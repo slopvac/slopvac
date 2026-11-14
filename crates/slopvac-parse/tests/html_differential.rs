@@ -134,12 +134,17 @@ const TEXTUAL: [&str; 11] = [
 /// Whether the reference can be built for `source` by dropping the tags of `<object>` and
 /// the like.
 fn reference_applies(source: &str) -> bool {
+    const FORMATTING: [&str; 6] = ["<b>", "<i>", "<em>", "<a ", "<code>", "<font"];
     // html5ever leaves a marker in its list of formatting elements when a template ends
     // inside a table cell, and then reopens an earlier formatting element in the text after
     // it. The extractor never feeds a template to the tree builder, so it has no such
     // marker. That is the reason for skipping templates: they only matter outside the
     // markers, which the corpus covers.
-    const FORMATTING: [&str; 6] = ["<b>", "<i>", "<em>", "<a ", "<code>", "<font"];
+    // The extractor skips a template in SVG and `MathML` too, up to its end tag, where the
+    // reference closes it with the SVG element around it.
+    if source.contains("<template>") && (source.contains("<svg>") || source.contains("<math>")) {
+        return false;
+    }
     if source.contains("<template>") && FORMATTING.iter().any(|t| source.contains(t)) {
         return false;
     }

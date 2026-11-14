@@ -48,8 +48,6 @@ pub(super) fn build(source: &str, budget: usize) -> Rc<Dom> {
         depth: DepthCache::default(),
         template_depth: 0,
         skip_foreign: 0,
-        skip_integration: 0,
-        skip_ftemplates: 0,
         ignore_lf: false,
     };
     for _ in Tokenizer::new_with_emitter(source, emitter) {}
@@ -71,68 +69,6 @@ enum Skip {
     /// It never reaches the tree builder, and the tokenizer switches to this state.
     Handled(Option<State>),
 }
-
-/// HTML start tags that end SVG and `MathML` content (and `<font>` with an attribute).
-const BREAKOUT: &[&str] = &[
-    "b",
-    "big",
-    "blockquote",
-    "body",
-    "br",
-    "center",
-    "code",
-    "dd",
-    "div",
-    "dl",
-    "dt",
-    "em",
-    "embed",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "head",
-    "hr",
-    "i",
-    "img",
-    "li",
-    "listing",
-    "menu",
-    "meta",
-    "nobr",
-    "ol",
-    "p",
-    "pre",
-    "ruby",
-    "s",
-    "small",
-    "span",
-    "strong",
-    "strike",
-    "sub",
-    "sup",
-    "table",
-    "tt",
-    "u",
-    "ul",
-    "var",
-    "font",
-];
-
-/// SVG and `MathML` elements that hold HTML.
-const INTEGRATION: &[&str] = &[
-    "title",
-    "desc",
-    "foreignobject",
-    "mi",
-    "mo",
-    "mn",
-    "ms",
-    "mtext",
-    "annotation-xml",
-];
 
 /// Counts the handles the tree builder holds, and the open `<table>` elements among them.
 #[derive(Default)]
@@ -203,10 +139,6 @@ struct Feeder<'a> {
     template_depth: usize,
     /// Open `<svg>` and `<math>` elements in the part being skipped.
     skip_foreign: usize,
-    /// Open HTML integration points among them.
-    skip_integration: usize,
-    /// Open SVG elements named `template` in the part being skipped.
-    skip_ftemplates: usize,
     /// Whether the tree builder drops a newline that opens the next text, as it does after
     /// `<pre>`, `<listing>` and `<textarea>`.
     ignore_lf: bool,
@@ -310,37 +242,6 @@ impl Feeder<'_> {
         count.tables.get() >= MAX_TABLES
     }
 
-    /// Track SVG and `MathML` in the skipped part, with the rules that end them.
-    fn skip_start(&mut self, local: &str) {
-        let foreign = self.skip_foreign > 0 && self.skip_integration == 0;
-        if foreign && (BREAKOUT.contains(&local) && (local != "font" || !self.attrs.is_empty())) {
-            self.skip_foreign = 0;
-            self.skip_integration = 0;
-            self.skip_ftemplates = 0;
-        }
-        let foreign = self.skip_foreign > 0 && self.skip_integration == 0;
-        if foreign && INTEGRATION.contains(&local) {
-            self.skip_integration += 1;
-        }
-        if matches!(local, "svg" | "math") {
-            self.skip_foreign += 1;
-        }
-    }
-
-    fn skip_end(&mut self, local: &str) {
-        if self.skip_foreign > 0 && self.skip_integration == 0 && matches!(local, "p" | "br") {
-            self.skip_foreign = 0;
-            self.skip_ftemplates = 0;
-        } else if self.skip_integration > 0 && INTEGRATION.contains(&local) {
-            self.skip_integration -= 1;
-        } else if matches!(local, "svg" | "math") {
-            self.skip_foreign = self.skip_foreign.saturating_sub(1);
-            if self.skip_foreign == 0 {
-                self.skip_integration = 0;
-            }
-        }
-    }
-
     /// Handle a tag that never reaches the tree builder. Returns the tokenizer state to
     /// switch to when it is one of those.
     ///
@@ -355,21 +256,19 @@ impl Feeder<'_> {
         let start = self.tag_kind == TagKind::StartTag;
         if self.template_depth > 0 {
             self.dom.charge(1);
-            // A `<template>` in SVG is an SVG element, and only a real one nests.
-            let plain = !(self.skip_foreign > 0 && self.skip_integration == 0);
             let state = if start {
                 self.last_start.clone_from(&self.tag_name);
                 if local == "template" {
-                    if plain {
-                        self.template_depth += 1;
-                    } else {
-                        self.skip_ftemplates += 1;
-                    }
+                    self.template_depth += 1;
                 }
-                self.skip_start(local);
-                // Nothing builds a tree here, so the tokenizer switches states by name,
-                // except inside SVG and `MathML`, where those names are plain elements.
-                if self.skip_foreign > 0 && self.skip_integration == 0 {
+                let in_foreign = self.skip_foreign > 0;
+                if matches!(local, "svg" | "math") && !self.self_closing {
+                    self.skip_foreign += 1;
+                }
+                // Nothing builds a tree here, so the tokenizer switches states by the name of
+                // an HTML raw text element. In SVG and `MathML` those names are plain
+                // elements, and a self-closed `<title/>` has no content to wait for.
+                if in_foreign {
                     None
                 } else {
                     naive_next_state(local.as_bytes())
@@ -377,27 +276,28 @@ impl Feeder<'_> {
             } else {
                 self.last_start.clear();
                 if local == "template" {
-                    if self.skip_ftemplates > 0 {
-                        self.skip_ftemplates -= 1;
-                    } else {
-                        // It reaches out of SVG and ends the real template.
-                        self.template_depth -= 1;
+                    self.template_depth -= 1;
+                    if self.template_depth == 0 {
                         self.skip_foreign = 0;
-                        self.skip_integration = 0;
                     }
                 }
-                self.skip_end(local);
+                if matches!(local, "svg" | "math") {
+                    self.skip_foreign = self.skip_foreign.saturating_sub(1);
+                }
                 None
             };
             self.text.raw = state.is_some();
             self.after_markup();
             return Skip::Handled(state);
         }
+        // A template is skipped wherever it sits. In SVG a self-closed `<template/>` is an
+        // empty element and has nothing to skip.
         let template = start
             && local == "template"
-            && !self
-                .tb
-                .adjusted_current_node_present_but_not_in_html_namespace();
+            && !(self.self_closing
+                && self
+                    .tb
+                    .adjusted_current_node_present_but_not_in_html_namespace());
         let transparent = matches!(local, "object" | "applet" | "marquee");
         let table = start && local == "table" && self.too_many_tables();
         if !(template || transparent || table) {
@@ -407,8 +307,6 @@ impl Feeder<'_> {
         if template {
             self.template_depth = 1;
             self.skip_foreign = 0;
-            self.skip_integration = 0;
-            self.skip_ftemplates = 0;
         } else {
             self.dom.tags.borrow_mut().push(TagTok {
                 range: range.clone(),

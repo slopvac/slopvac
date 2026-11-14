@@ -502,3 +502,97 @@ fn worst_shapes_at_the_input_cap_finish_in_bounded_time() {
         assert!(guarded_time < Duration::from_secs(30), "{name}");
     }
 }
+#[test]
+fn templates_at_a_foreign_integration_point_never_reach_the_tree_builder() {
+    // Inside SVG's `<foreignObject>` HTML rules apply, so a template there is a real one,
+    // and with a cell it leaves a marker behind. The scan skips a template in every context.
+    let n = 20_000;
+    let source = "<svg><foreignObject>".to_owned()
+        + &"<template><td></template>".repeat(n)
+        + &"<b></b>".repeat(n);
+    let stats = stats(&source);
+    assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
+}
+
+#[test]
+fn a_self_closed_svg_title_in_a_template_does_not_swallow_the_rest() {
+    let source = "<template><svg><title/></svg></template><p>after</p>";
+    let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
+    assert_eq!(doc.blocks.len(), 1);
+    let projection = doc.blocks[0].projection.as_ref().unwrap();
+    assert_eq!(projection.text(), "after");
+    let span = projection.span_for_range(0, 5);
+    assert_eq!(&source[span.start()..span.end()], "after");
+}
+
+/// Pieces that a skipped template can hold without swallowing its own end tag: no raw text,
+/// no comments, no templates, and nothing that hides the paragraph after it.
+const SAFE: &[&str] = &[
+    "x",
+    " ",
+    "\n",
+    "&amp;",
+    "é",
+    "<b>",
+    "</b>",
+    "<p>",
+    "</p>",
+    "<div>",
+    "</div>",
+    "<td>",
+    "<tr>",
+    "<table>",
+    "</table>",
+    "<li>",
+    "<br>",
+    "<svg>",
+    "</svg>",
+    "<math>",
+    "</math>",
+    "<svg><title/>",
+    "<svg><foreignObject>",
+    "</foreignObject>",
+    "<span>",
+    "</span>",
+    "<i>",
+    "</i>",
+    "<h2>",
+    "</h2>",
+    "<ul>",
+    "</ul>",
+    "<a href=x>",
+    "</a>",
+    "<font color=red>",
+    "<img>",
+    "</>",
+    "&bogus;",
+    "<?pi>",
+    "<!x>",
+];
+
+fn safe_soup() -> impl Strategy<Value = String> {
+    prop::collection::vec(prop::sample::select(SAFE), 0..20).prop_map(|v| v.concat())
+}
+
+proptest! {
+    #[test]
+    fn a_paragraph_after_a_skipped_template_keeps_its_text_and_position(
+        before in safe_soup(),
+        inside in safe_soup(),
+        after in safe_soup(),
+    ) {
+        let source = format!(
+            "{before}<template>{inside}</template>{after}</svg></math></table><p>SENTINEL</p>"
+        );
+        let (doc, _) = parse_html_budget(&source, whole(&source), UNLIMITED, UNLIMITED).unwrap();
+        let found = doc
+            .blocks
+            .iter()
+            .filter_map(|b| b.projection.as_ref())
+            .find(|p| p.text() == "SENTINEL");
+        let projection =
+            found.ok_or_else(|| TestCaseError::fail(format!("no sentinel in {source:?}")))?;
+        let span = projection.span_for_range(0, 8);
+        prop_assert_eq!(&source[span.start()..span.end()], "SENTINEL");
+    }
+}
