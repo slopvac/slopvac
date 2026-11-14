@@ -26,8 +26,9 @@ import json
 import os
 import random
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import corpuslib as lib
 from .textops import (

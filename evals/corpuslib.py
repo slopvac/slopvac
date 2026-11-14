@@ -300,7 +300,7 @@ def github_token(allow_gh_cli: bool = False) -> str | None:
         return token
     try:
         out = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, timeout=20
+            ["gh", "auth", "token"], capture_output=True, text=True, timeout=20, check=False
         )
     except (OSError, subprocess.SubprocessError):
         return None

@@ -81,7 +81,7 @@ def pin_repo(repo: str, repos: dict[str, Any], *, latest: bool = False) -> dict[
     content = base64.b64decode(info["content"]).decode("utf-8", "replace")
     copyright_line = None
     for line in content.splitlines():
-        if re.match(r"\s*(copyright|\(c\))", line, re.I) and len(line) < 200:
+        if re.match(r"\s*(copyright|\(c\))", line, re.IGNORECASE) and len(line) < 200:
             copyright_line = line.strip()
             break
     repos[repo] = {
@@ -475,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             got = HANDLERS[item.get("type", "files")](item, repos)
-        except Exception as exc:  # one bad source must not hide the others
+        except Exception as exc:  # noqa: BLE001 - one bad source must not hide the others
             print(f"SKIP {name}: {exc}", file=sys.stderr)
             continue
         print(f"{name:60s} {len(got)}")

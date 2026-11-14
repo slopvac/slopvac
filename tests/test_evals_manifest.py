@@ -11,8 +11,8 @@ from collections import Counter
 
 import pytest
 
-from evals import corpuslib as lib
 from evals import build_derived, twins
+from evals import corpuslib as lib
 
 MANIFEST = lib.load_manifest()
 DOCS = MANIFEST["documents"]
