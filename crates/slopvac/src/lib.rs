@@ -7,6 +7,7 @@ pub mod cli;
 pub mod color;
 pub mod engine_stub;
 pub mod env;
+pub mod errors;
 pub mod exit;
 pub mod generate;
 pub mod logging;
@@ -15,4 +16,4 @@ pub mod redact;
 mod run;
 
 pub use env::{Env, SystemEnv};
-pub use run::main_with;
+pub use run::{Globals, main_with, resolve_globals};

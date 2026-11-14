@@ -5,10 +5,15 @@ use std::fmt::Write as _;
 use std::io;
 use std::path::Path;
 
-/// Write the completion script for `shell` to `out`.
-pub fn completions(shell: clap_complete::Shell, out: &mut dyn io::Write) {
+/// Render the completion script for `shell`.
+///
+/// Rendering goes to memory first, because `clap_complete` panics on a write error.
+#[must_use]
+pub fn completions(shell: clap_complete::Shell) -> Vec<u8> {
     let mut cmd = crate::cli::command();
-    clap_complete::generate(shell, &mut cmd, "slopvac", out);
+    let mut buf = Vec::new();
+    clap_complete::generate(shell, &mut cmd, "slopvac", &mut buf);
+    buf
 }
 
 /// Render the main man page.

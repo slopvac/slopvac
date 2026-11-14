@@ -226,3 +226,97 @@ fn checked_in_cli_reference_is_current() {
         "docs/reference/cli.md is stale; run `cargo run -p slopvac -- cli-reference > docs/reference/cli.md`"
     );
 }
+
+#[test]
+fn failures_carry_stable_bracketed_codes() {
+    let (_dir, bad) = doc(&[0xff]);
+    let cases: Vec<(Vec<std::ffi::OsString>, &str)> = vec![
+        (vec!["lint".into()], "error[no-input]: "),
+        (
+            vec![bad.clone().into_os_string()],
+            "error[input-not-utf8]: ",
+        ),
+        (
+            vec!["/nonexistent/x.md".into()],
+            "error[input-unreadable]: ",
+        ),
+        (
+            vec!["lint".into(), "--no-vale".into(), "x".into()],
+            "error[removed-option]: ",
+        ),
+        (vec!["migrate".into()], "error[command-not-wired]: "),
+        (vec!["lint".into(), "--bogus".into()], "error[usage]: "),
+    ];
+    for (args, prefix) in cases {
+        slopvac()
+            .args(&args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::starts_with(prefix));
+    }
+}
+
+#[test]
+fn file_errors_never_show_absolute_paths() {
+    let (dir, path) = doc(&[0xff]);
+    let out = slopvac().arg(&path).output().expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("<external>/doc.md"), "{stderr}");
+    assert!(
+        !stderr.contains(&dir.path().display().to_string()),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn debug_logging_with_forced_colour_does_not_panic() {
+    let (_dir, path) = doc(b"x\n");
+    slopvac()
+        .env("SLOPVAC_LOG", "debug")
+        .args(["--color", "always"])
+        .arg(&path)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("\u{1b}["));
+}
+
+#[test]
+fn colour_flag_colours_help_and_no_color_does_not() {
+    slopvac()
+        .args(["--color", "always", "--help"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("\u{1b}["));
+    slopvac()
+        .args(["--help", "--no-color"])
+        .env("FORCE_COLOR", "1")
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("\u{1b}[").not());
+}
+
+#[test]
+fn rules_category_is_repeatable() {
+    // The command is unwired, but the arguments must parse: a parse error is a usage error.
+    slopvac()
+        .args(["rules", "--category", "a", "--category", "b"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[command-not-wired]"));
+}
+
+#[test]
+fn closed_stdout_is_not_a_panic() {
+    use std::process::{Command as Std, Stdio};
+    let bin = assert_cmd::cargo::cargo_bin("slopvac");
+    let mut child = Std::new(bin)
+        .args(["completions", "bash"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}

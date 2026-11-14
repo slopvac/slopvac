@@ -265,7 +265,8 @@ fn rules() -> Command {
         .arg(
             Arg::new("category")
                 .long("category")
-                .help("Only this category."),
+                .action(ArgAction::Append)
+                .help("Only this category. Repeatable."),
         )
         .arg(Arg::new("kind").long("kind").help("Only this match kind."))
         .arg(

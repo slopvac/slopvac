@@ -32,14 +32,16 @@ fn non_empty(env: &dyn Env, name: &str) -> bool {
 
 /// Resolve whether to emit colour.
 ///
-/// Order: an explicit `--color` (or `--no-color`), then `NO_COLOR`, then
+/// Order: an explicit `--color` (or `--no-color`) decides alone, with `auto` meaning the
+/// terminal check. Without one: `NO_COLOR`, then
 /// `CLICOLOR_FORCE` or `FORCE_COLOR`, then a terminal check with `TERM`.
 #[must_use]
 pub fn resolve(flag: Option<ColorChoice>, env: &dyn Env) -> bool {
     match flag {
         Some(ColorChoice::Always) => return true,
         Some(ColorChoice::Never) => return false,
-        Some(ColorChoice::Auto) | None => {}
+        Some(ColorChoice::Auto) => return terminal_allows_color(env),
+        None => {}
     }
     if non_empty(env, "NO_COLOR") {
         return false;
@@ -47,6 +49,10 @@ pub fn resolve(flag: Option<ColorChoice>, env: &dyn Env) -> bool {
     if non_empty(env, "CLICOLOR_FORCE") || non_empty(env, "FORCE_COLOR") {
         return true;
     }
+    terminal_allows_color(env)
+}
+
+fn terminal_allows_color(env: &dyn Env) -> bool {
     env.stdout_is_terminal() && env.var("TERM").as_deref() != Some("dumb")
 }
 
@@ -66,7 +72,20 @@ mod tests {
                 true,
                 false,
             ),
-            (Some(ColorChoice::Auto), &[("NO_COLOR", "1")], true, false),
+            (Some(ColorChoice::Auto), &[("NO_COLOR", "1")], true, true),
+            (
+                Some(ColorChoice::Auto),
+                &[("FORCE_COLOR", "1")],
+                false,
+                false,
+            ),
+            (
+                Some(ColorChoice::Auto),
+                &[("CLICOLOR_FORCE", "1")],
+                false,
+                false,
+            ),
+            (Some(ColorChoice::Auto), &[("TERM", "dumb")], true, false),
             (None, &[("NO_COLOR", "")], true, true),
             (
                 None,

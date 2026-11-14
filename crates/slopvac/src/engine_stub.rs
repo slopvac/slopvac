@@ -3,11 +3,16 @@
 //! The CLI codes against [`Linter`]. The stub reads each target as bytes,
 //! rejects invalid UTF-8 as an incomplete run, and reports no findings.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use crate::errors::CliError;
+use crate::redact;
 
 /// What the CLI asks the engine to lint.
 #[derive(Debug, Clone, Default)]
 pub struct LintRequest {
+    /// Project root. Paths outside it are redacted in messages.
+    pub root: PathBuf,
     /// Files to lint. Empty with `stdin` set means standard input.
     pub targets: Vec<PathBuf>,
     /// Raw stdin bytes, when `--stdin` was given.
@@ -21,8 +26,8 @@ pub struct RunOutcome {
     pub documents: usize,
     /// Whether at least one gate failed.
     pub gate_failed: bool,
-    /// Messages for documents that could not be checked.
-    pub incomplete: Vec<String>,
+    /// Documents that could not be checked.
+    pub incomplete: Vec<CliError>,
 }
 
 /// The engine contract the CLI depends on.
@@ -39,17 +44,27 @@ impl Linter for StubLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut outcome = RunOutcome::default();
         if let Some(bytes) = &request.stdin {
-            check(crate::redact::STDIN_NAME, bytes, &mut outcome);
+            check(redact::STDIN_NAME, bytes, &mut outcome);
         }
         for path in &request.targets {
+            let shown = shown_path(path, &request.root);
             match std::fs::read(path) {
-                Ok(bytes) => check(&path.display().to_string(), &bytes, &mut outcome),
-                Err(err) => outcome
-                    .incomplete
-                    .push(format!("{}: {}", path.display(), err.kind())),
+                Ok(bytes) => check(&shown, &bytes, &mut outcome),
+                Err(err) => outcome.incomplete.push(CliError::new(
+                    "input-unreadable",
+                    format!("{shown}: {}", err.kind()),
+                )),
             }
         }
         outcome
+    }
+}
+
+fn shown_path(path: &Path, root: &Path) -> String {
+    if path.is_absolute() {
+        redact::path_for_log(path, root)
+    } else {
+        path.display().to_string()
     }
 }
 
@@ -57,6 +72,9 @@ fn check(name: &str, bytes: &[u8], outcome: &mut RunOutcome) {
     if std::str::from_utf8(bytes).is_ok() {
         outcome.documents += 1;
     } else {
-        outcome.incomplete.push(format!("{name}: not valid UTF-8"));
+        outcome.incomplete.push(CliError::new(
+            "input-not-utf8",
+            format!("{name}: not valid UTF-8"),
+        ));
     }
 }

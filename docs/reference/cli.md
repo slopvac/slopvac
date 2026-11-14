@@ -59,7 +59,7 @@ List rules.
 
 | Argument | Description |
 | --- | --- |
-| `--category` | Only this category. |
+| `--category` | Only this category. Repeatable. |
 | `--kind` | Only this match kind. |
 | `--genre` | Only rules that apply to this genre. |
 | `--include-excluded` | Include rules the genre excludes. |
