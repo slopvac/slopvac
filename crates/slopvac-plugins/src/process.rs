@@ -144,6 +144,9 @@ struct State {
     status: Option<String>,
     /// A kill ran before the leader was reaped.
     forced: bool,
+    /// The kill teardown ran. It runs once: what it found is killed and
+    /// cannot fork, so another walk would find nothing new.
+    killed: bool,
     /// What the teardowns so far left undone.
     left: Teardown,
     /// The leader is reaped and the group unregistered.
@@ -191,13 +194,23 @@ impl Group {
         }
     }
 
-    /// Kill the group and the descendants that left it, unless the leader is reaped.
+    /// Kill the group and the descendants that left it, unless the leader is
+    /// reaped or a kill already ran.
     ///
     /// Blocks while another teardown or the reap is in flight.
     pub(crate) fn kill(&self) {
         let mut st = lock(&self.state);
         if st.status.is_none() {
             st.forced = true;
+            self.kill_once(&mut st);
+        }
+    }
+
+    /// Run the kill teardown unless it already ran. The caller holds the
+    /// lock and keeps the leader unreaped.
+    fn kill_once(&self, st: &mut State) {
+        if !st.killed {
+            st.killed = true;
             let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
             st.left.merge(left);
         }
@@ -210,7 +223,7 @@ impl Group {
     /// the final kill no longer finds it.
     pub(crate) fn kill_strays(&self) {
         let mut st = lock(&self.state);
-        if st.status.is_none() {
+        if st.status.is_none() && !st.killed {
             let left = tear_down(self.pid, self.table.as_ref(), Then::Resume);
             st.left.merge(left);
         }
@@ -239,8 +252,7 @@ impl Group {
     pub(crate) fn finish(&self, leader: Leader) {
         {
             let mut st = lock(&self.state);
-            let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
-            st.left.merge(left);
+            self.kill_once(&mut st);
             st.status = Some(leader.reap());
         }
         lock(&LIVE).retain(|g| !std::ptr::eq(Arc::as_ptr(g), self));

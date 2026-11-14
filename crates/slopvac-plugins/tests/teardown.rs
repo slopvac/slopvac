@@ -201,6 +201,24 @@ fn a_walk_that_cannot_read_the_process_table_is_reported_incomplete() {
 }
 
 #[test]
+fn repeated_kills_walk_the_process_table_once() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A helper that fails ends its walk after one run, so runs count walks.
+    let (dir, cfg) = seam("walk-once", "echo run >> \"$1/runs\"\nexit 1\n", WALK);
+    let p = start_mode("hang", &dir, &cfg);
+    let _ = pids_n(&dir.join("pids"), 1);
+    let _ = kill_all_live();
+    let _ = kill_all_live();
+    // Fails the plugin, kills it again and waits for the reap.
+    drop(p);
+    let runs = std::fs::read_to_string(dir.join("runs")).unwrap_or_default();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(runs.lines().count(), 1, "{runs:?}");
+}
+
+#[test]
 fn table_rows_naming_the_host_or_init_as_descendants_are_never_signalled() {
     let _serial = SERIAL
         .lock()
