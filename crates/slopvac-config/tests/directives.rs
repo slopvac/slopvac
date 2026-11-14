@@ -505,3 +505,74 @@ fn block_comment_directives_stop_before_the_closing_marker() {
     assert_eq!(out.settings[0].value, json!("en-GB"));
     assert_eq!(found("/* slopvac: locale=en-GB\n */\n", "a.c"), 1);
 }
+
+#[test]
+fn comments_inside_template_interpolations_and_escaped_triple_quotes_are_handled() {
+    let cases = [
+        (
+            "comment with a backtick in an interpolation",
+            "const s = `a ${ x /* ` */ } b\n// slopvac: locale=fr\n`;\n",
+            "a.js",
+            0,
+        ),
+        (
+            "line comment with a brace in an interpolation",
+            "const s = `${ a // }\n}\n// slopvac: locale=fr\n`;\n",
+            "a.js",
+            0,
+        ),
+        (
+            "escaped triple double quote",
+            "\"\"\"a \\\"\"\" b\n# slopvac: locale=fr\n\"\"\"\n",
+            "a.py",
+            0,
+        ),
+        (
+            "escaped triple single quote",
+            "'''a \\''' b\n# slopvac: locale=fr\n'''\n",
+            "a.py",
+            0,
+        ),
+        (
+            "code after a real close",
+            "\"\"\"a\"\"\"\n# slopvac: locale=en-GB\n",
+            "a.py",
+            1,
+        ),
+        (
+            "rust escaped quote then string",
+            "let q = '\\''; let s = \"x\";\n// slopvac: locale=en-GB\n",
+            "a.rs",
+            1,
+        ),
+        (
+            "rust unicode escape",
+            "let c = '\\u{1F600}';\n// slopvac: locale=en-GB\n",
+            "a.rs",
+            1,
+        ),
+        (
+            "go raw string has no escapes",
+            "const s = `a \\`\n// slopvac: locale=en-GB\n",
+            "a.go",
+            1,
+        ),
+        (
+            "go raw string",
+            "const s = `\n// slopvac: locale=fr\n`\n",
+            "a.go",
+            0,
+        ),
+        ("shell", "echo '#'\n# slopvac: locale=en-GB\n", "a.sh", 1),
+        ("lua", "x = 1\n-- slopvac: locale=en-GB\n", "a.lua", 1),
+        (
+            "build file by name",
+            "# slopvac: locale=en-GB\n",
+            "Rakefile",
+            1,
+        ),
+    ];
+    for (name, doc, file, want) in cases {
+        assert_eq!(found(doc, file), want, "{name}");
+    }
+}

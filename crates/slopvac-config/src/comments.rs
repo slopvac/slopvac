@@ -3,6 +3,19 @@
 //! One small scanner per comment family. It tracks only what decides whether a comment marker
 //! starts a comment: strings, raw strings, character literals, template literals and block
 //! comments. It does not parse the language.
+//!
+//! The language set follows the 2.x code-comment mode (`SOURCE_LANGUAGE_BY_EXTENSION` in
+//! `packages/slopvac-lint`), with a few more plain-text formats.
+//!
+//! Known limitations. These constructs can hide a real comment or fake one, and a parser-backed
+//! extractor would settle them (see bead slopvac-8l4.4.13):
+//!
+//! - JavaScript regular expression literals that hold a quote or a backtick, such as `/'/`.
+//! - Python f-strings with nested quotes, and Ruby, shell and PHP heredocs and `%q` strings.
+//! - C++ raw strings (`R"(…)"`), Swift `#"…"#` strings, Lua long strings (`[[…]]`) and Kotlin
+//!   raw strings, whose backslashes do not escape.
+//! - CSS, which has block comments only, is scanned with the C rules, so `//` in a `url(…)`
+//!   at the start of a line reads as a comment.
 
 use std::ops::Range;
 
@@ -20,8 +33,10 @@ pub(crate) struct Family {
     semi: bool,
     /// Rust: raw strings, lifetimes, nested block comments, strings that span lines.
     rust: bool,
-    /// Backtick strings (JavaScript, TypeScript, Go).
+    /// Backtick template literals with `${…}` code and escapes (JavaScript, TypeScript).
     backtick: bool,
+    /// Backtick raw strings with no escapes and no interpolation (Go).
+    raw_backtick: bool,
     /// `"""` strings (Python, Java, Kotlin, Scala, Swift).
     triple: bool,
 }
@@ -33,6 +48,7 @@ const NONE: Family = Family {
     semi: false,
     rust: false,
     backtick: false,
+    raw_backtick: false,
     triple: false,
 };
 
@@ -42,25 +58,41 @@ pub(crate) fn family_of(extension: &str) -> Option<Family> {
         c_like: true,
         ..NONE
     };
+    let hash = Family { hash: true, ..NONE };
     Some(match extension {
         "rs" => Family { rust: true, ..c },
-        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "go" => Family {
+        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => Family {
             backtick: true,
             ..c
         },
+        "go" => Family {
+            raw_backtick: true,
+            ..c
+        },
         "java" | "kt" | "kts" | "scala" | "swift" => Family { triple: true, ..c },
-        "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "php" | "dart" | "m" => c,
-        "py" | "pyi" => Family {
+        "c" | "h" | "cc" | "cpp" | "cxx" | "hh" | "hpp" | "hxx" | "cs" | "dart" | "m" | "fs"
+        | "fsx" | "proto" | "css" | "scss" | "less" => c,
+        "php" => Family { hash: true, ..c },
+        "py" | "pyi" | "pyw" => Family {
             hash: true,
             triple: true,
             ..NONE
         },
-        "rb" | "sh" | "bash" | "zsh" | "fish" | "pl" | "r" | "mk" | "toml" | "yaml" | "yml"
-        | "ps1" | "conf" => Family { hash: true, ..NONE },
+        "rb" | "sh" | "bash" | "zsh" | "fish" | "pl" | "pm" | "r" | "ex" | "exs" | "jl" | "ps1"
+        | "psm1" | "mk" | "toml" | "yaml" | "yml" | "conf" => hash,
         "sql" | "lua" | "hs" | "adb" | "ads" => Family { dash: true, ..NONE },
-        "lisp" | "clj" | "el" | "ini" | "asm" | "s" => Family { semi: true, ..NONE },
+        "lisp" | "clj" | "cljs" | "el" | "ini" | "asm" | "s" => Family { semi: true, ..NONE },
         _ => return None,
     })
+}
+
+/// The comment family of a file known by its whole name, such as `Rakefile`.
+pub(crate) fn family_of_name(name: &str) -> Option<Family> {
+    match name.to_ascii_lowercase().as_str() {
+        "sconstruct" => family_of("py"),
+        "gemfile" | "rakefile" | "brewfile" => family_of("rb"),
+        _ => None,
+    }
 }
 
 /// One comment: where its marker starts and the range of text after the marker.
@@ -195,6 +227,12 @@ fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
         return rust_quote(doc, i);
     }
     if quote == b'`' {
+        if fam.raw_backtick {
+            return b[i + 1..]
+                .iter()
+                .position(|&c| c == b'`')
+                .map_or(b.len(), |p| i + 1 + p + 1);
+        }
         return if fam.backtick {
             skip_template(b, i + 1)
         } else {
@@ -202,16 +240,10 @@ fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
         };
     }
     if quote == b'"' && fam.triple && b[i..].starts_with(b"\"\"\"") {
-        return b[i + 3..]
-            .windows(3)
-            .position(|w| w == b"\"\"\"")
-            .map_or(b.len(), |p| i + 3 + p + 3);
+        return triple_end(b, i + 3, *b"\"\"\"");
     }
     if quote == b'\'' && fam.triple && fam.hash && b[i..].starts_with(b"'''") {
-        return b[i + 3..]
-            .windows(3)
-            .position(|w| w == b"'''")
-            .map_or(b.len(), |p| i + 3 + p + 3);
+        return triple_end(b, i + 3, *b"'''");
     }
     let spans_lines = fam.rust;
     let mut j = i + 1;
@@ -226,14 +258,31 @@ fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
     b.len()
 }
 
+/// The end of a triple-quoted string whose body starts at `from`. A backslash escapes the next
+/// byte, so an escaped delimiter does not close the string.
+fn triple_end(b: &[u8], from: usize, delim: [u8; 3]) -> usize {
+    let mut j = from;
+    while j < b.len() {
+        if b[j] == b'\\' {
+            j += 2;
+        } else if b[j..].starts_with(&delim) {
+            return j + 3;
+        } else {
+            j += 1;
+        }
+    }
+    b.len()
+}
+
 /// A Rust `'`: a character literal is skipped whole, a lifetime only loses its quote.
 fn rust_quote(doc: &str, i: usize) -> usize {
     let b = doc.as_bytes();
     if b.get(i + 1) == Some(&b'\\') {
-        return b[i + 2..]
-            .iter()
-            .position(|&c| c == b'\'')
-            .map_or(b.len(), |p| i + 2 + p + 1);
+        return b.get(i + 3..).map_or(b.len(), |rest| {
+            rest.iter()
+                .position(|&c| c == b'\'')
+                .map_or(b.len(), |p| i + 3 + p + 1)
+        });
     }
     match doc[i + 1..].chars().next() {
         Some(c) if b.get(i + 1 + c.len_utf8()) == Some(&b'\'') => i + 1 + c.len_utf8() + 1,
@@ -268,6 +317,14 @@ fn skip_braces(b: &[u8], from: usize) -> usize {
                 if depth == 0 {
                     return j + 1;
                 }
+            }
+            b'/' if b.get(j + 1) == Some(&b'/') => {
+                j = line_end(b, j);
+                continue;
+            }
+            b'/' if b.get(j + 1) == Some(&b'*') => {
+                j = block_end(b, j + 2, false).0;
+                continue;
             }
             b'`' => {
                 j = skip_template(b, j + 1);

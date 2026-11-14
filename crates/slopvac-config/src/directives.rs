@@ -16,7 +16,7 @@
 use std::ops::Range;
 use std::path::Path;
 
-use crate::comments::{Family, comments, family_of};
+use crate::comments::{Family, comments, family_of, family_of_name};
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::frontmatter::{Policy, Read, denied};
@@ -44,16 +44,20 @@ enum Style {
 }
 
 fn style_of(file: &str) -> Style {
-    match Path::new(file)
+    let path = Path::new(file);
+    let extension = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
+        .map(str::to_ascii_lowercase);
+    match extension.as_deref() {
         Some("md" | "markdown" | "mdx" | "html" | "htm") => Style::Html,
         Some("rst") => Style::Rst,
         Some(other) => family_of(other).map_or(Style::Plain, Style::Code),
-        None => Style::Plain,
+        None => path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(family_of_name)
+            .map_or(Style::Plain, Style::Code),
     }
 }
 
