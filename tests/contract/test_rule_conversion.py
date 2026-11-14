@@ -123,7 +123,7 @@ def test_converted_patterns_compile_with_pcre2(category: dict, rule: dict) -> No
         (r"[\U0001F300-\U0001FAFF]", [r"\U0001F300", r"\U0001FAFF"]),
         (r"\\u2014", []),  # an escaped backslash then a literal u
         (r"\x{2014}", []),  # PCRE2-native, allowed
-        (r"caf\u00e9", [r"\u00e9"]),
+        (r"x\u00e9", [r"\u00e9"]),
     ],
 )
 def test_unicode_escapes_are_found(source: str, found: list[str]) -> None:
