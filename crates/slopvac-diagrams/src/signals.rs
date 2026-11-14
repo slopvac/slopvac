@@ -454,6 +454,20 @@ mod tests {
     }
 
     #[test]
+    fn two_distinct_meta_references_are_reported_once_each() {
+        let text = "In the diagram above and the figure below, requests retry.";
+        let found = prose_rules("", &[], text);
+        let got: Vec<_> = found.iter().map(|f| (f.rule, f.span.clone())).collect();
+        assert_eq!(
+            got,
+            [
+                ("diagram.meta-reference", 100..120),
+                ("diagram.meta-reference", 125..141),
+            ]
+        );
+    }
+
+    #[test]
     fn meta_reference_variants_report_rule_and_exact_span() {
         for (text, phrase) in [
             (
