@@ -239,6 +239,44 @@ def _render(command: list[str], output_format: str, destination: Path) -> int:
     return result.returncode
 
 
+_LEVELS = {"error": "error", "warning": "warning"}
+
+
+def _escape_data(text: str) -> str:
+    """Encode workflow-command message data per the runner's rules."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    """Encode a workflow-command property value (data rules plus `:` and `,`)."""
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def _annotations(data: dict[str, Any]) -> list[str]:
+    """Build one workflow command per finding from the JSON report.
+
+    The report, not the linter's `github` output, is the source: file names and
+    messages are untrusted and must be encoded before they reach stdout.
+    """
+    lines = []
+    for document in data["documents"]:
+        for finding in document.get("findings", []):
+            level = _LEVELS.get(finding["severity"], "notice")
+            lines.append(
+                f"::{level} file={_escape_property(str(finding['path']))},"
+                f"line={int(finding['line'])},col={int(finding.get('column', 1))},"
+                f"title={_escape_property(str(finding['rule_id']))}"
+                f"::{_escape_data(str(finding['message']))}"
+            )
+    summary = data["summary"]
+    lines.append(
+        f"::notice title=slopvac::score {summary['score']}/100, "
+        f"{summary['findings']} finding(s), "
+        f"{summary['per_100_words']:.2f} per 100 words"
+    )
+    return lines
+
+
 def _summary_markdown(data: dict[str, Any]) -> str:
     summary = data["summary"]
     verdict = "PASS" if summary["passed"] else "FAIL"
@@ -332,12 +370,8 @@ def lint() -> int:
         raise ActionError("could not write GitHub step summary") from exc
 
     if _env("ANNOTATE") == "true":
-        github_path = _temporary_path(suffix=".github")
-        try:
-            _render(command, "github", github_path)
-            print(github_path.read_text(encoding="utf-8"), end="")
-        finally:
-            github_path.unlink(missing_ok=True)
+        for line in _annotations(data):
+            print(line)
 
     if _env("SARIF") == "true":
         sarif_path = Path(_env("SARIF_FILE", "slopvac.sarif"))

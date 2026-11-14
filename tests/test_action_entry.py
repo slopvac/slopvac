@@ -182,5 +182,105 @@ def test_changed_file_names_are_escaped_in_log_output(
     lines = capsys.readouterr().out.splitlines()
     assert lines == [f"- {logged}"]
     assert not any(line.lstrip().startswith("::") for line in lines)
-    # The linter still receives the exact, unescaped name.
-    assert action_entry._read_paths(tmp_path / "slopvac-paths") == [name]
+
+
+@pytest.mark.parametrize(
+    ("name", "message", "expected"),
+    [
+        (
+            "a.md\n::error::injected",
+            "msg",
+            (
+                "::warning file=a.md%0A%3A%3Aerror%3A%3Ainjected,line=3,col=2,"
+                "title=style.rule::msg"
+            ),
+        ),
+        (
+            "a.md\r::add-mask::x",
+            "msg",
+            (
+                "::warning file=a.md%0D%3A%3Aadd-mask%3A%3Ax,line=3,col=2,"
+                "title=style.rule::msg"
+            ),
+        ),
+        (
+            "a,b.md",
+            "msg",
+            "::warning file=a%2Cb.md,line=3,col=2,title=style.rule::msg",
+        ),
+        (
+            "c:d.md",
+            "msg",
+            "::warning file=c%3Ad.md,line=3,col=2,title=style.rule::msg",
+        ),
+        (
+            "plain.md",
+            "100% sure\n::error::x",
+            (
+                "::warning file=plain.md,line=3,col=2,title=style.rule"
+                "::100%25 sure%0A::error::x"
+            ),
+        ),
+    ],
+)
+def test_annotations_are_built_from_json_with_escaped_values(
+    tmp_path, monkeypatch, capsys, name, message, expected
+):
+    path_list = tmp_path / "targets"
+    path_list.write_bytes(name.encode() + b"\0")
+    report = {
+        "summary": {
+            "score": 90.0,
+            "findings": 1,
+            "errors": 0,
+            "warnings": 1,
+            "suggestions": 0,
+            "documents": 1,
+            "words": 100,
+            "per_100_words": 1.0,
+            "passed": True,
+            "categories": [],
+        },
+        "documents": [
+            {
+                "path": name,
+                "findings": [
+                    {
+                        "path": name,
+                        "line": 3,
+                        "column": 2,
+                        "rule_id": "style.rule",
+                        "severity": "warning",
+                        "message": message,
+                    }
+                ],
+            }
+        ],
+    }
+    for key, value in {
+        "PATH_LIST": str(path_list),
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "RUNNER_TEMP": str(tmp_path),
+        "VALE": "false",
+        "ANNOTATE": "true",
+        "SARIF": "false",
+    }.items():
+        monkeypatch.setenv(key, value)
+    argvs: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        argvs.append(command)
+        kwargs["stdout"].write(json.dumps(report))
+        return CompletedProcess(command, 0, stderr="")
+
+    with patch("scripts.action_entry.subprocess.run", side_effect=fake_run):
+        assert action_entry.lint() == 0
+
+    # The linter receives the exact, unescaped name.
+    assert all(name in argv for argv in argvs)
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [
+        expected,
+        "::notice title=slopvac::score 90.0/100, 1 finding(s), 1.00 per 100 words",
+    ]
