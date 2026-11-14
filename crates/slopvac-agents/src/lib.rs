@@ -10,6 +10,7 @@ pub mod fsx;
 pub mod harness;
 pub mod managed;
 pub mod prime;
+pub mod review;
 pub mod setup;
 
 pub use error::AgentsError;
