@@ -4,7 +4,9 @@
 //! return no fragments. Known limits: a label that spans lines is not seen, and a
 //! node that has no shape renders its id, which is not extracted.
 
-use crate::{Extraction, Fragment, Role};
+use std::collections::HashMap;
+
+use crate::{Extraction, Fragment, Role, lines};
 
 struct Line<'a> {
     off: usize,
@@ -32,6 +34,21 @@ impl Emitter {
     }
 }
 
+impl Emitter {
+    /// Like `push`, for a quoted property value that may hold backslash escapes.
+    fn push_unescaped(&mut self, off: usize, s: &str, a: usize, b: usize, role: Role, id: &str) {
+        let before = self.out.len();
+        self.push(off, s, a, b, role, id);
+        if self.out.len() > before {
+            let last = self.out.last_mut().expect("just pushed");
+            let raw = &s[last.span.start - off..last.span.end - off];
+            if raw.contains('\\') {
+                last.text = Some(raw.replace("\\\"", "\"").replace("\\\\", "\\"));
+            }
+        }
+    }
+}
+
 fn trim_range(s: &str, a: usize, b: usize) -> (usize, usize) {
     let t = &s[a..b];
     let lead = t.len() - t.trim_start().len();
@@ -51,16 +68,13 @@ fn unwrap_label(s: &str, a: usize, b: usize) -> (usize, usize) {
 }
 
 pub(crate) fn extract(src: &str, base: usize) -> Extraction {
-    let mut lines = Vec::new();
-    let mut off = 0;
-    for raw in src.split_inclusive('\n') {
-        let text = raw.trim_end_matches(['\n', '\r']);
-        lines.push(Line {
-            off: base + off,
-            text,
-        });
-        off += raw.len();
-    }
+    let lines: Vec<Line<'_>> = lines(src)
+        .into_iter()
+        .map(|l| Line {
+            off: base + l.start,
+            text: l.text,
+        })
+        .collect();
     let mut iter = lines.iter().peekable();
     let mut front = Vec::new();
     if iter.peek().is_some_and(|l| l.text.trim_end() == "---") {
@@ -78,10 +92,11 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         if t.is_empty() || t.starts_with("%%") {
             continue;
         }
-        header = Some(t.split_whitespace().next().unwrap_or(""));
+        let lead = l.text.len() - l.text.trim_start().len();
+        header = Some((l.off + lead, t));
         break;
     }
-    let diagram = match header {
+    let diagram = match header.map(|(_, t)| first_word(t).split(';').next().unwrap_or("")) {
         Some("graph" | "flowchart" | "flowchart-elk") => "flowchart",
         Some("sequenceDiagram") => "sequence",
         Some("classDiagram" | "classDiagram-v2") => "class",
@@ -106,27 +121,34 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         }
     }
     let mut state = State::default();
+    if let Some((off, t)) = header
+        && let Some(k) = t.find(';')
+    {
+        let tail = &t[k + 1..];
+        let lead = tail.len() - tail.trim_start().len();
+        statement(&mut em, &mut state, off + k + 1 + lead, tail.trim());
+    }
     for l in iter {
         let lead = l.text.len() - l.text.trim_start().len();
-        let t = l.text.trim();
-        if t.is_empty() || t.starts_with("%%") {
-            continue;
-        }
-        let off = l.off + lead;
-        if accessibility(&mut em, &mut state, off, t) {
-            continue;
-        }
-        match diagram {
-            "flowchart" => flowchart(&mut em, off, t),
-            "sequence" => sequence(&mut em, off, t),
-            "class" => class(&mut em, &mut state, off, t),
-            "state" => state_diagram(&mut em, &mut state, off, t),
-            _ => er(&mut em, &mut state, off, t),
-        }
+        statement(&mut em, &mut state, l.off + lead, l.text.trim());
     }
     Extraction {
         diagram: Some(diagram.to_string()),
         fragments: em.out,
+    }
+}
+
+/// Dispatch one trimmed statement line to its diagram type.
+fn statement(em: &mut Emitter, state: &mut State, off: usize, t: &str) {
+    if t.is_empty() || t.starts_with("%%") || accessibility(em, state, off, t) {
+        return;
+    }
+    match em.diagram {
+        "flowchart" => flowchart(em, off, t),
+        "sequence" => sequence(em, off, t),
+        "class" => class(em, state, off, t),
+        "state" => state_diagram(em, state, off, t),
+        _ => er(em, state, off, t),
     }
 }
 
@@ -186,6 +208,109 @@ const SHAPES: &[(&str, &[&str])] = &[
     (">", &["]"]),
 ];
 
+/// Searches within one line. Each failed search is remembered so a line of
+/// repeated unmatched openers costs one scan, not one scan per opener.
+struct Search<'a> {
+    t: &'a str,
+    dead: HashMap<&'static str, usize>,
+}
+
+impl<'a> Search<'a> {
+    fn new(t: &'a str) -> Self {
+        Search {
+            t,
+            dead: HashMap::new(),
+        }
+    }
+
+    /// Find the first position at or after `from` where any needle starts.
+    /// Return the position and the matching needle length.
+    fn find_any(
+        &mut self,
+        key: &'static str,
+        needles: &[&str],
+        from: usize,
+    ) -> Option<(usize, usize)> {
+        if self.dead.get(key).is_some_and(|&d| d <= from) {
+            return None;
+        }
+        let bytes = self.t.as_bytes();
+        for pos in from..bytes.len() {
+            for needle in needles {
+                if bytes[pos..].starts_with(needle.as_bytes()) {
+                    return Some((pos, needle.len()));
+                }
+            }
+        }
+        let entry = self.dead.entry(key).or_insert(from);
+        *entry = (*entry).min(from);
+        None
+    }
+
+    /// Find the `}` that closes the attribute block whose body starts at `from`,
+    /// skipping quoted strings.
+    fn attr_end(&mut self, from: usize) -> Option<usize> {
+        if self.dead.get("@{").is_some_and(|&d| d <= from) {
+            return None;
+        }
+        let bytes = self.t.as_bytes();
+        let mut quoted = false;
+        let mut pos = from;
+        while pos < bytes.len() {
+            match bytes[pos] {
+                b'\\' if quoted => pos += 1,
+                b'"' => quoted = !quoted,
+                b'}' if !quoted => return Some(pos),
+                _ => {}
+            }
+            pos += 1;
+        }
+        let entry = self.dead.entry("@{").or_insert(from);
+        *entry = (*entry).min(from);
+        None
+    }
+}
+
+/// Find the range of the `label` property inside an attribute block body.
+fn attr_label(t: &str, start: usize, end: usize) -> Option<(usize, usize)> {
+    let bytes = t.as_bytes();
+    let mut pos = start;
+    while pos < end {
+        while pos < end && (bytes[pos].is_ascii_whitespace() || bytes[pos] == b',') {
+            pos += 1;
+        }
+        let key_start = pos;
+        while pos < end && bytes[pos] != b':' {
+            pos += 1;
+        }
+        let key = t[key_start..pos.min(end)].trim().trim_matches('"');
+        pos += 1;
+        while pos < end && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        let (value_start, value_end);
+        if bytes.get(pos) == Some(&b'"') && pos < end {
+            value_start = pos + 1;
+            pos += 1;
+            while pos < end && bytes[pos] != b'"' {
+                pos += if bytes[pos] == b'\\' { 2 } else { 1 };
+            }
+            value_end = pos.min(end);
+            pos += 1;
+        } else {
+            value_start = pos;
+            while pos < end && bytes[pos] != b',' {
+                pos += 1;
+            }
+            value_end = pos.min(end);
+        }
+        if key == "label" {
+            return Some((value_start.min(value_end), value_end));
+        }
+    }
+    None
+}
+
 fn flowchart(em: &mut Emitter, off: usize, t: &str) {
     let word = first_word(t);
     match word {
@@ -199,10 +324,8 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
                 .map_or(t.len(), |n| a + n);
             let bracket = t[id_end..].trim_start();
             if id_end > a && bracket.starts_with('[') {
-                let gap = t.len() - id_end - bracket.len();
-                // Re-parse as `id[...]` by treating the id as already read.
+                let open = t.len() - bracket.len();
                 let id = t[a..id_end].to_string();
-                let open = id_end + gap;
                 if let Some(n) = t[open + 1..].rfind(']') {
                     em.push(off, t, open + 1, open + 1 + n, Role::Group, &id);
                 }
@@ -214,16 +337,17 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
         }
         _ => {}
     }
+    let mut search = Search::new(t);
     let b = t.as_bytes();
     let mut i = 0;
     while i < b.len() {
         let c = b[i];
         if c.is_ascii_whitespace() || c == b';' || c == b'&' {
             i += 1;
-        } else if let Some(n) = link(em, off, t, i) {
+        } else if let Some(n) = link(em, &mut search, off, i) {
             i = n;
         } else if t[i..].chars().next().is_some_and(is_id_char) {
-            i = node(em, off, t, i, Role::Node);
+            i = node(em, &mut search, off, i, Role::Node);
         } else {
             i += t[i..].chars().next().map_or(1, char::len_utf8);
         }
@@ -231,25 +355,22 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
 }
 
 /// Parse one node starting at `i`. Return the index after it.
-fn node(em: &mut Emitter, off: usize, t: &str, i: usize, role: Role) -> usize {
+fn node(em: &mut Emitter, search: &mut Search<'_>, off: usize, i: usize, role: Role) -> usize {
+    let t = search.t;
     let id_end = t[i..]
         .find(|c: char| !is_id_char(c))
         .map_or(t.len(), |n| i + n);
     let id = &t[i..id_end];
     let rest = &t[id_end..];
     if rest.starts_with("@{") {
-        let end = rest.find('}').map_or(t.len(), |n| id_end + n);
-        if let Some(k) = t[id_end..end].find("label:") {
-            let a = id_end + k + "label:".len();
-            let inner = &t[a..end];
-            let stop = if inner.trim_start().starts_with('"') {
-                inner.len()
-            } else {
-                inner.find(',').unwrap_or(inner.len())
-            };
-            em.push(off, t, a, a + stop, role, id);
+        let body = id_end + 2;
+        let Some(end) = search.attr_end(body) else {
+            return body;
+        };
+        if let Some((a, b)) = attr_label(t, body, end) {
+            em.push_unescaped(off, t, a, b, role, id);
         }
-        return (end + 1).min(t.len());
+        return end + 1;
     }
     for (open, closers) in SHAPES {
         if !rest.starts_with(open) {
@@ -260,21 +381,15 @@ fn node(em: &mut Emitter, off: usize, t: &str, i: usize, role: Role) -> usize {
         let lead = body.len() - body.trim_start().len();
         if body[lead..].starts_with('"') {
             let q = p + lead + 1;
-            if let Some(n) = t[q..].find('"') {
-                em.push(off, t, q, q + n, role, id);
-                let after = q + n + 1;
-                let end = closers
-                    .iter()
-                    .filter_map(|c| t[after..].find(c).map(|k| after + k + c.len()))
-                    .min();
-                return end.unwrap_or(t.len());
+            if let Some((n, _)) = search.find_any("\"", &["\""], q) {
+                em.push(off, t, q, n, role, id);
+                let after = n + 1;
+                return search
+                    .find_any(open, closers, after)
+                    .map_or(t.len(), |(k, len)| k + len);
             }
         }
-        let found = closers
-            .iter()
-            .filter_map(|c| t[p..].find(c).map(|k| (p + k, c.len())))
-            .min_by_key(|(k, _)| *k);
-        return match found {
+        return match search.find_any(open, closers, p) {
             Some((k, len)) => {
                 em.push(off, t, p, k, role, id);
                 k + len
@@ -285,7 +400,8 @@ fn node(em: &mut Emitter, off: usize, t: &str, i: usize, role: Role) -> usize {
     id_end.max(i + 1)
 }
 
-fn link(em: &mut Emitter, off: usize, t: &str, at: usize) -> Option<usize> {
+fn link(em: &mut Emitter, search: &mut Search<'_>, off: usize, at: usize) -> Option<usize> {
+    let t = search.t;
     let rest = &t[at..];
     for (marker, terminators) in [
         ("-- ", &["-->", "---", "--x", "--o"][..]),
@@ -294,10 +410,7 @@ fn link(em: &mut Emitter, off: usize, t: &str, at: usize) -> Option<usize> {
     ] {
         if rest.starts_with(marker) {
             let start = at + marker.len();
-            let (end, len) = terminators
-                .iter()
-                .filter_map(|term| t[start..].find(term).map(|p| (start + p, term.len())))
-                .min_by_key(|&(p, _)| p)?;
+            let (end, len) = search.find_any(marker, terminators, start)?;
             em.push(off, t, start, end, Role::Edge, "link");
             return Some(end + len);
         }
@@ -327,10 +440,10 @@ fn link(em: &mut Emitter, off: usize, t: &str, at: usize) -> Option<usize> {
     }
     let bar = end + t[end..].len() - t[end..].trim_start_matches(' ').len();
     if bytes.get(bar) == Some(&b'|')
-        && let Some(len) = t[bar + 1..].find('|')
+        && let Some((close, _)) = search.find_any("|", &["|"], bar + 1)
     {
-        em.push(off, t, bar + 1, bar + 1 + len, Role::Edge, "link");
-        return Some(bar + 2 + len);
+        em.push(off, t, bar + 1, close, Role::Edge, "link");
+        return Some(close + 1);
     }
     Some(end)
 }
@@ -692,5 +805,77 @@ mod tests {
     fn mixed_unicode_is_not_split_inside_a_character() {
         let src = "flowchart TD\n  A[Café — naïve] --> B[日本語]\n";
         assert_eq!(labels(src), [n("Café — naïve"), n("日本語")]);
+    }
+
+    #[test]
+    fn attribute_label_ignores_other_properties_and_quoted_braces() {
+        for (src, want) in [
+            (
+                "flowchart LR\n  A@{ shape: rect, label: \"Typed node\" }\n",
+                "Typed node",
+            ),
+            (
+                "flowchart LR\n  A@{ label: \"First\", shape: rect }\n",
+                "First",
+            ),
+            (
+                "flowchart LR\n  A@{ label: \"has } brace\", shape: rect }\n",
+                "has } brace",
+            ),
+            (
+                "flowchart LR\n  A@{ shape: rect, label: Bare text, icon: x }\n",
+                "Bare text",
+            ),
+            (
+                "flowchart LR\n  A@{ \"label\": \"Quoted key\" }\n",
+                "Quoted key",
+            ),
+        ] {
+            let got = labels(src);
+            assert_eq!(got, [n(want)], "{src}");
+        }
+    }
+
+    #[test]
+    fn attribute_label_with_escaped_quote_carries_converted_text() {
+        let src = "flowchart LR\n  A@{ label: \"say \\\"hi\\\"\", shape: rect }\n";
+        let ex = run(Format::Mermaid, src, 0);
+        assert_eq!(ex.fragments[0].text.as_deref(), Some("say \"hi\""));
+        assert!(!ex.fragments[0].fixable());
+    }
+
+    #[test]
+    fn malformed_repeated_openers_scan_in_linear_time() {
+        let started = std::time::Instant::now();
+        for unit in ["A[ ", "A@{ ", "A-- ", "A[\"", "A-->|", "A[/ ", "A(("] {
+            let src = format!("flowchart LR\n{}\n", unit.repeat(300_000));
+            let _ = run(Format::Mermaid, &src, 0);
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn lone_cr_and_mixed_terminators_keep_original_offsets() {
+        let src = "flowchart TD\rA[One]\r\nB[Two]\nC[Three]\r";
+        let ex = run(Format::Mermaid, src, 0);
+        let got: Vec<_> = ex.fragments.iter().map(|f| &src[f.span.clone()]).collect();
+        assert_eq!(got, ["One", "Two", "Three"]);
+        assert_eq!(ex.fragments[0].span.start, src.find("One").unwrap());
+    }
+
+    #[test]
+    fn statements_after_the_header_semicolon_are_extracted() {
+        let src = "flowchart TD; A[One] --> B[Two]\n";
+        let ex = run(Format::Mermaid, src, 40);
+        let spans: Vec<_> = ex.fragments.iter().map(|f| f.span.clone()).collect();
+        let one = src.find("One").unwrap() + 40;
+        let two = src.find("Two").unwrap() + 40;
+        assert_eq!(spans, [one..one + 3, two..two + 3]);
+        let seq = labels("sequenceDiagram; A->>B: hi\n");
+        assert_eq!(seq, [(Role::Message, "hi".to_string())]);
     }
 }

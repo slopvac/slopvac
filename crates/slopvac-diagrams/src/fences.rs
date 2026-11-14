@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use crate::Format;
+use crate::{Format, lines};
 
 /// A fenced code block that holds a diagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,11 +22,9 @@ pub struct DiagramBlock {
 pub fn find_markdown_blocks(markdown: &str) -> Vec<DiagramBlock> {
     let mut blocks = Vec::new();
     let mut open: Option<(char, usize, Option<Format>, usize)> = None;
-    let mut offset = 0;
-    for line in markdown.split_inclusive('\n') {
-        let start = offset;
-        offset += line.len();
-        let trimmed = line.trim_start_matches([' ', '\t']);
+    for source_line in lines(markdown) {
+        let (start, offset) = (source_line.start, source_line.end);
+        let trimmed = source_line.text.trim_start_matches([' ', '\t']);
         let fence_char = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'));
         let run = fence_char.map_or(0, |c| trimmed.chars().take_while(|&x| x == c).count());
         match open {
@@ -77,5 +75,13 @@ mod tests {
     #[test]
     fn unterminated_fence_yields_nothing() {
         assert_eq!(find_markdown_blocks("```mermaid\nA-->B\n"), Vec::new());
+    }
+
+    #[test]
+    fn handles_crlf_and_lone_cr_with_original_offsets() {
+        let md = "x\r\n```mermaid\rA-->B\r```\r\n";
+        let blocks = find_markdown_blocks(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(&md[blocks[0].body.clone()], "A-->B\r");
     }
 }

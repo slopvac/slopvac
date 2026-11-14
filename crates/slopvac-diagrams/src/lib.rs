@@ -104,12 +104,56 @@ impl Format {
     /// Pick a format from a file name, or `None` when it is not a diagram.
     #[must_use]
     pub fn from_path(path: &str) -> Option<Format> {
-        let lower = path.to_ascii_lowercase();
-        match lower.rsplit('.').next()? {
+        let ext = std::path::Path::new(path).extension()?.to_str()?;
+        match ext.to_ascii_lowercase().as_str() {
             "mmd" | "mermaid" => Some(Format::Mermaid),
             _ => None,
         }
     }
+}
+
+/// A source line without its terminator.
+pub(crate) struct SourceLine<'a> {
+    /// Byte offset of the line start.
+    pub(crate) start: usize,
+    /// The line text, terminator excluded.
+    pub(crate) text: &'a str,
+    /// Byte offset just after the terminator.
+    pub(crate) end: usize,
+}
+
+/// Split text into lines at LF, CRLF and a CR that does not precede LF
+/// (positions contract, section "Line terminators"). Offsets address the original bytes.
+pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
+    let bytes = src.as_bytes();
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut pos = 0;
+    while pos < bytes.len() {
+        let terminator = match bytes[pos] {
+            b'\r' if bytes.get(pos + 1) == Some(&b'\n') => 2,
+            b'\n' | b'\r' => 1,
+            _ => {
+                pos += 1;
+                continue;
+            }
+        };
+        out.push(SourceLine {
+            start,
+            text: &src[start..pos],
+            end: pos + terminator,
+        });
+        pos += terminator;
+        start = pos;
+    }
+    if start < bytes.len() {
+        out.push(SourceLine {
+            start,
+            text: &src[start..],
+            end: bytes.len(),
+        });
+    }
+    out
 }
 
 /// Extract the fragments of a diagram source whose first byte sits at `base` in the host file.
@@ -117,5 +161,45 @@ impl Format {
 pub fn extract(format: Format, source: &str, base: usize) -> Extraction {
     match format {
         Format::Mermaid => mermaid::extract(source, base),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_path_matches_extensions_case_insensitively() {
+        for (path, want) in [
+            ("flow.mmd", Some(Format::Mermaid)),
+            ("dir/Flow.MMD", Some(Format::Mermaid)),
+            ("x.mermaid", Some(Format::Mermaid)),
+            ("mmd", None),
+            (".mmd", None),
+            ("dir.mmd/readme", None),
+            ("flow.mmd.bak", None),
+            ("notes.md", None),
+            ("", None),
+        ] {
+            assert_eq!(Format::from_path(path), want, "{path:?}");
+        }
+    }
+
+    #[test]
+    fn from_lang_is_case_insensitive() {
+        assert_eq!(Format::from_lang("Mermaid"), Some(Format::Mermaid));
+        assert_eq!(Format::from_lang("rust"), None);
+        assert_eq!(Format::from_lang(""), None);
+    }
+
+    #[test]
+    fn lines_split_on_lf_crlf_and_lone_cr() {
+        let got: Vec<_> = lines("a\nb\r\nc\rd")
+            .iter()
+            .map(|l| (l.start, l.text, l.end))
+            .collect();
+        assert_eq!(got, [(0, "a", 2), (2, "b", 5), (5, "c", 7), (7, "d", 8)]);
+        assert_eq!(lines("").len(), 0);
+        assert_eq!(lines("a\n").len(), 1);
     }
 }
