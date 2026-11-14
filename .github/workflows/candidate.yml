@@ -118,9 +118,78 @@ jobs:
     with:
       version: ${{ needs.validate.outputs.cargo-version }}
 
+  # One native runner per target, so cargo-dist needs no cross-compile wrapper.
+  # The SBOM is a global artifact in cargo-dist and is left out of candidates.
+  archives:
+    name: Archive (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add "$TARGET"
+
+      - name: Install musl tools
+        if: ${{ endsWith(matrix.target, '-musl') }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
+        env:
+          BINSTALL_DISABLE_TELEMETRY: "true"
+
+      - name: Install cargo-dist and cargo-auditable
+        shell: bash
+        run: cargo binstall cargo-dist@0.34.0 cargo-auditable --no-confirm
+
+      - name: Set the candidate version
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+        run: uv run --no-project python scripts/set_workspace_version.py "$VERSION"
+
+      - name: Build the archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+          TARGET: ${{ matrix.target }}
+        run: dist build --artifacts=local --target "$TARGET" --tag "v$VERSION"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-${{ matrix.target }}
+          path: |
+            target/distrib/*.tar.xz
+            target/distrib/*.zip
+            target/distrib/*.sha256
+          if-no-files-found: error
+
   publish:
     name: Publish to PyPI
-    needs: [validate, evals, wheels]
+    needs: [validate, evals, wheels, archives]
     if: ${{ needs.validate.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -151,3 +220,41 @@ jobs:
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  # Runs after the PyPI approval, so one approval covers the whole candidate.
+  prerelease:
+    name: GitHub prerelease
+    needs: [validate, publish, wheels, archives]
+    if: ${{ needs.validate.outputs.publish == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the prerelease
+      id-token: write # sign build provenance
+      attestations: write
+    steps:
+      - name: Download archives and wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{archive,wheels}-*"
+          merge-multiple: true
+          path: artifacts
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/*.tar.xz
+            artifacts/*.zip
+            artifacts/*.whl
+
+      - name: Create the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PYPI_VERSION: ${{ needs.validate.outputs.pypi-version }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --title "slopvac $PYPI_VERSION (release candidate)" \
+            --notes "Release candidate. Install with \`uvx slopvac==$PYPI_VERSION\`. Not a stable release." \
+            artifacts/*

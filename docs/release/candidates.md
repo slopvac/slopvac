@@ -16,8 +16,9 @@ The `Release candidate` workflow (`.github/workflows/candidate.yml`) then:
 1. Validates the tag and checks that the commit is on `main` or a release-please branch.
 2. Sets the build version to `X.Y.Z-rc.N` for the CI checkout only. No commit carries it.
 3. Runs the offline accuracy gate (`accuracy::` tests) and the migration end-to-end tests (`migration_e2e::`). Both use `--no-tests=fail`, so a missing suite blocks the candidate.
-4. Builds wheels for the supported platforms through `wheels.yml`.
+4. Builds wheels for the supported platforms through `wheels.yml`, and cargo-dist archives for the six release targets.
 5. Waits for approval in the `pypi` environment, then publishes `X.Y.ZrcN` to PyPI.
+6. Creates a GitHub prerelease named after the tag, with the archives, checksums and wheels, and attests their build provenance. Candidates get no Homebrew formula or installers, and the SBOM is left out.
 
 The Cargo workspace version, the wheel version and the PyPI version come from one tag. `uvx slopvac==3.0.0rc1` installs the candidate. A plain `uvx slopvac` keeps resolving to the latest stable release, because pip and uv skip prereleases by default.
 
@@ -37,6 +38,4 @@ Otherwise the stable release stops before it builds. Prerelease tags skip the ga
 
 ## Maintainer setup
 
-- Register `candidate.yml` and the `pypi` environment as a PyPI Trusted Publisher for `slopvac`.
-- Keep required reviewers on the `pypi` environment.
-- Wire `release-provenance.yml` into cargo-dist with `plan-jobs = ["./release-provenance"]` in `dist-workspace.toml`, then run `dist generate`.
+The PyPI Trusted Publisher, the `pypi` environment, the Homebrew tap and its token are set up by hand. See [maintainer setup](maintainer-setup.md). To wire the provenance gate into cargo-dist, add `plan-jobs = ["./release-provenance"]` to `dist-workspace.toml` and run `dist generate`.
