@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "extractor/extract",
+  "params": {
+    "extractor": "asciidoc",
+    "documents": [
+      {
+        "id": "d1",
+        "text": "We must never fail.\n"
+      }
+    ]
+  }
+}

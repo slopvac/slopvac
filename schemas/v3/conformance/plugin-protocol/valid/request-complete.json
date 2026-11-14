@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "provider/complete",
+  "params": {
+    "provider": "claude",
+    "task": "fact-check",
+    "model": "model-b",
+    "items": [
+      {
+        "id": "c1",
+        "text": "The tool has 12 rules.",
+        "instruction": "Verify against the source."
+      }
+    ]
+  }
+}

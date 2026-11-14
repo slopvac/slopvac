@@ -1,0 +1,18 @@
+{
+  "files": [
+    {
+      "path": ".opencode/skills/slopvac/SKILL.md",
+      "action": "write",
+      "content": "---\n"
+    },
+    {
+      "path": "AGENTS.md",
+      "action": "merge",
+      "content": "<!-- slopvac -->\n"
+    },
+    {
+      "path": "old.md",
+      "action": "remove"
+    }
+  ]
+}

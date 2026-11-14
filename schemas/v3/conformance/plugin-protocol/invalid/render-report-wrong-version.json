@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "reporter/render",
+  "params": {
+    "reporter": "markdown",
+    "report": {
+      "schema_version": 1
+    }
+  }
+}

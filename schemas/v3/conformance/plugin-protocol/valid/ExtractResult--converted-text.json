@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "segments": [
+        {
+          "span": {
+            "start": 0,
+            "end": 19
+          },
+          "context": "prose",
+          "text": "We must never fail."
+        },
+        {
+          "span": {
+            "start": 20,
+            "end": 40
+          },
+          "context": "code"
+        }
+      ]
+    }
+  ]
+}

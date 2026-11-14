@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "fixer/fix",
+  "params": {
+    "fixer": "terms",
+    "documents": [
+      {
+        "id": "d1",
+        "text": "We must never fail.\n",
+        "findings": [
+          {
+            "rule": "core:passive-voice",
+            "severity": "fatal",
+            "span": {
+              "start": 3,
+              "end": 7
+            },
+            "message": "Passive voice."
+          }
+        ]
+      }
+    ]
+  }
+}

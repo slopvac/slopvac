@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32001,
+    "message": "host speaks 2 to 3",
+    "data": {
+      "slopvac_code": "protocol-version-unsupported",
+      "supported": {
+        "min": 1,
+        "max": 1
+      }
+    }
+  }
+}

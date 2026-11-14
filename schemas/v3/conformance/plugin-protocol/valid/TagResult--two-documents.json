@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "tags": [
+        {
+          "kind": "requirement",
+          "span": {
+            "start": 3,
+            "end": 7
+          },
+          "confidence": 0.9,
+          "evidence": "must"
+        }
+      ]
+    },
+    {
+      "document": "d2",
+      "tags": []
+    }
+  ]
+}

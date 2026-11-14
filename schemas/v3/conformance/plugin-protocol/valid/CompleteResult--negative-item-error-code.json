@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "item": "c1",
+      "error": {
+        "code": -32603,
+        "message": "x",
+        "data": {
+          "slopvac_code": "document-invalid"
+        }
+      }
+    }
+  ]
+}

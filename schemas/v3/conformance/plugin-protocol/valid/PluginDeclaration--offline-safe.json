@@ -1,0 +1,15 @@
+{
+  "network": false,
+  "hooks": [
+    {
+      "kind": "tagger",
+      "id": "requirement"
+    }
+  ],
+  "features": {
+    "required": [],
+    "optional": [
+      "document-path"
+    ]
+  }
+}

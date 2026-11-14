@@ -1,0 +1,28 @@
+{
+  "protocolVersion": 1,
+  "minProtocolVersion": 1,
+  "hostInfo": {
+    "name": "slopvac",
+    "version": "3.0.0"
+  },
+  "capabilities": {
+    "hooks": [
+      "tagger",
+      "hologram"
+    ],
+    "features": [
+      "document-path",
+      "x-private",
+      "future-thing"
+    ]
+  },
+  "offline": false,
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "maxBatchDocuments": 64
+  },
+  "futureField": {
+    "a": 1
+  },
+  "x-vendor": true
+}
