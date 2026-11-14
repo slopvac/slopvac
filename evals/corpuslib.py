@@ -12,10 +12,12 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -379,14 +381,28 @@ def fetch_text(doc: dict[str, Any], token: str | None, raw_cache: Path) -> str:
     raise FetchError(f"{doc['id']}: cannot fetch source type {stype!r}")
 
 
-def _cached_get(url: str, token: str | None, raw_cache: Path) -> bytes:
+def _cached_get(
+    url: str,
+    token: str | None,
+    raw_cache: Path,
+    getter: Callable[[str, str | None], bytes] = http_get,
+) -> bytes:
+    """Download once per URL; safe when several threads miss the same entry.
+
+    Each download writes its own temporary file in the cache directory and then
+    renames it into place, so racing writers never share a file and a reader
+    never sees a partial one. Last rename wins; the bytes are identical.
+    """
     key = hashlib.sha256(url.encode()).hexdigest()
     path = raw_cache / key
-    if path.exists():
+    try:
         return path.read_bytes()
-    body = http_get(url, token)
+    except FileNotFoundError:
+        pass
+    body = getter(url, token)
     raw_cache.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(body)
-    tmp.replace(path)
+    with tempfile.NamedTemporaryFile(dir=raw_cache, prefix=key[:12] + ".", suffix=".tmp", delete=False) as handle:
+        handle.write(body)
+        tmp = Path(handle.name)
+    os.replace(tmp, path)
     return body

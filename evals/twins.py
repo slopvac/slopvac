@@ -26,6 +26,7 @@ import os
 import shlex
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -138,7 +139,14 @@ def cmd_generate(
     return 0
 
 
-def cmd_record(manifest: dict[str, Any], cache: Path, model: str | None) -> int:
+def cmd_record(
+    manifest: dict[str, Any],
+    cache: Path,
+    model: str | None,
+    today: str | None = None,
+    out: Path = lib.MANIFEST_PATH,
+) -> int:
+    stamp = today or datetime.now(UTC).date().isoformat()
     recorded = 0
     for slot in slots(manifest):
         path = cache / "twins" / f"{slot['id']}.txt"
@@ -149,11 +157,12 @@ def cmd_record(manifest: dict[str, Any], cache: Path, model: str | None) -> int:
         slot["bytes"] = len(lib.normalise(text).encode())
         slot["words"] = len(text.split())
         slot["status"] = "generated"
+        slot["date"] = stamp
         slot["source"]["prompt_version"] = PROMPT_VERSION
         if model:
             slot["source"]["model"] = model
         recorded += 1
-    lib.dump_manifest(manifest)
+    lib.dump_manifest(manifest, out)
     print(f"{recorded} twins recorded")
     return 0
 
