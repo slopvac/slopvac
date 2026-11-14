@@ -21,6 +21,9 @@ github-attestations = true
 cargo-auditable = true
 cargo-cyclonedx = true
 pr-run-mode = "plan"
+# scripts/patch_release_workflow.py hardens the generated workflow, so the file differs
+# from the template on purpose. Regenerate it with scripts/dist_generate.sh.
+allow-dirty = ["ci"]
 
 # The repo's pinact check requires actions pinned by commit.
 [dist.github-action-commits]
