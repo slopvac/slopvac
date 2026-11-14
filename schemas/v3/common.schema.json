@@ -5,7 +5,7 @@
   "description": "Shared $defs referenced by every v3 artifact schema. Shapes are frozen by slopvac-8l4.2.19; owners fill semantics. A PR editing a def links the owner bead.",
   "$defs": {
     "Span": {
-      "description": "Half-open byte range [start, end) into the source text. Semantics owned by slopvac-8l4.2.11.",
+      "description": "Half-open range [start, end) of byte offsets into the original file bytes, BOM included. The end is exclusive, start is at most end, and both offsets fall on code point boundaries and never between the CR and LF of one CRLF. Semantics owned by slopvac-8l4.2.11; see docs/contract/positions.md.",
       "type": "object",
       "properties": {
         "start": {"type": "integer", "minimum": 0},
@@ -15,7 +15,7 @@
       "additionalProperties": false
     },
     "LineCol": {
-      "description": "One-based line and column position. Semantics owned by slopvac-8l4.2.11.",
+      "description": "One-based line and column. The column counts Unicode code points from the line start, after any BOM, and a tab counts as one. Output formats that need another unit convert from the span. Semantics owned by slopvac-8l4.2.11; see docs/contract/positions.md.",
       "type": "object",
       "properties": {
         "line": {"type": "integer", "minimum": 1},
@@ -25,7 +25,7 @@
       "additionalProperties": false
     },
     "Edit": {
-      "description": "Replace the source bytes in span with text. Semantics owned by slopvac-8l4.2.11.",
+      "description": "Replace the source bytes in span with text, written verbatim. A zero-width span inserts. Edits in one set use original offsets and must not overlap. Semantics owned by slopvac-8l4.2.11; see docs/contract/positions.md.",
       "type": "object",
       "properties": {
         "span": {"$ref": "#/$defs/Span"},
