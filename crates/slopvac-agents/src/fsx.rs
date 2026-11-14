@@ -96,6 +96,13 @@ impl Project {
     /// the project, then apply the target policy to the destination: no `.git`
     /// component (any case) and a `.md` file name. A link that climbs out of the
     /// project, is absolute, or loops fails with `UnsafeTarget`.
+    ///
+    /// Trade-off: the policy check reads the links once, and the resolved path is
+    /// then opened through the directory handle. The handle keeps every access
+    /// inside the project, but a process that rewrites links in the project between
+    /// the check and the open could still aim a component at `.git`. A process that
+    /// can do that can write `.git` directly, so for a same-user CLI the check is a
+    /// guard against mistakes, not a sandbox.
     fn resolve(&self, rel: &Path) -> Result<PathBuf, AgentsError> {
         let bad = || AgentsError::UnsafeTarget(self.display(rel));
         let mut pending: VecDeque<Step> = steps(rel).ok_or_else(bad)?;

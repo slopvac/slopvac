@@ -118,6 +118,20 @@ fn section(text: &str, shown: &str) -> Result<Option<(usize, usize)>, AgentsErro
     }
 }
 
+/// The line terminator that ends `text`, if it ends with one. The separator before
+/// a new block copies it, so a lone CR after LF lines cannot merge into a CRLF.
+fn last_terminator(text: &str) -> Option<&'static str> {
+    if text.ends_with("\r\n") {
+        Some("\r\n")
+    } else if text.ends_with('\n') {
+        Some("\n")
+    } else if text.ends_with('\r') {
+        Some("\r")
+    } else {
+        None
+    }
+}
+
 fn newline(text: &str) -> &'static str {
     if text.contains("\r\n") {
         "\r\n"
@@ -208,7 +222,8 @@ pub fn update_block(
     } else if text.is_empty() {
         body
     } else {
-        format!("{text}{nl}{body}")
+        let sep = last_terminator(text).unwrap_or(nl);
+        format!("{text}{sep}{body}")
     };
     project.write_atomic(rel, before, updated.as_bytes())
 }

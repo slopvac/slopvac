@@ -143,7 +143,13 @@ mod containment {
             ("CLAUDE.md", ".git/config"),
             ("CLAUDE.md", ".git/info/x.md"),
             ("CLAUDE.md", "docs/../.git/y.md"),
+            ("CLAUDE.md", ".Git/info/x.md"),
+            ("CLAUDE.md", ".GIT/y.md"),
+            ("CLAUDE.md", "docs/../.gIt/y.md"),
             (".claude", ".git"),
+            (".claude", ".Git"),
+            (".claude", ".GIT"),
+            (".claude", "sub/../.gIT"),
             (".claude", "sub/../.git"),
         ];
         for (link, to) in cases {
@@ -238,6 +244,11 @@ fn remove_restores_the_original_bytes_for_every_line_ending() {
         "\n",
         "\n\n",
         "# A\n```\ncode\n```",
+        "a\nb\r",
+        "a\r\nb\n",
+        "a\nb\r\n",
+        "a\rb\n",
+        "a\nb\rc",
     ];
     for original in cases {
         let project = tempfile::tempdir().unwrap();
@@ -297,4 +308,21 @@ fn a_file_without_a_final_newline_keeps_none_after_remove() {
     execute(&o).unwrap();
     execute(&Options { remove: true, ..o }).unwrap();
     assert_eq!(fs::read_to_string(&file).unwrap(), "# A");
+}
+
+#[test]
+fn a_lone_cr_after_lf_lines_does_not_merge_into_crlf() {
+    let project = tempfile::tempdir().unwrap();
+    let file = project.path().join("CLAUDE.md");
+    fs::write(&file, "a\nb\r").unwrap();
+    let o = Options {
+        agent: false,
+        no_skill: true,
+        ..opts(project.path(), "claude")
+    };
+    execute(&o).unwrap();
+    let installed = fs::read(&file).unwrap();
+    assert!(installed.starts_with(b"a\nb\r\r<!-- slopvac:begin -->"));
+    execute(&Options { remove: true, ..o }).unwrap();
+    assert_eq!(fs::read(&file).unwrap(), b"a\nb\r");
 }
