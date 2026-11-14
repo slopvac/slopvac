@@ -1,0 +1,6 @@
+# file -> JSON pointer (into the instance) where validation must fail.
+"Span--negative.json" = "/start"
+"LineCol--zero.json" = "/line"
+"RuleId--unqualified.json" = ""
+"Severity--unknown.json" = ""
+"SchemaVersion--one.json" = ""

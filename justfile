@@ -72,3 +72,7 @@ perf-check $BASE="" $SCENARIO="": perf-wait-idle
         esac
     done
     PERF_BASE="$base" PERF_SCENARIO="$scenario" uv run --group profile python scripts/perf/perf.py check --idle-checked
+
+# Validate the v3 contract schemas and conformance corpus offline.
+contract:
+    uv run --extra dev pytest tests/contract
