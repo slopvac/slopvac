@@ -31,6 +31,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "1"
 thiserror = "2"
 slopvac-diagrams = { path = "crates/slopvac-diagrams" }
+slopvac-terms = { path = "crates/slopvac-terms" }
 clap = { version = "4.6", features = ["derive"] }
 similar = "3"
 toml_edit = "0.25"
