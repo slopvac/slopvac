@@ -19,7 +19,7 @@ from preserve_expansion import (
     category_dial,
     expand,
     mapping,
-    matches,
+    matches_files,
     resolve,
     style_layer,
     to_2x_config,
@@ -383,6 +383,47 @@ SCENARIOS = {
         },
         ["docs/a.md", "c.md"],
     ),
+    "later-block-rule-ignored-by-an-earlier-profile-switch": (
+        {
+            "profile": "relaxed",
+            "overrides": [
+                {"files": ["docs/**"], "profile": "strict"},
+                {"files": ["docs/api/**"], "rules": {"orwell.not-un": "warning"}},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
+    "later-block-rule-revived-by-an-earlier-category": (
+        {
+            "profile": "relaxed",
+            "overrides": [
+                {"files": ["docs/**"], "categories": {"prose-craft": "warning"}},
+                {"files": ["docs/api/**"], "rules": {"prose-craft.spacing": "error"}},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
+    "later-block-rule-ignored-after-a-switch-to-relaxed": (
+        {
+            "profile": "strict",
+            "overrides": [
+                {"files": ["docs/**"], "profile": "relaxed"},
+                {"files": ["docs/api/**"], "rules": {"orwell.not-un": "warning"}},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
+    "top-rule-ignored-only-in-a-nested-scope": (
+        {
+            "profile": "strict",
+            "rules": {"orwell.not-un": "warning"},
+            "overrides": [
+                {"files": ["docs/**"], "profile": "normal"},
+                {"files": ["docs/api/**"], "profile": "relaxed"},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
     "two-profile-overrides": (
         {
             "profile": "normal",
@@ -409,7 +450,7 @@ def test_expansion_reproduces_2x_for_each_file(name, ruleset):
         layers.extend(
             {"categories": b.get("categories", {}), "rules": b.get("rules", {})}
             for b in config3["overrides"]
-            if any(matches(g, path) for g in b["files"])
+            if matches_files(b["files"], path)
         )
         wrong = {}
         for rule in ruleset.all_rules:
@@ -449,3 +490,22 @@ def test_a_profile_override_clears_a_budget_with_none(ruleset):
     )
     block = config3["overrides"][0]
     assert block["categories"]["orwell-voice"]["max_per_100_words"] == "none"
+
+
+@pytest.mark.parametrize(
+    "files",
+    [["docs/*.md"], ["docs/**", "!docs/api/**"]],
+    ids=["wildcard", "negated"],
+)
+def test_expansion_stops_on_globs_it_cannot_relate(ruleset, files):
+    from preserve_expansion import AmbiguousOverlap
+
+    config2 = {
+        "profile": "normal",
+        "overrides": [
+            {"files": files, "profile": "relaxed"},
+            {"files": ["docs/api/**"], "profile": "strict"},
+        ],
+    }
+    with pytest.raises(AmbiguousOverlap):
+        expand(config2, ruleset)

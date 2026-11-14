@@ -83,11 +83,43 @@ def category_dial(layers: list[dict], category: str, key: str):
 
 
 def matches(glob: str, path: str) -> bool:
-    return (
-        path.startswith(glob.removesuffix("**"))
-        if glob.endswith("**")
-        else path == glob
-    )
+    return path.startswith(glob.removesuffix("**")) if glob.endswith("**") else path == glob
+
+
+def matches_files(files: list[str], path: str) -> bool:
+    """Gitignore-style list: the last pattern that matches decides, ``!`` negates."""
+    hit = False
+    for pattern in files:
+        negate = pattern.startswith("!")
+        if matches(pattern.removeprefix("!"), path):
+            hit = not negate
+    return hit
+
+
+class AmbiguousOverlap(Exception):
+    """Two override blocks overlap in a way the expansion cannot state."""
+
+
+def _prefix(files: list[str]) -> str:
+    if len(files) != 1 or files[0].startswith("!"):
+        raise AmbiguousOverlap(f"cannot relate {files}")
+    glob = files[0]
+    if glob.endswith("**"):
+        return glob.removesuffix("**")
+    if any(c in glob for c in "*?["):
+        raise AmbiguousOverlap(f"cannot relate {files}")
+    return glob
+
+
+def _relation(a: list[str], b: list[str]) -> str:
+    pa, pb = _prefix(a), _prefix(b)
+    if pa == pb:
+        return "equal"
+    if pb.startswith(pa) and pa.endswith("/") or pa == "":
+        return "contains"
+    if pa.startswith(pb) and pb.endswith("/") or pb == "":
+        return "contained"
+    return "disjoint"
 
 
 def expand(config2: dict, ruleset) -> dict:
@@ -97,14 +129,18 @@ def expand(config2: dict, ruleset) -> dict:
     E2 states, in each layer that authors a category, the profile rule defaults
     of that category, because a rule default beat an authored category in 2.x.
     E3 puts, before the override blocks, one block per profile override. It holds
-    the target style, the authored settings that stay valid under the target
-    profile, and ``none`` where the target has no budget.
-    E4 drops an authored rule entry that 2.x ignored in the scope of its layer: a
-    judgement rule, a tier-excluded rule, and a rule in a category that is off
-    after the layers up to and including the entry.
+    the target style and ``none`` where the target has no budget.
+    E4 handles an authored rule entry that 2.x ignored. A file matches a set of
+    override blocks, and 2.x decides from the final profile and category levels of
+    that set. The expansion lists the sets that the block globs allow. An entry
+    that is ignored in every set it can see is dropped. An entry that is ignored in
+    some sets stays, and a guard block at the end sets the rule to ``off`` for the
+    files of each such set. Judgement entries are always dropped.
     E5 gives an authored category without a severity the severity in force.
     """
     top = config2.get("profile", "normal")
+    overrides = config2.get("overrides", [])
+    n = len(overrides)
     styles = {p: style_layer(p) for p in mapping.PROFILES}
     states = {p: mapping.engine_states(p)[2] for p in mapping.PROFILES}
     defaults = {p: mapping.rule_defaults(p) for p in mapping.PROFILES}
@@ -135,15 +171,6 @@ def expand(config2: dict, ruleset) -> dict:
             if tier[k].kind.value != "judgement"
         }
 
-    def ignored(qid: str, profile: str, real_cats: list[dict]) -> bool:
-        rule = tier[qid]
-        if rule.tier_for(profile).value == "excluded":
-            return True
-        severity = styles[profile]["categories"].get(rule.category, {}).get("severity")
-        for cats in real_cats:
-            severity = cats.get(rule.category, {}).get("severity", severity)
-        return severity == "off"
-
     def sticky_for(categories: dict, profile: str, own_rules: dict) -> dict:
         out = {}
         for name in categories:
@@ -153,27 +180,81 @@ def expand(config2: dict, ruleset) -> dict:
                     out[qid] = defaults[profile][qid]
         return out
 
-    top_real = {k: dials(v) for k, v in config2.get("categories", {}).items()}
-    top_cat = authored(config2.get("categories", {}), top)
-    top_rules = rule_levels(config2.get("rules", {}))
+    # The sets of blocks that one file can match.
+    relations = {
+        (i, j): _relation(overrides[i]["files"], overrides[j]["files"])
+        for i in range(n)
+        for j in range(n)
+        if i != j
+    }
 
+    def consistent(members: frozenset[int]) -> bool:
+        for (i, j), rel in relations.items():
+            if rel == "disjoint" and i in members and j in members:
+                return False
+            if rel in ("equal", "contained") and i in members and j not in members:
+                return False
+        return True
+
+    scopes = [
+        frozenset(i for i in range(n) if mask >> i & 1)
+        for mask in range(1 << n)
+        if consistent(frozenset(i for i in range(n) if mask >> i & 1))
+    ]
+
+    top_real = {k: dials(v) for k, v in config2.get("categories", {}).items()}
+    block_real = [
+        {k: dials(v) for k, v in b.get("categories", {}).items()} for b in overrides
+    ]
+
+    def effective(scope: frozenset[int]) -> tuple[str, list[dict]]:
+        profile = top
+        cats = [top_real]
+        for i in sorted(scope):
+            profile = overrides[i].get("profile") or profile
+            cats.append(block_real[i])
+        return profile, cats
+
+    def ignored(qid: str, scope: frozenset[int]) -> bool:
+        profile, cats = effective(scope)
+        rule = tier[qid]
+        if rule.tier_for(profile).value == "excluded":
+            return True
+        severity = styles[profile]["categories"].get(rule.category, {}).get("severity")
+        for layer in cats:
+            severity = layer.get(rule.category, {}).get("severity", severity)
+        return severity == "off"
+
+    guards: dict[frozenset[int], dict[str, str]] = {}
+
+    def keep(qid: str, visible: list[frozenset[int]]) -> bool:
+        flags = [ignored(qid, s) for s in visible]
+        if all(flags):
+            return False
+        for scope, flag in zip(visible, flags):
+            if flag:
+                guards.setdefault(scope, {})[qid] = "off"
+        return True
+
+    top_cat = authored(config2.get("categories", {}), top)
+    top_rules = {
+        k: v for k, v in rule_levels(config2.get("rules", {})).items() if keep(k, scopes)
+    }
     out: dict = {"profile": top, "styles": [mapping.style_name(top)]}
-    project_rules = {k: v for k, v in top_rules.items() if not ignored(k, top, [top_real])}
-    project_rules = {**sticky_for(top_cat, top, project_rules), **project_rules}
     out["categories"] = copy.deepcopy(top_cat)
-    out["rules"] = project_rules
+    out["rules"] = {**sticky_for(top_cat, top, top_rules), **top_rules}
 
     blocks = []
     switch = []
-    for block in config2.get("overrides", []):
+    for index, block in enumerate(overrides):
         profile = block.get("profile")
         in_force = profile or top
-        real = {k: dials(v) for k, v in block.get("categories", {}).items()}
         cats = authored(block.get("categories", {}), in_force)
+        visible = [s for s in scopes if index in s]
         rules = {
             k: v
             for k, v in rule_levels(block.get("rules", {})).items()
-            if not ignored(k, in_force, [top_real, real])
+            if keep(k, visible)
         }
         rules = {**sticky_for(cats, in_force, rules), **rules}
         new = {"files": block["files"], "categories": cats, "rules": rules}
@@ -191,12 +272,13 @@ def expand(config2: dict, ruleset) -> dict:
                     kept["max_per_100_words"] = "none"
                 if kept:
                     sw_cats[name] = kept
-            keys = set().union(*(st["rules"] for st in styles.values())) | set(top_rules)
+            keys = set().union(*(st["rules"] for st in styles.values())) | set(
+                config2.get("rules", {})
+            )
             sw_rules = {}
             for qid in sorted(keys):
                 if qid in top_rules:
-                    keep = not ignored(qid, profile, [top_real])
-                    sw_rules[qid] = top_rules[qid] if keep else states[profile][qid][1]
+                    sw_rules[qid] = top_rules[qid]
                     continue
                 rule = tier[qid]
                 if (
@@ -211,7 +293,26 @@ def expand(config2: dict, ruleset) -> dict:
                 {"files": block["files"], "categories": sw_cats, "rules": sw_rules}
             )
         blocks.append(new)
-    out["overrides"] = [*switch, *blocks]
+
+    def region(scope: frozenset[int]) -> list[str]:
+        if not scope:
+            return ["**", *(f"!{b['files'][0]}" for b in overrides)]
+        inner = max(scope, key=lambda i: len(_prefix(overrides[i]["files"])))
+        inside = overrides[inner]["files"][0]
+        return [
+            inside,
+            *(
+                f"!{overrides[j]['files'][0]}"
+                for j in range(n)
+                if j not in scope and relations[(j, inner)] in ("contained", "equal")
+            ),
+        ]
+
+    guard_blocks = [
+        {"files": region(scope), "categories": {}, "rules": rules}
+        for scope, rules in sorted(guards.items(), key=lambda kv: sorted(kv[0]))
+    ]
+    out["overrides"] = [*switch, *blocks, *guard_blocks]
     return out
 
 
