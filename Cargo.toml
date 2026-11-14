@@ -33,6 +33,8 @@ pcre2-sys = "=0.2.10"
 serde-saphyr = "2"
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-styles = { path = "crates/slopvac-styles" }
+ignore = "0.4"
+globset = "0.4"
 slopvac-pos = { path = "crates/slopvac-pos" }
 slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 serde = { version = "1", features = ["derive"] }
@@ -48,6 +50,9 @@ flate2 = "1.1"
 roxmltree = "0.21"
 markdown = "1"
 clap = { version = "4.6", features = ["derive"] }
+saphyr = "0.3"
+# The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
+saphyr-parser = "0.3.4"
 slopvac-agents = { path = "crates/slopvac-agents" }
 cap-std = "4"
 cap-fs-ext = "4"
@@ -67,6 +72,8 @@ ureq = { version = "3.5", default-features = false, features = [
   "platform-verifier",
 ] }
 semver = "1"
+minisign = { version = "0.10", default-features = false }
+minisign-verify = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

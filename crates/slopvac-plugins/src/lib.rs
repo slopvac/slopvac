@@ -22,6 +22,7 @@ pub mod lock;
 pub mod oci;
 pub mod process;
 pub mod protocol;
+pub mod sign;
 pub mod strict;
 
 pub use api::{DocOutcome, plan_batches};

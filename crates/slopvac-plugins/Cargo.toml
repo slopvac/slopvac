@@ -13,6 +13,7 @@ base64.workspace = true
 cap-fs-ext.workspace = true
 cap-std.workspace = true
 crossbeam-channel.workspace = true
+minisign-verify.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -26,15 +27,12 @@ ureq.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true, features = ["event"] }
 
-# O_NOFOLLOW for the no-follow opens in `apply`.
-[target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["fs"] }
-
 # Windows has no stable safe call for a file's hard-link count.
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"
 
 [dev-dependencies]
+minisign.workspace = true
 tempfile.workspace = true
 toml.workspace = true
 
