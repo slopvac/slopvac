@@ -221,3 +221,33 @@ fn front_matter_settings_sit_above_overrides_and_the_policy_comes_from_the_confi
     assert!(!Policy::from_config(&off).enabled);
     assert!(Policy::from_config(&cfg).enabled);
 }
+
+#[test]
+fn the_block_is_found_by_its_decoded_key() {
+    let doc = "---\n\"sl\\u006fpvac\":\n  v: 3\n  locale: en-GB\n---\n";
+    let out = read(doc, "a.md", &default_policy());
+    assert_eq!(out.diagnostics, []);
+    assert_eq!(out.settings.len(), 1);
+    assert_eq!(out.settings[0].value, json!("en-GB"));
+    assert_eq!(out.settings[0].source.line, Some(4));
+
+    let json_doc = "{\"sl\\u006fpvac\": {\"v\": 3, \"locale\": \"en-GB\"}}\n";
+    assert_eq!(read(json_doc, "a.md", &default_policy()).settings.len(), 1);
+
+    let other = "---\n\"t\\u0069tle\": x\n---\n";
+    let out = read(other, "a.md", &default_policy());
+    assert_eq!((out.settings.len(), out.diagnostics.len()), (0, 0));
+
+    let denied = "---\n\"sl\\u006fpvac\":\n  v: 3\n  rules:\n    core:x: \"off\"\n---\n";
+    assert_eq!(
+        read(denied, "a.md", &default_policy()).diagnostics[0].code,
+        Code::FrontmatterFieldDenied
+    );
+}
+
+#[test]
+fn a_block_with_a_utf8_byte_order_mark_reports_columns_after_the_mark() {
+    let doc = "\u{feff}---\nslopvac:\n  v: 3\n  profil: strict\n---\n";
+    let out = read(doc, "a.md", &default_policy());
+    assert_eq!(out.diagnostics[0].location(doc), (4, 3));
+}

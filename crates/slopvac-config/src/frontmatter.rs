@@ -181,11 +181,15 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         return Read::default();
     };
     let raw = &doc[block.content.clone()];
-    if !raw.contains("slopvac") {
+    // The key `slopvac` can be spelled another way only through an escape, so text with neither
+    // the word nor a backslash cannot hold the block. Otherwise the decoded keys decide.
+    let names_slopvac = raw.contains("slopvac");
+    if !names_slopvac && !raw.contains('\\') {
         return Read::default();
     }
     let root = match parse_block(doc, &block) {
         Ok(n) => n,
+        Err(_) if !names_slopvac => return Read::default(),
         Err(e) => {
             let at = e
                 .span
@@ -203,7 +207,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
             };
         }
     };
-    if root.get("slopvac").is_none() && matches!(root.value, Value::Table(_)) {
+    if root.get("slopvac").is_none() {
         return Read::default();
     }
     let mut diagnostics = validate_frontmatter(&root, doc);
