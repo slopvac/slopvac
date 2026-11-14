@@ -232,7 +232,10 @@ fn a_document_that_is_not_utf8_makes_the_check_incomplete() {
     fs::write(p.root().join("a.md"), [0x23, 0xff, 0xfe, 0x0a]).unwrap();
     let (code, out) = p.validate(&["a.md"]);
     assert_eq!(code, 2);
-    assert!(out.contains("cannot read a.md: not valid UTF-8"), "{out}");
+    assert!(
+        out.contains("error[config-io]: cannot read a.md: not valid UTF-8"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -241,7 +244,10 @@ fn a_path_that_does_not_exist_makes_the_check_incomplete() {
     p.write("slopvac.toml", "schema_version = 3\n");
     let (code, out) = p.validate(&["nope.md"]);
     assert_eq!(code, 2);
-    assert!(out.contains("cannot read nope.md: no such file"), "{out}");
+    assert!(
+        out.contains("error[config-io]: cannot read nope.md: no such file"),
+        "{out}"
+    );
 }
 
 #[cfg(unix)]
@@ -257,7 +263,10 @@ fn a_directory_that_cannot_be_read_makes_the_check_incomplete() {
     let (code, out) = p.validate(&["docs"]);
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(code, 2, "{out}");
-    assert!(out.contains("cannot read inside docs"), "{out}");
+    assert!(
+        out.contains("error[config-io]: cannot read inside docs"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -294,4 +303,16 @@ fn the_schema_flag_prints_the_config_schema_for_editors() {
             .unwrap()
             .ends_with("/config.schema.json")
     );
+}
+
+#[test]
+fn a_missing_config_is_reported_with_its_code_and_the_path_as_typed() {
+    let p = Project::new();
+    let (code, out) = p.validate(&["--config", "conf/team.toml"]);
+    assert_eq!(code, 2);
+    assert!(
+        out.starts_with("error[config-io]: cannot read conf/team.toml: no such file\n"),
+        "{out}"
+    );
+    assert!(!out.contains(p.root().to_str().unwrap()), "{out}");
 }

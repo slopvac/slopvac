@@ -64,7 +64,8 @@ impl Report {
     }
 }
 
-/// Validate the config that applies to `cwd` (or `explicit`) and every document under `paths`.
+/// Validate the config that applies to `cwd` (or `explicit`, relative to `cwd` as the user typed
+/// it) and every document under `paths`.
 ///
 /// A path that is a directory is walked for documents. With no paths the run checks the
 /// config alone.
@@ -77,7 +78,7 @@ pub fn validate(
     let mut report = Report::default();
     let discovery = Discovery::new(presets);
     let config = match explicit {
-        Some(p) => discovery.explicit(p).map(Some),
+        Some(p) => discovery.explicit_in(cwd, p).map(Some),
         None => discovery.nearest(cwd),
     };
     let config = match config {
@@ -139,7 +140,7 @@ fn config_problem(e: &ConfigError) -> Problem {
         ConfigError::Io { path, .. } => Problem {
             file: path.clone(),
             code: Some(Code::Io),
-            rendered: e.to_string(),
+            rendered: e.render(),
         },
     }
 }
@@ -200,7 +201,7 @@ fn unreadable(report: &mut Report, file: &str, message: &str) {
     report.problems.push(Problem {
         file: file.to_owned(),
         code: Some(Code::Io),
-        rendered: message.to_owned(),
+        rendered: format!("error[{}]: {message}", Code::Io.as_str()),
     });
 }
 
@@ -338,7 +339,7 @@ pub fn run(
         .map(|v| v.cloned().collect())
         .unwrap_or_default();
     let config = matches.get_one::<PathBuf>("config");
-    let report = validate(cwd, config.map(|p| cwd.join(p)).as_deref(), &paths, presets);
+    let report = validate(cwd, config.map(PathBuf::as_path), &paths, presets);
     for p in &report.problems {
         writeln!(out, "{}\n", p.rendered)?;
     }
