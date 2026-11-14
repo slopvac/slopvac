@@ -69,12 +69,35 @@ pub fn extract(doc: &str) -> Option<Block> {
     None
 }
 
+/// Lines with their start offsets. A line ends at LF, CRLF or a CR that does not precede LF, as
+/// `docs/contract/positions.md` defines, and keeps its terminator.
 fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
-    text.split_inclusive('\n').scan(0, |pos, line| {
-        let at = *pos;
-        *pos += line.len();
-        Some((at, line))
-    })
+    let bytes = text.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => i += 1,
+            b'\r' => {
+                i += if bytes.get(i + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                }
+            }
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        lines.push((start, &text[start..i]));
+        start = i;
+    }
+    if start < bytes.len() {
+        lines.push((start, &text[start..]));
+    }
+    lines.into_iter()
 }
 
 fn json_block(rest: &str, doc_start: usize) -> Option<Block> {
@@ -183,7 +206,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     let raw = &doc[block.content.clone()];
     // The key `slopvac` can be spelled another way only through an escape, so text with neither
     // the word nor a backslash cannot hold the block. Otherwise the decoded keys decide.
-    let names_slopvac = raw.contains("slopvac");
+    let names_slopvac = raw.contains("slopvac") || has_escaped_slopvac_key(raw);
     if !names_slopvac && !raw.contains('\\') {
         return Read::default();
     }
@@ -258,4 +281,66 @@ fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
             path: vec!["slopvac".into(), e.key.clone()],
         })
         .collect()
+}
+
+/// Whether `raw` holds a quoted key that decodes to `slopvac`, such as `"sl\u006fpvac":`.
+///
+/// This runs only when the block does not parse, so the parser cannot say which keys it holds.
+fn has_escaped_slopvac_key(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let start = i + 1;
+        let mut j = start;
+        while j < bytes.len() && bytes[j] != b'"' && bytes[j] != b'\n' {
+            j += if bytes[j] == b'\\' { 2 } else { 1 };
+        }
+        if j >= bytes.len() || bytes[j] != b'"' {
+            i = start;
+            continue;
+        }
+        let after = raw[j + 1..].trim_start_matches([' ', '\t']);
+        let key_position = after.starts_with([':', '=', ']']);
+        if key_position && decode_escapes(&raw[start..j]) == "slopvac" {
+            return true;
+        }
+        i = j + 1;
+    }
+    false
+}
+
+/// Decode the escapes that YAML, JSON and TOML double-quoted strings share.
+fn decode_escapes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let Some(e) = chars.next() else { break };
+        let digits = match e {
+            'u' => 4,
+            'U' => 8,
+            'x' => 2,
+            _ => {
+                out.push(match e {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    other => other,
+                });
+                continue;
+            }
+        };
+        let hex: String = chars.by_ref().take(digits).collect();
+        if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+            out.push(ch);
+        }
+    }
+    out
 }

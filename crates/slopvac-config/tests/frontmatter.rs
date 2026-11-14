@@ -251,3 +251,33 @@ fn a_block_with_a_utf8_byte_order_mark_reports_columns_after_the_mark() {
     let out = read(doc, "a.md", &default_policy());
     assert_eq!(out.diagnostics[0].location(doc), (4, 3));
 }
+
+#[test]
+fn an_escaped_slopvac_key_with_broken_contents_is_still_reported() {
+    for doc in [
+        "---\n\"sl\\u006fpvac\": [\n---\n",
+        "{\"sl\\u006fpvac\": [1, }\n",
+        "+++\n[\"sl\\u006fpvac\"]\nv = = 3\n+++\n",
+    ] {
+        let out = read(doc, "a.md", &default_policy());
+        assert_eq!(out.diagnostics.len(), 1, "{doc:?}");
+        assert_eq!(out.diagnostics[0].code, Code::Parse, "{doc:?}");
+    }
+    let unrelated = "---\n\"t\\u0069tle\": [\n---\n";
+    assert_eq!(read(unrelated, "a.md", &default_policy()).diagnostics, []);
+}
+
+#[test]
+fn front_matter_ended_by_lone_cr_terminators_is_read() {
+    let doc = "---\rslopvac:\r  v: 3\r  profil: strict\r---\rBody\r";
+    let out = read(doc, "a.md", &default_policy());
+    assert_eq!(out.diagnostics.len(), 1);
+    assert_eq!(out.diagnostics[0].code, Code::UnknownKey);
+    assert_eq!(out.diagnostics[0].location(doc), (4, 3));
+
+    let ok = "---\rslopvac:\r  v: 3\r  locale: en-GB\r---\r";
+    let out = read(ok, "a.md", &default_policy());
+    assert_eq!(out.diagnostics, []);
+    assert_eq!(out.settings[0].source.line, Some(4));
+    assert_eq!(extract("---\ra: 1\r---\r").map(|b| b.content), Some(4..9));
+}
