@@ -11,7 +11,7 @@ mod common;
 use common::{category, engine, id, places, rule, ruleset, settings, tokens};
 use serde_json::json;
 use slopvac_engine::{Engine, Input, Level, Mode};
-use slopvac_model::{GenreId, NoticeLevel, Severity};
+use slopvac_model::{NoticeLevel, Severity};
 
 fn leverage() -> serde_json::Value {
     tokens("dull", "leverage", &json!({}))
