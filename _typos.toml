@@ -28,6 +28,8 @@ fter = "fter"
 struc = "struc"
 utiliz = "utiliz"
 retrie = "retrie"
+validat = "validat"
+deprecat = "deprecat"
 
 # Crate name `flate2` (gzip/deflate) cited in the v3 design doc.
 flate = "flate"
@@ -41,6 +43,10 @@ unparseable = "unparseable"
 Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
+
+# Product name (Azure Kubernetes Service) in the bundled terms list,
+# crates/slopvac-terms/data/builtin.toml.
+AKS = "AKS"
 
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).
