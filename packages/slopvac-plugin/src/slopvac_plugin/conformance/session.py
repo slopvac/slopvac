@@ -78,23 +78,28 @@ def taskkill_command(pid: int, system_root: str | None = None) -> list[str]:
     ]
 
 
-def kill_tree(proc: subprocess.Popen[bytes], job: JobObject | None = None) -> None:
+def kill_tree(
+    proc: subprocess.Popen[bytes], job: JobObject | None = None, wait: float = 10
+) -> None:
     """End the plugin and everything it started. Safe to call twice.
 
     On Windows the job ends descendants that outlive the plugin. ``taskkill`` stays
-    as the fallback for a plugin that could not be put in a job.
+    as the fallback for a plugin that could not be put in a job. The caller waits
+    at most ``wait`` seconds for it; a ``taskkill`` still running then finishes on
+    its own.
     """
     if os.name == "nt":
         if job is not None:
             with suppress(OSError):
                 job.terminate()
         with suppress(OSError, subprocess.SubprocessError):
-            subprocess.run(
+            killer = subprocess.Popen(
                 taskkill_command(proc.pid),
-                check=False,
-                capture_output=True,
-                timeout=10,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
+            killer.wait(timeout=wait)
     else:
         # The plugin leads its own process group (start_new_session).
         with suppress(ProcessLookupError, PermissionError):
@@ -147,6 +152,9 @@ class Session:
         self._queued_bytes = 0
         self._violation: str | None = None
         self._swept = False
+        # Set by close(): a reader that ends after it closes its own stream.
+        self._closing = False
+        self._stream_lock = threading.Lock()
         self._stderr = bytearray()
         # Reply limit: 1 MiB until the initialize reply, then the negotiated limit.
         self._limit = framing.PRE_INITIALIZE_LIMIT
@@ -185,7 +193,7 @@ class Session:
                 return
             self._violation = message
         self._events.put(("violation", message, 0))
-        kill_tree(self.proc, self._job)
+        kill_tree(self.proc, self._job, self._time_left(10))
 
     def _count_output(self, size: int) -> bool:
         with self._lock:
@@ -235,6 +243,33 @@ class Session:
         else:
             self._limit = self._proposed
 
+    def _finish_reading(self, stream: Any) -> None:
+        """A reader that ends after close() began closes its own stream.
+
+        close() leaves the stream of a live reader alone, so nobody else would.
+        """
+        if self._closing:
+            with self._stream_lock, suppress(OSError, ValueError):
+                stream.close()
+
+    def _detach(self, stream: Any) -> None:
+        """Point a blocked reader's descriptor at the null device (POSIX).
+
+        The read in progress ends with the next byte, and the read after it finds the
+        end of the stream, wherever the reader is in a frame. The pipe then has no
+        reader, so a writer outside the process group gets a broken pipe.
+        """
+        if os.name == "nt" or stream is None:
+            return
+        with self._stream_lock, suppress(OSError, ValueError):
+            if stream.closed:
+                return  # the reader closed it; the number may name another file now
+            null = os.open(os.devnull, os.O_RDONLY)
+            try:
+                os.dup2(null, stream.fileno())
+            finally:
+                os.close(null)
+
     def _read_stdout(self) -> None:
         stream = self.proc.stdout
         assert stream is not None
@@ -255,6 +290,8 @@ class Session:
             self._violate(str(exc))
         except (OSError, ValueError):
             self._put_eof()
+        finally:
+            self._finish_reading(stream)
 
     def _drain_stderr(self) -> None:
         stream = self.proc.stderr
@@ -270,11 +307,22 @@ class Session:
                 del self._stderr[:-STDERR_TAIL_BYTES]
         except (OSError, ValueError):
             pass
+        finally:
+            self._finish_reading(stream)
 
     def stderr_tail(self) -> str:
         return bytes(self._stderr).decode("utf-8", "replace")[-400:]
 
     # Sending -----------------------------------------------------------------
+
+    def _time_left(self, cap: float) -> float:
+        """``cap`` seconds, cut to the time budget left; 0 once it has run out.
+
+        For teardown waits, which end the plugin whatever the budget says.
+        """
+        if self.deadline is None:
+            return cap
+        return max(0.0, min(cap, self.deadline - time.monotonic()))
 
     def _wait_limit(self, timeout: float | None) -> float:
         """``timeout`` (default: the session timeout), cut to the time budget left."""
@@ -318,8 +366,8 @@ class Session:
         writer.start()
         writer.join(limit)
         if writer.is_alive():
-            kill_tree(self.proc, self._job)  # the broken pipe frees the writer
-            writer.join(5)
+            kill_tree(self.proc, self._job, self._time_left(10))
+            writer.join(self._time_left(5))  # the broken pipe frees the writer
             raise CaseFailure(f"the plugin did not read its input within {limit} s")
         if problem and not tolerate_closed:
             raise CaseFailure(f"the plugin closed its input early: {problem[0]}")
@@ -375,7 +423,7 @@ class Session:
                 assert self.proc.stdin is not None
                 self.proc.stdin.close()
 
-        _bounded(close, 1)
+        _bounded(close, self._time_left(1))
 
     # Receiving -----------------------------------------------------------------
 
@@ -436,16 +484,40 @@ class Session:
         return self.response_to(self.start_request(method, params))
 
     def drain_events(self, timeout: float = 0.5) -> list[tuple[str, Any]]:
-        """Events up to the end of output (or the timeout), for 'nothing else was sent'."""
+        """Events up to the end of output, or until ``timeout`` seconds have passed.
+
+        The window is one span from the call, cut to the time budget, so output that
+        keeps coming cannot hold it open.
+        """
         events: list[tuple[str, Any]] = []
+        end = time.monotonic() + self._time_left(timeout)
         while True:
             try:
-                kind, value = self._get(timeout)
+                kind, value = self._get(max(0.0, end - time.monotonic()))
             except queue.Empty:
                 return events
             events.append((kind, value))
             if kind in ("eof", "violation"):
                 return events
+
+    def expect_end_of_output(self, timeout: float, printed: str) -> None:
+        """After the plugin exited: fail unless its output ends with nothing on it.
+
+        The first frame or framing error fails at once with ``printed``. Output still
+        open after ``timeout`` seconds (cut to the budget) is held by a process that
+        left the plugin's process group.
+        """
+        try:
+            kind, value = self._get(self._wait_limit(timeout))
+        except queue.Empty:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise CaseFailure("the time budget ran out") from None
+            raise CaseFailure(
+                f"standard output stayed open {timeout:g} s after the plugin exited: "
+                "a process outside its process group holds it"
+            ) from None
+        if kind != "eof":
+            raise CaseFailure(f"{printed}: {str(value)[:200]}")
 
     # Ending --------------------------------------------------------------------
 
@@ -453,7 +525,7 @@ class Session:
         """End descendants that outlive the plugin. They would hold the pipes open."""
         if not self._swept:
             self._swept = True
-            kill_tree(self.proc, self._job)
+            kill_tree(self.proc, self._job, self._time_left(10))
 
     def wait(self, timeout: float) -> int:
         try:
@@ -463,20 +535,47 @@ class Session:
         self._sweep()
         return status
 
-    def close(self) -> None:
+    def close(self) -> str | None:
+        """End the plugin and stop reading it, within the time budget left.
+
+        The plugin and its process group are killed even when the budget has run
+        out. Returns a problem the case must report, else None.
+
+        Residual (POSIX): a descendant that calls setsid leaves the process group, so
+        killpg cannot reach it. When it holds standard output or standard error, the
+        reader stays blocked. close() does not wait for it past the budget: it reports
+        it and points the reader's descriptor at the null device. The next write from
+        that process wakes the reader, which finds the end of the stream; the write
+        after that gets a broken pipe. A process that never writes again stays alive.
+        Windows ends such descendants with the job object.
+        """
+        self._closing = True
         self.close_stdin()
         with suppress(subprocess.TimeoutExpired):
-            self.proc.wait(timeout=0.5)
+            self.proc.wait(timeout=self._time_left(0.5))
         self._sweep()
         with suppress(subprocess.TimeoutExpired):
-            self.proc.wait(timeout=5)
+            self.proc.wait(timeout=self._time_left(5))
+        end = time.monotonic() + self._time_left(2)
         for thread in self._readers:
-            thread.join(timeout=2)
+            thread.join(timeout=max(0.0, end - time.monotonic()))
         # A reader that is still blocked holds the stream lock, and close() would wait
         # for it. That happens only when a descendant left the process group.
+        held = False
         for stream, thread in zip(
             (self.proc.stdout, self.proc.stderr), self._readers, strict=True
         ):
-            if stream is not None and not thread.is_alive():
+            if thread.is_alive():
+                held = True
+                self._detach(stream)
+            elif stream is not None:
                 with suppress(OSError, ValueError):
                     stream.close()
+        if not held:
+            return None
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            return "the time budget ran out before the plugin's output closed"
+        return (
+            "the plugin's output stayed open after its process group was killed: "
+            "a process outside the group holds it"
+        )

@@ -115,8 +115,8 @@ def run_conformance(
         declaration=declaration,
     )
     env.deadline = min(started + case_budget, suite_end)
-    with env.session() as probe:
-        try:
+    try:
+        with env.session() as probe:
             reply = handshake(probe)
             # A hook kind the host does not know is ignored (section 4.2). P19 still
             # reads the full list from its own reply.
@@ -125,8 +125,8 @@ def run_conformance(
                 for h in reply["capabilities"]["hooks"]
                 if h["kind"] in ALL_KINDS
             ]
-        except CaseFailure:
-            env.hooks = []  # P1 reports the cause
+    except CaseFailure:
+        pass  # P1 reports the cause. Hooks read before a failed close still count.
     report = Report()
     for case_id, (title, fn) in CASES.items():
         if only and case_id not in only:
@@ -143,11 +143,16 @@ def run_conformance(
             )
             continue
         env.deadline = min(now + case_budget, suite_end)
+        status, detail = PASS, ""
         try:
             fn(env)
-            report.results.append(CaseResult(case_id, title, PASS))
         except CaseSkip as skip:
-            report.results.append(CaseResult(case_id, title, SKIP, str(skip)))
+            status, detail = SKIP, str(skip)
         except CaseFailure as failure:
-            report.results.append(CaseResult(case_id, title, FAIL, str(failure)))
+            status, detail = FAIL, str(failure)
+        # Teardown waits stop at the deadline, but the kill after them still takes
+        # time. A case that ends past its deadline did not finish in its budget.
+        if status != FAIL and time.monotonic() > env.deadline:
+            status, detail = FAIL, "the case ran past its time budget"
+        report.results.append(CaseResult(case_id, title, status, detail))
     return report

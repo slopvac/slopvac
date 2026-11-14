@@ -5,6 +5,7 @@ Usage: hostile_plugin.py MODE [ARG]. Modes:
   stderr-flood         print 8 MiB to standard error without a newline
   frame-flood COUNT    print COUNT small valid frames
   big-frames COUNT     print COUNT valid frames of 100 KiB
+  trickle              print a small valid frame every 0.2 s for 30 s
   deaf                 never read standard input
   spawner PATH         start a descendant that keeps the pipes open, write its pid to PATH
   spawner-exit PATH    the same, and then exit at once
@@ -43,6 +44,11 @@ elif mode == "big-frames":
         out.write(frame(100 * 1024))
         out.flush()
     time.sleep(60)
+elif mode == "trickle":
+    for _ in range(150):
+        out.write(frame(0))
+        out.flush()
+        time.sleep(0.2)
 elif mode in ("spawner", "spawner-exit"):
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
     with open(arg, "w", encoding="utf-8") as handle:

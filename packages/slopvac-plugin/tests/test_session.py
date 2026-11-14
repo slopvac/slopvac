@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from conftest import FIXTURES, bounded, script
+from slopvac_plugin.conformance.cases import handshake
 from slopvac_plugin.conformance.schemas import Schemas
 from slopvac_plugin.conformance.session import (
     CaseFailure,
@@ -209,6 +210,34 @@ def test_close_ends_a_descendant_that_holds_the_pipes(
         s.close()
 
 
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "trickle-after-exit",  # whole frames every 0.4 s
+        "drip-after-exit",  # one body that never completes, a byte every 0.2 s
+    ],
+)
+def test_close_ends_a_writer_outside_the_process_group_on_its_next_output(
+    schemas: Schemas, escape_pidfile: Path, mode: str
+):
+    """A descendant in a new session survives killpg; the closed pipe ends it."""
+    s = Session(
+        script("raw_plugin.py", mode),
+        schemas,
+        10,
+        env_names=["ESCAPE_PIDFILE"],
+    )
+    try:
+        handshake(s)  # the plugin is up, so its exit starts the descendant
+        assert bounded(s.close, 30), "close() hung on a descendant"
+        assert wait_for(lambda: escape_pidfile.read_text("utf-8") != "")
+        child = int(escape_pidfile.read_text("utf-8").split()[0])
+        assert wait_for(lambda: not alive(child), 10), "the descendant survived"
+    finally:
+        s.close()
+
+
 WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="Job Objects are Windows")
 
 
@@ -297,6 +326,42 @@ def test_a_cancel_write_that_blocks_uses_up_the_grace(schemas: Schemas):
         with pytest.raises(CaseFailure, match="did not read its input within 1"):
             s.cancel_and_wait(1, 1)
         assert time.monotonic() - started < 10  # not the 30 s session timeout
+    finally:
+        s.close()
+
+
+def test_drain_events_ends_at_its_window_while_frames_keep_coming(schemas: Schemas):
+    """A frame every 0.2 s must not restart the 1 s window."""
+    s = Session(hostile("trickle"), schemas, 10)
+    try:
+        events = []
+        assert bounded(lambda: events.extend(s.drain_events(1)), 10)
+        assert events
+        assert all(kind == "frame" for kind, _ in events)
+    finally:
+        s.close()
+
+
+def test_close_stops_at_the_deadline_when_the_plugin_ignores_end_of_input(
+    schemas: Schemas,
+):
+    """The plugin never reads and never exits; close() ends it within the budget."""
+    s = Session(hostile("deaf"), schemas, 30)
+    try:
+        stdin = s.proc.stdin
+        assert stdin is not None
+
+        def fill() -> None:
+            with suppress(OSError, ValueError):
+                stdin.write(b"x" * (8 * 1024 * 1024))
+
+        threading.Thread(target=fill, daemon=True).start()
+        time.sleep(0.5)  # the pipe is full: closing stdin now blocks
+        s.deadline = time.monotonic() + 0.2
+        started = time.monotonic()
+        assert bounded(s.close, 30)
+        assert time.monotonic() - started < 1.2  # the waits alone were 1.5 s
+        assert wait_for(lambda: s.proc.poll() is not None)
     finally:
         s.close()
 

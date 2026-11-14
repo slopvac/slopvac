@@ -60,6 +60,13 @@ slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
 
 The suite treats the plugin as untrusted. It gets only `PATH` and `LANG` (and the variables Windows needs to start a process), plus the names you give with `--env`, so CI tokens and credentials stay out of it. The plugin runs in its own process group, and the suite ends the whole group when it closes the session. The suite also caps how much the plugin may print, ends a plugin that stops reading its input, and checks each reply against the 1 MiB limit before `initialize` and the negotiated `maxMessageBytes` after it. A plugin that declares more than 1,024 hooks, or a feature list longer than 1,024 entries, fails P1. The protocol sets no count, so the suite picks this bound to keep its own work linear. The suite also fails a plugin that sends any call, because protocol v1 has no plugin-to-host calls, and it does so before it validates the call's params.
 
+The case budget covers cleanup too:
+
+- Every wait to close a session stops at the deadline. The suite kills the process group after the last wait.
+- A case that ends past its deadline fails, even when its checks passed or it skipped.
+- After the plugin exits, the first frame on its output fails P13 or P14 at once.
+- On POSIX, a descendant that calls `setsid` leaves the process group, and the suite cannot kill it. When such a process keeps the plugin's output open, the case fails and the suite detaches the pipe. After one more write from that process, its writes fail with a broken pipe. A silent process stays alive: this gap is a known limit of the suite. On Windows, the job object ends every descendant.
+
 Exit 0 means every applicable case passed. Exit 1 means a case failed. Exit 2 means the suite could not run, for example because the command does not start. A skipped case prints its reason and does not fail the run.
 
 ### Sample requests

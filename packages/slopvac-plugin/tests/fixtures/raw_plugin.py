@@ -5,11 +5,20 @@ exit-zero-without-shutdown, no-version-check, read-oversized-body, slow-tagger,
 float-id, float-limit, big-init-reply, big-reply, deaf-after-init, in-flight-17, in-flight-unsafe, unknown-kind,
 mixed-features, many-hooks, call-oversized, small-limit (maxMessageBytes 65536),
 batch1 (maxBatchDocuments 1) and its variants batch1-swapped, batch1-both,
-batch1-malformed and batch1-slow. Standard library only, like a plugin in
+batch1-malformed and batch1-slow, ignore-eof (a slow initialize reply, and end of
+input does not end it), nine-taggers (taggers t1 to t9 under the small limit, and an
+error entry for the document "bad"), escape-silent, trickle-after-exit and
+drip-after-exit. The last three start a descendant in a new session that keeps
+standard output open: one stays silent, one prints a frame every 0.4 s once the
+plugin exits, and one then sends a header and a body one byte at a time. They append its
+pid to the file named by ESCAPE_PIDFILE. Standard library only, like a plugin in
 any other language would be.
 """
 
+import atexit
 import json
+import os
+import subprocess
 import sys
 import time
 
@@ -17,6 +26,44 @@ mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
 inp, out = sys.stdin.buffer, sys.stdout.buffer
 limit = 1048576
 state = "new"
+TAGGERS = [f"t{n}" for n in range(1, 10)] if mode == "nine-taggers" else ["main"]
+TRICKLE = """
+import sys, time
+body = b'{"jsonrpc":"2.0","method":"x-late","params":{}}'
+for _ in range(75):
+    sys.stdout.buffer.write(b"Content-Length: %d\\r\\n\\r\\n" % len(body) + body)
+    sys.stdout.buffer.flush()
+    time.sleep(0.4)
+"""
+# A body that never completes: one byte every 0.2 s.
+DRIP = """
+import sys, time
+sys.stdout.buffer.write(b"Content-Length: 1000000\\r\\n\\r\\n")
+for _ in range(150):
+    sys.stdout.buffer.write(b"x")
+    sys.stdout.buffer.flush()
+    time.sleep(0.2)
+"""
+
+
+def escape(code):
+    """Start a descendant that leaves the process group and holds standard output."""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    with open(os.environ["ESCAPE_PIDFILE"], "a", encoding="utf-8") as handle:
+        handle.write(f"{child.pid}\n")
+
+
+if mode == "escape-silent":
+    escape("import time; time.sleep(30)")
+if mode == "trickle-after-exit":
+    atexit.register(escape, TRICKLE)
+if mode == "drip-after-exit":
+    atexit.register(escape, DRIP)
 
 
 def read():
@@ -73,6 +120,8 @@ def fail(i, code, slug, **data):
 
 while True:
     msg = read()
+    if msg is None and mode == "ignore-eof":
+        time.sleep(60)
     if msg is None:
         sys.exit(0 if state == "shutdown" else 1)
     method, i, params = msg.get("method"), msg.get("id"), msg.get("params") or {}
@@ -92,7 +141,10 @@ while True:
             )
             continue
         limit = params["limits"]["maxMessageBytes"]
-        if mode == "small-limit":
+        if mode == "ignore-eof":
+            time.sleep(1)
+        small = mode in ("small-limit", "nine-taggers")
+        if small:
             limit = 65536  # a frame over it ends this plugin
         reply(
             i,
@@ -103,7 +155,7 @@ while True:
                     "version": "0",
                 },
                 "capabilities": {
-                    "hooks": [{"kind": "tagger", "id": "main"}]
+                    "hooks": [{"kind": "tagger", "id": t} for t in TAGGERS]
                     + (
                         [{"kind": "hologram", "id": "x"}]
                         if mode == "unknown-kind"
@@ -128,7 +180,7 @@ while True:
                     "maxMessageBytes": float(limit)
                     if mode == "float-limit"
                     else 65536
-                    if mode == "small-limit"
+                    if small
                     else limit,
                     "maxBatchDocuments": 1 if mode.startswith("batch1") else 64,
                     "maxInFlight": {"in-flight-17": 17, "in-flight-unsafe": 2**60}.get(
@@ -148,7 +200,7 @@ while True:
         reply(i, None)
         state = "shutdown"
     elif method == "tagger/tag":
-        if params.get("tagger") != "main":
+        if params.get("tagger") not in TAGGERS:
             fail(i, -32602, "invalid-params")
             continue
         if mode == "call-oversized":
@@ -184,6 +236,14 @@ while True:
         if mode == "batch1-both":
             documents = [{"id": "doc-1", "text": ""}, {"id": "doc-2", "text": ""}]
         for doc in documents:
+            if mode == "nine-taggers" and doc["id"] == "bad":
+                error = {
+                    "code": -32602,
+                    "message": "bad",
+                    "data": {"slopvac_code": "x"},
+                }
+                results.append({"document": "bad", "error": error})
+                continue
             size = len(doc["text"].encode())
             end = {"bad-span": size + 1, "split-char-span": 2}.get(mode, size)
             swapped = {"doc-1": "doc-2", "doc-2": "doc-1"}

@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 from conftest import EXAMPLE, FIXTURES, SDK_ENV, bounded, script
 from slopvac_plugin.conformance import SuiteError, load_declaration, run_conformance
-from slopvac_plugin.conformance.cases import check_edits, handshake
-from slopvac_plugin.conformance.session import CaseFailure, Session
+from slopvac_plugin.conformance.cases import CASES, check_edits, handshake
+from slopvac_plugin.conformance.session import CaseFailure, CaseSkip, Session
 
 ALL_IDS = [f"P{i}" for i in range(1, 20)]
 REPO = Path(__file__).resolve().parents[3]
@@ -424,16 +424,76 @@ def tagger_input(documents):
     return {"tagger": {"documents": documents}}
 
 
-def test_batches_are_sized_by_the_escaped_bytes_the_session_sends(quiet_cwd):
+@pytest.mark.parametrize("case_id", ["P6", "P15"])
+def test_batches_are_sized_by_the_escaped_bytes_the_session_sends(case_id, quiet_cwd):
     # Six documents of 12006 UTF-8 bytes. Counted as raw UTF-8, five fit in 65536
     # bytes, but the session sends them escaped (24012 bytes each), so two fit.
+    # P6 sends them to a hook id the plugin does not declare.
     documents = [{"id": f"d{n}", "text": JAPANESE} for n in range(6)]
+    report = run_conformance(
+        script("raw_plugin.py", "small-limit"),
+        inputs=tagger_input(documents),
+        only=[case_id],
+    )
+    assert statuses(report) == {case_id: "pass"}, report.to_text()
+
+
+def tag_body_size(request_id: int, hook_id: str, documents: list) -> int:
+    """Bytes of the tagger/tag body the suite sends: compact JSON, default spacing."""
+    message = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "tagger/tag",
+        "params": {"tagger": hook_id, "documents": documents},
+    }
+    return len(json.dumps(message).encode("utf-8"))
+
+
+def test_batches_at_the_limit_are_sized_with_the_id_each_is_sent_with(quiet_cwd):
+    # Every pair of documents makes a body of exactly 65536 bytes with a one-digit
+    # id. Batches go out with ids 2, 3, ..., so the ninth carries id 10 and one more
+    # byte: it must hold one document, or the plugin exits on the oversized frame.
+    empty = [{"id": f"d{n:02}", "text": ""} for n in range(2)]
+    room = 65536 - tag_body_size(2, "main", empty)
+    even, odd = room // 2, room - room // 2
+    documents = [
+        {"id": f"d{n:02}", "text": "x" * (odd if n % 2 else even)} for n in range(18)
+    ]
+    assert tag_body_size(9, "main", documents[:2]) == 65536
+    assert tag_body_size(10, "main", documents[:2]) == 65537
     report = run_conformance(
         script("raw_plugin.py", "small-limit"),
         inputs=tagger_input(documents),
         only=["P15"],
     )
     assert statuses(report) == {"P15": "pass"}, report.to_text()
+
+
+def test_p7_sizes_each_planned_request_with_the_id_it_is_sent_with(quiet_cwd):
+    # Nine taggers, one request each, ids 2 to 10. A valid and an invalid document
+    # make exactly 65536 bytes with a one-digit id, so the request for t9 (id 10) is
+    # one byte over and must stay unsent.
+    bad = {"id": "bad", "text": "a\u0000b"}
+    room = 65536 - tag_body_size(2, "t1", [{"id": "ok", "text": ""}, bad])
+    valid = {"id": "ok", "text": "x" * room}
+    assert tag_body_size(10, "t9", [valid, bad]) == 65537
+    inputs = {"tagger": {"documents": [valid], "invalid_document": bad}}
+    report = run_conformance(
+        script("raw_plugin.py", "nine-taggers"), inputs=inputs, only=["P7"]
+    )
+    assert statuses(report) == {"P7": "pass"}, report.to_text()
+
+
+def test_a_provider_request_over_the_limit_skips_p16_unsent(quiet_cwd):
+    # The SDK plugin negotiates 16 MiB; one item of 17 MiB cannot fit.
+    item = {"id": "item-1", "text": "x" * (17 * 1024 * 1024)}
+    report = run_conformance(
+        script("all_hooks_plugin.py"),
+        inputs={"provider": {"items": [item]}},
+        pass_env=SDK_ENV,
+        only=["P16"],
+    )
+    assert statuses(report) == {"P16": "skip"}, report.to_text()
 
 
 def test_a_document_over_the_limit_alone_skips_and_no_such_frame_is_written(
@@ -516,3 +576,77 @@ def test_cli_takes_the_budget_options(tmp_path):
         cwd=tmp_path,
     )
     assert result.returncode == 0, result.stdout
+
+
+POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="setsid is POSIX")
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("case_id", ["P13", "P14"])
+def test_frames_after_exit_from_an_escaped_descendant_fail_at_once(
+    case_id, escape_pidfile, quiet_cwd
+):
+    # A descendant in its own session holds standard output and prints a frame every
+    # 0.4 s for 30 s after the plugin exits. No wait may restart on each frame.
+    report = run_within(
+        15,
+        lambda: run_conformance(
+            script("raw_plugin.py", "trickle-after-exit"),
+            only=[case_id],
+            pass_env=["ESCAPE_PIDFILE"],
+            case_budget=10,
+        ),
+    )
+    assert statuses(report) == {case_id: "fail"}, report.to_text()
+    assert "printed" in report.results[0].detail
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("case_id", "inputs"),
+    [
+        ("P1", None),
+        # A document over the 16 MiB limit: the case skips inside its session.
+        ("P15", tagger_input([{"id": "big", "text": "x" * (17 * 1024 * 1024)}])),
+    ],
+)
+def test_a_descendant_that_leaves_the_process_group_fails_the_case(
+    case_id, inputs, escape_pidfile, quiet_cwd
+):
+    # The descendant holds standard output and stays silent, so the suite cannot end
+    # it or see the end of output. The case reports it instead of passing or skipping.
+    report = run_within(
+        30,
+        lambda: run_conformance(
+            script("raw_plugin.py", "escape-silent"),
+            inputs=inputs,
+            only=[case_id],
+            pass_env=["ESCAPE_PIDFILE"],
+        ),
+    )
+    assert statuses(report) == {case_id: "fail"}, report.to_text()
+    assert "process group" in report.results[0].detail
+
+
+@pytest.mark.parametrize("outcome", ["returns", "skips"])
+def test_a_case_that_ends_after_its_deadline_fails(outcome, monkeypatch, quiet_cwd):
+    # The runner checks the clock after the case, whatever the case reported.
+    def late(env):
+        time.sleep(max(0.0, env.deadline - time.monotonic()) + 0.05)
+        if outcome == "skips":
+            raise CaseSkip("not applicable")
+
+    monkeypatch.setitem(CASES, "P1", ("a case that ends late", late))
+    report = run_conformance(script("raw_plugin.py"), only=["P1"], case_budget=1.0)
+    assert statuses(report) == {"P1": "fail"}, report.to_text()
+    assert "budget" in report.results[0].detail
+
+
+def test_a_case_whose_cleanup_runs_past_its_budget_fails(quiet_cwd):
+    # The initialize reply takes 1 s of the 1.5 s budget, and the plugin ignores end
+    # of input, so closing the session would need 0.5 s more than the budget holds.
+    report = run_conformance(
+        script("raw_plugin.py", "ignore-eof"), only=["P1"], case_budget=1.5
+    )
+    assert statuses(report) == {"P1": "fail"}, report.to_text()
+    assert "budget" in report.results[0].detail

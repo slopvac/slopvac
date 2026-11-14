@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import threading
 from collections.abc import Callable, Iterator
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -68,3 +70,20 @@ def quiet_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Run the suite from an empty directory, so P17's file snapshot is stable."""
     monkeypatch.chdir(tmp_path)
     return tmp_path
+
+
+@pytest.fixture
+def escape_pidfile(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Path]:
+    """Where raw_plugin.py records descendants that left its process group.
+
+    The suite cannot end them, so the test does.
+    """
+    path = tmp_path_factory.mktemp("escaped") / "pids"
+    path.touch()
+    monkeypatch.setenv("ESCAPE_PIDFILE", str(path))
+    yield path
+    for pid in path.read_text("utf-8").split():
+        with suppress(ProcessLookupError):
+            os.kill(int(pid), signal.SIGKILL)

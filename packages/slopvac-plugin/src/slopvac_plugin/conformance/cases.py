@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import contextlib
 import itertools
+import os
+import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,11 +69,21 @@ class Env:
 
     @contextlib.contextmanager
     def session(self) -> Iterator[Session]:
+        """A session that is closed at the end. A problem found on closing fails it."""
         s = self.spawn()
         try:
             yield s
-        finally:
+        except CaseSkip:
+            problem = s.close()
+            if problem is not None:
+                raise CaseFailure(problem) from None
+            raise
+        except BaseException:
             s.close()
+            raise
+        problem = s.close()
+        if problem is not None:
+            raise CaseFailure(problem)
 
     @contextlib.contextmanager
     def ready(self, **options: Any) -> Iterator[tuple[Session, dict[str, Any]]]:
@@ -251,18 +263,27 @@ def check_result(env: Env, kind: str, params: dict[str, Any], result: Any) -> No
             check_edits(doc, edits)
 
 
-def request_size(s: Session, method: str, params: dict[str, Any]) -> int:
-    """Bytes of the body the session would send, measured with its own serialiser."""
-    message = {"jsonrpc": "2.0", "id": s.next_id, "method": method, "params": params}
+def request_size(request_id: int, method: str, params: dict[str, Any]) -> int:
+    """Bytes of the body the session sends, measured with its own serialiser.
+
+    The id is part of the body, so size a request with the id it will be sent with.
+    """
+    message = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
     return len(serialise(message))
 
 
-def fits(s: Session, method: str, params: dict[str, Any]) -> bool:
-    """Whether one request stays inside the limits the plugin negotiated."""
+def fits(
+    s: Session, method: str, params: dict[str, Any], request_id: int | None = None
+) -> bool:
+    """Whether one request stays inside the limits the plugin negotiated.
+
+    ``request_id`` is the id it will be sent with; the default is the next one.
+    """
     documents = params.get("documents", [])
+    request_id = s.next_id if request_id is None else request_id
     return (
         len(documents) <= s.max_documents
-        and request_size(s, method, params) <= s.max_body_bytes
+        and request_size(request_id, method, params) <= s.max_body_bytes
     )
 
 
@@ -272,6 +293,9 @@ def batches(s: Session, kind: str, params: dict[str, Any]) -> list[dict[str, Any
     The host respects maxBatchDocuments and maxMessageBytes (sections 2.2 and 5.3), so
     the suite does too. When a document cannot fit alone, the sample input is unsuitable
     for this plugin: the case skips and no oversized frame is written.
+
+    Batch ``n`` is sized with id ``s.next_id + n``, the id it gets when the batches
+    are sent in order with nothing in between.
     """
     method = METHODS[kind]
     documents = params.get("documents")
@@ -285,11 +309,12 @@ def batches(s: Session, kind: str, params: dict[str, Any]) -> list[dict[str, Any
     current: list[dict[str, Any]] = []
     for document in documents:
         trial = {**params, "documents": [*current, document]}
-        if current and not fits(s, method, trial):
+        if current and not fits(s, method, trial, s.next_id + len(out)):
             out.append({**params, "documents": current})
             current = []
         current.append(document)
-        if not fits(s, method, {**params, "documents": current}):
+        batch = {**params, "documents": current}
+        if not fits(s, method, batch, s.next_id + len(out)):
             raise CaseSkip(
                 f"document {document.get('id')!r} alone exceeds the negotiated limits "
                 f"(maxMessageBytes {s.max_body_bytes}, maxBatchDocuments "
@@ -427,8 +452,8 @@ def p6(env: Env) -> None:
     declared = {k for k, _ in env.hooks}
     with env.ready() as (s, _):
         for kind, _id in env.hooks:
-            params = env.params(kind, "no-such-hook")
-            error_of(s.request(METHODS[kind], params), -32602, "invalid-params")
+            first = batches(s, kind, env.params(kind, "no-such-hook"))[0]
+            error_of(s.request(METHODS[kind], first), -32602, "invalid-params")
         for kind in ALL_KINDS:
             if kind not in declared:
                 error_of(
@@ -453,7 +478,8 @@ def p7(env: Env) -> None:
             params = env.params(kind, hook_id)
             bad = env.inputs[kind]["invalid_document"]
             params["documents"] = [params["documents"][0], bad]
-            if fits(s, METHODS[kind], params):
+            # The requests go out in order after this loop, one id each.
+            if fits(s, METHODS[kind], params, s.next_id + len(mixed)):
                 mixed.append((kind, params))
         if not mixed:
             raise CaseSkip(
@@ -543,9 +569,8 @@ def expect_rejected_at_the_header(env: Env, s: Session, length: int) -> None:
     s.send_bytes(b"Content-Length: %d\r\n\r\n" % length, tolerate_closed=True)
     status = s.wait(env.exit_timeout)
     require(status == 1, f"an oversized body gave status {status}, not 1")
-    require(
-        all(kind == "eof" for kind, _ in s.drain_events()),
-        "the plugin printed output for an oversized body",
+    s.expect_end_of_output(
+        env.exit_timeout, "the plugin printed output for an oversized body"
     )
 
 
@@ -567,10 +592,8 @@ def p14(env: Env) -> None:
         require("result" in s.request("shutdown"), "shutdown failed")
         s.notify("exit")
         s.wait(env.exit_timeout)
-        events = s.drain_events()
-        require(
-            all(kind == "eof" for kind, _ in events),
-            f"standard output holds more than frames: {events[:1]}",
+        s.expect_end_of_output(
+            env.exit_timeout, "the plugin printed after it answered shutdown and exited"
         )
 
 
@@ -589,22 +612,38 @@ def p16(env: Env) -> None:
         raise CaseSkip("the plugin declares no provider")
     with env.ready(offline=True) as (s, _):
         for kind, hook_id in providers:
-            reply = s.request(METHODS[kind], env.params(kind, hook_id))
-            error_of(reply, -32007, "offline")
+            first = batches(s, kind, env.params(kind, hook_id))[0]
+            error_of(s.request(METHODS[kind], first), -32007, "offline")
     # The suite cannot observe sockets: "opens no connection" is the plugin's promise.
 
 
-def _snapshot(root: Path) -> set[tuple[str, int, int]]:
-    skip = {"__pycache__", ".git", ".venv", "node_modules"}
+SNAPSHOT_SKIP = {"__pycache__", ".git", ".venv", "node_modules"}
+SNAPSHOT_ENTRIES = 5000
+
+
+def _snapshot(root: Path, deadline: float | None) -> set[tuple[str, int, int]]:
+    """Path, size and mtime of up to SNAPSHOT_ENTRIES entries under ``root``.
+
+    The skipped directories are not entered, so a plugin that fills one cannot make
+    the walk long, and the walk stops at the case deadline.
+    """
     seen: set[tuple[str, int, int]] = set()
-    for path in root.rglob("*"):
-        if len(seen) > 5000:
-            break
-        if skip & set(path.relative_to(root).parts) or path.suffix == ".pyc":
-            continue
-        with contextlib.suppress(OSError):
-            stat = path.stat()
-            seen.add((str(path.relative_to(root)), stat.st_size, stat.st_mtime_ns))
+    stack = [str(root)]
+    while stack:
+        with contextlib.suppress(OSError), os.scandir(stack.pop()) as entries:
+            for entry in entries:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise CaseFailure("the time budget ran out")
+                if entry.name in SNAPSHOT_SKIP or entry.name.endswith(".pyc"):
+                    continue
+                if len(seen) >= SNAPSHOT_ENTRIES:
+                    return seen
+                with contextlib.suppress(OSError):
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    stat = entry.stat()
+                    name = os.path.relpath(entry.path, root)
+                    seen.add((name, stat.st_size, stat.st_mtime_ns))
     return seen
 
 
@@ -612,11 +651,11 @@ def _snapshot(root: Path) -> set[tuple[str, int, int]]:
 def p17(env: Env) -> None:
     hooks = need_hooks(env, ("recipe",))
     with env.ready() as (s, _):
-        before = _snapshot(Path.cwd())
+        before = _snapshot(Path.cwd(), env.deadline)
         for kind, hook_id in hooks:
             call_hook(env, s, kind, hook_id)  # checks each batch against its request
         require(
-            _snapshot(Path.cwd()) == before,
+            _snapshot(Path.cwd(), env.deadline) == before,
             "the working directory changed during recipe/plan",
         )
 
