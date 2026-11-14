@@ -39,7 +39,7 @@ fn add_infers_case_sensitivity_from_the_term() {
             "Acme Cloud",
         ],
     );
-    assert_eq!(out, "added AcmeCloud (case-sensitive)\n");
+    assert_eq!(out, "added AcmeCloud (flags wrong case)\n");
     let text = file(&dir);
     assert!(
         text.contains("term = \"dbt\"\nignore_case = true"),
@@ -149,7 +149,7 @@ fn check_reports_wrong_case_with_position_and_skips_code() {
         "We use Github.\nRun `github` here.\n```\ngithub\n```\nAnd acme works.\n",
     )
     .unwrap();
-    terms(&dir, &["add", "Acme", "--case-sensitive"]);
+    terms(&dir, &["add", "Acme"]);
     let (code, out) = terms(&dir, &["check", "doc.md"]);
     assert_eq!(code, 1);
     assert_eq!(
@@ -242,6 +242,192 @@ fn files_flag_selects_the_terms_file() {
     assert!(!dir.join(".slopvac/terms.toml").exists());
     let (_, out) = terms(&dir, &["list", "--files", "docs/my-terms.toml"]);
     assert_eq!(out, "Acme\t-\tproject\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn write_terms(dir: &Path, text: &str) {
+    std::fs::create_dir_all(dir.join(".slopvac")).unwrap();
+    std::fs::write(dir.join(".slopvac/terms.toml"), text).unwrap();
+}
+
+#[test]
+fn case_sensitive_flag_is_serialised_and_changes_checking() {
+    let dir = scratch("case-flag");
+    let (_, out) = terms(&dir, &["add", "Go", "--case-sensitive"]);
+    assert_eq!(out, "added Go (exact spelling only)\n");
+    let text = file(&dir);
+    assert!(
+        text.contains("term = \"Go\"\ncase_sensitive = true"),
+        "{text}"
+    );
+    assert!(!text.contains("ignore_case"), "{text}");
+    std::fs::write(dir.join("doc.md"), "We go to Go and then go again.\n").unwrap();
+    let (code, out) = terms(&dir, &["check", "doc.md"]);
+    assert_eq!((code, out.as_str()), (0, ""));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn inline_array_files_support_add_remove_and_import() {
+    let dir = scratch("inline");
+    write_terms(
+        &dir,
+        "# project terms\nschema_version = 3\nterms = [\n  # the product\n  { term = \"Acme\", kind = \"product\" },\n  { term = \"Zed\" },\n]\n",
+    );
+    let (code, _) = terms(&dir, &["add", "Widget", "--kind", "tool"]);
+    assert_eq!(code, 0);
+    let text = file(&dir);
+    assert!(text.starts_with("# project terms\n"), "{text}");
+    assert!(text.contains("# the product"), "{text}");
+    assert!(text.contains("term = \"Widget\""), "{text}");
+    let (_, out) = terms(&dir, &["list"]);
+    assert_eq!(
+        out,
+        "Acme\tproduct\tproject\nZed\t-\tproject\nWidget\ttool\tproject\n"
+    );
+    let (code, _) = terms(&dir, &["remove", "Zed"]);
+    assert_eq!(code, 0);
+    assert!(!file(&dir).contains("Zed"));
+    assert!(file(&dir).contains("# the product"));
+    std::fs::write(dir.join("accept.txt"), "Kubernetes\nAcme\n").unwrap();
+    let (_, out) = terms(&dir, &["import", "--from", "vale", "accept.txt"]);
+    assert!(
+        out.starts_with("imported 1 terms (1 already present"),
+        "{out}"
+    );
+    let (_, out) = terms(&dir, &["list"]);
+    assert_eq!(
+        out,
+        "Acme\tproduct\tproject\nWidget\ttool\tproject\nKubernetes\t-\tproject\n"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn remove_from_a_mixed_file_leaves_the_other_terms() {
+    let dir = scratch("remove-inline");
+    write_terms(
+        &dir,
+        "schema_version = 3\nterms = [{ term = \"A\" }, { term = \"B\" }]\n",
+    );
+    terms(&dir, &["remove", "A"]);
+    let text = file(&dir);
+    assert!(text.starts_with("schema_version = 3\nterms = ["), "{text}");
+    assert!(!text.contains("\"A\""), "{text}");
+    let (_, out) = terms(&dir, &["list"]);
+    assert_eq!(out, "B\t-\tproject\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_save_leaves_the_original_file_and_no_temp_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch("atomic");
+    terms(&dir, &["add", "Acme"]);
+    let before = file(&dir);
+    let sub = dir.join(".slopvac");
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let m = command()
+        .try_get_matches_from(["terms", "add", "Widget"])
+        .unwrap();
+    let result = run(&m, &dir, &mut Vec::new());
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Root ignores directory permissions, so only assert when the write failed.
+    if result.is_err() {
+        assert_eq!(file(&dir), before);
+        let leftovers: Vec<_> = std::fs::read_dir(&sub)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(leftovers, ["terms.toml"]);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_rename_failure_cleans_up_the_temp_file() {
+    let dir = scratch("rename-fail");
+    let target = dir.join(".slopvac/terms.toml");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("keep"), "x").unwrap();
+    let m = command()
+        .try_get_matches_from(["terms", "add", "Acme", "--files", ".slopvac/terms.toml"])
+        .unwrap();
+    assert!(run(&m, &dir, &mut Vec::new()).is_err());
+    let names: Vec<_> = std::fs::read_dir(dir.join(".slopvac"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["terms.toml"]);
+    assert!(target.join("keep").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn vale_comments_need_a_space_and_hash_tags_are_entries() {
+    let dir = scratch("vale-comments");
+    std::fs::write(dir.join("accept.txt"), "# a comment\n#\n#tag\nGitHub\n").unwrap();
+    let (_, out) = terms(&dir, &["import", "--from", "vale", "accept.txt"]);
+    assert_eq!(
+        out,
+        "imported 2 terms (0 already present, 0 patterns skipped)\n"
+    );
+    let text = file(&dir);
+    assert!(text.contains("term = \"#tag\""), "{text}");
+    assert!(!text.contains("a comment"), "{text}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn codespell_quoted_lists_parse_and_malformed_ones_change_nothing() {
+    let dir = scratch("codespell-quotes");
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[tool.codespell]\nignore-words-list = \"alpha,beta\"\n",
+    )
+    .unwrap();
+    let (_, out) = terms(&dir, &["import", "--from", "codespell", "pyproject.toml"]);
+    assert!(out.starts_with("imported 2 terms"), "{out}");
+    let before = file(&dir);
+    for bad in [
+        "ignore-words-list = \"alpha,beta\n",
+        "ignore-words-list = ['a', 'b']\n",
+    ] {
+        std::fs::write(dir.join("bad.cfg"), bad).unwrap();
+        let m = command()
+            .try_get_matches_from(["terms", "import", "--from", "codespell", "bad.cfg"])
+            .unwrap();
+        assert!(run(&m, &dir, &mut Vec::new()).is_err(), "{bad}");
+        assert_eq!(file(&dir), before, "{bad}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cspell_yaml_configs_are_rejected_clearly() {
+    let dir = scratch("cspell-yaml");
+    std::fs::write(dir.join("cspell.yaml"), "words:\n  - alpha\n").unwrap();
+    let m = command()
+        .try_get_matches_from(["terms", "import", "--from", "cspell", "cspell.yaml"])
+        .unwrap();
+    let e = run(&m, &dir, &mut Vec::new()).unwrap_err().to_string();
+    assert!(e.contains("cspell YAML configs are not supported"), "{e}");
+    assert!(!dir.join(".slopvac/terms.toml").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn double_backtick_spans_hide_terms_that_contain_a_backtick() {
+    let text = "a `` x`github `` b github\n";
+    let ranges = markdown_code_ranges(text);
+    assert_eq!(ranges, [2..16]);
+    assert_eq!(&text[2..16], "`` x`github ``");
+    let dir = scratch("double-tick");
+    std::fs::write(dir.join("doc.md"), text).unwrap();
+    let (_, out) = terms(&dir, &["check", "doc.md"]);
+    assert_eq!(out, "doc.md:1:20: github -> GitHub\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

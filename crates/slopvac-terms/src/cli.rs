@@ -67,7 +67,8 @@ pub fn command() -> Command {
                 .arg(
                     Arg::new("case-sensitive")
                         .long("case-sensitive")
-                        .action(ArgAction::SetTrue),
+                        .action(ArgAction::SetTrue)
+                        .help("Match only the exact spelling; other casings are different words"),
                 )
                 .arg(files_arg()),
         )
@@ -85,7 +86,10 @@ pub fn command() -> Command {
         )
         .subcommand(
             Command::new("import")
-                .about("Import words from another tool")
+                .about(
+                    "Import words from another tool: a Vale accept.txt, a cspell JSON config \
+                     (YAML configs are not supported) or a codespell ignore list",
+                )
                 .arg(Arg::new("from").long("from").required(true).value_parser([
                     "vale",
                     "cspell",
@@ -155,18 +159,43 @@ pub fn markdown_code_ranges(text: &str) -> Vec<Range<usize>> {
         out.push(start..text.len());
     }
     for (base, line) in spans {
-        let mut open: Option<usize> = None;
-        for (i, c) in line.char_indices() {
-            if c == '`' {
-                match open.take() {
-                    Some(s) => out.push(base + s..base + i + 1),
-                    None => open = Some(i),
-                }
-            }
-        }
+        inline_spans(line, base, &mut out);
     }
     out.sort_by_key(|r| r.start);
     out
+}
+
+/// Inline code spans in one line. A span opens with a run of backticks and
+/// closes at the next run of the same length, so ``` `` a`b `` ``` is one span.
+fn inline_spans(line: &str, base: usize, out: &mut Vec<Range<usize>>) {
+    let runs: Vec<(usize, usize)> = {
+        let mut runs = Vec::new();
+        let mut start = None;
+        for (i, c) in line.char_indices() {
+            match (c == '`', start) {
+                (true, None) => start = Some(i),
+                (false, Some(s)) => {
+                    runs.push((s, i - s));
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        if let Some(s) = start {
+            runs.push((s, line.len() - s));
+        }
+        runs
+    };
+    let mut k = 0;
+    while k < runs.len() {
+        let (s, n) = runs[k];
+        if let Some(j) = (k + 1..runs.len()).find(|&j| runs[j].1 == n) {
+            out.push(base + s..base + runs[j].0 + n);
+            k = j + 1;
+        } else {
+            k += 1;
+        }
+    }
 }
 
 fn rows(project: &[TermEntry], builtin: bool) -> Vec<(TermEntry, &'static str)> {
@@ -224,9 +253,10 @@ fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<
 
 fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required").clone();
+    let case_sensitive = m.get_flag("case-sensitive");
     let ignore_case = if m.get_flag("ignore-case") {
         true
-    } else if m.get_flag("case-sensitive") {
+    } else if case_sensitive {
         false
     } else {
         infer_ignore_case(&term)
@@ -239,7 +269,7 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
             .unwrap_or_default(),
         kind: m.get_one::<String>("kind").cloned(),
         ignore_case,
-        case_sensitive: false,
+        case_sensitive,
     };
     let file = &paths[0];
     let mut doc = TermsDoc::open(file)?;
@@ -247,8 +277,10 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
     doc.save(file)?;
     let how = if ignore_case {
         "ignoring case"
+    } else if case_sensitive {
+        "exact spelling only"
     } else {
-        "case-sensitive"
+        "flags wrong case"
     };
     writeln!(out, "added {term} ({how})").map_err(|e| io_err(&e))?;
     Ok(0)

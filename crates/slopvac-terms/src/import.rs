@@ -104,13 +104,24 @@ pub fn parse(path: &str, source: Source, text: &str) -> Result<Imported, TermsEr
     let mut out = Imported::default();
     match source {
         Source::Vale => {
+            // Vale: a line that starts with `# ` is a comment; `#tag` is an entry.
             for line in text.lines() {
-                if !line.trim_start().starts_with('#') {
+                if !(line.starts_with("# ") || line.trim_end() == "#") {
                     push(&mut out, line);
                 }
             }
         }
         Source::Cspell => {
+            let ext = std::path::Path::new(path)
+                .extension()
+                .map(std::ffi::OsStr::to_ascii_lowercase);
+            if ext.is_some_and(|e| e == "yml" || e == "yaml") {
+                return Err(TermsError::Parse {
+                    path: path.to_owned(),
+                    message: "cspell YAML configs are not supported; convert the file to JSON"
+                        .to_owned(),
+                });
+            }
             let cfg: Cspell = serde_json::from_str(&strip_json_comments(text)).map_err(|e| {
                 TermsError::Parse {
                     path: path.to_owned(),
@@ -124,11 +135,13 @@ pub fn parse(path: &str, source: Source, text: &str) -> Result<Imported, TermsEr
         Source::Codespell => {
             for line in text.lines() {
                 let line = line.trim();
-                if line.starts_with('#') || line.starts_with(';') {
+                let section = line.starts_with('[') && line.ends_with(']');
+                if line.starts_with('#') || line.starts_with(';') || section {
                     continue;
                 }
                 if let Some((key, list)) = line.split_once('=') {
                     if key.trim() == "ignore-words-list" {
+                        let list = unquote(path, list.trim())?;
                         list.split(',').for_each(|w| push(&mut out, w));
                     }
                 } else {
@@ -138,4 +151,28 @@ pub fn parse(path: &str, source: Source, text: &str) -> Result<Imported, TermsEr
         }
     }
     Ok(out)
+}
+
+/// Strip one pair of matching quotes from an `ignore-words-list` value, as in
+/// `pyproject.toml`. An unbalanced quote or a TOML array is an error, so the
+/// import stops before it changes anything.
+fn unquote<'a>(path: &str, value: &'a str) -> Result<&'a str, TermsError> {
+    let bad = |message: &str| TermsError::Parse {
+        path: path.to_owned(),
+        message: format!("ignore-words-list: {message}"),
+    };
+    if value.starts_with('[') {
+        return Err(bad(
+            "TOML arrays are not supported; use a comma-separated string",
+        ));
+    }
+    for q in ['"', '\''] {
+        if value.starts_with(q) || value.ends_with(q) {
+            return value
+                .strip_prefix(q)
+                .and_then(|v| v.strip_suffix(q))
+                .ok_or_else(|| bad("unbalanced quote"));
+        }
+    }
+    Ok(value)
 }
