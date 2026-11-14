@@ -17,20 +17,32 @@ gate = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
 
-FILTERS = {
-    "golden": "test(/^golden::/)",
-    "accuracy": "test(/^accuracy::/)",
-    "compat-preserve": "test(/^compat::preserve/)",
-    "conformance": "test(/^conformance::/)",
-    "migration-e2e": "test(/^migration_e2e::/)",
-    "perf-budgets": "test(/^perf_budget::/)",
-}
 NEXTEST = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E"]
+COMMANDS = {
+    "golden": [*NEXTEST, "test(/^golden::/)"],
+    "accuracy": [*NEXTEST, "test(/^accuracy::/)"],
+    "compat-preserve": [*NEXTEST, "test(/^compat::preserve/)"],
+    "conformance": [*NEXTEST, "test(/^conformance::/)"],
+    "conformance-contract": ["python3", "-m", "pytest", "-q", "tests/contract"],
+    "migration-e2e": [*NEXTEST, "test(/^migration_e2e::/)"],
+    "perf-budgets": [*NEXTEST, "test(/^perf_budget::/)"],
+    "perf-installed-binary": [
+        "python3",
+        "scripts/perf/binary_bench.py",
+        "run",
+        "--binary",
+        "target/release/slopvac",
+        "--budgets",
+        "scripts/perf/binary-budgets.toml",
+        "--enforce",
+    ],
+}
 TRIPLES = [
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
     "x86_64-pc-windows-msvc",
 ]
 EVIDENCE_IDS = [
@@ -116,8 +128,7 @@ def evidence(tmp_path):
 CONFIG = {
     "beads": {"release_label": "release:3.0.0", "allowed_open": ["epic"]},
     "command": [
-        {"id": suite, "title": suite, "run": [*NEXTEST, flt]}
-        for suite, flt in FILTERS.items()
+        {"id": suite, "title": suite, "run": run} for suite, run in COMMANDS.items()
     ],
 }
 
@@ -243,13 +254,12 @@ def test_shipped_config_lists_the_required_items():
     config = tomllib.loads(
         (SCRIPT.parent / "release-gate.toml").read_text(encoding="utf-8")
     )
-    assert {c["id"] for c in config["command"]} == set(FILTERS)
+    assert {c["id"]: c["run"] for c in config["command"]} == COMMANDS
     assert gate.check_suites_configured(config).status == "pass"
 
 
-def test_the_six_mandatory_suites_are_exactly_these():
-    assert set(gate.MANDATORY_SUITES) == set(FILTERS)
-    assert len(gate.MANDATORY_SUITES) == 6
+def test_the_trusted_commands_are_exactly_these():
+    assert {k: list(v) for k, v in gate.TRUSTED_COMMANDS.items()} == COMMANDS
 
 
 def test_a_valid_config_is_accepted():
@@ -280,9 +290,9 @@ def test_a_no_op_or_unknown_command_is_rejected(run):
     "run",
     [
         # Missing --no-tests=fail.
-        ["cargo", "nextest", "run", "--workspace", "-E", FILTERS["golden"]],
+        ["cargo", "nextest", "run", "--workspace", "-E", "test(/^golden::/)"],
         # Extra flag that could change what runs.
-        [*NEXTEST, FILTERS["golden"], "--run-ignored", "all"],
+        [*COMMANDS["golden"], "--run-ignored", "all"],
         # Flags in another order.
         [
             "cargo",
@@ -291,7 +301,7 @@ def test_a_no_op_or_unknown_command_is_rejected(run):
             "--no-tests=fail",
             "--workspace",
             "-E",
-            FILTERS["golden"],
+            "test(/^golden::/)",
         ],
         # Different subcommand.
         [
@@ -301,10 +311,14 @@ def test_a_no_op_or_unknown_command_is_rejected(run):
             "--workspace",
             "--no-tests=fail",
             "-E",
-            FILTERS["golden"],
+            "test(/^golden::/)",
         ],
         # Filter selects another suite.
-        [*NEXTEST, FILTERS["accuracy"]],
+        [*NEXTEST, "test(/^accuracy::/)"],
+        # Negated prefix: the string still contains `golden::`.
+        [*NEXTEST, "not test(/^golden::/) | test(/^nothing::/)"],
+        # Prefix kept, everything else also selected.
+        [*NEXTEST, "test(/^golden::/) | all()"],
         # Different runner.
         ["cargo", "test", "golden::"],
     ],
@@ -314,12 +328,39 @@ def test_an_alternative_nextest_form_is_rejected(run):
     assert (result.status, "golden" in result.evidence) == ("fail", True)
 
 
+@pytest.mark.parametrize(
+    "run",
+    [
+        ["python3", "-m", "pytest", "-q", "tests/contract/test_schemas.py"],
+        ["python3", "-m", "pytest", "-q", "-k", "nothing", "tests/contract"],
+        ["python3", "-m", "pytest", "-q"],
+    ],
+)
+def test_a_narrowed_pytest_command_is_rejected(run):
+    result = gate.check_suites_configured(config_with("conformance-contract", run))
+    assert result.status == "fail"
+
+
+def test_the_installed_binary_check_cannot_drop_enforcement():
+    run = [a for a in COMMANDS["perf-installed-binary"] if a != "--enforce"]
+    result = gate.check_suites_configured(config_with("perf-installed-binary", run))
+    assert result.status == "fail"
+
+
 def test_an_unlisted_extra_command_is_rejected():
     config = {
         "command": [*CONFIG["command"], {"id": "extra", "title": "x", "run": ["true"]}]
     }
     result = gate.check_suites_configured(config)
     assert (result.status, "extra" in result.evidence) == ("fail", True)
+
+
+@pytest.mark.parametrize("bad_id", [["golden"], 7])
+def test_a_non_string_command_id_is_reported_not_raised(evidence, bad_id):
+    config = {"command": [*CONFIG["command"], {"id": bad_id, "run": ["true"]}]}
+    result = gate.check_suites_configured(config)
+    assert (result.status, "must be a string" in result.evidence) == ("fail", True)
+    assert gate_with(fake_runner({}), evidence, config)
 
 
 def test_a_rejected_command_is_never_run(evidence):
@@ -457,3 +498,80 @@ def test_a_malformed_evidence_file_fails_every_item(tmp_path):
     results = gate.check_evidence(path)
     assert len(results) == len(EVIDENCE_IDS)
     assert {r.status for r in results} == {"fail"}
+
+
+def test_omitting_the_musl_approval_fails_that_item_only(tmp_path):
+    missing = "signed-artifacts-x86_64-unknown-linux-musl"
+    path = write_evidence(tmp_path / "e.toml", skip=missing)
+    failing = [r.id for r in gate.check_evidence(path) if r.status == "fail"]
+    assert failing == [f"evidence:{missing}"]
+
+
+@pytest.mark.parametrize("bad_id", ['["security-review"]', "7"])
+def test_a_non_string_evidence_id_is_an_evidence_file_failure(tmp_path, bad_id):
+    path = write_evidence(tmp_path / "e.toml")
+    path.write_text(path.read_text() + f"[[item]]\nid = {bad_id}\n", encoding="utf-8")
+    results = by_id(gate.check_evidence(path))
+    assert results["evidence-file"].status == "fail"
+    assert "must be a string" in results["evidence-file"].evidence
+    assert results["evidence:security-review"].status == "pass"
+
+
+# --- command line ------------------------------------------------------------
+
+
+@pytest.fixture
+def cli(monkeypatch, capsys):
+    """Run `main` with a fake runner; return (exit code, parsed JSON rows)."""
+
+    def run(evidence_path, beads=None, runner=None):
+        monkeypatch.setattr(gate, "run_process", runner or fake_runner(beads or {}))
+        code = gate.main(["--json", "--evidence", str(evidence_path)])
+        return code, json.loads(capsys.readouterr().out)
+
+    return run
+
+
+def test_main_exits_zero_and_lists_every_item(cli, evidence):
+    code, rows = cli(evidence)
+    # 3 tracker items + suites-configured + 8 commands + 11 approvals.
+    assert code == 0
+    assert len(rows) == 23
+    assert {r["status"] for r in rows} == {"pass"}
+
+
+def test_main_exits_one_when_the_evidence_file_is_absent(cli, tmp_path):
+    code, rows = cli(tmp_path / "absent.toml")
+    statuses = {r["id"]: r["status"] for r in rows}
+    assert code == 1
+    assert statuses["evidence:security-review"] == "fail"
+    assert statuses["golden"] == "pass"
+
+
+def test_main_exits_two_when_only_the_tracker_is_unavailable(cli, evidence):
+    def no_bd(argv):
+        if argv[0] == "bd":
+            raise FileNotFoundError(2, "missing", "bd")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    code, rows = cli(evidence, runner=no_bd)
+    assert code == 2
+    assert {r["status"] for r in rows} == {"pass", "incomplete"}
+
+
+def test_main_forwards_the_evidence_path(cli, tmp_path):
+    missing = "hook-contract"
+    path = write_evidence(tmp_path / "custom.toml", skip=missing)
+    code, rows = cli(path)
+    failing = [r["id"] for r in rows if r["status"] == "fail"]
+    # The default path does not exist, so only the one skipped item failing
+    # shows the custom file was the one read.
+    assert (code, failing) == (1, [f"evidence:{missing}"])
+
+
+def test_main_prints_a_table_by_default(monkeypatch, capsys, evidence):
+    monkeypatch.setattr(gate, "run_process", fake_runner({}))
+    assert gate.main(["--evidence", str(evidence)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "| Item | Status | Evidence |"
+    assert len(out) == 2 + 23

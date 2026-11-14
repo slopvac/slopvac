@@ -3,6 +3,8 @@
 # repository root and passes when it exits 0. A missing tool is "incomplete".
 # Suites that do not exist yet fail on purpose: `--no-tests=fail` makes cargo
 # nextest exit non-zero when a filter matches nothing, so an absent suite can't pass.
+# `run` must equal the trusted argv in `TRUSTED_COMMANDS` in the script, so a
+# change here needs the matching change there.
 
 [beads]
 release_label = "release:3.0.0"
@@ -63,6 +65,11 @@ run = [
 ]
 
 [[command]]
+id = "conformance-contract"
+title = "Contract tests (schemas, positions, lint report, compatibility matrix)"
+run = ["python3", "-m", "pytest", "-q", "tests/contract"]
+
+[[command]]
 id = "migration-e2e"
 title = "Migration end-to-end on fixture repositories"
 run = [
@@ -86,4 +93,18 @@ run = [
   "--no-tests=fail",
   "-E",
   "test(/^perf_budget::/)",
+]
+
+[[command]]
+id = "perf-installed-binary"
+title = "Installed binary budgets (startup, lint time, memory, size)"
+run = [
+  "python3",
+  "scripts/perf/binary_bench.py",
+  "run",
+  "--binary",
+  "target/release/slopvac",
+  "--budgets",
+  "scripts/perf/binary-budgets.toml",
+  "--enforce",
 ]

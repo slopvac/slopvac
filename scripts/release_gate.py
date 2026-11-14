@@ -42,27 +42,40 @@ class Result:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _NEXTEST = ("cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E")
+_PYTEST = ("python3", "-m", "pytest", "-q")
 
-# Suites the 3.0.0 release cannot ship without, each pinned to an argv prefix
-# plus one filter argument that must contain the marker. A config that omits a
-# suite, swaps the runner, drops a flag or adds an unlisted command is an error,
-# so editing release-gate.toml cannot turn the gate green.
-SUITE_PINS: dict[str, tuple[tuple[str, ...], str]] = {
-    "golden": (_NEXTEST, "golden::"),
-    "accuracy": (_NEXTEST, "accuracy::"),
-    "compat-preserve": (_NEXTEST, "compat::preserve"),
-    "conformance": (_NEXTEST, "conformance::"),
-    "migration-e2e": (_NEXTEST, "migration_e2e::"),
-    "perf-budgets": (_NEXTEST, "perf_budget::"),
+# Each gate item runs exactly one trusted command. A config entry passes only
+# when its `run` equals the argv here, so editing release-gate.toml cannot swap
+# in a no-op, a looser filter or another runner. Items whose check does not
+# exist yet point at its future path and fail until it does.
+TRUSTED_COMMANDS: dict[str, tuple[str, ...]] = {
+    "golden": (*_NEXTEST, "test(/^golden::/)"),
+    "accuracy": (*_NEXTEST, "test(/^accuracy::/)"),
+    "compat-preserve": (*_NEXTEST, "test(/^compat::preserve/)"),
+    "conformance": (*_NEXTEST, "test(/^conformance::/)"),
+    "conformance-contract": (*_PYTEST, "tests/contract"),
+    "migration-e2e": (*_NEXTEST, "test(/^migration_e2e::/)"),
+    "perf-budgets": (*_NEXTEST, "test(/^perf_budget::/)"),
+    "perf-installed-binary": (
+        "python3",
+        "scripts/perf/binary_bench.py",
+        "run",
+        "--binary",
+        "target/release/slopvac",
+        "--budgets",
+        "scripts/perf/binary-budgets.toml",
+        "--enforce",
+    ),
 }
-MANDATORY_SUITES = tuple(SUITE_PINS)
+MANDATORY_SUITES = tuple(TRUSTED_COMMANDS)
 
 # Installed artifacts must be signed and verified on each of these targets.
 TARGET_TRIPLES = (
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
     "x86_64-pc-windows-msvc",
 )
 
@@ -170,14 +183,12 @@ def check_soft_blocked(runner: Runner) -> Result:
 
 
 def _pin_problem(suite: str, argv: object) -> str | None:
-    """Why `argv` is not the pinned runner for `suite`, or None."""
-    prefix, marker = SUITE_PINS[suite]
+    """Why `argv` is not the trusted command for `suite`, or None."""
+    trusted = TRUSTED_COMMANDS[suite]
     if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
         return "run must be a list of strings"
-    if tuple(argv[: len(prefix)]) != prefix or len(argv) != len(prefix) + 1:
-        return f"run must be `{' '.join(prefix)} <filter>`"
-    if marker not in argv[-1]:
-        return f"filter must select `{marker}`"
+    if tuple(argv) != trusted:
+        return f"run must be exactly `{' '.join(trusted)}`"
     return None
 
 
@@ -189,6 +200,8 @@ def check_suites_configured(config: dict) -> Result:
     for entry in config.get("command", []):
         if not isinstance(entry, dict):
             problems.append("a command entry is not a table")
+        elif not isinstance(entry.get("id"), str):
+            problems.append(f"command id must be a string, got {entry.get('id')!r}")
         elif entry.get("id") in entries:
             problems.append(f"duplicate: {entry.get('id')}")
         else:
@@ -196,7 +209,7 @@ def check_suites_configured(config: dict) -> Result:
     missing = [suite for suite in MANDATORY_SUITES if suite not in entries]
     if missing:
         problems.append(f"missing: {', '.join(missing)}")
-    extra = [str(i) for i in entries if i not in SUITE_PINS]
+    extra = [str(i) for i in entries if i not in TRUSTED_COMMANDS]
     if extra:
         problems.append(f"not a mandatory suite: {', '.join(extra)}")
     for suite in MANDATORY_SUITES:
@@ -267,6 +280,9 @@ def check_evidence(path: Path) -> list[Result]:
     records: dict[object, dict] = {}
     for item in items:
         name = item.get("id")
+        if not isinstance(name, str):
+            problems.append(f"item id must be a string, got {name!r}")
+            continue
         unknown = sorted(set(item) - _EVIDENCE_KEYS)
         if unknown:
             problems.append(f"item {name!r}: unknown keys {', '.join(unknown)}")
@@ -329,7 +345,8 @@ def run_gate(
         check_command(runner, entry)
         for entry in config.get("command", [])
         if isinstance(entry, dict)
-        and entry.get("id") in SUITE_PINS
+        and isinstance(entry.get("id"), str)
+        and entry.get("id") in TRUSTED_COMMANDS
         and _pin_problem(entry["id"], entry.get("run")) is None
     ]
     return results + check_evidence(evidence)
@@ -359,7 +376,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     config = tomllib.loads(args.config.read_text(encoding="utf-8"))
-    results = run_gate(config, evidence=args.evidence)
+    results = run_gate(config, run_process, args.evidence)
     if args.json:
         print(json.dumps([asdict(r) for r in results], indent=2))
     else:
