@@ -1,0 +1,6 @@
+Improve redis.conf documentation on repl-diskless-load (#11213)
+
+Just noticed that there are some inaccurate, or at least confusing information about `repl-diskless-load` in `redis.conf`
+It shouldn't scare away users willing to spend the extra memory.
+
+`may mean that we have to flush the contents of the current database before the full rdb was received.`: this is likely related to the time when there was an option `always`, where content on replica was flushed before loading from master.

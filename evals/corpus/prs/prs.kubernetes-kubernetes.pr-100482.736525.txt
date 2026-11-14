@@ -1,0 +1,33 @@
+generic ephemeral volume checks
+
+#### What type of PR is this?
+
+/kind bug
+
+#### What this PR does / why we need it:
+
+When adding the ephemeral volume feature, the special case for
+PersistentVolumeClaim volume sources was overlooked in three places:
+- host path check in kubelet
+- node limit check in the scheduler
+- volume zone
+
+Of these, volume zone is deprecated an doesn't need to be changed to support ephemeral volumes.
+
+#### Special notes for your reviewer:
+
+@msau42 pointed out the gap in nodevolumelimits on chat. The other two places where found with:
+```
+git grep -i '\(name\|pvc\).*=.*ClaimName'
+```
+
+#### Does this PR introduce a user-facing change?
+```release-note
+Generic ephemeral volumes were not considered properly by the the node limits scheduler filter and the kubelet hostpath check.
+```
+
+#### Additional documentation e.g., KEPs (Kubernetes Enhancement Proposals), usage docs, etc.:
+
+```docs
+- [KEP]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1698-generic-ephemeral-volumes
+```

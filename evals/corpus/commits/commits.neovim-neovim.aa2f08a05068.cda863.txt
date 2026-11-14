@@ -1,0 +1,11 @@
+fix(highlight): link more treesitter groups by default (#20711)
+
+Problem: Captures used by bundled parsers are not highlighted by default
+Solution: Add links to default groups
+
+A link is added for a capture if
+* there is a default group of the same name (e.g., `@tag` -> `Tag`)
+* it's used in a bundled query and doesn't have a reasonable fallback
+  (e.g., `@text.literal`)
+
+Also add all linked groups to the treesitter docs.

@@ -1,0 +1,5 @@
+Only use a custom JSONDecoder if needed
+
+The default JSONDecoder adds no extra functionality to `json.loads`, but using a custom class in the function call you off of an optimized fast path in pypy (it adds some overhead in cpython, but I think it's minimal). This change sticks with the default loading behaviour unless the user has specifically opted in to customising it.
+
+Co-authored-by: David Lord <davidism@gmail.com>

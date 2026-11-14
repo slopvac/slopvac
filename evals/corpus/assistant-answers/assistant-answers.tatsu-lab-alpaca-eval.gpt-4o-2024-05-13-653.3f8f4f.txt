@@ -1,0 +1,35 @@
+Certainly! Here are some papers that are related to the topic of "RoMQA: A Benchmark for Robust, Multi-evidence, Multi-answer Question Answering":
+
+1. **"SQuAD: 100,000+ Questions for Machine Comprehension of Text"**
+   - Authors: Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, Percy Liang
+   - Description: This foundational paper introduces the Stanford Question Answering Dataset (SQuAD), which is a significant dataset for training and evaluating machine comprehension models. It focuses on the single-evidence, single-answer paradigm.
+
+2. **"MultiQA: An Empirical Investigation of Generalization and Transfer in Question Answering"**
+   - Authors: Roy Schwartz, Jesse Dodge, Noah A. Smith, Oren Etzioni
+   - Description: This paper investigates the generalization and transfer learning capabilities of QA models across multiple datasets, emphasizing robustness and the ability to handle diverse question types and evidence sources.
+
+3. **"HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering"**
+   - Authors: Zhiyun Yang, Peng Qi, Samuel R. Bowman
+   - Description: HotpotQA introduces a dataset for multi-hop question answering, where a model must combine information from multiple paragraphs to answer questions, relevant to the multi-evidence aspect of RoMQA.
+
+4. **"DROP: A Reading Comprehension Benchmark Requiring Discrete Reasoning Over Paragraphs"**
+   - Authors: Danqi Chen, Adam Fisch, Jason Weston, Antoine Bordes
+   - Description: The DROP dataset challenges models to perform discrete reasoning over text and understand compositional questions, which is valuable for multi-evidence QA tasks.
+
+5. **"Natural Questions: A Benchmark for Question Answering Research"**
+   - Authors: Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina N. Toutanova, Llion Jones, Ming-Wei Chang, Andrew Dai, Jakob Uszkoreit, Quoc Le, Slav Petrov
+   - Description: This paper describes the Natural Questions dataset, which provides real user questions and corresponding answers from Wikipedia, focusing on realistic and complex question answering.
+
+6. **"Complex Question Answering with Multi-hop Rereading Comprehension"**
+   - Authors: Qiu Ran, Wenxuan Zhang, Lihan Wang, Ruiming Tang, Xiuqiang He, Zheng-Yu Niu, Hua Wu, Haifeng Wang
+   - Description: The research explores a multi-hop reading comprehension model that revisits the text to gather evidence from multiple places, aligning with the multi-evidence requirement in RoMQA.
+
+7. **"A Hybrid Neural Network Model for Commonsense Reasoning"**
+   - Authors: Yichen Jiang, Mohit Bansal
+   - Description: This paper discusses a hybrid model for commonsense reasoning that integrates multiple sources of evidence, which can be extended to multi-answer question answering scenarios.
+
+8. **"T5: Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer"**
+   - Authors: Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, Peter J. Liu
+   - Description: T5 is a versatile transformer model trained on a variety of tasks, including QA, making it relevant for understanding how models can be adapted for robust, multi-evidence, and multi-answer question answering.
+
+These papers cover various aspects of question answering, including dataset construction, multi-hop reasoning, robustness, and model evaluation, all of which are pertinent to the themes explored in the RoMQA paper.

@@ -7,6 +7,11 @@
 # often enough (`caf391e` -> `calf`) that the file is noise-only.
 extend-exclude = [
   "CHANGELOG.md",
+  # Third-party text kept verbatim as eval data, plus manifests of hashes.
+  "evals/corpus/",
+  "evals/manifest.json",
+  "evals/defect-bank.json",
+  "evals/candidates-diagrams.json",
   "packages/slopvac-lint/tests/fixtures/text_type/runbook-labels-v1.jsonl",
   # Generated Unicode tables (tools/generate_unicode.py); code-point names are not words.
   "crates/slopvac-text/src/unicode_data.rs",

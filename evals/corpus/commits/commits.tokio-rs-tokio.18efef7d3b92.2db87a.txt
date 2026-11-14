@@ -1,0 +1,19 @@
+signal: add track_caller to public APIs (#4806)
+
+Functions that may panic can be annotated with #[track_caller] so that
+in the event of a panic, the function where the user called the
+panicking function is shown instead of the file and line within Tokio
+source.
+
+This change adds #[track_caller] to the signal() function which is the
+only function in the signal public API which can panic. Documentation
+was added to this function to indicate that it may panic.
+
+Not all panic cases can have #[track_caller] applied fully as the
+callstack passes through a closure which isn't yet supported by the
+annotation (e.g. signal() called from outside a tokio runtime).
+
+Tests are included to cover the case where signal() is called from a
+runtime without IO enabled.
+
+Refs: #4413

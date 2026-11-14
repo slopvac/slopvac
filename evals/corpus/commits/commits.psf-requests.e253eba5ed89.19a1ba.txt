@@ -1,0 +1,11 @@
+Stop abusing pytest-httpbin to test commonName support
+
+pytest-httpbin<1.0 ships with a server certificate with a commonName but
+no subjectAltName. urllib3 2.0 will stop supporting those in the future,
+so we want to upgrade pytest-httpbin.
+
+Unfortunately, `test_https_warnings` was relying on this broken
+certificate. With this change, we use `trustme` to create a broken
+certificate specifically for this test, so that we can upgrade
+pytest-httpbin and make sure that other tests relying on httpbin TLS
+support will continue to work with urllib3 2.0.

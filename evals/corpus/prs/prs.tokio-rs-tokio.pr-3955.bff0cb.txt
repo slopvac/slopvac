@@ -1,0 +1,11 @@
+Rework binding of new tasks
+
+This PR reworks how new tasks are bound to the runtime they are spawned on. The gist of the PR is that the task is now bound to the runtime immediately as part of spawning the task, instead of being bound lazily on first poll. The PR also introduces a conceptual change for the meaning of the `Notified` type — that type is now "just" a notification, and someone who holds a `Notified` is never responsible for cleaning up the task.
+
+To implement this, I make the following changes:
+
+ 1. Remove the `bind` method from the `Schedule` trait. 
+ 2. Change the various `schedule` methods to just consume and drop the `Notified` when the runtime is shutting down, instead of reporting an error so the task can be shut down immediately when it is newly spawned.
+ 3. Introduce an `UnboundTask` type, which is the type used by a task until it is bound to a scheduler.
+ 4. Introduce a `bind` method on `OwnedTasks` that takes an `UnboundTask` and returns a `Notified` for that task.
+ 5. Make an `OwnedTasks` closeable to prevent binding new tasks to it when the runtime is shutting down.

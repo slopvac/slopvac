@@ -1,0 +1,12 @@
+explicitly declare lazy_static dependency
+
+`benches/bench.rs` uses lazy_static but Cargo.toml does not declare a
+dependency on it. This causes rustc to use its own internal private
+copy instead. Sometimes this causes unintuitive errors like this Debian
+bug: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=942243
+
+The underlying issue is https://github.com/rust-lang/rust#27812 but it
+can be avoided by explicitly declaring the dependency, which you are
+supposed to do anyways.
+
+Closes #1435

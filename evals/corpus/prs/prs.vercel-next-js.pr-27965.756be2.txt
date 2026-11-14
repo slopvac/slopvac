@@ -1,0 +1,15 @@
+[Docs] Add testing docs
+
+Add a new doc showing how to configure Jest and Cypress with Next.js
+
+## Feature
+
+- [ ] Implements an existing feature request or RFC. Make sure the feature request has been accepted for implementation before opening a PR.
+- [ ] Related issues linked using `fixes #number`
+- [ ] Integration tests added
+- [x] Documentation added
+- [ ] Telemetry added. In case of a feature if it's used or not.
+- [ ] Errors have helpful link attached, see `contributing.md`
+
+## Documentation / Examples
+- [x] Make sure the linting passes

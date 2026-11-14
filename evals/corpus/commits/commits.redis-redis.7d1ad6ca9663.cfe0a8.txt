@@ -1,0 +1,17 @@
+Fix RM_Yield bug processing future commands of the current client. (#10573)
+
+RM_Yield was missing a call to protectClient to prevent redis from
+processing future commands of the yielding client.
+
+Adding tests that fail without this fix.
+
+This would be complicated to solve since nested calls to RM_Call used to
+replace the current_client variable with the module temp client.
+
+It looks like it's no longer necessary to do that, since it was added
+back in #9890 to solve two issues, both already gone:
+1. call to CONFIG SET maxmemory could trigger a module hook calling
+   RM_Call. although this specific issue is gone, arguably other hooks
+   like keyspace notification, can do the same.
+2. an assertion in lookupKey that checks the current command of the
+   current client, introduced in #9572 and removed in #10248

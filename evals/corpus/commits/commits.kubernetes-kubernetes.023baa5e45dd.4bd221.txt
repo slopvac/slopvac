@@ -1,0 +1,16 @@
+e2e framework: truncate too long failure messages when writing JUnit
+
+Our tooling cannot handle very long failure messages well:
+- when unfolding a test in the spyglass UI, it fills the entire screen
+- failure correlation for http://go.k8s.io/triage has resource constraints
+
+We cannot enforce that all tests only produce short failure messages and even
+if we could, depending on the test failure, including more information may be
+useful to understand it.
+
+To achieve both goals (summary for correlation and overview, all details
+available when digging deeper), too longer failure messages now get truncated,
+with the full message guaranteed to be captured in the test output.
+
+"Too long" is arbitrarily chosen to be similar to the gomega.MaxLength because
+that has been a limit for failure message size in the past.

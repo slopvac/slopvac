@@ -1,0 +1,8 @@
+args: refactor to permit adding other engines
+
+This is in preparation for adding a new --engine flag which is intended
+to eventually supplant --auto-hybrid-regex.
+
+While there are no immediate plans to add more regex engines to ripgrep,
+this is intended to make it easier to maintain a patch to ripgrep with
+an additional regex engine. See #1488 for more details.

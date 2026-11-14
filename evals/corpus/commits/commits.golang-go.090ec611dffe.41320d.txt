@@ -1,0 +1,10 @@
+cmd/asm: delete unused func newAddr
+
+Change-Id: I62f38aa07e9c6e2f0947d23adc7a1b453277c790
+Reviewed-on: https://go-review.googlesource.com/c/go/+/435942
+TryBot-Result: Gopher Robot <gobot@golang.org>
+Run-TryBot: Cherry Mui <cherryyz@google.com>
+Reviewed-by: Cherry Mui <cherryyz@google.com>
+Run-TryBot: Ian Lance Taylor <iant@google.com>
+Reviewed-by: Dmitri Shuralyov <dmitshur@google.com>
+Auto-Submit: Ian Lance Taylor <iant@google.com>

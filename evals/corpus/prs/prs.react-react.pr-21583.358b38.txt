@@ -1,0 +1,37 @@
+Devtools: add feature to trigger an error boundary
+
+<!--
+  Thanks for submitting a pull request!
+  We appreciate you spending the time to work on these changes. Please provide enough information so that others can review your pull request. The three fields below are mandatory.
+
+  Before submitting a pull request, please make sure the following is done:
+
+- [x] Fork [the repository](https://github.com/facebook/react) and create your branch from `master`.
+- [x] Run `yarn` in the repository root.
+- [x] If you've fixed a bug or added code that should be tested, add tests!
+- [x] Ensure the test suite passes (`yarn test`). Tip: `yarn test --watch TestName` is helpful in development.
+- [ ] Run `yarn test --prod` to test in the production environment. It supports the same options as `yarn test`.
+- [x] `yarn prettier`
+- [x] `yarn linc`
+- [x] `yarn flow dom`
+
+  Learn more about contributing: https://reactjs.org/docs/how-to-contribute.html
+-->
+
+## Summary
+
+#16469:  force components into an error state, in order to test error boundaries (similar to how the suspense toggle works).
+
+## Test Plan
+
+Test that error state can be toggled by the new "toggle error" button
+
+
+https://user-images.githubusercontent.com/783410/120503013-81fa4b00-c3f5-11eb-974d-abe8d3f2d20f.mov
+
+Test that the "toggle error" button only shows up for components that are within an error boundary
+
+
+https://user-images.githubusercontent.com/783410/120503151-9fc7b000-c3f5-11eb-8fac-bb1e8e82c136.mov
+
+(note: an error boundary could be within another error boundary so we should allow to force an error state on it)

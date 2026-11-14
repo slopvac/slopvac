@@ -1,0 +1,16 @@
+Fixed #33700 -- Skipped extra resolution for successful requests not ending with /.
+
+By moving a should_redirect_with_slash call out of an if block, commit
+9390da7fb6e251eaa9a785692f987296cb14523f negated the performance fix
+of commit 434d309ef6dbecbfd2b322d3a1da78aa5cb05fa8 (#24720).
+Meanwhile, the logging issue #26293 that it targeted was subsequently
+fixed more fully by commit 40b69607c751c4afa453edfd41d2ed155e58187e
+(#26504), so it is no longer needed.  This effectively reverts it.
+
+This speeds up successful requests not ending with / when APPEND_SLASH
+is enabled (the default, and still useful in projects with a mix of
+URLs with and without trailing /).  The amount of speedup varies from
+about 5% in a typical project to nearly 50% on a benchmark with many
+routes.
+
+Signed-off-by: Anders Kaseorg <andersk@mit.edu>

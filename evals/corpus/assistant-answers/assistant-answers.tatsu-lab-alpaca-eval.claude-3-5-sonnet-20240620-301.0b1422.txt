@@ -1,0 +1,14 @@
+Here's a table with the planets of the solar system and their dimensions:
+
+| Planet    | Equatorial Diameter (km) | Mean Radius (km) | Surface Area (km²) | Volume (km³)      |
+|-----------|--------------------------|-------------------|---------------------|-------------------|
+| Mercury   | 4,879                    | 2,439.7           | 7.48 × 10⁷          | 6.08 × 10¹⁰       |
+| Venus     | 12,104                   | 6,051.8           | 4.60 × 10⁸          | 9.28 × 10¹¹       |
+| Earth     | 12,742                   | 6,371.0           | 5.10 × 10⁸          | 1.08 × 10¹²       |
+| Mars      | 6,779                    | 3,389.5           | 1.45 × 10⁸          | 1.63 × 10¹¹       |
+| Jupiter   | 139,820                  | 69,911            | 6.14 × 10¹⁰         | 1.43 × 10¹⁵       |
+| Saturn    | 116,460                  | 58,232            | 4.27 × 10¹⁰         | 8.27 × 10¹⁴       |
+| Uranus    | 50,724                   | 25,362            | 8.08 × 10⁹          | 6.83 × 10¹³       |
+| Neptune   | 49,244                   | 24,622            | 7.62 × 10⁹          | 6.25 × 10¹³       |
+
+Note: These values are approximate and may vary slightly depending on the source. The table includes the eight recognized planets in our solar system, as Pluto is now classified as a dwarf planet.

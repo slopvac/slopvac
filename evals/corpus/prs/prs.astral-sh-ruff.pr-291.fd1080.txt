@@ -1,0 +1,64 @@
+Implement `flake8-super` check
+
+Here's my attempt at implementing this rule.
+
+Some feedback.
+
+Right now implementing autofix seems very hard. Why?
+Because `Location` does not have `.end()` method.
+
+We need to fix:
+
+```python
+super(
+   SuperClass,
+   self
+).method()
+```
+
+How can we do that?
+
+1. Get the second argument, assume it is `self`, take `4` as length: this will backfire in cases when non-`self` name is used
+2. Convert the last argument to string to get its length? No idea how can we do that. Python has `ast.unparse` or `astor`
+3. Manually go through different types of nodes and find their length: seems to complex
+
+It would also be rather hard to find these cases:
+
+```python
+super(
+   SuperClass,
+   self)
+
+# vs
+
+super(
+   SuperClass,
+   self
+)
+```
+
+This is my code for the fix that I've decided not to include into this PR.
+
+```rust
+           if matches!(autofix, fixer::Mode::Generate | fixer::Mode::Apply) {
+                // It looks like this:
+                // super(some, args).some_attr
+                // ^               ^
+                // start           end
+                // It can also be multiline.
+                let last_arg = args.last().unwrap();
+                check.amend(Fix {
+                    content: "super()".to_string(),
+                    start: Location::new(expr.location.row(), expr.location.column()),
+                    end: Location::new(  // TODO: find end location
+                        last_arg.location.row(),
+                        last_arg.location.column() + 2,
+                    ),
+                    applied: false,
+                });
+            }
+```
+
+I propose to use libcst instead for fixes. It just works.
+
+Refs #273

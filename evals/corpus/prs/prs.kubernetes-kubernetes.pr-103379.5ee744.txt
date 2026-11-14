@@ -1,0 +1,17 @@
+A collection of Service REST cleanups
+
+This is the first part of https://github.com/kubernetes/kubernetes/pull/96684, which should all be viable for commit without the rest of the delayering.
+
+/kind cleanup
+
+#### What this PR does / why we need it:
+
+Simplifies and corrects multiple issues around Service REST, making the effort to de-layer that code easier.  Some of the tests were simply wrong, but were not being caught because of how they are written.
+
+#### Special notes for your reviewer:
+
+I have taken great pains to make each commit about as small as possible.  Please review them commit-by-commit for max comprehension.  You probably want to disable whitespace diffs, too.
+
+```release-note
+NONE
+```

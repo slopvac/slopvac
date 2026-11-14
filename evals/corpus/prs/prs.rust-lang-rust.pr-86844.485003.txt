@@ -1,0 +1,9 @@
+Support #[global_allocator] without the allocator shim
+
+This makes it possible to use liballoc/libstd in combination with `--emit obj` if you use `#[global_allocator]`. This is what rust-for-linux uses right now and systemd may use in the future. Currently they have to depend on the exact implementation of the allocator shim to create one themself as `--emit obj` doesn't create an allocator shim.
+
+Note that currently the allocator shim also defines the oom error handler, which is normally required too. Once `#![feature(default_alloc_error_handler)]` becomes the only option, this can be avoided. In addition when using only fallible allocator methods and either `--cfg no_global_oom_handling` for liballoc (like rust-for-linux) or `--gc-sections` no references to the oom error handler will exist.
+
+To avoid this feature being insta-stable, you will have to define `__rust_no_alloc_shim_is_unstable` to avoid linker errors.
+
+(Labeling this with both T-compiler and T-lang as it originally involved both an implementation detail and had an insta-stable user facing change. As noted above, the `__rust_no_alloc_shim_is_unstable` symbol requirement should prevent unintended dependence on this unstable feature.)
