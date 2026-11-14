@@ -24,6 +24,8 @@ code:
   - '**/conftest.py'
   - 'schemas/**'
   - 'docs/contract/**'
+  - 'scripts/contract/**'
+  - 'tests/contract/**'
 
 package:
   - '.github/workflows/**'
