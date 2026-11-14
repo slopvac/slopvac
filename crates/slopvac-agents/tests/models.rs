@@ -143,7 +143,9 @@ fn checked_in_table_matches_the_generated_one() {
     if std::env::var_os("SLOPVAC_BLESS").is_some() {
         std::fs::write(&path, &generated).unwrap();
     }
-    let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
+    let on_disk = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
     assert_eq!(
         on_disk, generated,
         "run `SLOPVAC_BLESS=1 cargo test -p slopvac-agents --test models`"
