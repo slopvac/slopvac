@@ -100,3 +100,40 @@ A document lands in `holdout` or `tuning` by a hash of its root parent, about 20
 ### A/B
 
 `ab` resamples documents once and scores both arms on each draw. The interval is for B minus A. It lists a rule as a regression when the interval for recall falls below zero, or the interval for control false positives or human findings rises above zero.
+
+## Labels
+
+Precision needs a trustworthy answer to "was this finding right?". The labelling workflow produces those answers without trusting one model.
+
+```sh
+python -m evals label sample results.json                 # pick findings, balanced across documents
+python -m evals label judge --family anthropic --model <name> --provider-cmd '<cmd>'
+python -m evals label judge --family openai --model <name> --provider-cmd '<cmd>'
+python -m evals label merge                               # labels, disputes, stats
+python -m evals label resolve <item> tp --reviewer <you> --reason '<why>'
+python -m evals score results.json --labels evals/labels/labels.jsonl
+```
+
+Files live in `evals/labels/`:
+
+| File | Content |
+| --- | --- |
+| `items.jsonl` | Sampled findings, frozen once chosen. |
+| `judgments/<family>.jsonl` | One verdict per item and option order. |
+| `human.jsonl` | Human verdicts with reviewer, reason and date. Append only; the last row wins. |
+| `labels.jsonl` | The current label per item and where it came from. |
+| `disputes.jsonl` | Items that need a human. |
+| `spot-check.json` | Automatic labels that a human should re-check (10%, seeded). |
+| `revisions.jsonl` | Every label change: previous label, new label, source, reviewer and reason. |
+| `stats.json` | Agreement (Cohen's kappa), unstable judgments, positives per rule. |
+
+How a label forms:
+
+1. Sampling skips seeded documents, whose inserted sentences are positive by construction. It takes up to 40 findings per rule, one document at a time, so no document dominates.
+2. Each judge sees every item twice, with the "rule is right" and "rule is wrong" options in swapped positions. A family whose two answers differ, or are both "unsure", is `unstable`.
+3. The item gets an automatic label only when both families are stable and agree. Everything else lands in `disputes.jsonl`.
+4. A human verdict always wins. Spot-check a sample of automatic labels, and resolve every dispute.
+
+A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
+
+A rule needs 20 adjudicated true positives before the precision gate trusts it. `stats.json` lists the count per rule.

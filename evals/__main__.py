@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import runner, scoring
+from . import labelling, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -88,6 +88,116 @@ def cmd_ab(args: argparse.Namespace) -> int:
     return 1 if report["regressions"] and args.fail_on_regression else 0
 
 
+DEFAULT_RULES_DIR = lib.EVALS_DIR.parent / "packages/slopvac-lint/src/slopvac/rules"
+
+
+def _paths(args: argparse.Namespace) -> dict[str, Path]:
+    d = Path(args.dir)
+    return {
+        "items": d / "items.jsonl",
+        "judgments": d / "judgments",
+        "human": d / "human.jsonl",
+        "labels": d / "labels.jsonl",
+        "revisions": d / "revisions.jsonl",
+        "disputes": d / "disputes.jsonl",
+        "spot": d / "spot-check.json",
+        "stats": d / "stats.json",
+    }
+
+
+def cmd_label_sample(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    existing = labelling.read_jsonl(p["items"])
+    new = labelling.sample_items(
+        lib.load_manifest(),
+        runner.load_results(Path(args.results)),
+        per_rule=args.per_rule,
+        existing=[i["id"] for i in existing],
+    )
+    labelling.write_jsonl(p["items"], [*existing, *new])
+    print(f"{len(new)} new items, {len(existing) + len(new)} total")
+    return 0
+
+
+def cmd_label_judge(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    out = p["judgments"] / f"{args.family}.jsonl"
+    done = {(r["item"], r["order"]) for r in labelling.read_jsonl(out)}
+    try:
+        rows = labelling.judge_items(
+            labelling.read_jsonl(p["items"]),
+            labelling.command_asker(args.provider_cmd),
+            family=args.family,
+            model=args.model,
+            manifest=lib.load_manifest(),
+            cache=_cache(args),
+            notes=labelling.rule_notes(Path(args.rules_dir)),
+            done=done,
+        )
+    except runner.EngineError as exc:
+        print(f"evals label judge: {exc}", file=sys.stderr)
+        return 2
+    labelling.append_jsonl(out, rows)
+    print(f"{len(rows)} judgments written to {out}")
+    return 0
+
+
+def cmd_label_merge(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    judgments = [
+        r
+        for f in sorted(p["judgments"].glob("*.jsonl"))
+        for r in labelling.read_jsonl(f)
+    ]
+    previous = {r["item"]: r["label"] for r in labelling.read_jsonl(p["labels"])}
+    merged = labelling.merge(
+        labelling.read_jsonl(p["items"]), judgments, labelling.read_jsonl(p["human"])
+    )
+    labelling.write_jsonl(p["labels"], merged["labels"])
+    labelling.write_jsonl(p["disputes"], merged["disputes"])
+    labelling.append_jsonl(
+        p["revisions"],
+        labelling.revisions_for_merge(
+            previous,
+            merged["labels"],
+            args.date or labelling.today(),
+            labelling.read_jsonl(p["human"]),
+        ),
+    )
+    p["spot"].write_text(
+        json.dumps(merged["spot_check"], indent=1) + "\n", encoding="utf-8"
+    )
+    p["stats"].write_text(
+        json.dumps(merged["stats"], indent=1, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {k: v for k, v in merged["stats"].items() if k != "positives_by_rule"}
+        )
+    )
+    return 0
+
+
+def cmd_label_resolve(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    if args.item not in {i["id"] for i in labelling.read_jsonl(p["items"])}:
+        print(f"evals label resolve: unknown item {args.item}", file=sys.stderr)
+        return 2
+    try:
+        row = labelling.record_human(
+            item=args.item,
+            label=args.verdict,
+            reviewer=args.reviewer,
+            reason=args.reason,
+            date=args.date or labelling.today(),
+        )
+    except ValueError as exc:
+        print(f"evals label resolve: {exc}", file=sys.stderr)
+        return 2
+    labelling.append_jsonl(p["human"], [row])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m evals", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -112,6 +222,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--resamples", type=int, default=1000)
     s.add_argument("--out")
     s.set_defaults(func=cmd_score)
+
+    lab = sub.add_parser("label", help="build and maintain adjudicated labels")
+    lab.add_argument(
+        "--dir", default=str(labelling.LABELS_DIR), help="labels directory"
+    )
+    lsub = lab.add_subparsers(dest="label_command", required=True)
+
+    ls = lsub.add_parser("sample", help="pick findings to label")
+    ls.add_argument("results")
+    ls.add_argument("--per-rule", type=int, default=40)
+    ls.set_defaults(func=cmd_label_sample)
+
+    lj = lsub.add_parser("judge", help="ask one model family about every pending item")
+    lj.add_argument("--family", required=True)
+    lj.add_argument("--model", required=True)
+    lj.add_argument("--provider-cmd", required=True, help="reads a prompt on stdin")
+    lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
+    lj.add_argument("--cache")
+    lj.set_defaults(func=cmd_label_judge)
+
+    lm = lsub.add_parser("merge", help="combine judgments into labels and disputes")
+    lm.add_argument("--date", default=None)
+    lm.set_defaults(func=cmd_label_merge)
+
+    lr = lsub.add_parser("resolve", help="record a human verdict")
+    lr.add_argument("item")
+    lr.add_argument("verdict", choices=("tp", "fp"))
+    lr.add_argument("--reviewer", required=True)
+    lr.add_argument("--reason", required=True)
+    lr.add_argument("--date", default=None)
+    lr.set_defaults(func=cmd_label_resolve)
 
     a = sub.add_parser("ab", help="paired comparison of two stored results")
     a.add_argument("a")
