@@ -234,11 +234,15 @@ pub fn check_reviewer_model(author: Option<&str>, reviewer: &str) -> Result<bool
 /// One piece of text sent to a provider.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PayloadItem {
-    /// 1-based line in the revision.
+    /// What the text is: `changed`, `added`, `dropped`, `original_document` or
+    /// `revised_document`.
+    pub role: &'static str,
+    /// Line of `text` in its document: the revision, except for `dropped` and
+    /// `original_document`, which sit in the original.
     pub line: usize,
-    /// Revised text.
+    /// The text.
     pub text: String,
-    /// The text before the change, when it is part of the payload.
+    /// For `changed`, the sentence before the change.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original: Option<String>,
 }
@@ -246,49 +250,96 @@ pub struct PayloadItem {
 /// The exact text a provider would receive.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Payload {
-    /// `claims` (mechanical), `passages` (update) or `document` (rewrite).
+    /// `none` (mechanical), `passages` (update) or `document` (rewrite).
     pub kind: &'static str,
     /// The items.
     pub items: Vec<PayloadItem>,
 }
 
-/// Build the payload for a review type. `mechanical` sends changed claims only,
-/// `update` sends each changed passage with its original, `rewrite` sends the document.
+/// Build the payload for a review type.
+///
+/// - `mechanical` sends nothing: lint and the claims diff are the whole review.
+/// - `update` sends every changed passage with its original, every added sentence,
+///   and every dropped original sentence, so a deletion is reviewed too.
+/// - `rewrite` sends the original document as the baseline and the revised document.
 #[must_use]
-pub fn payload(kind: ReviewType, report: &Report, revised: &str) -> Payload {
+pub fn payload(kind: ReviewType, report: &Report, original: &str, revised: &str) -> Payload {
     match kind {
         ReviewType::Mechanical => Payload {
-            kind: "claims",
-            items: report
-                .claims
-                .iter()
-                .map(|c| PayloadItem {
-                    line: c.line,
-                    text: c.text.clone(),
-                    original: None,
-                })
-                .collect(),
+            kind: "none",
+            items: Vec::new(),
         },
-        ReviewType::Update => Payload {
-            kind: "passages",
-            items: report
+        ReviewType::Update => {
+            let mut items: Vec<PayloadItem> = report
                 .claims
                 .iter()
                 .map(|c| PayloadItem {
+                    role: if c.change == "added" {
+                        "added"
+                    } else {
+                        "changed"
+                    },
                     line: c.line,
                     text: c.text.clone(),
                     original: c.original.clone(),
                 })
-                .collect(),
-        },
+                .collect();
+            items.extend(report.dropped.iter().map(|d| PayloadItem {
+                role: "dropped",
+                line: d.line,
+                text: d.text.clone(),
+                original: None,
+            }));
+            Payload {
+                kind: "passages",
+                items,
+            }
+        }
         ReviewType::Rewrite => Payload {
             kind: "document",
-            items: vec![PayloadItem {
-                line: 1,
-                text: revised.to_owned(),
-                original: None,
-            }],
+            items: vec![
+                PayloadItem {
+                    role: "original_document",
+                    line: 1,
+                    text: original.to_owned(),
+                    original: None,
+                },
+                PayloadItem {
+                    role: "revised_document",
+                    line: 1,
+                    text: revised.to_owned(),
+                    original: None,
+                },
+            ],
         },
+    }
+}
+
+/// Refuse an explicit type that is lighter than the change needs. `auto` is the
+/// least type that covers the change, so a lighter type under-reviews it.
+pub fn check_eligible(
+    chosen: ReviewType,
+    required: ReviewType,
+    reason: &str,
+) -> Result<(), AgentsError> {
+    if rank(chosen) >= rank(required) {
+        return Ok(());
+    }
+    Err(AgentsError::Coded {
+        code: "review-type-ineligible",
+        message: format!(
+            "--type {} is too light for this change: it needs at least {} because {reason}",
+            chosen.name(),
+            required.name()
+        ),
+    })
+}
+
+fn rank(kind: ReviewType) -> u8 {
+    match kind {
+        ReviewType::Mechanical => 0,
+        ReviewType::Update => 1,
+        ReviewType::Rewrite => 2,
     }
 }
 
@@ -328,6 +379,8 @@ pub struct Plan {
     pub scope: Scope,
     /// The exact provider payload.
     pub payload: Payload,
+    /// False for `mechanical`, which never calls a provider.
+    pub uses_provider: bool,
     /// True when the reviewer model was compared with the author's.
     pub reviewer_model_checked: bool,
     /// The provider's report; absent on `--dry-run`.
@@ -417,7 +470,10 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         .get_one::<String>("type")
         .and_then(|t| ReviewType::parse(t))
     {
-        Some(t) => (t, "chosen with --type".to_owned()),
+        Some(t) => {
+            check_eligible(t, auto_type, &auto_reason)?;
+            (t, "chosen with --type".to_owned())
+        }
         None => (auto_type, auto_reason),
     };
     let scope = Scope::for_report(&report);
@@ -436,11 +492,12 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         reason,
         stats,
         scope,
-        payload: payload(review_type, &report, &revised),
+        payload: payload(review_type, &report, &original, &revised),
+        uses_provider: review_type != ReviewType::Mechanical,
         reviewer_model_checked: checked,
         report: None,
     };
-    if !matches.get_flag("dry-run") {
+    if plan.uses_provider && !matches.get_flag("dry-run") {
         plan.report = Some(call_provider(env, &plan)?);
     }
     let mut json = serde_json::to_string_pretty(&plan)

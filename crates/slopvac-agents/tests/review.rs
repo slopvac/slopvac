@@ -90,19 +90,63 @@ fn reviewer_model_must_differ_from_the_author_model() {
 #[test]
 fn payload_is_only_what_the_review_type_needs() {
     let report = compare(ORIGINAL, REVISED);
-    let mechanical = payload(ReviewType::Mechanical, &report, REVISED);
-    assert_eq!(mechanical.kind, "claims");
-    assert_eq!(mechanical.items.len(), 3);
-    assert!(mechanical.items.iter().all(|i| i.original.is_none()));
-    let update = payload(ReviewType::Update, &report, REVISED);
+    let mechanical = payload(ReviewType::Mechanical, &report, ORIGINAL, REVISED);
+    assert_eq!(mechanical.kind, "none");
+    assert_eq!(mechanical.items.len(), 0);
+
+    let update = payload(ReviewType::Update, &report, ORIGINAL, REVISED);
     assert_eq!(update.kind, "passages");
+    let roles = |role: &str| update.items.iter().filter(|i| i.role == role).count();
     assert_eq!(
-        update.items.iter().filter(|i| i.original.is_some()).count(),
-        2
+        (roles("changed"), roles("added"), roles("dropped")),
+        (2, 1, 3)
     );
-    let rewrite = payload(ReviewType::Rewrite, &report, REVISED);
-    assert_eq!((rewrite.kind, rewrite.items.len()), ("document", 1));
-    assert_eq!(rewrite.items[0].text, REVISED);
+    assert!(
+        update
+            .items
+            .iter()
+            .filter(|i| i.role == "changed")
+            .all(|i| i.original.is_some())
+    );
+    let dropped: Vec<&str> = update
+        .items
+        .iter()
+        .filter(|i| i.role == "dropped")
+        .map(|i| i.text.as_str())
+        .collect();
+    assert!(dropped.contains(&"Entries expire after 24 hours."));
+
+    let rewrite = payload(ReviewType::Rewrite, &report, ORIGINAL, REVISED);
+    assert_eq!(rewrite.kind, "document");
+    let texts: Vec<(&str, &str)> = rewrite
+        .items
+        .iter()
+        .map(|i| (i.role, i.text.as_str()))
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            ("original_document", ORIGINAL),
+            ("revised_document", REVISED)
+        ]
+    );
+}
+
+#[test]
+fn a_deletion_only_update_still_sends_the_deleted_sentence() {
+    let original = "Keep this one. Remove the 90 day limit. Keep that one.";
+    let report = compare(original, "Keep this one. Keep that one.");
+    let update = payload(
+        ReviewType::Update,
+        &report,
+        original,
+        "Keep this one. Keep that one.",
+    );
+    assert_eq!(update.items.len(), 1);
+    assert_eq!(
+        (update.items[0].role, update.items[0].text.as_str()),
+        ("dropped", "Remove the 90 day limit.")
+    );
 }
 
 struct Mock {
@@ -304,4 +348,192 @@ fn prime_review_names_only_real_commands_and_flags() {
         .filter(|p| p.starts_with("review:"))
         .collect();
     assert_eq!(problems, Vec::<String>::new());
+}
+struct Recorder {
+    seen: std::cell::RefCell<Vec<Payload>>,
+}
+
+impl ModelProvider for Recorder {
+    fn name(&self) -> &'static str {
+        "recorder"
+    }
+    fn model(&self) -> &str {
+        "gpt-5"
+    }
+    fn review(&self, payload: &Payload) -> Result<String, AgentsError> {
+        self.seen.borrow_mut().push(payload.clone());
+        Ok("ok".into())
+    }
+}
+
+const WORDS: [&str; 10] = [
+    "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+];
+
+/// Ten sentences with no literals, so a reworded one is a mechanical change.
+fn prose(verb: &str) -> String {
+    WORDS
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            let v = if i == 2 { verb } else { "handles" };
+            format!("The {w} module {v} routine requests.")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn pair(dir: &Path, old: &str, new: &str, extra: &[&str]) -> clap::ArgMatches {
+    fs::write(dir.join("old.md"), old).unwrap();
+    fs::write(dir.join("new.md"), new).unwrap();
+    let mut argv = vec![
+        "review".to_owned(),
+        dir.join("new.md").display().to_string(),
+        "--original".into(),
+        dir.join("old.md").display().to_string(),
+    ];
+    argv.extend(extra.iter().map(|s| (*s).to_owned()));
+    command().try_get_matches_from(argv).unwrap()
+}
+
+#[test]
+fn a_mechanical_review_never_calls_a_provider_online_or_offline() {
+    let dir = tempfile::tempdir().unwrap();
+    let rec = Recorder {
+        seen: std::cell::RefCell::new(Vec::new()),
+    };
+    for offline in [false, true] {
+        let env = ReviewEnv {
+            offline,
+            provider: Some(&rec),
+            ..ReviewEnv::default()
+        };
+        let out = run(
+            &pair(dir.path(), &prose("handles"), &prose("serves"), &[]),
+            &env,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["review_type"], "mechanical", "offline={offline}");
+        assert_eq!(json["uses_provider"], false);
+        assert_eq!(json["payload"]["kind"], "none");
+        assert!(json.get("report").is_none());
+    }
+    let none = run(
+        &pair(dir.path(), &prose("handles"), &prose("serves"), &[]),
+        &ReviewEnv::default(),
+    );
+    assert!(
+        none.is_ok(),
+        "no provider is needed for a mechanical review"
+    );
+    assert_eq!(rec.seen.borrow().len(), 0);
+}
+
+#[test]
+fn an_explicit_type_lighter_than_the_change_needs_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let v = |verb: &str| format!("{} Retries stop after 7 attempts.", prose(verb));
+    let base = v("handles");
+    let cases: [(String, Vec<&str>, &str); 6] = [
+        (
+            v("serves").replace("serves", "does not handle"),
+            vec!["--type", "mechanical"],
+            "negation",
+        ),
+        (
+            v("serves").replace("serves", "handles 90"),
+            vec!["--type", "mechanical"],
+            "literal",
+        ),
+        (
+            v("serves"),
+            vec!["--type", "mechanical", "--genre", "reference"],
+            "genre",
+        ),
+        (
+            base.replace(" Retries stop after 7 attempts.", ""),
+            vec!["--type", "mechanical"],
+            "lost fact",
+        ),
+        (
+            (0..10)
+                .map(|i| format!("Wholly new text number {i} appears here."))
+                .collect::<Vec<_>>()
+                .join(" "),
+            vec!["--type", "update"],
+            "rewrite size",
+        ),
+        (
+            (0..10)
+                .map(|i| format!("Wholly new text number {i} appears here."))
+                .collect::<Vec<_>>()
+                .join(" "),
+            vec!["--type", "mechanical"],
+            "rewrite size",
+        ),
+    ];
+    for (revised, extra, why) in cases {
+        let err = run(
+            &pair(dir.path(), &base, &revised, &extra),
+            &ReviewEnv::default(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "review-type-ineligible", "{why}");
+    }
+    let ok = run(
+        &pair(
+            dir.path(),
+            &base,
+            &v("serves"),
+            &["--type", "mechanical", "--dry-run"],
+        ),
+        &ReviewEnv::default(),
+    );
+    assert!(ok.is_ok());
+    let heavier = run(
+        &pair(
+            dir.path(),
+            &base,
+            &v("serves"),
+            &["--type", "rewrite", "--dry-run"],
+        ),
+        &ReviewEnv::default(),
+    );
+    assert!(heavier.is_ok(), "a heavier type is allowed");
+}
+
+#[test]
+fn the_provider_receives_dropped_sentences_and_the_rewrite_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let rec = Recorder {
+        seen: std::cell::RefCell::new(Vec::new()),
+    };
+    let env = ReviewEnv {
+        provider: Some(&rec),
+        ..ReviewEnv::default()
+    };
+
+    let old = format!("{} Remove the 90 day limit.", prose("handles"));
+    run(
+        &pair(dir.path(), &old, &prose("handles"), &["--type", "update"]),
+        &env,
+    )
+    .unwrap();
+    let sent = rec.seen.borrow()[0].clone();
+    assert_eq!(sent.kind, "passages");
+    assert_eq!(sent.items.len(), 1);
+    assert_eq!(
+        (sent.items[0].role, sent.items[0].text.as_str()),
+        ("dropped", "Remove the 90 day limit.")
+    );
+
+    run(
+        &pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]),
+        &env,
+    )
+    .unwrap();
+    let sent = rec.seen.borrow()[1].clone();
+    let texts: Vec<&str> = sent.items.iter().map(|i| i.text.as_str()).collect();
+    assert_eq!(texts, [ORIGINAL, REVISED]);
 }
