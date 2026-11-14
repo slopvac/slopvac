@@ -199,7 +199,7 @@ def test_explicit_inspection_profile_ignores_file_overrides(tmp_path):
 @pytest.mark.parametrize(
     "text,rule",
     [
-        ("The Harness Measures, It Does Not Judge", "contrastive-inversion-frames"),
+        ("The Harness Measures, It Does Not Judge", "contrastive-appositive"),
         ("Slopvac never writes the config.", "negative-guarantee-core"),
     ],
 )
@@ -265,3 +265,20 @@ def test_packaged_cache_identity_ignores_cwd_collisions(tmp_path, monkeypatch):
     before = ruleset_cache.content_key(sources)
     (tmp_path / sources[0][0]).write_text("unrelated local content")
     assert ruleset_cache.content_key(_read_sources([])) == before
+
+
+@pytest.mark.parametrize(
+    "text,rule,expected",
+    [
+        ("It's not a linter, it's a review partner.", "contrastive-inversion-frames", True),
+        ("The parser reads JSON; it does not read YAML.", "contrastive-inversion-frames", False),
+        ("The parser reads JSON; it does not read YAML.", "contrastive-appositive", True),
+        ("Studio takes a model ID; it does not need to appear in the list.", "contrastive-appositive", False),
+        ("The client sends a token; it must not log the `token` value.", "contrastive-appositive", False),
+        ("The parser reads JSON; it does not read `yaml` files.", "contrastive-appositive", False),
+    ],
+)
+def test_contrastive_forms_report_under_their_own_rule(text, rule, expected):
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert any(f.rule_id.endswith("." + rule) for f in findings) == expected
