@@ -7,6 +7,32 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
+/// Deterministic work counting for the linearity tests. In test builds `tick`
+/// adds to a per-thread counter; elsewhere it compiles to nothing.
+#[cfg(test)]
+pub(crate) mod work {
+    use std::cell::Cell;
+
+    thread_local! {
+        static WORK: Cell<u64> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn tick(units: usize) {
+        WORK.with(|w| w.set(w.get() + units as u64));
+    }
+
+    /// Returns the work done since the last call and resets the counter.
+    pub(crate) fn take() -> u64 {
+        WORK.with(|w| w.replace(0))
+    }
+}
+
+#[cfg(not(test))]
+mod work {
+    #[inline(always)]
+    pub(super) const fn tick(_units: usize) {}
+}
+
 /// One token of the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Token {
@@ -63,8 +89,10 @@ fn find_code_spans(text: &str) -> Vec<CodeSpan> {
     let mut runs: Vec<Range<usize>> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
+        work::tick(1);
         if bytes[i] == b'`' {
             let len = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            work::tick(len);
             runs.push(i..i + len);
             i += len;
         } else {
@@ -74,11 +102,13 @@ fn find_code_spans(text: &str) -> Vec<CodeSpan> {
     let mut next_same: Vec<Option<usize>> = vec![None; runs.len()];
     let mut latest: HashMap<usize, usize> = HashMap::new();
     for (idx, run) in runs.iter().enumerate().rev() {
+        work::tick(1);
         next_same[idx] = latest.insert(run.len(), idx);
     }
     let mut spans = Vec::new();
     let mut idx = 0;
     while idx < runs.len() {
+        work::tick(1);
         if let Some(close) = next_same[idx] {
             spans.push(CodeSpan {
                 open: runs[idx].start,
@@ -102,6 +132,7 @@ fn assemble(text: &str, code_spans: &[CodeSpan], split: SplitFn) -> Vec<Token> {
     for span in code_spans {
         push_plain(text, plain_start..span.open, &mut work, &mut segments);
         let start = work.len();
+        self::work::tick(span.inner.len());
         work.extend(text[span.inner.clone()].chars().map(|_| '*'));
         segments.push(Segment {
             work: start..work.len(),
@@ -115,6 +146,7 @@ fn assemble(text: &str, code_spans: &[CodeSpan], split: SplitFn) -> Vec<Token> {
     let mut spans = Vec::new();
     let mut chunk_start: Option<usize> = None;
     for (pos, c) in work.char_indices() {
+        self::work::tick(1);
         // Rust's White_Space set equals Go's unicode.IsSpace (checked over all
         // code points against Go 1.27.4), which prose splits on.
         if c.is_whitespace() {
@@ -154,6 +186,7 @@ fn push_plain(text: &str, orig: Range<usize>, work: &mut String, segments: &mut 
         return;
     }
     let start = work.len();
+    self::work::tick(orig.len());
     work.push_str(&text[orig.clone()]);
     segments.push(Segment {
         work: start..work.len(),
@@ -226,6 +259,7 @@ fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
     // Suffixes peel off the end, so they are collected in reverse.
     let mut suffixes: Vec<Range<usize>> = Vec::new();
     while lo < hi {
+        work::tick(1 + PREFIXES.len() + SUFFIXES.len());
         let span = &chunk[lo..hi];
         if is_special(span) {
             break;
@@ -243,6 +277,7 @@ fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
         while next < occurrences.len()
             && (occurrences[next].start <= lo || occurrences[next].end > hi)
         {
+            work::tick(1);
             next += 1;
         }
         if let Some(occurrence) = occurrences.get(next) {
@@ -270,6 +305,7 @@ fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
 /// ignored), in order of start. Two endings never start at the same byte.
 fn contraction_occurrences(chunk: &str) -> Vec<Range<usize>> {
     let bytes = chunk.as_bytes();
+    work::tick(bytes.len() * CONTRACTIONS.len());
     let mut found = Vec::new();
     for start in 1..bytes.len() {
         for ending in CONTRACTIONS {
@@ -290,6 +326,7 @@ fn contraction_occurrences(chunk: &str) -> Vec<Range<usize>> {
 /// Go: `^(?:[A-Za-z]\.){2,}$|^[A-Z][a-z]{1,2}\.$`.
 fn is_special(span: &str) -> bool {
     let b = span.as_bytes();
+    work::tick(1);
     let pair = |p: &[u8]| p[0].is_ascii_alphabetic() && p[1] == b'.';
     // Checking both ends first rejects most spans in constant time, so
     // peeling a long run of punctuation does not rescan the middle each step.
@@ -297,7 +334,10 @@ fn is_special(span: &str) -> bool {
         && b.len().is_multiple_of(2)
         && pair(&b[..2])
         && pair(&b[b.len() - 2..])
-        && b.as_chunks::<2>().0.iter().all(|p| pair(p));
+        && b.as_chunks::<2>().0.iter().all(|p| {
+            work::tick(1);
+            pair(p)
+        });
     let title = (3..=4).contains(&b.len())
         && b[0].is_ascii_uppercase()
         && b[b.len() - 1] == b'.'
@@ -315,6 +355,7 @@ pub(crate) fn sentences(text: &str, tokens: &[Token]) -> Vec<Range<usize>> {
     let mut start = 0;
     let mut i = 0;
     while i < tokens.len() {
+        work::tick(1);
         let mut end = i + 1;
         let mut boundary = false;
         if !tokens[i].placeholder
@@ -325,6 +366,7 @@ pub(crate) fn sentences(text: &str, tokens: &[Token]) -> Vec<Range<usize>> {
                 && tokens[end].span.start == tokens[end - 1].span.end
                 && is_closer(&tokens[end].word)
             {
+                work::tick(1);
                 end += 1;
             }
             boundary = end == tokens.len() || {
@@ -350,6 +392,7 @@ pub(crate) fn sentences(text: &str, tokens: &[Token]) -> Vec<Range<usize>> {
 }
 
 fn blank_line_between(gap: &str) -> bool {
+    work::tick(gap.len());
     gap.bytes().filter(|&b| b == b'\n').count() >= 2
 }
 
@@ -517,8 +560,10 @@ mod oracle {
         let run = bytes[open..].iter().take_while(|&&b| b == b'`').count();
         let mut i = open + run;
         while i < bytes.len() {
+            work::tick(1);
             if bytes[i] == b'`' {
                 let close = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+                work::tick(close);
                 if close == run {
                     return Some((open + run..i, i + close));
                 }
@@ -534,6 +579,7 @@ mod oracle {
         let mut spans = Vec::new();
         let mut i = 0;
         while i < text.len() {
+            work::tick(1);
             if text.as_bytes()[i] != b'`' {
                 i += 1;
             } else if let Some((inner, end)) = code_span(text, i) {
@@ -559,8 +605,10 @@ mod oracle {
             .iter()
             .filter_map(|c| {
                 let c = c.as_bytes();
-                (1..=bytes.len().checked_sub(c.len())?)
-                    .find(|&i| bytes[i..i + c.len()].eq_ignore_ascii_case(c))
+                (1..=bytes.len().checked_sub(c.len())?).find(|&i| {
+                    work::tick(1);
+                    bytes[i..i + c.len()].eq_ignore_ascii_case(c)
+                })
             })
             .min()
     }
@@ -569,10 +617,10 @@ mod oracle {
         let b = span.as_bytes();
         let dotted = b.len() >= 4
             && b.len().is_multiple_of(2)
-            && b.as_chunks::<2>()
-                .0
-                .iter()
-                .all(|p| p[0].is_ascii_alphabetic() && p[1] == b'.');
+            && b.as_chunks::<2>().0.iter().all(|p| {
+                work::tick(1);
+                p[0].is_ascii_alphabetic() && p[1] == b'.'
+            });
         let title = (3..=4).contains(&b.len())
             && b[0].is_ascii_uppercase()
             && b[b.len() - 1] == b'.'
@@ -585,6 +633,7 @@ mod oracle {
         let mut base = base;
         let mut suffixes: Vec<Range<usize>> = Vec::new();
         while !span.is_empty() {
+            work::tick(1 + PREFIXES.len() + SUFFIXES.len());
             if is_special(span) {
                 break;
             }
@@ -731,6 +780,96 @@ mod differential_tests {
                 .map(|s| (s.open, s.inner, s.end))
                 .collect();
             assert_eq!(new, old, "{text:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/common/adversarial.rs"]
+mod adversarial;
+
+#[cfg(test)]
+mod work_tests {
+    use super::*;
+
+    fn linear_work(text: &str) -> u64 {
+        work::take();
+        let tokens = tokenize(text);
+        let _ = sentences(text, &tokens);
+        work::take()
+    }
+
+    fn oracle_work(text: &str) -> u64 {
+        work::take();
+        let tokens = oracle::tokenize(text);
+        let _ = sentences(text, &tokens);
+        work::take()
+    }
+
+    /// Work units allowed per input byte, and a constant allowance. The
+    /// linear code spends at most 67 units per byte (peeling one punctuation
+    /// character costs a table lookup of each affix); quadratic code passes
+    /// this budget as soon as the input is a few thousand bytes.
+    const PER_BYTE: u64 = 70;
+    const ALLOWANCE: u64 = 1_000;
+
+    fn budget(text: &str) -> u64 {
+        PER_BYTE * text.len() as u64 + ALLOWANCE
+    }
+
+    /// Big enough for the unique-length backtick case to show its n^1.5 cost.
+    fn size_for(name: &str, small: usize) -> usize {
+        if name == "backtick runs" {
+            200_000
+        } else {
+            small
+        }
+    }
+
+    #[test]
+    fn tokenizing_stays_within_a_linear_work_budget_on_adversarial_inputs() {
+        for name in adversarial::NAMES {
+            let n = size_for(name, 40_000);
+            let text = adversarial::adversarial(name, n);
+            let work = linear_work(&text);
+            assert!(
+                work <= budget(&text),
+                "{name}: {work} units for {} bytes exceeds {}",
+                text.len(),
+                budget(&text)
+            );
+            // Doubling the input must not much more than double the work.
+            let double = adversarial::adversarial(name, 2 * n);
+            let doubled = linear_work(&double);
+            assert!(
+                doubled * 10 <= work * 22,
+                "{name}: doubling the input took work from {work} to {doubled}"
+            );
+        }
+    }
+
+    /// The same budget rejects the quadratic implementation this module
+    /// replaced, on every input that made it quadratic. This is what makes
+    /// the gate above meaningful: reverting an optimisation fails it.
+    #[test]
+    fn the_budget_rejects_the_old_quadratic_code() {
+        for name in [
+            "bang run",
+            "wrapped word",
+            "contractions",
+            "contraction tail",
+            "dotted abbreviation tail",
+            "backtick runs",
+        ] {
+            let n = size_for(name, 4_000);
+            let text = adversarial::adversarial(name, n);
+            let work = oracle_work(&text);
+            assert!(
+                work > budget(&text),
+                "{name}: the old code used only {work} units for {} bytes (budget {})",
+                text.len(),
+                budget(&text)
+            );
         }
     }
 }

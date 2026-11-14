@@ -94,3 +94,23 @@ fn matches_prose_on_go_casing_edge_cases() {
         assert_eq!(tags(text), want, "{text}");
     }
 }
+
+/// A sentence starts after `.` unless the next word starts with a lowercase
+/// letter, and "lowercase" is Go's `Ll`: U+24D0 (circled small a) is a symbol,
+/// not `Ll`, so it starts a new sentence and the tagger sees fresh context.
+/// Expected tags: prose tags "The file ." and "ⓐ key works" as two sentences;
+/// as one sentence it would tag the circled letter `,` instead of `NFP`.
+#[test]
+fn a_circled_letter_after_a_full_stop_starts_a_new_sentence() {
+    assert_eq!(
+        tags("The file. \u{24d0} key works"),
+        [
+            ("The", "DT"),
+            ("file", "NN"),
+            (".", "."),
+            ("\u{24d0}", "NFP"),
+            ("key", "JJ"),
+            ("works", "NNS"),
+        ]
+    );
+}
