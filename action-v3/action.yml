@@ -30,21 +30,27 @@ inputs:
     required: false
     default: ""
   fail-on-findings:
-    description: Set false to report findings without failing the job. An incomplete check (exit 2) always fails.
+    description: Set false to report findings without failing the job. Only exit 1 is softened. Exit 2, other statuses and signals always fail.
     required: false
     default: "true"
   reporter:
     description: >-
-      auto, review, annotations or none. auto posts a reviewdog pull request
-      review with suggestions when the token can write (same-repository pull
-      request, not Dependabot) and falls back to annotations otherwise. Pushes
-      report through a check run.
+      auto, review, annotations or none. auto tries a reviewdog pull request
+      review with suggestions for a same-repository pull request that
+      Dependabot did not open, and falls back to annotations when the review
+      fails (for example a read-only token). Other pull requests use
+      annotations. Pushes report through a check run. Reporting never fails
+      the job.
     required: false
     default: auto
   github-token:
     description: Token reviewdog uses to post. Needs pull-requests write for review mode, checks write for check runs.
     required: false
     default: ${{ github.token }}
+  rdjsonl-file:
+    description: Where to write the reviewdog rdjsonl report.
+    required: false
+    default: slopvac.rdjsonl
   sarif:
     description: Write SARIF and upload it to code scanning. The job needs security-events write.
     required: false
@@ -137,6 +143,17 @@ runs:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: python3 "$ACTION_PATH/../scripts/action_entry.py" resolve-targets
 
+    # policies.md 1.4: packs come from the lockfile in a named step of their
+    # own, so the lint step below can run offline. A failed sync fails the
+    # action. Without a lockfile the step does nothing.
+    - name: Sync packs
+      id: sync
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BINARY: ${{ inputs.binary || format('{0}/slopvac-bin/slopvac', runner.temp) }}
+      run: python3 "$ACTION_PATH/../scripts/action_v3.py" sync
+
     # The binary is the gate. The outcome is checked in the last step, so the
     # reports below still upload when the lint fails.
     - name: Lint
@@ -152,41 +169,34 @@ runs:
         MAX_PER_100: ${{ inputs.max-per-100-words }}
         FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         OFFLINE: ${{ inputs.offline }}
+        RDJSONL_FILE: ${{ inputs.rdjsonl-file }}
         SARIF: ${{ inputs.sarif }}
         SARIF_FILE: ${{ inputs.sarif-file }}
         CODECLIMATE: ${{ inputs.codeclimate }}
       run: python3 "$ACTION_PATH/../scripts/action_v3.py" lint
 
-    - name: Choose the reviewdog reporter
-      id: reporter
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-        REPORTER: ${{ inputs.reporter }}
-        EVENT_NAME: ${{ github.event_name }}
-        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        BASE_REPO: ${{ github.repository }}
-        ACTOR: ${{ github.actor }}
-      run: python3 "$ACTION_PATH/../scripts/action_v3.py" reporter
-
+    # Reporting never gates: a failed install or post only warns.
     - name: Install reviewdog
-      if: steps.reporter.outputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      id: reviewdog
+      if: always() && inputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      continue-on-error: true
       uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.5.0
       with:
         reviewdog_version: v0.21.3
 
     - name: Report with reviewdog
-      if: steps.reporter.outputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
-      continue-on-error: true
+      if: always() && inputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         REVIEWDOG_GITHUB_API_TOKEN: ${{ inputs.github-token }}
-        REPORTER: ${{ steps.reporter.outputs.reporter }}
+        REPORTER: ${{ inputs.reporter }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        BASE_REPO: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
         RDJSONL: ${{ steps.lint.outputs.rdjsonl-file }}
-      run: |
-        set -euo pipefail
-        reviewdog -f=rdjsonl -name=slopvac -reporter="$REPORTER" \
-          -filter-mode=added -fail-level=none < "$RDJSONL"
+      run: python3 "$ACTION_PATH/../scripts/action_v3.py" report
 
     - name: Upload SARIF to code scanning
       if: always() && inputs.sarif == 'true' && steps.lint.outputs.sarif-file != ''

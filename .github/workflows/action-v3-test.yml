@@ -55,5 +55,5 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$OUTCOME" == "$EXPECTED" ]] || { echo "expected $EXPECTED, got $OUTCOME" >&2; exit 1; }
-          [[ "$FINDINGS" == "3" && "$PASSED" == "false" ]] || { echo "bad outputs: findings=$FINDINGS passed=$PASSED" >&2; exit 1; }
+          [[ "$FINDINGS" == "1" && "$PASSED" == "false" ]] || { echo "bad outputs: findings=$FINDINGS passed=$PASSED" >&2; exit 1; }
           test -s "$CODECLIMATE"

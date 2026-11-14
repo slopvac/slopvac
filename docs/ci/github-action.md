@@ -29,11 +29,13 @@ jobs:
 | SARIF | Code scanning, with the category set by `sarif-category` (default `slopvac`). Set `sarif: false` to skip it. |
 | Code Climate | The `slopvac-codeclimate` workflow artifact. Set `codeclimate: false` to skip it. |
 
-The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action posts a review with suggestions when the token can write, which means a pull request from the same repository that Dependabot did not open. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run.
+The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
+
+When the project has a `.slopvac/packs.lock` lockfile, a separate `Sync packs` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
 
 The lint steps run with `--offline`, so they never reach the network. Installing slopvac still does. Set `offline: false` to allow network access during the lint.
 
-Set `fail-on-findings: false` to report without failing the job. An incomplete check (exit 2) always fails.
+Set `fail-on-findings: false` to report without failing the job. That softens only exit 1. An incomplete check (exit 2), any other exit status and a crash from a signal always fail the job.
 
 ## Pull requests from forks
 
@@ -54,14 +56,16 @@ jobs:
         with:
           reporter: none
           sarif: false
-      - env:
+          rdjsonl-file: findings/findings.rdjsonl
+      # Findings fail the action, so the steps below must run after a failure.
+      - if: ${{ !cancelled() }}
+        env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          RDJSONL: ${{ steps.slopvac.outputs.rdjsonl }}
         run: |
-          mkdir findings
+          mkdir -p findings
           printf '%s\n' "$PR_NUMBER" > findings/pr-number
-          cp "$RDJSONL" findings/findings.rdjsonl
-      - uses: actions/upload-artifact@v7
+      - if: ${{ !cancelled() && hashFiles('findings/findings.rdjsonl') != '' }}
+        uses: actions/upload-artifact@v7
         with:
           name: slopvac-findings
           path: findings
