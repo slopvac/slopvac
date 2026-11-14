@@ -1,48 +1,39 @@
 """The 2.x profile mapping reproduces every 2.x gate input.
 
-The 2.x engine is the ground truth. A small reference resolver applies the 3.0
-rules to the generated ``core:legacy-<profile>`` style: a rule entry is final, else
-a category level sets the rule, else the rule's own severity stands, and ``off``
-disables. The resolver and the engine must agree on every rule, category budget,
-weight and threshold, for strict, normal and relaxed.
+The 2.x engine is the ground truth. The reference resolver in
+``preserve_expansion`` applies the 3.0 precedence to the generated
+``core:legacy-<profile>`` styles. It must agree with the engine on every rule
+(checked and judgement), category budget, weight and threshold, for strict, normal
+and relaxed, and for configs with profile overrides and authored settings.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import tomllib
-from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
+from preserve_expansion import (
+    ROOT,
+    category_dial,
+    expand,
+    NO_BUDGET,
+    mapping,
+    matches,
+    resolve,
+    style_layer,
+    to_2x_config,
+)
 from referencing import Registry, Resource
 
-ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = ROOT / "schemas" / "v3"
-_spec = importlib.util.spec_from_file_location(
-    "profile_mapping", ROOT / "scripts" / "contract" / "profile_mapping.py"
-)
-mapping = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(mapping)
-
 PROFILES = mapping.PROFILES
 
 
 def _style(profile: str) -> dict:
     path = mapping.OUT / f"{mapping.style_name(profile)}.toml"
     return tomllib.loads(path.read_text(encoding="utf-8"))
-
-
-def reference_resolve(style: dict, category: str, qid: str, shipped: str) -> str:
-    """3.0 resolution of one rule under one style. Returns a level; off disables."""
-    rule_level = style.get("rules", {}).get(qid)
-    if rule_level is not None:
-        return rule_level
-    dials = style.get("categories", {}).get(category)
-    if dials is not None and "severity" in dials:
-        return dials["severity"]
-    return shipped
 
 
 @pytest.fixture(scope="module", params=PROFILES)
@@ -52,22 +43,128 @@ def truth(request):
     return profile, ruleset, resolved, states
 
 
+@pytest.fixture(scope="module")
+def ruleset():
+    return mapping.engine_states("normal")[0]
+
+
+# --- generated files -------------------------------------------------------
+
+
 def test_committed_files_equal_regenerated_output():
     for name, text in mapping.build().items():
         assert (mapping.OUT / name).read_text(encoding="utf-8") == text, name
 
 
+def test_check_exits_0_when_files_are_current(monkeypatch, capsys):
+    assert _check_in_tmp({"a.toml": "x\n"}, {"a.toml": "x\n"}, monkeypatch) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("on_disk", "expected", "named"),
+    [
+        ({"a.toml": "old\n"}, {"a.toml": "new\n"}, "a.toml"),
+        ({}, {"a.toml": "new\n"}, "a.toml"),
+    ],
+    ids=["stale", "missing"],
+)
+def test_check_exits_1_and_names_the_file_when_stale_or_missing(
+    monkeypatch, capsys, on_disk, expected, named
+):
+    assert _check_in_tmp(on_disk, expected, monkeypatch) == 1
+    assert named in capsys.readouterr().err
+
+
+def test_check_does_not_rewrite_files(monkeypatch, tmp_path):
+    (tmp_path / "a.toml").write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(mapping, "OUT", tmp_path)
+    monkeypatch.setattr(mapping, "build", lambda: {"a.toml": "new\n", "b.toml": "y\n"})
+    assert mapping.main(["--check"]) == 1
+    assert (tmp_path / "a.toml").read_text(encoding="utf-8") == "old\n"
+    assert not (tmp_path / "b.toml").exists()
+
+
+def _check_in_tmp(on_disk, expected, monkeypatch):
+    import tempfile
+    from pathlib import Path
+
+    tmp = Path(tempfile.mkdtemp(prefix="mapping-check-"))
+    for name, text in on_disk.items():
+        (tmp / name).write_text(text, encoding="utf-8")
+    monkeypatch.setattr(mapping, "OUT", tmp)
+    monkeypatch.setattr(mapping, "build", lambda: expected)
+    try:
+        return mapping.main(["--check"])
+    finally:
+        for p in tmp.iterdir():
+            p.unlink()
+        tmp.rmdir()
+
+
+# --- default config, every rule -------------------------------------------
+
+
 def test_every_rule_resolves_to_its_2x_state(truth):
     profile, ruleset, _, states = truth
-    style = _style(profile)
+    layers = [style_layer(profile)]
     wrong = {}
-    for rule in ruleset.rules:
-        got = reference_resolve(
-            style, rule.category, rule.qualified_id, rule.severity.value
+    for rule in ruleset.all_rules:
+        got = resolve(
+            layers,
+            rule.category,
+            rule.qualified_id,
+            rule.severity.value,
+            rule.kind.value == "judgement",
         )
         if got != states[rule.qualified_id][1]:
             wrong[rule.qualified_id] = (got, states[rule.qualified_id][1])
     assert wrong == {}
+
+
+def test_the_catalogue_includes_judgement_rules(truth):
+    _, ruleset, _, states = truth
+    assert len(ruleset.judgement_rules) > 0
+    assert set(states) == {r.qualified_id for r in ruleset.all_rules}
+
+
+def test_judgement_level_follows_the_tier(truth):
+    profile, ruleset, _, _ = truth
+    style = _style(profile)
+    for rule in ruleset.judgement_rules:
+        want = {"enforced": "error", "advisory": "suggestion", "excluded": "off"}[
+            rule.tier_for(profile).value
+        ]
+        assert style["rules"][rule.qualified_id] == want
+
+
+def test_a_judgement_rule_in_an_off_category_keeps_its_tier_level():
+    # prose-scope is off at relaxed, and code-change-prose-scope is advisory there.
+    style = _style("relaxed")
+    assert style["categories"]["prose-scope"]["severity"] == "off"
+    assert style["rules"]["prose-scope.code-change-prose-scope"] == "suggestion"
+
+
+def test_checklist_selection_matches_2x(truth):
+    profile, ruleset, _, _ = truth
+    from slopvac.enums import Tier  # noqa: F401  (documents the tier source)
+    from slopvac.genres import GENRES
+
+    style = _style(profile)
+    for genre in GENRES:
+        want = {
+            r.qualified_id
+            for r in ruleset.judgement_rules
+            if genre.name in ruleset.categories[r.category].recommended_for
+            and r.tier_for(profile).value != "excluded"
+        }
+        got = {
+            r.qualified_id
+            for r in ruleset.judgement_rules
+            if genre.name in ruleset.categories[r.category].recommended_for
+            and style["rules"][r.qualified_id] != "off"
+        }
+        assert got == want, genre.name
 
 
 def test_category_budgets_and_weights_match_2x(truth):
@@ -110,18 +207,16 @@ def test_per_rule_default_under_an_error_category_keeps_its_warning():
 @pytest.mark.parametrize("profile", PROFILES)
 def test_latin_abbreviation_is_off_in_every_profile(profile):
     # profiles.py ships this rule off at every profile (_OFF_BY_DEFAULT).
-    style = _style(profile)
-    assert reference_resolve(
-        style, "ste-practices", "ste-practices.latin-abbreviation", "suggestion"
-    ) == "off"
-
-
-def test_excluded_rule_resolves_to_off():
-    # `ai-tells-formatting` is off at relaxed through the category; rules excluded by tier
-    # inside live categories need their own entry.
-    relaxed = _style("relaxed")
-    assert relaxed["categories"]["ai-tells-formatting"]["severity"] == "off"
-    assert "off" in set(relaxed["rules"].values())
+    assert (
+        resolve(
+            [style_layer(profile)],
+            "ste-practices",
+            "ste-practices.latin-abbreviation",
+            "suggestion",
+            False,
+        )
+        == "off"
+    )
 
 
 def test_genres_keep_their_2x_profile():
@@ -148,3 +243,138 @@ def test_generated_style_validates_against_the_style_schema(profile):
         Draft202012Validator(schema, registry=registry).iter_errors(_style(profile))
     )
     assert errors == []
+
+
+# --- configs with overrides and authored settings -------------------------
+
+SCENARIOS = {
+    "profile-override": (
+        {
+            "profile": "normal",
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
+        ["docs/a.md", "src/a.md"],
+    ),
+    "authored-category-severity": (
+        {"profile": "normal", "categories": {"prose-craft": {"severity": "error"}}},
+        ["a.md"],
+    ),
+    "authored-category-floor-only": (
+        {
+            "profile": "normal",
+            "categories": {"ste-verbs": {"minimum_severity": "warning"}},
+        },
+        ["a.md"],
+    ),
+    "authored-category-off": (
+        {"profile": "strict", "categories": {"prose-inflation": "off"}},
+        ["a.md"],
+    ),
+    "authored-category-revives-off": (
+        {"profile": "relaxed", "categories": {"prose-craft": "warning"}},
+        ["a.md"],
+    ),
+    "authored-rule": (
+        {"profile": "normal", "rules": {"prose-craft.spacing": "error"}},
+        ["a.md"],
+    ),
+    "rule-default-survives-authored-category": (
+        {"profile": "normal", "categories": {"prose-inclusive": "error"}},
+        ["a.md"],
+    ),
+    "override-authors-category": (
+        {
+            "profile": "normal",
+            "overrides": [
+                {"files": ["docs/**"], "categories": {"prose-craft": "error"}}
+            ],
+        },
+        ["docs/a.md", "src/a.md"],
+    ),
+    "profile-override-keeps-top-authored-category": (
+        {
+            "profile": "normal",
+            "categories": {"prose-craft": {"severity": "warning", "weight": 3.0}},
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
+        ["docs/a.md", "src/a.md"],
+    ),
+    "profile-override-keeps-top-authored-rule": (
+        {
+            "profile": "normal",
+            "rules": {"ste-verbs.passive-voice": "error"},
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
+        ["docs/a.md"],
+    ),
+    "profile-override-with-own-category": (
+        {
+            "profile": "normal",
+            "overrides": [
+                {
+                    "files": ["docs/**"],
+                    "profile": "strict",
+                    "categories": {"orwell-voice": "error"},
+                }
+            ],
+        },
+        ["docs/a.md"],
+    ),
+    "two-profile-overrides": (
+        {
+            "profile": "normal",
+            "overrides": [
+                {"files": ["docs/**"], "profile": "relaxed"},
+                {"files": ["docs/api/**"], "profile": "strict"},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SCENARIOS))
+def test_expansion_reproduces_2x_for_each_file(name, ruleset):
+    config2, paths = SCENARIOS[name]
+    config3 = expand(config2, ruleset)
+    styles = {p: style_layer(p) for p in PROFILES}
+    config = to_2x_config(config2)
+    for path in paths:
+        _, resolved, states = mapping.engine_states(config2["profile"], config, path)
+        layers = [styles[config2["profile"]]]
+        layers.append({"categories": config3["categories"], "rules": config3["rules"]})
+        layers.extend(
+            {"categories": b.get("categories", {}), "rules": b.get("rules", {})}
+            for b in config3["overrides"]
+            if any(matches(g, path) for g in b["files"])
+        )
+        wrong = {}
+        for rule in ruleset.all_rules:
+            got = resolve(
+                layers,
+                rule.category,
+                rule.qualified_id,
+                rule.severity.value,
+                rule.kind.value == "judgement",
+            )
+            if got != states[rule.qualified_id][1]:
+                wrong[rule.qualified_id] = (got, states[rule.qualified_id][1])
+        assert wrong == {}, path
+        for cat, settings in resolved.categories.items():
+            if settings.severity.value == "off":
+                continue
+            budget = category_dial(layers, cat, "max_per_100_words")
+            if budget is not None and budget >= NO_BUDGET:
+                budget = None
+            assert budget == settings.max_per_100_words, (path, cat)
+            assert category_dial(layers, cat, "weight") == settings.weight, (path, cat)
+
+
+def test_ignored_2x_rule_entry_is_dropped(ruleset):
+    excluded = next(
+        r for r in ruleset.rules if r.tier_for("relaxed").value == "excluded"
+    )
+    config2 = {"profile": "relaxed", "rules": {excluded.qualified_id: "error"}}
+    assert excluded.qualified_id not in expand(config2, ruleset)["rules"]
+    _, _, states = mapping.engine_states("relaxed", to_2x_config(config2), "a.md")
+    assert states[excluded.qualified_id] == (False, "off")

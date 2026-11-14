@@ -1,0 +1,206 @@
+"""Reference for `slopvac migrate --preserve-behavior` and the 3.0 level resolution.
+
+``expand`` turns a 2.x config into a 3.0 config that selects the generated
+``legacy-<profile>`` styles. ``resolve`` applies the 3.0 precedence the profile
+mapping relies on. Both are test references: the real ``migrate`` and resolver
+replace them and keep the same scenarios.
+
+3.0 level precedence (docs/contract/profiles.md, section 4): among the entries
+that name a checked rule or its category, the highest layer wins. In one layer a
+rule entry beats a category entry. A category entry that wins is raised to the
+merged ``minimum_severity``. Judgement rules take their level from rule entries
+only.
+"""
+
+from __future__ import annotations
+
+import copy
+import importlib.util
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+_spec = importlib.util.spec_from_file_location(
+    "profile_mapping", ROOT / "scripts" / "contract" / "profile_mapping.py"
+)
+mapping = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(mapping)
+
+RANK = {"suggestion": 0, "warning": 1, "error": 2}
+
+
+def dials(value) -> dict:
+    return {"severity": value} if isinstance(value, str) else dict(value)
+
+
+def style_layer(profile: str) -> dict:
+    import tomllib
+
+    path = mapping.OUT / f"{mapping.style_name(profile)}.toml"
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return {
+        "categories": {k: dials(v) for k, v in data["categories"].items()},
+        "rules": dict(data.get("rules", {})),
+    }
+
+
+def resolve(layers: list[dict], category: str, qid: str, shipped: str, judgement: bool):
+    """Level of one rule under ordered layers (lowest first).
+
+    A rule entry beats a category entry unless the category entry sits in a higher
+    layer and the rule entry is not ``off``. An ``off`` rule entry holds against any
+    category entry; only a rule entry in a higher layer revives it.
+    """
+    rule_hit = cat_hit = None
+    for index, layer in enumerate(layers):
+        if qid in layer.get("rules", {}):
+            rule_hit = (index, layer["rules"][qid])
+        if not judgement:
+            sev = dials(layer.get("categories", {}).get(category, {})).get("severity")
+            if sev is not None:
+                cat_hit = (index, sev)
+    if rule_hit and (rule_hit[1] == "off" or not cat_hit or cat_hit[0] <= rule_hit[0]):
+        return rule_hit[1]
+    if not cat_hit:
+        return shipped
+    level = cat_hit[1]
+    if level != "off":
+        floor = None
+        for layer in layers:
+            floor = dials(layer.get("categories", {}).get(category, {})).get(
+                "minimum_severity", floor
+            )
+        if floor not in (None, "off") and RANK[level] < RANK[floor]:
+            level = floor
+    return level
+
+
+def category_dial(layers: list[dict], category: str, key: str):
+    value = None
+    for layer in layers:
+        value = dials(layer.get("categories", {}).get(category, {})).get(key, value)
+    return value
+
+
+NO_BUDGET = 1_000_000.0
+
+
+def matches(glob: str, path: str) -> bool:
+    return (
+        path.startswith(glob.removesuffix("**"))
+        if glob.endswith("**")
+        else path == glob
+    )
+
+
+def expand(config2: dict, ruleset) -> dict:
+    """The 3.0 config that reproduces ``config2`` under the legacy styles.
+
+    E1 selects the style of the top-level profile and copies the authored tables.
+    E2 states, in each layer that authors a category, the profile rule defaults
+    of that category, because a rule default beat an authored category in 2.x.
+    E3 puts, before the override blocks, one block per profile override with the
+    target style, minus what the top level authors.
+    E4 drops an authored rule entry that 2.x ignored: a tier-excluded rule, and a
+    rule in a category that the profile turned off.
+    """
+    top = config2.get("profile", "normal")
+    styles = {p: style_layer(p) for p in mapping.PROFILES}
+    states = {p: mapping.engine_states(p)[2] for p in mapping.PROFILES}
+    defaults = {p: mapping.rule_defaults(p) for p in mapping.PROFILES}
+    by_category: dict[str, list] = {}
+    for rule in ruleset.all_rules:
+        by_category.setdefault(rule.category, []).append(rule)
+    tier = {r.qualified_id: r for r in ruleset.all_rules}
+
+    def authored(cats: dict, profile: str) -> dict:
+        """E5: 2.x credited the whole category as authored, so an advisory rule took
+        the category level even when only a floor or a budget was written."""
+        out = {}
+        for name, value in cats.items():
+            d = dials(value)
+            if "severity" not in d:
+                d["severity"] = styles[profile]["categories"][name]["severity"]
+            out[name] = d
+        return out
+
+    top_cat = authored(config2.get("categories", {}), top)
+    top_rules = {
+        k: (v if isinstance(v, str) else v["severity"])
+        for k, v in config2.get("rules", {}).items()
+    }
+
+    def ignored(qid: str, profile: str) -> bool:
+        rule = tier[qid]
+        if rule.tier_for(profile).value == "excluded":
+            return True
+        cat = styles[profile]["categories"].get(rule.category, {})
+        return cat.get("severity") == "off" and rule.category not in top_cat
+
+    def sticky_for(categories: dict, profile: str, own_rules: dict) -> dict:
+        out = {}
+        for name in categories:
+            for rule in by_category.get(name, []):
+                qid = rule.qualified_id
+                if qid in defaults[profile] and qid not in own_rules:
+                    out[qid] = defaults[profile][qid]
+        return out
+
+    out: dict = {"profile": top, "styles": [mapping.style_name(top)]}
+    project_rules = {k: v for k, v in top_rules.items() if not ignored(k, top)}
+    project_rules = {**sticky_for(top_cat, top, project_rules), **project_rules}
+    out["categories"] = copy.deepcopy(top_cat)
+    out["rules"] = project_rules
+
+    blocks = []
+    switch = []
+    for block in config2.get("overrides", []):
+        profile = block.get("profile")
+        cats = authored(block.get("categories", {}), profile or top)
+        rules = {
+            k: (v if isinstance(v, str) else v["severity"])
+            for k, v in block.get("rules", {}).items()
+        }
+        in_force = profile or top
+        rules = {k: v for k, v in rules.items() if not ignored(k, in_force)}
+        rules = {**sticky_for(cats, in_force, rules), **rules}
+        new = {"files": block["files"], "categories": cats, "rules": rules}
+        if profile:
+            new["profile"] = profile
+            target = styles[profile]
+            base = styles[top]
+            sw_cats = {}
+            for name, d in target["categories"].items():
+                kept = {k: v for k, v in d.items() if k not in top_cat.get(name, {})}
+                if (
+                    "max_per_100_words" not in d
+                    and "max_per_100_words" in base["categories"][name]
+                    and "max_per_100_words" not in top_cat.get(name, {})
+                ):
+                    kept["max_per_100_words"] = NO_BUDGET
+                if kept:
+                    sw_cats[name] = kept
+            sw_rules = {}
+            for qid in sorted(set().union(*(st["rules"] for st in styles.values()))):
+                if qid in top_rules:
+                    continue
+                rule = tier[qid]
+                if (
+                    rule.category in top_cat
+                    and rule.kind.value != "judgement"
+                    and rule.tier_for(profile).value == "advisory"
+                    and qid not in defaults[profile]
+                ):
+                    continue
+                sw_rules[qid] = states[profile][qid][1]
+            switch.append(
+                {"files": block["files"], "categories": sw_cats, "rules": sw_rules}
+            )
+        blocks.append(new)
+    out["overrides"] = [*switch, *blocks]
+    return out
+
+
+def to_2x_config(config2: dict):
+    from slopvac.config import Config
+
+    return Config.model_validate(config2)

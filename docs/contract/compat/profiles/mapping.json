@@ -9,7 +9,19 @@
   "profiles": {
     "normal": {
       "categories": 30,
-      "rule_entries": 51,
+      "rule_defaults": {
+        "ai-tells-structure.definitional-negation-pair": "warning",
+        "ai-tells-structure.negative-guarantee-core": "warning",
+        "orwell.compound-preposition": "warning",
+        "prose-craft.latinisms": "off",
+        "prose-inclusive.ableist": "off",
+        "prose-inclusive.device-assumption": "off",
+        "prose-inclusive.exclusive": "off",
+        "ste-practices.gendered-or-exclusionary-language": "off",
+        "ste-practices.latin-abbreviation": "off",
+        "ste-practices.unclear-pronoun": "off"
+      },
+      "rule_entries": 119,
       "severity_shift": 0,
       "style": "core:legacy-normal",
       "thresholds": {
@@ -21,7 +33,16 @@
     },
     "relaxed": {
       "categories": 30,
-      "rule_entries": 47,
+      "rule_defaults": {
+        "prose-craft.latinisms": "off",
+        "prose-inclusive.ableist": "off",
+        "prose-inclusive.device-assumption": "off",
+        "prose-inclusive.exclusive": "off",
+        "ste-practices.gendered-or-exclusionary-language": "off",
+        "ste-practices.latin-abbreviation": "off",
+        "ste-practices.unclear-pronoun": "off"
+      },
+      "rule_entries": 155,
       "severity_shift": 0,
       "style": "core:legacy-relaxed",
       "thresholds": {
@@ -31,7 +52,18 @@
     },
     "strict": {
       "categories": 30,
-      "rule_entries": 15,
+      "rule_defaults": {
+        "ai-tells-structure.definitional-negation-pair": "warning",
+        "ai-tells-structure.negative-guarantee-core": "warning",
+        "prose-craft.latinisms": "off",
+        "prose-inclusive.ableist": "off",
+        "prose-inclusive.device-assumption": "off",
+        "prose-inclusive.exclusive": "off",
+        "ste-practices.gendered-or-exclusionary-language": "off",
+        "ste-practices.latin-abbreviation": "off",
+        "ste-practices.unclear-pronoun": "off"
+      },
+      "rule_entries": 83,
       "severity_shift": 0,
       "style": "core:legacy-strict",
       "thresholds": {
