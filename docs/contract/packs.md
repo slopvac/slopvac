@@ -61,7 +61,7 @@ Casing has three modes:
 
 The two flags cannot combine. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
 
-A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optional `replacement`. The loader trims and lower-cases `word`, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
+A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
 
 ## 7. Lockfile
 
