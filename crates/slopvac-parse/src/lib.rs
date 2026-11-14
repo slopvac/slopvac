@@ -20,7 +20,9 @@ mod projection;
 #[cfg(test)]
 mod work;
 
-pub use document::{Admonition, AdmonitionSyntax, Block, BlockKind, Document, ParseError};
+pub use document::{
+    Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, ParseError,
+};
 pub use markdown::parse_markdown;
 pub use mdx::parse_mdx;
 pub use projection::{Projection, Token, TokenKind};
