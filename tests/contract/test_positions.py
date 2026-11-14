@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 from position_reference import (
-    LSP_ENCODING,
     UNITS,
     Doc,
     PositionError,
