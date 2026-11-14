@@ -92,8 +92,8 @@
       "detail": {
         "default": ""
       },
-      "disposition": "migrate",
-      "note": "Maps onto the style preset.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -104,8 +104,8 @@
       "detail": {
         "default": ""
       },
-      "disposition": "migrate",
-      "note": "Becomes a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -140,10 +140,10 @@
       "detail": {
         "default": ""
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Installs from a path or URL with the binary installer.",
       "owner": "slopvac-8l4.13.6",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "action:input:upload-sarif",
@@ -164,8 +164,8 @@
       "detail": {
         "default": "true"
       },
-      "disposition": "remove-with-deprecation",
-      "note": "Ignored with a deprecation notice.",
+      "disposition": "remove",
+      "note": "Errors at 3.0.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -176,8 +176,8 @@
       "detail": {
         "default": ""
       },
-      "disposition": "remove-with-deprecation",
-      "note": "Ignored with a deprecation notice.",
+      "disposition": "remove",
+      "note": "Errors at 3.0.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -328,10 +328,10 @@
       "source": "behavior",
       "summary": "code comments.",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Comment extraction for source files.",
       "owner": "slopvac-8l4.3.14",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "behavior:colour-verbosity",
@@ -348,7 +348,7 @@
       "source": "behavior",
       "summary": "compile cache.",
       "detail": {},
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "The compiled-styles cache is gone.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -359,7 +359,7 @@
       "summary": "config discovery.",
       "detail": {},
       "disposition": "migrate",
-      "note": "slopvac.toml, .slopvac.toml and pyproject.toml tables stay readable in compatibility mode.",
+      "note": "2.x slopvac.toml, .slopvac.toml and pyproject.toml tables are rejected with a pointer to `slopvac migrate`, which rewrites them.",
       "owner": "slopvac-8l4.4.2",
       "test": "n/a"
     },
@@ -440,7 +440,7 @@
       "detail": {},
       "disposition": "preserve",
       "note": "rules filters by category, kind, genre and profile.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -450,7 +450,7 @@
       "detail": {},
       "disposition": "preserve",
       "note": "rules and explain emit text, json and md.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -458,20 +458,20 @@
       "source": "behavior",
       "summary": "lint JSON.",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "The JSON report moves from schema version 1 to 3.",
       "owner": "slopvac-8l4.2.2",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "behavior:locale-overrides",
       "source": "behavior",
       "summary": "locale overrides.",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Locale from the flag, config and front matter.",
       "owner": "slopvac-8l4.3.12",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "behavior:onboard-output",
@@ -488,10 +488,10 @@
       "source": "behavior",
       "summary": "prime topics.",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "prime write, review and report keep their text contract; new topics join.",
       "owner": "slopvac-8l4.11.1",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "behavior:reference-check",
@@ -599,7 +599,7 @@
       "summary": "suppression directives.",
       "detail": {},
       "disposition": "migrate",
-      "note": "2.x directive IDs migrate with `slopvac migrate`.",
+      "note": "2.x directive IDs are rewritten by `slopvac migrate`.",
       "owner": "slopvac-8l4.16.1",
       "test": "n/a"
     },
@@ -618,17 +618,17 @@
       "source": "behavior",
       "summary": "uvx install.",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "`uvx slopvac` keeps working through maturin wheels.",
       "owner": "slopvac-8l4.13.2",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "behavior:vale-binary-install",
       "source": "behavior",
       "summary": "Vale install.",
       "detail": {},
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "scripts/install_vale.py and the pinned Vale go away.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -638,7 +638,7 @@
       "source": "behavior",
       "summary": "Vale sub-gate.",
       "detail": {},
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "The Vale sub-gate and UNCHECKED reporting go away.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -648,7 +648,7 @@
       "source": "click",
       "summary": "slopvac cache",
       "detail": {},
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Pruned the Vale cache; removed.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -658,7 +658,7 @@
       "source": "click",
       "summary": "slopvac compile",
       "detail": {},
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Compiled Vale styles; removed with Vale.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -668,10 +668,10 @@
       "source": "click",
       "summary": "slopvac doctor",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Reports Rust binary, config and pack health instead of Python and Vale.",
       "owner": "slopvac-8l4.12.5",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "cmd:explain",
@@ -679,8 +679,8 @@
       "summary": "slopvac explain",
       "detail": {},
       "disposition": "preserve",
-      "note": "Rule explanation; no bead owns the inspection commands.",
-      "owner": "TBD",
+      "note": "Rule explanation.",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -688,10 +688,10 @@
       "source": "click",
       "summary": "slopvac init",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Writes 3.0 config templates.",
       "owner": "slopvac-8l4.12.8",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "cmd:lint",
@@ -718,10 +718,10 @@
       "source": "click",
       "summary": "slopvac prime",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Progressive disclosure; same entry point.",
       "owner": "slopvac-8l4.11.1",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "cmd:reference",
@@ -749,8 +749,8 @@
       "summary": "slopvac rules",
       "detail": {},
       "disposition": "preserve",
-      "note": "Rule listing; no bead owns the inspection commands.",
-      "owner": "TBD",
+      "note": "Rule listing.",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -758,10 +758,10 @@
       "source": "click",
       "summary": "slopvac setup",
       "detail": {},
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Covers all harnesses including OpenCode.",
       "owner": "slopvac-8l4.11.2",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "hook:slopvac",
@@ -778,8 +778,8 @@
       "source": ".pre-commit-hooks.yaml",
       "summary": "slopvac lint --no-vale",
       "detail": {},
-      "disposition": "remove-with-deprecation",
-      "note": "Vale is gone; the ID stays as an alias of slopvac for one minor release.",
+      "disposition": "remove",
+      "note": "Vale is gone; the hook ID is removed.",
       "owner": "slopvac-8l4.13.8",
       "test": "n/a"
     },
@@ -801,7 +801,7 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale cache option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -814,7 +814,7 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale cache option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -826,7 +826,7 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale compile option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -842,7 +842,7 @@
           "json"
         ]
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale compile option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -855,7 +855,7 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale compile option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -867,7 +867,7 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale output directory.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -884,7 +884,7 @@
           "relaxed"
         ]
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale compile option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -896,7 +896,7 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Vale compile option.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
@@ -908,7 +908,7 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "remove-with-deprecation",
+      "disposition": "remove",
       "note": "Names a Vale binary; Vale is gone.",
       "owner": "slopvac-8l4.12.5",
       "test": "n/a"
@@ -950,7 +950,7 @@
       },
       "disposition": "preserve",
       "note": "Same meaning.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -967,7 +967,7 @@
       },
       "disposition": "preserve",
       "note": "text, json and md stay.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -982,9 +982,9 @@
           "relaxed"
         ]
       },
-      "disposition": "migrate",
-      "note": "Follows the profile mapping.",
-      "owner": "TBD",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "owner": "slopvac-8l4.12.11",
       "test": "n/a"
     },
     {
@@ -994,8 +994,8 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
-      "note": "Becomes a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1007,7 +1007,7 @@
         "kind": "argument"
       },
       "disposition": "migrate",
-      "note": "IDs gain the pack namespace; bare 2.x IDs resolve with a notice.",
+      "note": "IDs gain the pack namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs.",
       "owner": "slopvac-8l4.2.3",
       "test": "n/a"
     },
@@ -1080,8 +1080,8 @@
           "relaxed"
         ]
       },
-      "disposition": "migrate",
-      "note": "Selects the mapped style preset.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
       "owner": "slopvac-8l4.2.10",
       "test": "n/a"
     },
@@ -1118,8 +1118,8 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "migrate",
-      "note": "Replaced by --mode code-comments; the flag is kept as an alias.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Use --mode code-comments.",
       "owner": "slopvac-8l4.3.14",
       "test": "n/a"
     },
@@ -1131,7 +1131,7 @@
         "kind": "option"
       },
       "disposition": "preserve",
-      "note": "Same flag; reads 3.0 config and 2.x config in compatibility mode.",
+      "note": "Same flag; a 2.x config is rejected with a pointer to `slopvac migrate`.",
       "owner": "slopvac-8l4.4.2",
       "test": "pending"
     },
@@ -1180,10 +1180,10 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Shows layered provenance for each setting.",
       "owner": "slopvac-8l4.4.2",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "opt:lint:--fix",
@@ -1212,10 +1212,10 @@
           "html"
         ]
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "text, json, github, sarif and html continue; json is schema version 3; rdjsonl, codeclimate, junit, checkstyle and markdown are new.",
       "owner": "slopvac-8l4.12.2",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "opt:lint:--language",
@@ -1236,10 +1236,10 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Locale comes from spellbook and SCOWL/VarCon; the flag stays.",
       "owner": "slopvac-8l4.3.12",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "opt:lint:--max-per-100-words",
@@ -1276,10 +1276,10 @@
           "code-comments"
         ]
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "code-comments moves to the tree-sitter mode; prose stays the default.",
       "owner": "slopvac-8l4.3.14",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "opt:lint:--no-color",
@@ -1302,8 +1302,8 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "remove-with-deprecation",
-      "note": "Vale is removed; the flag is accepted and ignored with a deprecation notice for one minor release.",
+      "disposition": "remove",
+      "note": "Vale is removed; the flag errors at 3.0.",
       "owner": "slopvac-8l4.16.2",
       "test": "n/a"
     },
@@ -1316,8 +1316,8 @@
         "flag": true
       },
       "disposition": "preserve",
-      "note": "Opens the HTML report; no bead covers it.",
-      "owner": "TBD",
+      "note": "Opens the HTML report.",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1344,8 +1344,8 @@
           "relaxed"
         ]
       },
-      "disposition": "migrate",
-      "note": "Profiles map onto the 3.0 style model; the flag stays as an alias.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
       "owner": "slopvac-8l4.2.10",
       "test": "n/a"
     },
@@ -1356,8 +1356,8 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
-      "note": "Project rules load as a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1418,8 +1418,8 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
-      "note": "Becomes a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1435,10 +1435,10 @@
           "report"
         ]
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "write, review and report stay; migrate and configure are new.",
       "owner": "slopvac-8l4.11.1",
-      "test": "n/a"
+      "test": "pending"
     },
     {
       "id": "opt:reference:--check",
@@ -1460,8 +1460,8 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
-      "note": "Becomes a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1499,7 +1499,7 @@
       },
       "disposition": "preserve",
       "note": "Filter stays.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1511,7 +1511,7 @@
       },
       "disposition": "preserve",
       "note": "Same meaning.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1528,7 +1528,7 @@
       },
       "disposition": "preserve",
       "note": "text, json and md stay.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1547,7 +1547,7 @@
       },
       "disposition": "preserve",
       "note": "Filter stays; genres become data.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1560,7 +1560,7 @@
       },
       "disposition": "preserve",
       "note": "Stays.",
-      "owner": "TBD",
+      "owner": "slopvac-8l4.12.11",
       "test": "pending"
     },
     {
@@ -1579,10 +1579,10 @@
           "judgement"
         ]
       },
-      "disposition": "migrate",
+      "disposition": "preserve",
       "note": "Kinds change with the typed match block.",
-      "owner": "TBD",
-      "test": "n/a"
+      "owner": "slopvac-8l4.12.11",
+      "test": "pending"
     },
     {
       "id": "opt:rules:--profile",
@@ -1596,9 +1596,9 @@
           "relaxed"
         ]
       },
-      "disposition": "migrate",
-      "note": "Follows the profile mapping.",
-      "owner": "TBD",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "owner": "slopvac-8l4.12.11",
       "test": "n/a"
     },
     {
@@ -1608,8 +1608,8 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "migrate",
-      "note": "Becomes a local pack.",
+      "disposition": "remove",
+      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },

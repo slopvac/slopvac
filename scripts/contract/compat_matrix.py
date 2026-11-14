@@ -25,7 +25,7 @@ DISPOSITIONS = COMPAT / "dispositions.toml"
 MATRIX_JSON = COMPAT / "matrix.json"
 MATRIX_MD = COMPAT / "matrix.md"
 
-VALID_DISPOSITIONS = ("preserve", "migrate", "remove-with-deprecation")
+VALID_DISPOSITIONS = ("preserve", "migrate", "remove")
 SOURCE_PREFIXES = ("cmd:", "opt:", "action:input:", "action:output:", "hook:")
 BEHAVIOR_PREFIX = "behavior:"
 

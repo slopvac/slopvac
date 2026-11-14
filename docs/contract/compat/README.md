@@ -12,6 +12,6 @@ Regenerate after changing the CLI, the Action, the hooks, or the dispositions:
 uv run python scripts/contract/compat_matrix.py
 ```
 
-`--check` exits 1 when the committed files are stale. `tests/contract/test_compat_matrix.py` makes the same comparison. It also fails on rows without a disposition or owner, and on keys with no matching source row. Rows owned by `TBD` must appear in the test's allow list, which can only shrink.
+`--check` exits 1 when the committed files are stale. `tests/contract/test_compat_matrix.py` makes the same comparison. It also fails on rows without a disposition or owner, and on keys with no matching source row.
 
-Dispositions are `preserve`, `migrate`, and `remove-with-deprecation`. The `test` column reads `pending` for preserve rows. Installed-binary tests against the 3.0 binary replace it later.
+Dispositions are `preserve`, `migrate`, and `remove`. `migrate` means `slopvac migrate` rewrites the item (config keys, directive IDs, steering blocks). 3.0 has no compatibility mode: removed options error, and 2.x configs are rejected with a pointer to `slopvac migrate`. The `test` column reads `pending` for preserve rows. Installed-binary tests against the 3.0 binary replace it later.
