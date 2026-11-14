@@ -26,6 +26,7 @@ def test_published_hook_ids():
     ("hook_id", "entry"),
     [
         ("slopvac", "slopvac lint"),
+        # STUB(slopvac-8l4.13.13): --style is a placeholder for the CLI's style option.
         ("slopvac-strict", "slopvac lint --style core:legacy-strict"),
     ],
 )
@@ -82,6 +83,7 @@ def _run_hook(tmp_path: Path, runner: str, hook_id: str) -> list[str]:
     ("hook_id", "argv"),
     [
         ("slopvac", ["lint", "README.md"]),
+        # STUB(slopvac-8l4.13.13): --style is a placeholder for the CLI's style option.
         ("slopvac-strict", ["lint", "--style", "core:legacy-strict", "README.md"]),
     ],
 )

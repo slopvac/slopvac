@@ -218,7 +218,7 @@ repos:
 ```
 
 The hook runs the `slopvac` binary on your `PATH`. Use `slopvac-strict` for the
-bundled `core:legacy-strict` style. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).
+bundled `core:legacy-strict` style. The `--style` option is pending in the 3.0 CLI, so the hook command will change to the final option before release. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).
 
 ### GitHub Actions
 

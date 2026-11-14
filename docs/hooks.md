@@ -30,9 +30,11 @@ prek reads the same file, so `prek run` and `pre-commit run` behave the same.
 | `slopvac` | `slopvac lint <files>` |
 | `slopvac-strict` | `slopvac lint --style core:legacy-strict <files>` |
 
+<!-- STUB(slopvac-8l4.13.13): --style is a placeholder until the CLI exposes its style-selection option. -->
+
 The hook has no pinned tool version. The `rev` selects the hook definition, and the binary on `PATH` selects the rules. Pin the binary version in your tool manager, for example with `mise`.
 
-`--profile` is removed in 3.0. The `slopvac-strict` hook applies the bundled `core:legacy-strict` style, the 3.0 counterpart of the 2.x strict profile. Scope the hook with `files:` so it runs only on reference material:
+`--profile` is removed in 3.0. The `slopvac-strict` hook applies the bundled `core:legacy-strict` style, the 3.0 counterpart of the 2.x strict profile. The `--style` option is pending in the 3.0 CLI, so the hook command will change to the final option before release. Scope the hook with `files:` so it runs only on reference material:
 
 ```yaml
 - id: slopvac-strict
