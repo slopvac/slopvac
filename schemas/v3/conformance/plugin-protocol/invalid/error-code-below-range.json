@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "error": {
+    "code": -9007199254740992,
+    "message": "x",
+    "data": {
+      "slopvac_code": "document-invalid"
+    }
+  }
+}

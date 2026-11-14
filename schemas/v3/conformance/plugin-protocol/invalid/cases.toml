@@ -53,3 +53,4 @@
 "PluginDeclaration--missing-network.json" = ""
 "PluginDeclaration--hook-without-id.json" = "/hooks/0"
 "id-above-2-53.json" = "/id"
+"error-code-below-range.json" = "/error/code"

@@ -50,7 +50,7 @@ A sender must not send a body over the limit. A reader checks `Content-Length` b
 
 A duplicate key in an object is a framing error in v1, because readers disagree about which value wins.
 
-Numbers follow checked rules in v1. A field the schema types as an integer must parse as an integer: `1.0` and `1e2` are invalid. An integer outside 0 to 2^53-1 (the range that JSON readers in every language keep exact) is invalid. A reader converts to its internal type with checked arithmetic, and a failed conversion makes the message invalid. All size and span arithmetic in the host is checked. Overflow is a `plugin-output-invalid` or a framing error, never a wrap.
+Numbers follow checked rules in v1. A field the schema types as an integer must parse as an integer: `1.0` and `1e2` are invalid. An integer outside ±(2^53-1), the range that JSON readers in every language keep exact, is invalid. Signed values are valid where the schema allows them, such as the negative JSON-RPC error `code`. Fields for sizes, counts, spans and finding indices also require 0 or more, and request ids require 1 or more, so one out-of-range field invalidates only that message or, for a per-document `error`, only that entry. A reader converts to its internal type with checked arithmetic, and a failed conversion makes the message invalid. All size and span arithmetic in the host is checked. Overflow is a `plugin-output-invalid` or a framing error, never a wrap.
 
 Before `initialize` completes, no negotiated limit exists. Until then the host applies a 1 MiB body limit and the 10 s `initialize` deadline to everything the plugin sends. The host's own `initialize` request must fit in the same limit. The negotiated limits take effect with the reply, and the host applies them to later messages only.
 
@@ -109,7 +109,7 @@ Anything that decides whether the host may start the plugin comes from the plugi
 - The manifest is part of the content hash that `slopvac plugins trust` records. A change to the declaration changes the hash and revokes trust.
 - Before spawn the host checks: trust for the hash, `network` against offline mode (`--offline`, `SLOPVAC_OFFLINE`, `[network] offline`, and the `offline` state at the call site), and the declared hook kinds against the hooks the command needs. A plugin with `network: true` does not spawn in offline mode. The host prints `offline: <plugin> needs the network` and exits 2 when the user asked for the operation.
 - The host also decides from the declaration which features it can grant. It does not spawn a plugin whose declared required feature it lacks.
-- After spawn the host compares the reply with the declaration. The reply is valid only when `requiresNetwork` equals `network`, every hook in the reply appears in the manifest, and each required feature appears in the manifest's required list. A mismatch is `plugin-declaration-mismatch`. The host kills the plugin and does not reuse it.
+- After spawn the host compares the reply with the declaration. The reply is valid only when `requiresNetwork` equals `network`, every hook in the reply appears in the manifest, each required feature appears in the manifest's required list, and each optional feature appears in the manifest's optional list. A feature the manifest lists as optional may not become required in the reply. A mismatch is `plugin-declaration-mismatch`. The host kills the plugin and does not reuse it.
 - A plugin may offer fewer hooks than it declared. It may not offer more.
 
 ## 5. Hooks
