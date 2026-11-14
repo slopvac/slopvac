@@ -84,7 +84,7 @@ A results file holds the engine name, command and version, the manifest hash, an
 
 `score` reports, for each rule and for a split (`all`, `tuning` or `holdout`):
 
-- `recall`: seeded defects and adjudicated true positives where the rule fires within one line. `seeded_recall` and `adjudicated_recall` show the two parts. An adjudicated positive that the engine no longer reports counts as a miss. Pass `--labels evals/labels/labels.jsonl` to include them.
+- `recall`: seeded defects and adjudicated true positives where the rule fires within one line. `seeded_recall` and `adjudicated_recall` show the two parts. An adjudicated positive that the engine does not report counts as a miss. Pass `--labels evals/labels/labels.jsonl` to include them.
 - `precision`: adjudicated findings labelled true over all labelled findings, with `--labels`.
 - `control_fpr`: clean-control sentences where the rule fires within one line.
 - `human_per_100_words`: findings on pre-2022 human text, a floor on false positives.
