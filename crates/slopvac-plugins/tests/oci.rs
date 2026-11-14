@@ -741,6 +741,80 @@ fn referrers_reject_ten_thousand_and_one_descriptors() {
     );
 }
 
+/// A registry without the referrers API whose `sha256-<hex>` tag holds `count` descriptors.
+fn tag_schema_server(subject: &Digest, count: usize) -> Server {
+    let one = json!({"mediaType": MEDIA_MANIFEST, "digest": Digest::of(b"r"), "size": 1});
+    let index = json!({"schemaVersion": 2, "mediaType": MEDIA_INDEX,
+        "manifests": vec![one; count]})
+    .to_string();
+    let tag_path = format!("/v2/a/b/manifests/sha256-{}", subject.hex());
+    Server::start(move |req| {
+        if req.path == tag_path {
+            Response::new(200)
+                .header("Content-Type", MEDIA_INDEX)
+                .body(index.clone())
+        } else {
+            Response::new(404)
+        }
+    })
+}
+
+#[test]
+fn the_tag_schema_fallback_accepts_exactly_ten_thousand_descriptors() {
+    let subject = Digest::of(b"s");
+    let server = tag_schema_server(&subject, 10_000);
+    let found = anonymous_client()
+        .referrers(&reference(&server, "a/b:1"), &subject, None)
+        .unwrap();
+    assert_eq!(found.len(), 10_000);
+}
+
+#[test]
+fn the_tag_schema_fallback_rejects_ten_thousand_and_one_descriptors() {
+    let subject = Digest::of(b"s");
+    let server = tag_schema_server(&subject, 10_001);
+    let err = anonymous_client()
+        .referrers(&reference(&server, "a/b:1"), &subject, None)
+        .unwrap_err();
+    assert!(
+        matches!(err, OciError::TooLarge { limit: 10_000, .. }),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn the_tag_schema_fallback_gate_counts_descriptors_before_the_type_filter() {
+    let subject = Digest::of(b"s");
+    let server = tag_schema_server(&subject, 10_001);
+    let err = anonymous_client()
+        .referrers(
+            &reference(&server, "a/b:1"),
+            &subject,
+            Some("application/vnd.slopvac.signature.v1"),
+        )
+        .unwrap_err();
+    assert!(matches!(err, OciError::TooLarge { .. }), "{err:?}");
+}
+
+#[test]
+fn referrers_api_responses_with_an_unsupported_content_type_are_refused() {
+    for content_type in ["text/html", MEDIA_MANIFEST] {
+        let index = json!({"schemaVersion": 2, "mediaType": MEDIA_INDEX, "manifests": []});
+        let server = Server::start(move |_| {
+            Response::new(200)
+                .header("Content-Type", content_type)
+                .body(index.to_string())
+        });
+        let err = anonymous_client()
+            .referrers(&reference(&server, "a/b:1"), &Digest::of(b"s"), None)
+            .unwrap_err();
+        assert!(
+            matches!(&err, OciError::UnsupportedMediaType(t) if t == content_type),
+            "{content_type}: {err:?}"
+        );
+    }
+}
+
 #[test]
 fn the_next_page_is_the_link_with_rel_next_wherever_it_appears() {
     // Each case is the `Link` header lines of the first page; "b" is on page 2.
@@ -1012,6 +1086,100 @@ mod windows_helpers {
     fn a_batch_file_is_never_a_helper() {
         let msg = lookup_with_file("bat", "x", "docker-credential-x.bat");
         assert!(msg.contains("not found"), "{msg}");
+    }
+
+    /// Build a tiny executable from `source` with the toolchain that runs the tests.
+    fn compile(source: &str, out: &std::path::Path) {
+        let src = out.with_extension("rs");
+        std::fs::write(&src, source).unwrap();
+        let status = std::process::Command::new("rustc")
+            .arg("--edition=2021")
+            .arg("-o")
+            .arg(out)
+            .arg(&src)
+            .status()
+            .unwrap();
+        assert!(status.success(), "rustc failed for {}", out.display());
+    }
+
+    /// Removes the decoy from the application directory, even when the test fails.
+    struct RemoveOnDrop(std::path::PathBuf);
+
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    fn pid_is_gone(pid: u32) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let listing = std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+                .output()
+                .unwrap();
+            if !String::from_utf8_lossy(&listing.stdout).contains(&pid.to_string()) {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
+    /// Windows resolves a bare `taskkill` from the application directory before
+    /// System32, so a decoy there would run if the kill used the bare name.
+    #[test]
+    fn tm38_a_timeout_runs_system32_taskkill_never_a_decoy_found_by_name() {
+        let dir = std::env::temp_dir().join(format!("slopvac-oci-win-kill-{}", std::process::id()));
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            json!({"credsStore": "hang"}).to_string(),
+        )
+        .unwrap();
+        let pid_file = dir.join("helper.pid");
+        let decoy_marker = dir.join("decoy-ran");
+        compile(
+            &format!(
+                "fn main() {{ std::fs::write({pid_file:?}, std::process::id().to_string()).unwrap(); \
+                 std::thread::sleep(std::time::Duration::from_secs(600)); }}"
+            ),
+            &bin.join("docker-credential-hang.exe"),
+        );
+        let app_dir = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_owned();
+        let decoy = app_dir.join("taskkill.exe");
+        let _cleanup = RemoveOnDrop(decoy.clone());
+        let built = dir.join("taskkill.exe");
+        compile(
+            &format!("fn main() {{ std::fs::write({decoy_marker:?}, \"ran\").unwrap(); }}"),
+            &built,
+        );
+        std::fs::copy(&built, &decoy).unwrap();
+
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(dir.clone()),
+            helper_search_path: Some(bin.clone().into_os_string()),
+            helper_timeout: Some(std::time::Duration::from_secs(5)),
+            ..DefaultCredentials::default()
+        };
+        let err = creds.credential("ghcr.io").unwrap_err().to_string();
+
+        assert!(err.contains("timed out"), "{err}");
+        assert!(!decoy_marker.exists(), "the decoy taskkill.exe ran");
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("the helper wrote its pid before the lookup ended")
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(pid_is_gone(pid), "helper {pid} survived the timeout");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
 

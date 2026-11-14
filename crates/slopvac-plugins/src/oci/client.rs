@@ -84,6 +84,42 @@ impl Fetched {
     }
 }
 
+/// The response's `Content-Type` without parameters, lower-cased.
+fn content_type<T>(resp: &ureq::http::Response<T>) -> Option<String> {
+    resp.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
+}
+
+/// The manifest or index type of a body: the header's when it is one of the
+/// two, else the body's own `mediaType` behind a generic JSON header.
+fn manifest_media_type(header_type: Option<&str>, body: &[u8]) -> Result<String, OciError> {
+    match header_type {
+        Some(t @ (MEDIA_MANIFEST | MEDIA_INDEX)) => Ok(t.to_owned()),
+        other => {
+            // Some registries send a generic type; the body then names its own.
+            let declared = serde_json::from_slice::<serde_json::Value>(body)
+                .ok()
+                .and_then(|v| {
+                    v.get("mediaType")
+                        .and_then(|m| m.as_str().map(str::to_owned))
+                });
+            match declared.as_deref() {
+                Some(t @ (MEDIA_MANIFEST | MEDIA_INDEX))
+                    if other
+                        .is_none_or(|o| o.starts_with("application/json") || o == "text/plain") =>
+                {
+                    Ok(t.to_owned())
+                }
+                _ => Err(OciError::UnsupportedMediaType(
+                    other.unwrap_or("none").to_owned(),
+                )),
+            }
+        }
+    }
+}
+
 /// OCI registry client. One per run; it caches bearer tokens by registry
 /// origin and scope, so a token never goes to another registry.
 pub struct Client {
@@ -325,11 +361,7 @@ impl Client {
         if status != 200 {
             return Err(Self::deny_or_status(&url, status));
         }
-        let header_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase());
+        let header_type = content_type(&resp);
         check_declared_length(&resp, MAX_MANIFEST_BYTES as u64, "manifest")?;
         let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "manifest")?;
         let digest = Digest::of(&body);
@@ -341,32 +373,7 @@ impl Client {
                 actual: digest.to_string(),
             });
         }
-        let media_type = match header_type.as_deref() {
-            Some(t @ (MEDIA_MANIFEST | MEDIA_INDEX)) => t.to_owned(),
-            other => {
-                // Some registries send a generic type; the body then names its own.
-                let declared = serde_json::from_slice::<serde_json::Value>(&body)
-                    .ok()
-                    .and_then(|v| {
-                        v.get("mediaType")
-                            .and_then(|m| m.as_str().map(str::to_owned))
-                    });
-                match declared.as_deref() {
-                    Some(t @ (MEDIA_MANIFEST | MEDIA_INDEX))
-                        if other.is_none_or(|o| {
-                            o.starts_with("application/json") || o == "text/plain"
-                        }) =>
-                    {
-                        t.to_owned()
-                    }
-                    _ => {
-                        return Err(OciError::UnsupportedMediaType(
-                            other.unwrap_or("none").to_owned(),
-                        ));
-                    }
-                }
-            }
-        };
+        let media_type = manifest_media_type(header_type.as_deref(), &body)?;
         Ok(Fetched {
             digest,
             media_type,
@@ -494,22 +501,24 @@ impl Client {
                     Err(OciError::NotFound(_)) => {}
                     Err(e) => return Err(e),
                 }
+                Self::check_referrers_count(found.len())?;
                 break;
             }
             if status != 200 {
                 return Err(Self::deny_or_status(&url, status));
             }
             let next = next_link(&resp, &url);
+            let header_type = content_type(&resp);
             let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "referrers index")?;
-            let index: Index = serde_json::from_slice(&body)
-                .map_err(|e| OciError::Invalid(format!("referrers index: {e}")))?;
-            found.extend(index.manifests);
-            if found.len() > MAX_TAGS {
-                return Err(OciError::TooLarge {
-                    what: "referrers list".into(),
-                    limit: MAX_TAGS as u64,
-                });
+            let media_type = manifest_media_type(header_type.as_deref(), &body)?;
+            let index = Fetched {
+                digest: Digest::of(&body),
+                media_type,
+                body,
             }
+            .index()?;
+            found.extend(index.manifests);
+            Self::check_referrers_count(found.len())?;
             let Some(next) = next else { break };
             url = next;
         }
@@ -517,6 +526,17 @@ impl Client {
             found.retain(|d| d.artifact_type.as_deref() == Some(want));
         }
         Ok(found)
+    }
+
+    /// Refuse a referrers list past the descriptor limit, before any filtering.
+    fn check_referrers_count(count: usize) -> Result<(), OciError> {
+        if count > MAX_TAGS {
+            return Err(OciError::TooLarge {
+                what: "referrers list".into(),
+                limit: MAX_TAGS as u64,
+            });
+        }
+        Ok(())
     }
 
     /// List tags, following `Link` pagination up to 10 pages and 10,000 tags.
