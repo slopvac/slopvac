@@ -22,6 +22,10 @@ code:
   - 'scripts/install_vale.py'
   - 'mise.toml'
   - '**/conftest.py'
+  - 'schemas/**'
+  - 'docs/contract/**'
+  - 'scripts/contract/**'
+  - 'tests/contract/**'
 
 package:
   - '.github/workflows/**'
@@ -112,6 +116,8 @@ lint:
   - 'packages/**'
   - 'tests/**'
   - 'scripts/**'
+  - 'schemas/**'
+  - 'docs/contract/**'
   - '**/*.md'
   - '**/*.mdx'
   - '**/*.markdown'
