@@ -1,0 +1,36 @@
+# Release-readiness gate for slopvac 3.0.0 (bead slopvac-8l4.13.9).
+# `scripts/release_gate.py` reads this file. Each [[command]] runs from the
+# repository root and passes when it exits 0. A missing tool is "incomplete".
+# Suites that do not exist yet fail on purpose: `--no-tests=fail` makes cargo
+# nextest exit non-zero when a filter matches nothing, so an absent suite can't pass.
+
+[beads]
+release_label = "release:3.0.0"
+# Open beads that may stay open while the gate runs: the gate itself and the
+# programme and distribution epics that close after it.
+allowed_open = ["slopvac-8l4", "slopvac-8l4.13", "slopvac-8l4.13.9"]
+
+[[command]]
+id = "golden"
+title = "Golden suite"
+run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^golden::/)"]
+
+[[command]]
+id = "accuracy"
+title = "Offline accuracy gate (precision and recall)"
+run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^accuracy::/)"]
+
+[[command]]
+id = "compat-preserve"
+title = "Compatibility matrix preserve rows"
+run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^compat::preserve/)"]
+
+[[command]]
+id = "conformance"
+title = "Conformance tests (plugin protocol, positions, lint report, policies)"
+run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^conformance::/)"]
+
+[[command]]
+id = "perf-budgets"
+title = "Performance budgets measured on the installed CLI"
+run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^perf_budget::/)"]
