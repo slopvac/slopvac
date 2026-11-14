@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use similar::TextDiff;
-use toml_edit::DocumentMut;
+use toml_edit::{DocumentMut, Item, Value};
 
 use crate::config::{key_lines, migrate_config};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
@@ -240,7 +240,15 @@ enum Origin {
 /// without it. Unrelated content and comments in `pyproject.toml` stay as they are.
 fn extract_tool_table(text: &str) -> Option<(String, String)> {
     let mut doc: DocumentMut = text.parse().ok()?;
-    let table = doc.get("tool")?.get("slopvac")?.as_table()?.clone();
+    let table = match doc.get("tool")?.get("slopvac")? {
+        Item::Table(t) => {
+            let mut t = t.clone();
+            t.set_dotted(false);
+            t
+        }
+        Item::Value(Value::InlineTable(t)) => t.clone().into_table(),
+        _ => return None,
+    };
     let tool = doc.get_mut("tool")?.as_table_like_mut()?;
     tool.remove("slopvac");
     if tool.is_empty() {
@@ -302,10 +310,55 @@ pub fn render_diff(plan: &Plan) -> String {
     out
 }
 
+/// Reject a project-relative path that is not a plain descent into the project:
+/// absolute paths, `..`, and any existing symlink on the way. Nothing is touched.
+fn ensure_inside(root: &Path, name: &Path) -> Result<(), Error> {
+    use std::path::Component;
+    let mut cur = root.to_owned();
+    let mut any = false;
+    for comp in name.components() {
+        let Component::Normal(part) = comp else {
+            return Err(Error::Unsafe(format!(
+                "{}: path leaves the project",
+                name.display()
+            )));
+        };
+        if part.to_string_lossy().contains('\n') {
+            return Err(Error::Unsafe(format!(
+                "{}: newline in path",
+                name.display()
+            )));
+        }
+        any = true;
+        cur.push(part);
+        if fs::symlink_metadata(&cur).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(Error::Unsafe(format!(
+                "{}: {} is a symbolic link",
+                name.display(),
+                cur.display()
+            )));
+        }
+    }
+    if any {
+        Ok(())
+    } else {
+        Err(Error::Unsafe("empty path".into()))
+    }
+}
+
 /// Write the plan to disk. Replaced and deleted files are copied to [`BACKUP_DIR`]
-/// first, with a manifest that [`restore`] reads.
+/// first, with a manifest that [`restore`] reads. A second write is refused while a
+/// backup exists, so the first backup is never overwritten.
 pub fn apply(root: &Path, plan: &Plan) -> Result<(), Error> {
+    for c in &plan.changes {
+        ensure_inside(root, &c.path)?;
+    }
     let backup = root.join(BACKUP_DIR);
+    if backup.exists() {
+        return Err(Error::Unsafe(format!(
+            "{BACKUP_DIR} exists; run `slopvac migrate --restore` or delete it first"
+        )));
+    }
     fs::create_dir_all(&backup).map_err(|e| Error::io(&backup, e))?;
     let mut manifest = String::new();
     for c in &plan.changes {
@@ -337,27 +390,41 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<(), Error> {
 
 /// Undo the last [`apply`]: put backed-up files back and remove files it created.
 /// Returns the number of files touched.
+///
+/// The manifest is data on disk, so every entry is checked before any file changes:
+/// a path must stay inside the project and cross no symbolic link.
 pub fn restore(root: &Path) -> Result<usize, Error> {
     let backup = root.join(BACKUP_DIR);
+    if fs::symlink_metadata(&backup).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(Error::Unsafe(format!("{BACKUP_DIR} is a symbolic link")));
+    }
     let manifest = read(&backup.join("manifest.txt"))?;
-    let mut count = 0;
+    let mut steps = Vec::new();
     for line in manifest.lines() {
         let Some((kind, name)) = line.split_once(' ') else {
-            continue;
+            return Err(Error::Unsafe(format!("malformed manifest line `{line}`")));
         };
-        let full = root.join(name);
-        match kind {
-            "M" => {
-                fs::copy(backup.join(name), &full).map_err(|e| Error::io(&full, e))?;
-            }
-            "C" if full.is_file() => {
-                fs::remove_file(&full).map_err(|e| Error::io(&full, e))?;
-            }
-            "C" => {}
-            _ => continue,
+        if kind != "M" && kind != "C" {
+            return Err(Error::Unsafe(format!("unknown manifest entry `{line}`")));
         }
-        count += 1;
+        let rel = Path::new(name);
+        ensure_inside(root, rel)?;
+        if kind == "M" {
+            ensure_inside(&backup, rel)?;
+            if !backup.join(rel).is_file() {
+                return Err(Error::Unsafe(format!("{name}: missing from the backup")));
+            }
+        }
+        steps.push((kind == "M", rel.to_owned()));
+    }
+    for (is_backup, rel) in &steps {
+        let full = root.join(rel);
+        if *is_backup {
+            fs::copy(backup.join(rel), &full).map_err(|e| Error::io(&full, e))?;
+        } else if full.is_file() {
+            fs::remove_file(&full).map_err(|e| Error::io(&full, e))?;
+        }
     }
     fs::remove_dir_all(&backup).map_err(|e| Error::io(&backup, e))?;
-    Ok(count)
+    Ok(steps.len())
 }

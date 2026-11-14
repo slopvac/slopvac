@@ -247,3 +247,130 @@ fn cli_exits_2_and_names_each_dropped_setting() {
     );
     assert!(err.contains("slopvac.toml:3: `vale.enabled`"), "{err}");
 }
+
+fn backup_with(dir: &Path, manifest: &str) {
+    let b = dir.join(slopvac_migrate::BACKUP_DIR);
+    fs::create_dir_all(&b).unwrap();
+    fs::write(b.join("manifest.txt"), manifest).unwrap();
+}
+
+#[test]
+fn restore_rejects_paths_that_leave_the_project() {
+    let outer = tempfile::tempdir().unwrap();
+    let root = outer.path().join("proj");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(outer.path().join("victim.txt"), "keep").unwrap();
+    let abs = format!("C {}\n", outer.path().join("victim.txt").display());
+    for manifest in [
+        "C ../victim.txt\n",
+        abs.as_str(),
+        "M ../victim.txt\n",
+        "C a/../../victim.txt\n",
+    ] {
+        backup_with(&root, manifest);
+        assert!(
+            matches!(restore(&root), Err(Error::Unsafe(_))),
+            "{manifest}"
+        );
+        assert_eq!(
+            fs::read_to_string(outer.path().join("victim.txt")).unwrap(),
+            "keep"
+        );
+        fs::remove_dir_all(root.join(slopvac_migrate::BACKUP_DIR)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_rejects_a_symlinked_directory() {
+    let outer = tempfile::tempdir().unwrap();
+    let root = outer.path().join("proj");
+    let elsewhere = outer.path().join("elsewhere");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("victim.txt"), "keep").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("link")).unwrap();
+    backup_with(&root, "C link/victim.txt\n");
+    assert!(matches!(restore(&root), Err(Error::Unsafe(_))));
+    assert!(elsewhere.join("victim.txt").exists());
+}
+
+#[test]
+fn restore_checks_every_entry_before_touching_any_file() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "made.toml", "new");
+    backup_with(dir.path(), "C made.toml\nC ../escape\n");
+    assert!(restore(dir.path()).is_err());
+    assert!(dir.path().join("made.toml").exists());
+}
+
+#[test]
+fn apply_refuses_while_a_backup_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
+    let p = plan_of(dir.path()).unwrap();
+    apply(dir.path(), &p).unwrap();
+    write(dir.path(), "slopvac.toml", "profile = \"normal\"\n");
+    assert!(matches!(apply(dir.path(), &p), Err(Error::Unsafe(_))));
+}
+
+#[test]
+fn inline_tool_slopvac_table_migrates() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool]\nruff = { line-length = 88 }\nslopvac = { profile = \"strict\", exclude = [\"a\"] }\n",
+    );
+    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
+    let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
+    assert!(py.contains("ruff = { line-length = 88 }"), "{py}");
+    assert!(!py.contains("slopvac"), "{py}");
+    let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
+    assert!(new.contains("profile = \"strict\""), "{new}");
+    assert!(new.contains("exclude = [\"a\"]"), "{new}");
+}
+
+#[test]
+fn dotted_tool_slopvac_keys_migrate() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[tool]\nslopvac.profile = \"strict\"\n",
+    );
+    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
+    let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
+    assert!(new.contains("profile = \"strict\""), "{new}");
+    let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
+    assert!(!py.contains("slopvac"), "{py}");
+}
+
+#[test]
+fn warnings_print_even_when_there_is_nothing_to_change() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.md", "<!-- slopvac:begin -->\nunterminated\n");
+    let (code, out, _) = run_cli(&[dir.path().to_str().unwrap()], &NullLinter);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("warning: a.md: malformed or ambiguous"),
+        "{out}"
+    );
+    assert!(out.contains("Nothing to migrate."), "{out}");
+}
+
+#[test]
+fn schema_version_two_config_migrates_through_the_command() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "slopvac.toml",
+        "schema_version = 2\nprofile = \"strict\"\n",
+    );
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"], &NullLinter);
+    assert_eq!((code, err.as_str()), (0, ""));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("slopvac.toml")).unwrap(),
+        "schema_version = 3\nprofile = \"strict\"\n"
+    );
+}

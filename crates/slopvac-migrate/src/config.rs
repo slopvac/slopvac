@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use toml_edit::{Array, Document, DocumentMut, Item, Table, TableLike, Value, value};
+use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::{Dropped, Error, Options, RenameTable};
 
@@ -165,6 +165,12 @@ fn migrate_scope(t: &mut dyn TableLike, path: &str, scope: Scope, cx: &mut Cx<'_
     };
     for key in keys_of(t) {
         let kp = join(path, &key);
+        if scope == Scope::Project && key == "schema_version" {
+            if t.get("schema_version").and_then(Item::as_integer) != Some(2) {
+                cx.drop_key(&kp, "expected 2 in a 2.x config");
+            }
+            continue;
+        }
         if !allowed.contains(&key.as_str()) {
             cx.drop_key(
                 &kp,
@@ -340,6 +346,38 @@ fn terms_table(t: &mut dyn TableLike) -> Option<&mut dyn TableLike> {
     t.get_mut("terms")?.as_table_like_mut()
 }
 
+/// The comment and blank lines before an entry: its key's leading text and, for a
+/// table, the text before its header.
+fn leading(parent: &dyn TableLike, name: &str) -> String {
+    let mut out = String::new();
+    if let Some(Item::Table(table)) = parent.get(name) {
+        out.push_str(
+            table
+                .decor()
+                .prefix()
+                .and_then(RawString::as_str)
+                .unwrap_or(""),
+        );
+    }
+    if let Some(key) = parent.key(name) {
+        out.push_str(
+            key.leaf_decor()
+                .prefix()
+                .and_then(RawString::as_str)
+                .unwrap_or(""),
+        );
+    }
+    out
+}
+
+fn set_leading(t: &mut dyn TableLike, name: &str, prefix: &str) {
+    if let Some(mut key) = t.key_mut(name) {
+        let decor = key.leaf_decor_mut();
+        decor.set_prefix(prefix);
+        decor.set_suffix(" ");
+    }
+}
+
 fn migrate_locale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     let Some(item) = t.get("locale") else { return };
     let Some(tl) = item.as_table_like() else {
@@ -357,19 +395,23 @@ fn migrate_locale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     }
     let default = tl.get("default").cloned();
     let allow = tl.get("allow").cloned();
-    let decor = t.key("locale").map(|k| k.leaf_decor().clone());
+    let header = leading(t, "locale");
+    let default_lead = format!("{header}{}", leading(tl, "default"));
+    let allow_lead = if default.is_some() {
+        leading(tl, "allow")
+    } else {
+        format!("{header}{}", leading(tl, "allow"))
+    };
     t.remove("locale");
     if let Some(d) = default {
         t.insert("locale", d);
-        if let (Some(decor), Some(mut k)) = (decor, t.key_mut("locale")) {
-            *k.leaf_decor_mut() = decor;
-            k.leaf_decor_mut().set_suffix(" ");
-        }
+        set_leading(t, "locale", &default_lead);
         cx.notes.push(format!("moved {path}.default to {path}"));
     }
     if let Some(a) = allow {
         if let Some(terms) = terms_table(t) {
             terms.insert("allow", a);
+            set_leading(terms, "allow", &allow_lead);
         }
         cx.notes.push(format!("moved {path}.allow to terms.allow"));
     }
@@ -392,20 +434,25 @@ fn migrate_vocabulary(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     if !ok {
         return;
     }
-    let file = tl
-        .get("path")
-        .and_then(Item::as_value)
-        .cloned()
-        .map(|mut v| {
-            v.decor_mut().clear();
-            v
-        });
+    let lead = format!("{}{}", leading(t, "vocabulary"), leading(tl, "path"));
+    let file = tl.get("path").and_then(Item::as_value).cloned();
     t.remove("vocabulary");
-    if let Some(file) = file {
+    if let Some(mut file) = file {
+        let suffix = file
+            .decor()
+            .suffix()
+            .and_then(RawString::as_str)
+            .unwrap_or("")
+            .to_owned();
+        file.decor_mut().clear();
         let mut arr = Array::new();
         arr.push(file);
+        let mut v = Value::from(arr);
+        v.decor_mut().set_prefix(" ");
+        v.decor_mut().set_suffix(suffix);
         if let Some(terms) = terms_table(t) {
-            terms.insert("blocklists", value(arr));
+            terms.insert("blocklists", Item::Value(v));
+            set_leading(terms, "blocklists", &lead);
         }
         cx.notes
             .push(format!("moved {path}.path to terms.blocklists"));

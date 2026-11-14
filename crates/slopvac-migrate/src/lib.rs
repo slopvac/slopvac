@@ -77,6 +77,9 @@ pub enum Error {
     /// Two config files in one directory make the result ambiguous.
     #[error("{0}")]
     Conflict(String),
+    /// A path would leave the project or cross a symbolic link, or a backup is in the way.
+    #[error("unsafe: {0}")]
+    Unsafe(String),
     /// The rename table is malformed.
     #[error("rename table: {0}")]
     RenameTable(String),

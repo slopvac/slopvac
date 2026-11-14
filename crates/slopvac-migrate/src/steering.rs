@@ -1,6 +1,6 @@
 //! Managed steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->`.
 
-use crate::directives::fence_marker;
+use crate::directives::fence_step;
 
 const BEGIN: &str = "<!-- slopvac:begin -->";
 const END: &str = "<!-- slopvac:end -->";
@@ -28,13 +28,9 @@ pub fn rewrite_steering(text: &str) -> Result<Option<String>, String> {
     let mut found: Vec<(&str, usize, usize)> = Vec::new();
     let mut offset = 0;
     for line in text.split_inclusive('\n') {
-        if let Some(m) = fence_marker(line) {
-            match fence {
-                None => fence = Some(m),
-                Some((c, n)) if c == m.0 && m.1 >= n => fence = None,
-                Some(_) => {}
-            }
-        } else if fence.is_none() {
+        if fence_step(&mut fence, line) {
+            // fenced text and fence markers are examples
+        } else {
             let v = line.trim().trim_start_matches('\u{feff}');
             if v == BEGIN {
                 found.push((BEGIN, offset, offset + line.len()));

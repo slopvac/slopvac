@@ -79,6 +79,9 @@ fn run_inner(matches: &ArgMatches, linter: &dyn Linter, out: &mut dyn Write) -> 
     };
     let renames = RenameTable::bundled();
     let plan = plan(&root, &renames, options)?;
+    for warning in &plan.warnings {
+        writeln!(out, "warning: {warning}").map_err(io)?;
+    }
     if plan.is_empty() {
         writeln!(out, "Nothing to migrate.").map_err(io)?;
         return Ok(());
@@ -86,9 +89,6 @@ fn run_inner(matches: &ArgMatches, linter: &dyn Linter, out: &mut dyn Write) -> 
     write!(out, "{}", render_diff(&plan)).map_err(io)?;
     for note in &plan.notes {
         writeln!(out, "note: {note}").map_err(io)?;
-    }
-    for warning in &plan.warnings {
-        writeln!(out, "warning: {warning}").map_err(io)?;
     }
     let before = linter.lint(&root, Phase::Before, &[])?;
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;

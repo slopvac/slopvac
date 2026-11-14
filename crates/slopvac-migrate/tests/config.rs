@@ -152,6 +152,44 @@ fn guidance_and_thresholds_copy() {
 }
 
 #[test]
+fn schema_version_two_is_rewritten_to_three() {
+    let out = migrate("schema_version = 2\nprofile = \"strict\"\n").unwrap();
+    assert_eq!(out, "schema_version = 3\nprofile = \"strict\"\n");
+}
+
+#[test]
+fn other_schema_versions_are_not_a_2x_config() {
+    assert_eq!(
+        dropped("schema_version = 1\nprofile = \"strict\"\n"),
+        vec![("schema_version".to_owned(), 1)]
+    );
+}
+
+#[test]
+fn vocabulary_comments_follow_the_path_to_blocklists() {
+    let out =
+        migrate("# Our word list\n[vocabulary]\n# the file\npath = \"words.toml\" # relative\n")
+            .unwrap();
+    assert_eq!(
+        out,
+        "schema_version = 3\n\n[terms]\n# Our word list\n# the file\nblocklists = [\"words.toml\"] # relative\n"
+    );
+}
+
+#[test]
+fn locale_comments_follow_their_values() {
+    let out = migrate(
+        "# Spelling\n[locale]\n# target\ndefault = \"en-GB\" # UK\n# skip these\nallow = [\"x\"]\n",
+    )
+    .unwrap();
+    assert!(
+        out.contains("# Spelling\n# target\nlocale = \"en-GB\" # UK\n"),
+        "{out}"
+    );
+    assert!(out.contains("# skip these\nallow = [\"x\"]"), "{out}");
+}
+
+#[test]
 fn preserve_behavior_adds_the_ste_style() {
     let rw = migrate_config(
         "profile = \"normal\"\n",
