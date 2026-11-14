@@ -1,0 +1,51 @@
+//! Report-level serde behaviour that the generated schema cannot prove.
+
+#![allow(missing_docs)]
+
+use std::fs;
+use std::path::Path;
+
+use serde_json::{Value, json};
+use slopvac_model::{ConfigSource, Report};
+
+fn report(name: &str) -> Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../schemas/v3/conformance/lint-report/valid")
+        .join(name);
+    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+#[test]
+fn a_serialized_report_pins_schema_version_three() {
+    let parsed: Report = serde_json::from_value(report("empty-run.json")).unwrap();
+    let out = serde_json::to_value(&parsed).unwrap();
+    assert_eq!(out["schema_version"], json!(3));
+}
+
+#[test]
+fn a_config_source_rejects_an_unknown_layer() {
+    let source = json!({"layer": "defaults"});
+    assert!(serde_json::from_value::<ConfigSource>(source).is_err());
+}
+
+#[test]
+fn a_config_source_accepts_each_published_layer() {
+    for layer in [
+        "core",
+        "style",
+        "genre",
+        "extends",
+        "project",
+        "override",
+        "front-matter",
+        "directive",
+        "cli",
+        "env",
+    ] {
+        let parsed: ConfigSource = serde_json::from_value(json!({"layer": layer})).unwrap();
+        assert_eq!(
+            serde_json::to_value(&parsed).unwrap(),
+            json!({"layer": layer})
+        );
+    }
+}

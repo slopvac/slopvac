@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "packs": [
+    {
+      "id": "acme-style",
+      "namespace": "acme",
+      "name": "Acme style",
+      "description": "House style for Acme docs.",
+      "version": "1.2.0",
+      "kind": "data",
+      "slopvac_api": 1,
+      "source": "https://user:pw@example.com/pack.tar.gz",
+      "publisher_key": {
+        "key_id": "0123456789ABCDEF",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}
