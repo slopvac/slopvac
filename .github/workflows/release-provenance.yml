@@ -34,3 +34,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/release_provenance.py check-stable "$TAG" --repo "$REPO" --sha "$EVENT_SHA"
+
+      # A tag-writer could move the tag after this check. Only a repository ruleset
+      # makes version tags immutable, and a maintainer must create it. Read-only;
+      # fails closed, also when the token cannot read rulesets.
+      - name: Require an immutable tag ruleset
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_ruleset.py check "$TAG" --repo "$REPO"
