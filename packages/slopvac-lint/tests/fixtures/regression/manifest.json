@@ -14,8 +14,8 @@
       "expected": {
         "ai-tells-structure.cataphoric-lead-in-core": 2,
         "ai-tells-structure.negative-guarantee-core": 6,
-        "ai-tells-structure.negative-inventory-core": 1,
-        "docs-discipline.history-narration": 5,
+        "docs-discipline.history-narration": 3,
+        "docs-discipline.no-longer-change": 1,
         "prose-agency.anthropomorphism": 1,
         "prose-craft.directional-ref": 1,
         "prose-craft.future-tense": 1,
@@ -110,7 +110,7 @@
         "issue": "srobroek/slopvac#255"
       },
       "expected": {
-        "docs-discipline.history-narration": 3,
+        "docs-discipline.history-narration": 1,
         "ste-sentences.missing-article-or-determiner": 1,
         "ste-verbs.passive-voice": 1
       }
@@ -133,7 +133,7 @@
         "issue": "srobroek/slopvac#257"
       },
       "expected": {
-        "ai-tells-formatting.title-case-heading": 5
+        "ai-tells-formatting.title-case-heading": 3
       }
     }
   ]
