@@ -137,3 +137,25 @@ How a label forms:
 A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
 
 A rule needs 20 adjudicated true positives before the precision gate trusts it. `stats.json` lists the count per rule.
+
+## Ratchet
+
+The ratchet stops a rule change from making a rule worse. `evals/baselines/python.json` holds the counts per rule and split: recall, precision, false positives on clean controls, and findings on human text. The baseline records no local paths.
+
+```sh
+just eval-ratchet            # run the reference engine, compare with the baseline, report only
+just eval-ratchet enforce    # exit 1 on a regression
+just eval-baseline           # rebuild the baseline after an intended change
+```
+
+A rule regresses when its current estimate is worse than the baseline estimate by more than noise:
+
+- For recall and precision, the upper end of the current interval is below the baseline rate.
+- For the control false-positive rate, the lower end is above it.
+- For findings on human text, the current count exceeds the baseline count, scaled by word count, by more than two Poisson standard deviations plus one.
+
+The interval is the wider of the Wilson interval and the document-cluster bootstrap interval. A rate on fewer than 10 cases is listed and never gated. A rule that disappears from the scorecard is a regression.
+
+Tuning and holdout are compared separately against their own baselines. Tune rules against `tuning`. Use `holdout` to check that a gain generalises.
+
+The ratchet starts in report mode. The workflow `evals-ratchet.yml` runs on rule, engine and eval changes and writes the table to the job summary. Set the repository variable `SLOPVAC_EVALS_GATE` to `enforce`, or pass `--mode enforce`, to fail the run. The run is deterministic for a given engine and corpus, and a baseline from another manifest is rejected with exit 2. After a corpus or label change, rebuild the baseline in the same pull request and say why.

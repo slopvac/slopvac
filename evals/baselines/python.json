@@ -1,0 +1,1414 @@
+{
+ "corpus": {
+  "manifest_sha256": "375f84d99bfd92ce2571edecf532e172468be8ded1e2a7f6eeb7956274693f46"
+ },
+ "engine": {
+  "name": "python",
+  "version": "2.18.1"
+ },
+ "schema": 1,
+ "splits": {
+  "holdout": {
+   "human_words": 35373,
+   "rules": {
+    "ai-tells-content-shape.adjective-per-noun-spray": {
+     "human_findings": 1
+    },
+    "ai-tells-content-shape.durable-vocabulary-habits": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 7,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-content-shape.fabricated-citations-core": {
+     "human_findings": 6
+    },
+    "ai-tells-content-shape.superficial-ing-analysis": {
+     "human_findings": 1
+    },
+    "ai-tells-figurative.figurative-sits": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-strikes": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.resonate-overuse": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-formatting.bold-spray": {
+     "human_findings": 4
+    },
+    "ai-tells-formatting.em-dash-density": {
+     "human_findings": 5
+    },
+    "ai-tells-formatting.emoji-list-markers": {
+     "human_findings": 1
+    },
+    "ai-tells-formatting.heading-hierarchy": {
+     "human_findings": 3
+    },
+    "ai-tells-formatting.title-case-heading": {
+     "human_findings": 61
+    },
+    "ai-tells-structure.absolute-assertion-core": {
+     "human_findings": 2
+    },
+    "ai-tells-structure.cataphoric-lead-in-core": {
+     "human_findings": 2
+    },
+    "ai-tells-structure.rhetorical-question-transition": {
+     "human_findings": 6
+    },
+    "ai-tells-structure.summary-closer-frames": {
+     "human_findings": 1
+    },
+    "docs-discipline.history-narration": {
+     "human_findings": 49
+    },
+    "docs-discipline.internal-refs": {
+     "human_findings": 3
+    },
+    "docs-discipline.status-language": {
+     "human_findings": 16
+    },
+    "orwell.compound-preposition": {
+     "human_findings": 17
+    },
+    "orwell.unsupported-evaluative": {
+     "human_findings": 4
+    },
+    "prose-agency.narrator-distance": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-agency.unattributed-recommendation": {
+     "human_findings": 1
+    },
+    "prose-craft.ambiguity": {
+     "human_findings": 8
+    },
+    "prose-craft.articles": {
+     "human_findings": 1
+    },
+    "prose-craft.dead-opener": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 27,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.directional-ref": {
+     "human_findings": 3
+    },
+    "prose-craft.first-person-plural": {
+     "human_findings": 233
+    },
+    "prose-craft.future-tense": {
+     "human_findings": 178
+    },
+    "prose-craft.gerund-heading": {
+     "human_findings": 2
+    },
+    "prose-craft.hyphens": {
+     "human_findings": 6
+    },
+    "prose-craft.latinisms": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 1
+     }
+    },
+    "prose-craft.link-text": {
+     "human_findings": 10
+    },
+    "prose-craft.negative-requirement": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.optional-plural": {
+     "human_findings": 2
+    },
+    "prose-craft.ordinals": {
+     "human_findings": 33
+    },
+    "prose-craft.plural-abbreviation": {
+     "human_findings": 4
+    },
+    "prose-craft.politeness": {
+     "human_findings": 14
+    },
+    "prose-craft.redundancy": {
+     "human_findings": 1
+    },
+    "prose-craft.relative-date": {
+     "human_findings": 15
+    },
+    "prose-craft.self-reference": {
+     "human_findings": 7
+    },
+    "prose-craft.sentence-length": {
+     "human_findings": 43
+    },
+    "prose-craft.spacing": {
+     "human_findings": 31
+    },
+    "prose-craft.unclear-antecedent": {
+     "human_findings": 37
+    },
+    "prose-craft.versions": {
+     "human_findings": 1
+    },
+    "prose-craft.wordiness": {
+     "human_findings": 38
+    },
+    "prose-discipline.bidirectional-hedge": {
+     "human_findings": 1
+    },
+    "prose-discipline.frozen-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-discipline.hedged-hedge": {
+     "human_findings": 4
+    },
+    "prose-discipline.phrasal-verb": {
+     "human_findings": 6
+    },
+    "prose-format.no-unicode-dash": {
+     "human_findings": 1
+    },
+    "prose-inflation.borderline-hype": {
+     "human_findings": 11
+    },
+    "prose-inflation.business-jargon": {
+     "human_findings": 1
+    },
+    "prose-inflation.document-preamble": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-inflation.hedge-stack": {
+     "human_findings": 2
+    },
+    "prose-inflation.intensifier": {
+     "human_findings": 10
+    },
+    "prose-inflation.nominalized-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 4,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-inflation.slop-lexicon": {
+     "human_findings": 4
+    },
+    "prose-inflation.uncomparables": {
+     "human_findings": 2
+    },
+    "prose-inflation.vague-quantifier": {
+     "human_findings": 30
+    },
+    "prose-promotion.promotional-puffery": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-promotion.promotional-verbs": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-scope.implementation-leak": {
+     "human_findings": 1
+    },
+    "prose-scope.rejected-alternative": {
+     "human_findings": 1
+    },
+    "prose-scope.unrequested-reassurance": {
+     "human_findings": 4
+    },
+    "ste-descriptive.paragraph-too-many-sentences": {
+     "human_findings": 3
+    },
+    "ste-descriptive.sentence-too-long-descriptive": {
+     "human_findings": 139
+    },
+    "ste-nouns.multiword-noun-too-long": {
+     "human_findings": 135
+    },
+    "ste-practices.false-friend-term": {
+     "human_findings": 15
+    },
+    "ste-practices.omitted-conjunction-that": {
+     "human_findings": 15
+    },
+    "ste-practices.phrasal-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 5,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ste-practices.possessive-form-unclear": {
+     "human_findings": 6
+    },
+    "ste-procedural.condition-after-command": {
+     "human_findings": 123
+    },
+    "ste-procedural.instruction-not-imperative": {
+     "human_findings": 35
+    },
+    "ste-procedural.multiple-instructions-per-sentence": {
+     "human_findings": 35
+    },
+    "ste-procedural.sentence-too-long-procedural": {
+     "human_findings": 10
+    },
+    "ste-punctuation.colon-terminates-sentence-for-count": {
+     "human_findings": 12
+    },
+    "ste-punctuation.hyphen-group-too-long": {
+     "human_findings": 32
+    },
+    "ste-punctuation.hyphen-missing-in-compound-modifier": {
+     "human_findings": 16
+    },
+    "ste-punctuation.semicolon-used": {
+     "human_findings": 43
+    },
+    "ste-safety.safety-block-does-not-start-with-command": {
+     "human_findings": 2
+    },
+    "ste-sentences.complex-text-not-in-vertical-list": {
+     "human_findings": 41
+    },
+    "ste-sentences.missing-article-or-determiner": {
+     "human_findings": 11
+    },
+    "ste-sentences.omitted-subject": {
+     "human_findings": 2
+    },
+    "ste-verbs.auxiliary-stacking": {
+     "human_findings": 2
+    },
+    "ste-verbs.complex-tense": {
+     "human_findings": 96
+    },
+    "ste-verbs.nominalized-action": {
+     "human_findings": 3
+    },
+    "ste-verbs.passive-voice": {
+     "human_findings": 463
+    },
+    "ste-words.approved-word-substitution": {
+     "human_findings": 51
+    },
+    "ste-words.obligation-word-substitution": {
+     "human_findings": 48
+    },
+    "ste-words.slang-or-jargon-term": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-words.spelling": {
+     "human_findings": 57
+    },
+    "ste-words.verb-or-adjective-form-not-permitted": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 2
+     }
+    }
+   }
+  },
+  "tuning": {
+   "human_words": 133105,
+   "rules": {
+    "ai-residue.chat-leakage": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 1,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "ai-tells-content-shape.adjective-per-noun-spray": {
+     "human_findings": 9
+    },
+    "ai-tells-content-shape.durable-vocabulary-habits": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 9
+     },
+     "human_findings": 12,
+     "recall": {
+      "hits": 9,
+      "n": 9
+     }
+    },
+    "ai-tells-content-shape.fabricated-citations-core": {
+     "human_findings": 12
+    },
+    "ai-tells-content-shape.fake-specificity": {
+     "human_findings": 3
+    },
+    "ai-tells-content-shape.superficial-ing-analysis": {
+     "human_findings": 9
+    },
+    "ai-tells-figurative.colloquial-assessment": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-draws": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-falls": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 6,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-lends": {
+     "human_findings": 1
+    },
+    "ai-tells-figurative.figurative-loud": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-rides": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.figurative-runs": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-figurative.figurative-sits": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "ai-tells-figurative.figurative-strikes": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-figurative.figurative-wins": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-figurative.resonate-overuse": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-formatting.bold-spray": {
+     "human_findings": 15
+    },
+    "ai-tells-formatting.cross-reference-signposting": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 1,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-formatting.em-dash-density": {
+     "human_findings": 7
+    },
+    "ai-tells-formatting.emoji-list-markers": {
+     "human_findings": 11
+    },
+    "ai-tells-formatting.heading-hierarchy": {
+     "human_findings": 23
+    },
+    "ai-tells-formatting.inline-header-list": {
+     "human_findings": 5
+    },
+    "ai-tells-formatting.italicised-copula": {
+     "human_findings": 7
+    },
+    "ai-tells-formatting.title-case-heading": {
+     "human_findings": 295
+    },
+    "ai-tells-register.anthropomorphised-justification-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-register.corporate-analytic-filler-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 4,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-register.faux-candor-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 1,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-register.figurative-verb-verdict-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-register.intensifier-tics-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 4,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "ai-tells-register.organic-consequence-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-register.sycophantic-meta-residue": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-register.urgency-inflation-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-structure.absolute-assertion-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 3,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-structure.cataphoric-lead-in-core": {
+     "human_findings": 8
+    },
+    "ai-tells-structure.contrastive-inversion-frames": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "ai-tells-structure.definitional-negation-pair": {
+     "human_findings": 1
+    },
+    "ai-tells-structure.false-suspense-frames": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ai-tells-structure.meta-narration-frames": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ai-tells-structure.negative-guarantee-core": {
+     "human_findings": 4
+    },
+    "ai-tells-structure.negative-inventory-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 5
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 5,
+      "n": 5
+     }
+    },
+    "ai-tells-structure.rhetorical-question-transition": {
+     "human_findings": 22
+    },
+    "ai-tells-structure.summary-closer-frames": {
+     "human_findings": 5
+    },
+    "ai-tells-structure.think-of-it-as-core": {
+     "human_findings": 5
+    },
+    "ai-tells-structure.tricolon-abuse-core": {
+     "human_findings": 1
+    },
+    "ai-tells-structure.vague-attribution-core": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "docs-discipline.history-narration": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 56,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "docs-discipline.internal-refs": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 13,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "docs-discipline.status-language": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 92,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "orwell.compound-preposition": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 53,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "orwell.not-un": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "orwell.stale-figure": {
+     "human_findings": 1
+    },
+    "orwell.unsupported-evaluative": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 26,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-agency.agentless-passive": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 5
+     },
+     "human_findings": 1,
+     "recall": {
+      "hits": 5,
+      "n": 5
+     }
+    },
+    "prose-agency.anthropomorphism": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-agency.false-agency": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 5
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 5,
+      "n": 5
+     }
+    },
+    "prose-agency.narrator-distance": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-agency.unattributed-recommendation": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 11,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-craft.ambiguity": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 12,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-craft.articles": {
+     "human_findings": 1
+    },
+    "prose-craft.dead-opener": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 87,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-craft.directional-ref": {
+     "human_findings": 83
+    },
+    "prose-craft.first-person-plural": {
+     "human_findings": 652
+    },
+    "prose-craft.future-tense": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 753,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-craft.gerund-heading": {
+     "human_findings": 44
+    },
+    "prose-craft.hyphens": {
+     "human_findings": 11
+    },
+    "prose-craft.link-text": {
+     "human_findings": 102
+    },
+    "prose-craft.negative-requirement": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 9,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.optional-plural": {
+     "human_findings": 13
+    },
+    "prose-craft.ordinals": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 7,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.plural-abbreviation": {
+     "human_findings": 4
+    },
+    "prose-craft.politeness": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 101,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.redundancy": {
+     "human_findings": 4
+    },
+    "prose-craft.relative-date": {
+     "human_findings": 36
+    },
+    "prose-craft.self-reference": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 19,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-craft.sentence-length": {
+     "human_findings": 165
+    },
+    "prose-craft.spacing": {
+     "human_findings": 135
+    },
+    "prose-craft.unclear-antecedent": {
+     "human_findings": 148
+    },
+    "prose-craft.versions": {
+     "human_findings": 18
+    },
+    "prose-craft.wordiness": {
+     "human_findings": 141
+    },
+    "prose-discipline.bidirectional-hedge": {
+     "human_findings": 5
+    },
+    "prose-discipline.frozen-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 11,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-discipline.hedged-hedge": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 5
+     },
+     "human_findings": 28,
+     "recall": {
+      "hits": 5,
+      "n": 5
+     }
+    },
+    "prose-discipline.marketing-lexicon": {
+     "human_findings": 5
+    },
+    "prose-discipline.phrasal-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 5,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-discipline.run-on": {
+     "human_findings": 1
+    },
+    "prose-format.emoji-heading": {
+     "human_findings": 8
+    },
+    "prose-format.no-unicode-dash": {
+     "human_findings": 20
+    },
+    "prose-format.prose-block": {
+     "human_findings": 3
+    },
+    "prose-inclusive.ableist": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 1
+     }
+    },
+    "prose-inclusive.exclusive": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 1
+     }
+    },
+    "prose-inflation.additive-hedge": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 1,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-inflation.borderline-hype": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 89,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-inflation.business-jargon": {
+     "human_findings": 1
+    },
+    "prose-inflation.document-preamble": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 12,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-inflation.hedge-stack": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 11,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-inflation.intensifier": {
+     "human_findings": 56
+    },
+    "prose-inflation.nominalized-verb": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 16,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-inflation.slop-lexicon": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 40,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-inflation.uncomparables": {
+     "human_findings": 1
+    },
+    "prose-inflation.vague-declarative": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "prose-inflation.vague-quantifier": {
+     "human_findings": 143
+    },
+    "prose-promotion.promotional-adjective-noun": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 5,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-promotion.promotional-puffery": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-promotion.promotional-verbs": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 3,
+      "n": 3
+     }
+    },
+    "prose-promotion.strategy-buzzwords": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "prose-scope.implementation-leak": {
+     "human_findings": 34
+    },
+    "prose-scope.rejected-alternative": {
+     "human_findings": 6
+    },
+    "prose-scope.unrequested-reassurance": {
+     "human_findings": 23
+    },
+    "ste-descriptive.paragraph-too-many-sentences": {
+     "human_findings": 10
+    },
+    "ste-descriptive.sentence-too-long-descriptive": {
+     "human_findings": 679
+    },
+    "ste-nouns.multiword-noun-too-long": {
+     "human_findings": 280
+    },
+    "ste-practices.false-friend-term": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 63,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-practices.gendered-or-exclusionary-language": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 3
+     }
+    },
+    "ste-practices.latin-abbreviation": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 3
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 3
+     }
+    },
+    "ste-practices.omitted-conjunction-that": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 76,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-practices.phrasal-verb": {
+     "human_findings": 50
+    },
+    "ste-practices.possessive-form-unclear": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 7,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-procedural.condition-after-command": {
+     "human_findings": 364
+    },
+    "ste-procedural.instruction-not-imperative": {
+     "human_findings": 292
+    },
+    "ste-procedural.multiple-instructions-per-sentence": {
+     "human_findings": 174
+    },
+    "ste-procedural.sentence-too-long-procedural": {
+     "human_findings": 66
+    },
+    "ste-punctuation.colon-terminates-sentence-for-count": {
+     "human_findings": 85
+    },
+    "ste-punctuation.hyphen-group-too-long": {
+     "human_findings": 86
+    },
+    "ste-punctuation.hyphen-missing-in-compound-modifier": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 4
+     },
+     "human_findings": 65,
+     "recall": {
+      "hits": 4,
+      "n": 4
+     }
+    },
+    "ste-punctuation.semicolon-used": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 175,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-sentences.complex-text-not-in-vertical-list": {
+     "human_findings": 229
+    },
+    "ste-sentences.missing-article-or-determiner": {
+     "human_findings": 35
+    },
+    "ste-sentences.omitted-subject": {
+     "human_findings": 8
+    },
+    "ste-verbs.auxiliary-stacking": {
+     "human_findings": 4
+    },
+    "ste-verbs.complex-tense": {
+     "human_findings": 483
+    },
+    "ste-verbs.nominalized-action": {
+     "human_findings": 60
+    },
+    "ste-verbs.passive-voice": {
+     "human_findings": 1767
+    },
+    "ste-verbs.verb-form-not-listed": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 0,
+     "recall": {
+      "hits": 0,
+      "n": 1
+     }
+    },
+    "ste-words.approved-word-substitution": {
+     "human_findings": 203
+    },
+    "ste-words.obligation-word-substitution": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 2
+     },
+     "human_findings": 286,
+     "recall": {
+      "hits": 2,
+      "n": 2
+     }
+    },
+    "ste-words.slang-or-jargon-term": {
+     "control_fpr": {
+      "hits": 0,
+      "n": 1
+     },
+     "human_findings": 2,
+     "recall": {
+      "hits": 1,
+      "n": 1
+     }
+    },
+    "ste-words.spelling": {
+     "human_findings": 67
+    },
+    "ste-words.verb-used-as-noun": {
+     "human_findings": 2
+    }
+   }
+  }
+ }
+}

@@ -100,3 +100,25 @@ eval-score RESULTS SPLIT="all":
 # Paired A/B of two stored results; exits 1 when B regresses beyond noise.
 eval-ab A B SPLIT="all":
     uv run python -m evals ab {{quote(A)}} {{quote(B)}} --split {{quote(SPLIT)}} --fail-on-regression
+
+# Run the Python reference on the committed and derived corpus, then compare with the baseline.
+eval-ratchet MODE="report":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="${SLOPVAC_EVALS_CACHE:-evals/.cache}"
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    uv run python -m evals.build_derived --materialise --cache "$cache"
+    uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
+    uv run python -m evals gate "$out/results.json" --baseline evals/baselines/python.json --mode {{quote(MODE)}}
+
+# Rebuild the committed baseline after an intended rule or corpus change.
+eval-baseline:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="${SLOPVAC_EVALS_CACHE:-evals/.cache}"
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    uv run python -m evals.build_derived --materialise --cache "$cache"
+    uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
+    uv run python -m evals baseline "$out/results.json" --out evals/baselines/python.json

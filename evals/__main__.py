@@ -8,6 +8,7 @@ ab      paired comparison of two stored results
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import labelling, runner, scoring
+from . import gate, labelling, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -35,6 +36,10 @@ def _emit(data: object, out: str | None) -> None:
 def cmd_run(args: argparse.Namespace) -> int:
     manifest = lib.load_manifest()
     engine = runner.Engine.parse(args.engine, Path(args.cwd) if args.cwd else None)
+    if args.skip_format:
+        engine = dataclasses.replace(
+            engine, unsupported=engine.unsupported | frozenset(args.skip_format)
+        )
     base = (
         runner.available_selector(_cache(args))
         if args.available
@@ -68,6 +73,50 @@ def cmd_score(args: argparse.Namespace) -> int:
     )
     _emit(card, args.out)
     return 0
+
+
+def _split_cards(args: argparse.Namespace, manifest: dict) -> dict[str, dict]:
+    results = runner.load_results(Path(args.results))
+    runner.check_corpus(results, manifest)
+    labels = scoring.load_verdicts(Path(args.labels)) if args.labels else None
+    return {
+        split: scoring.score(manifest, results, split=split, labels=labels)
+        for split in gate.SPLITS
+    }
+
+
+def cmd_baseline(args: argparse.Namespace) -> int:
+    manifest = lib.load_manifest()
+    try:
+        cards = _split_cards(args, manifest)
+    except runner.EngineError as exc:
+        print(f"evals baseline: {exc}", file=sys.stderr)
+        return 2
+    gate.dump_baseline(gate.make_baseline(cards), Path(args.out))
+    return 0
+
+
+def cmd_gate(args: argparse.Namespace) -> int:
+    mode = args.mode or os.environ.get("SLOPVAC_EVALS_GATE", "report")
+    if mode not in ("report", "enforce"):
+        print(
+            f"evals gate: mode must be report or enforce, not {mode!r}", file=sys.stderr
+        )
+        return 2
+    manifest = lib.load_manifest()
+    try:
+        baseline = gate.load_baseline(Path(args.baseline))
+        runner.check_corpus({"corpus": baseline.get("corpus")}, manifest)
+        cards = _split_cards(args, manifest)
+    except (OSError, ValueError, runner.EngineError) as exc:
+        print(f"evals gate: {exc}", file=sys.stderr)
+        return 2
+    result = gate.compare(baseline, cards)
+    text = gate.markdown(result, mode)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    sys.stdout.write(text)
+    return 1 if result["regressions"] and mode == "enforce" else 0
 
 
 def cmd_ab(args: argparse.Namespace) -> int:
@@ -217,6 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument(
         "--available", action="store_true", help="skip documents with no local text"
     )
+    r.add_argument(
+        "--skip-format",
+        action="append",
+        help="skip a document format, for a run that must not depend on installed converters",
+    )
     r.add_argument("--out", required=True)
     r.set_defaults(func=cmd_run)
 
@@ -260,6 +314,24 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--reason", required=True)
     lr.add_argument("--date", default=None)
     lr.set_defaults(func=cmd_label_resolve)
+
+    b = sub.add_parser("baseline", help="write a ratchet baseline from stored results")
+    b.add_argument("results")
+    b.add_argument("--labels")
+    b.add_argument("--out", required=True)
+    b.set_defaults(func=cmd_baseline)
+
+    g = sub.add_parser("gate", help="compare stored results with a baseline")
+    g.add_argument("results")
+    g.add_argument("--baseline", required=True)
+    g.add_argument("--labels")
+    g.add_argument(
+        "--mode",
+        choices=("report", "enforce"),
+        help="default: SLOPVAC_EVALS_GATE, else report",
+    )
+    g.add_argument("--out", help="write the markdown summary here")
+    g.set_defaults(func=cmd_gate)
 
     a = sub.add_parser("ab", help="paired comparison of two stored results")
     a.add_argument("a")
