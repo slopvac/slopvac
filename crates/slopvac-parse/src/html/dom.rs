@@ -78,6 +78,13 @@ pub(super) struct Elem {
     annotation_xml: bool,
 }
 
+impl Elem {
+    /// Whether this is a `MathML` `annotation-xml` that holds HTML.
+    pub(super) fn annotation_xml(&self) -> bool {
+        self.annotation_xml
+    }
+}
+
 #[derive(Debug)]
 pub(super) enum Kind {
     /// The document, or the fragment of a template.
@@ -103,7 +110,7 @@ pub(super) struct Node {
 #[derive(Clone, Debug)]
 pub(super) struct Handle {
     pub(super) id: usize,
-    name: Rc<QualName>,
+    pub(super) name: Rc<QualName>,
 }
 
 /// A tag, comment or doctype token.

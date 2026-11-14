@@ -67,7 +67,7 @@ CURATED: list[tuple[str, str]] = [
     ("entity_inside_word", "<p>AT&amp;T rocks and a&lt;b work.</p>\n"),
     ("entity_at_word_end", "<p>R&amp;D. Q&amp;A, Tom&amp;</p>\n"),
     ("numeric_entities", "<p>Use a&#169;b and c&#x1F600;d marks.</p>\n"),
-    ("named_entities", "<p>caf&eacute; &mdash; &quot;quoted&quot; &copy; 2026</p>\n"),
+    ("named_entities", "<p>r&eacute;sum&eacute; &mdash; &quot;quoted&quot; &copy; 2026</p>\n"),
     ("nbsp", "<p>one&nbsp;two three</p>\n"),
     (
         "script_skipped",

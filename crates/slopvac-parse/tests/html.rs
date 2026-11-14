@@ -161,13 +161,13 @@ fn leading_and_trailing_whitespace_is_dropped() {
 
 #[test]
 fn inline_tags_do_not_split_a_word() {
-    let source = "<p>un<b>believ</b>able</p>";
+    let source = "<p>un<b>friend</b>ly</p>";
     let doc = parse(source);
-    assert_eq!(texts(&doc), ["unbelievable"]);
+    assert_eq!(texts(&doc), ["unfriendly"]);
     // A match across the tags includes the markup between the characters.
     assert_eq!(
-        source_of(source, &doc.blocks[0], 0, 12),
-        "un<b>believ</b>able"
+        source_of(source, &doc.blocks[0], 0, 10),
+        "un<b>friend</b>ly"
     );
 }
 

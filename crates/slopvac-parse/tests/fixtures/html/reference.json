@@ -529,11 +529,11 @@
  },
  {
   "id": "named_entities",
-  "source": "<p>caf&eacute; &mdash; &quot;quoted&quot; &copy; 2026</p>\n",
+  "source": "<p>r&eacute;sum&eacute; &mdash; &quot;quoted&quot; &copy; 2026</p>\n",
   "words": [
    {
-    "text": "café",
-    "src": "caf&eacute;"
+    "text": "résumé",
+    "src": "r&eacute;sum&eacute;"
    },
    {
     "text": "—",

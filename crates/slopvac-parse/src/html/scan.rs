@@ -21,7 +21,8 @@ use html5ever::{Attribute, LocalName, QualName, ns};
 use html5gum::{Emitter, Error, State, Tokenizer, naive_next_state};
 
 use super::dom::{
-    Dom, Handle, Item, MAX_DEPTH, MAX_TABLES, PieceKind, Sink, TagKind as Kind, TagTok, stand_in,
+    Dom, Handle, Item, Kind as NodeKind, MAX_DEPTH, MAX_TABLES, PieceKind, Sink, TagKind as Kind,
+    TagTok, stand_in,
 };
 
 type Builder = TreeBuilder<Handle, Sink>;
@@ -47,7 +48,7 @@ pub(super) fn build(source: &str, budget: usize) -> Rc<Dom> {
         seq: 0,
         depth: DepthCache::default(),
         template_depth: 0,
-        skip_foreign: 0,
+        skip_ctx: Vec::new(),
         ignore_lf: false,
     };
     for _ in Tokenizer::new_with_emitter(source, emitter) {}
@@ -68,6 +69,50 @@ enum Skip {
     Feed,
     /// It never reaches the tree builder, and the tokenizer switches to this state.
     Handled(Option<State>),
+}
+
+/// SVG or `MathML`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ns {
+    Svg,
+    Math,
+}
+
+/// Where a skipped template is: inside SVG or `MathML`, or at an HTML integration point in
+/// one. HTML, outside both, is the empty stack.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ctx {
+    Foreign(Ns),
+    Integration(Ns, &'static str),
+}
+
+/// The name of `local` if it is an HTML integration point, where start tags follow the HTML
+/// rules: `foreignObject`, `desc` and `title` in SVG, the text integration points in
+/// `MathML`, and `annotation-xml` with an HTML encoding.
+fn integration_point(ns: Ns, local: &str, html_annotation: bool) -> Option<&'static str> {
+    match (ns, local) {
+        (Ns::Svg, name) if name.eq_ignore_ascii_case("foreignobject") => Some("foreignobject"),
+        (Ns::Svg, "desc") => Some("desc"),
+        (Ns::Svg, "title") => Some("title"),
+        (Ns::Math, "mi") => Some("mi"),
+        (Ns::Math, "mo") => Some("mo"),
+        (Ns::Math, "mn") => Some("mn"),
+        (Ns::Math, "ms") => Some("ms"),
+        (Ns::Math, "mtext") => Some("mtext"),
+        (Ns::Math, "annotation-xml") if html_annotation => Some("annotation-xml"),
+        _ => None,
+    }
+}
+
+/// Collects the handles the tree builder holds, in the order it reports them.
+#[derive(Default)]
+struct Chain(std::cell::RefCell<Vec<Handle>>);
+
+impl Tracer for Chain {
+    type Handle = Handle;
+    fn trace_handle(&self, node: &Handle) {
+        self.0.borrow_mut().push(node.clone());
+    }
 }
 
 /// Counts the handles the tree builder holds, and the open `<table>` elements among them.
@@ -138,7 +183,7 @@ struct Feeder<'a> {
     /// How many `<template>` start tags are open in the part being skipped.
     template_depth: usize,
     /// Open `<svg>` and `<math>` elements in the part being skipped.
-    skip_foreign: usize,
+    skip_ctx: Vec<Ctx>,
     /// Whether the tree builder drops a newline that opens the next text, as it does after
     /// `<pre>`, `<listing>` and `<textarea>`.
     ignore_lf: bool,
@@ -246,6 +291,91 @@ impl Feeder<'_> {
         count.tables.get() >= MAX_TABLES
     }
 
+    /// The SVG or `MathML` context around the current node, outermost first, or nothing in
+    /// HTML. The tree builder only says whether the current node is foreign, so this finds the
+    /// node on the stack of open elements: the open elements form a chain from the document,
+    /// and the end of the chain is the current node.
+    fn enclosing_context(&mut self) -> Vec<Ctx> {
+        if !self
+            .tb
+            .adjusted_current_node_present_but_not_in_html_namespace()
+        {
+            return Vec::new();
+        }
+        let chain = Chain::default();
+        self.tb.trace_handles(&chain);
+        let handles = chain.0.into_inner();
+        self.dom.charge(handles.len());
+        let nodes = self.dom.nodes.borrow();
+        let mut current = None;
+        let mut parent = self.dom.document;
+        for handle in handles.iter().skip(1) {
+            if nodes[handle.id].parent != Some(parent) {
+                break;
+            }
+            parent = handle.id;
+            current = Some(handle);
+        }
+        let Some(handle) = current else {
+            return Vec::new();
+        };
+        let ns = if handle.name.ns == ns!(svg) {
+            Ns::Svg
+        } else if handle.name.ns == ns!(mathml) {
+            Ns::Math
+        } else {
+            return Vec::new();
+        };
+        let html_annotation =
+            matches!(&nodes[handle.id].kind, NodeKind::Element(e) if e.annotation_xml());
+        let mut ctx = vec![Ctx::Foreign(ns)];
+        if let Some(name) = integration_point(ns, &handle.name.local, html_annotation) {
+            ctx.push(Ctx::Integration(ns, name));
+        }
+        ctx
+    }
+
+    /// A start tag in a skipped template: track SVG, `MathML` and the HTML integration points
+    /// among them.
+    fn skip_open(&mut self, local: &str) {
+        if self.self_closing {
+            return;
+        }
+        match self.skip_ctx.last().copied() {
+            Some(Ctx::Foreign(ns)) => {
+                let html_annotation = self.attrs.iter().any(|(name, value)| {
+                    name == b"encoding"
+                        && (value.eq_ignore_ascii_case(b"text/html")
+                            || value.eq_ignore_ascii_case(b"application/xhtml+xml"))
+                });
+                if matches!(local, "svg" | "math") {
+                    self.skip_ctx.push(Ctx::Foreign(ns));
+                } else if let Some(name) = integration_point(ns, local, html_annotation) {
+                    self.skip_ctx.push(Ctx::Integration(ns, name));
+                }
+            }
+            _ => match local {
+                "svg" => self.skip_ctx.push(Ctx::Foreign(Ns::Svg)),
+                "math" => self.skip_ctx.push(Ctx::Foreign(Ns::Math)),
+                _ => {}
+            },
+        }
+    }
+
+    /// An end tag in a skipped template.
+    fn skip_close(&mut self, local: &str) {
+        if matches!(self.skip_ctx.last(), Some(Ctx::Integration(_, name)) if *name == local) {
+            self.skip_ctx.pop();
+        } else if matches!(local, "svg" | "math") {
+            // It ends the nearest root, and what is inside it.
+            while let Some(ctx) = self.skip_ctx.pop() {
+                if matches!(ctx, Ctx::Foreign(_)) {
+                    break;
+                }
+            }
+        }
+    }
+
     /// Handle a tag that never reaches the tree builder. Returns the tokenizer state to
     /// switch to when it is one of those.
     ///
@@ -262,19 +392,18 @@ impl Feeder<'_> {
             self.dom.charge(1);
             let state = if start {
                 self.last_start.clone_from(&self.tag_name);
-                let in_foreign = self.skip_foreign > 0;
+                let foreign = matches!(self.skip_ctx.last(), Some(Ctx::Foreign(_)));
                 // In SVG a self-closed template is an empty element. In HTML the slash is
                 // ignored.
-                if local == "template" && !(in_foreign && self.self_closing) {
+                if local == "template" && !(foreign && self.self_closing) {
                     self.template_depth += 1;
                 }
-                if matches!(local, "svg" | "math") && !self.self_closing {
-                    self.skip_foreign += 1;
-                }
+                self.skip_open(local);
                 // Nothing builds a tree here, so the tokenizer switches states by the name of
-                // an HTML raw text element. In SVG and `MathML` those names are plain
-                // elements, and a self-closed `<title/>` has no content to wait for.
-                if in_foreign {
+                // an HTML raw text element, in HTML and at an HTML integration point. In SVG
+                // and `MathML` those names are plain elements, and a self-closed `<title/>`
+                // has no content to wait for.
+                if foreign {
                     None
                 } else {
                     naive_next_state(local.as_bytes())
@@ -284,12 +413,10 @@ impl Feeder<'_> {
                 if local == "template" {
                     self.template_depth -= 1;
                     if self.template_depth == 0 {
-                        self.skip_foreign = 0;
+                        self.skip_ctx.clear();
                     }
                 }
-                if matches!(local, "svg" | "math") {
-                    self.skip_foreign = self.skip_foreign.saturating_sub(1);
-                }
+                self.skip_close(local);
                 None
             };
             self.text.raw = state.is_some();
@@ -303,10 +430,7 @@ impl Feeder<'_> {
             self.dom.charge(1);
             if start && !self.self_closing {
                 self.template_depth = 1;
-                self.skip_foreign = usize::from(
-                    self.tb
-                        .adjusted_current_node_present_but_not_in_html_namespace(),
-                );
+                self.skip_ctx = self.enclosing_context();
             }
             if start {
                 self.last_start.clone_from(&self.tag_name);

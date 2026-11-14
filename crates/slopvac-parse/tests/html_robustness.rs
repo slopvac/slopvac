@@ -579,6 +579,16 @@ fn safe_soup() -> impl Strategy<Value = String> {
     prop::collection::vec(prop::sample::select(SAFE), 0..20).prop_map(|v| v.concat())
 }
 
+/// Markup without SVG, `MathML` or templates, for what comes before a context under test.
+fn html_soup() -> impl Strategy<Value = String> {
+    let atoms: Vec<&str> = SAFE
+        .iter()
+        .copied()
+        .filter(|a| !a.contains("svg") && !a.contains("math") && !a.contains("template"))
+        .collect();
+    prop::collection::vec(prop::sample::select(atoms), 0..20).prop_map(|v| v.concat())
+}
+
 /// The same for inside a template. A `<template/>` there opens a nested template, because
 /// HTML ignores the slash, so it would swallow the end tag that the test expects.
 fn inside_soup() -> impl Strategy<Value = String> {
@@ -648,4 +658,75 @@ fn a_self_closed_template_hides_nothing() {
     let source = "<p>a<template/>b</p>";
     let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
     assert_eq!(doc.blocks[0].projection.as_ref().unwrap().text(), "ab");
+}
+#[test]
+fn a_self_closed_template_in_svg_inside_a_skipped_template_does_not_nest() {
+    // In SVG `<template/>` is an empty element, so the template that holds it ends at the
+    // first `</template>` and the paragraph after it shows.
+    let source = "<template><svg><template/></svg></template><p>after</p>";
+    let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
+    assert_eq!(doc.blocks.len(), 1);
+    let projection = doc.blocks[0].projection.as_ref().unwrap();
+    assert_eq!(projection.text(), "after");
+    let span = projection.span_for_range(0, 5);
+    assert_eq!(&source[span.start()..span.end()], "after");
+}
+
+#[test]
+fn raw_text_in_a_template_at_an_integration_point_holds_a_literal_end_tag() {
+    // A template directly inside `<foreignObject>` holds HTML, so the `<textarea>` is RCDATA
+    // and its `</template>` is text. Nothing inside shows.
+    let source = "<svg><foreignObject><template><textarea></template><p>x</p></textarea></template><p>after</p>";
+    let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
+    let texts: Vec<_> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| b.projection.as_ref())
+        .map(slopvac_parse::Projection::text)
+        .collect();
+    assert_eq!(texts, ["after"]);
+}
+
+/// Contexts that hold HTML, and so make raw text elements raw, around a template.
+const HTML_CONTEXTS: &[&str] = &[
+    "",
+    "<svg><foreignObject>",
+    "<svg><desc>",
+    "<svg><title>",
+    "<math><mi>",
+    "<math><mtext>",
+    "<math><annotation-xml encoding=text/html>",
+    "<math><annotation-xml encoding=application/xhtml+xml>",
+];
+
+/// Raw text elements whose text holds a literal end tag of the template.
+const RAW_WITH_END_TAG: &[&str] = &[
+    "<textarea></template><p>LEAK</p></textarea>",
+    "<title></template><p>LEAK</p></title>",
+    "<style></template><p>LEAK</p></style>",
+    "<script></template><p>LEAK</p></script>",
+    "<xmp></template><p>LEAK</p></xmp>",
+    "<iframe></template><p>LEAK</p></iframe>",
+];
+
+proptest! {
+    #[test]
+    fn raw_text_in_a_skipped_template_keeps_a_literal_end_tag(
+        context in prop::sample::select(HTML_CONTEXTS),
+        raw in prop::sample::select(RAW_WITH_END_TAG),
+        before in html_soup(),
+    ) {
+        let source = format!(
+            "{before}{context}<template>{raw}</template></svg></math><p>SENTINEL</p>"
+        );
+        let (doc, _) = parse_html_budget(&source, whole(&source), UNLIMITED, UNLIMITED).unwrap();
+        let texts: Vec<&str> = doc
+            .blocks
+            .iter()
+            .filter_map(|b| b.projection.as_ref())
+            .map(slopvac_parse::Projection::text)
+            .collect();
+        prop_assert!(texts.iter().all(|t| !t.contains("LEAK")), "{source:?}: {texts:?}");
+        prop_assert!(texts.contains(&"SENTINEL"), "{source:?}: {texts:?}");
+    }
 }
