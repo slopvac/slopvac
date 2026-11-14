@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .. import framing
+
 PROTOCOL = "plugin-protocol.schema.json"
 COMMON = "common.schema.json"
 
@@ -45,10 +47,12 @@ class Schemas:
         )
         # Draft 2020-12 accepts 1.0 as an integer. Protocol v1 does not (section 2.2),
         # and the strict parser keeps 1.0 a float, so only an int token is an integer.
+        # The parser marks a token beyond 2^53-1 as UnsafeInt, a subclass of int, so the
+        # check is on the exact type and the safe range.
         checker = Draft202012Validator.TYPE_CHECKER.redefine(
             "integer",
             lambda _checker, value: (
-                isinstance(value, int) and not isinstance(value, bool)
+                type(value) is int and abs(value) <= framing.MAX_SAFE_INT
             ),
         )
         self._validator_class = validators.extend(

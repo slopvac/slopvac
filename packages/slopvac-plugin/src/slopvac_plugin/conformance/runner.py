@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .cases import CASES, Env, handshake
+from .cases import ALL_KINDS, CASES, Env, handshake
 from .schemas import Schemas
 from .session import CaseFailure, CaseSkip, SuiteError
 
@@ -107,7 +107,13 @@ def run_conformance(
     with env.session() as probe:
         try:
             reply = handshake(probe)
-            env.hooks = [(h["kind"], h["id"]) for h in reply["capabilities"]["hooks"]]
+            # A hook kind the host does not know is ignored (section 4.2). P19 still
+            # reads the full list from its own reply.
+            env.hooks = [
+                (h["kind"], h["id"])
+                for h in reply["capabilities"]["hooks"]
+                if h["kind"] in ALL_KINDS
+            ]
         except CaseFailure:
             env.hooks = []  # P1 reports the cause
     report = Report()

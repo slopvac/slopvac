@@ -99,7 +99,8 @@ class Plugin:
         self._offline = False
         self._granted: frozenset[str] = frozenset()
         self._events: dict[int, threading.Event] = {}
-        self._events_lock = threading.Lock()
+        # Guards _events. The reader waits on it for a free slot (section 6.1).
+        self._events_lock = threading.Condition()
         self._write_lock = threading.Lock()
         self._out: BinaryIO | None = None
 
@@ -175,7 +176,9 @@ class Plugin:
     def serve(self, stdin: BinaryIO, stdout: BinaryIO) -> int:
         """Run the lifecycle on the given streams and return the exit status."""
         self._out = stdout
-        inbox: queue.Queue[Any] = queue.Queue()
+        # Bounded to twice maxInFlight frames: the reader blocks when it is full
+        # (threat model section 5.5), so a flooding peer cannot grow memory.
+        inbox: queue.Queue[Any] = queue.Queue(maxsize=2 * self.max_in_flight)
         threading.Thread(
             target=self._read_loop, args=(stdin, inbox), name="reader", daemon=True
         ).start()
@@ -251,6 +254,17 @@ class Plugin:
             and is_request_id(message.get("id"))
         ):
             with self._events_lock:
+                method = message["method"]
+                if isinstance(method, str) and method in BY_METHOD:
+                    # The host keeps at most maxInFlight requests pending. A peer that
+                    # sends more waits here, with the rest of its input unread, until a
+                    # slot frees. The contract has no busy error to answer with.
+                    self._events_lock.wait_for(
+                        lambda: (
+                            message["id"] in self._events
+                            or len(self._events) < self.max_in_flight
+                        )
+                    )
                 self._events.setdefault(message["id"], threading.Event())
 
     # Main thread --------------------------------------------------------------
@@ -416,6 +430,7 @@ class Plugin:
     def _drop(self, msg_id: int) -> None:
         with self._events_lock:
             self._events.pop(msg_id, None)
+            self._events_lock.notify_all()
 
     # Writing --------------------------------------------------------------------
 

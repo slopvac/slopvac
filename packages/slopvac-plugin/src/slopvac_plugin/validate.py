@@ -72,16 +72,45 @@ def check_segments(data: bytes, segments: Sequence[Segment]) -> None:
         previous_end = segment.span.end
 
 
-def _overlap(a: Span, b: Span) -> bool:
-    if a.start == a.end and b.start == b.end:
-        return a.start == b.start
-    return a.start < b.end and b.start < a.end
+# Per-document limits on a fixer reply (threat model section 5.5, TM-14).
+MAX_EDITS = 1000
+MAX_INSERTED_BYTES = 1024 * 1024
+INSERTED_BYTES_PER_SPAN_BYTE = 4
+INSERTED_BYTES_SLACK = 4096
+
+
+def inserted_bytes_limit(findings: Sequence[Finding]) -> int:
+    """The lesser of 1 MiB and four times the selected spans plus 4 KiB."""
+    spanned = sum(f.span.end - f.span.start for f in findings)
+    return min(
+        MAX_INSERTED_BYTES,
+        INSERTED_BYTES_PER_SPAN_BYTE * spanned + INSERTED_BYTES_SLACK,
+    )
+
+
+def _check_no_overlap(spans: Sequence[Span]) -> None:
+    """Sort and sweep, O(n log n). Zero-width edits collide only at the same point."""
+    reach = 0
+    previous: Span | None = None
+    for span in sorted(spans, key=lambda s: (s.start, s.end)):
+        if span.start < reach:
+            raise OutputInvalid("edits overlap")
+        if (
+            previous is not None
+            and span.start == span.end == previous.start == previous.end
+        ):
+            raise OutputInvalid("edits overlap")
+        reach = max(reach, span.end)
+        previous = span
 
 
 def check_edits(
     data: bytes, findings: Sequence[Finding], edits: Sequence[Edit]
 ) -> None:
     """Every edit names a selected finding and lies inside its span, ends included."""
+    if len(edits) > MAX_EDITS:
+        raise OutputInvalid(f"{len(edits)} edits is more than the limit of {MAX_EDITS}")
+    inserted = 0
     for edit in edits:
         check_span(data, edit.span, "edit span")
         if not is_int(edit.finding) or edit.finding >= len(findings):
@@ -91,10 +120,10 @@ def check_edits(
             raise OutputInvalid("edit lies outside the span of its finding")
         if not isinstance(edit.text, str):
             raise OutputInvalid("edit text must be a string")
-    for i, first in enumerate(edits):
-        for second in edits[i + 1 :]:
-            if _overlap(first.span, second.span):
-                raise OutputInvalid("edits overlap")
+        inserted += len(edit.text.encode("utf-8", "surrogatepass"))
+    if inserted > inserted_bytes_limit(findings):
+        raise OutputInvalid("edits insert more bytes than the limit allows")
+    _check_no_overlap([edit.span for edit in edits])
 
 
 def check_score(value: object) -> float:

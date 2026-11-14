@@ -194,3 +194,17 @@ def test_a_plugin_with_a_busy_hook_still_ends_at_once(start, ending):
     else:
         s.send_bytes(b"Content-Length: nope\r\n\r\n")
     assert s.wait(10) == 1
+
+
+def test_a_peer_that_floods_while_a_hook_stalls_is_not_read_without_bound(start):
+    """Section 6.1: the plugin never holds more than maxInFlight requests at once."""
+    s = start(script("behaviour_plugin.py"))  # maxInFlight 1
+    handshake(s)
+    padding = {"id": "d1", "text": "x" * 10_000}
+    params = {"tagger": "stuck", "documents": [padding]}
+    s.start_request("tagger/tag", params)  # the hook stalls for 30 s
+    # 300 requests are 3 MB. An unbounded inbox takes them all; a bounded one stops
+    # reading after the pipe buffer and a few frames, and a write blocks.
+    with pytest.raises(CaseFailure, match="did not read its input"):
+        for _ in range(300):
+            s.start_request("tagger/tag", params, timeout=1)

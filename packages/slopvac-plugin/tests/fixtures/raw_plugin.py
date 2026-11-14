@@ -2,7 +2,7 @@
 
 Usage: raw_plugin.py [MODE]. Modes: no-limit, stdout-noise, bad-span, split-char-span,
 exit-zero-without-shutdown, no-version-check, read-oversized-body, slow-tagger,
-float-id, float-limit, big-init-reply, big-reply, deaf-after-init. Standard library only, like a plugin in
+float-id, float-limit, big-init-reply, big-reply, deaf-after-init, in-flight-17, in-flight-unsafe, unknown-kind. Standard library only, like a plugin in
 any other language would be.
 """
 
@@ -98,14 +98,21 @@ while True:
                     "version": "0",
                 },
                 "capabilities": {
-                    "hooks": [{"kind": "tagger", "id": "main"}],
+                    "hooks": [{"kind": "tagger", "id": "main"}]
+                    + (
+                        [{"kind": "hologram", "id": "x"}]
+                        if mode == "unknown-kind"
+                        else []
+                    ),
                     "features": {"required": [], "optional": []},
                     "requiresNetwork": False,
                 },
                 "limits": {
                     "maxMessageBytes": float(limit) if mode == "float-limit" else limit,
                     "maxBatchDocuments": 64,
-                    "maxInFlight": 1,
+                    "maxInFlight": {"in-flight-17": 17, "in-flight-unsafe": 2**60}.get(
+                        mode, 1
+                    ),
                 },
             },
         )

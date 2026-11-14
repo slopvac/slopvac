@@ -37,6 +37,7 @@ METHODS = {
     "recipe": "recipe/plan",
 }
 MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+MAX_IN_FLIGHT = 16  # section 6.1: the host ceiling
 FLOOR = 65536
 PRE_INITIALIZE_LIMIT = 1024 * 1024
 
@@ -155,8 +156,18 @@ def check_spans(data: bytes, spans: Sequence[dict[str, Any]], what: str) -> None
         require(problem is None, f"{what}: {problem}")
 
 
+# Per-document limits on a fixer reply (threat model section 5.5, TM-14).
+MAX_EDITS = 1000
+MAX_INSERTED_BYTES = 1024 * 1024
+
+
 def check_edits(doc: dict[str, Any], edits: Sequence[dict[str, Any]]) -> None:
+    require(
+        len(edits) <= MAX_EDITS,
+        f"{len(edits)} edits is more than the limit of {MAX_EDITS}",
+    )
     findings = doc.get("findings", [])
+    inserted = 0
     for edit in edits:
         require(
             edit["finding"] < len(findings),
@@ -167,16 +178,22 @@ def check_edits(doc: dict[str, Any], edits: Sequence[dict[str, Any]]) -> None:
             outer["start"] <= span["start"] and span["end"] <= outer["end"],
             "edit lies outside the span of its finding",
         )
-    for i, a in enumerate(edits):
-        for b in edits[i + 1 :]:
-            sa, sb = a["span"], b["span"]
-            zero = sa["start"] == sa["end"] and sb["start"] == sb["end"]
-            overlap = (
-                sa["start"] == sb["start"]
-                if zero
-                else (sa["start"] < sb["end"] and sb["start"] < sa["end"])
-            )
-            require(not overlap, "two edits overlap")
+        inserted += len(edit["text"].encode("utf-8", "surrogatepass"))
+    spanned = sum(f["span"]["end"] - f["span"]["start"] for f in findings)
+    require(
+        inserted <= min(MAX_INSERTED_BYTES, 4 * spanned + 4096),
+        "edits insert more bytes than the limit allows",
+    )
+    # Sort and sweep. A zero-width edit collides only with another at the same point.
+    spans = sorted((e["span"]["start"], e["span"]["end"]) for e in edits)
+    reach, previous = 0, None
+    for start, end in spans:
+        require(start >= reach, "two edits overlap")
+        require(
+            not (previous is not None and start == end == previous[0] == previous[1]),
+            "two edits overlap",
+        )
+        reach, previous = max(reach, end), (start, end)
 
 
 def check_result(env: Env, kind: str, params: dict[str, Any], result: Any) -> None:
@@ -260,6 +277,10 @@ def p1(env: Env) -> None:
         )
         require(
             limits["maxBatchDocuments"] <= 64, "batch limit raised above the host's"
+        )
+        require(
+            limits["maxInFlight"] <= MAX_IN_FLIGHT,
+            f"maxInFlight is above the host ceiling of {MAX_IN_FLIGHT}",
         )
 
 
@@ -372,9 +393,8 @@ def p9(env: Env) -> None:
         if hooks:
             kind, hook_id = hooks[0]
             request_id = s.start_request(METHODS[kind], env.params(kind, hook_id))
-            s.notify("$/cancelRequest", {"id": request_id})
-            # The grace runs from the cancel, not from the request.
-            response = s.response_to(request_id, env.cancel_grace)
+            # One deadline from before the cancel write covers write and response.
+            response = s.cancel_and_wait(request_id, env.cancel_grace)
             if "error" in response:
                 error_of(response, -32005, "request-cancelled")
         s.notify("$/cancelRequest", {"id": 987654})

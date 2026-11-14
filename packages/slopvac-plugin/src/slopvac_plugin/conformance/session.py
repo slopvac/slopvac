@@ -13,6 +13,7 @@ import queue
 import signal
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any
 
 from .. import framing
 from .schemas import Schemas
+from .winjob import JobObject
 
 # Limits on what a plugin may print, from the host's (section 3 and TM-2).
 MAX_OUTPUT_BYTES = 512 * 1024 * 1024  # stdout and stderr together
@@ -76,9 +78,16 @@ def taskkill_command(pid: int, system_root: str | None = None) -> list[str]:
     ]
 
 
-def kill_tree(proc: subprocess.Popen[bytes]) -> None:
-    """End the plugin and everything it started. Safe to call twice."""
+def kill_tree(proc: subprocess.Popen[bytes], job: JobObject | None = None) -> None:
+    """End the plugin and everything it started. Safe to call twice.
+
+    On Windows the job ends descendants that outlive the plugin. ``taskkill`` stays
+    as the fallback for a plugin that could not be put in a job.
+    """
     if os.name == "nt":
+        if job is not None:
+            with suppress(OSError):
+                job.terminate()
         with suppress(OSError, subprocess.SubprocessError):
             subprocess.run(
                 taskkill_command(proc.pid),
@@ -148,6 +157,7 @@ class Session:
             )
         except OSError as exc:
             raise SuiteError(f"cannot start the plugin: {exc}") from exc
+        self._job = JobObject.around(self.proc)
         self._readers = [
             threading.Thread(target=target, daemon=True)
             for target in (self._read_stdout, self._drain_stderr)
@@ -164,7 +174,7 @@ class Session:
                 return
             self._violation = message
         self._events.put(("violation", message, 0))
-        kill_tree(self.proc)
+        kill_tree(self.proc, self._job)
 
     def _count_output(self, size: int) -> bool:
         with self._lock:
@@ -255,8 +265,18 @@ class Session:
 
     # Sending -----------------------------------------------------------------
 
-    def send_bytes(self, data: bytes, *, tolerate_closed: bool = False) -> None:
-        """Write to the plugin within ``timeout`` seconds, else end it and fail."""
+    def send_bytes(
+        self,
+        data: bytes,
+        *,
+        tolerate_closed: bool = False,
+        timeout: float | None = None,
+    ) -> None:
+        """Write to the plugin within ``timeout`` seconds, else end it and fail.
+
+        ``timeout`` defaults to the session timeout.
+        """
+        limit = self.timeout if timeout is None else timeout
         stdin = self.proc.stdin
         assert stdin is not None
         problem: list[Exception] = []
@@ -270,26 +290,48 @@ class Session:
 
         writer = threading.Thread(target=write, daemon=True)
         writer.start()
-        writer.join(self.timeout)
+        writer.join(limit)
         if writer.is_alive():
-            kill_tree(self.proc)  # the broken pipe frees the writer
+            kill_tree(self.proc, self._job)  # the broken pipe frees the writer
             writer.join(5)
-            raise CaseFailure(
-                f"the plugin did not read its input within {self.timeout} s"
-            )
+            raise CaseFailure(f"the plugin did not read its input within {limit} s")
         if problem and not tolerate_closed:
             raise CaseFailure(f"the plugin closed its input early: {problem[0]}")
 
-    def send(self, message: dict[str, Any]) -> None:
-        self.send_bytes(framing.encode_frame(json.dumps(message).encode("utf-8")))
+    def send(self, message: dict[str, Any], *, timeout: float | None = None) -> None:
+        self.send_bytes(
+            framing.encode_frame(json.dumps(message).encode("utf-8")), timeout=timeout
+        )
 
-    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+    def notify(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> None:
         message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             message["params"] = params
-        self.send(message)
+        self.send(message, timeout=timeout)
 
-    def start_request(self, method: str, params: dict[str, Any] | None = None) -> int:
+    def cancel_and_wait(self, request_id: int, grace: float) -> dict[str, Any]:
+        """Cancel a request and take its response, all within ``grace`` seconds.
+
+        Section 6.3 gives the plugin one grace period from the cancel. A write that
+        blocks uses up the same period, so a late reply cannot pass.
+        """
+        deadline = time.monotonic() + grace
+        self.notify("$/cancelRequest", {"id": request_id}, timeout=grace)
+        return self.response_to(request_id, max(deadline - time.monotonic(), 0))
+
+    def start_request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> int:
         self._ids += 1
         message: dict[str, Any] = {"jsonrpc": "2.0", "id": self._ids, "method": method}
         if params is not None:
@@ -300,7 +342,7 @@ class Session:
             self._proposed = (
                 proposed if type(proposed) is int else framing.PRE_INITIALIZE_LIMIT
             )
-        self.send(message)
+        self.send(message, timeout=timeout)
         return self._ids
 
     def close_stdin(self) -> None:
@@ -378,7 +420,7 @@ class Session:
         """End descendants that outlive the plugin. They would hold the pipes open."""
         if not self._swept:
             self._swept = True
-            kill_tree(self.proc)
+            kill_tree(self.proc, self._job)
 
     def wait(self, timeout: float) -> int:
         try:

@@ -4,7 +4,9 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -207,6 +209,65 @@ def test_close_ends_a_descendant_that_holds_the_pipes(
         s.close()
 
 
+WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="Job Objects are Windows")
+
+
+def windows_alive(pid: int) -> bool:
+    """True while the Windows process ``pid`` has not exited."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(
+        0x1000, False, pid
+    )  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False  # no such process
+    try:
+        code = wintypes.DWORD()
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+@WINDOWS_ONLY
+@pytest.mark.parametrize("mode", ["spawner", "spawner-exit"])
+def test_windows_close_ends_a_descendant_after_its_parent_exited(
+    schemas: Schemas, tmp_path: Path, mode: str
+):
+    """taskkill /T cannot find the child of a dead parent. The job still holds it."""
+    pidfile = tmp_path / "child.pid"
+    s = Session(hostile(mode, str(pidfile)), schemas, 10)
+    child = None
+    try:
+        assert wait_for(lambda: pidfile.exists() and pidfile.read_text("utf-8") != "")
+        child = int(pidfile.read_text("utf-8"))
+        if mode == "spawner-exit":
+            assert s.proc.wait(timeout=20) is not None
+        assert windows_alive(child)
+        assert bounded(s.close, 30), "close() hung on a descendant"
+        assert wait_for(lambda: not windows_alive(child), 10), "the descendant survived"
+    finally:
+        s.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the job exists on Windows")
+def test_no_job_object_off_windows(schemas: Schemas):
+    s = Session(script("raw_plugin.py"), schemas, 10)
+    try:
+        assert s._job is None
+    finally:
+        s.close()
+
+
 @POSIX_ONLY
 def test_the_plugin_leads_its_own_process_group(schemas: Schemas):
     s = Session(script("raw_plugin.py"), schemas, 10)
@@ -215,3 +276,47 @@ def test_the_plugin_leads_its_own_process_group(schemas: Schemas):
         assert os.getpgid(s.proc.pid) != os.getpgrp()
     finally:
         s.close()
+
+
+def test_a_cancel_write_that_blocks_uses_up_the_grace(schemas: Schemas):
+    """Section 6.3: the grace covers the cancel write too, not only the wait."""
+    s = Session(hostile("deaf"), schemas, 30)
+    try:
+        assert s.proc.stdin is not None
+        # Fill the pipe so the cancel notification cannot be written.
+        stdin = s.proc.stdin
+
+        def fill() -> None:
+            with suppress(OSError, ValueError):
+                stdin.write(b"x" * (8 * 1024 * 1024))
+
+        filler = threading.Thread(target=fill, daemon=True)
+        filler.start()
+        time.sleep(0.5)
+        started = time.monotonic()
+        with pytest.raises(CaseFailure, match="did not read its input within 1"):
+            s.cancel_and_wait(1, 1)
+        assert time.monotonic() - started < 10  # not the 30 s session timeout
+    finally:
+        s.close()
+
+
+def test_the_schema_integer_check_refuses_a_value_beyond_2_53_minus_1(schemas: Schemas):
+    from slopvac_plugin.framing import UnsafeInt, loads_strict
+
+    reply = {
+        "protocolVersion": 1,
+        "pluginInfo": {"name": "p", "version": "0"},
+        "capabilities": {
+            "hooks": [],
+            "features": {"required": [], "optional": []},
+            "requiresNetwork": False,
+        },
+        "limits": {"maxMessageBytes": 65536, "maxBatchDocuments": 1, "maxInFlight": 1},
+    }
+    assert schemas.errors("InitializeResult", reply) == []
+    # The strict parser turns a token beyond 2^53-1 into an UnsafeInt, an int subclass.
+    parsed = loads_strict(b'{"n": 9007199254740993}')["n"]
+    assert isinstance(parsed, UnsafeInt)
+    reply["limits"]["maxBatchDocuments"] = parsed
+    assert schemas.errors("InitializeResult", reply) != []

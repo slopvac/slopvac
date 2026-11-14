@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from conftest import EXAMPLE, FIXTURES, SDK_ENV, bounded, script
 from slopvac_plugin.conformance import SuiteError, load_declaration, run_conformance
-from slopvac_plugin.conformance.cases import handshake
+from slopvac_plugin.conformance.cases import check_edits, handshake
 from slopvac_plugin.conformance.session import CaseFailure
 
 ALL_IDS = [f"P{i}" for i in range(1, 20)]
@@ -90,6 +90,8 @@ def test_plugin_written_without_the_sdk_passes(quiet_cwd):
         ("float-id", "P1"),  # answers with id 1.0
         ("float-limit", "P1"),  # maxMessageBytes spelled 65536.0
         ("big-init-reply", "P1"),  # an initialize reply over 1 MiB
+        ("in-flight-17", "P1"),  # maxInFlight above the host ceiling of 16
+        ("in-flight-unsafe", "P1"),  # maxInFlight beyond 2^53-1
     ],
 )
 def test_suite_fails_a_broken_plugin_on_the_violated_case(mode, failing, quiet_cwd):
@@ -260,3 +262,53 @@ def test_cli_gives_the_plugin_only_the_environment_it_is_told_to(tmp_path):
     names = set(dump.read_text("utf-8").split())
     assert "OPTED_IN" in names
     assert "CI_DEPLOY_TOKEN" not in names
+
+
+def fixer_doc(length: int) -> dict:
+    return {"findings": [{"span": {"start": 0, "end": length}}]}
+
+
+def edit(start: int, end: int, text: str = "") -> dict:
+    return {"finding": 0, "span": {"start": start, "end": end}, "text": text}
+
+
+def test_suite_accepts_a_thousand_edits_and_refuses_more_quickly():
+    import time
+
+    doc = fixer_doc(100_000)
+    check_edits(doc, [edit(i, i) for i in range(1000)])
+    started = time.monotonic()
+    with pytest.raises(CaseFailure, match="1000"):
+        check_edits(doc, [edit(i, i) for i in range(100_000)])
+    assert time.monotonic() - started < 1
+
+
+@pytest.mark.parametrize(
+    "edits",
+    [
+        [edit(0, 10), edit(2, 2), edit(4, 5)],  # a wide edit and a far one
+        [edit(3, 3), edit(3, 3)],  # two insertions at one point
+        [edit(2, 4), edit(3, 5)],
+    ],
+)
+def test_suite_refuses_overlapping_edits(edits):
+    with pytest.raises(CaseFailure, match="overlap"):
+        check_edits(fixer_doc(10), edits)
+
+
+def test_suite_accepts_touching_edits_and_an_insertion_at_an_edge():
+    check_edits(fixer_doc(10), [edit(2, 2), edit(2, 3), edit(3, 5), edit(5, 5)])
+
+
+def test_suite_refuses_inserted_bytes_over_the_limit():
+    check_edits(fixer_doc(2), [edit(0, 2, "x" * 4104)])
+    with pytest.raises(CaseFailure, match="bytes"):
+        check_edits(fixer_doc(2), [edit(0, 2, "x" * 4105)])
+
+
+def test_an_unknown_hook_kind_is_ignored_by_the_cases_that_call_hooks(quiet_cwd):
+    # The plugin declares a tagger and a "hologram" hook. Section 4.2: ignore the latter.
+    report = run_conformance(
+        script("raw_plugin.py", "unknown-kind"), only=["P5", "P6"], timeout=5
+    )
+    assert statuses(report) == {"P5": "pass", "P6": "pass"}, report.to_text()

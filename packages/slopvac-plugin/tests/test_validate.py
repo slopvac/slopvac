@@ -1,4 +1,5 @@
 import math
+import time
 
 import pytest
 from slopvac_plugin.errors import OutputInvalid
@@ -141,3 +142,45 @@ def test_score_must_be_finite_and_not_negative(score):
 def test_score_zero_and_integers_are_accepted():
     assert check_score(0) == 0.0
     assert check_score(3) == 3.0
+
+
+WIDE = Finding("a:b", "warning", Span(0, 10), "m")
+WIDE_TEXT = b"0123456789"
+
+
+def test_an_edit_far_from_an_earlier_wide_edit_still_overlaps_it():
+    # [0,10) overlaps (4,5) even though (2,3) sits between them in start order.
+    spans = [(0, 10), (2, 2), (4, 5)]
+    with pytest.raises(OutputInvalid, match="overlap"):
+        check_edits(WIDE_TEXT, [WIDE], [Edit(0, Span(*s), "x") for s in spans])
+
+
+def test_a_thousand_edits_are_accepted():
+    edits = [Edit(0, Span(i, i), "") for i in range(1000)]
+    big = Finding("a:b", "warning", Span(0, 1000), "m")
+    check_edits(b"x" * 1000, [big], edits)
+
+
+def test_one_thousand_and_one_edits_are_refused_quickly():
+    # 100,000 zero-width edits made the all-pairs check run about 5e9 comparisons.
+    edits = [Edit(0, Span(i, i), "") for i in range(100_000)]
+    big = Finding("a:b", "warning", Span(0, 100_000), "m")
+    started = time.monotonic()
+    with pytest.raises(OutputInvalid, match="1000"):
+        check_edits(b"x" * 100_000, [big], edits)
+    assert time.monotonic() - started < 1
+
+
+def test_inserted_bytes_over_four_times_the_span_plus_4_kib_are_refused():
+    # Span of 2 bytes: the limit is 4 * 2 + 4096 = 4104 bytes.
+    finding = Finding("a:b", "warning", Span(0, 2), "m")
+    check_edits(b"ab", [finding], [Edit(0, Span(0, 2), "x" * 4104)])
+    with pytest.raises(OutputInvalid, match="bytes"):
+        check_edits(b"ab", [finding], [Edit(0, Span(0, 2), "x" * 4105)])
+
+
+def test_inserted_bytes_are_counted_as_utf8():
+    finding = Finding("a:b", "warning", Span(0, 2), "m")
+    # 1369 three-byte characters are 4107 bytes: over the limit, under it by length.
+    with pytest.raises(OutputInvalid, match="bytes"):
+        check_edits(b"ab", [finding], [Edit(0, Span(0, 2), "日" * 1369)])
