@@ -153,6 +153,7 @@ fn dispatch(
                 slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
             })
             .map_err(|e| CliError::new("lsp-failed", e.to_string())),
+        Some(("migrate", m)) => migrate(m, out, err_out),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
@@ -208,6 +209,17 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+fn migrate(
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
+    // 2.x config and a migrated tree.
+    let code = slopvac_migrate::run(m, &slopvac_migrate::NullLinter, out, err_out);
+    Ok(u8::try_from(code).unwrap_or(exit::INCOMPLETE))
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {

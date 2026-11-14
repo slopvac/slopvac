@@ -111,6 +111,20 @@ Run the language server on standard input and output.
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac migrate`
+
+Migrate a 2.x project to 3.0: config, inline directives and steering blocks
+
+| Argument | Description |
+| --- | --- |
+| `<PATH>` | Project root |
+| `--write` | Apply the changes instead of previewing them |
+| `--preserve-behavior` | Keep the 2.x vocabulary behavior by adding the STE style |
+| `--restore` | Undo the last --write from the backup |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.
@@ -176,16 +190,6 @@ Manage plugins and packs: sync, trust, update.
 ### `slopvac packs`
 
 List installed rule packs.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac migrate`
-
-Rewrite a 2.x configuration for 3.0.
 
 | Argument | Description |
 | --- | --- |
