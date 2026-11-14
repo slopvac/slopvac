@@ -212,7 +212,8 @@ fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
     const DEMONSTRATIVES: &[&str] = &["the", "this"];
     let w = spans(block.text);
     let mut out = Vec::new();
-    for i in 0..w.len() {
+    let mut i = 0;
+    while i < w.len() {
         let at = |k: usize| w.get(i + k).map_or("", |(_, s)| s.as_str());
         let len = if DEMONSTRATIVES.contains(&at(0))
             && NOUNS.contains(&at(1))
@@ -233,9 +234,11 @@ fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
         {
             4
         } else {
+            i += 1;
             continue;
         };
         out.push(block.span.start + w[i].0.start..block.span.start + w[i + len - 1].0.end);
+        i += len;
     }
     out
 }
@@ -451,13 +454,33 @@ mod tests {
     }
 
     #[test]
-    fn meta_reference_variants() {
-        for text in [
-            "As shown in the diagram, requests fan out.",
-            "See the figure below for details.",
-            "This flowchart illustrates retries.",
+    fn meta_reference_variants_report_rule_and_exact_span() {
+        for (text, phrase) in [
+            (
+                "As shown in the diagram, requests fan out.",
+                "As shown in the diagram",
+            ),
+            (
+                "Requests fan out, as illustrated in the diagram.",
+                "as illustrated in the diagram",
+            ),
+            (
+                "Requests fan out, as depicted in this figure.",
+                "as depicted in this figure",
+            ),
+            ("See the figure below for details.", "the figure below"),
+            (
+                "This flowchart illustrates retries.",
+                "This flowchart illustrates",
+            ),
+            ("The chart depicts the retry path.", "The chart depicts"),
+            ("Details are in the diagram above.", "in the diagram above"),
         ] {
-            assert_eq!(prose_rules("", &[], text).len(), 1, "{text}");
+            let found = prose_rules("", &[], text);
+            assert_eq!(found.len(), 1, "{text}");
+            assert_eq!(found[0].rule, "diagram.meta-reference", "{text}");
+            let start = text.find(phrase).unwrap() + 100;
+            assert_eq!(found[0].span, start..start + phrase.len(), "{text}");
         }
         assert_eq!(
             prose_rules("", &[], "The diagrams team owns this.").len(),
