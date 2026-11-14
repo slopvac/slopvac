@@ -9,7 +9,7 @@ use crate::lexicon::{
     EXTRA_FINITE_STEMS, FINITE_VERB_FORMS, IMPERATIVE_VERBS, NON_NOUN_SECOND_TOKENS, is_imperative,
 };
 use crate::pattern::{TextError, matches_start, re, re_i};
-use crate::pyrules::{casefold, trim};
+use crate::pyrules::{casefold, trim, upper};
 use crate::tokens::{stepless_tokens, strip_step_number};
 
 /// The procedural and descriptive split that selects the sentence word cap.
@@ -123,7 +123,7 @@ pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     if let Some(caps) = p.safety_marker.captures(stripped.as_bytes())? {
         let whole = caps.get(0).expect("group 0 exists");
         let marker = caps.name("marker").map_or(String::new(), |m| {
-            String::from_utf8_lossy(m.as_bytes()).to_uppercase()
+            upper(&String::from_utf8_lossy(m.as_bytes()))
         });
         let body =
             stripped[whole.end()..].trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);

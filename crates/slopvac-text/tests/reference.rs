@@ -99,3 +99,14 @@ fn spacing_marks_are_word_characters_like_python() {
     // a standalone number and "degrees Celsius" stays two words: 3 in total.
     assert_eq!(count_words("a\u{903}10 degrees Celsius").unwrap(), 3);
 }
+
+/// U+A7CE is a capital letter only from Unicode 17. The reference reads Unicode 16, where
+/// `str.isupper` is false for it, so "Check it. \u{A7CE} more prose follows." is one
+/// sentence there (Python 3.14.8). Rust's own `char::is_uppercase` would split it. The
+/// word count is not compared: `regex` reads a later Unicode release than PCRE2, a
+/// divergence recorded in tests/fixtures/divergences.md.
+#[test]
+fn sentence_opener_uppercase_follows_unicode_16_like_python() {
+    let got = split_sentences("Check it. \u{A7CE} more prose follows.").unwrap();
+    assert_eq!(got.len(), 1);
+}

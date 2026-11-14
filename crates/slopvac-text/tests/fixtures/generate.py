@@ -100,6 +100,8 @@ CURATED = [
     "Wait\u200d10 degrees Celsius.",
     "We asked the U.S. It was late.",
     "We asked the U.S. It\u0301 was late.",
+    "Check it. \u01c5 more prose follows.",
+    "Check it. \u0130 more prose follows.",
 ]
 
 

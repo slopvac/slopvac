@@ -8,7 +8,7 @@ use pcre2::bytes::Regex;
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
 use crate::pattern::{TextError, find_all, matches_start, re};
-use crate::pyrules::{is_digit, is_space, trim, trim_start};
+use crate::pyrules::{is_digit, is_space, is_upper, trim, trim_start};
 use crate::tokens::{
     CODE_SPAN, IDENTIFIER, PAREN_SPAN, QUOTED_SPAN, URL_OR_PATH, WORDLIKE, count_words,
 };
@@ -96,7 +96,7 @@ fn terminal_cut(
     }
     Ok(match trim_start(&text[end..]).chars().next() {
         None => Some(end),
-        Some(c) if c.is_uppercase() || is_digit(c) => Some(end),
+        Some(c) if is_upper(c) || is_digit(c) => Some(end),
         Some(_) => None,
     })
 }
