@@ -2415,9 +2415,12 @@ dependencies = [
 name = "slopvac-engine"
 version = "0.0.0"
 dependencies = [
+ "crossbeam-channel",
  "globset",
  "ignore",
  "proptest",
+ "slopvac-model",
+ "slopvac-parse",
  "tempfile",
  "thiserror",
 ]
