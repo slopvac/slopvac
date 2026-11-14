@@ -102,17 +102,19 @@ def cmd_models(args: argparse.Namespace) -> int:
         engine = runner.Engine.parse(args.engine)
         out = Path(args.out) if args.out else models.default_output(models.today())
         journal = models.Journal(out.with_suffix(".journal.jsonl"))
-        budget = models.Budget(args.max_invocations, spent=journal.attempts)
         try:
-            results = models.execute(
-                tasks,
-                roster,
-                args.repeats,
-                models.make_linter(engine),
-                workers=args.workers,
-                budget=budget,
-                journal=journal,
-            )
+            with models.Budget(
+                args.max_invocations, out.with_suffix(".ledger.jsonl")
+            ) as budget:
+                results = models.execute(
+                    tasks,
+                    roster,
+                    args.repeats,
+                    models.make_linter(engine),
+                    workers=args.workers,
+                    budget=budget,
+                    journal=journal,
+                )
         except models.BudgetExceeded as exc:
             print(
                 f"evals models run: {exc}; {journal.path} keeps the finished calls",

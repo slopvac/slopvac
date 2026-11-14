@@ -29,6 +29,7 @@ Repeat each run at least three times, because one sample of a model says little.
 from __future__ import annotations
 
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -42,10 +43,10 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Self
 
 from . import corpuslib as lib
-from . import facts, metrics, runner
+from . import facts, metrics, procs, runner
 from .textops import prose_paragraphs
 
 PROMPT_VERSION = "1"
@@ -481,24 +482,88 @@ class Reply(NamedTuple):
 
 
 class Budget:
-    """A shared ceiling on model-command invocations, retries included.
+    """A ceiling on model-command invocations, retries included, kept on disk.
 
-    `reserve` runs before every spawn. Once the ceiling is reached it raises, so
-    no process starts past it, however many threads ask at once.
+    Every `reserve` is appended to a ledger and fsynced BEFORE a process starts,
+    so a crash between the reservation and the spawn still counts as spent. On
+    resume the spent count is the number of reservations in the ledger. An
+    exclusive lock on `<ledger>.lock` is held for the life of the run: a second
+    live run on the same ledger refuses to start, which stops independent
+    launches from each spending the full ceiling.
+
+    With no ledger path the budget lives in memory only, which suits tests.
     """
 
-    def __init__(self, ceiling: int, spent: int = 0) -> None:
+    def __init__(self, ceiling: int, ledger: Path | str | None = None) -> None:
+        ledger = Path(ledger) if ledger is not None else None
         self.ceiling = ceiling
-        self.spent = spent
+        self.ledger = ledger
+        self.spent = 0
+        self.unfinished_at_start = 0
         self._lock = threading.Lock()
+        self._fd: int | None = None
+        self._handle: Any = None
+        if ledger is not None:
+            self._open(ledger)
 
-    def reserve(self) -> None:
+    def _open(self, ledger: Path) -> None:
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        self._fd = os.open(str(ledger) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(self._fd)
+            self._fd = None
+            raise ModelEvalError(
+                f"another run holds the ledger lock for {ledger.name}; refusing to start"
+            ) from None
+        reserved: set[int] = set()
+        finished: set[int] = set()
+        if ledger.is_file():
+            for line in ledger.read_text("utf-8").splitlines():
+                if not line:
+                    continue
+                event = json.loads(line)
+                (reserved if event["event"] == "reserve" else finished).add(event["n"])
+        self.spent = len(reserved)
+        self.unfinished_at_start = len(reserved - finished)
+        self._handle = ledger.open("a", encoding="utf-8")
+
+    def _append(self, event: dict[str, Any]) -> None:
+        if self._handle is not None:
+            self._handle.write(json.dumps(event, sort_keys=True) + "\n")
+            self._handle.flush()
+            os.fsync(self._handle.fileno())
+
+    def reserve(self) -> int:
+        """Persist one reservation, then return its number. Raises at the ceiling."""
         with self._lock:
             if self.spent >= self.ceiling:
                 raise BudgetExceeded(
                     f"invocation ceiling of {self.ceiling} reached; nothing more was started"
                 )
             self.spent += 1
+            self._append({"event": "reserve", "n": self.spent})
+            return self.spent
+
+    def finish(self, number: int, status: str) -> None:
+        with self._lock:
+            self._append({"event": "finish", "n": number, "status": status})
+
+    def close(self) -> None:
+        with self._lock:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            if self._fd is not None:
+                os.close(self._fd)  # closing the descriptor drops the lock
+                self._fd = None
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
 
 def job_id(kind: str, model: str, prompt: str, repeat: int) -> str:
@@ -551,7 +616,7 @@ def command_ask(
     attempts: int = 3,
     *,
     budget: Budget | None = None,
-    timeout: int = 900,
+    timeout: int = procs.OUTER_TIMEOUT,
 ) -> Callable[[str], Reply]:
     argv = shlex.split(command)
 
@@ -559,24 +624,27 @@ def command_ask(
         last = ""
         used = 0
         for _ in range(attempts):
-            if budget:
-                budget.reserve()
+            number = budget.reserve() if budget else 0
             used += 1
             try:
-                proc = subprocess.run(
-                    argv,
-                    input=prompt,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=timeout,
-                )
+                proc = procs.run_group(argv, input=prompt, timeout=timeout)
             except subprocess.TimeoutExpired:
+                if budget:
+                    budget.finish(number, "timeout")
                 last = f"model command timed out after {timeout}s"
                 continue
-            if proc.returncode == 0 and proc.stdout.strip():
+            except BaseException:
+                if budget:
+                    budget.finish(number, "interrupted")
+                raise
+            ok = proc.returncode == 0 and bool(proc.stdout.strip())
+            if budget:
+                budget.finish(number, "ok" if ok else "fail")
+            if ok:
                 return Reply(proc.stdout, used)
-            last = f"model command exited {proc.returncode}: {proc.stderr[:300]}"
+            last = procs.redact(
+                f"model command exited {proc.returncode}: {proc.stderr[:300]}"
+            )
         raise CallFailed(last, used)
 
     return ask
