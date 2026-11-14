@@ -1,0 +1,2 @@
+crates/slopvac-agents/topics/*.j2 text eol=lf
+crates/slopvac-agents/data/*.json text eol=lf

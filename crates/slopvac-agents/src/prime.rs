@@ -20,16 +20,16 @@ use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
 pub const SCHEMA_VERSION: u8 = 3;
 
 /// The base topic; it has no name on the command line.
-const BASE: &str = include_str!("../topics/base.md");
+const BASE: &str = include_str!("../topics/base.md.j2");
 
 /// Topics in index order: name and source.
 const TOPICS: [(&str, &str); 6] = [
-    ("write", include_str!("../topics/write.md")),
-    ("report", include_str!("../topics/report.md")),
-    ("configure", include_str!("../topics/configure.md")),
-    ("migrate", include_str!("../topics/migrate.md")),
-    ("setup", include_str!("../topics/setup.md")),
-    ("rules", include_str!("../topics/rules.md")),
+    ("write", include_str!("../topics/write.md.j2")),
+    ("report", include_str!("../topics/report.md.j2")),
+    ("configure", include_str!("../topics/configure.md.j2")),
+    ("migrate", include_str!("../topics/migrate.md.j2")),
+    ("setup", include_str!("../topics/setup.md.j2")),
+    ("rules", include_str!("../topics/rules.md.j2")),
 ];
 
 /// How much detail a topic renders.
@@ -82,7 +82,7 @@ fn split_summary(source: &str) -> (&str, &str) {
     {
         Some(summary) => (
             summary.trim(),
-            source[first.len()..].trim_start_matches('\n'),
+            source[first.len()..].trim_start_matches(['\r', '\n']),
         ),
         None => ("", source),
     }
@@ -191,8 +191,8 @@ fn render_template(
         commands => commands,
         topics => topics,
     };
-    let body = split_summary(source).1;
-    env.render_str(body, ctx)
+    let body = split_summary(source).1.replace("\r\n", "\n");
+    env.render_str(&body, ctx)
         .map_err(|e| AgentsError::Usage(format!("prime topic {name:?} failed to render: {e}")))
 }
 
