@@ -215,7 +215,9 @@ def test_a_tag_flag_in_an_unexpected_command_shape_fails_the_patch(raw):
     old = "dist build ${{ needs.plan.outputs.tag-flag }}"
     assert old in raw
     with pytest.raises(ValueError, match="tag interpolated"):
-        patcher.harden(raw.replace(old, "dist build --verbose ${{ needs.plan.outputs.tag-flag }}"))
+        patcher.harden(
+            raw.replace(old, "dist build --verbose ${{ needs.plan.outputs.tag-flag }}")
+        )
 
 
 def _run_scripts(text: str):

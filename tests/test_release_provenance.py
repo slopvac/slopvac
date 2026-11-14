@@ -68,7 +68,9 @@ def make_runner(trees: dict[str, str], tags: list[str], runs: dict[str, list[dic
         query = dict(part.split("=") for part in argv[2].split("?")[1].split("&"))
         page, per_page = int(query["page"]), int(query["per_page"])
         batch = runs.get(query["head_sha"], [])
-        return json.dumps({"workflow_runs": batch[(page - 1) * per_page : page * per_page]})
+        return json.dumps(
+            {"workflow_runs": batch[(page - 1) * per_page : page * per_page]}
+        )
 
     return runner
 

@@ -164,7 +164,9 @@ _VERIFY_ANCHORS = ("      - id: host\n", "      - name: Create GitHub Release\n"
 def _verify_tag_before_publishing(text: str) -> str:
     """A tag-writer may move the tag after the provenance check; catch it at publish time."""
     for anchor in _VERIFY_ANCHORS:
-        text = _replace_once(text, anchor, _VERIFY_STEP + anchor, f"anchor {anchor.strip()}")
+        text = _replace_once(
+            text, anchor, _VERIFY_STEP + anchor, f"anchor {anchor.strip()}"
+        )
     return text
 
 
