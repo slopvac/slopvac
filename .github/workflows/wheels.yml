@@ -34,12 +34,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-15, target: aarch64-apple-darwin, smoke: true }
-          - { os: macos-15-intel, target: x86_64-apple-darwin, smoke: true }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, manylinux: auto, smoke: true }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, manylinux: auto, smoke: true }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl, manylinux: musllinux_1_2, smoke: false }
-          - { os: windows-2025, target: x86_64-pc-windows-msvc, smoke: true }
+          - os: macos-15
+            target: aarch64-apple-darwin
+            smoke: true
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            smoke: true
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+            smoke: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: auto
+            smoke: true
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+            smoke: false
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            smoke: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
