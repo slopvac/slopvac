@@ -6,6 +6,7 @@ mod classify;
 mod lexicon;
 mod pattern;
 mod pyrules;
+mod rewrite;
 mod sentences;
 mod tokens;
 mod unicode_data;

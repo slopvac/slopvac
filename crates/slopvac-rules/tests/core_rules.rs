@@ -141,13 +141,36 @@ fn parity() -> Value {
 }
 
 /// Python's caseless matching folds U+0130 (İ) and U+0131 (ı) onto `i` and `I`; PCRE2 does
-/// not. `fixtures/divergences.md` records it. Every other difference is a bug.
-fn is_known_divergence(text: &str) -> bool {
+/// not. For a text that holds either, the expected spans are the generator's "inert" spans:
+/// Python's own spans with both characters swapped for caseless letters. Nothing else may
+/// differ. `fixtures/divergences.md` records it.
+fn has_dotted_i(text: &str) -> bool {
     text.contains(['\u{130}', '\u{131}'])
 }
 
-/// Rule, text index, Python's spans and the Rust spans, for a pair that differs.
+/// Rule, text index, expected spans and the Rust spans, for a pair that differs.
 type Difference = (String, usize, Vec<(usize, usize)>, Vec<(usize, usize)>);
+
+fn spans_at(
+    hits: &serde_json::Map<String, Value>,
+    index: usize,
+    at: &[usize],
+) -> Vec<(usize, usize)> {
+    hits.get(&index.to_string())
+        .map(|v| {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|p| {
+                    (
+                        at[p[0].as_u64().unwrap() as usize],
+                        at[p[1].as_u64().unwrap() as usize],
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 #[test]
 fn every_lexical_pattern_matches_python_on_the_corpus() {
@@ -161,34 +184,26 @@ fn every_lexical_pattern_matches_python_on_the_corpus() {
         .collect();
     let offsets: Vec<Vec<usize>> = texts.iter().map(|t| byte_offsets(t)).collect();
     let expected = doc["spans"].as_object().unwrap();
+    let inert = doc["inert"].as_object().unwrap();
     let mut rules = 0;
     let mut compared = 0;
+    let mut folded = 0;
     let mut differing: Vec<Difference> = Vec::new();
     for rule in set.rules().filter(|r| r.matcher().is_some()) {
         let python_id = rule.id().local().to_owned();
-        let hits = expected
-            .get(&python_id)
-            .unwrap_or_else(|| panic!("no Python spans for {python_id}"))
-            .as_object()
-            .unwrap();
+        let object = |map: &'_ serde_json::Map<String, Value>| {
+            map.get(&python_id)
+                .unwrap_or_else(|| panic!("no Python spans for {python_id}"))
+                .as_object()
+                .unwrap()
+                .clone()
+        };
+        let (hits, inert_hits) = (object(expected), object(inert));
         rules += 1;
         for (index, text) in texts.iter().enumerate() {
             let at = &offsets[index];
-            let want: Vec<(usize, usize)> = hits
-                .get(&index.to_string())
-                .map(|v| {
-                    v.as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|p| {
-                            (
-                                at[p[0].as_u64().unwrap() as usize],
-                                at[p[1].as_u64().unwrap() as usize],
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let dotted = has_dotted_i(text);
+            let want = spans_at(if dotted { &inert_hits } else { &hits }, index, at);
             let got: Vec<(usize, usize)> = rule
                 .find_all(text)
                 .unwrap()
@@ -196,6 +211,9 @@ fn every_lexical_pattern_matches_python_on_the_corpus() {
                 .map(|r| (r.start, r.end))
                 .collect();
             compared += 1;
+            if dotted && want != spans_at(&hits, index, at) {
+                folded += 1;
+            }
             if got != want {
                 differing.push((python_id.clone(), index, want, got));
             }
@@ -218,16 +236,12 @@ fn every_lexical_pattern_matches_python_on_the_corpus() {
     );
     assert_eq!(rules, 144);
     assert_eq!(compared, 144 * texts.len());
-    let unexpected: Vec<_> = differing
-        .iter()
-        .filter(|(_, i, _, _)| !is_known_divergence(texts[*i]))
-        .collect();
     assert!(
-        unexpected.is_empty(),
+        differing.is_empty(),
         "{} differing (rule, text) pairs, first: {:#?}",
-        unexpected.len(),
-        unexpected.iter().take(5).collect::<Vec<_>>()
+        differing.len(),
+        differing.iter().take(5).collect::<Vec<_>>()
     );
     // The recorded divergence is real: if it disappears, delete it here and from the docs.
-    assert!(differing.len() > 100);
+    assert!(folded > 100, "{folded} pairs depend on İ/ı folding");
 }

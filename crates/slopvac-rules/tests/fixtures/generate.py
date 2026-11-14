@@ -167,8 +167,23 @@ def build_corpus(rules) -> list[str]:
     return texts
 
 
-def spans_for(rules, texts: list[str]) -> dict[str, dict[str, list[list[int]]]]:
-    """Rule id -> text index -> code point spans, for the texts that match."""
+# PCRE2 does not fold U+0130 (dotted capital I) and U+0131 (dotless i) onto `i` and `I` when it
+# ignores case; Python's `regex` does. The "inert" spans say what PCRE2 should find: Python's
+# spans on the text with both characters swapped for two caseless letters, which keeps their
+# length and their word-ness and removes only the folding.
+INERT = str.maketrans({"\u0130": "\u0294", "\u0131": "\u0295"})
+
+
+def has_dotted_i(text: str) -> bool:
+    return text != text.translate(INERT)
+
+
+def spans_for(rules, texts: list[str], inert: bool = False) -> dict[str, dict[str, list[list[int]]]]:
+    """Rule id -> text index -> code point spans, for the texts that match.
+
+    With ``inert`` only the texts that hold U+0130 or U+0131 are searched, with those
+    characters swapped out (see ``INERT``).
+    """
     out: dict[str, dict[str, list[list[int]]]] = {}
     for rule in rules:
         pattern = rule_pattern(rule)
@@ -176,7 +191,10 @@ def spans_for(rules, texts: list[str]) -> dict[str, dict[str, list[list[int]]]]:
             continue
         hits: dict[str, list[list[int]]] = {}
         for index, text in enumerate(texts):
-            found = [[m.start(), m.end()] for m in pattern.finditer(text)]
+            if inert and not has_dotted_i(text):
+                continue
+            subject = text.translate(INERT) if inert else text
+            found = [[m.start(), m.end()] for m in pattern.finditer(subject)]
             if found:
                 hits[str(index)] = found
         out[rule.qualified_id] = hits
@@ -185,7 +203,9 @@ def spans_for(rules, texts: list[str]) -> dict[str, dict[str, list[list[int]]]]:
 
 def parity_text(texts: list[str]) -> str:
     """One text per line and one rule per line, so a change reviews as a small diff."""
-    spans = spans_for(lexical_rules(), texts)
+    rules = lexical_rules()
+    spans = spans_for(rules, texts)
+    inert = spans_for(rules, texts, inert=True)
     dump = lambda value: json.dumps(value, ensure_ascii=False, separators=(",", ":"))  # noqa: E731
     lines = [
         "{",
@@ -197,6 +217,9 @@ def parity_text(texts: list[str]) -> str:
     lines.append("],")
     lines.append('"spans":{')
     lines.append(",\n".join(f"{dump(k)}:{dump(v)}" for k, v in spans.items()))
+    lines.append("},")
+    lines.append('"inert":{')
+    lines.append(",\n".join(f"{dump(k)}:{dump(v)}" for k, v in inert.items()))
     lines.append("}")
     lines.append("}")
     return "\n".join(lines) + "\n"
@@ -220,7 +243,7 @@ def main() -> None:
         # only the spans must track the rules.
         fresh = parity_text(stored["texts"])
         current = json.loads(fresh)
-        if stored["spans"] != current["spans"]:
+        if stored["spans"] != current["spans"] or stored["inert"] != current["inert"]:
             problems.append("pattern-parity.json spans are stale")
         if problems:
             raise SystemExit(

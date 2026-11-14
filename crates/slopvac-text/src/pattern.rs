@@ -1,5 +1,7 @@
 use pcre2::bytes::{Regex, RegexBuilder};
 
+use crate::rewrite::compat;
+
 /// A pattern failed at match time, for example by exhausting PCRE2's match limit.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("pattern match failed: {0}")]
@@ -9,74 +11,6 @@ impl From<pcre2::Error> for TextError {
     fn from(e: pcre2::Error) -> Self {
         Self(e.to_string())
     }
-}
-
-/// The Python `regex` module's `\w`, which follows UTS #18: Alphabetic, marks (M), decimal
-/// digits (Nd), connector punctuation (Pc) and `Join_Control`. PCRE2's UCP `\w` is L, N,
-/// Mn and Pc, so the built-in patterns spell the class out.
-const WORD: &str = r"\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\x{200C}\x{200D}";
-
-/// Rewrite `\w`, `\W`, `\b` and `\B` into explicit classes (see [`WORD`]).
-///
-/// The walk skips escaped characters, so `\\w` (a literal backslash and `w`) stays as it is,
-/// and inside a character class `\b` stays a backspace. After a class-level `\w` a `-` is
-/// escaped, because PCRE2 reads `\x{200D}-.` as a range.
-fn compat(pattern: &str) -> String {
-    let boundary = format!("(?:(?<![{WORD}])(?=[{WORD}])|(?<=[{WORD}])(?![{WORD}]))");
-    let not_boundary = format!("(?:(?<![{WORD}])(?![{WORD}])|(?<=[{WORD}])(?=[{WORD}]))");
-    let word = format!("[{WORD}]");
-    let non_word = format!("[^{WORD}]");
-    let mut out = String::with_capacity(pattern.len() + 64);
-    let mut chars = pattern.chars().peekable();
-    let mut in_class = false;
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => match (chars.next(), in_class) {
-                (Some('w'), true) => {
-                    out.push_str(WORD);
-                    if chars.next_if_eq(&'-').is_some() {
-                        out.push_str("\\-");
-                    }
-                }
-                (Some('w'), false) => out.push_str(&word),
-                (Some('W'), false) => out.push_str(&non_word),
-                (Some('b'), false) => out.push_str(&boundary),
-                (Some('B'), false) => out.push_str(&not_boundary),
-                (Some(other), _) => {
-                    out.push('\\');
-                    out.push(other);
-                }
-                (None, _) => out.push('\\'),
-            },
-            '[' if in_class && chars.peek() == Some(&':') => {
-                // A POSIX class such as `[:alpha:]` inside a class: copy it through `:]`.
-                out.push(c);
-                while let Some(n) = chars.next() {
-                    out.push(n);
-                    if n == ':' && chars.peek() == Some(&']') {
-                        out.extend(chars.next());
-                        break;
-                    }
-                }
-            }
-            '[' if !in_class => {
-                in_class = true;
-                out.push(c);
-                if chars.next_if_eq(&'^').is_some() {
-                    out.push('^');
-                }
-                if chars.next_if_eq(&']').is_some() {
-                    out.push_str("\\]");
-                }
-            }
-            ']' if in_class => {
-                in_class = false;
-                out.push(c);
-            }
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 /// Compile a pattern in UTF and Unicode-property mode, as the Python reference's
@@ -222,5 +156,89 @@ mod tests {
     #[test]
     fn a_pattern_that_does_not_compile_is_an_error() {
         assert!(Pattern::new("(unclosed", false).is_err());
+    }
+
+    #[test]
+    fn non_word_is_the_complement_of_the_python_word_class() {
+        // U+0903 is a spacing mark and U+200D a joiner: word characters for Python, so `\W`
+        // skips them, though native PCRE2 `\W` takes U+0903.
+        assert_eq!(spans(r"\W", "a\u{903}b-"), [5..6]);
+        assert_eq!(spans(r"\W", "a\u{200d}b-"), [5..6]);
+    }
+
+    #[test]
+    fn a_not_boundary_ignores_marks_and_joiners_like_python() {
+        assert_eq!(spans(r"a\B\x{903}", "a\u{903}"), [0..4]);
+    }
+
+    #[test]
+    fn a_negated_class_with_a_non_word_escape_keeps_marks_and_joiners() {
+        // `[^\W_]` is a word character that is not an underscore.
+        assert_eq!(spans(r"[^\W_]+", "a\u{903}_b\u{200d}"), [0..4, 5..9]);
+    }
+
+    #[test]
+    fn a_positive_class_with_a_non_word_escape_mixes_with_other_members() {
+        assert_eq!(spans(r"[\W\d]+", "a\u{903}-5x"), [4..6]);
+        assert_eq!(spans(r"[\Wx]+", "\u{903}-x\u{200d}"), [3..5]);
+    }
+
+    #[test]
+    fn a_non_word_class_alone_is_the_complement() {
+        assert_eq!(spans(r"[\W]+", "a\u{903}-,b"), [4..6]);
+        assert_eq!(spans(r"[^\W]+", "-a\u{903}-"), [1..5]);
+    }
+
+    #[test]
+    fn a_caret_left_first_by_a_removed_non_word_escape_stays_literal() {
+        assert_eq!(spans(r"[\W^]+", "a^-b"), [1..3]);
+    }
+
+    #[test]
+    fn quoted_text_is_matched_literally() {
+        assert_eq!(spans(r"\Q\W\E", r"a\W"), [1..3]);
+        assert_eq!(spans(r"\Q\w\E", r"a\w"), [1..3]);
+        assert_eq!(spans(r"\Q[\Ex\b", "[x "), [0..2]);
+    }
+
+    #[test]
+    fn an_unterminated_quote_runs_to_the_end() {
+        assert_eq!(spans(r"a\Q\w", r"a\w"), [0..3]);
+    }
+
+    #[test]
+    fn a_bracket_in_a_comment_does_not_open_a_class() {
+        assert_eq!(spans(r"(?#[)a\x{903}\b", "a\u{903} b"), [0..4]);
+        assert_eq!(
+            spans("(?x) a\\x{903} \\b # [ comment", "a\u{903} b"),
+            [0..4]
+        );
+    }
+
+    #[test]
+    fn extended_mode_ends_with_its_group() {
+        // Outside the group `#` is a literal and `[\w]` a class again.
+        assert_eq!(spans("(?x: a #c\n)#[\\w]", "a#\u{903}"), [0..5]);
+    }
+
+    #[test]
+    fn extended_mode_set_inline_lasts_to_the_end_of_the_group() {
+        assert_eq!(spans("(?:(?x) a # [\n)b", "ab"), [0..2]);
+    }
+
+    #[test]
+    fn a_control_escape_does_not_open_a_class() {
+        assert_eq!(spans(r"\c[\x{903}\b", "\u{1b}\u{903} "), [0..4]);
+    }
+
+    #[test]
+    fn a_closing_bracket_first_in_a_class_is_a_member() {
+        assert_eq!(spans(r"[]\w]+", "]a\u{903}-"), [0..5]);
+        assert_eq!(spans(r"[^]\w]+", "]a-,"), [2..4]);
+    }
+
+    #[test]
+    fn a_posix_class_inside_a_class_is_kept() {
+        assert_eq!(spans(r"[[:digit:]\w]+", "1a\u{903}-"), [0..5]);
     }
 }
