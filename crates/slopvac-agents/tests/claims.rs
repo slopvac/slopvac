@@ -238,3 +238,76 @@ fn output_is_deterministic() {
         serde_json::to_string(&b).unwrap()
     );
 }
+
+#[test]
+fn indentation_only_change_in_fenced_code_is_a_changed_claim() {
+    let old = "```sh\nrun a\n```\n";
+    let new = "```sh\n    run a\n```\n";
+    let r = compare(old, new);
+    assert_eq!(r.summary.changed, 1);
+    assert!(
+        r.claims[0].text.contains("\n    run a\n"),
+        "{:?}",
+        r.claims[0].text
+    );
+}
+
+#[test]
+fn negations_are_counted_not_flagged() {
+    let cases = [
+        ("It is not never ready.", "It is never ready.", 2, 1, true),
+        ("It is never ready.", "It is not never ready.", 1, 2, true),
+        ("It is not ready, not safe.", "It is not ready.", 2, 1, true),
+        ("It is not ready.", "It is not ready now.", 1, 1, false),
+        ("It is ready.", "It is not ready.", 0, 1, true),
+    ];
+    for (old, new, before, after, changed) in cases {
+        let r = compare(old, new);
+        assert_eq!(r.claims.len(), 1, "{old}");
+        let c = &r.claims[0];
+        assert_eq!(
+            (
+                c.negations_original,
+                c.negations_revised,
+                c.negation_changed
+            ),
+            (before, after, changed),
+            "{old}"
+        );
+    }
+}
+
+#[test]
+fn signed_numbers_are_distinct_literals() {
+    let cases = [
+        (
+            "The offset is -5 pixels.",
+            "The offset is 5 pixels.",
+            "-5",
+            "5",
+        ),
+        ("The step is +3 pixels.", "The step is 3 pixels.", "+3", "3"),
+        (
+            "The shift is 5 pixels.",
+            "The shift is -5 pixels.",
+            "5",
+            "-5",
+        ),
+    ];
+    for (old, new, gone, came) in cases {
+        let r = compare(old, new);
+        let c = &r.claims[0];
+        assert_eq!(
+            kinds(&c.literals_removed),
+            [("number".into(), gone.into())],
+            "{old}"
+        );
+        assert_eq!(
+            kinds(&c.literals_added),
+            [("number".into(), came.into())],
+            "{old}"
+        );
+    }
+    let same = compare("The delta is \u{2212}2 units.", "The delta is -2 units.");
+    assert!(same.claims[0].literals_added.is_empty() && same.claims[0].literals_removed.is_empty());
+}
