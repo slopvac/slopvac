@@ -39,8 +39,11 @@ code points, and the byte-order mark is not part of line 1. `LineIndex` gives th
 for any offset in the document.
 
 - A scalar span covers the value as written. Quoted scalars include the quotes.
-- A YAML or JSON collection span runs from its first byte to its last, brackets included.
-  Trailing newlines are not part of it.
+- A YAML or JSON collection span runs from its first byte to its last, brackets included. A flow
+  collection ends at its closing bracket, also after a trailing comma. A block collection ends
+  where its last entry ends. Trailing comments, blank lines and newlines are not part of it.
+- A YAML value that is omitted (`key:` or a bare `-`) is null with a zero-width span right
+  after the `:` or `-`. The enclosing block collection includes that colon or dash.
 - A TOML table span runs from its header, or its first key when it has none, to the end of its
   last entry.
 - A key span covers the key as written, so JSON keys include their quotes.

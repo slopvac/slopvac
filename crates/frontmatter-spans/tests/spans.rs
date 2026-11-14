@@ -1,138 +1,9 @@
-//! Span invariants over a corpus: every node and key slice is a clean, re-parsable fragment.
+//! Span invariants over a corpus, plus named regressions.
 
-use frontmatter_spans::{Format, FrontMatter, Node, Value};
+mod common;
 
-/// A canonical, span-free rendering of a value, for comparing a node to its re-parse.
-fn shape(node: &Node) -> String {
-    match &node.value {
-        Value::Null => "null".into(),
-        Value::Bool(b) => b.to_string(),
-        Value::Integer(i) => i.to_string(),
-        Value::Float(f) => format!("{f:?}"),
-        Value::String(s) | Value::Datetime(s) => format!("{s:?}"),
-        Value::Array(items) => {
-            let inner: Vec<String> = items.iter().map(shape).collect();
-            format!("[{}]", inner.join(","))
-        }
-        Value::Table(entries) => {
-            let inner: Vec<String> = entries
-                .iter()
-                .map(|e| format!("{:?}:{}", e.key, shape(&e.value)))
-                .collect();
-            format!("{{{}}}", inner.join(","))
-        }
-    }
-}
-
-struct Item<'a> {
-    node: &'a Node,
-}
-
-fn nodes<'a>(
-    node: &'a Node,
-    out: &mut Vec<Item<'a>>,
-    keys: &mut Vec<(&'a str, std::ops::Range<usize>, usize)>,
-) {
-    out.push(Item { node });
-    match &node.value {
-        Value::Table(entries) => {
-            for e in entries {
-                keys.push((&e.key, e.key_span.range.clone(), e.key_span.start.column));
-                nodes(&e.value, out, keys);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|n| nodes(n, out, keys)),
-        _ => {}
-    }
-}
-
-fn parse_fragment(format: Format, fragment: &str) -> Option<FrontMatter<'static>> {
-    let doc: &'static str = Box::leak(
-        match format {
-            Format::Yaml => format!("---\n{fragment}\n---\n"),
-            Format::Toml => format!("+++\nv = {fragment}\n+++\n"),
-            Format::Json => format!("{{\"v\": {fragment}}}"),
-        }
-        .into_boxed_str(),
-    );
-    FrontMatter::parse(doc).ok().flatten()
-}
-
-fn check(doc: &str) {
-    let fm = FrontMatter::parse(doc)
-        .unwrap_or_else(|e| panic!("{doc:?}: {e}"))
-        .unwrap_or_else(|| panic!("{doc:?}: no block"));
-    let format = fm.block.format;
-    let mut all = Vec::new();
-    let mut keys = Vec::new();
-    nodes(&fm.root, &mut all, &mut keys);
-
-    for Item { node } in all.iter().skip(1) {
-        let slice = &doc[node.span.range.clone()];
-        if slice.is_empty() {
-            continue;
-        }
-        assert_eq!(slice, slice.trim(), "padding in {slice:?} of {doc:?}");
-        // TOML tables written with headers or dotted keys are not fragments.
-        let toml_table_form = format == Format::Toml
-            && match &node.value {
-                Value::Table(_) => !slice.starts_with('{'),
-                Value::Array(items) => {
-                    slice.starts_with("[[")
-                        && matches!(items.first().map(|n| &n.value), Some(Value::Table(_)))
-                }
-                _ => false,
-            };
-        if toml_table_form {
-            continue;
-        }
-        let quoted = slice.starts_with(['"', '\'']);
-        if format == Format::Yaml && !quoted {
-            let last = slice.rsplit(['\n', '\r']).next().unwrap();
-            assert!(!last.contains('#'), "comment text in {slice:?} of {doc:?}");
-        }
-        let fragment = if format == Format::Yaml {
-            // Block collections continue at the column where they began.
-            format!("{}{slice}", " ".repeat(node.span.start.column - 1))
-        } else {
-            slice.to_owned()
-        };
-        let again = parse_fragment(format, &fragment)
-            .unwrap_or_else(|| panic!("{slice:?} of {doc:?} does not re-parse"));
-        let root = &again.root;
-        let got = match format {
-            Format::Yaml => root,
-            _ => root.get("v").expect("v"),
-        };
-        assert_eq!(shape(got), shape(node), "{slice:?} of {doc:?}");
-    }
-
-    for (key, range, _) in keys {
-        let slice = &doc[range];
-        assert_eq!(slice, slice.trim(), "padding in key {slice:?}");
-        let fragment = match format {
-            Format::Yaml => format!("{slice}: 1"),
-            Format::Toml => format!("{slice} = 1"),
-            Format::Json => format!("{{{slice}: 1}}"),
-        };
-        let wrapped = match format {
-            Format::Yaml => format!("---\n{fragment}\n---\n"),
-            Format::Toml => format!("+++\n{fragment}\n+++\n"),
-            Format::Json => fragment,
-        };
-        // Dotted TOML keys (`a.b`) are paths, not single keys.
-        if format == Format::Toml && slice.contains('.') && !slice.starts_with(['"', '\'']) {
-            continue;
-        }
-        let again = FrontMatter::parse(&wrapped)
-            .unwrap_or_else(|e| panic!("key {slice:?} of {doc:?}: {e}"))
-            .unwrap();
-        let Value::Table(entries) = &again.root.value else {
-            panic!("not a table");
-        };
-        assert_eq!(entries[0].key, key, "key {slice:?} of {doc:?}");
-    }
-}
+use common::check;
+use frontmatter_spans::{FrontMatter, Node, Value};
 
 const CORPUS: &[&str] = &[
     // YAML: nested flow, immediately nested, with trailing comments.
@@ -226,4 +97,62 @@ fn a_bare_alias_error_covers_the_whole_alias_token() {
         let span = err.span.clone().expect("span");
         assert_eq!(&doc[span.range], token, "{body:?}: {err}");
     }
+}
+
+#[test]
+fn flow_collections_with_a_trailing_comma_keep_their_closing_delimiter() {
+    let cases = [
+        ("a: {b: 1,}", "{b: 1,}"),
+        ("a: [1,]", "[1,]"),
+        ("a: [1, 2 , ]", "[1, 2 , ]"),
+        ("a: {\n  b: 1,\n}", "{\n  b: 1,\n}"),
+        ("a: [1, # c\n  2, # d\n] # e", "[1, # c\n  2, # d\n]"),
+        ("a: [[1,],]", "[[1,],]"),
+    ];
+    for (body, want) in cases {
+        let doc = format!("---\n{body}\n---\n");
+        let fm = FrontMatter::parse(&doc).unwrap().unwrap();
+        assert_eq!(text(&doc, fm.get("a").unwrap()), want, "{body:?}");
+    }
+}
+
+#[test]
+fn an_empty_value_is_zero_width_right_after_its_colon_or_dash() {
+    let cases = [
+        ("a:", "a", 2),
+        ("a: # note\nb: 1", "a", 2),
+        ("a:\n  draft:", "a", 2),
+    ];
+    for (body, key, colon) in cases {
+        let doc = format!("---\n{body}\n---\n");
+        let fm = FrontMatter::parse(&doc).unwrap().unwrap();
+        let node = fm.get(key).unwrap();
+        let at = 4 + colon - 1 + 1; // after `---\n` and the one-byte key
+        if matches!(node.value, Value::Null) {
+            assert_eq!(node.span.range, at..at, "{body:?}");
+        }
+    }
+    let doc = "---\n- a\n-\n- b\n---\n";
+    let fm = FrontMatter::parse(doc).unwrap().unwrap();
+    let Value::Array(items) = &fm.root.value else {
+        panic!()
+    };
+    assert_eq!(items[1].span.range, 9..9);
+    assert_eq!(&doc[..9], "---\n- a\n-");
+}
+
+#[test]
+fn block_collections_with_an_empty_final_value_keep_the_colon_or_dash() {
+    let doc = "---\na:\n  draft: # note\n\n# tail\n---\n";
+    let fm = FrontMatter::parse(doc).unwrap().unwrap();
+    assert_eq!(text(doc, fm.get("a").unwrap()), "draft:");
+    assert_eq!(text(doc, &fm.root), "a:\n  draft:");
+
+    let doc = "---\nx: 1\ndraft:\n---\n";
+    let fm = FrontMatter::parse(doc).unwrap().unwrap();
+    assert_eq!(text(doc, &fm.root), "x: 1\ndraft:");
+
+    let doc = "---\n- a\n- # n\n---\n";
+    let fm = FrontMatter::parse(doc).unwrap().unwrap();
+    assert_eq!(text(doc, &fm.root), "- a\n-");
 }
