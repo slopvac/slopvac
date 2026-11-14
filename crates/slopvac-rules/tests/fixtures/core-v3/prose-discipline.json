@@ -1,0 +1,651 @@
+{
+  "schema_version": 3,
+  "id": "prose-discipline",
+  "title": "Prose discipline",
+  "description": "Referential consistency, sentence load, and constructions that hide the verb or the claim.",
+  "weight": 1.5,
+  "max_per_100_words": {
+    "strict": 0.4,
+    "normal": 0.8,
+    "relaxed": 2.0
+  },
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "competing-actor-terms",
+      "name": "Pick one term for one subject",
+      "message": "Two or more terms name what may be the same subject. Pick one and use it everywhere, or state the distinction at first use.",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "List every term this document uses for a person or system that acts: user, customer, client, consumer, caller, requester, tenant, account, operator, admin, developer, integrator, subscriber, end user. For each pair, do they name the same subject? If yes, that is rotation and one term must win. If no, does the document define the difference at first use?"
+      },
+      "examples": [
+        {
+          "bad": "The user submits a job. The customer receives a token. The client then polls for the result.",
+          "good": "The user submits a job, receives a token, and polls for the result.",
+          "note": "Three terms, one actor. The fix is one term, not three synonyms."
+        },
+        {
+          "bad": "The caller opens a connection. The consumer must close it.",
+          "good": "The caller opens the connection and must close it."
+        }
+      ],
+      "fix": "Choose the narrowest accurate term, replace every other, and define the distinction at first use only when two subjects genuinely differ.",
+      "ai_signal": "none",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:1.11",
+        "note": "The specification requires one name for one thing. Software prose breaks this most often across actor nouns, because each one reads as a legitimate synonym in isolation. Kept as judgement because co-occurrence alone does not prove rotation: a document may legitimately distinguish a user from the client library that acts for them."
+      }
+    },
+    {
+      "id": "frozen-verb",
+      "name": "Put the action in the verb",
+      "message": "\"{match}\" freezes the action in a noun. Use the plain verb.",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?<![\\w-])(?:perform|conduct|carry out|undertake|execute|make|do|give|provide|effect|achieve|obtain|initiate|implement)(?:s|ed|ing)?\\s+(?:(?:a|an|the)\\s+)?(?!(?:guidance|assistance|information|difference|condition)s?(?![\\w-]))\\w{4,}(?:tion|sion|ment|ance|ence|ysis|ision|ation)(?![\\w-])(?=\\s*(?:$|[^\\w\\s]|(?:of|on|for|to|about|into|onto|with|between|among|against|from|by|in|at|over|across|through|under|upon|per|via|within|without|during|until|and|or|but|nor|that|which|when|where|while|before|after|if|unless|because|so|as|than)(?![\\w-])))",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "identifier-fidelity"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        },
+        {
+          "name": "legal-force"
+        },
+        {
+          "name": "api-name"
+        }
+      ],
+      "allowlist": [
+        "make a decision about",
+        "implementation"
+      ],
+      "examples": [
+        {
+          "bad": "The runner performs an analysis of the coverage report.",
+          "good": "The runner analyzes the coverage report."
+        },
+        {
+          "bad": "Conduct an investigation of the failing shard.",
+          "good": "Investigate the failing shard."
+        },
+        {
+          "bad": "The hook provides validation of the payload.",
+          "good": "The hook validates the payload."
+        },
+        {
+          "bad": "The docs provide an explanation of each flag, with migration notes.",
+          "good": "The docs explain each flag and provide migration notes."
+        },
+        {
+          "bad": "Reviewers make a recommendation, then provide guidance on the fix.",
+          "good": "Reviewers recommend a change, then provide guidance on the fix."
+        }
+      ],
+      "fix": "Promote the noun to a finite verb and delete the general-purpose verb and its article.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:3.7",
+        "orwell_ref": "cut-what-cuts",
+        "note": "Both sources name this. Orwell's operators-or-verbal-false-limbs paragraph calls the pattern \"the elimination of simple verbs\"; the specification requires a verb for an action. Overlaps orwell-voice.passive-voice on sentences that are both passive and frozen, which is correct: they carry two defects and the fix differs. Human labelling, 2026-10: narrowed after a review sample in which every finding was a false positive. Three classes were removed: the noun as a modifier of the real object (\"provides location data\"), the noun as a causative object (\"make the intention clear\"), and idioms with no faithful verb (\"provide guidance\", \"provide assistance\", \"obtain information\", \"make a difference\", \"provide a condition\"). `facilitate` was dropped from the verb list because \"facilitate X\" means letting someone else do X, so promoting the noun moves the actor."
+      }
+    },
+    {
+      "id": "run-on",
+      "name": "Split the run-on",
+      "message": "This sentence stitches {match} independent ideas together; the limit is {replacement}. Split it.",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "metric",
+        "metric": "clause_boundaries",
+        "threshold": 3,
+        "comparison": "gt"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        },
+        {
+          "name": "vertical-list"
+        },
+        {
+          "name": "legal-force"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The parser reads the file, and it normalizes the paths; then it emits the report, but it skips any entry that fails validation, which the caller must handle separately.",
+          "good": "The parser reads the file and normalizes the paths. It emits the report and skips any entry that fails validation. The caller handles those separately."
+        }
+      ],
+      "fix": "Split at the clause boundary that carries the least shared context.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.1",
+        "note": "Counts coordinating conjunctions, semicolons, dashes used as clause joins, and non-restrictive \"which\" clauses, rather than words. A sentence under the word cap can still carry four ideas, and that is the defect a reader feels. Threshold 3 permits a compound sentence with a trailing qualifier and rejects the fourth stitch."
+      }
+    },
+    {
+      "id": "phrasal-verb",
+      "name": "Use the plain verb",
+      "message": "Use \"{replacement}\" rather than \"{match}\".",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "substitution",
+        "substitutions": {
+          "\\bspin(?:s|ning)? up\\b": "start",
+          "\\bspun up\\b": "started",
+          "\\bspin(?:s|ning)? down\\b": "stop",
+          "\\bstand(?:s|ing)? up\\b": "deploy",
+          "\\bstood up\\b": "deployed",
+          "\\breach(?:es|ing)? out\\b": "ask",
+          "\\breached out\\b": "asked",
+          "\\bdive(?:s|d)? into\\b": "examine",
+          "\\bdiving into\\b": "examining",
+          "\\bdig(?:s|ging)? into\\b": "examine",
+          "\\bkick(?:s|ing)? off\\b": "start",
+          "\\bkicked off\\b": "started",
+          "\\bcircle back\\b": "return to this",
+          "\\bcircling back\\b": "returning to this",
+          "\\bdrill(?:s|ing)? down\\b": "examine in detail",
+          "\\bramp(?:s|ing)? up\\b": "increase",
+          "\\bramped up\\b": "increased",
+          "\\bsurface(?:s|d)? up\\b": "report",
+          "\\bbubble(?:s|d)? up\\b": "propagate",
+          "\\bloop(?:s|ing)? in\\b": "include",
+          "\\blooped in\\b": "included",
+          "\\btouch base\\b": "speak",
+          "\\bdouble(?:s|d)? down on\\b": "commit to",
+          "\\bunpack(?:s|ing)?\\b": "explain",
+          "\\blean(?:s|ing)? into\\b": "prioritize",
+          "\\blevel(?:s|ling|ing)? up\\b": "improve",
+          "\\bwind(?:s|ing)? down\\b": "stop",
+          "\\bsun ?set(?:s|ting)?\\b": "withdraw"
+        },
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "identifier-fidelity"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        },
+        {
+          "name": "api-name"
+        },
+        {
+          "name": "ui-label"
+        }
+      ],
+      "allowlist": [
+        "set up",
+        "sets up",
+        "setup",
+        "log in",
+        "logs in",
+        "login",
+        "check out",
+        "checks out",
+        "checkout",
+        "roll back",
+        "rolls back",
+        "rollback",
+        "fall back",
+        "falls back",
+        "fallback",
+        "back up",
+        "backs up",
+        "backup",
+        "clean up",
+        "cleans up",
+        "cleanup",
+        "shut down",
+        "shuts down",
+        "shutdown",
+        "opt in",
+        "opts in",
+        "opt out",
+        "build up",
+        "tear down",
+        "teardown"
+      ],
+      "examples": [
+        {
+          "bad": "Spin up a replica before you migrate.",
+          "good": "Start a replica before you migrate."
+        },
+        {
+          "bad": "We reached out to the maintainers.",
+          "good": "We asked the maintainers."
+        },
+        {
+          "bad": "This section unpacks the retry logic.",
+          "good": "This section explains the retry logic."
+        }
+      ],
+      "fix": "Replace with the plain verb the list names.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:3.5",
+        "note": "A closed list, not a general -up/-out pattern. `set up`, `log in`, `check out`, `roll back`, and `shut down` are the correct names of real operations, and a suffix pattern would report every one of them. The allowlist is the load-bearing half of this rule."
+      }
+    },
+    {
+      "id": "marketing-register",
+      "name": "Describe, do not sell",
+      "message": "This passage sells rather than describes. State what the artifact does and what a reader can measure.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "For each evaluative claim in this passage, is there a number, a benchmark, a named limit, a version, or a citation within the same sentence or the next one? And would the claim's opposite be recognized as a disagreement about fact rather than a difference of opinion? A claim that fails both is marketing."
+      },
+      "examples": [
+        {
+          "bad": "Built for teams who care about quality, our approach gives you confidence at every step of the pipeline.",
+          "good": "The gate blocks a merge when coverage drops below 80%.",
+          "note": "No banned adjective appears in the first version. The defect is the claim shape: nothing in it can be checked."
+        },
+        {
+          "bad": "Designed from the ground up for the modern developer workflow.",
+          "good": "Runs as a pre-commit hook and a GitHub Action."
+        }
+      ],
+      "fix": "Replace each unmeasurable claim with the fact that motivated it, or delete the sentence.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "empty-evaluative-word",
+        "note": "Paired with orwell.unsupported-evaluative, which owns the token list. This half exists because the token list is perishable and incomplete: a passage can carry the marketing register with no listed word in it, and that is the commoner failure in generated prose."
+      }
+    },
+    {
+      "id": "marketing-lexicon",
+      "name": "Cut the marketing adjective",
+      "message": "\"{match}\" is sales register. State the measurable fact instead.",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "effortless",
+          "effortlessly",
+          "turnkey",
+          "best-in-class",
+          "game-changing",
+          "revolutionary",
+          "next-generation",
+          "supercharge",
+          "supercharged",
+          "unleash",
+          "unleashes",
+          "empower",
+          "empowers",
+          "delightful",
+          "magical",
+          "beautifully",
+          "stunning",
+          "unparalleled",
+          "unmatched",
+          "premier",
+          "first-class",
+          "top-tier",
+          "hassle-free",
+          "pain-free",
+          "zero-effort",
+          "future-proof",
+          "bulletproof",
+          "rock-solid",
+          "blazing",
+          "buttery smooth",
+          "dead simple",
+          "insanely fast",
+          "ridiculously easy"
+        ],
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "identifier-fidelity"
+        },
+        {
+          "name": "landing-page"
+        },
+        {
+          "name": "api-name"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "A turnkey, future-proof deployment story.",
+          "good": "Deploys with one command; supported on Kubernetes 1.28 and later."
+        }
+      ],
+      "fix": "Delete the adjective and state what the reader can measure.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "prose-inflation",
+        "note": "Distinct from orwell.unsupported-evaluative by test rather than by taste: that rule asks whether evidence is present, this one asks whether the word belongs to advertising at all. `bulletproof` fails even with a benchmark beside it."
+      }
+    },
+    {
+      "id": "overloaded-sentence",
+      "name": "One sentence, one idea",
+      "message": "This sentence carries more than one idea. Split it at the point where the reader has to start holding something new.",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Read the sentence once and stop. How many separate things must the reader now remember? If more than one, could each stand as its own sentence without repeating a noun phrase to make sense? If yes, it is overloaded. A list of parallel actions sharing one subject and one verb is ONE idea, however long; two clauses joined by \"and\" that could each stand alone are two."
+      },
+      "examples": [
+        {
+          "bad": "The parser reads the manifest and the resolver walks the dependency graph.",
+          "good": "The parser reads the manifest. The resolver then walks the dependency graph.",
+          "note": "Two clauses, two subjects, two ideas. Each stands alone."
+        },
+        {
+          "bad": "Because the cache is keyed by content the migration must run first, and the index rebuild depends on it, so plan for downtime.",
+          "good": "The cache is keyed by content, so the migration must run first. The index rebuild depends on the migration. Plan for downtime."
+        },
+        {
+          "bad": "We deleted the retry path, which nobody used, and simplified the client.",
+          "good": "Nobody used the retry path, so we deleted it. That simplified the client.",
+          "note": "The metric counts two boundaries here and would pass at threshold 3. A reader still holds three things."
+        }
+      ],
+      "fix": "Split at the boundary where the reader starts holding a second thing, and make the shared noun explicit in the new sentence.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.1",
+        "note": "Paired with prose-discipline.run-on, which counts clause boundaries. The count is a candidate finder: it cannot tell a parallel list sharing one subject from two unrelated clauses, and both shapes appear at the same boundary count. This half carries the decision."
+      }
+    },
+    {
+      "id": "hedged-into-uselessness",
+      "name": "The document must assert something",
+      "message": "This document hedges its own claims to the point of asserting nothing. Take the position the evidence supports.",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "List the load-bearing claims: the sentences a reader would act on. For each, is it hedged? Then ask three things. First, could the reader act on the document as written, or does every path out of it end in \"it depends\"? Second, is any claim hedged in BOTH directions, so that the hedge and its counter-hedge cancel (\"this may improve latency, though it might also increase it\")? Third, is any hedge itself hedged (\"this could potentially help in some cases\")? A document where the majority of load-bearing claims carry a hedge is a document that says nothing, whatever each sentence looks like on its own."
+      },
+      "examples": [
+        {
+          "bad": "The cache may improve response time in some workloads, though results can vary and it might increase memory use depending on configuration.",
+          "good": "The cache cuts median response time by 40% on repeated prompts. It holds entries in memory: budget 200 MB per 10,000 entries.",
+          "note": "Hedged in both directions, so the two halves cancel and the reader learns nothing they can act on."
+        },
+        {
+          "bad": "You should probably consider using the strict profile for reference material, although the normal profile may also be suitable in many cases.",
+          "good": "Use the strict profile for reference material."
+        },
+        {
+          "bad": "This could potentially help reduce some of the noise in certain cases.",
+          "good": "This removes the 12 findings that fired on code comments.",
+          "note": "A hedge on a hedge on a quantifier. Three layers, no claim."
+        }
+      ],
+      "fix": "For each hedged claim, either state it plainly with the evidence, or delete it. Where the uncertainty is real, name its cause and its bound instead of hedging the verb.",
+      "ai_signal": "none",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "cut-what-cuts",
+        "note": "Document-scoped on purpose. Every sentence here can pass prose-inflation.hedge-stack, which fires only on a stack inside one sentence. The defect is the ratio across the document: a single honest hedge is correct, and hedging every claim is a refusal to write the doc. A hedge is permitted where the uncertainty is real and named -- a measured variance, a documented platform difference -- and the exception list is what a suppression must cite."
+      }
+    },
+    {
+      "id": "bidirectional-hedge",
+      "name": "Do not hedge both ways",
+      "message": "\"{match}\" hedges in both directions, so the two halves cancel. State which one the evidence supports.",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?:may|might|could|can|should|tends? to|is likely to)\\s+\\w+[^.!?]{0,80}?(?:,\\s*)?(?:but|though|although|however|while|whereas|yet)\\s+[^.!?]{0,40}?(?:may|might|could|can|also|equally|sometimes)\\b",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "genuine-uncertainty"
+        },
+        {
+          "name": "measured-variance"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "legal-force"
+        },
+        {
+          "name": "safety-critical"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The cache may improve response time, though it might also increase memory use.",
+          "good": "The cache cuts median response time by 40% and holds 200 MB per 10,000 entries."
+        },
+        {
+          "bad": "Batching can reduce cost, but it may equally add latency.",
+          "good": "Batching cuts cost by 30% and adds 15 ms of latency."
+        }
+      ],
+      "fix": "Keep the direction the evidence supports and state its magnitude. Where both hold, give both numbers rather than both hedges.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "cut-what-cuts",
+        "note": "The mechanizable core of hedged-into-uselessness. Reports the shape; the judgement rule decides whether the uncertainty behind it is real."
+      }
+    },
+    {
+      "id": "hedged-hedge",
+      "name": "One hedge or none",
+      "message": "\"{match}\" hedges a hedge. Keep at most one, or state the claim plainly.",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?<![\\w-])(?:may|might|could|can|should|would)\\s+(?:\\w+\\s+)?(?:help(?:s)?\\s+(?:to\\s+)?|serve\\s+to\\s+|work\\s+to\\s+|tend\\s+to\\s+)?\\w+\\s+(?:some|certain|various|several|many|most)\\s+(?:of\\s+)?(?:the\\s+)?\\w+|(?<![\\w-])in\\s+(?:some|certain|many|most)\\s+cases?(?![\\w-])",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "genuine-uncertainty"
+        },
+        {
+          "name": "measured-variance"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "legal-force"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "This could potentially help reduce some of the noise in certain cases.",
+          "good": "This removes the 12 findings that fired on code comments."
+        },
+        {
+          "bad": "The flag may help avoid certain failures.",
+          "good": "The flag skips the retry path, so a 429 fails immediately."
+        }
+      ],
+      "fix": "Delete the hedging verbs and the quantifier, then name what actually changes.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "cut-what-cuts",
+        "note": "Separate from prose-inflation.hedge-stack: that rule matches modal plus adverb (\"may possibly\"), this one matches a modal wrapped around a vague quantifier (\"may help reduce some of the\"), which no adverb appears in."
+      }
+    },
+    {
+      "id": "negative-guarantee-remainder",
+      "name": "Name what stops the action a component never takes",
+      "message": "A guarantee about what a component never does names nothing that stops the action. Name the hook, test, gate, or permission, or state what it does.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does a sentence in this passage reassure the reader that a component, tool, agent, or role never takes an action with a side effect or authority (writes, deletes, pushes, creates, sends, blocks, approves, resolves, or contacts an external system), as in \"X never Y\", \"X runs no Z\", \"X itself never creates A, B, or C\", or \"X is never Y-ed\", while nothing in the passage stops that action? Flag it when the passage names no hook, test, check, lock, permission, type, or code path that prevents the action, when two or more such guarantees stack up for one subject, or when the sentence lists side effects that do not happen. A condition the guarantee waits on (\"before the gate resolves\") does not prevent the action. Preserve a guarantee the passage explains or enforces, a consequence the passage derives, how an operation handles a class of input, a language, protocol, or data invariant, a specification line with a normative keyword (MUST NOT, NEVER), an imperative or elliptical directive (\"Never edit ...\", \"..., never X\"), and a past or measured fact."
+      },
+      "examples": [
+        {
+          "bad": "The release agent never merges a pull request. It never pushes a tag before the release gate resolves. It runs no deploy step on its own.",
+          "good": "A maintainer merges the release pull request; branch protection rejects the agent's token on `main`. CI pushes the tag after the release gate resolves.",
+          "note": "flag: three stacked guarantees for one subject, and the gate is a condition, not what stops the push"
+        },
+        {
+          "bad": "The sync tool itself never creates a branch, a tag, a release, or a webhook.",
+          "good": "The sync tool writes one file, `.sync/state.json`.",
+          "note": "flag: a list of side effects that do not happen"
+        },
+        {
+          "bad": "Advisory hooks print a reminder when a Terraform file changes. They never block a command.",
+          "good": "Advisory hooks print a reminder when a Terraform file changes and exit 0, so the command runs."
+        },
+        {
+          "bad": "The pre-push hook rejects a push to `main`, so the agent never pushes there.",
+          "note": "preserve: the passage names the hook that stops the action"
+        },
+        {
+          "bad": "Segments are immutable, so a segment is never modified after it is written.",
+          "note": "preserve: data invariant"
+        },
+        {
+          "bad": "The client MUST NOT retry a request that returned 409.",
+          "note": "preserve: normative specification line"
+        },
+        {
+          "bad": "Never edit the lockfile by hand.",
+          "note": "preserve: imperative directive"
+        }
+      ],
+      "fix": "State what the component does and name what stops the action, or delete the guarantee. In agent guidance, write the limit as a directive (NEVER, MUST NOT).",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Absolute assertion\")",
+        "note": "Judgement remainder of ai-tells-structure.negative-guarantee-core. The core finds the shape; this question decides whether anything in the passage makes the guarantee true, which no pattern can read. It also covers the forms the core leaves out: a guarantee after a comma or a conjunction (\"..., so the gate can never block them\"), modal guarantees and passives (\"will never\", \"can never\", \"is never written\", \"would never\", \"was never written\"), and subjects the core cannot parse. ai-tells-structure.absolute-assertion-remainder defers this form here. The rule shipped in prose-discipline in 2.16.0 so that the `reference` checklist, which covers agent guidance and runbooks, carried it: ai-tells-structure was not recommended for that genre then. The id stays where it shipped. Indicative run, 2026-10-20, one frontier model: 0 of 36 pre-2022 human paragraphs holding \"never\" flagged, most of them reference docs; 33 of 71 model-written agent-tooling paragraphs that the core matched flagged. Each of 12 sampled kept paragraphs named a mechanism or reason (a hook, a read-only mount, a mode), was a normative line, or described no side effect. On a private repository's README and two agent skills, it flagged every descriptive guarantee and kept every imperative \"never\" directive. On drafts of this question, a smaller judge model either flagged a quarter of the human paragraphs or kept half the descriptive guarantees, so the question needs a capable reviewer."
+      }
+    },
+    {
+      "id": "bare-quantifier-with-figure-available",
+      "name": "Give the bare quantifier its number",
+      "message": "A bare quantifier stands where a figure was available. Give the number.",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Find every bare quantifier: most, some, many, few, often, usually, frequently, generally, typically, several times, much, little. For each, ask one question -- does the writer have the number? A quantifier over something the document itself counts elsewhere, over a list it contains, or over a measurement it reports is a withheld figure and must be replaced. A quantifier over a genuinely unbounded or unmeasured set is correct and stays."
+      },
+      "examples": [
+        {
+          "bad": "Most requests are cached.",
+          "good": "94% of requests are cached.",
+          "note": "The document reports the hit rate two paragraphs later, so the figure was available."
+        },
+        {
+          "bad": "The parser handles many formats.",
+          "good": "The parser handles XISF, FITS, and TIFF.",
+          "note": "A list the document could have written out."
+        },
+        {
+          "bad": "Some tests need a live database.",
+          "good": "The four integration tests need a live database."
+        },
+        {
+          "bad": "Most requests complete in 15 ms.",
+          "good": "Most requests complete in 15 ms.",
+          "note": "CORRECT AS WRITTEN, and the reason this is judgement rather than a token list. The figure is present; `most` quantifies the distribution honestly, because not all of them do."
+        }
+      ],
+      "fix": "Replace the quantifier with the figure. Where the set is genuinely unmeasured, say so and name why.",
+      "ai_signal": "none",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "Wikipedia MOS:WEASEL",
+        "note": "Deliberately NOT a lexical rule. Wikipedia lists these tokens, and its own condition is \"when quantifiable measures could be provided\", which no pattern decides: \"most requests complete in 15 ms\" is correct and \"most users prefer it\" is not, and the two are identical in shape. A token rule here would fire on correct prose in every document, which is how a rule gets disabled. The multi-word forms that carry the evasion in their shape -- \"a number of\", \"in most cases\" -- ARE mechanized, in prose-inflation.vague-quantifier."
+      }
+    },
+    {
+      "id": "no-longer-change-remainder",
+      "name": "Judge whether \"no longer\" narrates a change",
+      "message": "\"no longer\" may narrate a change: state what the artifact does now",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this \"no longer\" tell the reader what the artifact used to do, or does it describe runtime state (a run that is no longer live, a node that is no longer healthy)? Runtime state is legitimate; preserve it. In change communications (a changelog, release note, migration guide, or a labelled, versioned change note) the delta is the content; preserve it. Flag only a change claim in a consumer or reference doc body that the checked rule's change-verb list does not name."
+      },
+      "examples": [
+        {
+          "bad": "The importer no longer tolerates trailing commas.",
+          "good": "The importer rejects trailing commas."
+        }
+      ],
+      "fix": "State the current behaviour; move the delta to a changelog or release note.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Split from docs-discipline.history-narration (issue 255)",
+        "url": "https://github.com/srobroek/slopvac/issues/255",
+        "note": "Judgement remainder of docs-discipline.no-longer-change."
+      }
+    }
+  ]
+}

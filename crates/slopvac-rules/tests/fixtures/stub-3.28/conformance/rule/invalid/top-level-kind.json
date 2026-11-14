@@ -1,0 +1,16 @@
+{
+  "schema_version": 3,
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "tokens",
+    "tokens": [
+      "x"
+    ]
+  },
+  "citation": {
+    "source": "s"
+  },
+  "kind": "tokens"
+}
