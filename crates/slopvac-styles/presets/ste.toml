@@ -1,0 +1,14 @@
+schema_version = 3
+description = "Simplified Technical English readability rules, at the 2.18 normal-profile levels."
+
+[categories]
+ste-words = { severity = "warning", max_per_100_words = 1.5, weight = 0.8 }
+ste-nouns = { severity = "warning", max_per_100_words = 1.0, weight = 0.8 }
+ste-verbs = { severity = "warning", max_per_100_words = 1.0, weight = 0.8 }
+ste-sentences = { severity = "warning", max_per_100_words = 1.5, weight = 1.0 }
+ste-procedural = { severity = "warning", max_per_100_words = 1.0, weight = 0.8 }
+ste-descriptive = { severity = "warning", max_per_100_words = 1.0, weight = 0.8 }
+ste-safety = { severity = "error", max_per_100_words = 0.0, weight = 1.2 }
+ste-punctuation = { severity = "suggestion", max_per_100_words = 1.5, weight = 0.5 }
+ste-practices = { severity = "suggestion", max_per_100_words = 1.5, weight = 0.5 }
+ste-vocabulary = "off"
