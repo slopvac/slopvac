@@ -54,34 +54,45 @@ fn rows_show_case_modes_and_group_by_kind() {
     assert!(text.contains("\n## protocol\n\n| Term |"), "{text}");
 }
 
-/// The built example binary. The test builds it first, so it also works when
-/// only this test target runs (`cargo test --test reference` skips examples).
-fn example() -> PathBuf {
-    static BUILD: std::sync::Once = std::sync::Once::new();
-    let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-    BUILD.call_once(|| {
-        let status = Command::new(env!("CARGO"))
-            .args([
-                "build",
-                "--quiet",
-                "--example",
-                "reference",
-                "--manifest-path",
-            ])
-            .arg(manifest)
-            .status()
-            .unwrap();
-        assert!(status.success(), "building the example failed");
-    });
+/// The cargo profile this test binary was built with, from its path:
+/// `target/<dir>/deps/<test>`, where `debug` is the `dev` profile.
+fn profile() -> String {
     let exe = std::env::current_exe().unwrap();
-    let dir = exe.parent().unwrap().parent().unwrap().join("examples");
-    let path = dir.join(format!("reference{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        path.exists(),
-        "example binary not built: {}",
-        path.display()
-    );
-    path
+    let dir = exe.parent().unwrap().parent().unwrap().file_name().unwrap();
+    match dir.to_str().unwrap() {
+        "debug" => "dev".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// Build the example with the test's own profile and return the executable
+/// path that cargo reports, so any profile or target directory works. Building
+/// here also covers `cargo test --test reference`, which skips examples.
+fn example() -> PathBuf {
+    static BUILT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            let output = Command::new(env!("CARGO"))
+                .args(["build", "--quiet", "--example", "reference"])
+                .args(["--profile", &profile(), "--message-format=json"])
+                .args([
+                    "--manifest-path",
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                ])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "building the example failed");
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                .filter(|m| {
+                    m["reason"] == "compiler-artifact" && m["target"]["name"] == "reference"
+                })
+                .find_map(|m| m["executable"].as_str().map(PathBuf::from))
+                .expect("cargo reported no executable for the example")
+        })
+        .clone()
 }
 
 fn scratch(name: &str) -> PathBuf {
