@@ -31,7 +31,7 @@
       },
       "contexts_seen": ["prose", "code-block", "front-matter"],
       "config_sources": [
-        {"layer": "defaults"},
+        {"layer": "core"},
         {"layer": "project", "file": ".slopvac.toml", "line": 3, "column": 1},
         {"layer": "front-matter", "file": "docs/guide.md", "line": 2, "column": 1}
       ],
@@ -102,7 +102,7 @@
         "reasons": [{"signal": "cli-flag", "detail": "--genre consumer"}]
       },
       "contexts_seen": ["prose", "html-comment"],
-      "config_sources": [{"layer": "defaults"}, {"layer": "cli"}],
+      "config_sources": [{"layer": "core"}, {"layer": "cli"}],
       "words": 250, "sentences": 18, "paragraphs": 8,
       "findings": [],
       "categories": [],
@@ -121,7 +121,7 @@
       "profile": "strict",
       "genre": {"id": "internal", "source": "default", "reasons": []},
       "contexts_seen": ["code-comment"],
-      "config_sources": [{"layer": "defaults"}],
+      "config_sources": [{"layer": "core"}],
       "words": 80, "sentences": 6, "paragraphs": 3,
       "findings": [
         {
