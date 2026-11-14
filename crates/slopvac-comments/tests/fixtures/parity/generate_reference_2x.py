@@ -3,7 +3,6 @@
 Run from the repo root: uvx --from ./packages/slopvac-lint python <this file> <this directory>
 """
 
-import json
 import sys
 from pathlib import Path
 
