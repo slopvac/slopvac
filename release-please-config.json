@@ -120,6 +120,11 @@
         {
           "type": "toml",
           "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='slopvac-pos')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
           "jsonpath": "$.package[?(@.name.value=='slopvac-report')].version"
         },
         {

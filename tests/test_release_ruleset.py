@@ -144,9 +144,10 @@ def test_excludes_that_cannot_match_the_tag_do_not_exclude_it(exclude):
     check([ruleset(exclude=exclude)])
 
 
-def test_a_tag_that_is_not_a_release_tag_is_rejected():
+@pytest.mark.parametrize("tag", ["v3.0.0$(id)", "v03.0.0", "v3.00.0", "v3.0.00"])
+def test_a_tag_that_is_not_a_release_tag_is_rejected(tag):
     with pytest.raises(ValueError, match="not a release tag"):
-        check([ruleset()], tag="v3.0.0$(id)")
+        check([ruleset()], tag=tag)
 
 
 def test_an_api_error_fails_closed():

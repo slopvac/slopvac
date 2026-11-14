@@ -3,7 +3,7 @@ name = "slopvac-workspace"
 version = "0.0.0"
 description = "Repository workspace configuration for Slopvac"
 requires-python = ">=3.11"
-dependencies = ["slopvac"]
+dependencies = ["slopvac", "slopvac-plugin[conformance]"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2", "pytest-cov>=5.0"]
@@ -13,14 +13,19 @@ package = false
 
 [tool.uv.sources]
 slopvac = { workspace = true }
+slopvac-plugin = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/slopvac-lint"]
+members = ["packages/slopvac-lint", "packages/slopvac-plugin"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/slopvac-lint/tests", "tests"]
+testpaths = [
+  "packages/slopvac-lint/tests",
+  "packages/slopvac-plugin/tests",
+  "tests",
+]
 addopts = "-q"
-pythonpath = ["."]
+pythonpath = [".", "packages/slopvac-plugin/src"]
 
 [dependency-groups]
 profile = [

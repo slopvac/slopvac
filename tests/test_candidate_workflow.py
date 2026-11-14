@@ -279,6 +279,10 @@ def test_the_parse_step_writes_both_versions_for_a_candidate_tag(
         "rc/v3.0.0",
         "rc/v3.0.0-rc.0",
         "rc/v3.0.0-rc.01",
+        "rc/v03.0.0-rc.1",
+        "rc/v3.00.0-rc.1",
+        "rc/v3.0.00-rc.1",
+        "rc/v3.0.0-rc.1\u0663",
         "rc/v3.0-rc.1",
         "x/rc/v3.0.0-rc.1",
         "rc/v3.0.0-rc.1/extra",
@@ -323,14 +327,20 @@ def git(cwd: Path, *args: str) -> str:
 @pytest.fixture
 def clone(tmp_path):
     """A checkout whose origin has one commit per branch: main, main-foo, feature,
-    and release-please--branches--main."""
+    release-please--branches--main, and release-please--x."""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
     git(tmp_path, "init", "-q", "-b", "main", str(seed))
     git(seed, "remote", "add", "origin", str(origin))
     shas = {}
-    for branch in ("main", "main-foo", "feature", "release-please--branches--main"):
+    for branch in (
+        "main",
+        "main-foo",
+        "feature",
+        "release-please--branches--main",
+        "release-please--x",
+    ):
         git(seed, "checkout", "-q", "--orphan", branch)
         (seed / "f").write_text(branch)
         git(seed, "add", "f")
@@ -349,9 +359,10 @@ def clone(tmp_path):
         ("release-please--branches--main", True),
         ("main-foo", False),
         ("feature", False),
+        ("release-please--x", False),
     ],
 )
-def test_the_ancestry_guard_accepts_only_main_and_release_please_branches(
+def test_the_ancestry_guard_accepts_only_main_and_the_release_please_main_branch(
     clone, branch, passes
 ):
     work, shas = clone

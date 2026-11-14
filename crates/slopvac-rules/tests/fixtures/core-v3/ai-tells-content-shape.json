@@ -1,0 +1,444 @@
+{
+  "schema_version": 3,
+  "id": "ai-tells-content-shape",
+  "title": "AI tells -- content shape",
+  "description": "Defects in what the prose contains rather than how it is arranged: fabricated citations, fake specificity, vaporware description, dilution, and rationale nobody asked for.",
+  "weight": 1.5,
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "fabricated-citations-core",
+      "name": "Strip citation junk",
+      "message": "damaged citation: {match} -- verify the reference and strip the tracking junk",
+      "severity": "error",
+      "scope": "raw",
+      "match": {
+        "kind": "pattern",
+        "pattern": "utm_source=|utm_medium=|utm_campaign=|[?&]fbclid=|[?&]gclid=",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "https://example.com/docs?utm_source=chatgpt.com",
+          "good": "https://example.com/docs"
+        }
+      ],
+      "fix": "Strip the tracking parameters from the URL.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Fabricated or damaged citations\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core, narrowed to the ONE checkable slice: tracking junk in a pasted URL. The assistant-artifact half of the same catalog row (`oaicite`, `contentReference`, `[cite: 1]`, `grok_card`) is already mechanised inside ai-residue.chat-leakage, so it is not duplicated here. Judgement remainder in ai-tells-content-shape.fabricated-citations-remainder covers what a pattern can never do -- resolve the DOI."
+      }
+    },
+    {
+      "id": "fabricated-citations-remainder",
+      "name": "Verify every reference you did not fetch yourself",
+      "message": "unverified citation: verify every reference you did not fetch yourself",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "For each reference in this document, did you fetch it yourself and confirm it says what the sentence claims?"
+      },
+      "examples": [
+        {
+          "bad": "Smith (2019) reports a 40% reduction, doi:10.1000/182.",
+          "good": "The npm RFC 0012 measured a 40% drop in resolution variance.",
+          "note": "The catalog's failure modes: DOIs that resolve to unrelated papers, invented ISBNs, dead URLs, and book cites with no page numbers."
+        }
+      ],
+      "fix": "Fetch each reference, or delete the claim that rests on it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Fabricated or damaged citations\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Judgement remainder of ai-tells-content-shape.fabricated-citations-core, and enforced at every tier: a fabricated citation is a factual defect in any register. Decidable, not taste -- the reviewer either fetched it or did not. Related to ai-tells-structure.vague-attribution-remainder, which asks whether a source is NAMED; this asks whether a named source is REAL."
+      }
+    },
+    {
+      "id": "fake-specificity",
+      "name": "Give the number or drop the quantifier",
+      "message": "fake specificity: {match} -- give the number or drop the quantifier",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:over|more than|upwards of|nearly|almost)\\s+\\d+\\+|\\b\\d+\\+\\s+(?:different\\s+)?(?!(?:to|of|and|or|the|a|an|is|are|was|were|for|in|on|at|by)\\b)\\w{3,}|\\ba wide range of\\b|\\ba broad range of\\b|\\ba host of\\b",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "over 100+ integrations",
+          "good": "137 integrations"
+        },
+        {
+          "bad": "a wide range of formats",
+          "good": "Markdown, MDX, and reStructuredText"
+        },
+        {
+          "bad": "500+ integrations",
+          "good": "Python 3.8+ and 3.9+ are supported"
+        }
+      ],
+      "fix": "Give the count, or delete the quantifier.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Fake specificity\")",
+        "note": "The catalog names four forms: \"over 100+\", \"countless\", \"numerous\", \"a wide range of\". The middle two are already mechanised in prose-inflation.vague-quantifier at WARNING on a measured base rate of 9.9 hits per 10k human-written words, so they are deliberately NOT repeated here. This rule carries only the forms that rule does not reach, and it is at error because \"over 100+\" is a self-contradicting construction rather than a register choice. Split as core-only: the residual judgement is prose-inflation.vague-quantifier's own message (\"give the count\")."
+      }
+    },
+    {
+      "id": "vaporware-description",
+      "name": "Cut the claim, not the qualifier",
+      "message": "vaporware: cut the CLAIM, not the qualifier",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "In a current consumer or internal artifact, does each present-tense behavior claim match code at HEAD? Flag a claim that presents planned, historical, or unavailable behavior as shipped; do not apply this test to a change communication, release note, historical record, decision, future plan, or specification whose purpose is to state that other time or intent."
+      },
+      "examples": [
+        {
+          "bad": "The loader supports globs (coming soon).",
+          "good": "The loader accepts a literal path.",
+          "note": "Deleting the hedge alone converts an honest roadmap note into a false claim: the lint passes and the document now lies."
+        },
+        {
+          "good": "Release 2.4 adds glob support; version 2.3 accepts literal paths only.",
+          "bad": "The current loader supports globs."
+        },
+        {
+          "good": "The next version will add glob support; this is a proposed behavior.",
+          "bad": "The loader supports globs today."
+        }
+      ],
+      "fix": "For current artifacts, delete an unsupported claim or keep only the documented opt-in behavior. For change, history, decisions, plans, and specifications, label the status and date or target explicitly instead of disguising it as current behavior.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Vaporware description\")",
+        "note": "JUDGEMENT-ONLY BY DESIGN, and enforced at every tier. The catalog is explicit that the mechanical rule is a TRAP: docs-discipline.status-language bans the hedge (\"coming soon\", \"not yet implemented\", \"planned\"), and a writer who deletes only the hedge to pass the gate ships a document that lies. The tell is not the honesty -- it is the MIXTURE, a page that reads as shipped and hedges in the margins. So this rule deliberately does NOT carry a pattern: it exists to make the status-language finding decidable, and any engine that fires them independently reproduces the trap. The `fix` field carries the catalog's ordered procedure verbatim in substance."
+      }
+    },
+    {
+      "id": "adjective-per-noun-spray",
+      "name": "Cut decorative modifiers",
+      "message": "adjective spray: {match} adjectives per noun -- keep the ones that carry load",
+      "severity": "warning",
+      "scope": "document",
+      "match": {
+        "kind": "metric",
+        "metric": "adjectives_per_noun",
+        "threshold": 0.5,
+        "comparison": "gt"
+      },
+      "fix": "Keep adjectives that change what the reader does; cut decoration.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Adjective-per-noun spray\")",
+        "note": "The catalog states this as a RATIO (\"every noun wears a modifier\"), which is why it converts to a metric rather than a pattern. Threshold 0.5 is INFERRED from that phrasing (one adjective per two nouns) and is NOT measured; calibrate before enforcing outside strict. Needs a POS tagger, which the engine does not yet have -- the same gap that blocks prose-craft.plural-abbreviation. The catalog's own guidance names the keep test: \"destructive\" and \"reversible\" carry load."
+      }
+    },
+    {
+      "id": "elegant-variation",
+      "name": "Repeat the noun",
+      "message": "elegant variation: repeat the noun; precision beats variety",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this document refer to one thing by two or more different names without saying they are the same thing?"
+      },
+      "examples": [
+        {
+          "bad": "The loader reads it. The resolver caches it. The component then exits.",
+          "good": "The loader reads it, caches it, then exits."
+        }
+      ],
+      "fix": "Pick one name and use it every time.",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Elegant variation\")",
+        "note": "A repetition-penalty artifact of the decoder. Judgement-only: deciding it requires knowing that two nouns denote the same referent, which is the coreference problem."
+      }
+    },
+    {
+      "id": "one-point-dilution",
+      "name": "Say it once and stop",
+      "message": "one-point dilution: say it once; stop",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does a later passage restate a point the document already made without adding a fact, constraint, reproduction step, decision, or dated change? Keep it when it has its own job: a required change note, a plan or specification entry, a historical record, or a scoped recommendation that names a concrete action or condition."
+      },
+      "examples": [
+        {
+          "bad": "Determinism matters. Put another way, the same input gives the same output. Think of it as a pure function.",
+          "good": "The gate produces the same findings on every run."
+        },
+        {
+          "bad": "The cache is deterministic. In other words, it behaves predictably. Think of it as a stable map.",
+          "good": "The cache returns the same value for the same key until invalidation."
+        },
+        {
+          "good": "Version 2 changed the cache key; the migration note retains the old key so operators can update stored entries.",
+          "bad": "Think of the cache as a stable map, a reliable lookup, and a predictable store."
+        },
+        {
+          "bad": "Think of the cache as a stable map. When it is stale, refresh it before reading the result.",
+          "good": "When the cache is stale, refresh it before reading the result.",
+          "note": "preserve: bounded, scoped recommendation or condition in the author's voice"
+        }
+      ],
+      "fix": "Delete each restatement after the first unless it carries a distinct required fact or purpose.",
+      "ai_signal": "none",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"One-point dilution\")",
+        "note": "Judgement-only: detecting it requires recognising two passages as the same argument in different words. Overlaps ai-tells-structure.think-of-it-as-core, whose frames are one common vehicle for a restatement."
+      }
+    },
+    {
+      "id": "padded-symmetry",
+      "name": "Let a section be two sentences",
+      "message": "padded symmetry: two sentences is a fine section",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does any section exist to match a sibling's length, or does any FAQ/Tips/Troubleshooting section answer a question nobody asked?"
+      },
+      "examples": [
+        {
+          "bad": "## Troubleshooting\n\nIf the loader fails, check the logs.",
+          "good": "",
+          "note": "A troubleshooting section for problems that do not exist."
+        }
+      ],
+      "fix": "Delete the padding and let the section be short.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Padded symmetry\")",
+        "note": "Judgement-only. Related to the immutable historical record's \"Asymmetric structure\" at https://github.com/srobroek/slopvac/blob/18c37dcaf2d11ef43ab9cf4610cae0664e2644af/packages/slopvac-lint/docs/counter-signals.md, whose positive form is proposed as a document metric, `section-length-dispersion`. That metric is the mechanizable proxy; this rule is the decidable question."
+      }
+    },
+    {
+      "id": "superficial-ing-analysis",
+      "name": "State the analysis as a fact or delete it",
+      "message": "superficial -ing analysis: {match} -- state it as a fact, or delete it",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": ",\\s+(?:highlighting|underscoring|emphasi[sz]ing|ensuring|showcasing|demonstrating|reflecting|illustrating|reinforcing|signalling|signaling|making it|allowing for|paving the way|cementing|solidifying)\\b",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The gate reads one config file, ensuring reliability.",
+          "good": "The gate reads one config file. A second file is ignored."
+        }
+      ],
+      "fix": "State the claim as its own sentence, or delete the clause.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Superficial -ing analysis\")",
+        "note": "Fully mechanizable as a trailing-participle frame, so no judgement partner: the catalog's own test -- \"either the analysis is a fact (state it as one) or it is air\" -- is answered by making the writer promote the clause to a sentence. Upstream ai-tells.ParticipialPadding covers this and stays enabled."
+      }
+    },
+    {
+      "id": "durable-vocabulary-habits",
+      "name": "Use the concrete verb",
+      "message": "indirect verb: use '{replacement}' instead of '{match}'",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "substitution",
+        "substitutions": {
+          "\\bserves as\\b": "is",
+          "\\bstands as\\b": "is",
+          "\\brepresents(?=\\s+(?:a|an)\\s+(?:\\w+\\s+)?(?:significant|substantial|major|important|pivotal|key|fundamental|dramatic|bold|huge|giant|big|step|shift|leap|milestone|turning|departure|evolution|breakthrough|commitment)\\b)": "is",
+          "(?<!such )\\bacts as\\b": "is",
+          "\\bboasts\\b": "has",
+          "\\boffers(?!\\s+(?:you\\s+)?(?:a|an|the)\\s+(?:[\\w-]+\\s+)?(?:path|way|approach|means|route|balance|trade-?off|alternative|compromise|middle)\\b)(?=\\s+(?:a|an|the|you|\\d)\\b)": "has",
+          "\\bfeatures(?=\\s+(?:a|an|the|\\d)\\b)": "has",
+          "\\bis designed to\\b": "(write what it does)",
+          "\\bplays a (?:vital|key|crucial|critical|central|pivotal) role\\b": "(say what it does)",
+          "\\bunderscores the importance of\\b": "(state the consequence)"
+        },
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The loader serves as the cache.",
+          "good": "The loader is the cache."
+        },
+        {
+          "bad": "The flag is designed to skip fences.",
+          "good": "The flag skips fences."
+        },
+        {
+          "bad": "The crate features a typed header struct.",
+          "good": "The crate has a typed header struct."
+        },
+        {
+          "good": "Supported features are listed below.",
+          "bad": "The CLI offers a dry-run mode."
+        },
+        {
+          "bad": "This release represents a major shift in the scheduler.",
+          "good": "The enum represents either an IPv4 or an IPv6 address."
+        },
+        {
+          "bad": "The proxy acts as the cache.",
+          "good": "The lineup featured such acts as the house band."
+        },
+        {
+          "bad": "The monitor plays a key role in tracking memory.",
+          "good": "The new strategy offers a way to reuse code without indirection.",
+          "note": "The fix for a role phrase is the verb it hides (\"tracks memory\"). An abstract offer -- a way, path, or approach -- has no \"has\" rewrite and does not fire."
+        }
+      ],
+      "fix": "Replace with the concrete verb or noun.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Durable vocabulary habits\")",
+        "note": "The catalog groups four SHAPES, not marker words, and three of them convert as substitutions: copula avoidance, ability framing, and significance inflation. The fourth -- textbook connectors opening consecutive sentences (`moreover`, `furthermore`) -- is a POSITION-and-adjacency claim, so it is carried separately as ai-tells-content-shape.textbook-connector-runs. The `allows you to` half of ability framing is already mechanised in prose-agency.false-agency and is deliberately not repeated. Three replacement values are parenthetical instructions rather than literal swaps, because the catalog's fix names an operation, not a word. Upstream ai-tells.ServesAsDodge overlaps the copula band and stays enabled. Human labelling, 2026-10: `represents` fired on a type that literally represents a value and now fires only before a significance claim (\"a major shift\"); `acts as` skips the noun in \"such acts as\"; `offers` skips an abstract way, path, or approach, which \"has\" cannot replace; `a testament to` left this rule because its \"(state the measurement)\" fix misfired on commemorative prose and ai-tells-figurative and orwell already flag the phrase; and the role phrase now asks for the verb, since its effect is usually named in the same sentence."
+      }
+    },
+    {
+      "id": "textbook-connector-runs",
+      "name": "Do not open consecutive sentences on a textbook connector",
+      "message": "textbook connectors: replace with the concrete relation, or delete",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Do two consecutive sentences in this paragraph open on a textbook connector (moreover, furthermore, additionally, consequently)?"
+      },
+      "examples": [
+        {
+          "bad": "Moreover, the cache is warm. Furthermore, the lockfile is present.",
+          "good": "The cache is warm and the lockfile is present."
+        }
+      ],
+      "fix": "Delete the connectors; if the relation is real, rewrite so the sentences carry it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Durable vocabulary habits\")",
+        "note": "Judgement remainder of ai-tells-content-shape.durable-vocabulary-habits: the catalog's claim is about consecutive OPENINGS, which is an adjacency property, not a token match. The immutable historical record at https://github.com/srobroek/slopvac/blob/18c37dcaf2d11ef43ab9cf4610cae0664e2644af/packages/slopvac-lint/docs/exclusions.md records that upstream ai-tells.FormalTransitions was DISABLED for flagging these same connectives as bare tokens (\"these are ordinary English connectives and this corpus uses them correctly\"), so the adjacency form is deliberately the only one carried and prose-craft.wordiness maps `additionally` to `also` as a substitution without a position claim."
+      }
+    },
+    {
+      "id": "over-writing-remainder",
+      "name": "Judge whether the reader acts differently for having read it",
+      "message": "over-writing: cut it to the behavior; move the decision to an ADR, spec, or commit",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "If this paragraph were removed, would the reader lose a current behavior, constraint, reproduction step, or explicit change/decision purpose? Flag it when its reasoning is an implementation journey, cache-style operational archaeology, or a postscript whose removal preserves the reader's task and current contract. Keep rationale in a decision, plan, specification, change communication, or historical record when that is the document's purpose."
+      },
+      "examples": [
+        {
+          "bad": "A paragraph of loosely related reasoning appended to a section that had already finished.",
+          "good": "The loader reads the lockfile, then falls back to the manifest."
+        },
+        {
+          "bad": "We tried three cache layouts before settling on this one.",
+          "good": "The cache key is the manifest path and content hash."
+        },
+        {
+          "bad": "The old cache key was chosen after trying several alternatives.",
+          "good": "This migration note records why the old cache key must be retained until version 2.4."
+        }
+      ],
+      "fix": "Cut to the behavior; move decision history to an ADR, spec, commit, or change record.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Over-writing\")",
+        "note": "Judgement remainder of the prose-scope category. The catalog names three shapes: a rejected alternative defended in place (prose-scope.rejected-alternative), an implementation cost the reader cannot act on (prose-scope.implementation-leak), and a paragraph of loosely related reasoning appended to a finished section -- the third has NO pattern and is what this rule carries. Excluded at relaxed for the same genre reason the prose-scope rules are: an ADR or a spec exists to hold this content."
+      }
+    },
+    {
+      "id": "unasked-for-rationale",
+      "name": "Delete the clause and keep the behavior",
+      "message": "unasked-for rationale: delete the clause and keep the behavior, or move the reason to the commit",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "If this rationale were removed, would the reader lose a constraint, invariant, gotcha, measured threshold, reproduction step, or explicit change/decision purpose? Flag a clause that only defends an implementation or narrates its journey when the behavior and current contract remain unchanged without it. Keep reasons in safety explanations, decisions, plans, specifications, change communications, and historical records when that is their purpose."
+      },
+      "examples": [
+        {
+          "bad": "This keeps the logic in one place.",
+          "good": "The helper is shared by both parsers."
+        },
+        {
+          "bad": "We chose this cache layout after trying several alternatives.",
+          "good": "The cache key is the manifest path and content hash."
+        },
+        {
+          "good": "The migration record explains why version 2 retains the old key until all workers upgrade.",
+          "bad": "The old key was chosen because it felt simpler.",
+          "note": "A measured number that decided a threshold is one of the three legitimate cases, so this example is a judgement call, not a defect by construction."
+        }
+      ],
+      "fix": "Delete the rationale and keep the behavior, or move the reason to the appropriate decision or change record.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Unasked-for rationale\")",
+        "note": "JUDGEMENT-ONLY, and the catalog says so explicitly: \"Judge it, do not pattern-match it.\" Distinct from prose-scope.rejected-alternative, which needs a NAMED alternative to anchor on; this one names no alternative, so no pattern reaches it. The three legitimacy tests are carried inside judgement_question because all three are context the reader has and a regex does not. Excluded at relaxed on the same genre grounds as prose-scope."
+      }
+    },
+    {
+      "id": "epigram-closer-remainder",
+      "name": "Judge whether a closing line adds a fact",
+      "message": "epigram closer: the paragraph or table above already carried the content",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this closing line state a fact the paragraph or table above did not, or does it perform having concluded?"
+      },
+      "examples": [
+        {
+          "bad": "The linter is deterministic. The reviewer is not.",
+          "good": ""
+        }
+      ],
+      "fix": "Delete it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — content-shape.md (\"Epigram closer\")",
+        "note": "Judgement remainder of prose-scope.epigram, which mechanises two shapes -- a parallel pair and a negated maxim -- at warning, because the same shape occasionally states a real contrast. That warning level IS the judgement gap, and this rule names it. A reward-model favourite: it survives editing because it reads quotable."
+      }
+    }
+  ]
+}

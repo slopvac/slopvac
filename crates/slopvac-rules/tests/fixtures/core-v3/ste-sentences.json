@@ -1,0 +1,267 @@
+{
+  "schema_version": 3,
+  "id": "ste-sentences",
+  "title": "STE Sentences",
+  "description": "Governs sentence structure, omitted words, vertical lists, connectors, and determiners.",
+  "weight": 1.0,
+  "max_per_100_words": {
+    "strict": 1.0,
+    "normal": 2.0
+  },
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "omitted-subject",
+      "name": "Do not omit the subject after If, When, or Once",
+      "message": "Omitted subject \"{match}\". Name what is installed, configured, or ready.",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "pattern",
+        "pattern": "^\\s*(?:If|When|Once)\\s+(?:installed|configured|enabled|disabled|set|present|missing|deleted|done|complete|completed|ready|needed|required|applicable)\\s*,",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "If configured, the proxy rewrites the Host header.",
+          "good": "If the proxy is configured, it rewrites the Host header."
+        },
+        {
+          "bad": "Once enabled, the cache serves stale reads.",
+          "good": "Once the cache is enabled, it serves stale reads."
+        }
+      ],
+      "fix": "Restore the omitted subject.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.2",
+        "note": "STE 9:4.2 also forbids contractions. That branch was removed after human labelling judged every contraction finding a false positive (\"I'll cover\", \"I don't mention\"): contractions are ordinary prose outside a controlled language, and the defect that recurs in runbooks is the subject-elided conditional opener. The branch anchors on the line start rather than on capitalization, so case folding is safe."
+      }
+    },
+    {
+      "id": "sentence-not-short-or-clear",
+      "name": "Write short and clear sentences",
+      "message": "Check that this sentence carries one instruction or one topic.",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this sentence give exactly one instruction (in a procedure) or carry exactly one topic (in description)? If it carries more, split it."
+      },
+      "examples": [
+        {
+          "bad": "To rotate the signing key, first revoke the old key in the console, then generate a replacement and update every service that reads it, and finally delete the old secret.",
+          "good": "Rotate the signing key as follows: 1. Revoke the old key in the console. 2. Generate a replacement key. 3. Update every service that reads the key. 4. Delete the old secret."
+        }
+      ],
+      "fix": "Split the sentence into one instruction or topic per sentence.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.1",
+        "note": "This rule carries no number of its own; the word counts live in the procedural and descriptive chapters and are mechanized there as sentence-too-long-procedural and sentence-too-long-descriptive. What is left here is the one-topic test, which is judgement. Enforced at normal tier as a reviewer question, not as a finding."
+      }
+    },
+    {
+      "id": "complex-text-not-in-vertical-list",
+      "name": "Use a vertical list for complex content",
+      "message": "This sentence carries {value} coordinated items. Use a vertical list.",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "metric",
+        "metric": "coordinated_items",
+        "threshold": 3,
+        "comparison": "gt"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The manifest sets the image tag, the replica count, the resource limits, the liveness probe, and the service account.",
+          "good": "The manifest sets these values:\n- The image tag\n- The replica count\n- The resource limits\n- The liveness probe\n- The service account"
+        }
+      ],
+      "fix": "Convert the coordinated series into a vertical list.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.3",
+        "note": "The specification states the rule as a direction rather than a threshold, so the four-item trigger is our operational choice: three coordinated items still read cleanly inline, and the count is what a checker can measure. The formatting sub-requirements of this rule are separate mechanizable rules below."
+      }
+    },
+    {
+      "id": "vertical-list-lead-in-missing-colon",
+      "name": "End the list lead-in with a colon",
+      "message": "The sentence before a vertical list must end with a colon.",
+      "severity": "warning",
+      "scope": "paragraph",
+      "match": {
+        "kind": "structure",
+        "check": "vertical-list-lead-in-missing-colon"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The manifest sets these values.\n- The image tag\n- The replica count",
+          "good": "The manifest sets these values:\n- The image tag\n- The replica count"
+        }
+      ],
+      "fix": "Replace the period at the end of the lead-in with a colon.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.3",
+        "note": "Split from the parent rule because it is fully mechanizable and carries a distinct fix. The colon also terminates a sentence for word counting, so this rule is a precondition for the metrics contract (see metrics.md)."
+      }
+    },
+    {
+      "id": "vertical-list-item-punctuation",
+      "name": "Punctuate list items consistently",
+      "message": "List item punctuation is wrong: {detail}.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "structure",
+        "check": "vertical-list-item-punctuation"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        },
+        {
+          "name": "project-style-override"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The manifest sets these values:\n- the image tag,\n- the replica count;\n- the resource limits",
+          "good": "The manifest sets these values:\n- The image tag\n- The replica count\n- The resource limits."
+        }
+      ],
+      "fix": "Capitalize each item, remove commas and semicolons, and end the last item with a period.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.3",
+        "note": "Five checkable conditions in one rule: each item starts with an uppercase letter, no item ends with a comma or a semicolon, a full-sentence item ends with a period, a fragment item does not, and the last item ends with a period. The project-style-override exception exists because most software style guides already fix list punctuation differently, and a conflicting checker gets switched off. Advisory at normal tier for that reason."
+      }
+    },
+    {
+      "id": "missing-connector-between-related-sentences",
+      "name": "Connect related sentences",
+      "message": "Check whether these two sentences need a connecting word.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "judgement",
+        "question": "Does the second sentence add a result, a contrast, or a next step to the first? If yes, does a connecting word or phrase make that relation explicit?"
+      },
+      "examples": [
+        {
+          "bad": "The runner rejects the manifest. The image tag is missing.",
+          "good": "The runner rejects the manifest, because the image tag is missing."
+        }
+      ],
+      "fix": "Add a connecting word or phrase that names the relation.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.4",
+        "note": "Not mechanizable in either direction: a checker cannot detect a missing logical relation, and an \"add more connectors\" heuristic degrades prose. Kept as a reviewer question so the reviewer has one source of truth rather than inventing the rule."
+      }
+    },
+    {
+      "id": "missing-article-or-determiner",
+      "name": "Use an article or a demonstrative before a noun",
+      "message": "Missing article before \"{match}\".",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "pattern",
+        "pattern": "^\\s*(?:[A-Z][a-z]+)\\s+(?:config|manifest|worker|queue|token|endpoint|repository|branch|cache|index|schema|dashboard|runner|scheduler|cluster|node|pod|container|service|database)\\b(?!\\s+(?:is|are|can|will|has|have|must|does|do))",
+        "ignore_case": false
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        },
+        {
+          "name": "api-name"
+        },
+        {
+          "name": "identifier-fidelity"
+        },
+        {
+          "name": "heading"
+        },
+        {
+          "name": "general-statement"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "Restart worker after you edit config.",
+          "good": "Restart the worker after you edit the config."
+        },
+        {
+          "bad": "Delete branch when the merge completes.",
+          "good": "Delete the branch when the merge completes."
+        }
+      ],
+      "fix": "Add \"the\", \"a\", \"an\", \"this\", or \"these\" before the noun.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:4.5",
+        "note": "This rule moved chapters between issues (it was a noun-chapter rule in Issue 7), so any ruleset citing the old number is stale. Our pattern is narrow on purpose: it anchors on a sentence-initial verb plus a closed list of software nouns, because a general bare-noun detector fires on the legitimate article-free cases the specification itself permits — general statements, abstract qualities, and a noun followed by an alphanumeric identifier. The negative lookahead keeps it off subject-position uses. Advisory at normal tier because the closed list is the only thing holding the false-positive rate down. Tested: both bad examples match, both good examples do not, and \"Worker config is invalid\" does not match (lookahead) nor does the heading \"Cache invalidation\" (not in the noun list, and headings are excepted)."
+      }
+    }
+  ]
+}

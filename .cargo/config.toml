@@ -1,0 +1,5 @@
+# Link the vendored PCRE2 (10.46 via pcre2-sys 0.2.10), never a system libpcre2: a system
+# 10.42 has no bounded variable-length lookbehind and the core rules would not compile.
+# Policy and the rest of it (match limits, version check): bead slopvac-8l4.3.20.
+[env]
+PCRE2_SYS_STATIC = "1"

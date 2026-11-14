@@ -45,6 +45,32 @@ def _write_outputs(env: Mapping[str, str], values: Mapping[str, object]) -> None
         handle.writelines(f"{name}={value}\n" for name, value in values.items())
 
 
+def workspace_path(raw: str, env: Mapping[str, str]) -> Path:
+    """Resolve a report destination and keep it inside ``$GITHUB_WORKSPACE``.
+
+    A relative path is taken from the workspace. The path is normalised
+    lexically, then refused when it leaves the workspace or when the workspace
+    or any existing component below it, the file included, is a symlink
+    (CWE-22, CWE-59). The normalised path is the one the caller writes to, so
+    ``a/link/../b`` cannot resolve differently on disk than it did here.
+    """
+    workspace = Path(env.get("GITHUB_WORKSPACE") or Path.cwd())
+    if workspace.is_symlink():
+        raise ActionError(f"the workspace {str(workspace)!r} is a symlink")
+    base = Path(os.path.realpath(workspace))
+    if "\0" in raw:
+        raise ActionError("a report path contains a NUL byte")
+    candidate = Path(os.path.normpath(base / raw))
+    if candidate == base or base not in candidate.parents:
+        raise ActionError(f"report path {raw!r} is outside the workspace")
+    current = base
+    for part in candidate.relative_to(base).parts:
+        current /= part
+        if current.is_symlink():
+            raise ActionError(f"report path {raw!r} goes through a symlink")
+    return candidate
+
+
 def choose_reporter(env: Mapping[str, str]) -> tuple[str, bool]:
     """Return ``(reviewdog reporter, suggestions)`` for this event.
 
@@ -130,7 +156,7 @@ def lint(env: Mapping[str, str] = os.environ) -> int:
 
     reports = {
         "json": Path(env.get("REPORT_JSON") or temp / "slopvac-report.json"),
-        "rdjsonl": Path(env.get("RDJSONL_FILE") or temp / "slopvac.rdjsonl"),
+        "rdjsonl": Path(env.get("RDJSONL_FILE") or "slopvac.rdjsonl"),
     }
     if env.get("SARIF", "true") == "true":
         reports["sarif"] = Path(env.get("SARIF_FILE") or "slopvac.sarif")
@@ -138,6 +164,10 @@ def lint(env: Mapping[str, str] = os.environ) -> int:
         reports["codeclimate"] = Path(
             env.get("CODECLIMATE_FILE") or "slopvac-codeclimate.json"
         )
+    # The JSON gate report lives in the runner temp directory. Every other
+    # destination can come from an input, so none may leave the workspace.
+    for fmt in reports.keys() - {"json"}:
+        reports[fmt] = workspace_path(str(reports[fmt]), env)
 
     verdict = OK
     incomplete = False
