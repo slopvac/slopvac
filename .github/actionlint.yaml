@@ -8,3 +8,10 @@ paths:
   .github/workflows/test.yml:
     ignore:
       - 'label "macos-15-intel" is unknown'
+  # Hosted runner labels newer than actionlint 1.7.7.
+  .github/workflows/wheels.yml:
+    ignore:
+      - 'label "(macos-15-intel|ubuntu-24\.04-arm|windows-2025)" is unknown'
+  .github/workflows/candidate.yml:
+    ignore:
+      - 'label "(macos-15-intel|ubuntu-24\.04-arm|windows-2025)" is unknown'
