@@ -615,6 +615,43 @@ impl Run<'_> {
         Ok(out)
     }
 
+    /// Whether the rule's context gate or an exception detector drops a match: `range` in
+    /// `text`, at `span` in the source.
+    fn guarded(
+        &self,
+        rule: &slopvac_rules::Rule,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+    ) -> bool {
+        let gate = rule.contexts.as_ref();
+        let kinds = if gate.is_some() || !detectors.is_empty() {
+            self.tags.kinds_at(&(span.start()..span.end()))
+        } else {
+            Vec::new()
+        };
+        if let Some(gate) = gate {
+            let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
+                tags.as_ref()
+                    .map(|t| t.iter().any(|t| kinds.contains(&t.as_str())))
+            };
+            if has(&gate.skip) == Some(true) || has(&gate.only) == Some(false) {
+                return true;
+            }
+        }
+        let site = MatchSite {
+            text,
+            range,
+            span,
+            document: self.parsed,
+            tags: &kinds,
+        };
+        detectors
+            .iter()
+            .any(|d| self.engine.detectors.detects(d, &site))
+    }
+
     /// Findings of metric rules: one per sentence or paragraph over its threshold, or one for
     /// the document. A finding has a line and column 1 and no source range.
     fn metrics(&self) -> Result<Vec<Finding>, EngineError> {
@@ -622,6 +659,7 @@ impl Run<'_> {
         if matches!(self.input.kind, Kind::Diagram(_)) {
             return Ok(Vec::new());
         }
+        let inline_code = skip::build(self.parsed, &[], None, true);
         let mut out = Vec::new();
         for active in &engine.metrics {
             let set = &engine.sets[active.set];
@@ -631,7 +669,34 @@ impl Run<'_> {
                 continue;
             };
             let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
+            let detectors: Vec<&str> = rule
+                .exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect();
+            let exclusions;
+            let skip: &SkipRanges = match &rule.exclude_blocks {
+                Some(kinds) => {
+                    exclusions = skip::build(self.parsed, kinds, self.front_matter, true);
+                    &exclusions
+                }
+                None => &inline_code,
+            };
             for hit in self.subject.measure(metric, rule.text_type)? {
+                // The guards read the measured sentence or paragraph. A document-wide
+                // measurement has no unit to guard.
+                if let Some(unit) = &hit.unit
+                    && (skip.hides(unit.span)
+                        || self.guarded(
+                            rule,
+                            &detectors,
+                            &unit.text,
+                            &(0..unit.text.len()),
+                            unit.span,
+                        ))
+                {
+                    continue;
+                }
                 let at = Span::empty(hit.at);
                 if self.suppressed(loaded.id().as_str(), &exceptions, at) {
                     continue;
@@ -702,35 +767,8 @@ impl Run<'_> {
         if skip.hides(span) {
             return Ok(None);
         }
-        let gate = rule.contexts.as_ref();
-        let kinds = if gate.is_some() || !detectors.is_empty() {
-            self.tags.kinds_at(&(span.start()..span.end()))
-        } else {
-            Vec::new()
-        };
-        if let Some(gate) = gate {
-            let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
-                tags.as_ref()
-                    .map(|t| t.iter().any(|t| kinds.contains(&t.as_str())))
-            };
-            if has(&gate.skip) == Some(true) || has(&gate.only) == Some(false) {
-                return Ok(None);
-            }
-        }
-        if !detectors.is_empty() {
-            let site = MatchSite {
-                text: unit.text,
-                range,
-                span,
-                document: self.parsed,
-                tags: &kinds,
-            };
-            if detectors
-                .iter()
-                .any(|d| self.engine.detectors.detects(d, &site))
-            {
-                return Ok(None);
-            }
+        if self.guarded(rule, detectors, unit.text, range, span) {
+            return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
         let source_text = &self.input.source[span.start()..span.end()];

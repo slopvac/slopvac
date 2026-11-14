@@ -19,9 +19,21 @@ use slopvac_text::{
 use crate::directives::Lines;
 use crate::prepare::Prepared;
 
+/// The sentence or paragraph that a hit measured.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Unit {
+    /// Where it sits in the source.
+    pub(crate) span: Span,
+    /// Its projected text.
+    pub(crate) text: String,
+}
+
 /// A measurement over the threshold.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Hit {
+    /// The measured unit, for the guards that read a source range. A document-wide
+    /// measurement has none.
+    pub(crate) unit: Option<Unit>,
     /// The byte offset whose line the finding reports.
     pub(crate) at: usize,
     /// The measured value, as `{match}` shows it.
@@ -54,6 +66,14 @@ fn exceeds(value: f64, comparison: Comparison, threshold: f64) -> bool {
         Comparison::Gte => value >= threshold,
         Comparison::Lt => value < threshold,
         Comparison::Lte => value <= threshold,
+    }
+}
+
+/// STE 5.1, 6.3 and 5.5: the word cap that stands in for a threshold of 0.
+const fn word_cap(text_type: TextType) -> f64 {
+    match text_type {
+        TextType::Procedural | TextType::Safety => 20.0,
+        TextType::Descriptive | TextType::Any => 25.0,
     }
 }
 
@@ -148,25 +168,42 @@ impl<'a> Subject<'a> {
         let (cmp, limit) = (m.comparison, m.threshold);
         match m.metric.as_str() {
             "sentence_words" => {
-                self.sentences(cmp, limit, 0, |s| {
-                    Ok((text_type == TextType::Any || s.text_type == text_type)
-                        .then_some(s.word_count))
-                })
+                self.sentences(
+                    cmp,
+                    // A threshold of 0 means the cap of the sentence's own text type.
+                    |s| {
+                        if limit == 0.0 {
+                            word_cap(s.text_type)
+                        } else {
+                            limit
+                        }
+                    },
+                    0,
+                    |s| {
+                        Ok((text_type == TextType::Any || s.text_type == text_type)
+                            .then_some(s.word_count))
+                    },
+                )
             }
             "clause_boundaries" => {
-                self.sentences(cmp, limit, 1, |s| clause_boundaries(&s.text).map(Some))
+                self.sentences(cmp, |_| limit, 1, |s| clause_boundaries(&s.text).map(Some))
             }
-            "lead_in_words" => self.sentences(cmp, limit, 0, |s| {
-                s.text
-                    .split_once(':')
-                    .map(|(head, _)| count_words(head))
-                    .transpose()
-            }),
+            "lead_in_words" => self.sentences(
+                cmp,
+                |_| limit,
+                0,
+                |s| {
+                    s.text
+                        .split_once(':')
+                        .map(|(head, _)| count_words(head))
+                        .transpose()
+                },
+            ),
             "multiword_noun_words" => {
-                self.sentences(cmp, limit, 0, |s| longest_noun_stack(&s.text).map(Some))
+                self.sentences(cmp, |_| limit, 0, |s| longest_noun_stack(&s.text).map(Some))
             }
             "coordinated_items" => {
-                self.sentences(cmp, limit, 0, |s| coordinated_items(&s.text).map(Some))
+                self.sentences(cmp, |_| limit, 0, |s| coordinated_items(&s.text).map(Some))
             }
             "paragraph_sentences" => self.paragraphs(cmp, limit, |b| Ok(Some(b.sentences.len()))),
             "enumerating_paragraph_words" => self.paragraphs(cmp, limit, |b| {
@@ -219,7 +256,7 @@ impl<'a> Subject<'a> {
     fn sentences(
         &self,
         cmp: Comparison,
-        limit: f64,
+        limit: impl Fn(&slopvac_text::Sentence) -> f64,
         offset: i64,
         count: impl Fn(&slopvac_text::Sentence) -> Result<Option<usize>, TextError>,
     ) -> Result<Vec<Hit>, TextError> {
@@ -227,11 +264,16 @@ impl<'a> Subject<'a> {
         for block in self.prepared.blocks() {
             for sentence in &block.sentences {
                 let Some(n) = count(sentence)? else { continue };
+                let limit = limit(sentence);
                 if exceeds(float(n), cmp, limit) {
                     let span = block
                         .projection
                         .span_for_bytes(sentence.start, sentence.end);
                     hits.push(Hit {
+                        unit: Some(Unit {
+                            span,
+                            text: sentence.text.clone(),
+                        }),
                         at: span.start(),
                         shown: (i64::try_from(n).unwrap_or(i64::MAX) + offset).to_string(),
                         limit: (whole(limit) + offset).to_string(),
@@ -260,6 +302,10 @@ impl<'a> Subject<'a> {
                     .projection
                     .span_for_bytes(0, block.projection.text().len());
                 hits.push(Hit {
+                    unit: Some(Unit {
+                        span,
+                        text: block.projection.text().to_owned(),
+                    }),
                     at: span.start(),
                     shown: n.to_string(),
                     limit: whole(limit).to_string(),
@@ -273,6 +319,7 @@ impl<'a> Subject<'a> {
     fn document_hit(value: f64, cmp: Comparison, limit: f64) -> Vec<Hit> {
         if exceeds(value, cmp, limit) {
             vec![Hit {
+                unit: None,
                 at: 0,
                 shown: format!("{value:.2}"),
                 limit: format!("{limit:.2}"),

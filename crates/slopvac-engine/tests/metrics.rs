@@ -243,3 +243,75 @@ fn a_metric_the_engine_does_not_measure_is_reported_as_not_run() {
             .starts_with("1 active metric rule(s) did not run")
     );
 }
+
+#[test]
+fn a_zero_threshold_falls_back_to_the_word_cap_of_the_sentence_text_type() {
+    let rule = gt("sentence_words", 0.0);
+    // Procedural: 24 words against the cap of 20.
+    let procedural = "Open the valve and then close the door and then check the gauge and then record \
+                      the reading in the log for the shift.\n";
+    assert_eq!(
+        hits(&lint(&rule, procedural)),
+        [(1, "Got 24 over 20.".to_owned())]
+    );
+    // Descriptive: 24 words are under its cap of 25, and 26 are over.
+    let under = "The valve controls the flow of water through the main pipe and the gauge shows the \
+                 pressure of the water in the pipe.\n";
+    assert_eq!(hits(&lint(&rule, under)), []);
+    let over = "The valve controls the flow of water through the main pipe and the gauge shows the \
+                pressure of the water in the pipe at all times.\n";
+    assert_eq!(
+        hits(&lint(&rule, over)),
+        [(1, "Got 26 over 25.".to_owned())]
+    );
+}
+
+#[test]
+fn a_rule_that_excludes_headings_does_not_report_a_long_heading() {
+    let rule = metric(
+        "sentence_words",
+        3.0,
+        "gt",
+        &json!({"scope": "sentence", "exclude_blocks": ["heading"]}),
+    );
+    let doc = lint(
+        &rule,
+        "# This heading has six words.\n\nThis body has five.\n",
+    );
+    assert_eq!(hits(&doc), [(3, "Got 4 over 3.".to_owned())]);
+}
+
+#[test]
+fn a_context_gate_selects_the_sentences_a_metric_reads() {
+    let text = "You must open the valve now.\n\nWe open the valve now.\n";
+    let skip = metric(
+        "sentence_words",
+        3.0,
+        "gt",
+        &json!({"scope": "sentence", "contexts": {"skip": ["requirement"]}}),
+    );
+    assert_eq!(hits(&lint(&skip, text)), [(3, "Got 5 over 3.".to_owned())]);
+    let only = metric(
+        "sentence_words",
+        3.0,
+        "gt",
+        &json!({"scope": "sentence", "contexts": {"only": ["requirement"]}}),
+    );
+    assert_eq!(hits(&lint(&only, text)), [(1, "Got 6 over 3.".to_owned())]);
+}
+
+#[test]
+fn an_exception_detector_drops_the_metric_finding_it_covers() {
+    let rule = metric(
+        "sentence_words",
+        3.0,
+        "gt",
+        &json!({"scope": "sentence",
+                "exceptions": [{"name": "requirement", "detector": "requirement"}]}),
+    );
+    let doc = lint(
+        &rule,
+        "You must open the valve now.\n\nWe open the valve now.\n",
+    );
+    assert_eq!(hits(&doc), [(3, "Got 5 over 3.".to_owned())]);
+}
