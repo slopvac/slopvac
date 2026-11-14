@@ -1,0 +1,149 @@
+# Hand-written dispositions for the 2.x compatibility matrix.
+# Keys are row IDs. Disposition: preserve, migrate or remove.
+# migrate means `slopvac migrate` rewrites it (config keys, directive IDs, steering blocks).
+# 3.0 has no 2.x compatibility mode: removed options error and 2.x configs are rejected.
+# Owners are slopvac-3.0 beads.
+
+"cmd:root" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "`slopvac` stays the entry point; `slopvac <paths>` keeps working as `lint`." }
+"opt:root:--version" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Prints the version." }
+"cmd:doctor" = { disposition = "preserve", owner = "slopvac-8l4.12.5", note = "Reports Rust binary, config and pack health instead of Python and Vale." }
+"opt:doctor:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.5", note = "text and json stay." }
+"opt:doctor:--binary" = { disposition = "remove", owner = "slopvac-8l4.12.5", note = "Names a Vale binary; Vale is gone." }
+"opt:doctor:--config" = { disposition = "preserve", owner = "slopvac-8l4.12.5", note = "Same meaning." }
+"cmd:lint" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Core command; bare paths keep linting." }
+"opt:lint:targets" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Paths and directories, discovered with ignore rules (3.0 file discovery)." }
+"opt:lint:--stdin" = { disposition = "preserve", owner = "slopvac-8l4.12.9", note = "Reads one document from stdin." }
+"opt:lint:--language" = { disposition = "preserve", owner = "slopvac-8l4.12.9", note = "Names the stdin format." }
+"opt:lint:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:lint:--mode" = { disposition = "preserve", owner = "slopvac-8l4.3.14", note = "code-comments moves to the tree-sitter mode; prose stays the default." }
+"opt:lint:--config" = { disposition = "preserve", owner = "slopvac-8l4.4.2", note = "Same flag; a 2.x config is rejected with a pointer to `slopvac migrate`." }
+"opt:lint:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"opt:lint:--category" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Category filter stays." }
+"opt:lint:--disable" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Rule disable stays; IDs gain the pack namespace." }
+"opt:lint:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.2", note = "text, json, github, sarif and html continue; json is schema version 3; rdjsonl, codeclimate, junit, checkstyle and markdown are new." }
+"opt:lint:--out" = { disposition = "preserve", owner = "slopvac-8l4.12.2", note = "Writes the report to a file." }
+"opt:lint:--open" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Opens the HTML report." }
+"opt:lint:--min-score" = { disposition = "preserve", owner = "slopvac-8l4.3.8", note = "Score threshold stays." }
+"opt:lint:--max-per-100-words" = { disposition = "preserve", owner = "slopvac-8l4.3.8", note = "Density threshold stays." }
+"opt:lint:--locale" = { disposition = "preserve", owner = "slopvac-8l4.3.12", note = "Locale comes from spellbook and SCOWL/VarCon; the flag stays." }
+"opt:lint:--no-vale" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale is removed; the flag errors at 3.0." }
+"opt:lint:--diff-base" = { disposition = "preserve", owner = "slopvac-8l4.3.15", note = "Changed-lines scope." }
+"opt:lint:--diff-working-tree" = { disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Staged, unstaged and untracked scope." }
+"opt:lint:--comments" = { disposition = "remove", owner = "slopvac-8l4.3.14", note = "Errors at 3.0. Use --mode code-comments." }
+"opt:lint:--fix" = { disposition = "preserve", owner = "slopvac-8l4.3.17", note = "Safe substitutions only." }
+"opt:lint:--no-color" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Also honours NO_COLOR." }
+"opt:lint:--verbose" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Verbosity stays." }
+"opt:lint:--explain-config" = { disposition = "preserve", owner = "slopvac-8l4.4.2", note = "Shows layered provenance for each setting." }
+"cmd:rules" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Rule listing." }
+"opt:rules:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:rules:--category" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Filter stays." }
+"opt:rules:--kind" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Kinds change with the typed match block." }
+"opt:rules:--genre" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Filter stays; genres become data." }
+"opt:rules:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "text, json and md stay." }
+"opt:rules:--include-excluded" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Stays." }
+"opt:rules:--config" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Same meaning." }
+"opt:rules:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"cmd:explain" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Rule explanation." }
+"opt:explain:rule_id" = { disposition = "migrate", owner = "slopvac-8l4.2.3", note = "IDs gain the pack namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs." }
+"opt:explain:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "text, json and md stay." }
+"opt:explain:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:explain:--config" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Same meaning." }
+"opt:explain:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"cmd:init" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Writes 3.0 config templates." }
+"opt:init:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:init:--force" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Overwrites an existing file." }
+"opt:init:--path" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Output path." }
+"opt:init:--skip-agents" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Skips harness setup." }
+"opt:init:--harness" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Harness list gains OpenCode and others." }
+"opt:init:--no-skills" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"cmd:prime" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "Progressive disclosure; same entry point." }
+"opt:prime:topic" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "write, review and report stay; migrate and configure are new." }
+"opt:prime:--config" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "Same meaning." }
+"opt:prime:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"cmd:onboard" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"cmd:setup" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Covers all harnesses including OpenCode." }
+"opt:setup:harness" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"opt:setup:--list" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"opt:setup:--remove" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"opt:setup:--check" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"opt:setup:--root" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
+"cmd:compile" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Compiled Vale styles; removed with Vale." }
+"opt:compile:--outdir" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale output directory." }
+"opt:compile:--profile" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale compile option." }
+"opt:compile:--config" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale compile option." }
+"opt:compile:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale compile option." }
+"opt:compile:--no-validate" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale compile option." }
+"opt:compile:--format" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale compile option." }
+"cmd:cache" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Pruned the Vale cache; removed." }
+"opt:cache:--prune" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale cache option." }
+"opt:cache:--all" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale cache option." }
+"cmd:reference" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"opt:reference:--write" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"opt:reference:--check" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"opt:reference:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"action:input:paths" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:profile" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"action:input:config" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:changed-files-only" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:min-score" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:max-per-100-words" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:fail-on-findings" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:annotate" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays; reviewdog is the new default." }
+"action:input:sarif" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:sarif-file" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:upload-sarif" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:input:vale" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0." }
+"action:input:vale-version" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0." }
+"action:input:version" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Pins the binary version." }
+"action:input:source" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Installs from a path or URL with the binary installer." }
+"action:input:rules-dir" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
+"action:output:score" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:findings" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:errors" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:warnings" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:suggestions" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:documents" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:words" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:per-100-words" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:passed" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"action:output:json" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Path to the report; the JSON uses schema version 3." }
+"action:output:sarif" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
+"hook:slopvac" = { disposition = "preserve", owner = "slopvac-8l4.13.8", note = "Hook ID stays; entry runs the 3.0 binary." }
+"hook:slopvac-strict" = { disposition = "preserve", owner = "slopvac-8l4.13.8", note = "Hook ID stays." }
+"hook:slopvac-no-vale" = { disposition = "remove", owner = "slopvac-8l4.13.8", note = "Vale is gone; the hook ID is removed." }
+
+# Behaviour rows exist only here.
+"behavior:bare-path-lint" = { summary = "Bare paths run lint.", disposition = "preserve", owner = "slopvac-8l4.12.1", note = "`slopvac README.md` lints without a subcommand." }
+"behavior:stdin-text" = { summary = "Lint stdin.", disposition = "preserve", owner = "slopvac-8l4.12.9", note = "One document from stdin with --stdin." }
+"behavior:stdin-language" = { summary = "stdin language.", disposition = "preserve", owner = "slopvac-8l4.12.9", note = "--language picks the parser for stdin." }
+"behavior:stdin-invalid-utf8" = { summary = "stdin with invalid UTF-8.", disposition = "preserve", owner = "slopvac-8l4.12.9", note = "Invalid UTF-8 on stdin fails with a clear error and exit code." }
+"behavior:stdin-name-redaction" = { summary = "<stdin> redaction.", disposition = "preserve", owner = "slopvac-8l4.12.9", note = "The path shows as <stdin> in every output." }
+"behavior:fix-safe-substitutions" = { summary = "--fix.", disposition = "preserve", owner = "slopvac-8l4.3.17", note = "--fix rewrites only safe substitutions and reports the rest." }
+"behavior:diff-base-changed-lines" = { summary = "--diff-base scope.", disposition = "preserve", owner = "slopvac-8l4.3.15", note = "--diff-base lints only changed lines." }
+"behavior:diff-working-tree-staged" = { summary = "--diff-working-tree staged.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Staged changes are in scope." }
+"behavior:diff-working-tree-unstaged" = { summary = "--diff-working-tree unstaged.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Unstaged changes are in scope." }
+"behavior:diff-working-tree-untracked" = { summary = "--diff-working-tree untracked.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Untracked files are in scope." }
+"behavior:reference-write" = { summary = "reference --write.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "reference --write regenerates the rules reference." }
+"behavior:reference-check" = { summary = "reference --check.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "reference --check exits non-zero when the file is stale." }
+"behavior:onboard-output" = { summary = "onboard.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "onboard prints the agent onboarding text." }
+"behavior:init-flags" = { summary = "init flags.", disposition = "preserve", owner = "slopvac-8l4.12.8", note = "init flags select profile, path, harnesses and skills." }
+"behavior:init-idempotence" = { summary = "init idempotence.", disposition = "preserve", owner = "slopvac-8l4.12.8", note = "A second init leaves files unchanged unless --force." }
+"behavior:setup-list-remove-check" = { summary = "setup actions.", disposition = "preserve", owner = "slopvac-8l4.11.2", note = "setup --list, --remove and --check; remove deletes only what setup wrote." }
+"behavior:setup-root" = { summary = "setup --root.", disposition = "preserve", owner = "slopvac-8l4.11.2", note = "setup --root targets another directory." }
+"behavior:prime-topics" = { summary = "prime topics.", disposition = "preserve", owner = "slopvac-8l4.11.1", note = "prime write, review and report keep their text contract; new topics join." }
+"behavior:inspection-filters" = { summary = "rules/explain filters.", disposition = "preserve", owner = "slopvac-8l4.12.11", note = "rules filters by category, kind, genre and profile." }
+"behavior:inspection-formats" = { summary = "rules/explain formats.", disposition = "preserve", owner = "slopvac-8l4.12.11", note = "rules and explain emit text, json and md." }
+"behavior:category-disable-filters" = { summary = "--category and --disable.", disposition = "preserve", owner = "slopvac-8l4.12.1", note = "--category and --disable select rules for a run." }
+"behavior:locale-overrides" = { summary = "locale overrides.", disposition = "preserve", owner = "slopvac-8l4.3.12", note = "Locale from the flag, config and front matter." }
+"behavior:report-out-open" = { summary = "--out and --open.", disposition = "preserve", owner = "slopvac-8l4.12.2", note = "--out writes the report; --open shows it." }
+"behavior:colour-verbosity" = { summary = "colour and verbosity.", disposition = "preserve", owner = "slopvac-8l4.12.1", note = "NO_COLOR, --no-color and --verbose behaviour." }
+"behavior:thresholds-exit-codes" = { summary = "thresholds and exit codes.", disposition = "preserve", owner = "slopvac-8l4.3.8", note = "Exit 0 pass, 1 threshold fail, 2 incomplete; thresholds from flags, config and profile." }
+"behavior:lint-json-schema" = { summary = "lint JSON.", disposition = "preserve", owner = "slopvac-8l4.2.2", note = "The JSON report moves from schema version 1 to 3." }
+"behavior:suppression-directives" = { summary = "suppression directives.", disposition = "migrate", owner = "slopvac-8l4.16.1", note = "2.x directive IDs are rewritten by `slopvac migrate`." }
+"behavior:config-discovery" = { summary = "config discovery.", disposition = "migrate", owner = "slopvac-8l4.4.2", note = "2.x slopvac.toml, .slopvac.toml and pyproject.toml tables are rejected with a pointer to `slopvac migrate`, which rewrites them." }
+"behavior:rst-linting" = { summary = "RST.", disposition = "preserve", owner = "slopvac-8l4.3.21", note = "reStructuredText lints through a bundled docutils adapter." }
+"behavior:code-comments-mode" = { summary = "code comments.", disposition = "preserve", owner = "slopvac-8l4.3.14", note = "Comment extraction for source files." }
+"behavior:vale-subgate" = { summary = "Vale sub-gate.", disposition = "remove", owner = "slopvac-8l4.16.2", note = "The Vale sub-gate and UNCHECKED reporting go away." }
+"behavior:vale-binary-install" = { summary = "Vale install.", disposition = "remove", owner = "slopvac-8l4.16.2", note = "scripts/install_vale.py and the pinned Vale go away." }
+"behavior:compile-cache" = { summary = "compile cache.", disposition = "remove", owner = "slopvac-8l4.16.2", note = "The compiled-styles cache is gone." }
+"behavior:uvx-install" = { summary = "uvx install.", disposition = "preserve", owner = "slopvac-8l4.13.2", note = "`uvx slopvac` keeps working through maturin wheels." }
