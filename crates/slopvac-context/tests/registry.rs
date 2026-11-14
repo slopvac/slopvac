@@ -51,6 +51,23 @@ fn section_scope_stops_at_the_next_peer_and_keeps_subsections() {
 }
 
 #[test]
+fn identically_named_sibling_headings_are_tagged_independently() {
+    let src = "# T\n\n## Notes\n\nThe flag is gone.\n\n## Notes\n\nNothing else here.\n";
+    let idx = run(
+        "id: t\nkind: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n  sentence: flag\n",
+        "a.md",
+        src,
+    );
+    let first = src.find("The flag is gone.").unwrap();
+    let second = src.find("Nothing else here.").unwrap();
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.kinds_at(&(first..first + 17)), vec!["k"]);
+    assert!(idx.kinds_at(&(second..second + 18)).is_empty());
+    let second_heading = src.rfind("## Notes").unwrap();
+    assert!(idx.tags()[0].span.end <= second_heading);
+}
+
+#[test]
 fn sentence_scope_tags_the_matching_sentence() {
     let idx = run(
         "id: t\nkind: requirement\nconfidence: 0.8\nwhen:\n  sentence: '^use '\n",
