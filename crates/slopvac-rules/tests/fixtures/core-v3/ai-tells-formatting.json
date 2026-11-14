@@ -1,0 +1,263 @@
+{
+  "schema_version": 3,
+  "id": "ai-tells-formatting",
+  "title": "AI tells -- formatting and punctuation",
+  "description": "Markup and punctuation tells. These decay slowly, but em-dash suppression shipped in late-2025 frontier models, so ABSENCE proves nothing while density still signals.",
+  "weight": 1.0,
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "em-dash-density",
+      "name": "Keep only the em dashes that mark a real aside",
+      "message": "dash density: {match} dashes per 1000 words -- most become commas, colons, or two sentences",
+      "severity": "warning",
+      "scope": "document",
+      "match": {
+        "kind": "metric",
+        "metric": "dash_per_1000_words",
+        "threshold": 6,
+        "comparison": "gt"
+      },
+      "fix": "Convert each dash that is not marking a real aside into a comma, a colon, or two sentences.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Em-dash density\", \"Hyphen-swap\")",
+        "url": "https://techcrunch.com/2025/11/14/openai-says-its-fixed-chatgpts-em-dash-problem/",
+        "note": "The catalog's tell is DENSITY, not presence, and this is the metric form of it. Deliberately counts the ASCII `--` form as well as U+2014/U+2013, which is what makes it usable in a repo whose house style writes `--`: the catalog's \"Hyphen-swap\" row says a find-and-replace on a tell is still the tell, and the measured `--`-to-dash ratio in the source corpus is 6,743 to 2,124. Threshold 6 per 1000 words is INFERRED from the catalog's \"several dramatic pivots per page\" and is NOT measured -- calibrate before enforcing outside strict. prose-format.no-unicode-dash bans the Unicode characters outright and is the presence rule; this is the density rule, and they are complements. https://github.com/srobroek/slopvac/blob/18c37dcaf2d11ef43ab9cf4610cae0664e2644af/packages/slopvac-lint/docs/exclusions.md records why upstream ai-tells.EmDashUsage is disabled."
+      }
+    },
+    {
+      "id": "title-case-heading",
+      "name": "Use sentence case in headings",
+      "message": "title-case heading: {match} -- use sentence case unless house style says otherwise",
+      "severity": "warning",
+      "scope": "heading",
+      "match": {
+        "kind": "pattern",
+        "pattern": "^(?=\\S+[ \\t]+(?:\\S+[ \\t]+)*?(?!(?i:ALLOWED_WORDS)[,:;.!?)]*(?:[ \\t]|$))[A-Z][a-z]+[,:;.!?)]*(?:[ \\t]|$))(?=(?:.*\\b[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*\\b){2,})(?:(?:[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*|[A-Z]{2,}|`[^`\\n]+`|\\d+(?:\\.\\d+)*|a|an|and|as|at|but|by|for|from|in|into|nor|of|on|or|the|to|up|via|with|without|your|you|is|are|was|were|than|[,:;.!?&()/+-])[,:;.!?)]*(?:[ \\t]+|$))+$",
+        "placeholders": {
+          "ALLOWED_WORDS": "allowed-words"
+        },
+        "ignore_case": false
+      },
+      "examples": [
+        {
+          "bad": "Install The Plugin From Source",
+          "good": "Install the plugin from source"
+        },
+        {
+          "bad": "Getting Started",
+          "good": "Getting started"
+        },
+        {
+          "bad": "Table of Contents",
+          "good": "Table of contents"
+        },
+        {
+          "bad": "Step 1: Check Replication Lag",
+          "good": "Step 1: check replication lag"
+        },
+        {
+          "good": "Installation",
+          "bad": "Quick Start Guide"
+        },
+        {
+          "good": "Using the `--json` flag",
+          "bad": "Using The JSON Flag"
+        },
+        {
+          "good": "Use the TypeScript SDK",
+          "bad": "Configure The Server"
+        },
+        {
+          "good": "Implement EventLog",
+          "bad": "Configure Brave Search"
+        }
+      ],
+      "fix": "Lower-case every word but the first and any proper noun.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Title Case In Every Heading\")",
+        "note": "The catalog itself concedes the house-style escape (\"unless house style says otherwise\"), so this is advisory everywhere and excluded at relaxed. The pattern accepts a heading of two or more capitalised words, letting a closed list of function words, all-caps initialisms, code spans, digits, and punctuation through; it cannot distinguish a title-cased heading from one that is mostly proper nouns (\"Oh My Pi\", \"Claude Code\"), which is why it never reaches enforced. Recalibrated in the 2026-09-12 audit: the earlier three-plain-words form matched 5 of 143 AI headings and 0 of 191 human; this one matches 30 of 143 AI and 16 of 191 human, the human hits being proper nouns.\nOnly plain capitalised words after the first count (`Server`, not `SDK`, `EventLog`, `gRPC`, `Python3` or a code span), so a heading whose only capitals are acronyms or identifiers passes (issue #257). `ALLOWED_WORDS` in the pattern is a placeholder that matches nothing real; rules.inject_locale_rule swaps in the `[locale] allow` words so a project can declare its proper nouns."
+      }
+    },
+    {
+      "id": "bold-spray",
+      "name": "Bold at most the first definitional use",
+      "message": "bold spray: {match} bold spans per 1000 words -- bold at most first definitional use",
+      "severity": "warning",
+      "scope": "document",
+      "match": {
+        "kind": "metric",
+        "metric": "bold_spans_per_1000_words",
+        "threshold": 20,
+        "comparison": "gt"
+      },
+      "fix": "Keep bold on the first definitional use of a term and delete the rest.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Bold spray\")",
+        "note": "Density metric, matching the catalog's shape (\"every occurrence of chosen terms bolded\"). Threshold 20 per 1000 words was set in the 2026-09-12 audit: measured bold density was 2.64 per 1000 words on pre-2022 human prose, 6.32 on unguided model prose; the earlier threshold of 10 fired on 2 of 11 human documents, 20 on none while still catching 2 of 17 model documents. The catalog's \"key takeaway\" styling half is heading content, not bold density."
+      }
+    },
+    {
+      "id": "inline-header-list",
+      "name": "Convert a repeated bold-colon bullet run to prose or a table",
+      "message": "inline-header list: {match} consecutive bold-colon bullets -- prose, or a table with real columns",
+      "severity": "warning",
+      "scope": "document",
+      "match": {
+        "kind": "metric",
+        "metric": "consecutive_bold_colon_bullets",
+        "threshold": 4,
+        "comparison": "gte"
+      },
+      "fix": "Rewrite as prose, or as a table when there are real columns.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Inline-header list\")",
+        "note": "This is the mechanizable SHAPE half of two catalog entries: formatting.md's \"Inline-header list\" and structure.md's \"Bold-lead-in bullet symmetry\". The content half -- whether the bullets carry distinct substance -- is ai-tells-structure.tricolon-abuse-remainder, and the document-level framing judgement is ai-tells-register.over-formatting-reflex. Threshold 4 is INFERRED from the structure catalog's \"x 6\" illustration; calibrate."
+      }
+    },
+    {
+      "id": "heading-hierarchy",
+      "name": "Fix a skipped heading level",
+      "message": "heading hierarchy: {match} -- fix the level; delete the rule before it",
+      "severity": "warning",
+      "scope": "document",
+      "match": {
+        "kind": "structure",
+        "check": "heading-hierarchy"
+      },
+      "fix": "Use the next level down, and delete any horizontal rule immediately before a heading.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Skipped heading levels; horizontal rules before headings\")",
+        "note": "kind=structure, because the check is block-level shape over the heading sequence, not a regex over text: it needs the previous heading's level. Two defects in one rule, matching the catalog row -- an H2 followed by an H4, and a horizontal rule immediately preceding a heading. Enforced at every tier: a skipped level breaks screen-reader navigation and every TOC generator, which makes it an accessibility defect rather than a register preference. No existing Vale rule covers it, ours or upstream."
+      }
+    },
+    {
+      "id": "table-wrapping-one-sentence",
+      "name": "Unwrap a table that holds one sentence",
+      "message": "table wrapping prose: unwrap it",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does each table in this document have at least two rows whose cells vary in the same dimension, or is it one sentence in a grid?"
+      },
+      "examples": [
+        {
+          "bad": "| Note |\n|---|\n| The loader reads the lockfile. |",
+          "good": "The loader reads the lockfile."
+        }
+      ],
+      "fix": "Unwrap the table into the sentence it holds.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Tables wrapping what is actually one sentence of prose\")",
+        "note": "Judgement, because a one-row table is legitimate as a header-only reference stub and the test is whether the cells vary in a shared dimension. Inverse of prose-format.prose-block, which flags prose that should have been a table."
+      }
+    },
+    {
+      "id": "italicised-copula",
+      "name": "Delete manufactured emphasis",
+      "message": "italicised copula: {match} -- delete the emphasis; let word order carry the contrast",
+      "severity": "warning",
+      "scope": "raw",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?<![\\w*])\\*(?:is|are|was|were|not|the|do|does|did|can|will)\\*(?![\\w*])|(?<![\\w_])_(?:is|are|was|were|not|the|do|does|did|can|will)_(?![\\w_])",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The loader *is* the cache.",
+          "good": "The loader caches every resolved path."
+        }
+      ],
+      "fix": "Delete the emphasis; rewrite so word order carries the contrast if it is real.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Italicised copula for manufactured profundity\")",
+        "note": "Fully mechanizable: the tell is a closed set of function words under emphasis. `scope: raw` because the marker characters are markdown syntax that the prose parser strips. Upstream ai-tells.EmphaticCopula covers this and stays enabled, so expect duplicates. GO->PYTHON REGEX NOTE: uses two lookbehinds, unsupported by Go RE2; the upstream rule must reach the same lines another way."
+      }
+    },
+    {
+      "id": "cross-reference-signposting",
+      "name": "Delete the cross-reference signpost",
+      "message": "cross-reference signposting: {match} -- delete it; a doc with a TOC is not read linearly",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "as mentioned above",
+          "as mentioned earlier",
+          "as we'll see",
+          "as we will see",
+          "as noted earlier",
+          "recall that",
+          "as discussed earlier",
+          "as stated previously",
+          "we saw earlier"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "As mentioned above, the loader caches.",
+          "good": "The loader caches every resolved path."
+        }
+      ],
+      "fix": "Delete the signpost, or link the named section.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Cross-reference signposting\")",
+        "note": "Mechanizable as a token list, so no judgement partner. Complements prose-craft.directional-ref, which owns the POSITION-dependent forms (\"see below\", \"the table above\") as substitutions with named replacements; these are the READING-ORDER forms, whose fix is deletion, not substitution. Upstream ai-tells.RestatementMarkers and ai-tells.SelfReference overlap."
+      }
+    },
+    {
+      "id": "emoji-list-markers",
+      "name": "Delete emoji used as list markers",
+      "message": "emoji list marker: {match} -- delete it; the list marker carries the structure",
+      "severity": "warning",
+      "scope": "raw",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?m)^[ \\t]*[-*+][ \\t]+[🌀-🫿☀-➿⬀-⯿]️?[ \\t]",
+        "ignore_case": false
+      },
+      "examples": [
+        {
+          "bad": "- 🚀 Install the plugin",
+          "good": "- Install the plugin"
+        },
+        {
+          "good": "🚀 Install the plugin",
+          "bad": "* 📦 Install the plugin"
+        }
+      ],
+      "fix": "Delete the emoji; use a plain list marker.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — formatting.md (\"Emoji as list markers or in headings\")",
+        "note": "The list-marker half of the catalog row. The heading half is already mechanised as prose-format.emoji-heading, which the source repo gates at warning; this rule reaches the list position that `scope: heading` cannot see. Same codepoint ranges, `scope: raw` because a list marker is markdown syntax. The 2026-09-12 audit made the markdown list marker mandatory: the optional form also matched an emoji opening a plain paragraph (\"WARN **Whoa there!**\" in an error message), which is emoji residue but not a list marker, and one such line in pre-2022 human prose. GO->PYTHON: the pattern holds the literal characters. Python `regex` rejects `\\x{...}`, and PCRE2 rejects `\\u` and `\\U`; literals work in both."
+      }
+    }
+  ]
+}

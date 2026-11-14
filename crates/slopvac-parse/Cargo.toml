@@ -15,6 +15,8 @@ workspace = true
 slopvac-model = { workspace = true }
 html5gum = { workspace = true }
 html5ever = { workspace = true }
+pulldown-cmark = { workspace = true }
+markdown = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

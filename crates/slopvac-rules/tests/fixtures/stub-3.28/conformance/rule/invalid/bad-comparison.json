@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "metric",
+    "metric": "sentence_words",
+    "threshold": 3,
+    "comparison": "eq"
+  },
+  "citation": {
+    "source": "s"
+  }
+}

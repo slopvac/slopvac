@@ -1,0 +1,146 @@
+# Gold set: one sentence per line. A target is [word/TAG]; TAG is N, V, J, R.
+# Ambiguous technical prose: imperatives, noun adjuncts, headings, list items,
+# gerunds, and words that flip part of speech by context.
+Run the [deploy/N] script after the build finishes.
+The [deploy/N] failed with exit code 3.
+Each [deploy/N] takes about four minutes.
+[Deploy/V] the chart to the staging cluster.
+We [deploy/V] twice a day.
+Teams that [deploy/V] on Fridays need an on-call rota.
+Add a [deploy/N] key to the repository.
+Check the [return/N] value before you continue.
+The function's [return/N] is always a tuple.
+A non-zero [return/N] code means the job failed.
+[Return/V] an error when the token has expired.
+The handler must [return/V] within five seconds.
+Calls [return/V] immediately if the cache is warm.
+Press [Return/N] to accept the default.
+[Execute/V] the migration in a transaction.
+The runner will [execute/V] each step in order.
+Do not [execute/V] untrusted scripts.
+[Branch/V] from main before you start.
+Create a [branch/N] for each fix.
+The release [branch/N] is protected.
+Delete the feature [branch/N] after the merge.
+Developers [branch/V] off the release tag for hotfixes.
+The code paths [branch/V] on the value of the flag.
+Each [request/N] carries a trace header.
+Send a [request/N] to the token endpoint.
+The [request/N] body must be valid JSON.
+[Request/V] a new certificate from the issuing service.
+Clients [request/V] a lease before they write.
+You can [request/V] access through the portal.
+Open a pull [request/N] against main.
+Edit the [file/N] in place.
+The config [file/N] lives in the home directory.
+Every [file/N] system has a block size.
+[File/V] a bug if the installer hangs.
+Users [file/V] tickets through the help desk.
+Please [file/V] an issue with the full log.
+Rotate the [key/N] every ninety days.
+The [key/N] must be at least 32 bytes.
+Each [key/N] maps to one value.
+A [key/J] requirement is idempotency.
+Two [key/J] benefits stand out.
+[Key/V] the cache by tenant and region.
+Services [key/V] the cache by user ID.
+Store the API [key/N] in a secret.
+The [key/N] rotation job runs nightly.
+The setup is [simple/J] on Linux.
+A [simple/J] retry loop is enough here.
+Keep the interface [simple/J].
+The tool is [easy/J] to install.
+An [easy/J] fix is to raise the timeout.
+[Easy/J] targets for automation are the nightly jobs.
+The pods restart [quickly/R] after a crash.
+[Quickly/R] check the logs for errors.
+Rollbacks finish [quickly/R] because the images are cached.
+Configure the proxy [correctly/R] before the first run.
+The parser handles nested quotes [correctly/R].
+If the hash is computed [correctly/R], the check passes.
+[Test/V] the endpoint with an expired token.
+Run the [test/N] suite before you push.
+Each [test/N] creates its own database.
+Unit [tests/N] cover the parser.
+The job [tests/V] every commit.
+[Run/V] the installer as root.
+The last [run/N] took twelve minutes.
+Each pipeline [run/N] writes a log.
+[Build/V] the image with the release tag.
+The [build/N] failed on the linker step.
+A clean [build/N] takes ten minutes.
+[Update/V] the lockfile after you add a dependency.
+The [update/N] adds two new flags.
+Security [updates/N] install automatically.
+[Close/V] the connection when the request ends.
+The value is [close/J] to the limit.
+The two runs are [close/J] in duration.
+[Set/V] the timeout to thirty seconds.
+The [set/N] of allowed hosts is empty.
+The flag is [set/V] by the installer.
+[Release/V] the lock after the write.
+The [release/N] ships next week.
+Each [release/N] gets a signed tag.
+[Lock/V] the table before the migration.
+The [lock/N] expires after five minutes.
+[Log/V] every failed login.
+The [log/N] shows a timeout.
+Audit [logs/N] are kept for a year.
+[Cache/V] the response for one minute.
+The [cache/N] is warm after the first request.
+[Check/V] the status of the job.
+The health [check/N] runs every ten seconds.
+[Open/V] the settings page.
+The port is [open/J] to the internet.
+Leave the issue [open/J] until the fix ships.
+[Clean/V] the build directory.
+Start from a [clean/J] checkout.
+The cache makes the second run [fast/J].
+The service responds [fast/R] under load.
+The tier is [free/J] for open source projects.
+[Free/V] the buffer after use.
+The parser works [well/R] on large files.
+[Only/R] admins can delete a project.
+The script [only/R] reads the config.
+[Just/R] run the command again.
+Pick the [right/J] region for your users.
+The [default/N] is eight workers.
+Use the [default/J] port.
+The [default/J] value is false.
+The feature is [live/J] in all regions.
+Services [live/V] in their own namespaces.
+[Present/V] the token in the header.
+The header must be [present/J] on every call.
+Keep the secrets in a [separate/J] file.
+[Separate/V] the config from the code.
+The service is [ready/J] when the probe passes.
+Use a [direct/J] connection to the database.
+[Direct/V] traffic to the new pool.
+[Upgrade/V] the cluster one node at a time.
+The [upgrade/N] takes an hour.
+[Install/V] the package with pip.
+[Merge/V] the branch after review.
+The [merge/N] created a conflict.
+[Commit/V] the change with a clear message.
+Each [commit/N] triggers a build.
+[Push/V] the tag to the remote.
+A [push/N] to main runs the pipeline.
+[Patch/V] the deployment with the new image.
+The [patch/N] fixes a race condition.
+[Scale/V] the workers to five replicas.
+The [scale/N] of the problem grew.
+[Limit/V] the number of retries.
+The rate [limit/N] is one hundred requests per minute.
+[Report/V] the error to the caller.
+The [report/N] lists every finding.
+[Store/V] the token in the keychain.
+The object [store/N] holds the artifacts.
+The tool can [support/V] multiple accounts.
+Contact [support/N] if the install fails.
+The jobs [need/V] network access.
+There is no [need/N] to restart.
+[Process/V] the queue in order.
+The [process/N] exits with code 0.
+The [output/N] is a JSON object.
+The tool can [output/V] YAML as well.
+Each [input/N] must be a valid path.

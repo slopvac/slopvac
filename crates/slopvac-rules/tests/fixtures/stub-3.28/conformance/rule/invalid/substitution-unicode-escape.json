@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "substitution",
+    "substitutions": {
+      "\\u2014": "-"
+    }
+  },
+  "citation": {
+    "source": "s"
+  }
+}
