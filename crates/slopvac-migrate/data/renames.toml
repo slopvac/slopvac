@@ -1,0 +1,9 @@
+# STUB(slopvac-8l4.16.5): fakes the 2.x to 3.0 rename table. Every 2.x rule id
+# `<category>.<rule>` and category name moves into this pack unchanged. The real
+# table (slopvac-8l4.2.10) lists per-name entries and the profile mapping.
+default_pack = "core"
+
+# Explicit entries win over the default. Keys are 2.x names.
+[rules]
+
+[categories]

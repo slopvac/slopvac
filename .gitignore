@@ -28,3 +28,6 @@ perf-results/
 
 # Cargo build output.
 /target/
+
+# Generated docs site source (scripts/docs/build_site.py).
+/build/

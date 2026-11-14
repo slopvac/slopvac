@@ -1,0 +1,18 @@
+slopvac:
+  v: 3
+  genre: core:how-to
+  profile:
+    name: relaxed
+    severity_shift: 1
+  locale: und
+  thresholds:
+    min_score: 60
+  categories:
+    prose-scope: warning
+    ste-words:
+      weight: 0
+  rules:
+    core:no-unicode-dash: "off"
+  terms:
+    allow: [colour, slopvac]
+  x-reviewed-by: sjors
