@@ -10,6 +10,7 @@ resolution-markers = [
 [manifest]
 members = [
     "slopvac",
+    "slopvac-plugin",
     "slopvac-workspace",
 ]
 
@@ -1397,11 +1398,26 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "slopvac-plugin"
+version = "0.1.0"
+source = { editable = "packages/slopvac-plugin" }
+
+[package.optional-dependencies]
+conformance = [
+    { name = "jsonschema" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jsonschema", marker = "extra == 'conformance'", specifier = ">=4.18" }]
+provides-extras = ["conformance"]
+
+[[package]]
 name = "slopvac-workspace"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "slopvac" },
+    { name = "slopvac-plugin", extra = ["conformance"] },
 ]
 
 [package.optional-dependencies]
@@ -1426,6 +1442,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "slopvac", editable = "packages/slopvac-lint" },
+    { name = "slopvac-plugin", extras = ["conformance"], editable = "packages/slopvac-plugin" },
 ]
 provides-extras = ["dev"]
 
