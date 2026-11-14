@@ -7,6 +7,7 @@ use pcre2::bytes::Regex;
 
 use crate::lexicon::IMPERATIVE_VERBS;
 use crate::pattern::{TextError, find_all, re, re_i, replace_all};
+use crate::pyrules::{is_space, trim};
 
 pub(crate) const SENTINEL: char = '\0';
 
@@ -119,15 +120,15 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
     replace_all(&PROPER_NAME, text, |start, end| {
         let matched = &text[start..end];
         let first = matched
-            .split_whitespace()
-            .next()
+            .split(is_space)
+            .find(|part| !part.is_empty())
             .unwrap_or("")
             .to_lowercase();
         if IMPERATIVE_VERBS.contains(&first.as_str()) {
             return Ok(matched.to_owned());
         }
         let capitalised = find_all(&CAPITALISED, matched)?.len();
-        if capitalised < 2 || (capitalised == 2 && text[..start].trim().is_empty()) {
+        if capitalised < 2 || (capitalised == 2 && trim(&text[..start]).is_empty()) {
             return Ok(matched.to_owned());
         }
         Ok(format!(" {SENTINEL} "))

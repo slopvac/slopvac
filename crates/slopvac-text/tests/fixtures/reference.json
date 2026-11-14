@@ -1369,6 +1369,41 @@
   ]
  },
  {
+  "text": "We asked the U.S. It was late.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We asked the U.S.",
+    "start": 0,
+    "end": 17,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It was late.",
+    "start": 18,
+    "end": 30,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "We asked the U.S. It́ was late.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We asked the U.S. It́ was late.",
+    "start": 0,
+    "end": 32,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
   "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
   "words": 7,
   "text_type": "descriptive",

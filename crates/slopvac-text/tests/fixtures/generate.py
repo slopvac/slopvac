@@ -98,6 +98,8 @@ CURATED = [
     "Deploy \ufb06arts here.",
     "Wait \u203f10 degrees Celsius.",
     "Wait\u200d10 degrees Celsius.",
+    "We asked the U.S. It was late.",
+    "We asked the U.S. It\u0301 was late.",
 ]
 
 

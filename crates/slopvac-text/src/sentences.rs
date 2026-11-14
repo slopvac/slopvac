@@ -33,6 +33,8 @@ static COLON_END: LazyLock<Regex> = LazyLock::new(|| re(r":\s*\z"));
 static DOTTED_INITIALISM: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z"));
 
+static INITIALISM_OPENER: LazyLock<Regex> = LazyLock::new(|| re(r"^[A-Z][a-z]*\b"));
+
 fn is_closer(c: char) -> bool {
     matches!(c, '"' | '\'' | '”' | '’' | ')' | ']')
 }
@@ -52,24 +54,11 @@ fn protected_ranges(text: &str) -> Result<Vec<(usize, usize)>, TextError> {
     Ok(ranges)
 }
 
-fn is_initialism_opener(text: &str) -> bool {
-    let mut chars = text.char_indices();
-    match chars.next() {
-        Some((_, c)) if c.is_ascii_uppercase() => {}
-        _ => return false,
-    }
-    let mut end = text.len();
-    for (i, c) in chars {
-        if !c.is_ascii_lowercase() {
-            end = i;
-            break;
-        }
-    }
-    let boundary = text[end..]
-        .chars()
-        .next()
-        .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
-    boundary && INITIALISM_SENTENCE_OPENERS.contains(&&text[..end])
+/// Python's `re.match(r"([A-Z][a-z]*)\b", text)` against the closed-class opener list.
+fn is_initialism_opener(text: &str) -> Result<bool, TextError> {
+    Ok(find_all(&INITIALISM_OPENER, text)?
+        .first()
+        .is_some_and(|&(start, end)| INITIALISM_SENTENCE_OPENERS.contains(&&text[start..end])))
 }
 
 fn terminal_cut(
@@ -90,7 +79,7 @@ fn terminal_cut(
         let gap = &rest[..rest.len() - remainder.len()];
         if !remainder.is_empty()
             && gap.chars().count() < 2
-            && (gap != " " || !is_initialism_opener(remainder))
+            && (gap != " " || !is_initialism_opener(remainder)?)
         {
             return Ok(None);
         }
