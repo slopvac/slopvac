@@ -292,6 +292,23 @@ fn hyphenated_prose_still_matches() {
 }
 
 #[test]
+fn closing_unicode_punctuation_does_not_hide_a_term() {
+    let cases = [
+        "\u{201c}github.\u{201d}",
+        "\u{2018}github.\u{2019}",
+        "\u{00ab}github.\u{00bb}",
+        "(github.)",
+        "github\u{2026}",
+        "\u{201c}github\u{201d}",
+    ];
+    for text in cases {
+        let f = set().check_casing(text, &[]);
+        assert_eq!(f.len(), 1, "{text}");
+        assert_eq!(&text[f[0].span.clone()], "github", "{text}");
+    }
+}
+
+#[test]
 fn quoted_and_bracketed_terms_still_match() {
     assert_eq!(found("(github), \"github\" and github!").len(), 3);
 }

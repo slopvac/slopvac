@@ -185,8 +185,8 @@ fn token_ok(text: &str, start: usize, end: usize) -> bool {
     let te = text[end..]
         .find(char::is_whitespace)
         .map_or(text.len(), |p| end + p);
-    let lead = "([{\"'<`";
-    let trail = ")]}\"'>,;:!?.`";
+    let lead = "([{\"'<`\u{2018}\u{201c}\u{00ab}\u{2039}\u{ff08}\u{300c}\u{300e}\u{3010}";
+    let trail = ")]}\"'>,;:!?.`\u{2019}\u{201d}\u{00bb}\u{203a}\u{2026}\u{ff09}\u{300d}\u{300f}\u{3011}\u{3002}\u{ff0c}\u{ff01}\u{ff1f}";
     let mut ts = ts;
     while ts < start && text[ts..].starts_with(|c| lead.contains(c)) {
         ts += text[ts..].chars().next().map_or(1, char::len_utf8);
