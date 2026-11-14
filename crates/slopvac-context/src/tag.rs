@@ -23,7 +23,7 @@ pub trait Tagger: Send + Sync {
     /// Stable tagger id.
     fn id(&self) -> &str;
     /// Tags for one document.
-    fn tag(&self, doc: &dyn DocumentView) -> Vec<Tag>;
+    fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error>;
 }
 
 /// Ordered set of taggers.
@@ -54,15 +54,17 @@ impl TagRegistry {
         self.taggers.iter().map(|t| t.id()).collect()
     }
 
-    /// Run every tagger and index the result.
-    #[must_use]
-    pub fn tag_document(&self, doc: &dyn DocumentView) -> TagIndex {
-        let mut tags: Vec<Tag> = self.taggers.iter().flat_map(|t| t.tag(doc)).collect();
+    /// Run every tagger and index the result. The first tagger error stops the run.
+    pub fn tag_document(&self, doc: &dyn DocumentView) -> Result<TagIndex, Error> {
+        let mut tags = Vec::new();
+        for t in &self.taggers {
+            tags.extend(t.tag(doc)?);
+        }
         tags.sort_by(|a, b| {
             (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
         });
         tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
-        TagIndex { tags }
+        Ok(TagIndex { tags })
     }
 }
 

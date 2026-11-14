@@ -38,6 +38,8 @@ pub struct When {
     pub path: Option<String>,
     /// The sentence matches.
     pub sentence: Option<String>,
+    /// The block has this kind. Code blocks are skipped unless named here.
+    pub block_kind: Option<BlockKind>,
 }
 
 /// Front matter condition.
@@ -80,6 +82,12 @@ impl TaggerSpec {
 
     /// Compile into a tagger.
     pub fn compile(self) -> Result<DeclarativeTagger, Error> {
+        if !is_context_tag(&self.kind) {
+            return Err(Error::Parse(format!(
+                "tagger {}: kind `{}` is not a context tag (lowercase kebab-case)",
+                self.id, self.kind
+            )));
+        }
         if !(0.0..=1.0).contains(&self.confidence) {
             return Err(Error::Parse(format!(
                 "tagger {}: confidence outside 0..=1",
@@ -92,6 +100,7 @@ impl TaggerSpec {
             && w.frontmatter.is_none()
             && w.path.is_none()
             && w.sentence.is_none()
+            && w.block_kind.is_none()
         {
             return Err(Error::Parse(format!(
                 "tagger {}: `when` has no condition",
@@ -120,7 +129,18 @@ impl TaggerSpec {
     }
 }
 
+/// `ContextTag` in `common.schema.json`: `^[a-z][a-z0-9-]*$`.
+fn is_context_tag(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// A compiled declarative tagger.
+///
+/// Conditions combine with AND at three levels. Path and front matter are document
+/// conditions. Heading path, admonition title and block kind are block conditions. The
+/// sentence pattern is a sentence condition. Every given condition must hold for a tag.
 pub struct DeclarativeTagger {
     spec: TaggerSpec,
     heading: Option<Pattern>,
@@ -131,34 +151,60 @@ pub struct DeclarativeTagger {
 }
 
 impl DeclarativeTagger {
-    fn document_level_ok(&self, doc: &dyn DocumentView) -> bool {
+    fn document_level_ok(&self, doc: &dyn DocumentView) -> Result<bool, Error> {
         if let Some(p) = &self.path
-            && !p.is_match(doc.path())
+            && !p.is_match(doc.path())?
         {
-            return false;
+            return Ok(false);
         }
         if let Some((key, pat)) = &self.fm {
-            match (doc.front_matter(key), pat) {
-                (None, _) => return false,
-                (Some(v), Some(p)) if !p.is_match(v) => return false,
-                _ => {}
+            let Some(v) = doc.front_matter(key) else {
+                return Ok(false);
+            };
+            if let Some(p) = pat
+                && !p.is_match(v)?
+            {
+                return Ok(false);
             }
         }
-        true
+        Ok(true)
     }
 
-    fn block_ok(&self, b: &BlockView<'_>) -> bool {
-        if let Some(p) = &self.heading
-            && !b.heading_path.iter().any(|h| p.is_match(h))
-        {
-            return false;
+    fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
+        let kind_ok = match self.spec.when.block_kind {
+            Some(k) => b.kind == k,
+            None => b.kind != BlockKind::CodeBlock,
+        };
+        if !kind_ok {
+            return Ok(false);
         }
-        if let Some(p) = &self.admonition
-            && !b.admonition_title.is_some_and(|t| p.is_match(t))
-        {
-            return false;
+        if let Some(p) = &self.heading {
+            let mut any = false;
+            for h in &b.heading_path {
+                if p.is_match(h)? {
+                    any = true;
+                    break;
+                }
+            }
+            if !any {
+                return Ok(false);
+            }
         }
-        true
+        if let Some(p) = &self.admonition {
+            match b.admonition_title {
+                Some(t) if p.is_match(t)? => {}
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+
+    fn has_block_conditions(&self) -> bool {
+        let w = &self.spec.when;
+        w.heading_path.is_some()
+            || w.admonition_title.is_some()
+            || w.sentence.is_some()
+            || w.block_kind.is_some()
     }
 
     fn tag_for(&self, span: Range<usize>, evidence: &str) -> Tag {
@@ -176,25 +222,31 @@ impl Tagger for DeclarativeTagger {
         &self.spec.id
     }
 
-    fn tag(&self, doc: &dyn DocumentView) -> Vec<Tag> {
-        if !self.document_level_ok(doc) {
-            return Vec::new();
+    fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+        if !self.document_level_ok(doc)? {
+            return Ok(Vec::new());
+        }
+        let whole = 0..doc.source_len();
+        if self.spec.scope == Scope::Document && !self.has_block_conditions() {
+            return Ok(vec![self.tag_for(whole, "document")]);
         }
         let blocks = doc.blocks();
-        let doc_end = blocks.iter().map(|b| b.span.end).max().unwrap_or(0);
         let mut out = Vec::new();
         for (i, b) in blocks.iter().enumerate() {
-            if b.kind == BlockKind::CodeBlock || !self.block_ok(b) {
+            if !self.block_ok(b)? {
                 continue;
             }
             let hits: Vec<Range<usize>> = match &self.sentence {
                 None => vec![b.span.clone()],
-                Some(p) => doc
-                    .sentences(b)
-                    .into_iter()
-                    .filter(|s| p.is_match(s.text))
-                    .map(|s| s.span)
-                    .collect(),
+                Some(p) => {
+                    let mut v = Vec::new();
+                    for s in doc.sentences(b) {
+                        if p.is_match(s.text)? {
+                            v.push(s.span);
+                        }
+                    }
+                    v
+                }
             };
             if hits.is_empty() {
                 continue;
@@ -205,22 +257,30 @@ impl Tagger for DeclarativeTagger {
                 }
                 Scope::Paragraph => out.push(self.tag_for(b.span.clone(), "block")),
                 Scope::Section => out.push(self.tag_for(section_span(&blocks, i), "section")),
-                Scope::Document => return vec![self.tag_for(0..doc_end, "document")],
+                Scope::Document => return Ok(vec![self.tag_for(whole, "document")]),
             }
         }
-        out
+        Ok(out)
     }
 }
 
+fn level(b: &BlockView<'_>) -> u8 {
+    b.heading_level
+        .unwrap_or_else(|| u8::try_from(b.heading_path.len()).unwrap_or(u8::MAX))
+}
+
+/// The section of block `i`: from its nearest heading up to the next heading of the same
+/// or a shallower level. Text before the first heading forms a section of its own.
 fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
-    let path = &blocks[i].heading_path;
-    let first = (0..=i)
+    let owner = (0..=i)
         .rev()
-        .find(|&j| blocks[j].kind == BlockKind::Heading && blocks[j].heading_path == *path)
-        .unwrap_or(i);
-    let last = (i..blocks.len())
-        .take_while(|&j| blocks[j].heading_path.starts_with(path))
-        .last()
-        .unwrap_or(i);
+        .find(|&j| blocks[j].kind == BlockKind::Heading);
+    let (first, own_level) = match owner {
+        Some(j) => (j, level(&blocks[j])),
+        None => (0, 0),
+    };
+    let last = (i + 1..blocks.len())
+        .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
+        .map_or(blocks.len() - 1, |k| k - 1);
     blocks[first].span.start..blocks[last].span.end
 }

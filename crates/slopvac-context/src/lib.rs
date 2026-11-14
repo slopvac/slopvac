@@ -23,6 +23,14 @@ pub enum Error {
         /// PCRE2 message.
         message: String,
     },
+    /// PCRE2 failed while matching, for example on a match or JIT stack limit.
+    #[error("pattern `{pattern}` failed while matching: {message}")]
+    Match {
+        /// Pattern source.
+        pattern: String,
+        /// PCRE2 message.
+        message: String,
+    },
     /// A tagger id was registered twice.
     #[error("tagger `{0}` is already registered")]
     DuplicateTagger(String),
