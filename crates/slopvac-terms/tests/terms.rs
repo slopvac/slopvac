@@ -102,7 +102,7 @@ fn ignore_case_terms_accept_any_case() {
 #[test]
 fn skip_ranges_hide_code_spans() {
     let text = "run `github` and github";
-    let skip = vec![4..12];
+    let skip = std::iter::once(4..12).collect::<Vec<_>>();
     let f = set().check_casing(text, &skip);
     assert_eq!(f.len(), 1);
     assert_eq!(f[0].span, 17..23);
