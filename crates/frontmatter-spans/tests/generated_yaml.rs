@@ -1,9 +1,11 @@
 //! Generated YAML front matter: every span invariant holds for every node of random structures.
 //!
-//! The generator covers block and flow mappings and sequences nested to depth 4, flow with and
-//! without trailing commas, single-line and multi-line flow, empty values (`k:` and `-`),
-//! plain, single-quoted and double-quoted scalars with multi-byte text and escapes, trailing
-//! and leading comments, blank lines, compact and indented sequences, CRLF, and a BOM.
+//! The generator covers block and flow mappings and sequences nested to depth 4 with up to
+//! six entries, flow with and without trailing commas, single-line and multi-line flow, empty
+//! values (`k:` and `-`), plain, single-quoted and double-quoted scalars with multi-byte text
+//! and escapes, scalars folded over several lines, literal and folded block scalars with strip
+//! and clip chomping (also empty ones), keys with spaces and quotes, trailing and leading
+//! comments, blank lines, compact and indented sequences, CRLF, and a BOM.
 
 mod common;
 
@@ -22,6 +24,8 @@ enum N {
     Empty,
     Int(i64),
     Str(String, Style),
+    /// A block scalar: its lines, whether folded (`>`), and whether stripped (`-`).
+    Block(Vec<String>, bool, bool),
     Seq(Coll<N>),
     Map(Coll<(String, Style, N)>),
 }
@@ -31,7 +35,7 @@ enum N {
 #[derive(Clone, Debug)]
 struct Coll<T> {
     /// Each item with decoration bits: 1 trailing comment, 2 blank line before,
-    /// 4 comment line before, 8 no space after a flow colon.
+    /// 4 comment line before, 8 no space after a flow colon, 16 fold a scalar over two lines.
     items: Vec<(u8, T)>,
     flow: bool,
     comma: bool,
@@ -45,20 +49,32 @@ fn scalar() -> impl Strategy<Value = N> {
         Just(N::Empty),
         (-999i64..999).prop_map(N::Int),
         "w[a-zé日]{0,5}".prop_map(|s| N::Str(s, Style::Plain)),
+        "w[a-z]{1,3} [a-z日]{1,3}".prop_map(|s| N::Str(s, Style::Plain)),
         "[a-zé日 #:,'\\[\\]{}]{0,6}".prop_map(|s| N::Str(s, Style::Single)),
         "[a-zé日 #:,'\\[\\]{}\"\\\\\n\t]{0,6}".prop_map(|s| N::Str(s, Style::Double)),
+        (
+            prop::collection::vec("[a-zé日]{1,5}", 0..3),
+            any::<bool>(),
+            any::<bool>()
+        )
+            .prop_map(|(lines, folded, strip)| N::Block(lines, folded, strip)),
     ]
 }
 
-fn style() -> impl Strategy<Value = Style> {
-    prop_oneof![Just(Style::Plain), Just(Style::Single), Just(Style::Double)]
+/// A key and its style. Plain keys may hold spaces and quotes inside; quoted keys anything.
+fn key() -> impl Strategy<Value = (String, Style)> {
+    prop_oneof![
+        "[a-zé日]([a-zé日 '\"]{0,3}[a-zé日])?".prop_map(|k| (k, Style::Plain)),
+        "[a-zé日 '\"]{1,4}".prop_map(|k| (k, Style::Single)),
+        "[a-zé日 '\"]{1,4}".prop_map(|k| (k, Style::Double)),
+    ]
 }
 
 fn coll<T: std::fmt::Debug + Clone>(
     item: impl Strategy<Value = T> + 'static,
 ) -> impl Strategy<Value = Coll<T>> {
     (
-        prop::collection::vec((any::<u8>(), item), 0..4),
+        prop::collection::vec((any::<u8>(), item), 0..7),
         any::<bool>(),
         any::<bool>(),
         any::<bool>(),
@@ -73,11 +89,15 @@ fn coll<T: std::fmt::Debug + Clone>(
         })
 }
 
+fn entry(inner: impl Strategy<Value = N> + 'static) -> impl Strategy<Value = (String, Style, N)> {
+    (key(), inner).prop_map(|((k, st), n)| (k, st, n))
+}
+
 fn node() -> impl Strategy<Value = N> {
-    scalar().prop_recursive(4, 24, 4, |inner| {
+    scalar().prop_recursive(4, 32, 6, |inner| {
         prop_oneof![
             coll(inner.clone()).prop_map(N::Seq),
-            coll(("[a-zé日]{1,4}", style(), inner)).prop_map(N::Map),
+            coll(entry(inner)).prop_map(N::Map),
         ]
     })
 }
@@ -85,22 +105,32 @@ fn node() -> impl Strategy<Value = N> {
 fn root() -> impl Strategy<Value = N> {
     prop_oneof![
         coll(node()).prop_map(N::Seq),
-        coll(("[a-zé日]{1,4}", style(), node())).prop_map(N::Map),
+        coll(entry(node())).prop_map(N::Map)
     ]
 }
 
-/// An empty item is only possible in a block sequence; in flow it becomes the scalar `e`.
+/// An empty item and a block scalar are only possible in block context; in flow they become
+/// plain scalars.
 fn normalize(n: N, in_flow: bool) -> N {
+    let flat = |item: N, flow: bool| match item {
+        N::Empty if flow => N::Str("e".into(), Style::Plain),
+        N::Block(lines, ..) if flow => N::Str(
+            if lines.is_empty() {
+                "e".into()
+            } else {
+                lines.join(" ")
+            },
+            Style::Plain,
+        ),
+        item => normalize(item, flow),
+    };
     match n {
         N::Seq(mut c) => {
             let flow = is_flow(&c, in_flow);
             c.items = c
                 .items
                 .into_iter()
-                .map(|(d, item)| match item {
-                    N::Empty if flow => (d, N::Str("e".into(), Style::Plain)),
-                    item => (d, normalize(item, flow)),
-                })
+                .map(|(d, item)| (d, flat(item, flow)))
                 .collect();
             N::Seq(c)
         }
@@ -109,7 +139,14 @@ fn normalize(n: N, in_flow: bool) -> N {
             c.items = c
                 .items
                 .into_iter()
-                .map(|(d, (k, ks, item))| (d, (k, ks, normalize(item, flow))))
+                .map(|(d, (k, ks, item))| {
+                    // A map value that is empty stays empty in flow (`{k: }`).
+                    let item = match item {
+                        N::Empty => N::Empty,
+                        item => flat(item, flow),
+                    };
+                    (d, (k, ks, item))
+                })
                 .collect();
             N::Map(c)
         }
@@ -119,11 +156,20 @@ fn normalize(n: N, in_flow: bool) -> N {
 
 // ---- model shape ----------------------------------------------------------------------
 
+fn block_value(lines: &[String], folded: bool, strip: bool) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    let body = lines.join(if folded { " " } else { "\n" });
+    if strip { body } else { format!("{body}\n") }
+}
+
 fn model_shape(n: &N) -> String {
     match n {
         N::Empty => "null".into(),
         N::Int(i) => i.to_string(),
         N::Str(s, _) => format!("{s:?}"),
+        N::Block(lines, folded, strip) => format!("{:?}", block_value(lines, *folded, *strip)),
         N::Seq(c) => {
             let inner: Vec<String> = c.items.iter().map(|(_, n)| model_shape(n)).collect();
             format!("[{}]", inner.join(","))
@@ -176,6 +222,19 @@ fn scalar_text(n: &N) -> String {
     }
 }
 
+/// Break a rendered scalar at its first lone space; a line break folds back into one space.
+fn fold(text: &str, continuation: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    for i in 1..chars.len().saturating_sub(1) {
+        if chars[i] == ' ' && chars[i - 1] != ' ' && chars[i + 1] != ' ' {
+            let head: String = chars[..i].iter().collect();
+            let tail: String = chars[i + 1..].iter().collect();
+            return format!("{head}\n{continuation}{tail}");
+        }
+    }
+    text.to_owned()
+}
+
 fn is_scalar(n: &N) -> bool {
     matches!(n, N::Int(_) | N::Str(..))
 }
@@ -188,14 +247,7 @@ fn is_flow<T>(c: &Coll<T>, in_flow: bool) -> bool {
 fn flow_inline(n: &N) -> String {
     match n {
         N::Seq(c) => {
-            let items: Vec<String> = c
-                .items
-                .iter()
-                .map(|(_, n)| match n {
-                    N::Empty => "e".to_owned(), // an empty flow sequence item is not an entry
-                    n => flow_inline(n),
-                })
-                .collect();
+            let items: Vec<String> = c.items.iter().map(|(_, n)| flow_inline(n)).collect();
             wrap('[', ']', &items, c.comma)
         }
         N::Map(c) => {
@@ -229,23 +281,12 @@ const COMMENT: &str = "# note é";
 /// the key line) and ending with the closer.
 fn flow_multiline(n: &N, indent: usize) -> (char, Vec<String>) {
     let pad = " ".repeat(indent + 2);
-    let (open, close, parts): (char, char, Vec<(u8, String)>) = match n {
+    let (open, close, parts, comma): (char, char, Vec<(u8, String)>, bool) = match n {
         N::Seq(c) => (
             '[',
             ']',
-            c.items
-                .iter()
-                .map(|(d, n)| {
-                    (
-                        *d,
-                        if matches!(n, N::Empty) {
-                            "e".into()
-                        } else {
-                            flow_inline(n)
-                        },
-                    )
-                })
-                .collect(),
+            c.items.iter().map(|(d, n)| (*d, flow_inline(n))).collect(),
+            c.comma,
         ),
         N::Map(c) => (
             '{',
@@ -262,13 +303,9 @@ fn flow_multiline(n: &N, indent: usize) -> (char, Vec<String>) {
                     (*d, text)
                 })
                 .collect(),
+            c.comma,
         ),
         _ => unreachable!(),
-    };
-    let comma = match n {
-        N::Seq(c) => c.comma,
-        N::Map(c) => c.comma,
-        _ => false,
     };
     let mut lines = Vec::new();
     for (i, (d, text)) in parts.iter().enumerate() {
@@ -307,6 +344,31 @@ fn multiline(n: &N) -> bool {
     }
 }
 
+/// A scalar after `prefix`, folded over two lines when the decoration bit asks for it.
+fn scalar_lines(lines: &mut Vec<String>, prefix: &str, n: &N, cont_pad: &str, d: u8, note: &str) {
+    let text = scalar_text(n);
+    let text = if d & 16 != 0 {
+        fold(&text, cont_pad)
+    } else {
+        text
+    };
+    lines.push(format!("{prefix}{text}{note}"));
+}
+
+/// A block scalar after `prefix`: header line, then its lines indented under `pad`.
+fn block_scalar_lines(lines: &mut Vec<String>, prefix: &str, n: &N, pad: &str, note: &str) {
+    let N::Block(content, folded, strip) = n else {
+        unreachable!()
+    };
+    let header = format!(
+        "{}{}",
+        if *folded { '>' } else { '|' },
+        if *strip { "-" } else { "" }
+    );
+    lines.push(format!("{prefix}{header}{note}"));
+    lines.extend(content.iter().map(|l| format!("{pad}  {l}")));
+}
+
 /// Lines for a block collection at `indent`.
 fn block(n: &N, indent: usize) -> Vec<String> {
     let pad = " ".repeat(indent);
@@ -327,7 +389,19 @@ fn block(n: &N, indent: usize) -> Vec<String> {
                 };
                 match item {
                     N::Empty => lines.push(format!("{pad}-{note}")),
-                    n if is_scalar(n) => lines.push(format!("{pad}- {}{note}", scalar_text(n))),
+                    N::Block(..) => {
+                        block_scalar_lines(&mut lines, &format!("{pad}- "), item, &pad, &note);
+                    }
+                    n if is_scalar(n) => {
+                        scalar_lines(
+                            &mut lines,
+                            &format!("{pad}- "),
+                            n,
+                            &format!("{pad}  "),
+                            *d,
+                            &note,
+                        );
+                    }
                     n if coll_is_flow(n, false) == Some(true) => {
                         value_lines(&mut lines, &format!("{pad}- "), n, indent + 2, &note);
                     }
@@ -356,8 +430,18 @@ fn block(n: &N, indent: usize) -> Vec<String> {
                 };
                 match item {
                     N::Empty => lines.push(format!("{pad}{key}:{note}")),
+                    N::Block(..) => {
+                        block_scalar_lines(&mut lines, &format!("{pad}{key}: "), item, &pad, &note);
+                    }
                     n if is_scalar(n) => {
-                        lines.push(format!("{pad}{key}: {}{note}", scalar_text(n)));
+                        scalar_lines(
+                            &mut lines,
+                            &format!("{pad}{key}: "),
+                            n,
+                            &format!("{pad}  "),
+                            *d,
+                            &note,
+                        );
                     }
                     n if coll_is_flow(n, false) == Some(true) => {
                         value_lines(&mut lines, &format!("{pad}{key}: "), n, indent, &note);

@@ -38,12 +38,20 @@ A `Span` holds a byte `range` and the 1-based `start` and `end` line and column.
 code points, and the byte-order mark is not part of line 1. `LineIndex` gives the same mapping
 for any offset in the document.
 
-- A scalar span covers the value as written. Quoted scalars include the quotes.
-- A YAML or JSON collection span runs from its first byte to its last, brackets included. A flow
-  collection ends at its closing bracket, also after a trailing comma. A block collection ends
-  where its last entry ends. Trailing comments, blank lines and newlines are not part of it.
-- A YAML value that is omitted (`key:` or a bare `-`) is null with a zero-width span right
-  after the `:` or `-`. The enclosing block collection includes that colon or dash.
+- A scalar span covers the value as written. Quoted scalars include the quotes. A block
+  scalar (`|` or `>`) covers its content lines, without the header or the trailing newline.
+- **YAML collection spans point at the collection's start; use child spans for extents.** A
+  YAML mapping or sequence has a zero-width span at the start of its first entry: the first
+  key of a mapping, or the first item of a sequence. An empty flow collection (`[]`, `{}`) is
+  zero-width at its opening bracket. The reader does not guess where a YAML collection ends,
+  because the parser's end positions are unreliable around comments, trailing commas and
+  omitted entries.
+- A YAML value that is omitted (`key:` or a bare `-`) is null with a zero-width span. It sits
+  right after the `:` or `-`, or at the end of that line when a comment follows. An empty block
+  scalar is the empty string, and its span is the header or the start of the next line.
+- JSON and TOML collection spans are exact. JSON spans come from the crate's own parser, and
+  TOML spans come from `toml_edit` with no adjustment, except that a TOML table covers its header
+  and its entries.
 - A TOML table span runs from its header, or its first key when it has none, to the end of its
   last entry.
 - A key span covers the key as written, so JSON keys include their quotes.
@@ -62,7 +70,8 @@ let doc = "---\nslopvac:\n  genre: docs\n---\n";
 let fm = frontmatter_spans::FrontMatter::parse(doc).unwrap().unwrap();
 let meta = fm.deserialize_key::<Meta>("slopvac").unwrap().unwrap();
 assert_eq!(meta.value.genre, "docs");
-assert_eq!(&doc[meta.span.range], "genre: docs");
+// A YAML mapping span is zero-width at its first key.
+assert!(doc[meta.span.range.start..].starts_with("genre: docs"));
 ```
 
 `FrontMatter::deserialize` reads the whole block. `deserialize_key` reads one top-level key and

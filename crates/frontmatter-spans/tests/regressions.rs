@@ -27,21 +27,6 @@ fn duplicate_json_members_are_all_kept_and_lookup_takes_the_last() {
 }
 
 #[test]
-fn yaml_flow_collections_include_the_closing_bracket_on_any_line() {
-    let cases = [
-        ("a: [1, 2]", "[1, 2]"),
-        ("a: {b: 1}", "{b: 1}"),
-        ("a:\n  [1, [2]]", "[1, [2]]"),
-        ("a:\n  {b: {c: 1}}", "{b: {c: 1}}"),
-    ];
-    for (body, want) in cases {
-        let doc = format!("---\n{body}\n---\n");
-        let fm = FrontMatter::parse(&doc).unwrap().unwrap();
-        assert_eq!(text(&doc, fm.get("a").unwrap()), want, "{body}");
-    }
-}
-
-#[test]
 fn yaml_quoted_scalar_span_stops_at_the_closing_quote_before_a_comment() {
     let cases = [
         ("a: \"x\" # note", "\"x\""),

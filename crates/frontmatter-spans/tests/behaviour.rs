@@ -121,12 +121,9 @@ fn yaml_spans_index_the_whole_document_through_bom_and_crlf() {
 }
 
 #[test]
-fn yaml_collection_spans_include_flow_brackets_and_drop_trailing_newlines() {
-    let doc = "---\nseq: [1, [2]]\nmap: {a: 1}\nblock:\n  - x\ntext: |\n  hi\n---\n";
+fn yaml_block_scalar_span_drops_the_trailing_newline() {
+    let doc = "---\ntext: |\n  hi\n---\n";
     let fm = FrontMatter::parse(doc).unwrap().unwrap();
-    assert_eq!(text(doc, fm.get("seq").unwrap()), "[1, [2]]");
-    assert_eq!(text(doc, fm.get("map").unwrap()), "{a: 1}");
-    assert_eq!(text(doc, fm.get("block").unwrap()), "- x");
     assert_eq!(text(doc, fm.get("text").unwrap()), "hi");
 }
 
@@ -365,7 +362,10 @@ fn missing_field_error_points_at_the_containing_table() {
     let fm = FrontMatter::parse(doc).unwrap().unwrap();
     let err = fm.deserialize_key::<Meta>("outer").unwrap_err();
     assert!(err.message.contains("count"), "{err}");
-    assert_eq!(&doc[err.span.unwrap().range], "title: T");
+    // A YAML collection span is zero-width at its first entry.
+    let span = err.span.unwrap();
+    assert!(span.range.is_empty());
+    assert!(doc[span.range.start..].starts_with("title: T"));
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
@@ -384,7 +384,8 @@ fn deserialises_one_key_with_the_span_of_its_value() {
             genre: "docs".into()
         }
     );
-    assert_eq!(&doc[got.span.range], "genre: docs");
+    assert!(got.span.range.is_empty());
+    assert!(doc[got.span.range.start..].starts_with("genre: docs"));
     assert!(fm.deserialize_key::<Slopvac>("absent").unwrap().is_none());
 }
 

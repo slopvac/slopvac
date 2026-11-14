@@ -68,99 +68,39 @@ impl Offsets<'_> {
         self.index.span(self.base + lo..self.base + hi)
     }
 
-    /// The span of an omitted value: zero-width, right after the `:` or `-` that introduces it.
-    ///
-    /// saphyr puts the omitted value at the indicator or, when a comment follows, at the end of
-    /// the line. This walks back over blanks, newlines and comments to the indicator.
+    /// The span of an omitted plain value: zero-width, right after the `:` or `-` when saphyr
+    /// reports the indicator itself. After a trailing comment saphyr reports the end of the
+    /// line, and that position is kept as is.
     fn empty_value(&self, at: Marker) -> crate::Span {
-        let bytes = self.content.as_bytes();
         let lo = self.local(at);
-        let pos = if matches!(bytes.get(lo), Some(b':' | b'-')) {
+        let pos = if matches!(self.content.as_bytes().get(lo), Some(b':' | b'-')) {
             lo + 1
         } else {
-            self.indicator_end(lo)
-                .filter(|&e| matches!(bytes[e - 1], b':' | b'-'))
-                .unwrap_or(lo)
+            lo
         };
         let pos = self.base + pos;
         self.index.span(pos..pos)
     }
 
-    /// The content offset of the `-` that introduces the entry starting at document offset
-    /// `entry_start`, if one precedes it.
-    fn dash_before(&self, entry_start: usize) -> Option<usize> {
-        let end = self.indicator_end(entry_start - self.base)?;
-        (self.content.as_bytes()[end - 1] == b'-').then(|| end - 1)
-    }
-
-    /// The offset just past the last token before `pos`, skipping blanks, newlines and comments.
-    fn indicator_end(&self, pos: usize) -> Option<usize> {
+    /// The span of an empty `|` or `>` scalar: its header, without any comment saphyr includes.
+    /// When saphyr reports a position that is not a header (the next line), it is kept.
+    fn empty_block_scalar(&self, start: Marker, end: Marker) -> crate::Span {
         let bytes = self.content.as_bytes();
-        let mut end = pos;
-        loop {
-            while end > 0 && bytes[end - 1].is_ascii_whitespace() {
-                end -= 1;
+        let lo = self.local(start);
+        if matches!(bytes.get(lo), Some(b'|' | b'>')) {
+            let mut hi = lo + 1;
+            while matches!(bytes.get(hi), Some(b'-' | b'+' | b'0'..=b'9')) {
+                hi += 1;
             }
-            if end == 0 {
-                return None;
-            }
-            let line_start = bytes[..end]
-                .iter()
-                .rposition(|b| matches!(b, b'\n' | b'\r'))
-                .map_or(0, |i| i + 1);
-            match comment_start(&bytes[line_start..end]) {
-                Some(c) => end = line_start + c,
-                None => return Some(end),
-            }
+            self.index.span(self.base + lo..self.base + hi)
+        } else {
+            self.span(start, end, Kind::Plain)
         }
     }
 
-    /// The span of a sequence or mapping.
-    ///
-    /// A flow collection ends one byte after its closing delimiter, found from the start of
-    /// saphyr's closing event. A block collection ends where its last entry ends, so trailing
-    /// comments and blank lines stay outside.
-    fn collection_span(
-        &self,
-        open: Marker,
-        close: Marker,
-        first_dash: Option<usize>,
-        last_child_end: Option<usize>,
-    ) -> crate::Span {
-        let bytes = self.content.as_bytes();
-        // saphyr starts a block sequence after its first dash in some layouts (an omitted first
-        // entry, or dashes at the parent key's indent), so take the dash from the first entry.
-        let lo = first_dash.unwrap_or_else(|| self.local(open));
-        let closer = match bytes.get(lo) {
-            Some(b'[') => Some(b']'),
-            Some(b'{') => Some(b'}'),
-            _ => None,
-        };
-        let hi = closer
-            .and_then(|c| self.closing_delimiter(self.local(close), c))
-            .map_or_else(|| last_child_end.map_or(lo, |e| e - self.base), |at| at + 1);
-        self.index.span(self.base + lo..self.base + hi.max(lo))
-    }
-
-    /// Where the closing `delimiter` of a flow collection is, given the start of saphyr's
-    /// closing event. After a trailing comma saphyr reports the comma, so look past commas,
-    /// blanks, newlines and comments.
-    fn closing_delimiter(&self, from: usize, delimiter: u8) -> Option<usize> {
-        let bytes = self.content.as_bytes();
-        let mut i = from;
-        while i < bytes.len() {
-            match bytes[i] {
-                b if b == delimiter => return Some(i),
-                b',' | b' ' | b'\t' | b'\n' | b'\r' => i += 1,
-                b'#' => {
-                    while i < bytes.len() && !matches!(bytes[i], b'\n' | b'\r') {
-                        i += 1;
-                    }
-                }
-                _ => return None,
-            }
-        }
-        None
+    /// The zero-width span of a collection at `at`, a content offset.
+    fn collection_span(&self, at: usize) -> crate::Span {
+        self.index.span(self.base + at..self.base + at)
     }
 
     /// The `*name` token around a scan error, when the error is about an alias.
@@ -235,38 +175,6 @@ impl Offsets<'_> {
             .find(|&(s, _)| bytes[s] == sigil)
             .map(|(s, e)| self.index.span(self.base + s..self.base + e))
     }
-}
-
-/// The index of a `#` that starts a comment in `line`: outside quotes, at the start or after a blank.
-fn comment_start(line: &[u8]) -> Option<usize> {
-    let mut i = 0;
-    while i < line.len() {
-        match line[i] {
-            b'"' => {
-                i += 1;
-                while i < line.len() && line[i] != b'"' {
-                    i += if line[i] == b'\\' { 2 } else { 1 };
-                }
-            }
-            b'\'' => {
-                i += 1;
-                while i < line.len() {
-                    if line[i] == b'\'' {
-                        if line.get(i + 1) == Some(&b'\'') {
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    i += 1;
-                }
-            }
-            b'#' if i == 0 || matches!(line[i - 1], b' ' | b'\t') => return Some(i),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
 }
 
 /// The index of the quote that closes the scalar opened at `open`, searching up to `limit`.
@@ -411,8 +319,12 @@ impl Builder<'_> {
                     ScalarStyle::DoubleQuoted => Kind::Quoted(b'"'),
                     _ => Kind::Plain,
                 };
-                let span = if text.is_empty() && kind == Kind::Plain {
+                let span = if text.is_empty() && style == ScalarStyle::Plain {
                     self.offsets.empty_value(start)
+                } else if text.is_empty()
+                    && matches!(style, ScalarStyle::Literal | ScalarStyle::Folded)
+                {
+                    self.offsets.empty_block_scalar(start, end)
                 } else {
                     self.offsets.span(start, end, kind)
                 };
@@ -460,22 +372,20 @@ impl Builder<'_> {
                 let Some(frame) = self.stack.pop() else {
                     return Err(fail("unbalanced collection", Some(self.offsets.caret(end))));
                 };
-                let (open, dash, last_end, value) = match frame {
+                // Zero-width at the first entry; an empty flow collection has no entry, so it
+                // sits where saphyr says the collection starts: its opening bracket.
+                let (open, first, value) = match frame {
                     Frame::Seq { start, items } => {
-                        let last = items.last().map(|n| n.span.range.end);
-                        let dash = items
-                            .first()
-                            .and_then(|n| self.offsets.dash_before(n.span.range.start));
-                        (start, dash, last, Value::Array(items))
+                        let first = items.first().map(|n| n.span.range.start);
+                        (start, first, Value::Array(items))
                     }
                     Frame::Map { start, entries, .. } => {
-                        let last = entries
-                            .last()
-                            .map(|e| e.value.span.range.end.max(e.key_span.range.end));
-                        (start, None, last, Value::Table(entries))
+                        let first = entries.first().map(|e| e.key_span.range.start);
+                        (start, first, Value::Table(entries))
                     }
                 };
-                let span = self.offsets.collection_span(open, start, dash, last_end);
+                let at = first.map_or_else(|| self.offsets.local(open), |f| f - self.offsets.base);
+                let span = self.offsets.collection_span(at);
                 self.complete(Node { value, span })?;
             }
         }

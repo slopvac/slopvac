@@ -71,9 +71,37 @@ fn parse_fragment(format: Format, fragment: &str) -> Option<FrontMatter<'static>
     FrontMatter::parse(doc).ok().flatten()
 }
 
-/// Whether `line` carries comment text: a `#` outside quotes at the start or after a blank.
-fn has_comment(line: &str) -> bool {
-    let b = line.as_bytes();
+/// Whether the node is a collection, and where its first entry starts (`None` when empty).
+fn first_entry(node: &Node) -> (bool, Option<usize>) {
+    match &node.value {
+        Value::Table(entries) => (true, entries.first().map(|e| e.key_span.range.start)),
+        Value::Array(items) => (true, items.first().map(|n| n.span.range.start)),
+        _ => (false, None),
+    }
+}
+
+/// Whether the text before `start` ends with a block scalar header (`|`, `>`, with chomping).
+fn after_block_header(doc: &str, start: usize) -> bool {
+    let before = doc[..start].trim_end();
+    let line = before.rsplit(['\n', '\r']).next().unwrap_or("");
+    let line = line.split(" #").next().unwrap_or(line).trim_end();
+    ["|", ">", "|-", ">-", "|+", ">+"].iter().any(|h| {
+        line.ends_with(h)
+            && line[..line.len() - h.len()]
+                .chars()
+                .last()
+                .is_none_or(|c| c == ' ' || c == '-')
+    })
+}
+
+/// Whether the last line of `text` carries comment text: a `#` outside quotes (quotes may
+/// span lines) at the start of the line or after a blank.
+fn has_trailing_comment(text: &str) -> bool {
+    let b = text.as_bytes();
+    let last_line = b
+        .iter()
+        .rposition(|c| matches!(c, b'\n' | b'\r'))
+        .map_or(0, |i| i + 1);
     let mut i = 0;
     while i < b.len() {
         match b[i] {
@@ -96,7 +124,9 @@ fn has_comment(line: &str) -> bool {
                     i += 1;
                 }
             }
-            b'#' if i == 0 || b[i - 1] == b' ' || b[i - 1] == b'\t' => return true,
+            b'#' if i >= last_line && (i == last_line || b[i - 1] == b' ' || b[i - 1] == b'\t') => {
+                return true;
+            }
             _ => {}
         }
         i += 1;
@@ -116,19 +146,37 @@ pub(crate) fn check(doc: &str) -> String {
 
     for Visited { node, parent } in all.iter().skip(1) {
         let slice = &doc[node.span.range.clone()];
+        let (is_collection, first) = first_entry(node);
+        if format == Format::Yaml && is_collection {
+            // A YAML collection is zero-width at its first entry, or at its bracket if empty.
+            assert!(
+                node.span.range.is_empty(),
+                "collection {slice:?} of {doc:?}"
+            );
+            match first {
+                Some(at) => assert_eq!(node.span.range.start, at, "{doc:?}"),
+                None => assert!(
+                    matches!(doc.as_bytes()[node.span.range.start], b'[' | b'{'),
+                    "empty collection not at its bracket in {doc:?}"
+                ),
+            }
+            continue;
+        }
         if slice.is_empty() {
-            // An empty value is zero-width, right after the `:` or `-` that introduces it.
-            if format == Format::Yaml {
+            if format == Format::Yaml && !after_block_header(doc, node.span.range.start) {
+                // An omitted value is zero-width right after its `:` or `-`, or at the end
+                // of that line when a comment follows.
                 let at = node.span.range.start;
                 let want = match parent {
                     Parent::MapValue => b':',
                     Parent::SeqItem => b'-',
                     Parent::Root => unreachable!(),
                 };
+                let rest = &doc.as_bytes()[at..];
+                let eol = rest.first().is_none_or(|b| matches!(b, b'\n' | b'\r'));
                 assert!(
-                    at > 0 && doc.as_bytes()[at - 1] == want,
-                    "empty value at {at} is not right after `{}` in {doc:?}",
-                    want as char
+                    (at > 0 && doc.as_bytes()[at - 1] == want) || eol,
+                    "empty value at {at} is misplaced in {doc:?}"
                 );
             }
             continue;
@@ -147,9 +195,14 @@ pub(crate) fn check(doc: &str) -> String {
         if toml_table_form {
             continue;
         }
+        if format == Format::Yaml && after_block_header(doc, node.span.range.start) {
+            continue; // block scalar content is not a fragment on its own
+        }
         if format == Format::Yaml {
-            let last = slice.rsplit(['\n', '\r']).next().unwrap();
-            assert!(!has_comment(last), "comment text in {slice:?} of {doc:?}");
+            assert!(
+                !has_trailing_comment(slice),
+                "comment text in {slice:?} of {doc:?}"
+            );
         }
         let fragment = if format == Format::Yaml {
             // Block collections continue at the column where they began.

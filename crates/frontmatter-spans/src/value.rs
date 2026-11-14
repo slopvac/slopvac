@@ -29,6 +29,9 @@ pub struct Node {
     /// The value.
     pub value: Value,
     /// The source range of the value as written. Quoted scalars include the quotes.
+    ///
+    /// YAML mappings and sequences are the exception: their span is zero-width at the start
+    /// of their first entry, so use the children's spans for extents.
     pub span: Span,
 }
 
