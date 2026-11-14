@@ -2143,6 +2143,12 @@ dependencies = [
 [[package]]
 name = "slopvac-text"
 version = "0.0.0"
+dependencies = [
+ "pcre2",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "smallvec"
