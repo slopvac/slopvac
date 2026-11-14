@@ -105,9 +105,14 @@ impl TermSet {
                 let end = i + s.text.len();
                 end <= bytes.len()
                     && text.is_char_boundary(end)
-                    && bytes[i..end].eq_ignore_ascii_case(s.text.as_bytes())
+                    && if self.terms[s.term].case_sensitive {
+                        &bytes[i..end] == s.text.as_bytes()
+                    } else {
+                        bytes[i..end].eq_ignore_ascii_case(s.text.as_bytes())
+                    }
                     && left_ok(text, i)
                     && right_ok(text, end)
+                    && token_ok(text, i, end)
             });
             let Some(s) = hit else {
                 i += 1;
@@ -153,15 +158,64 @@ fn right_ok(text: &str, at: usize) -> bool {
     }
 }
 
-/// Skip a plural or possessive ending so it does not count as part of the next word.
+/// Skip a plural or possessive ending, ignoring ASCII case, so it does not
+/// count as part of the next word. The ending stays outside the reported span.
 fn strip_suffix_forms(rest: &str) -> &str {
     for suffix in ["'s", "\u{2019}s", "s'", "s\u{2019}", "es", "s"] {
-        if let Some(after) = rest.strip_prefix(suffix) {
-            let next = after.chars().next();
-            if next.is_none_or(|c| !is_word(c)) {
+        if rest.len() >= suffix.len()
+            && rest.is_char_boundary(suffix.len())
+            && rest[..suffix.len()].eq_ignore_ascii_case(suffix)
+        {
+            let after = &rest[suffix.len()..];
+            if after.chars().next().is_none_or(|c| !is_word(c)) {
                 return after;
             }
         }
     }
     rest
+}
+
+/// Reject a match inside a path, URL, domain, e-mail or handle. The whole
+/// whitespace-delimited token decides, so `docs/my-github-repo` and
+/// `@my-github` are skipped while `github-hosted` still matches.
+fn token_ok(text: &str, start: usize, end: usize) -> bool {
+    let ts = text[..start].rfind(char::is_whitespace).map_or(0, |p| {
+        p + text[p..].chars().next().map_or(1, char::len_utf8)
+    });
+    let te = text[end..]
+        .find(char::is_whitespace)
+        .map_or(text.len(), |p| end + p);
+    let lead = "([{\"'<`";
+    let trail = ")]}\"'>,;:!?.`";
+    let mut ts = ts;
+    while ts < start && text[ts..].starts_with(|c| lead.contains(c)) {
+        ts += text[ts..].chars().next().map_or(1, char::len_utf8);
+    }
+    let mut te = te;
+    while te > end && text[..te].ends_with(|c| trail.contains(c)) {
+        te -= text[..te].chars().next_back().map_or(1, char::len_utf8);
+    }
+    let token = &text[ts..te];
+    let (s, e) = (start - ts, end - ts);
+    let outside = |i: usize| i < s || i >= e;
+    let chars: Vec<(usize, char)> = token.char_indices().collect();
+    for (k, &(i, c)) in chars.iter().enumerate() {
+        if !outside(i) {
+            continue;
+        }
+        if "/@\\".contains(c) {
+            return false;
+        }
+        if c == '.' {
+            let prev_alnum = k
+                .checked_sub(1)
+                .is_some_and(|p| chars[p].1.is_alphanumeric());
+            let next_alnum = chars.get(k + 1).is_some_and(|x| x.1.is_alphanumeric());
+            // `.github`, `github.com` and `docs.github` are paths or domains.
+            if prev_alnum || next_alnum {
+                return false;
+            }
+        }
+    }
+    true
 }

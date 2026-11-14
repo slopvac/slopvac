@@ -8,6 +8,7 @@ fn term(t: &str) -> TermEntry {
         variants: vec![],
         kind: None,
         ignore_case: false,
+        case_sensitive: false,
     }
 }
 
@@ -239,4 +240,125 @@ fn blocklist_rejects_bad_files() {
 fn blocklist_rejects_unknown_formats() {
     let e = Blocklist::parse("b.txt", "txt", "").unwrap_err();
     assert!(matches!(e, TermsError::Parse { .. }));
+}
+
+fn go_set() -> TermSet {
+    let mut go = term("Go");
+    go.case_sensitive = true;
+    TermSet::new([go, term("GitHub")])
+}
+
+#[test]
+fn case_sensitive_terms_never_flag_ordinary_words() {
+    let text = "We go to the store, then go home. GO team. Go is a language.";
+    assert_eq!(go_set().check_casing(text, &[]), []);
+}
+
+#[test]
+fn wrong_case_plurals_report_the_term_without_the_suffix() {
+    let cases = [
+        ("Githubs", 0..6, "Github"),
+        ("GITHUBS", 0..6, "GITHUB"),
+        ("github's", 0..6, "github"),
+        ("GITHUB'S", 0..6, "GITHUB"),
+    ];
+    for (text, span, found) in cases {
+        let f = set().check_casing(text, &[]);
+        assert_eq!(f.len(), 1, "{text}");
+        assert_eq!(f[0].span, span, "{text}");
+        assert_eq!(f[0].found, found, "{text}");
+    }
+}
+
+#[test]
+fn whole_token_decides_path_and_handle_exclusion() {
+    for text in [
+        "docs/my-github-repo",
+        "@my-github",
+        "https://example.com/github-actions",
+        "see github.io for more",
+        "org/github",
+        "me@github.com",
+    ] {
+        assert_eq!(found(text), [], "{text}");
+    }
+}
+
+#[test]
+fn hyphenated_prose_still_matches() {
+    let f = set().check_casing("a github-hosted repo", &[]);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].span, 2..8);
+}
+
+#[test]
+fn quoted_and_bracketed_terms_still_match() {
+    assert_eq!(found("(github), \"github\" and github!").len(), 3);
+}
+
+#[test]
+fn ignore_case_and_case_sensitive_together_is_an_error() {
+    let text =
+        "schema_version = 3\n[[terms]]\nterm = \"Go\"\nignore_case = true\ncase_sensitive = true\n";
+    let e = TermsFile::parse("t.toml", text).unwrap_err().to_string();
+    assert!(e.contains("both ignore_case and case_sensitive"), "{e}");
+}
+
+fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("slopvac-terms-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn terms_file_loads_from_disk_and_reports_read_failures() {
+    let dir = scratch("terms");
+    let ok = dir.join("terms.toml");
+    std::fs::write(&ok, FILE).unwrap();
+    assert_eq!(TermsFile::load(&ok).unwrap().terms.len(), 2);
+
+    let missing = TermsFile::load(&dir.join("missing.toml")).unwrap_err();
+    assert!(matches!(missing, TermsError::Io { .. }));
+    let directory = TermsFile::load(&dir).unwrap_err();
+    assert!(matches!(directory, TermsError::Io { .. }));
+    let bad = dir.join("bad.toml");
+    std::fs::write(&bad, [0xff, 0xfe, 0x00]).unwrap();
+    let invalid = TermsFile::load(&bad).unwrap_err();
+    assert!(matches!(invalid, TermsError::Io { .. }));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn blocklist_load_dispatches_on_suffix() {
+    let dir = scratch("blocklist");
+    let toml = dir.join("b.TOML");
+    let json = dir.join("b.json");
+    let yaml = dir.join("b.yaml");
+    let none = dir.join("blocklist");
+    std::fs::write(&toml, BLOCK).unwrap();
+    std::fs::write(
+        &json,
+        r#"{"entries":[{"word":"leverage","pos":"verb","reason":"r"}]}"#,
+    )
+    .unwrap();
+    std::fs::write(&yaml, "entries: []\n").unwrap();
+    std::fs::write(&none, BLOCK).unwrap();
+
+    assert_eq!(Blocklist::load(&toml).unwrap().len(), 2);
+    assert_eq!(Blocklist::load(&json).unwrap().len(), 1);
+    assert!(matches!(
+        Blocklist::load(&yaml).unwrap_err(),
+        TermsError::Parse { .. }
+    ));
+    assert!(matches!(
+        Blocklist::load(&none).unwrap_err(),
+        TermsError::Parse { .. }
+    ));
+    let gone = Blocklist::load(&dir.join("gone.toml")).unwrap_err();
+    assert!(matches!(gone, TermsError::Io { .. }));
+    let bad = dir.join("bad.toml");
+    std::fs::write(&bad, [0xff, 0xfe]).unwrap();
+    let invalid = Blocklist::load(&bad).unwrap_err();
+    assert!(matches!(invalid, TermsError::Io { .. }));
+    std::fs::remove_dir_all(&dir).unwrap();
 }

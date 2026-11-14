@@ -24,6 +24,10 @@ pub struct TermEntry {
     /// Accept any casing; the term is then an allow-list entry only.
     #[serde(default)]
     pub ignore_case: bool,
+    /// Match only the exact spelling. Other casings are different words, so
+    /// ordinary words such as `Go` never produce a finding.
+    #[serde(default)]
+    pub case_sensitive: bool,
 }
 
 /// A parsed terms file.
@@ -63,6 +67,12 @@ impl TermsFile {
         }
         let mut seen = std::collections::BTreeSet::new();
         for (i, t) in file.terms.iter().enumerate() {
+            if t.ignore_case && t.case_sensitive {
+                return Err(TermsError::Entry {
+                    path: path.to_owned(),
+                    message: format!("term `{}` sets both ignore_case and case_sensitive", t.term),
+                });
+            }
             if t.term.trim().is_empty() {
                 return Err(TermsError::Entry {
                     path: path.to_owned(),
