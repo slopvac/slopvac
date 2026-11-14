@@ -253,7 +253,7 @@ impl GenreRegistry {
         doc: &dyn DocumentView,
         opts: &ResolveOptions<'_>,
     ) -> Result<GenreResult, Error> {
-        let candidates = self.score(doc);
+        let candidates = self.score(doc)?;
         let mut scores: Vec<(String, f32)> = candidates
             .iter()
             .map(|(g, s, _)| (g.spec.id.clone(), *s))
@@ -322,46 +322,54 @@ impl GenreRegistry {
         })
     }
 
-    fn score<'a>(&'a self, doc: &dyn DocumentView) -> Vec<(&'a Genre, f32, Vec<Reason>)> {
+    fn score<'a>(&'a self, doc: &dyn DocumentView) -> Result<Vec<Candidate<'a>>, Error> {
         let blocks = doc.blocks();
         let headings: Vec<&str> = blocks
             .iter()
             .filter(|b| b.kind == BlockKind::Heading)
             .map(|b| b.text)
             .collect();
-        self.genres
-            .iter()
-            .filter(|g| !g.spec.is_abstract)
-            .map(|g| {
-                let mut total = 0.0;
-                let mut reasons = Vec::new();
-                for s in &g.signals {
-                    let hit = match &s.kind {
-                        SignalKind::Heading(p) => headings
-                            .iter()
-                            .find(|h| p.is_match(h))
-                            .map(|h| ("heading", format!("heading `{h}`"))),
-                        SignalKind::Path(p) => p
-                            .is_match(doc.path())
-                            .then(|| ("path", format!("path `{}`", doc.path()))),
-                        SignalKind::Frontmatter(k, p) => doc
-                            .front_matter(k)
-                            .filter(|v| p.as_ref().is_none_or(|p| p.is_match(v)))
-                            .map(|v| ("front-matter", format!("`{k}: {v}`"))),
-                    };
-                    if let Some((signal, detail)) = hit {
-                        total += s.weight;
-                        reasons.push(Reason {
-                            signal: signal.to_string(),
-                            detail: format!("{detail} (+{})", s.weight),
-                        });
+        let mut out = Vec::new();
+        for g in self.genres.iter().filter(|g| !g.spec.is_abstract) {
+            let mut total = 0.0;
+            let mut reasons = Vec::new();
+            for s in &g.signals {
+                let hit = match &s.kind {
+                    SignalKind::Heading(p) => {
+                        let mut found = None;
+                        for h in &headings {
+                            if p.is_match(h)? {
+                                found = Some(("heading", format!("heading `{h}`")));
+                                break;
+                            }
+                        }
+                        found
                     }
+                    SignalKind::Path(p) => p
+                        .is_match(doc.path())?
+                        .then(|| ("path", format!("path `{}`", doc.path()))),
+                    SignalKind::Frontmatter(k, p) => match doc.front_matter(k) {
+                        Some(v) if p.as_ref().map_or(Ok(true), |p| p.is_match(v))? => {
+                            Some(("front-matter", format!("`{k}: {v}`")))
+                        }
+                        _ => None,
+                    },
+                };
+                if let Some((signal, detail)) = hit {
+                    total += s.weight;
+                    reasons.push(Reason {
+                        signal: signal.to_string(),
+                        detail: format!("{detail} (+{})", s.weight),
+                    });
                 }
-                (g, total, reasons)
-            })
-            .collect()
+            }
+            out.push((g, total, reasons));
+        }
+        Ok(out)
     }
 }
+
+type Candidate<'a> = (&'a Genre, f32, Vec<Reason>);
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {
     let mut signals = Vec::new();
