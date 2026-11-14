@@ -49,7 +49,6 @@
       "extra-files": [
         "packages/slopvac-lint/pyproject.toml",
         "packages/slopvac-lint/src/slopvac/__init__.py",
-        ".pre-commit-hooks.yaml",
         "README.md",
         {
           "type": "toml",
@@ -69,12 +68,22 @@
         {
           "type": "toml",
           "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='slopvac-diagrams')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
           "jsonpath": "$.package[?(@.name.value=='slopvac-engine')].version"
         },
         {
           "type": "toml",
           "path": "Cargo.lock",
           "jsonpath": "$.package[?(@.name.value=='slopvac-lsp')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='slopvac-migrate')].version"
         },
         {
           "type": "toml",
@@ -100,6 +109,11 @@
           "type": "toml",
           "path": "Cargo.lock",
           "jsonpath": "$.package[?(@.name.value=='slopvac-rules')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='slopvac-styles')].version"
         },
         {
           "type": "toml",
