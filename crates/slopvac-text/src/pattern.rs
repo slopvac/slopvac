@@ -11,6 +11,7 @@ pub(crate) fn re_i(pattern: &str) -> Regex {
     build(pattern, true)
 }
 
+// STUB(slopvac-8l4.3.25): pcre2 crate defaults; apply the build and limits policy from slopvac-8l4.3.20.
 fn build(pattern: &str, caseless: bool) -> Regex {
     RegexBuilder::new()
         .utf(true)
