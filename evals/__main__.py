@@ -319,6 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = msub.choices["run"]
     run_parser.add_argument("--engine", default="python")
     run_parser.add_argument("--confirm-calls", type=int, required=True)
+    run_parser.add_argument("--workers", type=int, default=4)
     run_parser.add_argument("--out")
     sm = msub.add_parser("summarize", help="summarise a results file")
     sm.add_argument("results")

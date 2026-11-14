@@ -38,6 +38,7 @@ import subprocess
 import tempfile
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -466,6 +467,30 @@ def command_ask(command: str) -> Callable[[str], str]:
     return ask
 
 
+def _row(
+    task: Mapping[str, Any], model: Mapping[str, Any], repeat: int, answer: str
+) -> dict[str, Any]:
+    return {
+        "task": task["id"],
+        "type": task["type"],
+        "role": task["role"],
+        "variant": task.get("variant"),
+        "model": model["name"],
+        "family": model["family"],
+        "tier": model["tier"],
+        "repeat": repeat,
+        "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
+    }
+
+
+def _safe(ask: Callable[[str], str], prompt: str) -> tuple[str, str | None]:
+    """Ask once; a failed call becomes an empty answer plus the error text."""
+    try:
+        return ask(prompt), None
+    except ModelEvalError as exc:
+        return "", str(exc)[:300]
+
+
 def execute(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
@@ -476,57 +501,60 @@ def execute(
         command_ask(m["command"])
     ),
     date: str | None = None,
+    workers: int = 1,
 ) -> dict[str, Any]:
-    """Run every task against every model; reviewers see other models' rewrites."""
+    """Run every task against every model; reviewers see other models' rewrites.
+
+    Calls run on `workers` threads. A call that fails is recorded as an empty
+    answer with its error, so it counts as a failure and the run goes on.
+    """
     expected = plan(tasks, models, repeats)
     asks = {m["name"]: ask_for(m) for m in models}
+    first = [
+        (model, task, repeat)
+        for model in models
+        for task in tasks
+        for repeat in range(repeats)
+    ]
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        answers = list(
+            pool.map(lambda job: _safe(asks[job[0]["name"]], job[1]["prompt"]), first)
+        )
     runs: list[dict[str, Any]] = []
     rewrite_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any], int, str]] = []
-    for model in models:
-        for task in tasks:
-            for repeat in range(repeats):
-                answer = asks[model["name"]](task["prompt"])
-                row = {
-                    "task": task["id"],
-                    "type": task["type"],
-                    "role": task["role"],
-                    "variant": task.get("variant"),
-                    "model": model["name"],
-                    "family": model["family"],
-                    "tier": model["tier"],
-                    "repeat": repeat,
-                    "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
-                }
-                if task["role"] == "author":
-                    row["score"] = score_author(task, answer, lint)
-                    if task["type"] == "rewrite":
-                        rewrite_outputs.append((task, model, repeat, answer))
-                else:
-                    row["score"] = score_review(task, answer)
-                runs.append(row)
+    for (model, task, repeat), (answer, error) in zip(first, answers, strict=True):
+        row = _row(task, model, repeat, answer)
+        if error:
+            row["error"] = error
+        if task["role"] == "author":
+            row["score"] = score_author(task, answer, lint)
+            if task["type"] == "rewrite":
+                rewrite_outputs.append((task, model, repeat, answer))
+        else:
+            row["score"] = score_review(task, answer)
+        runs.append(row)
+    second = []
     for task, author, repeat, answer in rewrite_outputs:
         review_task = authored_review_task(task, answer)
         for reviewer in models:
-            if reviewer["name"] == author["name"]:
-                continue
-            reply = asks[reviewer["name"]](review_task["prompt"])
-            runs.append(
-                {
-                    "task": review_task["id"],
-                    "type": "rewrite",
-                    "role": "reviewer",
-                    "variant": "authored",
-                    "model": reviewer["name"],
-                    "family": reviewer["family"],
-                    "tier": reviewer["tier"],
-                    "author_model": author["name"],
-                    "author_family": author["family"],
-                    "repeat": repeat,
-                    "output_sha256": hashlib.sha256(reply.encode()).hexdigest(),
-                    "score": score_review(review_task, reply)
-                    | {"lost_facts": len(review_task["lost"])},
-                }
-            )
+            if reviewer["name"] != author["name"]:
+                second.append((review_task, author, reviewer, repeat))
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        replies = list(
+            pool.map(lambda job: _safe(asks[job[2]["name"]], job[0]["prompt"]), second)
+        )
+    for (review_task, author, reviewer, repeat), (reply, error) in zip(
+        second, replies, strict=True
+    ):
+        row = _row(review_task, reviewer, repeat, reply)
+        row["author_model"] = author["name"]
+        row["author_family"] = author["family"]
+        if error:
+            row["error"] = error
+        row["score"] = score_review(review_task, reply) | {
+            "lost_facts": len(review_task["lost"])
+        }
+        runs.append(row)
     return {
         "schema": RESULTS_SCHEMA,
         "date": date or dt.date.today().isoformat(),
@@ -534,6 +562,7 @@ def execute(
         "tasks_sha256": tasks_digest(tasks),
         "repeats": repeats,
         "planned_calls": expected["total_calls"],
+        "failed_calls": sum(1 for r in runs if r.get("error")),
         "models": [
             {"name": m["name"], "family": m["family"], "tier": m["tier"]}
             for m in models
