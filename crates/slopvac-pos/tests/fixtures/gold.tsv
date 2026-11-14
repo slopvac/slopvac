@@ -1,0 +1,143 @@
+Run the deploy script after the build finishes.	deploy	8	N	NN
+The deploy failed with exit code 3.	deploy	4	N	NN
+Each deploy takes about four minutes.	deploy	5	N	NN
+Deploy the chart to the staging cluster.	Deploy	0	V	VB
+We deploy twice a day.	deploy	3	V	VBP
+Teams that deploy on Fridays need an on-call rota.	deploy	11	V	VBP
+Add a deploy key to the repository.	deploy	6	N	NN
+Check the return value before you continue.	return	10	N	NN
+The function's return is always a tuple.	return	15	N	NN
+A non-zero return code means the job failed.	return	11	N	NN
+Return an error when the token has expired.	Return	0	V	VB
+The handler must return within five seconds.	return	17	V	VB
+Calls return immediately if the cache is warm.	return	6	V	VB
+Press Return to accept the default.	Return	6	N	NNP
+Execute the migration in a transaction.	Execute	0	V	VB
+The runner will execute each step in order.	execute	16	V	VB
+Do not execute untrusted scripts.	execute	7	V	VB
+Branch from main before you start.	Branch	0	V	NN
+Create a branch for each fix.	branch	9	N	NN
+The release branch is protected.	branch	12	N	NN
+Delete the feature branch after the merge.	branch	19	N	NN
+Developers branch off the release tag for hotfixes.	branch	11	V	NN
+The code paths branch on the value of the flag.	branch	15	V	NN
+Each request carries a trace header.	request	5	N	NN
+Send a request to the token endpoint.	request	7	N	NN
+The request body must be valid JSON.	request	4	N	NN
+Request a new certificate from the issuing service.	Request	0	V	VB
+Clients request a lease before they write.	request	8	V	VBP
+You can request access through the portal.	request	8	V	VB
+Open a pull request against main.	request	12	N	NN
+Edit the file in place.	file	9	N	NN
+The config file lives in the home directory.	file	11	N	NN
+Every file system has a block size.	file	6	N	NN
+File a bug if the installer hangs.	File	0	V	VB
+Users file tickets through the help desk.	file	6	V	NN
+Please file an issue with the full log.	file	7	V	VB
+Rotate the key every ninety days.	key	11	N	JJ
+The key must be at least 32 bytes.	key	4	N	NN
+Each key maps to one value.	key	5	N	JJ
+A key requirement is idempotency.	key	2	J	JJ
+Two key benefits stand out.	key	4	J	JJ
+Key the cache by tenant and region.	Key	0	V	NNP
+Services key the cache by user ID.	key	9	V	VBZ
+Store the API key in a secret.	key	14	N	NN
+The key rotation job runs nightly.	key	4	N	JJ
+The setup is simple on Linux.	simple	13	J	JJ
+A simple retry loop is enough here.	simple	2	J	JJ
+Keep the interface simple.	simple	19	J	JJ
+The tool is easy to install.	easy	12	J	JJ
+An easy fix is to raise the timeout.	easy	3	J	JJ
+Easy targets for automation are the nightly jobs.	Easy	0	J	JJ
+The pods restart quickly after a crash.	quickly	17	R	RB
+Quickly check the logs for errors.	Quickly	0	R	RB
+Rollbacks finish quickly because the images are cached.	quickly	17	R	RB
+Configure the proxy correctly before the first run.	correctly	20	R	RB
+The parser handles nested quotes correctly.	correctly	33	R	RB
+If the hash is computed correctly, the check passes.	correctly	24	R	RB
+Test the endpoint with an expired token.	Test	0	V	VB
+Run the test suite before you push.	test	8	N	NN
+Each test creates its own database.	test	5	N	NN
+Unit tests cover the parser.	tests	5	N	VBZ
+The job tests every commit.	tests	8	V	NNS
+Run the installer as root.	Run	0	V	VB
+The last run took twelve minutes.	run	9	N	NN
+Each pipeline run writes a log.	run	14	N	NN
+Build the image with the release tag.	Build	0	V	VB
+The build failed on the linker step.	build	4	N	NN
+A clean build takes ten minutes.	build	8	N	NN
+Update the lockfile after you add a dependency.	Update	0	V	VB
+The update adds two new flags.	update	4	N	NN
+Security updates install automatically.	updates	9	N	VBZ
+Close the connection when the request ends.	Close	0	V	VB
+The value is close to the limit.	close	13	J	JJ
+The two runs are close in duration.	close	17	J	JJ
+Set the timeout to thirty seconds.	Set	0	V	VB
+The set of allowed hosts is empty.	set	4	N	NN
+The flag is set by the installer.	set	12	V	VBN
+Release the lock after the write.	Release	0	V	VB
+The release ships next week.	release	4	N	NN
+Each release gets a signed tag.	release	5	N	NN
+Lock the table before the migration.	Lock	0	V	VB
+The lock expires after five minutes.	lock	4	N	NN
+Log every failed login.	Log	0	V	VB
+The log shows a timeout.	log	4	N	NN
+Audit logs are kept for a year.	logs	6	N	NNS
+Cache the response for one minute.	Cache	0	V	VB
+The cache is warm after the first request.	cache	4	N	NN
+Check the status of the job.	Check	0	V	VB
+The health check runs every ten seconds.	check	11	N	VB
+Open the settings page.	Open	0	V	VB
+The port is open to the internet.	open	12	J	JJ
+Leave the issue open until the fix ships.	open	16	J	JJ
+Clean the build directory.	Clean	0	V	VB
+Start from a clean checkout.	clean	13	J	JJ
+The cache makes the second run fast.	fast	31	J	NN
+The service responds fast under load.	fast	21	R	JJ
+The tier is free for open source projects.	free	12	J	JJ
+Free the buffer after use.	Free	0	V	VB
+The parser works well on large files.	well	17	R	RB
+Only admins can delete a project.	Only	0	R	RB
+The script only reads the config.	only	11	R	RB
+Just run the command again.	Just	0	R	RB
+Pick the right region for your users.	right	9	J	JJ
+The default is eight workers.	default	4	N	NN
+Use the default port.	default	8	J	NN
+The default value is false.	default	4	J	NN
+The feature is live in all regions.	live	15	J	JJ
+Services live in their own namespaces.	live	9	V	VBP
+Present the token in the header.	Present	0	V	VB
+The header must be present on every call.	present	19	J	VBN
+Keep the secrets in a separate file.	separate	22	J	JJ
+Separate the config from the code.	Separate	0	V	VB
+The service is ready when the probe passes.	ready	15	J	JJ
+Use a direct connection to the database.	direct	6	J	JJ
+Direct traffic to the new pool.	Direct	0	V	JJ
+Upgrade the cluster one node at a time.	Upgrade	0	V	IN
+The upgrade takes an hour.	upgrade	4	N	NN
+Install the package with pip.	Install	0	V	VB
+Merge the branch after review.	Merge	0	V	VB
+The merge created a conflict.	merge	4	N	NN
+Commit the change with a clear message.	Commit	0	V	VB
+Each commit triggers a build.	commit	5	N	NN
+Push the tag to the remote.	Push	0	V	VB
+A push to main runs the pipeline.	push	2	N	NN
+Patch the deployment with the new image.	Patch	0	V	VB
+The patch fixes a race condition.	patch	4	N	NN
+Scale the workers to five replicas.	Scale	0	V	VB
+The scale of the problem grew.	scale	4	N	NN
+Limit the number of retries.	Limit	0	V	VB
+The rate limit is one hundred requests per minute.	limit	9	N	NN
+Report the error to the caller.	Report	0	V	VB
+The report lists every finding.	report	4	N	NN
+Store the token in the keychain.	Store	0	V	VB
+The object store holds the artifacts.	store	11	N	NN
+The tool can support multiple accounts.	support	13	V	VB
+Contact support if the install fails.	support	8	N	NN
+The jobs need network access.	need	9	V	VBP
+There is no need to restart.	need	12	N	NN
+Process the queue in order.	Process	0	V	NN
+The process exits with code 0.	process	4	N	NN
+The output is a JSON object.	output	4	N	NN
+The tool can output YAML as well.	output	13	V	VB
+Each input must be a valid path.	input	5	N	NN
