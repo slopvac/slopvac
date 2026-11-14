@@ -7,7 +7,8 @@ use pcre2::bytes::Regex;
 
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
-use crate::pattern::{find_all, matches_start, re};
+use crate::pattern::{TextError, find_all, matches_start, re};
+use crate::pyrules::{is_digit, is_space, trim, trim_start};
 use crate::tokens::{
     CODE_SPAN, IDENTIFIER, PAREN_SPAN, QUOTED_SPAN, URL_OR_PATH, WORDLIKE, count_words,
 };
@@ -31,13 +32,12 @@ static LIST_MARKER: LazyLock<Regex> = LazyLock::new(|| re(r"^(?:[-*+]|\d+[.)]|[A
 static COLON_END: LazyLock<Regex> = LazyLock::new(|| re(r":\s*\z"));
 static DOTTED_INITIALISM: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z"));
-const CLOSERS: [char; 5] = ['"', '\'', '”', '’', ')'];
 
 fn is_closer(c: char) -> bool {
-    CLOSERS.contains(&c) || c == ']'
+    matches!(c, '"' | '\'' | '”' | '’' | ')' | ']')
 }
 
-fn protected_ranges(text: &str) -> Vec<(usize, usize)> {
+fn protected_ranges(text: &str) -> Result<Vec<(usize, usize)>, TextError> {
     let mut ranges = Vec::new();
     for pattern in [
         &*CODE_SPAN,
@@ -46,10 +46,10 @@ fn protected_ranges(text: &str) -> Vec<(usize, usize)> {
         &*URL_OR_PATH,
         &*IDENTIFIER,
     ] {
-        ranges.extend(find_all(pattern, text));
+        ranges.extend(find_all(pattern, text)?);
     }
     ranges.sort_unstable();
-    ranges
+    Ok(ranges)
 }
 
 fn is_initialism_opener(text: &str) -> bool {
@@ -72,27 +72,27 @@ fn is_initialism_opener(text: &str) -> bool {
     boundary && INITIALISM_SENTENCE_OPENERS.contains(&&text[..end])
 }
 
-fn terminal_cut(text: &str, index: usize, protected: &[(usize, usize)]) -> Option<usize> {
+fn terminal_cut(
+    text: &str,
+    index: usize,
+    protected: &[(usize, usize)],
+) -> Result<Option<usize>, TextError> {
     let mut protected_end = None;
     if let Some(&(_, end)) = protected.iter().find(|&&(s, e)| s <= index && index < e) {
         if !text[index + 1..end].trim_matches(is_closer).is_empty() {
-            return None;
+            return Ok(None);
         }
         protected_end = Some(end);
     }
-    if text.as_bytes()[index] == b'.'
-        && DOTTED_INITIALISM
-            .is_match(&text.as_bytes()[..=index])
-            .unwrap_or(false)
-    {
+    if text.as_bytes()[index] == b'.' && DOTTED_INITIALISM.is_match(&text.as_bytes()[..=index])? {
         let rest = &text[index + 1..];
-        let remainder = rest.trim_start();
+        let remainder = trim_start(rest);
         let gap = &rest[..rest.len() - remainder.len()];
         if !remainder.is_empty()
             && gap.chars().count() < 2
             && (gap != " " || !is_initialism_opener(remainder))
         {
-            return None;
+            return Ok(None);
         }
     }
     let mut end = protected_end.unwrap_or(index + 1);
@@ -102,19 +102,14 @@ fn terminal_cut(text: &str, index: usize, protected: &[(usize, usize)]) -> Optio
         }
         end += c.len_utf8();
     }
-    if text[end..]
-        .chars()
-        .next()
-        .is_some_and(|c| !c.is_whitespace())
-    {
-        return None;
+    if text[end..].chars().next().is_some_and(|c| !is_space(c)) {
+        return Ok(None);
     }
-    let next = text[end..].trim_start().chars().next();
-    match next {
+    Ok(match trim_start(&text[end..]).chars().next() {
         None => Some(end),
-        Some(c) if c.is_uppercase() || c.is_numeric() => Some(end),
+        Some(c) if c.is_uppercase() || is_digit(c) => Some(end),
         Some(_) => None,
-    }
+    })
 }
 
 /// Python's `str.splitlines(keepends=True)` line breaks.
@@ -149,48 +144,57 @@ fn split_lines(text: &str) -> Vec<(usize, &str)> {
 }
 
 /// Split a lead-in and its list items, keeping each item's source offset.
-fn split_vertical_list(text: &str) -> Vec<(&str, usize)> {
+fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
     let lines = split_lines(text);
     if lines.len() < 2 {
-        return vec![(text, 0)];
+        return Ok(vec![(text, 0)]);
     }
     for (index, (_, line)) in lines.iter().enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
-        if !COLON_END.is_match(body.as_bytes()).unwrap_or(false) {
+        if !COLON_END.is_match(body.as_bytes())? {
             continue;
         }
-        let tail: Vec<(usize, &str)> = lines[index + 1..]
-            .iter()
-            .enumerate()
-            .map(|(k, (_, l))| (index + 1 + k, l.trim()))
-            .filter(|(_, l)| !l.is_empty())
-            .collect();
-        if tail.is_empty() || !tail.iter().all(|(_, l)| matches_start(&LIST_MARKER, l)) {
+        let mut tail: Vec<(usize, &str)> = Vec::new();
+        for (k, (_, l)) in lines[index + 1..].iter().enumerate() {
+            let part = trim(l);
+            if !part.is_empty() {
+                tail.push((index + 1 + k, part));
+            }
+        }
+        let mut all_items = !tail.is_empty();
+        for (_, part) in &tail {
+            if !matches_start(&LIST_MARKER, part)? {
+                all_items = false;
+                break;
+            }
+        }
+        if !all_items {
             continue;
         }
         let head_end = lines[index].0 + lines[index].1.len();
         let head_all = &text[..head_end];
-        let lead = head_all.len() - head_all.trim_start().len();
-        let mut result = vec![(head_all.trim(), lead)];
+        // Divergence from the Python reference, which reports offset 0 here even when
+        // the text starts with whitespace. See tests/fixtures/divergences.md.
+        let lead = head_all.len() - trim_start(head_all).len();
+        let mut result = vec![(trim(head_all), lead)];
         for (line_index, part) in tail {
             let (offset, raw) = lines[line_index];
-            let leading = raw.len() - raw.trim_start().len();
+            let leading = raw.len() - trim_start(raw).len();
             result.push((part, offset + leading));
         }
-        return result;
+        return Ok(result);
     }
-    vec![(text, 0)]
+    Ok(vec![(text, 0)])
 }
 
 /// Split prose into sentences, applying vertical-list structure before punctuation.
-#[must_use]
-pub fn split_sentences(text: &str) -> Vec<Sentence> {
-    if text.trim().is_empty() {
-        return Vec::new();
+pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
+    if trim(text).is_empty() {
+        return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for (chunk, chunk_offset) in split_vertical_list(text) {
-        let protected = protected_ranges(chunk);
+    for (chunk, chunk_offset) in split_vertical_list(text)? {
+        let protected = protected_ranges(chunk)?;
         let mut cuts = Vec::new();
         let mut index = 0;
         while index < chunk.len() {
@@ -199,7 +203,7 @@ pub fn split_sentences(text: &str) -> Vec<Sentence> {
                 .next()
                 .expect("index on a char boundary");
             if matches!(c, '.' | '!' | '?')
-                && let Some(end) = terminal_cut(chunk, index, &protected)
+                && let Some(end) = terminal_cut(chunk, index, &protected)?
             {
                 cuts.push(end);
                 index = end;
@@ -211,21 +215,21 @@ pub fn split_sentences(text: &str) -> Vec<Sentence> {
         cuts.push(chunk.len());
         for end in cuts {
             let raw = &chunk[start..end];
-            let part = raw.trim();
-            let leading = raw.len() - raw.trim_start().len();
+            let part = trim(raw);
+            let leading = raw.len() - trim_start(raw).len();
             let absolute = chunk_offset + start + leading;
             start = end;
-            if part.is_empty() || !WORDLIKE.is_match(part.as_bytes()).unwrap_or(false) {
+            if part.is_empty() || !WORDLIKE.is_match(part.as_bytes())? {
                 continue;
             }
             out.push(Sentence {
                 text: part.to_owned(),
                 start: absolute,
                 end: absolute + part.len(),
-                word_count: count_words(part),
-                text_type: classify_text_type(part),
+                word_count: count_words(part)?,
+                text_type: classify_text_type(part)?,
             });
         }
     }
-    out
+    Ok(out)
 }

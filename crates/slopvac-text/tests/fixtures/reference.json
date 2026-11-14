@@ -1068,6 +1068,188 @@
   ]
  },
  {
+  "text": "aः10 degrees Celsius is hot.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "aः10 degrees Celsius is hot.",
+    "start": 0,
+    "end": 30,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Uſe scripts live.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Uſe scripts live.",
+    "start": 0,
+    "end": 18,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Deploy scripts live here.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Deploy scripts live here.",
+    "start": 0,
+    "end": 25,
+    "word_count": 4,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Add ¼ cup of water. Then stir.",
+  "words": 6,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Add ¼ cup of water.",
+    "start": 0,
+    "end": 20,
+    "word_count": 4,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then stir.",
+    "start": 21,
+    "end": 31,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Add ² more. Then stir.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Add ² more.",
+    "start": 0,
+    "end": 12,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then stir.",
+    "start": 13,
+    "end": 23,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "One.\r\nTwo.\r\nThree",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "One.",
+    "start": 0,
+    "end": 4,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Two.",
+    "start": 6,
+    "end": 10,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Three",
+    "start": 12,
+    "end": 17,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Do the following:\r\n- Open the file.\r\n- Close the file.",
+  "words": 9,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Do the following:",
+    "start": 0,
+    "end": 17,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- Open the file.",
+    "start": 19,
+    "end": 35,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- Close the file.",
+    "start": 37,
+    "end": 54,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "First line wraps\r\nonto the second line. Then ends.",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "First line wraps\r\nonto the second line.",
+    "start": 0,
+    "end": 39,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then ends.",
+    "start": 40,
+    "end": 50,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "A\u001cB. Next sentence.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "A\u001cB.",
+    "start": 0,
+    "end": 4,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next sentence.",
+    "start": 5,
+    "end": 19,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
   "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
   "words": 7,
   "text_type": "descriptive",
@@ -2148,6 +2330,489 @@
     "start": 184,
     "end": 313,
     "word_count": 19,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Slopvac uses deterministic text analysis for its native metric rules. The\n[CLI reference](../README.md#scoring) describes how findings become scores and\ngates.",
+  "words": 21,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Slopvac uses deterministic text analysis for its native metric rules.",
+    "start": 0,
+    "end": 69,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The\n[CLI reference](../README.md#scoring) describes how findings become scores and\ngates.",
+    "start": 70,
+    "end": 159,
+    "word_count": 11,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Sentence-length rules use a software-documentation-aware word counter rather\nthan a whitespace split. The counter applies these operations in order:",
+  "words": 19,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Sentence-length rules use a software-documentation-aware word counter rather\nthan a whitespace split.",
+    "start": 0,
+    "end": 101,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The counter applies these operations in order:",
+    "start": 102,
+    "end": 148,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "1. Remove a leading step, list, or section number such as `1.`, `(a)`,\n   `4.2.1`, or `Step 3:`.\n2. Count each inline-code span, URL or path, command-line flag, environment\n   variable, dotted or namespaced identifier, and mixed alphanumeric identifier\n   as one word.\n3. Count quoted spans and forms such as `No. 1` as one word.\n4. Count a detected multiword proper name as one word.\n5. Count a parenthesized span as one word in its containing sentence.\n6. Count a numeric value with its unit as one word.\n7. Count a dotted abbreviation such as `U.S.` as one word.\n8. Keep apostrophes and hyphens inside a word when word characters occur on\n   both sides.",
+  "words": 109,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "1.",
+    "start": 0,
+    "end": 2,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Remove a leading step, list, or section number such as `1.`, `(a)`,\n   `4.2.1`, or `Step 3:`.",
+    "start": 3,
+    "end": 96,
+    "word_count": 15,
+    "text_type": "procedural"
+   },
+   {
+    "text": "2.",
+    "start": 97,
+    "end": 99,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count each inline-code span, URL or path, command-line flag, environment\n   variable, dotted or namespaced identifier, and mixed alphanumeric identifier\n   as one word.",
+    "start": 100,
+    "end": 268,
+    "word_count": 22,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "3.",
+    "start": 269,
+    "end": 271,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count quoted spans and forms such as `No. 1` as one word.",
+    "start": 272,
+    "end": 329,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "4.",
+    "start": 330,
+    "end": 332,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count a detected multiword proper name as one word.",
+    "start": 333,
+    "end": 384,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "5.",
+    "start": 385,
+    "end": 387,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count a parenthesized span as one word in its containing sentence.",
+    "start": 388,
+    "end": 454,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "6.",
+    "start": 455,
+    "end": 457,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count a numeric value with its unit as one word.",
+    "start": 458,
+    "end": 506,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "7.",
+    "start": 507,
+    "end": 509,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Count a dotted abbreviation such as `U.S.` as one word.",
+    "start": 510,
+    "end": 565,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "8.",
+    "start": 566,
+    "end": 568,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Keep apostrophes and hyphens inside a word when word characters occur on\n   both sides.",
+    "start": 569,
+    "end": 656,
+    "word_count": 14,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Examples:",
+  "words": 1,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Examples:",
+    "start": 0,
+    "end": 9,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Titles and Markdown emphasis do not receive a separate one-word exemption.\nThe counter applies the same identifier, proper-name, and lexical rules to unquoted titles and other prose.",
+  "words": 27,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Titles and Markdown emphasis do not receive a separate one-word exemption.",
+    "start": 0,
+    "end": 74,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The counter applies the same identifier, proper-name, and lexical rules to unquoted titles and other prose.",
+    "start": 75,
+    "end": 182,
+    "word_count": 16,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The parser builds prose blocks with `markdown-it-py` and then splits their text\ninto sentences. It treats a period, question mark, or exclamation mark as a\nsentence end only when it occurs at a valid boundary. Periods inside protected\nspans, decimal numbers, and recognized abbreviations do not split a sentence.",
+  "words": 49,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The parser builds prose blocks with `markdown-it-py` and then splits their text\ninto sentences.",
+    "start": 0,
+    "end": 95,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It treats a period, question mark, or exclamation mark as a\nsentence end only when it occurs at a valid boundary.",
+    "start": 96,
+    "end": 209,
+    "word_count": 21,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Periods inside protected\nspans, decimal numbers, and recognized abbreviations do not split a sentence.",
+    "start": 210,
+    "end": 312,
+    "word_count": 14,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "A colon that introduces a vertical list terminates the lead-in. Each list item\nthen becomes its own sentence for sentence-level metrics. List items remain\nseparate Markdown blocks, so they do not increase the\n`paragraph_sentences` count of the preceding paragraph.",
+  "words": 39,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "A colon that introduces a vertical list terminates the lead-in.",
+    "start": 0,
+    "end": 63,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each list item\nthen becomes its own sentence for sentence-level metrics.",
+    "start": 64,
+    "end": 136,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "List items remain\nseparate Markdown blocks, so they do not increase the\n`paragraph_sentences` count of the preceding paragraph.",
+    "start": 137,
+    "end": 264,
+    "word_count": 18,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Dotted initialisms use a conservative boundary heuristic. A following\nclosed-class opener such as `The`, `This`, `If`, or `We` can start a new\nsentence. A following proper-name-like continuation remains attached.",
+  "words": 29,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Dotted initialisms use a conservative boundary heuristic.",
+    "start": 0,
+    "end": 57,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A following\nclosed-class opener such as `The`, `This`, `If`, or `We` can start a new\nsentence.",
+    "start": 58,
+    "end": 152,
+    "word_count": 16,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A following proper-name-like continuation remains attached.",
+    "start": 153,
+    "end": 212,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Sentence caps depend on the text type. Slopvac classifies text with lexical\nrules. It does not use a dependency parser or general part-of-speech model.",
+  "words": 24,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Sentence caps depend on the text type.",
+    "start": 0,
+    "end": 38,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac classifies text with lexical\nrules.",
+    "start": 39,
+    "end": 82,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It does not use a dependency parser or general part-of-speech model.",
+    "start": 83,
+    "end": 151,
+    "word_count": 11,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- `WARNING`, `CAUTION`, and `DANGER` produce safety text unless the following\n  text is an instruction. `NOTICE` and `ATTENTION` also produce safety text\n  unless followed by an instruction. `IMPORTANT` is descriptive unless followed\n  by an instruction.\n- `NOTE`, `TIP`, `HINT`, and `INFO` are descriptive.\n- An instruction recognized from the closed imperative-verb vocabulary is\n  procedural.\n- Ambiguous text falls back to descriptive.",
+  "words": 57,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- `WARNING`, `CAUTION`, and `DANGER` produce safety text unless the following\n  text is an instruction. `NOTICE` and `ATTENTION` also produce safety text\n  unless followed by an instruction. `IMPORTANT` is descriptive unless followed\n  by an instruction.\n- `NOTE`, `TIP`, `HINT`, and `INFO` are descriptive.\n- An instruction recognized from the closed imperative-verb vocabulary is\n  procedural.\n- Ambiguous text falls back to descriptive.",
+    "start": 0,
+    "end": 439,
+    "word_count": 57,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The current word caps are 20 words for procedural and safety text and 25 words\nfor descriptive text.",
+  "words": 18,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The current word caps are 20 words for procedural and safety text and 25 words\nfor descriptive text.",
+    "start": 0,
+    "end": 100,
+    "word_count": 18,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The native engine evaluates these metrics when an active rule needs a measurement that Vale cannot handle. Other metric rules may run in Vale.",
+  "words": 24,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The native engine evaluates these metrics when an active rule needs a measurement that Vale cannot handle.",
+    "start": 0,
+    "end": 106,
+    "word_count": 17,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Other metric rules may run in Vale.",
+    "start": 107,
+    "end": 142,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The following metrics use lexical heuristics:",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The following metrics use lexical heuristics:",
+    "start": 0,
+    "end": 45,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- noun stacks\n- passive voice\n- adjectives\n- abstraction\n- hedges\n- concrete referents",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- noun stacks\n- passive voice\n- adjectives\n- abstraction\n- hedges\n- concrete referents",
+    "start": 0,
+    "end": 86,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Their names describe approximate signals. Slopvac does not perform full grammatical parsing.",
+  "words": 12,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Their names describe approximate signals.",
+    "start": 0,
+    "end": 41,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac does not perform full grammatical parsing.",
+    "start": 42,
+    "end": 92,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The parser excludes Markdown code blocks and front matter from the prose projection.\nInline code and other protected spans remain available to the word counter so\nthey can count as opaque units. Findings retain source locations mapped back to\nthe original document.",
+  "words": 42,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The parser excludes Markdown code blocks and front matter from the prose projection.",
+    "start": 0,
+    "end": 84,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Inline code and other protected spans remain available to the word counter so\nthey can count as opaque units.",
+    "start": 85,
+    "end": 194,
+    "word_count": 19,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Findings retain source locations mapped back to\nthe original document.",
+    "start": 195,
+    "end": 265,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The analysis uses deterministic heuristics. Proper-name detection relies on capitalization, imperative detection\nuses a closed verb set, and noun-stack detection uses lexical and suffix\npatterns. The classifier can disagree with a human analysis when a sentence falls outside those patterns.",
+  "words": 40,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The analysis uses deterministic heuristics.",
+    "start": 0,
+    "end": 43,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Proper-name detection relies on capitalization, imperative detection\nuses a closed verb set, and noun-stack detection uses lexical and suffix\npatterns.",
+    "start": 44,
+    "end": 195,
+    "word_count": 20,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The classifier can disagree with a human analysis when a sentence falls outside those patterns.",
+    "start": 196,
+    "end": 291,
+    "word_count": 15,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Use `slopvac explain <rule-id>` to inspect the rule that consumes a metric.\nWhen a deterministic match is valid in its context, use the [triage guide](triage.md).",
+  "words": 24,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Use `slopvac explain <rule-id>` to inspect the rule that consumes a metric.",
+    "start": 0,
+    "end": 75,
+    "word_count": 10,
+    "text_type": "procedural"
+   },
+   {
+    "text": "When a deterministic match is valid in its context, use the [triage guide](triage.md).",
+    "start": 76,
+    "end": 162,
+    "word_count": 14,
     "text_type": "descriptive"
    }
   ]

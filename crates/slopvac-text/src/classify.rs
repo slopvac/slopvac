@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::lexicon::{
     EXTRA_FINITE_STEMS, FINITE_VERB_FORMS, IMPERATIVE_VERBS, NON_NOUN_SECOND_TOKENS, is_imperative,
 };
-use crate::pattern::{matches_start, re, re_i};
+use crate::pattern::{TextError, matches_start, re, re_i};
+use crate::pyrules::{casefold, trim};
 use crate::tokens::{stepless_tokens, strip_step_number};
 
 /// The procedural and descriptive split that selects the sentence word cap.
@@ -88,26 +89,26 @@ static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| {
 static NUMERIC: LazyLock<Regex> = LazyLock::new(|| re(r"\A\d+(?:[.,]\d+)*\z"));
 
 fn is_finite_verb(token: &str) -> bool {
-    let word = token.to_lowercase();
+    let word = casefold(token);
     if FINITE_VERB_FORMS.contains(&word.as_str()) {
         return true;
     }
-    word.len() > 1
+    word.chars().count() > 1
         && word
             .strip_suffix('s')
             .is_some_and(|stem| EXTRA_FINITE_STEMS.contains(&stem) || is_imperative(stem))
 }
 
-fn imperative_start(p: &Patterns, text: &str) -> bool {
-    matches_start(&p.phrasal, text) || plain_imperative_start(p, text)
+fn imperative_start(p: &Patterns, text: &str) -> Result<bool, TextError> {
+    Ok(matches_start(&p.phrasal, text)? || plain_imperative_start(p, text)?)
 }
 
-fn plain_imperative_start(p: &Patterns, text: &str) -> bool {
-    matches_start(&p.imperative, text)
-        || matches_start(&p.negative, text)
-        || matches_start(&p.to_verb, text)
-        || matches_start(&p.remember_to, text)
-        || matches_start(&p.you_should, text)
+fn plain_imperative_start(p: &Patterns, text: &str) -> Result<bool, TextError> {
+    Ok(matches_start(&p.imperative, text)?
+        || matches_start(&p.negative, text)?
+        || matches_start(&p.to_verb, text)?
+        || matches_start(&p.remember_to, text)?
+        || matches_start(&p.you_should, text)?)
 }
 
 /// Select the sentence cap, conservatively distinguishing instructions.
@@ -116,48 +117,45 @@ fn plain_imperative_start(p: &Patterns, text: &str) -> bool {
 /// label is still procedural. Notes stay descriptive. The detector is lexical: a
 /// closed verb list with no parser, so rare imperatives and noun-verb homographs
 /// outside the list may be classified wrongly either way.
-#[must_use]
-pub fn classify_text_type(text: &str) -> TextType {
+pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     let p = &*PATTERNS;
-    let stripped = text.trim();
-    if let Ok(Some(caps)) = p.safety_marker.captures(stripped.as_bytes()) {
+    let stripped = trim(text);
+    if let Some(caps) = p.safety_marker.captures(stripped.as_bytes())? {
         let whole = caps.get(0).expect("group 0 exists");
         let marker = caps.name("marker").map_or(String::new(), |m| {
             String::from_utf8_lossy(m.as_bytes()).to_uppercase()
         });
         let body =
             stripped[whole.end()..].trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);
-        if imperative_start(p, body) {
-            return TextType::Procedural;
+        if imperative_start(p, body)? {
+            return Ok(TextType::Procedural);
         }
-        return if marker == "IMPORTANT" {
+        return Ok(if marker == "IMPORTANT" {
             TextType::Descriptive
         } else {
             TextType::Safety
-        };
+        });
     }
-    if matches_start(&p.note_marker, stripped) {
-        return TextType::Descriptive;
+    if matches_start(&p.note_marker, stripped)? {
+        return Ok(TextType::Descriptive);
     }
-    let body = strip_step_number(stripped).trim_start_matches([' ', '-', '*', '+']);
-    let stepless = strip_step_number(body);
-    let tokens = stepless_tokens(stepless);
-    let verb_first = tokens
-        .first()
-        .is_some_and(|t| is_imperative(&t.to_lowercase()));
+    let body = strip_step_number(stripped)?.trim_start_matches([' ', '-', '*', '+']);
+    let stepless = strip_step_number(body)?;
+    let tokens = stepless_tokens(stepless)?;
+    let verb_first = tokens.first().is_some_and(|t| is_imperative(&casefold(t)));
     if verb_first && tokens.len() >= 2 && is_finite_verb(&tokens[1]) {
-        return TextType::Descriptive;
+        return Ok(TextType::Descriptive);
     }
     if verb_first
         && tokens.len() >= 3
-        && !NON_NOUN_SECOND_TOKENS.contains(&tokens[1].to_lowercase().as_str())
-        && !matches_start(&NUMERIC, &tokens[1])
+        && !NON_NOUN_SECOND_TOKENS.contains(&casefold(&tokens[1]).as_str())
+        && !matches_start(&NUMERIC, &tokens[1])?
         && is_finite_verb(&tokens[2])
     {
-        return TextType::Descriptive;
+        return Ok(TextType::Descriptive);
     }
-    if plain_imperative_start(p, body) {
-        return TextType::Procedural;
+    if plain_imperative_start(p, body)? {
+        return Ok(TextType::Procedural);
     }
-    TextType::Descriptive
+    Ok(TextType::Descriptive)
 }

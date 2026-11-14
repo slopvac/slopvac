@@ -82,6 +82,15 @@ CURATED = [
     "Don’t use curly quotes’ here; it’s fine.",
     "“Quoted words here” and ‘single quoted’ too.",
     "Rules: run tests; fix bugs; ship it.",
+    "aः10 degrees Celsius is hot.",
+    "Uſe scripts live.",
+    "Deploy scripts live here.",
+    "Add ¼ cup of water. Then stir.",
+    "Add ² more. Then stir.",
+    "One.\r\nTwo.\r\nThree",
+    "Do the following:\r\n- Open the file.\r\n- Close the file.",
+    "First line wraps\r\nonto the second line. Then ends.",
+    "A\x1cB. Next sentence.",
 ]
 
 
@@ -117,17 +126,40 @@ def case(text: str) -> dict:
     }
 
 
-def main() -> None:
+def build() -> str:
     inputs = list(CURATED)
-    for name in ("README.md", "docs/metrics.md", "docs/design/slopvac-3.md"):
+    for name in (
+        "README.md",
+        "packages/slopvac-lint/docs/metrics.md",
+        "docs/design/slopvac-3.md",
+    ):
         path = ROOT / name
-        if path.exists():
-            inputs.extend(paragraphs(path)[:40])
-    cases = [case(t) for t in inputs]
-    (HERE / "reference.json").write_text(
-        json.dumps(cases, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
-    )
-    print(f"{len(cases)} cases")
+        if not path.exists():
+            raise SystemExit(f"missing fixture source: {name}")
+        inputs.extend(paragraphs(path)[:40])
+    return dump([case(t) for t in inputs])
+
+
+def dump(cases: list[dict]) -> str:
+    return json.dumps(cases, ensure_ascii=False, indent=1) + "\n"
+
+
+def main() -> None:
+    import sys
+
+    target = HERE / "reference.json"
+    if "--check" in sys.argv:
+        # The stored inputs are frozen; only the expected values must track Python.
+        stored = json.loads(target.read_text(encoding="utf-8"))
+        fresh = dump([case(c["text"]) for c in stored])
+        if target.read_text(encoding="utf-8") != fresh:
+            raise SystemExit(
+                "reference.json is stale; regenerate with generate.py and commit it"
+            )
+        return
+    text = build()
+    target.write_text(text, encoding="utf-8")
+    print(f"{text.count(chr(10))} lines written")
 
 
 if __name__ == "__main__":

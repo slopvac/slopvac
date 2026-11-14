@@ -5,9 +5,11 @@
 mod classify;
 mod lexicon;
 mod pattern;
+mod pyrules;
 mod sentences;
 mod tokens;
 
 pub use classify::{TextType, classify_text_type};
+pub use pattern::TextError;
 pub use sentences::{Sentence, split_sentences};
 pub use tokens::{count_words, tokens};

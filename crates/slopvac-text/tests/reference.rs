@@ -20,7 +20,7 @@ fn word_counts_match_the_python_reference() {
     for c in cases() {
         let text = c["text"].as_str().unwrap();
         assert_eq!(
-            count_words(text),
+            count_words(text).unwrap(),
             c["words"].as_u64().unwrap() as usize,
             "{text:?}"
         );
@@ -32,7 +32,7 @@ fn text_types_match_the_python_reference() {
     for c in cases() {
         let text = c["text"].as_str().unwrap();
         assert_eq!(
-            classify_text_type(text),
+            classify_text_type(text).unwrap(),
             kind(c["text_type"].as_str().unwrap()),
             "{text:?}"
         );
@@ -43,7 +43,7 @@ fn text_types_match_the_python_reference() {
 fn sentences_match_the_python_reference() {
     for c in cases() {
         let text = c["text"].as_str().unwrap();
-        let got = split_sentences(text);
+        let got = split_sentences(text).unwrap();
         let want = c["sentences"].as_array().unwrap();
         assert_eq!(
             got.len(),
@@ -67,4 +67,35 @@ fn sentences_match_the_python_reference() {
             assert_eq!(&text[g.start..g.end], g.text);
         }
     }
+}
+
+/// Intended divergence from the Python reference (tests/fixtures/divergences.md): the
+/// lead-in of a vertical list reports its true start when the text begins with
+/// whitespace. Python reports offset 0, which does not slice back to the sentence.
+#[test]
+fn list_lead_in_keeps_its_true_offset_after_leading_whitespace() {
+    let text = "  Do the following:\n- Open the file.\n- Close the file.";
+    let got = split_sentences(text).unwrap();
+    let spans: Vec<(usize, usize, &str)> = got
+        .iter()
+        .map(|s| (s.start, s.end, s.text.as_str()))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            (2, 19, "Do the following:"),
+            (20, 36, "- Open the file."),
+            (37, 54, "- Close the file."),
+        ]
+    );
+    for s in &got {
+        assert_eq!(&text[s.start..s.end], s.text);
+    }
+}
+
+#[test]
+fn spacing_marks_are_word_characters_like_python() {
+    // U+0903 is a spacing mark. Python's \w includes it, so the digits after it are not
+    // a standalone number and "degrees Celsius" stays two words: 3 in total.
+    assert_eq!(count_words("a\u{903}10 degrees Celsius").unwrap(), 3);
 }
