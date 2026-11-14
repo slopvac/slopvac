@@ -377,6 +377,13 @@ class Session:
             raise CaseFailure(
                 f"the plugin ended its output. stderr: {self.stderr_tail()!r}"
             )
+        # The v1 protocol has no plugin-to-host call (section 3), so refuse one before
+        # its params reach the schema: they are plugin-controlled and may be large.
+        if isinstance(value, dict) and "method" in value:
+            raise CaseFailure(
+                f"the plugin sent a call ({str(value['method'])[:60]!r}): "
+                "protocol v1 has no plugin-to-host calls"
+            )
         problems = self.schemas.errors(None, value)
         if problems:
             raise CaseFailure(f"message breaks the schema: {problems}")

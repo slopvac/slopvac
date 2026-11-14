@@ -34,7 +34,7 @@ What the SDK does for you:
 - **Offline mode.** When the host sets `offline`, the SDK answers a provider request with `offline` (-32007) and skips the handler.
 - **Output checks.** Before it sends a result, it checks that spans are in range and on character boundaries, that fixer edits lie inside the span of the finding they name, and that recipe paths are relative. A violation becomes `internal-error`, and the SDK logs the cause without document text.
 
-Spans are UTF-8 byte offsets. `Document.span(start, end)` converts character offsets, and `Document.data` holds the bytes.
+Spans are UTF-8 byte offsets. `Document.span(start, end)` converts character offsets, and `Document.data` holds the bytes. It raises `ValueError` for offsets that [the position contract](../../docs/contract/positions.md) calls invalid: outside the text, a start after the end, or between the CR and LF of one CRLF.
 
 `Plugin(network=...)` must equal the `network` value in the pack manifest. The hooks you register must be a subset of the hooks the manifest declares.
 
@@ -57,7 +57,7 @@ slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
 | `--env NAME` | Pass this environment variable to the plugin. Repeat for more names. |
 | `--format json` | Machine-readable report. |
 
-The suite treats the plugin as untrusted. It gets only `PATH` and `LANG` (and the variables Windows needs to start a process), plus the names you give with `--env`, so CI tokens and credentials stay out of it. The plugin runs in its own process group, and the suite ends the whole group when it closes the session. The suite also caps how much the plugin may print, ends a plugin that stops reading its input, and checks each reply against the 1 MiB limit before `initialize` and the negotiated `maxMessageBytes` after it.
+The suite treats the plugin as untrusted. It gets only `PATH` and `LANG` (and the variables Windows needs to start a process), plus the names you give with `--env`, so CI tokens and credentials stay out of it. The plugin runs in its own process group, and the suite ends the whole group when it closes the session. The suite also caps how much the plugin may print, ends a plugin that stops reading its input, and checks each reply against the 1 MiB limit before `initialize` and the negotiated `maxMessageBytes` after it. A plugin that declares more than 1,024 hooks, or a feature list longer than 1,024 entries, fails P1. The protocol sets no count, so the suite picks this bound to keep its own work linear. The suite also fails a plugin that sends any call, because protocol v1 has no plugin-to-host calls, and it does so before it validates the call's params.
 
 Exit 0 means every applicable case passed. Exit 1 means a case failed. Exit 2 means the suite could not run, for example because the command does not start. A skipped case prints its reason and does not fail the run.
 

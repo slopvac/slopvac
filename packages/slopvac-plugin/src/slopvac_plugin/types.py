@@ -40,14 +40,26 @@ class Document:
 
     def _byte_offset(self, index: int) -> int:
         offsets = self._byte_offsets
-        clamped = max(0, min(index, len(self.text)))
-        return clamped if offsets is None else offsets[clamped]
+        return index if offsets is None else offsets[index]
 
     def span(self, start: int, end: int) -> Span:
         """Convert character offsets of ``text`` into a byte ``Span``.
 
-        The first call on a document indexes it, so converting many spans is linear.
+        Raises ``ValueError`` for an offset the position contract calls invalid: out
+        of ``0..len(text)``, ``start`` after ``end``, or between the CR and LF of one
+        CRLF. The first call on a document indexes it, so converting many spans is
+        linear.
         """
+        size = len(self.text)
+        if type(start) is not int or type(end) is not int:
+            raise TypeError("span offsets must be integers")
+        if not (0 <= start <= size and 0 <= end <= size):
+            raise ValueError(f"span [{start}, {end}) is outside 0..{size}")
+        if end < start:
+            raise ValueError(f"span end {end} is before its start {start}")
+        for index in (start, end):
+            if 0 < index < size and self.text[index - 1 : index + 1] == "\r\n":
+                raise ValueError(f"offset {index} is between the CR and LF of a CRLF")
         return Span(self._byte_offset(start), self._byte_offset(end))
 
     def slice(self, span: Span) -> str:

@@ -2,7 +2,8 @@
 
 Usage: raw_plugin.py [MODE]. Modes: no-limit, stdout-noise, bad-span, split-char-span,
 exit-zero-without-shutdown, no-version-check, read-oversized-body, slow-tagger,
-float-id, float-limit, big-init-reply, big-reply, deaf-after-init, in-flight-17, in-flight-unsafe, unknown-kind. Standard library only, like a plugin in
+float-id, float-limit, big-init-reply, big-reply, deaf-after-init, in-flight-17, in-flight-unsafe, unknown-kind,
+mixed-features, many-hooks, call-oversized. Standard library only, like a plugin in
 any other language would be.
 """
 
@@ -103,8 +104,20 @@ while True:
                         [{"kind": "hologram", "id": "x"}]
                         if mode == "unknown-kind"
                         else []
+                    )
+                    + (
+                        [{"kind": "tagger", "id": f"h{n}"} for n in range(25000)]
+                        if mode == "many-hooks"
+                        else []
                     ),
-                    "features": {"required": [], "optional": []},
+                    "features": {
+                        "required": [],
+                        # Distinct strings and one integer: the schema's uniqueItems
+                        # check compares such an array pair by pair.
+                        "optional": [f"f{n}" for n in range(30000)] + [1]
+                        if mode == "mixed-features"
+                        else [],
+                    },
                     "requiresNetwork": False,
                 },
                 "limits": {
@@ -129,6 +142,20 @@ while True:
     elif method == "tagger/tag":
         if params.get("tagger") != "main":
             fail(i, -32602, "invalid-params")
+            continue
+        if mode == "call-oversized":
+            # The v1 protocol has no plugin-to-host calls (section 3).
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 99,
+                    "method": "tagger/tag",
+                    "params": {
+                        "documents": [{"id": f"d{n}", "text": ""} for n in range(20000)]
+                        + [1]
+                    },
+                }
+            )
             continue
         if mode == "slow-tagger":
             time.sleep(3)  # ignores the cancel

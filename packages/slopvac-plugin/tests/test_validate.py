@@ -78,6 +78,7 @@ TEXT = b"0123456789"
         [(2, 5)],
         [(2, 3), (3, 5)],  # adjacent
         [(2, 2), (2, 3)],  # insertion before an edit that starts there
+        [(3, 3), (3, 3)],  # insertions at one point apply in array order
     ],
 )
 def test_edits_inside_the_finding_are_accepted(spans):
@@ -91,7 +92,6 @@ def test_edits_inside_the_finding_are_accepted(spans):
         [(5, 6)],  # one byte after
         [(0, 10)],  # whole document
         [(2, 4), (3, 5)],  # overlap
-        [(3, 3), (3, 3)],  # two insertions at one point
         [(2, 5), (3, 3)],  # insertion inside another edit
     ],
 )

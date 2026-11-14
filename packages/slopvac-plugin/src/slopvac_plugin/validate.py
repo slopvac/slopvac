@@ -89,19 +89,16 @@ def inserted_bytes_limit(findings: Sequence[Finding]) -> int:
 
 
 def _check_no_overlap(spans: Sequence[Span]) -> None:
-    """Sort and sweep, O(n log n). Zero-width edits collide only at the same point."""
+    """Sort and sweep, O(n log n), as positions.md section Edit defines overlap.
+
+    An edit overlaps when it starts before the furthest end so far. Zero-width edits
+    at one offset do not overlap: they apply in array order.
+    """
     reach = 0
-    previous: Span | None = None
     for span in sorted(spans, key=lambda s: (s.start, s.end)):
         if span.start < reach:
             raise OutputInvalid("edits overlap")
-        if (
-            previous is not None
-            and span.start == span.end == previous.start == previous.end
-        ):
-            raise OutputInvalid("edits overlap")
         reach = max(reach, span.end)
-        previous = span
 
 
 def check_edits(

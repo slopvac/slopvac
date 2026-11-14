@@ -287,7 +287,6 @@ def test_suite_accepts_a_thousand_edits_and_refuses_more_quickly():
     "edits",
     [
         [edit(0, 10), edit(2, 2), edit(4, 5)],  # a wide edit and a far one
-        [edit(3, 3), edit(3, 3)],  # two insertions at one point
         [edit(2, 4), edit(3, 5)],
     ],
 )
@@ -296,8 +295,11 @@ def test_suite_refuses_overlapping_edits(edits):
         check_edits(fixer_doc(10), edits)
 
 
-def test_suite_accepts_touching_edits_and_an_insertion_at_an_edge():
-    check_edits(fixer_doc(10), [edit(2, 2), edit(2, 3), edit(3, 5), edit(5, 5)])
+def test_suite_accepts_touching_edits_and_insertions_at_one_point():
+    check_edits(
+        fixer_doc(10),
+        [edit(2, 2), edit(2, 3), edit(3, 5), edit(5, 5), edit(7, 7), edit(7, 7)],
+    )
 
 
 def test_suite_refuses_inserted_bytes_over_the_limit():
@@ -358,3 +360,48 @@ def test_example_stops_when_the_request_is_cancelled():
         example.tag_fences(
             Document("d", "```\nx\n```\n" * 10), _context(cancelled=True)
         )
+
+
+def run_within(seconds, fn):
+    """Result of ``fn()``; fails the test when it is still running after ``seconds``."""
+    box = []
+    assert bounded(lambda: box.append(fn()), seconds), (
+        f"still running after {seconds} s"
+    )
+    return box[0]
+
+
+@pytest.mark.parametrize("mode", ["mixed-features", "many-hooks"])
+def test_an_oversized_capability_list_fails_p1_without_burning_cpu(mode, quiet_cwd):
+    # Round 4, findings 3 and 4: 20,000+ entries made the schema's uniqueItems check,
+    # and P5's membership test, quadratic. The reply is under 1 MiB, so framing admits it.
+    report = run_within(
+        15, lambda: run_conformance(script("raw_plugin.py", mode), timeout=10)
+    )
+    assert statuses(report)["P1"] == "fail", report.to_text()
+    assert "1024" in next(r.detail for r in report.results if r.id == "P1")
+
+
+def test_a_plugin_to_host_call_is_refused_before_its_params_are_validated(start):
+    s = start(script("raw_plugin.py", "call-oversized"))
+    handshake(s)
+
+    def request():
+        with pytest.raises(CaseFailure, match="plugin-to-host"):
+            s.request(
+                "tagger/tag",
+                {"tagger": "main", "documents": [{"id": "d", "text": "t"}]},
+            )
+
+    run_within(15, request)
+
+
+def test_the_suite_accepts_two_inserts_at_one_offset_from_an_sdk_fixer(quiet_cwd):
+    # positions.md, Edit: zero-width edits at one offset apply in array order.
+    report = run_conformance(
+        script("double_insert_plugin.py"),
+        inputs={},
+        pass_env=SDK_ENV,
+        only=["P15", "P18"],
+    )
+    assert statuses(report) == {"P15": "pass", "P18": "pass"}, report.to_text()

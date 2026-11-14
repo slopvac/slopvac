@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .samples import DOCUMENT_KINDS, params_for
-from .schemas import Schemas
+from .schemas import MAX_UNIQUE_ITEMS, Schemas
 from .session import CaseFailure, CaseSkip, Session
 
 ALL_KINDS = ("tagger", "extractor", "reporter", "fixer", "scorer", "provider", "recipe")
@@ -129,9 +129,22 @@ def result_of(response: dict[str, Any]) -> Any:
     return response["result"]
 
 
+def _declared_hooks(result: Any) -> list[Any]:
+    """The hooks list of an initialize result, before the schema has checked its shape."""
+    caps = result.get("capabilities") if isinstance(result, dict) else None
+    hooks = caps.get("hooks") if isinstance(caps, dict) else None
+    return hooks if isinstance(hooks, list) else []
+
+
 def handshake(s: Session, **options: Any) -> dict[str, Any]:
     reply = s.request("initialize", host_params(**options))
     result = result_of(reply)
+    hooks = _declared_hooks(result)
+    require(
+        len(hooks) <= MAX_UNIQUE_ITEMS,
+        f"the plugin declares {len(hooks)} hooks, more than the limit of "
+        f"{MAX_UNIQUE_ITEMS}",
+    )
     problems = s.schemas.errors("InitializeResult", result)
     require(not problems, f"initialize result breaks InitializeResult: {problems}")
     s.notify("initialized", {})
@@ -184,16 +197,11 @@ def check_edits(doc: dict[str, Any], edits: Sequence[dict[str, Any]]) -> None:
         inserted <= min(MAX_INSERTED_BYTES, 4 * spanned + 4096),
         "edits insert more bytes than the limit allows",
     )
-    # Sort and sweep. A zero-width edit collides only with another at the same point.
-    spans = sorted((e["span"]["start"], e["span"]["end"]) for e in edits)
-    reach, previous = 0, None
-    for start, end in spans:
+    # Sort and sweep (positions.md, Edit). Zero-width edits at one offset are legal.
+    reach = 0
+    for start, end in sorted((e["span"]["start"], e["span"]["end"]) for e in edits):
         require(start >= reach, "two edits overlap")
-        require(
-            not (previous is not None and start == end == previous[0] == previous[1]),
-            "two edits overlap",
-        )
-        reach, previous = max(reach, end), (start, end)
+        reach = max(reach, end)
 
 
 def check_result(env: Env, kind: str, params: dict[str, Any], result: Any) -> None:
@@ -314,8 +322,8 @@ def p4(env: Env) -> None:
 @case("P5", "unknown fields, x- keys and unknown hook kinds are ignored")
 def p5(env: Env) -> None:
     with env.ready(extras=True) as (s, result):
-        hooks = [(h["kind"], h["id"]) for h in result["capabilities"]["hooks"]]
-        for kind, hook_id in [h for h in hooks if h in env.callable_hooks()]:
+        declared = {(h["kind"], h["id"]) for h in result["capabilities"]["hooks"]}
+        for kind, hook_id in [h for h in env.callable_hooks() if h in declared]:
             params = env.params(kind, hook_id)
             params["x-extra"] = {"a": 1}
             params["futureField"] = [1, "two"]

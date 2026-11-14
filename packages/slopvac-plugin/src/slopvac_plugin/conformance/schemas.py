@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,41 @@ from .. import framing
 PROTOCOL = "plugin-protocol.schema.json"
 COMMON = "common.schema.json"
 MAX_REPORTED = 3
+# Longest array the suite checks for uniqueness, and longest hook list it accepts.
+# The protocol sets no count (the Rust host has none either); this bounds suite work
+# against threat model section 5.5 (TM-2). Real plugins declare a handful of hooks.
+MAX_UNIQUE_ITEMS = 1024
+
+
+def canonical(value: Any) -> str:
+    """A string that is equal for equal JSON values, so uniqueness is a set lookup."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def bounded_unique_items(
+    validator: Any, enabled: bool, instance: Any, _schema: Any
+) -> Iterator[Any]:
+    """``uniqueItems`` in linear time, for at most ``MAX_UNIQUE_ITEMS`` items.
+
+    The stock keyword compares all pairs when an array mixes types, so a reply of a
+    few tens of thousands of names and one number burns CPU outside any deadline.
+    """
+    from jsonschema import ValidationError
+
+    if not enabled or not validator.is_type(instance, "array"):
+        return
+    if len(instance) > MAX_UNIQUE_ITEMS:
+        yield ValidationError(
+            f"{len(instance)} items is more than the limit of {MAX_UNIQUE_ITEMS}"
+        )
+        return
+    seen: set[str] = set()
+    for item in instance:
+        key = canonical(item)
+        if key in seen:
+            yield ValidationError(f"{item!r} is a duplicate: items must be unique")
+            return
+        seen.add(key)
 
 
 class MissingDependency(RuntimeError):
@@ -58,7 +94,9 @@ class Schemas:
             ),
         )
         self._validator_class = validators.extend(
-            Draft202012Validator, type_checker=checker
+            Draft202012Validator,
+            validators={"uniqueItems": bounded_unique_items},
+            type_checker=checker,
         )
 
     def errors(self, definition: str | None, instance: Any) -> list[str]:
