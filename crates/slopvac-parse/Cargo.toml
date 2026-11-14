@@ -13,6 +13,9 @@ workspace = true
 
 [dependencies]
 slopvac-model = { workspace = true }
+pulldown-cmark = { workspace = true }
+markdown = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

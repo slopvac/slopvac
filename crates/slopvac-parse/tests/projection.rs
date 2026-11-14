@@ -30,7 +30,7 @@ fn projected_ranges_map_to_the_vector_spans() {
     for case in v["projections"].as_array().unwrap() {
         let mut p = Projection::new();
         for t in case["tokens"].as_array().unwrap() {
-            let src = Span::new(n(&t["src"][0]), n(&t["src"][1]));
+            let src = Span::new(n(&t["src"][0]), n(&t["src"][1])).unwrap();
             p.push(
                 kind(t["kind"].as_str().unwrap()),
                 t["text"].as_str().unwrap(),
@@ -45,7 +45,7 @@ fn projected_ranges_map_to_the_vector_spans() {
         );
         for r in case["ranges"].as_array().unwrap() {
             let got = p.span_for_range(n(&r["projected"][0]), n(&r["projected"][1]));
-            let want = Span::new(n(&r["span"]["start"]), n(&r["span"]["end"]));
+            let want = Span::new(n(&r["span"]["start"]), n(&r["span"]["end"])).unwrap();
             assert_eq!(got, want, "{} {}", case["id"], r["projected"]);
         }
     }
@@ -54,10 +54,10 @@ fn projected_ranges_map_to_the_vector_spans() {
 #[test]
 fn byte_offsets_of_projected_text_map_like_code_points() {
     let mut p = Projection::new();
-    p.push(TokenKind::Identity, "é", Span::new(0, 2));
-    p.push(TokenKind::Entity, "&", Span::new(2, 7));
-    p.push(TokenKind::Identity, "x", Span::new(7, 8));
+    p.push(TokenKind::Identity, "é", Span::new(0, 2).unwrap());
+    p.push(TokenKind::Entity, "&", Span::new(2, 7).unwrap());
+    p.push(TokenKind::Identity, "x", Span::new(7, 8).unwrap());
     // Projected text "é&x": bytes 2..3 is the entity.
-    assert_eq!(p.span_for_bytes(2, 3), Span::new(2, 7));
-    assert_eq!(p.span_for_bytes(0, 4), Span::new(0, 8));
+    assert_eq!(p.span_for_bytes(2, 3), Span::new(2, 7).unwrap());
+    assert_eq!(p.span_for_bytes(0, 4), Span::new(0, 8).unwrap());
 }

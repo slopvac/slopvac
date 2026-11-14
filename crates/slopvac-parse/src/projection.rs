@@ -61,12 +61,11 @@ impl Projection {
     /// Append a token. Source ranges must ascend and not overlap.
     ///
     /// # Panics
-    /// Panics if `src` starts before the previous token's source end, or is reversed.
+    /// Panics if `src` starts before the previous token's source end.
     pub fn push(&mut self, kind: TokenKind, text: &str, src: Span) {
-        assert!(src.start <= src.end, "reversed token range {src:?}");
         if let Some(last) = self.tokens.last() {
             assert!(
-                src.start >= last.src.end,
+                src.start() >= last.src.end(),
                 "token range {src:?} overlaps the previous token {:?}",
                 last.src
             );
@@ -110,8 +109,8 @@ impl Projection {
             cursor = t1;
             if start >= t0 && start < t1 && point_at_start.is_none() {
                 point_at_start = Some(match token.kind {
-                    TokenKind::Identity => token.src.start + char_byte(&token.text, start - t0),
-                    _ => token.src.start,
+                    TokenKind::Identity => token.src.start() + char_byte(&token.text, start - t0),
+                    _ => token.src.start(),
                 });
             }
             let (a, b) = (start.max(t0), end.min(t1));
@@ -120,21 +119,21 @@ impl Projection {
             }
             let (s, e) = if token.kind == TokenKind::Identity {
                 (
-                    token.src.start + char_byte(&token.text, a - t0),
-                    token.src.start + char_byte(&token.text, b - t0),
+                    token.src.start() + char_byte(&token.text, a - t0),
+                    token.src.start() + char_byte(&token.text, b - t0),
                 )
             } else {
-                (token.src.start, token.src.end)
+                (token.src.start(), token.src.end())
             };
             lo = lo.min(s);
             hi = hi.max(e);
             found = true;
         }
         if found {
-            return Span::new(lo, hi);
+            return Span::new(lo, hi).expect("lo <= hi: both come from valid token spans");
         }
         let at = point_at_start
-            .or_else(|| self.tokens.last().map(|t| t.src.end))
+            .or_else(|| self.tokens.last().map(|t| t.src.end()))
             .unwrap_or(0);
         Span::empty(at)
     }
