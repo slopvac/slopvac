@@ -2,10 +2,9 @@
 
 Status: contract for 3.0. Bead `slopvac-8l4.2.12`. Plan: [slopvac-3.md](../design/slopvac-3.md).
 
-This document fixes three policies that the 3.0 binary, its schemas, and its plugin protocol must follow. Each section marks every statement as one of these:
+This document sets three policies that the 3.0 binary, its schemas, and its plugin protocol must follow.
 
-- **2.x behavior** describes behavior of `packages/slopvac-lint`, with the source file that implements it.
-- **3.0 requirement** describes behavior that does not exist yet. An owning bead follows each requirement. A requirement without an owning bead is a gap, and the release-readiness gate (`slopvac-8l4.13.9`) blocks on it.
+Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`, and each names the source file. Every other statement is a 3.0 requirement, and an owning bead follows it. The release-readiness gate (`slopvac-8l4.13.9`) lists this document and blocks on its conformance tests (section 4). An unowned requirement is a gap to close before the gate.
 
 "Must" is a requirement on the 3.0 binary. "Network" means any connection outside the local machine, including DNS lookups and registry or API calls.
 
@@ -13,39 +12,40 @@ This document fixes three policies that the 3.0 binary, its schemas, and its plu
 
 ### 1.1 Principles
 
-1. `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` read local files only. They open no connection.
+1. `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` read local files only. The one exception is the background update check (section 1.2), which the opt-outs in section 1.3 disable.
 2. Every network feature is a named command or hook in the table in section 1.2. No other code path opens a connection.
-3. Telemetry is absent. Slopvac transmits no document text, finding text, file path, rule hit count, or usage data to any server.
-4. A failed or refused connection never changes a lint verdict. It prints an error and exits 2 (incomplete) only when the user asked for the network operation.
-5. Agents and CI never consent on the user's behalf. Consent is an explicit command or flag that a person runs. No prompt exists that an agent could answer.
+3. Document text, finding text, file paths, and rule hit counts stay local. The update-check request is the only usage-like traffic, and it carries no document data. Slopvac has no telemetry.
+4. A failed or refused connection never changes a lint verdict. It prints an error, and it exits 2 (incomplete) only when the user asked for the network operation.
+5. Slopvac has no prompts, so consent is an explicit command or flag. A guard such as `--submit` binds a command and cannot tell who ran it. The prime text therefore tells agents to get the user's approval of the previewed output first.
 
 ### 1.2 Inventory of network features
 
 | Feature | 2.x behavior | 3.0 requirement | Owner |
 |---|---|---|---|
-| Update check | A detached process asks `https://pypi.org/pypi/slopvac/json` for the latest version and caches the result for 24 hours (`update_notice.py`). It runs only when stderr is a TTY. | Check the registry that matches the install method (`update-informer`). Cache for 24 hours. Show the result in `prime`, in JSON `notices`, and in `--version --json`, so agents see it. | `slopvac-8l4.12.4` |
-| `self update` | None. | Runs only for installs made by the slopvac installer. Downloads the release archive and verifies its minisign signature before it replaces the binary. | `slopvac-8l4.12.4`, `slopvac-8l4.13.3` |
-| Pack and plugin fetch | None. 2.x has no packs. | `plugins sync`, `plugins update`, and `pack publish` pull or push OCI artifacts. The client is hand-written on `ureq`. It uses anonymous tokens on GHCR and `docker_credential` for private registries. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
-| Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
-| Pack index search | None. | `plugins search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
+| Update check | A detached process asks `https://pypi.org/pypi/slopvac/json` for the latest version and caches the result for 24 hours (`update_notice.py`). Any command except `prime` may start it. Machine-readable output or a report file prevents it (`cli.py`). It runs only when stderr is a TTY. | Check the registry that matches the install method (`update-informer`). Only `lint`, `doctor`, `prime`, and `self update` may start it. Cache the result for 24 hours. Show it in `prime`, in JSON `notices`, and in `--version --json`, so agents see it. | `slopvac-8l4.12.4` |
+| `self update` | None. | Runs only for installs from the slopvac installer. It downloads the release archive, verifies the minisign signature, and then replaces the binary. | `slopvac-8l4.12.4`, `slopvac-8l4.13.3` |
+| OCI pack and plugin fetch | None. 2.x has no packs. | `plugins sync`, `plugins update`, and `pack publish` pull or push OCI artifacts. The client is hand-written on `ureq`. Initial support covers the documented GHCR flows (anonymous and basic tokens). `docker_credential` helpers extend this to other registries within the tested scope of the owning bead. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
+| Release-archive packs | None. | `plugins sync` downloads a pack or plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
 | Git packs | None. | A pack pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
+| Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
+| Pack index search | None. | `packs search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
 | Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` and posts the issue. Without a token it opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
 | Model-provider hooks | None. | A plugin that implements the model-provider hook may contact a model service. Slopvac core does not. Consent rules apply (section 1.5). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` |
 | LSP server | None. | `slopvac lsp` talks to the editor over stdio and opens no connection. | `slopvac-8l4.12.7` |
-| Code plugins in general | None. | A plugin process is a separate program. Slopvac 3.0 leaves plugin network access unsandboxed. The trust command (section 1.6) is the control, and the threat model records the residual risk. | `slopvac-8l4.9.4`, `slopvac-8l4.9.11` |
+| Code plugins in general | None. | A plugin process is a separate program, and 3.0 leaves its network access unsandboxed. The trust command (section 1.6) is the control. The threat model records the residual risk. | `slopvac-8l4.9.4`, `slopvac-8l4.9.11` |
 
-Install-time downloads sit outside the binary. In this repository, `scripts/install_vale.py` downloads Vale for development, and 3.0 removes Vale (`slopvac-8l4.16.4`).
+Downloads at install time sit outside the binary. In this repository, `scripts/install_vale.py` downloads Vale for development, and 3.0 removes Vale (`slopvac-8l4.16.4`).
 
 ### 1.3 Offline mode and opt-outs
 
-**2.x behavior.** The update check stops when any of these is true (`update_notice.py`, `_disabled_by_environment` and `_enabled`; `cli.py`, `_machine_output`):
+**2.x behavior.** The update check stops when any of these is true (`update_notice.py`, `_disabled_by_environment` and `_enabled`, and `cli.py`, `_machine_output`):
 
-- the `CI` variable is set, with any value;
-- `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, or `DO_NOT_TRACK` has a non-empty value;
-- stderr is not a TTY;
+- the `CI` variable is set, with any value.
+- `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, or `DO_NOT_TRACK` has a non-empty value.
+- stderr is not a TTY.
 - the command is `prime`, the format is not `text`, or `--out` or `--open` is present.
 
-2.x has only the environment variables above as switches.
+The environment variables above are the only switches in 2.x. Under `CI` or the other opt-outs, 2.x shows no notice either.
 
 **3.0 requirement.** Offline mode blocks every row of section 1.2. These switches turn it on:
 
@@ -55,13 +55,14 @@ Install-time downloads sit outside the binary. In this repository, `scripts/inst
 | `SLOPVAC_OFFLINE=1` | Offline for every run in the environment. |
 | `offline = true` under `[network]` in `slopvac.toml` | Offline for the project. |
 
-Offline is sticky. If any source sets it, no other source can unset it. This departs from the layer order of the plan, where a higher layer overrides a lower one.
+Offline is sticky. If any source sets it, no other source can unset it, and no flag turns it off. This departs from the layer order of the plan, where a higher layer overrides a lower one.
 
 In offline mode:
 
-- A command that needs the network exits 2 with the message `offline: <command> needs the network`. It does not retry or fall back.
-- Packs that the lockfile pins and that sit in the local cache load normally. A missing cache entry is an error that names the pack and the digest.
-- `plugins sync` can succeed from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports any missing pack.
+- A command that needs the network exits 2 with the code `offline-network-needed` and the message `offline: <command> needs the network`. It does not retry or fall back.
+- Packs that the lockfile pins and that sit in the local cache load normally.
+- A pack missing from the cache exits 2 with the code `offline-pack-missing`. The message names the pack and the digest.
+- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports each missing pack.
 
 These opt-outs apply to the update check only:
 
@@ -69,14 +70,15 @@ These opt-outs apply to the update check only:
 |---|---|
 | `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK` | Same as 2.x. |
 | `update_check = false` under `[network]` | Project-level opt-out. |
-| `CI` | No background update check in CI. A cached notice still shows if a cache exists. |
+| `CI` | No background check and no notice, as in 2.x. |
 
 Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2` for the config keys, `slopvac-8l4.12.4` for the update check.
 
 ### 1.4 CI defaults
 
 - Slopvac detects CI from the `CI` variable, as 2.x does.
-- In CI the update check stays off, and every command runs without prompts.
+- In CI the update check stays off.
+- No code path prompts, in CI or anywhere else.
 - `plugins sync` in CI runs from the lockfile. It fails with exit 2 when the lockfile is missing or a digest differs, and it leaves the lockfile as it found it.
 - A GitHub Action run that needs packs runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
@@ -89,25 +91,28 @@ Two features need consent beyond installing slopvac: issue submission and model-
 **Issue submission.**
 
 - `slopvac report` prints the exact title, labels, and body it would post, then exits. Posting needs `--submit`.
-- The body contains no local paths, file names, user names, host names, repository names, or organization names. Document text appears only when the user passes `--include-text <file>`, and the preview shows that text.
+- The body omits local paths, file names, user names, host names, repository names, and organization names. The body includes document text only when the user passes `--include-text <file>`, and the preview shows that text.
 - Environment fields come from the CLI, never from environment variables, as `CONTRIBUTING.md` requires for agent reports.
 - 2.x already requires the agent to get the user's approval of the exact post (`guidance.py`, the `prime report` workflow). 3.0 keeps that rule in the prime text and adds the command-level guard above.
 
 **Model-provider hooks.**
 
-- A model provider is a plugin. It stays off until the user trusts the plugin (`slopvac plugins trust`) and names it in `slopvac.toml` under `[review] provider`.
+- A model provider is a plugin. It stays off until the user runs `slopvac plugins trust` for it and names it in `slopvac.toml` under `[review] provider`.
 - Slopvac sends a provider only the text that the review type needs: changed claims for fact checking, the changed passages for `update`, and the whole document for `rewrite`. `slopvac review --dry-run` prints the exact payload without calling the provider.
 - During `lint`, every provider stays idle.
 - In offline mode no provider call happens, even for a trusted provider.
-- The reviewer must use a different model from the author. Slopvac cannot verify this for a provider it does not control, so the check compares the model names that the config and the provider report.
+- The reviewer model must differ from the author model. Slopvac cannot verify this for a provider it does not control. The check compares the model names that the config and the provider report.
 
 Owners: `slopvac-8l4.12.6`, `slopvac-8l4.9.6`, `slopvac-8l4.11.3`.
 
-### 1.6 Trust
+### 1.6 Trust and signatures
 
-- The plugin host refuses to load a code plugin until `slopvac plugins trust` records its content hash. A hash change revokes trust.
-- `sync`, `update`, and flags such as `--yes` never record trust.
-- Signatures verify the artifact before extraction. A missing or invalid signature makes `sync` fail with exit 2.
+- The plugin host refuses to load a code plugin until its content hash is trusted. A hash change revokes trust.
+- `slopvac plugins trust` records trust. `sync`, `update`, and flags such as `--yes` never record it.
+- CI has one explicit exception: the `SLOPVAC_TRUST` environment variable, which `slopvac-8l4.9.4` defines. A person writes it into the CI configuration, and it names what to trust. It is configuration, not a prompt, and no tool sets it on its own.
+- OCI artifacts carry minisign signatures as manifest layers. Slopvac verifies the signature before extraction, and a missing or invalid signature makes `sync` fail with exit 2.
+- Release archives verify against the release signature (`self update`).
+- Local folders and git commits carry no signature. A git pin names a commit, and the trust hash covers the content.
 
 Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
 
@@ -115,15 +120,15 @@ Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
 
 **2.x behavior.** Slopvac has no logging framework and no log file. Two redactions exist:
 
-- Input from `--stdin` is staged in a temporary file. Every report shows the path as `<stdin>`, and the temporary directory name never reaches output (`pipeline.py`, `redact_stdin`). Tests in `packages/slopvac-lint/tests/test_cli.py` cover text, JSON, and error output.
+- Slopvac stages `--stdin` input in a temporary file. Every report shows the path as `<stdin>`, and the temporary directory name never reaches output (`pipeline.py`, `redact_stdin`). Tests in `packages/slopvac-lint/tests/test_cli.py` cover text, JSON, and error output.
 - The update-check cache stores the check time and the latest version string.
 
 **3.0 requirement.**
 
-- Logging uses `tracing` and stays off unless `SLOPVAC_LOG` is set. Log output goes to stderr. No log file is written.
+- Logging uses `tracing` and stays off until `SLOPVAC_LOG` is set. Log output goes to stderr, and no log file exists.
 - Logs never contain document text, finding text, matched spans, front matter values, or terms.
 - Logs record document paths relative to the project root. A path outside the root appears as `<external>/<file name>`. Stdin appears as `<stdin>` everywhere, including logs, panics, and error chains.
-- Logs never contain tokens, `Authorization` headers, or URL credentials. Slopvac strips the user-info part of a URL before it logs the URL.
+- Logs never contain tokens, `Authorization` headers, or URL credentials. Before it logs a URL, slopvac strips the user-info part.
 - Rule IDs, pack IDs, digests, durations, and counts may appear in logs.
 - Panic and error output follow the same rules.
 - `SLOPVAC_LOG=trace` lifts none of these rules.
@@ -145,16 +150,16 @@ Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 **2.x behavior.**
 
 - Text output goes through a `rich` console. Rich drops styling when stdout is not a terminal, so piped output carries no escape codes (`cli.py`, `_console`). `test_cli.py` tests this.
-- `lint --no-color` removes color codes. Bold and italic styling remain in a terminal. A test covers this.
+- `lint --no-color` removes color codes. A test checks that no color code appears. In a forced terminal, bold and italic codes remain, and no test covers that.
 - JSON, SARIF, and GitHub annotations contain no terminal escape codes.
-- The `NO_COLOR` variable is ignored. `_console` passes `no_color=False`, which overrides the variable that `rich` would read. The defect is optional to fix in 2.x, because no 2.x release ships.
+- 2.x ignores the `NO_COLOR` variable. `_console` passes `no_color=False`, which overrides the variable that `rich` would read. The 2.x line ends at release 2.18.1, so the defect stays in 2.x.
 
-**3.0 requirement.** Color is resolved once, in this order:
+**3.0 requirement.** Slopvac resolves color once, in this order:
 
 1. `--color never|always|auto` (default `auto`) wins when given.
 2. A non-empty `NO_COLOR` means `never`.
 3. A non-empty `CLICOLOR_FORCE` or `FORCE_COLOR` means `always`.
-4. Otherwise color is on when stdout is a terminal and `TERM` is not `dumb`.
+4. Otherwise, color is on if stdout is a terminal and `TERM` is not `dumb`.
 
 `--no-color` stays as an alias for `--color never`.
 
@@ -164,11 +169,13 @@ Owners: `slopvac-8l4.12.1` for the flags, `slopvac-8l4.12.2` for the renderers.
 
 ### 2.2 Text that does not depend on sight
 
-- No signal relies on color alone. Every severity, verdict, and status appears as a word (`error`, `warning`, `suggestion`, `PASS`, `FAIL`, `UNCHECKED`). 2.x already does this in text and HTML (`html.py`).
+- Words carry every signal, and color only reinforces them. Every severity, verdict, and status appears as a word.
+  - 2.x text output prints `PASS`, `FAIL`, and `UNCHECKED` (`pipeline.py`).
+  - 2.x HTML prints `PASS`, `FAIL`, the severity word of each finding, and a heading that counts the checks that did not run (`html.py`).
 - Each finding prints on its own line in the form `path:line:column severity rule-id message`, so a screen reader reads the location first.
-- Text output has no spinners, progress bars, or animation. Progress goes to stderr, and only when stderr is a terminal and color is not `never`.
+- Text output has no spinners, progress bars, or animation. Progress goes to stderr. It appears only if stderr is a terminal and color is not `never`.
 - Symbols and emoji carry no meaning. Box-drawing characters are decoration, and each table row also reads in order as plain words.
-- When color is `never` and stdout is not a terminal, the renderer inserts no padding to align columns and does not wrap messages with hard line breaks.
+- When color is `never` and stdout is not a terminal, the renderer adds no alignment padding and inserts no hard line breaks into messages.
 
 Owner: `slopvac-8l4.12.2`.
 
@@ -180,7 +187,7 @@ Owner: `slopvac-8l4.12.2`.
 - Tables use `<th>` header cells. File details use `<details>` and `<summary>`.
 - The verdict and the severity of each finding appear as text.
 - The stylesheet respects `prefers-color-scheme`. Computed from the stylesheet variables with the WCAG relative-luminance formula, the status and muted text colors reach at least 4.87:1 against their panel in the light scheme. In the dark scheme they reach at least 5.26:1.
-- Every interpolated value is HTML-escaped.
+- The `_e` function escapes text from user content or findings: paths, notes, messages, rule IDs, replacements, the timestamp, and the version. The verdict and band words come from constants, and the statistics are numbers, so nothing escapes them.
 
 **3.0 requirement.** The 3.0 report keeps those properties and adds:
 
@@ -200,9 +207,9 @@ Owner: `slopvac-8l4.12.2`.
 
 - 3.0 messages, rule explanations, and generated pages are English only. `slopvac-8l4.18.2` tracks other languages after 3.0.
 - Message text is not an interface. Consumers branch on rule IDs, error codes, and exit codes (section 3.5).
-- The HTML report sets `lang="en"`. Strings live in one message table, so a later release can translate them without changing logic.
+- The HTML report sets `lang="en"`.
 
-Owner: `slopvac-8l4.12.2`.
+Owners: `slopvac-8l4.12.1` for CLI messages, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.2` for the HTML report.
 
 ## 3. API lifecycle
 
@@ -218,24 +225,26 @@ Owner: `slopvac-8l4.12.2`.
 | Lockfile | `schema_version` (integer) | `.slopvac/packs.lock` | `packs-lock` | `slopvac-8l4.2.4` |
 | Plugin protocol | `protocolVersion` (integer) | `initialize` request and response | `plugin-protocol` | `slopvac-8l4.2.6` |
 
-The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/common.schema.json`. The scaffold bead `slopvac-8l4.2.19` freezes their shape. This document fixes their meaning.
+The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/common.schema.json`. The scaffold bead `slopvac-8l4.2.19` freezes their shape, and `slopvac-8l4.2.12` owns their meaning (section 3.2).
 
 ### 3.2 `schema_version` and `slopvac_api`
 
-**2.x behavior.** `LintReport.schema_version` defaults to 1. The docstring in `report.py` states the rule: it changes only when a key is removed or retyped, and adding a key does not bump it. The report has a separate `version` key for the tool version. `doctor --format json` has its own `schema_version` of 1 (`doctor_report.py`). 2.x config files have no version field, and `extra="forbid"` rejects unknown keys (`config.py`).
+**2.x behavior.** `LintReport.schema_version` defaults to 1. The docstring in `report.py` states the rule: it changes only when a key is removed or retyped, and adding a key does not bump it. The report has a separate `version` key for the tool version. `doctor --format json` has its own `schema_version` of 1 (`doctor_report.py`). 2.x config files have no version field, and `extra="forbid"` rejects unknown keys (`config.py`). The 2.x function `update_notice.upgrade_hint` returns an install-method command such as `uv tool upgrade slopvac`, `pipx upgrade slopvac`, or `pip install -U slopvac`.
 
 **3.0 requirement.**
 
 - `SchemaVersion` is a positive integer. It counts breaking changes to one artifact's shape and has no minor or patch part.
 - Every root instance of a versioned artifact carries `schema_version` with the constant 3. Lint JSON jumps from 1 to 3 so that all artifacts share one number at first. The migration guide states this jump. A later breaking change raises only the number of the artifact it affects, so numbers can diverge after 3.0.
-- Changes within one `schema_version` are additive only. Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible. Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
+- Changes within one `schema_version` are additive only.
+  - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
+  - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
 - A schema's `$id` never changes within a version. The published URL has the form `https://srobroek.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
-- A version higher than the binary supports is an error that names the file, the version found, the versions supported, and the upgrade command (`upgrade_hint`, as in 2.x).
+- A version higher than the binary supports is an error. The message names the file, the version found, and the versions supported. It also prints the upgrade command for the install method, built as `upgrade_hint` builds it in 2.x.
 
-Owners: `slopvac-8l4.2.12` for the semantics, `slopvac-8l4.4.5` for the config migration chain.
+Owners: `slopvac-8l4.2.12` for the semantics, `slopvac-8l4.4.5` for the config version check.
 
 ### 3.3 Unknown-field handling
 
@@ -245,10 +254,10 @@ The rule depends on who wrote the file.
 |---|---|---|---|
 | Slopvac | A user (config, front matter, rules, packs) | Error with file, line, and column, plus the nearest valid key | A misspelled key would silently disable a setting. 2.x already forbids unknown keys. |
 | Slopvac | A plugin (protocol messages) | Ignored, logged at debug level | A plugin can be newer than the host within one API version. |
-| A consumer of slopvac output | Slopvac | The consumer should ignore it | Additive changes do not bump `schema_version`. |
+| A consumer of slopvac output | Slopvac | The consumer must ignore it | Additive changes do not bump `schema_version`. |
 | A plugin | Slopvac (protocol messages) | The plugin must ignore it | Same reason. |
 
-Authors who attach their own data to a user-written file put it under a key with the prefix `x-`. Slopvac ignores `x-` keys wherever it forbids unknown keys and never gives one a meaning. Each artifact schema records this 3.0 decision in its `description`.
+Authors who attach their own data to a user-written file put it under a key with the prefix `x-`. Slopvac ignores `x-` keys wherever it forbids unknown keys and never gives one a meaning. Each artifact schema records this rule in its `description`.
 
 The schema marks which output enums can gain values. Consumers must tolerate new values of those enums.
 
@@ -260,11 +269,11 @@ The plugin protocol follows LSP. The `initialize` request carries the host's `pr
 
 - The host picks the highest protocol version that both sides support. With no common version, the host does not load the plugin and prints both version lists.
 - The host calls only the hooks that the plugin declared.
-- A required feature that the host lacks stops the load with an error that names the feature. The host skips an optional feature it lacks.
-- Unknown capability names are ignored (section 3.3).
-- A data pack has no handshake. The host compares `slopvac_api` with the range it supports and loads the pack only when the value is in range.
+- If the host lacks a required feature, the load stops with an error that names the feature. The host skips an optional feature it lacks.
+- Both sides ignore unknown capability names (section 3.3).
+- A data pack has no handshake. The host compares `slopvac_api` with the range it supports. It loads the pack only if the value is in range.
 
-The message shapes belong to the plugin protocol bead. This document fixes the behavior above.
+The plugin protocol bead defines the message shapes.
 
 Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
@@ -276,7 +285,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `pack-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
-- A code is never reused and never changes meaning. A code that stops occurring stays in the documentation as retired.
+- No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
 - Plugin protocol errors use the JSON-RPC 2.0 error object. Its numeric `code` follows the JSON-RPC ranges, and `data.slopvac_code` carries the string code. The protocol bead defines the numeric range.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 
@@ -286,9 +295,9 @@ Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnos
 
 3.0 carries no deprecation machinery. A breaking change takes effect at a major version, and the release notes list it.
 
-- Within 3.x, minor and patch releases make additive changes only (section 3.2). A removal or rename needs a major version.
+- Minor and patch releases of 3.x make additive changes only (section 3.2). A removal or rename needs a major version.
 - Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options, hooks, and rule IDs with an error and exit 2.
-- Pack `slopvac_api` and plugin `protocolVersion` follow the same rule. The host loads a pack or plugin whose version it supports, as section 3.4 describes. A pack or plugin outside that range stays unloaded and the error names both versions. No grace period applies.
+- Pack `slopvac_api` and plugin `protocolVersion` follow the same rule. The host loads a pack or plugin whose version it supports, as section 3.4 describes. A pack or plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
 
 Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.
 
@@ -321,23 +330,23 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 
 | ID | Test | Owner |
 |---|---|---|
-| N1 | `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
-| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 when the cache lacks a pack, with the message in section 1.3. | `slopvac-8l4.9.3` |
-| N3 | Offline set in the environment survives a flag or config that tries to unset it. | `slopvac-8l4.12.1` |
+| N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
+| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-pack-missing` when the cache lacks a pack. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
+| N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
-| N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. This extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |
-| N6 | Machine formats and `prime` keep stdout free of update notices. JSON carries it in `notices`. | `slopvac-8l4.12.4` |
+| N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. The test extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |
+| N6 | Machine formats keep stdout free of update notices, and JSON carries the notice in `notices`. | `slopvac-8l4.12.4` |
 | N7 | `plugins sync` in CI exits 2 on a missing lockfile or a digest mismatch and leaves the lockfile unchanged. | `slopvac-8l4.9.3` |
-| N8 | `sync` and `update` never record trust, with or without `--yes`. | `slopvac-8l4.9.4` |
+| N8 | `sync` and `update` never record trust, with or without `--yes`. Only `plugins trust` and `SLOPVAC_TRUST` do. | `slopvac-8l4.9.4` |
 | N9 | `slopvac report` without `--submit` sends zero requests and prints the full body. Against a mock server, `--submit` posts exactly the previewed body. | `slopvac-8l4.12.6` |
 | N10 | The issue body for a run in a directory with a unique marker path and user name contains neither. | `slopvac-8l4.12.6` |
 | N11 | A review run with a model provider and `--dry-run` leaves the provider uncalled and prints the payload. A `lint` run leaves every provider uncalled. | `slopvac-8l4.11.3` |
 | N12 | A model provider that is untrusted or absent from the config never starts. | `slopvac-8l4.9.6` |
 | R1 | With `SLOPVAC_LOG=trace`, a run over a document with a unique sentinel string logs no copy of the sentinel from the text, matches, front matter, or terms. | `slopvac-8l4.12.1` |
-| R2 | The same run over stdin logs `<stdin>` and no temporary path, in logs, errors, and panics. The 2.x tests in `test_cli.py` cover the output side. | `slopvac-8l4.12.9` |
+| R2 | The same run over stdin logs `<stdin>` and no temporary path, in logs, errors, and panics. | `slopvac-8l4.12.9` |
 | R3 | Paths inside the project root log relative to it. Paths outside log as `<external>/<file name>`. | `slopvac-8l4.12.1` |
 | R4 | A token in `GH_TOKEN` and credentials in a registry URL appear in no log, error, or notice. | `slopvac-8l4.9.2` |
-| C1 | With stdout piped, no format contains an escape byte. This extends the 2.x test for piped text. | `slopvac-8l4.12.2` |
+| C1 | With stdout piped, no format contains an escape byte. | `slopvac-8l4.12.2` |
 | C2 | `NO_COLOR=1`, `--color never`, and `--no-color` each remove all escape codes, including bold and italic, even when `FORCE_COLOR=1` is set. | `slopvac-8l4.12.1` |
 | C3 | `--color always` forces color on a pipe, and `--color` wins over `NO_COLOR`. | `slopvac-8l4.12.1` |
 | C4 | Every severity and verdict in text output appears as a word. A snapshot test strips all escape codes and compares. | `slopvac-8l4.12.2` |
@@ -345,26 +354,27 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | H1 | The HTML report passes axe-core with no violations, has `lang="en"`, one `<h1>`, table captions and `scope`, and no remote resource. | `slopvac-8l4.12.2` |
 | H2 | The report stylesheet meets the contrast ratios in section 2.3, computed from its variables in both schemes. | `slopvac-8l4.12.2` |
 | V1 | Every published schema accepts its conformance instances and rejects the invalid ones. | `slopvac-8l4.2.19` |
-| V2 | An artifact with a higher `schema_version` than supported fails with the code, the versions, and the upgrade hint. | `slopvac-8l4.4.5` |
+| V2 | An artifact with a `schema_version` above the supported range fails with the code, the versions, and the upgrade command. | `slopvac-8l4.4.5` |
 | V3 | A user-written file with an unknown key fails with file, line, and column, and an `x-` key passes. A plugin message with an unknown field is ignored. | `slopvac-8l4.2.5`, `slopvac-8l4.2.6` |
 | V4 | A handshake with no common protocol version, a missing required feature, or an unknown capability produces the behavior in section 3.4. | `slopvac-8l4.9.6` |
 | V5 | A pack with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
 | V6 | Every error code in the generated docs is unique and kebab-case, and a later release keeps every code of the earlier one. | `slopvac-8l4.19.1` |
 | V7 | A config without `schema_version`, or with a 2.x value, exits 2 with `config-legacy-version` and a pointer to `slopvac migrate`, and lints nothing. | `slopvac-8l4.4.5` |
 | V8 | Each removed 2.x flag, option, and hook fails with an error and exit 2. No 2.x JSON format flag exists. | `slopvac-8l4.2.9` |
-| V10 | Each 2.x setting listed in section 3.7 maps in `slopvac migrate`, or produces `config-legacy-dropped`. | `slopvac-8l4.2.5`, `slopvac-8l4.16.1` |
 | V9 | The Python SDK example plugin passes the conformance suite. | `slopvac-8l4.9.7` |
+| V10 | Each 2.x setting listed in section 3.7 maps in `slopvac migrate`, or produces `config-legacy-dropped`. | `slopvac-8l4.2.5`, `slopvac-8l4.16.1` |
 
 The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/tests/`:
 
-- stdin redaction in text, JSON, and error output: `test_cli.py`;
-- update-check opt-outs and machine-format suppression: `test_update_notice.py`;
-- piped text output without escape codes, forced-terminal color codes, and `--no-color`: `test_cli.py`, added with this document.
+- stdin redaction in text, JSON, and error output: `test_cli.py`.
+- update-check opt-outs and machine-format suppression: `test_update_notice.py`.
+- piped text output without escape codes, forced-terminal color codes, and `--no-color` without color codes: `test_cli.py`.
 
 `NO_COLOR` has no 2.x test, because 2.x ignores the variable (section 2.1).
 
 ## 5. Follow-up for bead owners
 
-- `slopvac-8l4.12.1` owns the global `--offline`, `--color`, and `SLOPVAC_LOG` surface. Its description does not mention them yet.
-- `slopvac-8l4.4.2` adds the `[network]` table and `[review] provider` to the config schema.
 - `slopvac-8l4.12.6` adds the preview and `--submit` behavior from section 1.5.
+- `slopvac-8l4.13.6` is the Action bead. Its description lists reviewdog, SARIF, and CodeClimate, so it needs the `plugins sync` step and the `--offline` lint step from section 1.4.
+- `slopvac-8l4.9.8` is named "Pack index and slopvac packs search". The plan lists `search` under `plugins`, so the plan or the bead needs one name for the command.
+- `slopvac-8l4.12.4` confirms which commands may start the update check (section 1.2).
