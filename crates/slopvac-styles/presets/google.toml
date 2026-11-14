@@ -5,8 +5,14 @@
 # can check. The guide is licensed under CC BY 4.0
 # (https://creativecommons.org/licenses/by/4.0/). The rule choices below are
 # slopvac's own reading of it; Google does not endorse them.
+#
+# Coverage is partial on purpose. The guide permits "ad hoc" and gendered
+# pronouns for people whose gender is known, and it names click and select by
+# device. The 2.x rules for Latin phrases, pronouns and device wording are
+# broader than the guide, so this preset leaves them alone. Each policy has one
+# checker, so a single mistake yields a single finding.
 schema_version = 3
-description = "Google developer documentation style: sentence-case headings, semicolons allowed, no vertical-list requirement, inclusive language."
+description = "Google developer documentation style: sentence-case headings, semicolons allowed, no vertical-list requirement, no Latin abbreviations, inclusive terms."
 conflicts = ["ste"]
 
 [rules]
@@ -18,12 +24,8 @@ conflicts = ["ste"]
 "ste-sentences.complex-text-not-in-vertical-list" = "off"
 "ste-sentences.vertical-list-lead-in-missing-colon" = "off"
 "ste-sentences.vertical-list-item-punctuation" = "off"
-# Say "for example", not "e.g.".
+# Say "for example", not "e.g." (the one Latin-abbreviation checker).
 "ste-practices.latin-abbreviation" = "warning"
-"prose-craft.latinisms" = "warning"
-# Inclusive, unambiguous language.
-"ste-practices.gendered-or-exclusionary-language" = "warning"
-"ste-practices.unclear-pronoun" = "warning"
-"prose-inclusive.ableist" = "warning"
+# Inclusive terms such as allowlist and blocklist (the one terminology checker).
 "prose-inclusive.exclusive" = "warning"
-"prose-inclusive.device-assumption" = "warning"
+"prose-inclusive.ableist" = "warning"
