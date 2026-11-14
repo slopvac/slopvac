@@ -14,7 +14,9 @@ mod shape;
 mod source;
 
 pub use error::StyleError;
-pub use patch::{CategoryDials, CategoryPatch, Level, SettingValue, SettingsPatch, TermsPatch};
+pub use patch::{
+    Budget, CategoryDials, CategoryPatch, Level, SettingValue, SettingsPatch, TermsPatch,
+};
 pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, Setting, resolve};
 pub use shape::Style;

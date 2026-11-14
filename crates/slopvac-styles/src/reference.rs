@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use crate::source::BUILTIN;
-use crate::{CategoryDials, Level, Style};
+use crate::{Budget, CategoryDials, Level, Style};
 
 fn level(l: Level) -> &'static str {
     match l {
@@ -32,8 +32,14 @@ fn dials(d: &CategoryDials) -> String {
     if let Some(s) = d.severity {
         parts.push(format!("severity `{}`", level(s)));
     }
+    if let Some(b) = d.minimum_severity {
+        parts.push(format!("minimum severity `{}`", level(b)));
+    }
     if let Some(n) = d.max_per_100_words {
-        parts.push(format!("max per 100 words `{n}`"));
+        match n {
+            Budget::Limit(n) => parts.push(format!("max per 100 words `{n}`")),
+            Budget::None => parts.push("max per 100 words `none`".to_owned()),
+        }
     }
     if let Some(w) = d.weight {
         parts.push(format!("weight `{w}`"));
