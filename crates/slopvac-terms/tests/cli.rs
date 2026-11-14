@@ -422,7 +422,8 @@ fn cspell_yaml_configs_are_rejected_clearly() {
 fn double_backtick_spans_hide_terms_that_contain_a_backtick() {
     let text = "a `` x`github `` b github\n";
     let ranges = markdown_code_ranges(text);
-    assert_eq!(ranges, [2..16]);
+    assert_eq!(ranges.len(), 1);
+    assert_eq!(ranges[0], 2..16);
     assert_eq!(&text[2..16], "`` x`github ``");
     let dir = scratch("double-tick");
     std::fs::write(dir.join("doc.md"), text).unwrap();
