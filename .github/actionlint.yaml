@@ -24,9 +24,3 @@ paths:
   .github/workflows/release-smoke.yml:
     ignore:
       - 'label "(macos-15-intel|ubuntu-24\.04-arm|windows-2025)" is unknown'
-  .github/workflows/wheels.yml:
-    ignore:
-      - 'label "(macos-15-intel|ubuntu-24\.04-arm|windows-2025)" is unknown'
-  .github/workflows/candidate.yml:
-    ignore:
-      - 'label "(macos-15-intel|ubuntu-24\.04-arm|windows-2025)" is unknown'
