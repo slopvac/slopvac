@@ -47,6 +47,29 @@ impl StyleSource for MapSource {
     }
 }
 
+/// The presets that ship inside the binary.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BuiltinSource;
+
+const BUILTIN: &[(&str, &str)] = &[("ste", include_str!("../presets/ste.toml"))];
+
+impl BuiltinSource {
+    /// Names of the bundled presets.
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        BUILTIN.iter().map(|(n, _)| *n)
+    }
+}
+
+impl StyleSource for BuiltinSource {
+    fn load(&self, name: &str) -> Result<Style, StyleError> {
+        let (_, text) = BUILTIN
+            .iter()
+            .find(|(n, _)| *n == name)
+            .ok_or_else(|| StyleError::NotFound(name.to_owned()))?;
+        Style::parse(name, text)
+    }
+}
+
 /// Styles in a directory as `<name>.toml`.
 #[derive(Debug, Clone)]
 pub struct DirSource(PathBuf);
