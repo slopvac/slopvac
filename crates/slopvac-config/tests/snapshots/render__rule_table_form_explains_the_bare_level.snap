@@ -1,0 +1,11 @@
+---
+source: crates/slopvac-config/tests/render.rs
+expression: "rendered(\"schema_version = 3\\n\\n[rules.\\\"core:no-dash\\\"]\\nseverity = \\\"off\\\"\\n\")"
+---
+error[config-invalid-type]: expected one of `error`, `warning`, `suggestion`, `off`, found a table
+ --> slopvac.toml:3:1
+  |
+3 | [rules."core:no-dash"]
+  | ^^^^^^^^^^^^^^^^^^^^^^ a table here
+  |
+help: a rule takes a bare level, such as `"core:no-dash" = "off"`
