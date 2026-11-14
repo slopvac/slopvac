@@ -1,3 +1,6 @@
-//! Plugin discovery and execution.
+//! Plugin discovery, execution and distribution.
 //!
-//! This crate is a placeholder in the workspace skeleton.
+//! This crate holds the OCI client (`oci`). The plugin host and the trust store
+//! land in their own modules.
+
+pub mod oci;
