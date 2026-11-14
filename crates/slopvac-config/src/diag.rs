@@ -98,14 +98,47 @@ pub fn render(source: SourceFile<'_>, diagnostics: &[Diagnostic]) -> String {
         .join("\n")
 }
 
+/// The text as `annotate-snippets` should see it, and how far its offsets moved.
+///
+/// The renderer splits lines at LF and CRLF only and counts a byte order mark in column 1. The
+/// position contract also ends a line at a lone CR and keeps the mark out of line 1. A lone CR
+/// becomes an LF of the same length, and the mark is dropped, so line and column match the
+/// contract and every other offset only moves by the mark.
+fn display_text(text: &str) -> (std::borrow::Cow<'_, str>, usize) {
+    let (body, shift) = match text.strip_prefix('\u{feff}') {
+        Some(rest) => (rest, '\u{feff}'.len_utf8()),
+        None => (text, 0),
+    };
+    let bytes = body.as_bytes();
+    let has_lone_cr = bytes
+        .iter()
+        .enumerate()
+        .any(|(i, &b)| b == b'\r' && bytes.get(i + 1) != Some(&b'\n'));
+    if !has_lone_cr {
+        return (std::borrow::Cow::Borrowed(body), shift);
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' && chars.peek() != Some(&'\n') {
+            out.push('\n');
+        } else {
+            out.push(c);
+        }
+    }
+    (std::borrow::Cow::Owned(out), shift)
+}
+
 fn render_one(renderer: &Renderer, source: SourceFile<'_>, d: &Diagnostic) -> String {
-    let span = clamp(&d.span, source.text);
+    let (text, shift) = display_text(source.text);
+    let moved = d.span.start.saturating_sub(shift)..d.span.end.saturating_sub(shift);
+    let span = clamp(&moved, &text);
     let mut report = vec![
         Level::ERROR
             .primary_title(d.message.clone())
             .id(d.code.as_str())
             .element(
-                Snippet::source(source.text)
+                Snippet::source(text.as_ref())
                     .path(source.name)
                     .annotation(AnnotationKind::Primary.span(span).label(d.label.clone())),
             ),

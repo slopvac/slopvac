@@ -63,3 +63,51 @@ fn multiple_problems_render_in_document_order() {
         "schema_version = 3\nlocale = \"fr\"\nmodee = \"prose\"\n"
     ));
 }
+
+fn rendered_with(text: &str, name: &str) -> String {
+    let root = parse_toml(text).unwrap();
+    let diags = validate_config(&root, text);
+    render(SourceFile { name, text }, &diags)
+}
+
+#[test]
+fn rendered_positions_follow_the_position_contract() {
+    // The same mistake on line 3, column 1, written with each line terminator.
+    for (label, text) in [
+        ("lf", "schema_version = 3\n\nmodee = \"prose\"\n"),
+        ("crlf", "schema_version = 3\r\n\r\nmodee = \"prose\"\r\n"),
+        ("bom", "\u{feff}schema_version = 3\n\nmodee = \"prose\"\n"),
+    ] {
+        let out = rendered_with(text, "slopvac.toml");
+        assert!(out.contains("--> slopvac.toml:3:1"), "{label}: {out}");
+        assert!(out.contains("3 | modee = \"prose\""), "{label}: {out}");
+    }
+}
+
+#[test]
+fn a_mistake_on_the_first_line_after_a_byte_order_mark_is_column_one() {
+    let out = rendered_with(
+        "\u{feff}modee = \"prose\"\nschema_version = 3\n",
+        "slopvac.toml",
+    );
+    assert!(out.contains("--> slopvac.toml:1:1"), "{out}");
+}
+
+#[test]
+fn a_lone_cr_ends_a_rendered_line() {
+    // TOML refuses a lone CR, but YAML front matter and directives allow one.
+    for (label, text) in [("cr", "ab\rcd\ref"), ("bom and cr", "\u{feff}ab\rcd\ref")] {
+        let at = text.find("ef").unwrap();
+        let d = slopvac_config::Diagnostic {
+            code: slopvac_config::Code::UnknownKey,
+            message: "unknown key".into(),
+            label: "here".into(),
+            span: at..at + 2,
+            help: None,
+            path: vec![],
+        };
+        let out = render(SourceFile { name: "f.md", text }, &[d]);
+        assert!(out.contains("--> f.md:3:1"), "{label}: {out}");
+        assert!(out.contains("3 | ef"), "{label}: {out}");
+    }
+}
