@@ -1,0 +1,9 @@
+# file -> JSON pointer (into the instance) where validation must fail.
+"missing-v.yaml" = "/slopvac"
+"v-two.yaml" = "/slopvac/v"
+"unknown-key.yaml" = "/slopvac"
+"guidance-not-allowed.yaml" = "/slopvac"
+"rule-level-fatal.yaml" = "/slopvac/rules/core:no-dash"
+"not-a-mapping.yaml" = "/slopvac"
+"terms-files.yaml" = "/slopvac/terms"
+"bad-genre.yaml" = "/slopvac/genre"

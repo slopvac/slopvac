@@ -1,0 +1,90 @@
+schema_version = 3
+mode = "prose"
+extends = ["../shared/slopvac.toml", "docs-team:base"]
+styles = ["core:plain", "acme:house"]
+exclude = ["**/node_modules/**", "CHANGELOG.md", "vendor/**", "!vendor/ours/**"]
+profile = { name = "strict", severity_shift = -1 }
+locale = "en-GB"
+x-owner = "docs-team"
+
+[thresholds]
+max_total_per_100_words = 2.0
+max_errors = 0
+max_warnings = 10
+min_score = 80
+max_unicode_dashes = 0
+
+[categories]
+prose-scope = "warning"
+
+[categories.ste-words]
+severity = "suggestion"
+minimum_severity = "suggestion"
+max_per_100_words = 1.5
+weight = 0.5
+
+[rules]
+"core:no-unicode-dash" = "off"
+passive-voice = "warning"
+
+[terms]
+allow = ["colour", "slopvac"]
+files = [".slopvac/terms.toml"]
+blocklists = ["docs/blocklist.toml"]
+
+[[packs]]
+id = "acme"
+source = "oci://ghcr.io/acme/slopvac-acme"
+version = "1.2.0"
+
+[[plugins]]
+id = "acme-tagger"
+source = "../plugins/acme-tagger"
+
+[[genres]]
+genre = "reference"
+files = ["docs/reference/**"]
+profile = "strict"
+
+[[genres]]
+genre = "core:how-to"
+files = ["docs/guides/**"]
+x-note = "ignored"
+
+[frontmatter]
+enabled = true
+allow = ["genre", "locale", "terms", "rules"]
+
+[guidance]
+level = "full"
+write = "auto"
+review = "ask"
+review_depth = "adversary"
+report = "off"
+
+[network]
+offline = true
+update_check = false
+
+[review]
+provider = "acme-reviewer"
+model = "reviewer-large"
+author_model = "author-small"
+
+[[overrides]]
+files = ["docs/**", "!docs/generated/**"]
+profile = "relaxed"
+locale = "en-US"
+
+[overrides.thresholds]
+min_score = 60
+
+[overrides.rules]
+"core:no-unicode-dash" = "warning"
+
+[overrides.terms]
+blocklists = ["docs/override-blocklist.toml"]
+
+[[overrides]]
+files = ["README.md"]
+profile = "normal"

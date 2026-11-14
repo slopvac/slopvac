@@ -242,8 +242,10 @@ def drop_hidden_text(
     kept: list[Finding] = []
     for finding in findings:
         rule = ruleset.by_id(finding.rule_id)
-        if rule is not None and rule.scope is not Scope.RAW and (
-            finding.line in front_matter or in_comment(finding)
+        if (
+            rule is not None
+            and rule.scope is not Scope.RAW
+            and (finding.line in front_matter or in_comment(finding))
         ):
             continue
         kept.append(finding)
@@ -364,22 +366,46 @@ def format_message(template: str, **fields: object) -> str:
         return template
 
 
+def _bounded(alternatives: list[str]) -> str:
+    """Wrap alternatives in one word-edge pair: `(?<![\\w-])(?:a|b|c)(?![\\w-])`.
+
+    One shared pair is equivalent to a pair around each branch (backtracking
+    into the group tries the next branch when the trailing lookahead fails) and
+    keeps the lookarounds off every branch, which PCRE2 and fancy-regex
+    otherwise re-evaluate per branch.
+    """
+    return rf"(?<![\w-])(?:{'|'.join(alternatives)})(?![\w-])"
+
+
 def build_substitution_pattern(substitutions: dict[str, str]) -> str:
     """One alternation over every key, longest first.
 
     Longest-first matters: with `in order to` and `order` both present, the shorter
     key would otherwise win and report the wrong replacement.
+
+    Keys that need the default word-edge guard are grouped into runs that share
+    one `_bounded` pair. A key that carries its own boundary ends the run, so
+    the longest-first order is kept exactly.
     """
     parts: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if run:
+            parts.append(_bounded(run))
+            run.clear()
+
     for key in sorted(substitutions, key=len, reverse=True):
         if _HAS_OWN_BOUNDARY.search(key):
+            flush()
             parts.append(f"(?:{key})")
         elif _METACHARACTER.search(key):
             # Regex, but unanchored. Bound it without assuming a word edge, since
             # a key may begin or end with punctuation.
-            parts.append(rf"(?<![\w-])(?:{key})(?![\w-])")
+            run.append(f"(?:{key})")
         else:
-            parts.append(rf"(?<![\w-])(?:{re.escape(key)})(?![\w-])")
+            run.append(re.escape(key))
+    flush()
     return "|".join(parts)
 
 
@@ -410,12 +436,10 @@ def rule_pattern(rule: Rule) -> re.Pattern[str] | None:
     flags = re.IGNORECASE if rule.ignore_case else 0
     if rule.kind is RuleKind.TOKENS and rule.tokens:
         # Sort longest-first so "in order to" wins over "order".
-        alternatives = "|".join(
-            re.escape(t) for t in sorted(rule.tokens, key=len, reverse=True)
-        )
+        alternatives = [re.escape(t) for t in sorted(rule.tokens, key=len, reverse=True)]
         # Boundaries that tolerate a leading/trailing non-word character,
         # because many tokens are multi-word phrases with punctuation.
-        source = rf"(?<![\w-])(?:{alternatives})(?![\w-])"
+        source = _bounded(alternatives)
     elif rule.kind is RuleKind.SUBSTITUTION and rule.substitutions:
         source = build_substitution_pattern(rule.substitutions)
     elif rule.kind is RuleKind.PATTERN and rule.pattern:
@@ -676,8 +700,7 @@ class Engine:
         return sorted(
             rule.qualified_id
             for rule in self.rules
-            if rule.kind is RuleKind.METRIC
-            and (rule.metric or "") not in NATIVE_METRICS
+            if rule.kind is RuleKind.METRIC and (rule.metric or "") not in NATIVE_METRICS
         )
 
     def drop_suppressed(
@@ -720,13 +743,9 @@ class Engine:
 
         for rule in self.rules:
             if rule.kind in (RuleKind.TOKENS, RuleKind.PATTERN, RuleKind.SUBSTITUTION):
-                findings.extend(
-                    self._run_lexical(rule, document, suppressions, disabled)
-                )
+                findings.extend(self._run_lexical(rule, document, suppressions, disabled))
             elif rule.kind is RuleKind.METRIC:
-                findings.extend(
-                    self._run_metric(rule, document, suppressions, disabled)
-                )
+                findings.extend(self._run_metric(rule, document, suppressions, disabled))
             elif rule.kind is RuleKind.STRUCTURE:
                 findings.extend(
                     self._run_structure(rule, document, suppressions, disabled)
@@ -798,9 +817,14 @@ class Engine:
             )
             return [_Span(synthetic, 0, text)]
 
-        if rule.scope is Scope.SENTENCE:
+        if rule.scope in (Scope.SENTENCE, Scope.BODY_SENTENCE):
             spans: list[_Span] = []
             for block in blocks:
+                if rule.scope is Scope.BODY_SENTENCE and block.kind in (
+                    BlockKind.HEADING,
+                    BlockKind.TABLE,
+                ):
+                    continue
                 cursor = 0
                 for sentence in block.sentences:
                     local = block.text.find(sentence.text, cursor)
@@ -817,7 +841,8 @@ class Engine:
         # table's text is its cells joined, so its matches stay inside one cell.
         return [
             _Span(block, start, block.text[start:end])
-            for block in blocks if block.text
+            for block in blocks
+            if block.text
             for start, end in (block.cells or ((0, len(block.text)),))
         ]
 
@@ -882,12 +907,12 @@ class Engine:
 
                 if "\x00" in matched and block is not None:
                     end_line, source_end = block.position(base_offset + match.end())
-                    source_lines = document.raw_lines[line - 1:end_line]
+                    source_lines = document.raw_lines[line - 1 : end_line]
                     if line == end_line:
-                        matched = source_lines[0][column - 1:source_end - 1]
+                        matched = source_lines[0][column - 1 : source_end - 1]
                     else:
-                        source_lines[0] = source_lines[0][column - 1:]
-                        source_lines[-1] = source_lines[-1][:source_end - 1]
+                        source_lines[0] = source_lines[0][column - 1 :]
+                        source_lines[-1] = source_lines[-1][: source_end - 1]
                         matched = "\n".join(source_lines)
 
                 candidate = None
@@ -1024,8 +1049,7 @@ class Engine:
             enumerating = metric == "enumerating_paragraph_words"
             for block in document.paragraphs:
                 if enumerating and (
-                    sum(1 for s in block.sentences if coordinated_items(s.text) >= 3)
-                    < 3
+                    sum(1 for s in block.sentences if coordinated_items(s.text) >= 3) < 3
                 ):
                     continue
                 count = count_words(block.text)
@@ -1038,9 +1062,7 @@ class Engine:
                 # not contribute one sentence per bullet here -- list items are
                 # their own blocks, so they never reach this count.
                 if exceeds(len(block.sentences), threshold):
-                    report(
-                        block.lines[0], str(len(block.sentences)), str(int(threshold))
-                    )
+                    report(block.lines[0], str(len(block.sentences)), str(int(threshold)))
 
         elif metric == "multiword_noun_words":
             per_sentence(longest_noun_stack)
@@ -1104,9 +1126,7 @@ class Engine:
                 if block.kind is not BlockKind.HEADING:
                     continue
                 if previous and block.level > previous + 1:
-                    if not self._suppressed(
-                        rule, block.lines[0], suppressions, disabled
-                    ):
+                    if not self._suppressed(rule, block.lines[0], suppressions, disabled):
                         results.append(
                             self._metric_finding(
                                 rule,

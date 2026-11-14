@@ -15,7 +15,7 @@ import regex as re
 from pydantic import ValidationError
 
 from slopvac.config import Severity
-from slopvac.engine import build_substitution_pattern
+from slopvac.engine import build_substitution_pattern, rule_pattern
 from slopvac.model import Example, Rule, RuleKind, Tier
 from slopvac.rules import (
     RuleLoadError,
@@ -239,6 +239,113 @@ def test_every_lexical_rule_has_an_example(ruleset):
     for rule in ruleset.rules:
         if rule.kind in (RuleKind.TOKENS, RuleKind.PATTERN, RuleKind.SUBSTITUTION):
             assert rule.examples, f"{rule.qualified_id} ships no example"
+
+
+def _pcre2_problems(source: str) -> list[str]:
+    """Find constructs that Python `regex` accepts and PCRE2 rejects.
+
+    PCRE2 has no `\\uXXXX` or `\\UXXXXXXXX` escapes, and it needs every
+    lookbehind to have a bounded length. Python-only rules may not use either,
+    because the Rust port compiles the same YAML with PCRE2.
+    """
+    problems: list[str] = []
+    in_class = False
+    lookbehind_depths: list[int] = []  # paren depth of each open lookbehind
+    depth = 0
+    i = 0
+    while i < len(source):
+        char = source[i]
+        if char == "\\":
+            nxt = source[i + 1 : i + 2]
+            if nxt in ("u", "U"):
+                problems.append(f"\\{nxt} escape at {i}; use the literal character")
+            i += 2
+            continue
+        if in_class:
+            in_class = char != "]"
+        elif char == "[":
+            in_class = True
+            # A `]` first in the class, or right after `^`, is a literal member.
+            start = i + (2 if source.startswith("[^", i) else 1)
+            if source.startswith("]", start):
+                i = start
+        elif char == "(":
+            depth += 1
+            if source.startswith(("(?<=", "(?<!"), i):
+                lookbehind_depths.append(depth)
+        elif char == ")":
+            if lookbehind_depths and lookbehind_depths[-1] == depth:
+                lookbehind_depths.pop()
+            depth -= 1
+        elif lookbehind_depths and (
+            char in "*+" or re.match(r"\{\d*,\}", source[i:])
+        ):
+            problems.append(f"unbounded quantifier {char!r} inside a lookbehind at {i}")
+        i += 1
+    return problems
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (r"(?<=\bthat\s{1,3})will", 0),
+        (r"(?<=\bthat\s+)will", 1),
+        (r"(?<![\w-]+)x", 1),
+        (r"(?<=a{2,})x", 1),
+        (r"(?<=[+*]a)x\s+", 0),
+        (r"x+(?<=a)", 0),
+        (r"(?<=[])]a+)x", 1),
+        (r"(?<=[^])]a+)x", 1),
+        (r"(?<=[]]a)x+", 0),
+        (r"[\u2014]", 1),
+        (r"\\u2014", 0),
+        ("\u2014 [\U0001F300-\U0001FAFF]", 0),
+    ],
+)
+def test_pcre2_guard_flags_only_pcre2_incompatible_syntax(source, expected):
+    assert len(_pcre2_problems(source)) == expected
+
+
+def _future_tense_fires(text: str, ruleset) -> bool:
+    rule = next(r for r in ruleset.rules if r.qualified_id == "prose-craft.future-tense")
+    return bool(rule_pattern(rule).search(text))
+
+
+@pytest.mark.parametrize(
+    ("text", "fires"),
+    [
+        # The clause exception skips `will be` after `that` + 1-3 whitespace chars.
+        ("The files that   will be visible.", False),
+        ("The files that    will be visible.", True),
+        # After which/where/when/what, the gap before `will` is 1-3 whitespace chars.
+        ("It lists where   each will be freed.", False),
+        ("It lists where    each will be freed.", True),
+        ("It lists where each   will be freed.", False),
+        ("It lists where each    will be freed.", True),
+        # Each intervening word is at most 40 characters.
+        (f"It lists where {'a' * 40} will be freed.", False),
+        (f"It lists where {'a' * 41} will be freed.", True),
+        # At most two intervening words.
+        ("It lists where each buffer will be freed.", False),
+        ("It lists where each old buffer will be freed.", True),
+    ],
+)
+def test_future_tense_clause_exception_is_bounded(ruleset, text, fires):
+    assert _future_tense_fires(text, ruleset) is fires
+
+
+def test_every_lexical_pattern_is_pcre2_compatible(ruleset):
+    """The Rust port compiles these patterns with PCRE2, which rejects `\\u`
+    escapes and unbounded lookbehinds that Python `regex` accepts."""
+    failures = []
+    for rule in ruleset.rules:
+        if rule.kind not in _LEXICAL:
+            continue
+        compiled = rule_pattern(rule)
+        if compiled is None:
+            continue
+        failures += [f"{rule.qualified_id}: {p}" for p in _pcre2_problems(compiled.pattern)]
+    assert not failures, "\n".join(failures)
 
 
 def test_substitution_keys_resolve_to_a_replacement(ruleset):
