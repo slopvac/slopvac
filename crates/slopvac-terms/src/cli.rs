@@ -401,17 +401,19 @@ fn cmd_suggest(
     }
     let target = &paths[0];
     let mut doc = TermsDoc::open(target)?;
-    for term in accept {
+    for term in &accept {
         doc.add(&TermEntry {
-            term: term.clone(),
+            term: (*term).clone(),
             variants: vec![],
             kind: None,
             ignore_case: infer_ignore_case(term),
             case_sensitive: false,
         })?;
-        writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
     }
     doc.save(target)?;
+    for term in accept {
+        writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
+    }
     Ok(0)
 }
 

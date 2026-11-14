@@ -63,6 +63,9 @@ fn starts_sentence(text: &str, at: usize) -> bool {
     prefix.is_empty() || prefix.ends_with(['.', '?', '!', ':'])
 }
 
+/// Longest all-caps token that counts as an acronym.
+const MAX_ACRONYM: usize = 6;
+
 fn is_candidate(word: &str, text: &str, at: usize) -> bool {
     let chars: Vec<char> = word.chars().collect();
     let letters = chars.iter().filter(|c| c.is_alphabetic()).count();
@@ -71,8 +74,9 @@ fn is_candidate(word: &str, text: &str, at: usize) -> bool {
     }
     let upper = chars.iter().filter(|c| c.is_uppercase()).count();
     let first_upper = chars[0].is_uppercase();
-    if upper == letters && letters <= 6 {
-        return true;
+    if upper == letters {
+        // Short all-caps tokens are acronyms; longer ones are shouting.
+        return letters <= MAX_ACRONYM;
     }
     if upper >= 2 || (!first_upper && upper >= 1) {
         return chars.len() >= 3;

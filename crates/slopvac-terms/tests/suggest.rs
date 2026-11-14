@@ -53,6 +53,61 @@ fn lists_candidates_with_counts_files_and_first_location() {
 }
 
 #[test]
+fn unknown_two_letter_acronyms_and_lowercase_initial_names_are_suggested() {
+    let dir = scratch("odd-shapes");
+    std::fs::write(
+        dir.join("a.md"),
+        "We ship QZ and QZ, plus eWidget and eWidget. Also qz and widget.\n",
+    )
+    .unwrap();
+    let (code, out) = terms(&dir, &["suggest", "a.md"]);
+    assert_eq!(code, 0);
+    // QZ: two all-caps letters, first at col 9. eWidget: lower-case initial with
+    // one capital, first at col 25 ("We ship QZ and QZ, plus " is 24 chars).
+    assert_eq!(out, "QZ\t2\t1\ta.md:1:9\neWidget\t2\t1\ta.md:1:25\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn all_caps_words_over_six_letters_are_shouting_not_acronyms() {
+    let dir = scratch("shouting");
+    std::fs::write(
+        dir.join("a.md"),
+        "This is IMPORTANT and IMPORTANT. ABCDEF here and ABCDEF. ABCDEFG there and ABCDEFG.\n",
+    )
+    .unwrap();
+    let (_, out) = terms(&dir, &["suggest", "a.md"]);
+    // Six letters is the longest acronym; seven or more is shouting.
+    assert_eq!(out, "ABCDEF\t2\t1\ta.md:1:34\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn accept_prints_nothing_when_the_save_fails() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch("save-fails");
+    std::fs::write(dir.join("a.md"), "We use MyProduct and MyProduct.\n").unwrap();
+    let sub = dir.join(".slopvac");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+    // A superuser ignores directory modes; then there is no failure to test.
+    let writable = std::fs::File::create(sub.join("probe")).is_ok();
+    if !writable {
+        let m = command()
+            .try_get_matches_from(["terms", "suggest", "a.md", "--accept", "MyProduct"])
+            .unwrap();
+        let mut buf = Vec::new();
+        let result = run(&m, &dir, &mut buf);
+        assert!(result.is_err(), "the save must fail");
+        assert_eq!(String::from_utf8(buf).unwrap(), "");
+    }
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn known_terms_and_the_min_option_filter_candidates() {
     let dir = scratch("known");
     std::fs::write(
