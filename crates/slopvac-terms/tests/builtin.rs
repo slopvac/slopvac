@@ -134,6 +134,21 @@ const ORDINARY: &[&str] = &[
 ];
 
 #[test]
+fn beautiful_soup_is_named_in_prose_with_the_class_as_a_variant() {
+    let file = TermsFile::builtin();
+    let t = file
+        .terms
+        .iter()
+        .find(|t| t.term == "Beautiful Soup")
+        .expect("Beautiful Soup is listed");
+    assert_eq!(t.variants, ["BeautifulSoup"]);
+    assert!(
+        file.terms.iter().all(|t| t.term != "BeautifulSoup"),
+        "BeautifulSoup is a variant, not a term"
+    );
+}
+
+#[test]
 fn builtin_list_meets_the_size_requirement() {
     let n = TermsFile::builtin().terms.len();
     assert!((500..=1500).contains(&n), "{n} terms");
