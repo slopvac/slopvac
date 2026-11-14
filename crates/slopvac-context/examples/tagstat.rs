@@ -16,7 +16,7 @@ fn main() {
             continue;
         };
         let doc = PlainDocument::from_markdown(&path, &src);
-        let idx = reg.tag_document(&doc);
+        let idx = reg.tag_document(&doc).unwrap();
         for b in doc.blocks() {
             if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
                 continue;

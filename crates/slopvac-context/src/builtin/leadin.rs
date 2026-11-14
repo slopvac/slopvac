@@ -23,7 +23,7 @@ impl Tagger for ListLeadInTagger {
         "change-note-list-lead-in"
     }
 
-    fn tag(&self, doc: &dyn DocumentView) -> Vec<Tag> {
+    fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
         let blocks = doc.blocks();
         let mut out = Vec::new();
         let mut leading = false;
@@ -38,11 +38,11 @@ impl Tagger for ListLeadInTagger {
                 BlockKind::ListItem => {}
                 BlockKind::Paragraph => {
                     let t = b.text.trim_end();
-                    leading = t.ends_with(':') && self.version.is_match(t);
+                    leading = t.ends_with(':') && self.version.is_match(t)?;
                 }
                 _ => leading = false,
             }
         }
-        out
+        Ok(out)
     }
 }
