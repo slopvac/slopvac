@@ -153,17 +153,17 @@ def test_changed_only_missing_merge_base_fails_closed(tmp_path, monkeypatch, cap
     assert "merge base" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    ("name", "logged"),
-    [
-        ("a.md\n::error::forged.md", "a.md%0A::error::forged.md"),
-        ("a.md\r::add-mask::secret.md", "a.md%0D::add-mask::secret.md"),
-        ("a.md\n::stop-commands::tok.md", "a.md%0A::stop-commands::tok.md"),
-        ("::error::lead.md", "::error::lead.md"),
-        ("100%0A.md", "100%250A.md"),
-        ("bell\x07esc\x1b.md", "bell%07esc%1B.md"),
-    ],
-)
+HOSTILE_NAMES = [
+    ("a.md\n::error::forged.md", "a.md%0A::error::forged.md"),
+    ("a.md\r::add-mask::secret.md", "a.md%0D::add-mask::secret.md"),
+    ("a.md\n::stop-commands::tok.md", "a.md%0A::stop-commands::tok.md"),
+    ("::error::lead.md", "::error::lead.md"),
+    ("100%0A.md", "100%250A.md"),
+    ("bell\x07esc\x1b.md", "bell%07esc%1B.md"),
+]
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
 def test_changed_file_names_are_escaped_in_log_output(
     tmp_path, monkeypatch, capsys, name, logged
 ):
@@ -182,6 +182,61 @@ def test_changed_file_names_are_escaped_in_log_output(
     lines = capsys.readouterr().out.splitlines()
     assert lines == [f"- {logged}"]
     assert not any(line.lstrip().startswith("::") for line in lines)
+
+
+EMPTY_REPORT = {
+    "summary": {
+        "score": 100,
+        "findings": 0,
+        "errors": 0,
+        "warnings": 0,
+        "suggestions": 0,
+        "documents": 1,
+        "words": 10,
+        "per_100_words": 0.0,
+        "passed": True,
+        "categories": [],
+    },
+    "documents": [],
+}
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
+def test_resolved_target_names_reach_the_linter_unchanged(
+    tmp_path, monkeypatch, name, logged
+):
+    for key, value in {
+        "CHANGED_ONLY": "true",
+        "BASE_SHA": "abc123",
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "VALE": "false",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def fake_git(command, **kwargs):
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(command, 0, stdout=name.encode() + b"\0", stderr=b"")
+
+    with patch("scripts.action_entry.subprocess.run", side_effect=fake_git):
+        assert action_entry.resolve_targets() == 0
+
+    # Feed the path list resolve_targets() actually wrote into lint().
+    monkeypatch.setenv("PATH_LIST", str(tmp_path / "slopvac-paths"))
+    argvs: list[list[str]] = []
+
+    def fake_linter(command, **kwargs):
+        argvs.append(command)
+        kwargs["stdout"].write(json.dumps(EMPTY_REPORT))
+        return CompletedProcess(command, 0, stderr="")
+
+    with patch("scripts.action_entry.subprocess.run", side_effect=fake_linter):
+        assert action_entry.lint() == 0
+
+    assert argvs
+    assert all(argv[-1] == name for argv in argvs)
 
 
 @pytest.mark.parametrize(
@@ -284,3 +339,28 @@ def test_annotations_are_built_from_json_with_escaped_values(
         expected,
         "::notice title=slopvac::score 90.0/100, 1 finding(s), 1.00 per 100 words",
     ]
+
+
+def test_hostile_severity_and_rule_id_cannot_forge_commands(capsys):
+    report = {
+        **EMPTY_REPORT,
+        "documents": [
+            {
+                "path": "a.md",
+                "findings": [
+                    {
+                        "path": "a.md",
+                        "line": 1,
+                        "rule_id": "r\n::error::x",
+                        "severity": "error\n::stop-commands::",
+                        "message": "m",
+                    }
+                ],
+            }
+        ],
+    }
+
+    lines = action_entry._annotations(report)
+
+    assert lines[0] == "::notice file=a.md,line=1,col=1,title=r%0A%3A%3Aerror%3A%3Ax::m"
+    assert len(lines) == 2
