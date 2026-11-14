@@ -13,6 +13,7 @@ edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/srobroek/slopvac"
+homepage = "https://github.com/srobroek/slopvac"
 publish = false
 
 [workspace.dependencies]
@@ -32,7 +33,11 @@ slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
 toml = "1"
+jsonschema = "0.61.2"
+proptest = "1.12.0"
 thiserror = "2"
 slopvac-terms = { path = "crates/slopvac-terms" }
 base64 = "0.23"
@@ -51,12 +56,12 @@ rustix = { version = "1", default-features = false, features = [
   "std",
   "process",
 ] }
-serde_json = "1"
 sha2 = "0.10"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",
   "platform-verifier",
 ] }
+semver = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -83,3 +88,7 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Profile for cargo-dist release builds.
+[profile.dist]
+inherits = "release"

@@ -1,0 +1,36 @@
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.34.0"
+ci = "github"
+installers = ["shell", "powershell", "homebrew"]
+tap = "srobroek/homebrew-tap"
+publish-jobs = ["homebrew"]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "x86_64-pc-windows-msvc",
+]
+install-path = "CARGO_HOME"
+install-success-msg = "slopvac is installed. Run `slopvac --help` to start."
+create-release = false
+github-attestations = true
+cargo-auditable = true
+cargo-cyclonedx = true
+pr-run-mode = "plan"
+# A stable tag publishes only after a passed release candidate (release-provenance.yml).
+plan-jobs = ["./release-provenance"]
+# scripts/patch_release_workflow.py hardens the generated workflow, so the file differs
+# from the template on purpose. Regenerate it with scripts/dist_generate.sh.
+allow-dirty = ["ci"]
+
+# The repo's pinact check requires actions pinned by commit.
+[dist.github-action-commits]
+"actions/checkout" = "d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0"
+"actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2"
+"actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2"
+"actions/attest" = "1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2"

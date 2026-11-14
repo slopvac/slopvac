@@ -1,0 +1,97 @@
+# Distribution
+
+The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives in `dist-workspace.toml`, and `dist generate` writes `.github/workflows/release.yml` from it. Do not edit the workflow by hand. Regenerate it with `scripts/dist_generate.sh`, never with a bare `dist generate`.
+
+## What a release contains
+
+- Archives for macOS (arm64, x86_64), Linux (arm64 and x86_64 glibc, x86_64 musl), and Windows (x86_64).
+- Shell and PowerShell installers, and a Homebrew formula pushed to `srobroek/homebrew-tap`.
+- GitHub build attestations, checksums, a CycloneDX SBOM, and binaries built with `cargo-auditable`.
+
+## How a release flows
+
+Release-please owns the version, the tag, and the release notes. dist owns the artifacts. Neither creates the other's objects:
+
+1. A maintainer merges the release PR. Release-please creates the `vX.Y.Z` tag and an unpublished GitHub release for it (`"draft": true` and `"force-tag-creation": true` in `release-please-config.json`). Without `force-tag-creation`, GitHub creates no tag until a release is published.
+2. The tag push starts `release.yml`. The `route` job reads the major version. From major 3 on, the dist pipeline runs; earlier tags take the 2.x path below.
+3. The pipeline builds the artifacts and, in parallel, runs the provenance gate and the tag ruleset check (`release-provenance.yml`).
+4. The `host` job uploads the artifacts to the unpublished release. Right before it publishes, it checks again that the tag still points at the workflow commit. Then it publishes the release (`create-release = false` in `dist-workspace.toml`, so dist edits the existing release instead of creating one).
+5. Last, the Homebrew job pushes the formula to the tap, and the smoke test installs the result.
+
+The release-please token matters. A tag that the default `GITHUB_TOKEN` creates does not start `release.yml`, because GitHub runs no workflow for events that token causes. The release-please workflow uses the GitHub App token when `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY` are set, and falls back to `GITHUB_TOKEN` otherwise. With the fallback, the release stays unpublished: nothing runs to publish it. Configure the App before relying on this flow.
+
+### Releases before 3.0
+
+A tag with major version below 3 does not go through dist. The `publish-legacy-release` job (the only other job with `contents: write`) publishes the release that release-please made, so a 2.x release ends as it did when release-please published it directly. Right before it publishes, the job runs the same tag protection as the dist path: the ruleset check, then `verify-tag` (the remote tag must still equal the workflow commit). It also runs `release_provenance.py check-draft`, which reads the release read-only and fails unless it is unpublished and its author is `github-actions[bot]` or `<slug>[bot]`, where the repository variable `RELEASE_APP_SLUG` holds the release-please App's slug. When release-please runs with the App token, its releases are authored by `<slug>[bot]`, so `RELEASE_APP_SLUG` is required: without it the legacy publish job stops at `check-draft` and the 2.x release stays unpublished. The candidate gate does not apply to 2.x. The 2.x PyPI flow (`just release X.Y.Z`, then `publish-lint.yml`) is unchanged. The `route` job fails on a tag it cannot parse instead of skipping the checks.
+
+## Check a change without publishing
+
+```sh
+dist plan --tag v<version>
+dist generate --check
+dist build --artifacts=local --tag v<version>
+```
+
+`dist plan` needs a tag whose version equals the version in `Cargo.toml`. On pull requests the `plan` job in `release.yml` runs the same check (`pr-run-mode = "plan"`), so nothing builds or publishes from a branch.
+
+## Maintainer setup
+
+A maintainer must do these once. No workflow does them.
+
+- Create the `srobroek/homebrew-tap` repository and the `HOMEBREW_TAP_TOKEN` repository secret, a token with write access to the tap.
+- Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
+- Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
+- Create the tag ruleset described next.
+- Enable GitHub immutable releases in the repository settings. Once a release is published, its tag and assets then cannot change. The flow above fits this: assets attach before the release is published.
+
+A pushed version tag starts the workflow, so only maintainers tag. The workflow starts only on plain `v<major>.<minor>.<patch>` tags, so it never publishes a prerelease. [Release candidates](candidates.md) run from a separate workflow on `rc/vX.Y.Z-rc.N` tags; this workflow does not handle them.
+
+### Protect version tags
+
+Create a repository ruleset with these settings:
+
+- Target: tags, matching `refs/tags/v*`.
+- Enforcement: active. A ruleset in `evaluate` or `disabled` mode does not count.
+- Rules: restrict updates, restrict deletions, and block force pushes. In the API these are `update`, `deletion`, and `non_fast_forward`.
+- Bypass list: empty, or only the repository admin role. Any other bypass actor (a write role, a team, an app, a user, or a deploy key) lets that actor move the tag, so the check rejects the ruleset whatever the bypass mode.
+
+Without this ruleset, someone who can write tags could move a tag after the checks pass. The `verify-tag` check narrows that window, and the ruleset closes it.
+
+`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It also reads each covering ruleset's `bypass_actors` and counts the ruleset only when that list is present and holds nothing but the repository admin role (role id 5) or organization admins. It fails the release when the ruleset is missing, inactive, too narrow, has another bypass actor, or is unreadable.
+
+GitHub matches ref patterns with `fnmatch` under `File::FNM_PATHNAME` and adds the `~ALL` and `~DEFAULT_BRANCH` tokens (see [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)). The check does not reimplement that matching. It counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/v*`, or the exact tag ref, so use one of these. It treats an exclude as excluding the tag unless it provably cannot match.
+
+The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). GitHub returns `bypass_actors` only to a token that can administer the repository, which `GITHUB_TOKEN` cannot, so the workflow passes `RULESET_READ_TOKEN` as `GH_TOKEN` to this one step and falls back to `GITHUB_TOKEN` when the secret is unset. The secret reaches only the check step, through the environment. The REST page names no permission for the list endpoints, and it is not confirmed that `GITHUB_TOKEN` can read them at all. If the first release fails with a 403 or 404 although the ruleset exists, the check failed closed as designed; set `RULESET_READ_TOKEN`.
+
+## Tag safety
+
+A git tag name can hold `$(...)` or backticks, and the generated workflow pastes the tag into shell commands. `scripts/patch_release_workflow.py` rewrites the generated file after `dist generate`:
+
+- Only tags that match `v<digits>.<digits>.<digits>` start the workflow.
+- The first step of the plan job rejects any tag that is not exactly `vX.Y.Z`, before dist runs.
+- The tag reaches every shell step through an environment variable, never through `${{ }}` inside the script.
+- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the optional `RULESET_READ_TOKEN` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only when a passed [candidate](candidates.md) run exists.
+- The gate binds to the commit. `release_provenance.py check-stable` takes the commit the workflow runs on (`$GITHUB_SHA`) and fails when the tag points anywhere else. It reads the candidate runs page by page, up to 1000 runs, and fails closed beyond that.
+- The host job re-resolves the tag on the remote (`release_provenance.py verify-tag`, peeled for annotated tags) before dist runs and again right before it publishes the release. It fails unless the tag still equals `$GITHUB_SHA`. The tag and commit reach the script through environment variables only.
+- The Windows build step runs under bash, so the `$TAG_FLAG` environment variable expands. Under PowerShell it expanded to nothing.
+- The CycloneDX step output is read as `outputs.paths`, so the SBOM reaches the upload. dist 0.34.0 writes `output`, which is a typo.
+- The stable PyPI job in `publish-lint.yml` uses the same gate for versions 3.0.0 and later only. The `build` job decides this with `release_provenance.py requires-gate`. A 2.x release keeps its flow without the gate, because 2.x candidates are untagged branch builds that no candidate tag can prove.
+- The workflow token is read-only. Only the host job and the 2.x publish job can write contents.
+
+`dist-workspace.toml` sets `allow-dirty = ["ci"]` so dist accepts the hardened file. The script fails if a dist upgrade changes the template, and `tests/test_patch_release_workflow.py` hardens dist's raw output, `tests/fixtures/release.generated.yml`, and requires the result to equal the committed workflow byte for byte. After changing `dist-workspace.toml` or upgrading dist, run `scripts/dist_generate.sh --save-raw tests/fixtures/release.generated.yml` and commit both files.
+
+## Publish order and recovery
+
+Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `srobroek/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
+
+## Test an installed release
+
+`.github/workflows/release-smoke.yml` installs a published release and runs `slopvac --version` for each route, then compares the output with the tag:
+
+- the archive for each of the six targets, after checking the published `.sha256` file;
+- the shell installer on Linux and macOS, and the PowerShell installer on Windows;
+- `brew install srobroek/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
+
+It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with `GITHUB_TOKEN`, which raises no event, and such a trigger could start before the assets exist. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.
+
+The workflow needs a published release, so it has not run yet. The first real release is its first test.

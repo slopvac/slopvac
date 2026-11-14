@@ -4,14 +4,20 @@
 //! framing. Its contract is `docs/contract/plugin-protocol.md`. The host runs
 //! no async runtime: it uses one set of threads per plugin and
 //! `crossbeam-channel` deadlines. Threat-model controls are in
-//! `docs/contract/threat-model.md`. The OCI client is `oci`, and the trust
-//! store lands in its own module.
+//! `docs/contract/threat-model.md`.
+//!
+//! The other modules: the OCI client ([`oci`]), the `.slopvac/packs.lock`
+//! model ([`lock`]: strict reader, canonical writer, drift diff and the
+//! `outdated` query) and the pack [`index`] reader, builder and search. The
+//! trust store lands in its own module.
 
 pub mod api;
 pub mod error;
 pub mod frame;
 pub mod hooks;
 pub mod host;
+pub mod index;
+pub mod lock;
 pub mod oci;
 pub mod process;
 pub mod protocol;
