@@ -64,14 +64,23 @@ pub(crate) fn allowlisted(rule: &LoadedRule, text: &str, range: &std::ops::Range
     // Lower-case one character at a time and keep, for each byte of the result, the byte of
     // `text` it came from. A character whose lower case has another length (U+0130) then
     // shifts nothing else.
-    let mut lowered = String::with_capacity(text.len());
+    let mut per_char = String::with_capacity(text.len());
     let mut origin: Vec<usize> = Vec::with_capacity(text.len() + 1);
     for (at, c) in text.char_indices() {
-        let before = lowered.len();
-        lowered.extend(c.to_lowercase());
-        origin.resize(origin.len() + lowered.len() - before, at);
+        let before = per_char.len();
+        per_char.extend(c.to_lowercase());
+        origin.resize(origin.len() + per_char.len() - before, at);
     }
     origin.push(text.len());
+    // Whole-string lower case is what the allowlist entries went through, and it picks the
+    // final sigma by context. It only changes a sigma into another two-byte letter, so the
+    // byte map still holds; if it ever did not, the per-character text is the safe answer.
+    let whole = text.to_lowercase();
+    let lowered = if whole.len() == per_char.len() {
+        whole
+    } else {
+        per_char
+    };
     allowlist
         .iter()
         .map(|a| a.as_str().to_lowercase())

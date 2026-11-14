@@ -10,7 +10,7 @@
    "position",
    "paragraphs"
   ],
-  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). 2.x also counts the raw HTML block that opens the file as an empty paragraph."
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). 2.x counts the paragraph of image-only badge links (lines 11 to 13) as a paragraph with empty text and no sentences. `slopvac-parse` emits no block for a paragraph without prose, so Rust counts one fewer."
  },
  "docs/contract/config.md": {
   "ignore": [

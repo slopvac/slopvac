@@ -237,3 +237,57 @@ fn a_raw_rule_does_not_read_a_diagram_file() {
         .unwrap();
     assert!(doc.findings.is_empty());
 }
+
+/// A checker that answers with a range built from the source length and the prose base.
+type RangeFor = fn(usize) -> std::ops::Range<usize>;
+
+struct Ranged(RangeFor);
+
+impl DiagramChecker for Ranged {
+    fn rules(&self) -> Vec<DiagramRule> {
+        vec![DiagramRule {
+            id: id("acme:diagram.ranged"),
+            severity: Severity::Suggestion,
+        }]
+    }
+
+    fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit> {
+        vec![DiagramHit {
+            rule: id("acme:diagram.ranged"),
+            span: (self.0)(input.source.len()),
+            message: "bad".into(),
+        }]
+    }
+}
+
+/// A range with `start > end`, which a range literal would not let clippy accept.
+fn reversed(start: usize, end: usize) -> std::ops::Range<usize> {
+    #[allow(clippy::reversed_empty_ranges)]
+    {
+        start..end
+    }
+}
+
+#[test]
+fn a_checker_range_that_is_reversed_or_out_of_bounds_is_an_error_with_no_findings() {
+    // The prose before the diagram starts at `len + 1` in the checker's coordinates.
+    let cases: [(&str, RangeFor); 5] = [
+        ("reversed in the source", |_| reversed(5, 2)),
+        ("past the end of the file", |len| len - 1..len + 1),
+        ("start at the prose base, end below it", |len| {
+            reversed(len + 1, len)
+        }),
+        ("reversed inside the prose", |len| {
+            reversed(len + 6, len + 3)
+        }),
+        ("past the end of the prose", |len| len + 1..len + 1_000),
+    ];
+    for (name, range) in cases {
+        let e = Engine::new(vec![ruleset(vec![category("cat", &[])])], settings())
+            .unwrap()
+            .with_diagram_checker(Box::new(Ranged(range)));
+        let source = format!("Intro text here.\n\n{DIAGRAM}");
+        let result = e.lint(&Input::markdown("a.md", &source));
+        assert!(result.is_err(), "{name}: {result:?}");
+    }
+}

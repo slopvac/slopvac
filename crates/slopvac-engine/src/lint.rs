@@ -110,6 +110,10 @@ pub enum EngineError {
     /// A computed position was not valid for the file.
     #[error(transparent)]
     Position(#[from] PositionError),
+    /// A diagram checker returned a range that is reversed or outside the file and the
+    /// prose it was given.
+    #[error("diagram checker returned a bad range: {0}")]
+    BadRange(String),
     /// A value the engine built broke a model invariant. This is a bug.
     #[error("internal error: {0}")]
     Internal(String),
@@ -793,25 +797,27 @@ impl Run<'_> {
         hit: &Range<usize>,
         nearby: &[NearbyProse<'_>],
     ) -> Result<Span, EngineError> {
-        let internal = EngineError::Internal;
+        let bad = |why: &str| EngineError::BadRange(format!("{hit:?}: {why}"));
+        if hit.start > hit.end {
+            return Err(bad("the range is reversed"));
+        }
         let span = if hit.start <= self.input.source.len() {
-            Span::new(hit.start, hit.end).map_err(|e| internal(e.to_string()))?
+            if hit.end > self.input.source.len() {
+                return Err(bad("the range ends past the file"));
+            }
+            Span::new(hit.start, hit.end).map_err(|e| bad(&e.to_string()))?
         } else {
             let prose = nearby
                 .iter()
                 .find(|n| n.base <= hit.start && hit.end <= n.base + n.text().len())
-                .ok_or_else(|| {
-                    internal(format!("a diagram hit at {hit:?} is outside the prose"))
-                })?;
+                .ok_or_else(|| bad("the range is outside the prose"))?;
             let (from, to) = (hit.start - prose.base, hit.end - prose.base);
             if from == 0 && to == prose.text().len() {
                 prose.block.span
             } else if prose.text().is_char_boundary(from) && prose.text().is_char_boundary(to) {
                 prose.projection.span_for_bytes(from, to)
             } else {
-                return Err(internal(format!(
-                    "a diagram hit at {hit:?} splits a character"
-                )));
+                return Err(bad("the range splits a character"));
             }
         };
         self.index.check_span(span)?;

@@ -403,3 +403,35 @@ fn an_allowlisted_phrase_still_holds_when_other_text_changes_length_in_lower_cas
     assert_eq!(doc.findings[0].matched_text, "leverage");
     assert!(doc.findings[0].start.column() > 40);
 }
+
+#[test]
+fn a_list_under_a_version_lead_in_carries_the_change_note_context() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"contexts": {"skip": ["change-note"]}}),
+    )]);
+    let doc = lint(
+        &e,
+        "In 2.0:\n\n- Use leverage here.\n- More leverage.\n\nOutside leverage.\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 6, 9)]);
+    assert!(
+        doc.contexts_seen
+            .iter()
+            .any(|t| t.as_str() == "change-note")
+    );
+}
+
+#[test]
+fn a_greek_final_sigma_does_not_defeat_an_allowlisted_phrase() {
+    // Whole-string lower case turns the final sigma of "ΟΣ" into "ς" before a space.
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"allowlist": ["ος leverage"]}),
+    )]);
+    let doc = lint(&e, "Ο ΟΣ leverage here and a leverage there.\n");
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].start.column(), 26);
+}
