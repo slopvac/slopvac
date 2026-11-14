@@ -1,0 +1,69 @@
+name: Rust performance
+
+# Measures the installed release binary (startup, lint time, peak RSS, size) and
+# uploads the numbers. It reports only: budgets are agreed from these
+# measurements before any release gate uses them (slopvac-8l4.14.5).
+
+on:
+  schedule:
+    - cron: "43 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Measure (${{ matrix.os }})
+    # linux-arm64 and macOS arm64 cover the targets users install on; Windows
+    # lacks the wait4 call the harness uses for peak RSS.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: perf-${{ matrix.os }}
+
+      - name: Build the release binary
+        run: cargo build --release --locked -p slopvac
+
+      - name: Measure
+        run: >-
+          python3 scripts/perf/binary_bench.py run
+          --binary target/release/slopvac
+          --output "$RUNNER_TEMP/perf.json"
+
+      - name: Summarise
+        env:
+          RUNNER_OS_LABEL: ${{ matrix.os }}
+        run: |
+          {
+            echo "## Binary performance ($RUNNER_OS_LABEL)"
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/perf.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-${{ matrix.os }}
+          path: ${{ runner.temp }}/perf.json

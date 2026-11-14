@@ -1,0 +1,39 @@
+# STUB(slopvac-8l4.14.6): rules, explain and lint arguments are guesses until the clap CLI lands.
+# Scenarios for the installed Rust binary, mirroring scenarios.toml (2.x).
+# `{root}` expands to the repository root. A scenario whose command exits with a
+# code outside accept_exits is recorded as "error" and not measured, so
+# scenarios can be listed before the command exists.
+
+[[scenario]]
+name = "startup --version"
+args = ["--version"]
+
+[[scenario]]
+name = "startup rules json"
+args = ["rules", "--format", "json"]
+
+[[scenario]]
+name = "startup explain"
+args = ["explain", "ste-practices.gendered-or-exclusionary-language"]
+
+[[scenario]]
+name = "lint fixture warm"
+args = ["lint", "{root}/scripts/perf/fixtures/clean.md"]
+accept_exits = [0, 1]
+
+[[scenario]]
+name = "lint fixture cold"
+args = ["lint", "{root}/scripts/perf/fixtures/clean.md"]
+accept_exits = [0, 1]
+cold = true
+
+[[scenario]]
+name = "lint README warm"
+args = ["lint", "{root}/packages/slopvac-lint/README.md"]
+accept_exits = [0, 1]
+
+[[scenario]]
+name = "lint README cold"
+args = ["lint", "{root}/packages/slopvac-lint/README.md"]
+accept_exits = [0, 1]
+cold = true
