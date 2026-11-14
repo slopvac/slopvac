@@ -18,6 +18,24 @@ use crate::{Extraction, Fragment, Role};
 const MAX_INFLATED: u64 = 32 * 1024 * 1024;
 const MAX_NODES: u32 = 1_000_000;
 
+/// Limits shared by every page and every nested document of one file, so a file
+/// of many small pages cannot add up to more than one large page.
+struct Budget {
+    /// Inflated bytes left.
+    inflated: u64,
+    /// XML nodes left.
+    nodes: u32,
+}
+
+impl Budget {
+    fn new() -> Self {
+        Budget {
+            inflated: MAX_INFLATED,
+            nodes: MAX_NODES,
+        }
+    }
+}
+
 /// Where a parsed XML text sits in the host file.
 #[derive(Clone)]
 enum Origin {
@@ -28,15 +46,23 @@ enum Origin {
 }
 
 pub(crate) fn extract_xml(src: &str, base: usize) -> Extraction {
+    extract_xml_with(src, base, &mut Budget::new())
+}
+
+fn extract_xml_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
     let mut out = Vec::new();
-    if !document(src, &Origin::Direct(base), &mut out) {
+    if !document(src, &Origin::Direct(base), budget, &mut out) {
         return Extraction::default();
     }
     done(out)
 }
 
 pub(crate) fn extract_svg(src: &str, base: usize) -> Extraction {
-    let Ok(doc) = parse(src) else {
+    extract_svg_with(src, base, &mut Budget::new())
+}
+
+fn extract_svg_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
+    let Ok(doc) = parse(src, budget) else {
         return Extraction::default();
     };
     let root = doc.root_element();
@@ -46,13 +72,17 @@ pub(crate) fn extract_svg(src: &str, base: usize) -> Extraction {
     let range = attr.range_value();
     let whole = Origin::Whole(base + range.start..base + range.end);
     let mut out = Vec::new();
-    if !document(attr.value(), &whole, &mut out) {
+    if !document(attr.value(), &whole, budget, &mut out) {
         return Extraction::default();
     }
     done(out)
 }
 
 pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
+    extract_png_with(bytes, base, &mut Budget::new())
+}
+
+fn extract_png_with(bytes: &[u8], base: usize, budget: &mut Budget) -> Extraction {
     let Some((range, text)) = png_mxfile(bytes) else {
         return Extraction::default();
     };
@@ -61,7 +91,7 @@ pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
     };
     let whole = Origin::Whole(base + range.start..base + range.end);
     let mut out = Vec::new();
-    if !document(&xml, &whole, &mut out) {
+    if !document(&xml, &whole, budget, &mut out) {
         return Extraction::default();
     }
     done(out)
@@ -74,20 +104,26 @@ fn done(fragments: Vec<Fragment>) -> Extraction {
     }
 }
 
-fn parse(src: &str) -> Result<Document<'_>, roxmltree::Error> {
-    Document::parse_with_options(
+/// Parse XML against the shared node budget.
+fn parse<'a>(src: &'a str, budget: &mut Budget) -> Result<Document<'a>, roxmltree::Error> {
+    let doc = Document::parse_with_options(
         src,
         ParsingOptions {
             allow_dtd: true,
-            nodes_limit: MAX_NODES,
+            nodes_limit: budget.nodes,
             ..ParsingOptions::default()
         },
-    )
+    )?;
+    let used = u32::try_from(doc.descendants().count()).unwrap_or(u32::MAX);
+    budget.nodes = budget.nodes.saturating_sub(used);
+    Ok(doc)
 }
 
 /// Walk one XML document. Return false when it does not parse.
-fn document(src: &str, origin: &Origin, out: &mut Vec<Fragment>) -> bool {
-    let Ok(doc) = parse(src) else { return false };
+fn document(src: &str, origin: &Origin, budget: &mut Budget, out: &mut Vec<Fragment>) -> bool {
+    let Ok(doc) = parse(src, budget) else {
+        return false;
+    };
     let root = doc.root_element();
     match root.tag_name().name() {
         "mxfile" => {
@@ -103,10 +139,10 @@ fn document(src: &str, origin: &Origin, out: &mut Vec<Fragment>) -> bool {
                         }
                         _ => origin.clone(),
                     };
-                    let Some(xml) = inflate_page(payload) else {
+                    let Some(xml) = inflate_page(payload, budget) else {
                         return false;
                     };
-                    if !document(&xml, &whole, out) {
+                    if !inflated_model(&xml, page, &whole, budget, out) {
                         return false;
                     }
                 }
@@ -119,6 +155,25 @@ fn document(src: &str, origin: &Origin, out: &mut Vec<Fragment>) -> bool {
         }
         _ => false,
     }
+}
+
+/// Walk an inflated page. Its root must be the graph model: a page does not nest another file.
+fn inflated_model(
+    xml: &str,
+    page: &str,
+    origin: &Origin,
+    budget: &mut Budget,
+    out: &mut Vec<Fragment>,
+) -> bool {
+    let Ok(doc) = parse(xml, budget) else {
+        return false;
+    };
+    let root = doc.root_element();
+    if !root.has_tag_name("mxGraphModel") {
+        return false;
+    }
+    cells(root, page, origin, out);
+    true
 }
 
 fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Vec<Fragment>) {
@@ -192,12 +247,18 @@ fn role_of(cell: Node<'_, '_>, style: &str) -> Role {
 fn html_to_text(html: &str) -> String {
     let mut text = String::new();
     let mut rest = html;
+    // No tag can close after the last `>`, so one reverse scan bounds every later search.
+    let last_close = html.rfind('>');
     while let Some(open) = rest.find('<') {
         text.push_str(&rest[..open]);
         let after = &rest[open + 1..];
-        let close = after
-            .find('>')
-            .filter(|_| after.starts_with(|c: char| c.is_ascii_alphabetic() || c == '/'));
+        let consumed = html.len() - rest.len() + open + 1;
+        let starts_tag = after.starts_with(|c: char| c.is_ascii_alphabetic() || c == '/');
+        let close = if starts_tag && last_close.is_some_and(|last| last >= consumed) {
+            after.find('>')
+        } else {
+            None
+        };
         if let Some(close) = close {
             let tag = after[..close].trim_start_matches('/').to_ascii_lowercase();
             let name: String = tag
@@ -227,7 +288,8 @@ fn decode_entities(s: &str) -> String {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         let after = &rest[amp + 1..];
-        let decoded = after.find(';').filter(|&n| n <= 8).and_then(|n| {
+        let window = &after.as_bytes()[..after.len().min(9)];
+        let decoded = window.iter().position(|&b| b == b';').and_then(|n| {
             let ch = match &after[..n] {
                 "amp" => '&',
                 "lt" => '<',
@@ -258,17 +320,19 @@ fn decode_entities(s: &str) -> String {
     out
 }
 
-fn inflate_page(payload: &str) -> Option<String> {
+fn inflate_page(payload: &str, budget: &mut Budget) -> Option<String> {
     let compact: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = STANDARD_NO_PAD.decode(compact.trim_end_matches('=')).ok()?;
     let mut inflated = Vec::new();
     DeflateDecoder::new(bytes.as_slice())
-        .take(MAX_INFLATED + 1)
+        .take(budget.inflated + 1)
         .read_to_end(&mut inflated)
         .ok()?;
-    if inflated.len() as u64 > MAX_INFLATED {
+    let size = inflated.len() as u64;
+    if size > budget.inflated {
         return None;
     }
+    budget.inflated -= size;
     percent_decode(&inflated)
 }
 
@@ -298,8 +362,8 @@ fn png_mxfile(bytes: &[u8]) -> Option<(Range<usize>, Vec<u8>)> {
     while at + 8 <= bytes.len() {
         let len = u32::from_be_bytes(bytes[at..at + 4].try_into().ok()?) as usize;
         let kind = &bytes[at + 4..at + 8];
-        let data = at + 8..at + 8 + len;
-        if data.end + 4 > bytes.len() {
+        let data = at + 8..at.checked_add(8)?.checked_add(len)?;
+        if data.end.checked_add(4)? > bytes.len() {
             return None;
         }
         if kind == b"tEXt" {
@@ -436,5 +500,152 @@ mod tests {
     fn external_entities_are_refused() {
         let xxe = "<!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><mxGraphModel><root><mxCell id=\"2\" value=\"&e;\" vertex=\"1\"/></root></mxGraphModel>";
         assert_eq!(extract(Format::Drawio, xxe, 0).diagram, None);
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use std::fmt::Write as _;
+    use std::io::Write as _;
+
+    use base64::engine::general_purpose::STANDARD;
+    use flate2::Compression;
+    use flate2::write::DeflateEncoder;
+
+    use super::*;
+
+    /// Deflate and base64 `xml` the way draw.io stores a compressed page.
+    fn compressed_page(xml: &str) -> String {
+        let encoded: String = xml
+            .bytes()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() {
+                    char::from(b).to_string()
+                } else {
+                    format!("%{b:02X}")
+                }
+            })
+            .collect();
+        let mut enc = DeflateEncoder::new(Vec::new(), Compression::fast());
+        enc.write_all(encoded.as_bytes()).unwrap();
+        STANDARD.encode(enc.finish().unwrap())
+    }
+
+    fn model(cells: usize) -> String {
+        let mut body = String::new();
+        for i in 0..cells {
+            write!(body, "<mxCell id=\"c{i}\" value=\"L{i}\" vertex=\"1\"/>").unwrap();
+        }
+        format!("<mxGraphModel><root>{body}</root></mxGraphModel>")
+    }
+
+    fn file(pages: &[String]) -> String {
+        let mut body = String::new();
+        for (i, p) in pages.iter().enumerate() {
+            write!(body, "<diagram name=\"P{i}\">{p}</diagram>").unwrap();
+        }
+        format!("<mxfile>{body}</mxfile>")
+    }
+
+    #[test]
+    fn inflation_budget_is_shared_across_pages() {
+        let page = compressed_page(&model(50));
+        let src = file(&[page.clone(), page]);
+        let one_page_inflated = model(50).len() as u64 * 3;
+        let mut roomy = Budget {
+            inflated: one_page_inflated * 2 + 1024,
+            nodes: MAX_NODES,
+        };
+        assert_eq!(extract_xml_with(&src, 0, &mut roomy).fragments.len(), 100);
+        let mut tight = Budget {
+            inflated: one_page_inflated + 64,
+            nodes: MAX_NODES,
+        };
+        assert_eq!(extract_xml_with(&src, 0, &mut tight).diagram, None);
+    }
+
+    #[test]
+    fn a_page_that_inflates_past_the_budget_is_refused() {
+        let blank = " ".repeat(200_000);
+        let xml = format!("{}{blank}", model(1));
+        let src = file(&[compressed_page(&xml)]);
+        let mut budget = Budget {
+            inflated: 100_000,
+            nodes: MAX_NODES,
+        };
+        assert_eq!(extract_xml_with(&src, 0, &mut budget).diagram, None);
+    }
+
+    #[test]
+    fn node_budget_is_shared_across_pages() {
+        let page = compressed_page(&model(30));
+        let src = file(&[page.clone(), page]);
+        let mut roomy = Budget {
+            inflated: MAX_INFLATED,
+            nodes: 500,
+        };
+        assert_eq!(extract_xml_with(&src, 0, &mut roomy).fragments.len(), 60);
+        let mut tight = Budget {
+            inflated: MAX_INFLATED,
+            nodes: 50,
+        };
+        assert_eq!(extract_xml_with(&src, 0, &mut tight).diagram, None);
+    }
+
+    #[test]
+    fn a_compressed_page_cannot_nest_another_file() {
+        let inner = file(&[compressed_page(&model(1))]);
+        let src = file(&[compressed_page(&inner)]);
+        assert_eq!(extract_xml(&src, 0).diagram, None);
+    }
+
+    #[test]
+    fn unmatched_markup_openers_cost_linear_time_and_keep_their_text() {
+        let lt = "<1 ".repeat(100_000);
+        assert_eq!(html_to_text(&lt), lt.trim());
+        let tags = "<a ".repeat(100_000);
+        assert_eq!(html_to_text(&tags), tags.trim());
+        let amp = "&x".repeat(100_000);
+        assert_eq!(html_to_text(&amp), amp);
+        assert_eq!(
+            html_to_text("a &amp; b &#65; &bogus; c"),
+            "a & b A &bogus; c"
+        );
+    }
+
+    fn png(chunks: &[(&[u8], &[u8])]) -> Vec<u8> {
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        for (kind, data) in chunks {
+            out.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            out.extend_from_slice(&[0; 4]);
+        }
+        out
+    }
+
+    #[test]
+    fn malformed_png_chunks_yield_nothing_without_panicking() {
+        let mut max_len = png(&[]);
+        max_len.extend_from_slice(&u32::MAX.to_be_bytes());
+        max_len.extend_from_slice(b"tEXt");
+        max_len.extend_from_slice(b"mxfile\0abc");
+        let mut cut_header = png(&[]);
+        cut_header.extend_from_slice(&[0, 0, 0, 5, b't', b'E']);
+        let mut cut_crc = png(&[(b"tEXt", b"mxfile\0abc")]);
+        cut_crc.truncate(cut_crc.len() - 2);
+        let no_nul = png(&[(b"tEXt", b"mxfile")]);
+        let other_key = png(&[(b"tEXt", b"Comment\0hello")]);
+        let bad_percent = png(&[(b"tEXt", b"mxfile\0%zz")]);
+        for (name, bytes) in [
+            ("max length", max_len),
+            ("cut header", cut_header),
+            ("cut crc", cut_crc),
+            ("no nul", no_nul),
+            ("other key", other_key),
+            ("bad percent", bad_percent),
+        ] {
+            assert_eq!(extract_png(&bytes, 0).diagram, None, "{name}");
+        }
     }
 }

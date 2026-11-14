@@ -232,10 +232,6 @@ mod tests {
             ("plain.svg", None),
             ("plain.png", None),
             ("dir.drawio.svg/readme", None),
-            ("a.drawio", Some(Format::Drawio)),
-            ("a.drawio.svg", Some(Format::DrawioSvg)),
-            ("a.DRAWIO.png", Some(Format::DrawioPng)),
-            ("plain.svg", None),
             ("notes.md", None),
             ("", None),
         ] {
