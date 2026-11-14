@@ -3,9 +3,10 @@
 
 use std::ffi::{OsStr, OsString};
 use std::io::{ErrorKind, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions};
 
@@ -13,11 +14,29 @@ use crate::hooks::resolve_in_root;
 
 use super::{ApplyError, WriteOutcome};
 
+/// Points inside an application where a test can change the file system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// A plan entry is about to be applied, after the whole plan was checked.
+    Start,
+    /// The target was checked and is about to be opened.
+    BeforeOpen,
+    /// The temporary file holds the new bytes. Its mode is still the private one.
+    TempWritten,
+    /// The temporary file is final. The target is about to be checked again.
+    BeforeCommit,
+}
+
 /// A target split into the directory that holds it and its file name.
+///
+/// The directory handle is opened once, at check time, and every later write
+/// goes through it. Swapping a path component afterwards cannot redirect the
+/// write, because the handle names the directory that was checked.
 pub(crate) struct Located {
-    root: Dir,
-    /// Parent directory relative to the root, with symlinks resolved.
-    parent_rel: PathBuf,
+    /// Deepest directory of the resolved parent chain that exists.
+    anchor: Dir,
+    /// Directories below `anchor` that do not exist yet.
+    missing: Vec<OsString>,
     /// File name.
     pub name: OsString,
     /// Root-relative path with `/` separators and symlinked parents resolved.
@@ -29,14 +48,28 @@ fn windows_unsafe(seg: &str) -> bool {
     seg.contains([':', '<', '>', '"', '|', '?', '*'])
 }
 
+/// Whether a name has the shape of a Windows 8.3 short-name alias, a `~`
+/// followed by digits such as `GITHUB~1` or `WORKFL~1`.
+pub(crate) fn short_name_alias(seg: &str) -> bool {
+    seg.match_indices('~')
+        .any(|(i, _)| seg[i + 1..].starts_with(|c: char| c.is_ascii_digit()))
+}
+
 /// Locate `rel` under `root` and check the route stays inside the root.
 ///
 /// The final component is not followed here. The host checks in
 /// [`resolve_in_root`] refuse a link that leaves the root, anywhere in the path.
-pub(crate) fn locate(root: &Path, rel: &str) -> Result<Located, ApplyError> {
+/// With `windows` set, names that look like 8.3 aliases are refused too, since
+/// they can reach a denied directory under another name.
+pub(crate) fn locate(root: &Path, rel: &str, windows: bool) -> Result<Located, ApplyError> {
     if rel.split('/').any(windows_unsafe) {
         return Err(ApplyError::PathRefused(format!(
             "`{rel}`: stream or reserved character"
+        )));
+    }
+    if windows && rel.split('/').any(short_name_alias) {
+        return Err(ApplyError::PathRefused(format!(
+            "`{rel}`: looks like a Windows 8.3 short name"
         )));
     }
     resolve_in_root(root, rel).map_err(ApplyError::PathRefused)?;
@@ -53,43 +86,66 @@ pub(crate) fn locate(root: &Path, rel: &str) -> Result<Located, ApplyError> {
         .strip_prefix(&canon)
         .map_err(|_| ApplyError::PathRefused(format!("`{rel}` leaves the project root")))?
         .to_owned();
-    let mut resolved: Vec<String> = parent_rel
+    let comps: Vec<OsString> = parent_rel
         .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .map(|c| c.as_os_str().to_owned())
+        .collect();
+    let mut resolved: Vec<String> = comps
+        .iter()
+        .map(|c| c.to_string_lossy().into_owned())
         .collect();
     resolved.push(name.to_owned());
-    let dir = Dir::open_ambient_dir(&canon, ambient_authority())
+    let mut anchor = Dir::open_ambient_dir(&canon, ambient_authority())
         .map_err(|e| ApplyError::io(canon.display(), &e))?;
+    let mut depth = 0;
+    for c in &comps {
+        match anchor.open_dir_nofollow(c) {
+            Ok(d) => anchor = d,
+            Err(e) if e.kind() == ErrorKind::NotFound => break,
+            Err(e) => {
+                return Err(ApplyError::PathRefused(format!(
+                    "`{rel}`: `{}` is not a plain directory ({e})",
+                    c.to_string_lossy()
+                )));
+            }
+        }
+        depth += 1;
+    }
     Ok(Located {
-        root: dir,
-        parent_rel,
+        anchor,
+        missing: comps[depth..].to_vec(),
         name: OsString::from(name),
         resolved: resolved.join("/"),
     })
 }
 
 impl Located {
-    /// Open the parent directory through the root handle.
-    pub(crate) fn open_parent(&self, create: bool) -> Result<Dir, ApplyError> {
-        self.try_open_parent(create)?
-            .ok_or_else(|| ApplyError::Io(format!("{}: directory is missing", self.resolved)))
+    /// The parent directory, creating the missing levels when asked.
+    ///
+    /// Each level is made and opened relative to the previous handle, without
+    /// following a link that appeared in the meantime. Without `create`, a
+    /// missing directory gives `Ok(None)`.
+    pub(crate) fn parent(&self, create: bool) -> Result<Option<Dir>, ApplyError> {
+        let fail = |e: std::io::Error| ApplyError::io(&self.resolved, &e);
+        let mut dir = self.anchor.try_clone().map_err(fail)?;
+        for c in &self.missing {
+            if !create {
+                return Ok(None);
+            }
+            match dir.create_dir(c) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(fail(e)),
+            }
+            dir = dir.open_dir_nofollow(c).map_err(fail)?;
+        }
+        Ok(Some(dir))
     }
 
-    /// Like [`Self::open_parent`], but a missing directory gives `Ok(None)`
-    /// unless `create` is set.
-    pub(crate) fn try_open_parent(&self, create: bool) -> Result<Option<Dir>, ApplyError> {
-        let fail = |e: std::io::Error| ApplyError::io(&self.resolved, &e);
-        if self.parent_rel.as_os_str().is_empty() {
-            return self.root.try_clone().map(Some).map_err(fail);
-        }
-        if create {
-            self.root.create_dir_all(&self.parent_rel).map_err(fail)?;
-        }
-        match self.root.open_dir(&self.parent_rel) {
-            Ok(d) => Ok(Some(d)),
-            Err(e) if e.kind() == ErrorKind::NotFound && !create => Ok(None),
-            Err(e) => Err(fail(e)),
-        }
+    /// The parent directory, which must exist.
+    pub(crate) fn open_parent(&self) -> Result<Dir, ApplyError> {
+        self.parent(false)?
+            .ok_or_else(|| ApplyError::Io(format!("{}: directory is missing", self.resolved)))
     }
 }
 
@@ -98,21 +154,6 @@ impl Located {
 pub(crate) enum Current {
     Absent,
     File(Vec<u8>),
-}
-
-#[cfg(unix)]
-fn nofollow(opts: &mut OpenOptions) -> Result<(), ApplyError> {
-    use cap_std::fs::OpenOptionsExt;
-    let flag = i32::try_from(rustix::fs::OFlags::NOFOLLOW.bits())
-        .map_err(|_| ApplyError::Io("O_NOFOLLOW does not fit".into()))?;
-    opts.custom_flags(flag);
-    Ok(())
-}
-
-#[cfg(not(unix))]
-#[allow(clippy::unnecessary_wraps)]
-fn nofollow(_: &mut OpenOptions) -> Result<(), ApplyError> {
-    Ok(())
 }
 
 #[cfg(unix)]
@@ -132,6 +173,16 @@ fn link_count(f: &cap_std::fs::File, _: &cap_std::fs::Metadata) -> std::io::Resu
 ///
 /// Refuses a symlink, a non-regular file and a file with several hard links.
 pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Current, ApplyError> {
+    read_current_at(parent, name, shown, &mut |_| {})
+}
+
+fn read_current_at(
+    parent: &Dir,
+    name: &OsStr,
+    shown: &str,
+    hook: &mut dyn FnMut(Stage),
+) -> Result<Current, ApplyError> {
+    // A cheap look first, so that a pipe or device is never opened for reading.
     match parent.symlink_metadata(name) {
         Ok(m) if m.file_type().is_symlink() => return Err(ApplyError::Symlink(shown.into())),
         Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(shown.into())),
@@ -139,13 +190,13 @@ pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Cu
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Current::Absent),
         Err(e) => return Err(ApplyError::io(shown, &e)),
     }
+    hook(Stage::BeforeOpen);
     let mut opts = OpenOptions::new();
-    opts.read(true);
-    nofollow(&mut opts)?;
+    opts.read(true).follow(FollowSymlinks::No);
     let mut file = match parent.open_with(name, &opts) {
         Ok(f) => f,
         Err(e) => {
-            // The name may have become a symlink after the check above.
+            // The name may have become a symlink after the look above.
             let swapped = parent
                 .symlink_metadata(name)
                 .is_ok_and(|m| m.file_type().is_symlink());
@@ -157,6 +208,10 @@ pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Cu
         }
     };
     let meta = file.metadata().map_err(|e| ApplyError::io(shown, &e))?;
+    if meta.file_type().is_symlink() {
+        // Windows opens the reparse point itself.
+        return Err(ApplyError::Symlink(shown.into()));
+    }
     if !meta.is_file() {
         return Err(ApplyError::NotRegularFile(shown.into()));
     }
@@ -170,7 +225,7 @@ pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Cu
     Ok(Current::File(bytes))
 }
 
-/// What the target must hold for a write to go ahead.
+/// What the target must hold for a write or delete to go ahead.
 pub(crate) enum Expect<'a> {
     /// These exact bytes.
     Bytes(&'a [u8]),
@@ -178,12 +233,30 @@ pub(crate) enum Expect<'a> {
     Absent,
 }
 
+impl Expect<'_> {
+    fn holds(&self, now: &Current) -> bool {
+        match (self, now) {
+            (Self::Bytes(want), Current::File(have)) => have == want,
+            (Self::Absent, Current::Absent) => true,
+            _ => false,
+        }
+    }
+}
+
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Create a fresh temporary file next to the target.
+///
+/// On Unix it starts private (0600), so the new bytes are never readable by
+/// others while the file is being filled.
 fn create_temp(parent: &Dir, shown: &str) -> Result<(OsString, cap_std::fs::File), ApplyError> {
     let mut opts = OpenOptions::new();
     opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos());
@@ -202,38 +275,37 @@ fn create_temp(parent: &Dir, shown: &str) -> Result<(OsString, cap_std::fs::File
 /// Replace or create the target with `new`, atomically.
 ///
 /// Steps: read the target (no-follow, regular, one link), compare it with
-/// `expect`, write and sync a temporary file with the original mode, read the
-/// target again, and rename over it only if it is unchanged. `before_commit`
-/// runs after the temporary file is complete and before the second read.
+/// `expect`, write a private temporary file, give it the original mode, sync
+/// it, read the target again, and rename over it only if it is unchanged.
+/// Ownership is not copied: the replacement belongs to the user who applies it.
 pub(crate) fn replace(
     parent: &Dir,
     name: &OsStr,
     shown: &str,
     expect: &Expect<'_>,
     new: &[u8],
-    before_commit: impl FnOnce(),
+    hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
-    let first = read_current(parent, name, shown)?;
+    let first = read_current_at(parent, name, shown, hook)?;
     let changed = || ApplyError::SourceChanged(shown.into());
-    match (expect, &first) {
-        (Expect::Bytes(want), Current::File(have)) if have == want => {}
-        (Expect::Absent, Current::Absent) => {}
-        _ => return Err(changed()),
+    if !expect.holds(&first) {
+        return Err(changed());
     }
     if matches!(&first, Current::File(have) if have == new) {
         return Ok(WriteOutcome::Unchanged);
     }
     let (tmp, file) = create_temp(parent, shown)?;
-    let finish = |mut file: cap_std::fs::File| -> Result<WriteOutcome, ApplyError> {
+    let mut finish = |mut file: cap_std::fs::File| -> Result<WriteOutcome, ApplyError> {
         let io = |e: std::io::Error| ApplyError::io(shown, &e);
         file.write_all(new).map_err(io)?;
+        hook(Stage::TempWritten);
         if let Ok(meta) = parent.metadata(name) {
             file.set_permissions(meta.permissions()).map_err(io)?;
         }
         file.sync_all().map_err(io)?;
         // Windows cannot rename a file while a handle to it is open.
         drop(file);
-        before_commit();
+        hook(Stage::BeforeCommit);
         if read_current(parent, name, shown)? != first {
             return Err(changed());
         }
@@ -250,17 +322,34 @@ pub(crate) fn replace(
     result
 }
 
-/// Delete the target if it is a regular file with one link.
-pub(crate) fn remove(parent: &Dir, name: &OsStr, shown: &str) -> Result<WriteOutcome, ApplyError> {
-    match read_current(parent, name, shown)? {
-        Current::Absent => Ok(WriteOutcome::Absent),
-        Current::File(_) => {
-            parent
-                .remove_file(name)
-                .map_err(|e| ApplyError::io(shown, &e))?;
-            Ok(WriteOutcome::Removed)
-        }
+/// Delete the target if it still matches `expect` and is a regular file with
+/// one link.
+///
+/// An absent target stays absent: a file that appeared after the check is
+/// reported as changed and not deleted.
+pub(crate) fn remove(
+    parent: &Dir,
+    name: &OsStr,
+    shown: &str,
+    expect: &Expect<'_>,
+    hook: &mut dyn FnMut(Stage),
+) -> Result<WriteOutcome, ApplyError> {
+    let changed = || ApplyError::SourceChanged(shown.into());
+    let first = read_current_at(parent, name, shown, hook)?;
+    if !expect.holds(&first) {
+        return Err(changed());
     }
+    if first == Current::Absent {
+        return Ok(WriteOutcome::Absent);
+    }
+    hook(Stage::BeforeCommit);
+    if read_current(parent, name, shown)? != first {
+        return Err(changed());
+    }
+    parent
+        .remove_file(name)
+        .map_err(|e| ApplyError::io(shown, &e))?;
+    Ok(WriteOutcome::Removed)
 }
 
 /// An entry of `parent` whose name equals `name` except for case.
@@ -281,6 +370,8 @@ mod tests {
         Dir::open_ambient_dir(path, ambient_authority()).unwrap()
     }
 
+    fn noop(_: Stage) {}
+
     #[test]
     fn tm15_a_rename_race_before_the_commit_loses_nothing_and_leaves_no_temporary_file() {
         let tmp = tempfile::tempdir().unwrap();
@@ -293,12 +384,15 @@ mod tests {
             "a.md",
             &Expect::Bytes(b"original"),
             b"ours",
-            || std::fs::write(&target, "racer").unwrap(),
+            &mut |s| {
+                if s == Stage::BeforeCommit {
+                    std::fs::write(&target, "racer").unwrap();
+                }
+            },
         );
         assert_eq!(got, Err(ApplyError::SourceChanged("a.md".into())));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "racer");
-        let left: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().collect();
-        assert_eq!(left.len(), 1);
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 1);
     }
 
     #[test]
@@ -312,10 +406,81 @@ mod tests {
             "new.md",
             &Expect::Absent,
             b"ours",
-            || std::fs::write(&target, "racer").unwrap(),
+            &mut |s| {
+                if s == Stage::BeforeCommit {
+                    std::fs::write(&target, "racer").unwrap();
+                }
+            },
         );
         assert_eq!(got, Err(ApplyError::SourceChanged("new.md".into())));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "racer");
+    }
+
+    #[test]
+    fn tm15_a_hardlink_made_before_the_commit_stops_the_rename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        std::fs::write(&target, "original").unwrap();
+        let parent = dir(tmp.path());
+        let got = replace(
+            &parent,
+            OsStr::new("a.md"),
+            "a.md",
+            &Expect::Bytes(b"original"),
+            b"ours",
+            &mut |s| {
+                if s == Stage::BeforeCommit {
+                    std::fs::hard_link(&target, tmp.path().join("alias.md")).unwrap();
+                }
+            },
+        );
+        assert_eq!(got, Err(ApplyError::Hardlinked("a.md".into())));
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "original");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("alias.md")).unwrap(),
+            "original"
+        );
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn tm15_a_delete_of_an_absent_target_refuses_a_file_that_appeared() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("late.md"), "precious").unwrap();
+        let parent = dir(tmp.path());
+        let got = remove(
+            &parent,
+            OsStr::new("late.md"),
+            "late.md",
+            &Expect::Absent,
+            &mut noop,
+        );
+        assert_eq!(got, Err(ApplyError::SourceChanged("late.md".into())));
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("late.md")).unwrap(),
+            "precious"
+        );
+    }
+
+    #[test]
+    fn tm15_a_delete_refuses_a_file_that_changed_since_the_check() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        std::fs::write(&target, "checked").unwrap();
+        let parent = dir(tmp.path());
+        let got = remove(
+            &parent,
+            OsStr::new("a.md"),
+            "a.md",
+            &Expect::Bytes(b"checked"),
+            &mut |s| {
+                if s == Stage::BeforeCommit {
+                    std::fs::write(&target, "new work").unwrap();
+                }
+            },
+        );
+        assert_eq!(got, Err(ApplyError::SourceChanged("a.md".into())));
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new work");
     }
 
     #[cfg(unix)]
@@ -332,9 +497,11 @@ mod tests {
             "a.md",
             &Expect::Bytes(b"original"),
             b"ours",
-            || {
-                std::fs::remove_file(&target).unwrap();
-                std::os::unix::fs::symlink("other", &target).unwrap();
+            &mut |s| {
+                if s == Stage::BeforeCommit {
+                    std::fs::remove_file(&target).unwrap();
+                    std::os::unix::fs::symlink("other", &target).unwrap();
+                }
             },
         );
         assert_eq!(got, Err(ApplyError::Symlink("a.md".into())));
@@ -342,5 +509,70 @@ mod tests {
             std::fs::read_to_string(tmp.path().join("other")).unwrap(),
             "other"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tm15_a_symlink_swapped_in_between_the_look_and_the_open_is_not_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        std::fs::write(&target, "original").unwrap();
+        std::fs::write(tmp.path().join("other"), "other").unwrap();
+        let parent = dir(tmp.path());
+        let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", &mut |s| {
+            if s == Stage::BeforeOpen {
+                std::fs::remove_file(&target).unwrap();
+                std::os::unix::fs::symlink("other", &target).unwrap();
+            }
+        });
+        assert_eq!(got, Err(ApplyError::Symlink("a.md".into())));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_temporary_file_is_private_while_it_is_filled_and_gets_the_original_mode_before_the_rename()
+     {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        std::fs::write(&target, "original").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let parent = dir(tmp.path());
+        let temp_mode = || {
+            let t = std::fs::read_dir(tmp.path())
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .find(|p| p.extension().is_some_and(|e| e == "tmp"))
+                .unwrap();
+            std::fs::metadata(t).unwrap().permissions().mode() & 0o777
+        };
+        let mut seen = Vec::new();
+        replace(
+            &parent,
+            OsStr::new("a.md"),
+            "a.md",
+            &Expect::Bytes(b"original"),
+            b"ours",
+            &mut |s| {
+                if matches!(s, Stage::TempWritten | Stage::BeforeCommit) {
+                    seen.push((s, temp_mode()));
+                }
+            },
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            seen,
+            [(Stage::TempWritten, 0o600), (Stage::BeforeCommit, 0o644)]
+        );
+    }
+
+    #[test]
+    fn short_name_aliases_are_recognised_by_their_tilde_and_digits() {
+        for alias in ["GITHUB~1", "WORKFL~1", "progra~12", "a~1.md", "x~9.yml"] {
+            assert!(short_name_alias(alias), "{alias}");
+        }
+        for plain in ["a~b", "~", "~x1", "notes", "a~", "tilde~.md"] {
+            assert!(!short_name_alias(plain), "{plain}");
+        }
     }
 }

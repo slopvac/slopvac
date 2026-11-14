@@ -102,9 +102,16 @@ pub fn apply_edits(
     edits: &[FixEdit],
 ) -> Result<EditReport, ApplyError> {
     let new = edited_bytes(source, edits)?;
-    let at = locate(root, path)?;
-    let parent = at.open_parent(false)?;
-    let outcome = replace(&parent, &at.name, path, &Expect::Bytes(source), &new, || {})?;
+    let at = locate(root, path, cfg!(windows))?;
+    let parent = at.open_parent()?;
+    let outcome = replace(
+        &parent,
+        &at.name,
+        path,
+        &Expect::Bytes(source),
+        &new,
+        &mut |_| {},
+    )?;
     Ok(EditReport {
         path: path.to_owned(),
         edits: edits.len(),

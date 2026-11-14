@@ -7,10 +7,10 @@ use std::path::Path;
 
 use serde_json::Value;
 use slopvac_plugins::apply::{
-    ApplyError, EntryStatus, HarnessWarning, PlanOptions, WriteOutcome, apply_edits, apply_plan,
-    edited_bytes,
+    ApplyError, EntryStatus, HarnessWarning, PlanOptions, SeamStage, WriteOutcome, apply_edits,
+    apply_plan, apply_plan_seam, edited_bytes,
 };
-use slopvac_plugins::hooks::{FixEdit, RecipeAction, RecipeFile, Span};
+use slopvac_plugins::hooks::{FixEdit, MAX_INSERTED_BYTES, RecipeAction, RecipeFile, Span};
 use tempfile::TempDir;
 
 fn edit(start: u64, end: u64, text: &str) -> FixEdit {
@@ -720,4 +720,288 @@ fn tm18_a_path_that_differs_only_in_case_from_an_existing_file_is_refused() {
     );
     assert_eq!(names(&s.root), ["Notes.md"]);
     assert_eq!(fs::read_to_string(s.root.join("Notes.md")).unwrap(), "mine");
+}
+
+// ---- review round 1 ----
+
+fn seam(
+    s: &Sandbox,
+    plan: &[RecipeFile],
+    options: &PlanOptions,
+    mut act: impl FnMut(usize, SeamStage),
+) -> slopvac_plugins::apply::PlanReport {
+    apply_plan_seam(&s.root, plan, options, false, &mut act)
+}
+
+#[test]
+fn inserted_bytes_are_capped_at_the_limit_and_one_more_is_refused() {
+    let at_cap = edit(0, 0, &"x".repeat(MAX_INSERTED_BYTES));
+    assert_eq!(
+        edited_bytes(b"", &[at_cap]).unwrap().len(),
+        MAX_INSERTED_BYTES
+    );
+    let over = edit(0, 0, &"x".repeat(MAX_INSERTED_BYTES + 1));
+    assert!(matches!(
+        edited_bytes(b"", std::slice::from_ref(&over)),
+        Err(ApplyError::InvalidEdits(_))
+    ));
+    let s = sandbox();
+    fs::write(s.root.join("a.md"), "").unwrap();
+    assert!(apply_edits(&s.root, "a.md", b"", std::slice::from_ref(&over)).is_err());
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn tm16_a_parent_swapped_for_a_symlink_after_the_check_cannot_redirect_the_write() {
+    // Finding 1: the write must land in the directory that was checked.
+    let s = sandbox();
+    fs::create_dir_all(s.root.join(".github/workflows")).unwrap();
+    fs::create_dir(s.root.join("docs")).unwrap();
+    let plan = [write_file("docs/ci.yml", "x")];
+    let report = seam(&s, &plan, &PlanOptions::default(), |_, stage| {
+        if stage == SeamStage::Start {
+            fs::rename(s.root.join("docs"), s.root.join("docs.orig")).unwrap();
+            std::os::unix::fs::symlink(".github/workflows", s.root.join("docs")).unwrap();
+        }
+    });
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Done(WriteOutcome::Created)
+    );
+    assert_eq!(
+        names(&s.root.join(".github/workflows")),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        fs::read_to_string(s.root.join("docs.orig/ci.yml")).unwrap(),
+        "x"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn tm16_a_missing_parent_replaced_by_a_symlink_after_the_check_fails_and_writes_nothing() {
+    let s = sandbox();
+    fs::create_dir_all(s.root.join(".github/workflows")).unwrap();
+    let plan = [write_file("new/ci.yml", "x")];
+    let report = seam(&s, &plan, &PlanOptions::default(), |_, stage| {
+        if stage == SeamStage::Start {
+            std::os::unix::fs::symlink(".github/workflows", s.root.join("new")).unwrap();
+        }
+    });
+    assert!(matches!(
+        only_status(&report, 0),
+        EntryStatus::Failed(ApplyError::Io(_))
+    ));
+    assert!(!report.wrote);
+    assert_eq!(
+        names(&s.root.join(".github/workflows")),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn tm15_a_hardlink_made_after_the_check_stops_a_plan_write() {
+    let s = sandbox();
+    fs::write(s.root.join("b.md"), "keep").unwrap();
+    let plan = [write_file("b.md", "new")];
+    let report = seam(&s, &plan, &PlanOptions::default(), |_, stage| {
+        if stage == SeamStage::Start {
+            fs::hard_link(s.root.join("b.md"), s.root.join("alias.md")).unwrap();
+        }
+    });
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Failed(ApplyError::Hardlinked("b.md".into()))
+    );
+    assert_eq!(fs::read_to_string(s.root.join("b.md")).unwrap(), "keep");
+    assert_eq!(fs::read_to_string(s.root.join("alias.md")).unwrap(), "keep");
+    assert_eq!(names(&s.root), ["alias.md", "b.md"]);
+}
+
+#[test]
+fn a_failure_part_way_reports_done_failed_and_not_attempted_exactly() {
+    let s = sandbox();
+    fs::write(s.root.join("b.md"), "keep").unwrap();
+    let plan = [
+        write_file("a.md", "first"),
+        write_file("b.md", "second"),
+        write_file("c.md", "third"),
+    ];
+    let report = seam(&s, &plan, &PlanOptions::default(), |i, stage| {
+        if i == 1 && stage == SeamStage::Start {
+            fs::write(s.root.join("b.md"), "changed by someone").unwrap();
+        }
+    });
+    let statuses: Vec<_> = report.entries.iter().map(|e| e.status.clone()).collect();
+    assert_eq!(
+        statuses,
+        [
+            EntryStatus::Done(WriteOutcome::Created),
+            EntryStatus::Failed(ApplyError::SourceChanged("b.md".into())),
+            EntryStatus::NotAttempted,
+        ]
+    );
+    assert!(report.wrote);
+    assert!(report.has_problems());
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "first");
+    assert_eq!(
+        fs::read_to_string(s.root.join("b.md")).unwrap(),
+        "changed by someone"
+    );
+    assert!(!s.root.join("c.md").exists());
+}
+
+#[test]
+fn tm15_a_remove_of_an_absent_file_does_not_delete_one_created_after_the_check() {
+    let s = sandbox();
+    let plan = [file("late.md", RecipeAction::Remove, None)];
+    let report = seam(&s, &plan, &PlanOptions::default(), |_, stage| {
+        if stage == SeamStage::Start {
+            fs::write(s.root.join("late.md"), "precious").unwrap();
+        }
+    });
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Failed(ApplyError::SourceChanged("late.md".into()))
+    );
+    assert_eq!(
+        fs::read_to_string(s.root.join("late.md")).unwrap(),
+        "precious"
+    );
+}
+
+#[test]
+fn tm15_a_remove_does_not_delete_a_file_that_changed_after_the_check() {
+    let s = sandbox();
+    fs::write(s.root.join("a.md"), "checked").unwrap();
+    let plan = [file("a.md", RecipeAction::Remove, None)];
+    let report = seam(&s, &plan, &PlanOptions::default(), |_, stage| {
+        if stage == SeamStage::BeforeCommit {
+            fs::write(s.root.join("a.md"), "new work").unwrap();
+        }
+    });
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Failed(ApplyError::SourceChanged("a.md".into()))
+    );
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "new work");
+}
+
+#[test]
+fn removing_a_file_in_a_missing_directory_is_absent_and_later_entries_still_apply() {
+    let s = sandbox();
+    let plan = [
+        file("missing-dir/file.md", RecipeAction::Remove, None),
+        write_file("after.md", "ok"),
+    ];
+    let report = apply_plan(&s.root, &plan, &PlanOptions::default());
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Done(WriteOutcome::Absent)
+    );
+    assert_eq!(
+        *only_status(&report, 1),
+        EntryStatus::Done(WriteOutcome::Created)
+    );
+    assert_eq!(names(&s.root), ["after.md"]);
+}
+
+#[test]
+fn tm18_windows_8_3_short_name_aliases_are_refused() {
+    let s = sandbox();
+    fs::create_dir_all(s.root.join(".github/workflows")).unwrap();
+    for alias in [
+        "GITHUB~1/WORKFL~1/ci.yml",
+        ".github/WORKFL~1/ci.yml",
+        "GIT~1/config",
+        "PROGRA~1/x.md",
+        "docs/NOTES~12.md",
+    ] {
+        let report = apply_plan_seam(
+            &s.root,
+            &[write_file(alias, "x")],
+            &dry(),
+            true,
+            &mut |_, _| {},
+        );
+        assert!(
+            matches!(
+                only_status(&report, 0),
+                EntryStatus::Refused(ApplyError::PathRefused(_))
+            ),
+            "{alias}: {:?}",
+            only_status(&report, 0)
+        );
+    }
+}
+
+#[test]
+fn tm18_names_with_a_tilde_but_no_digits_are_not_taken_for_aliases() {
+    let s = sandbox();
+    let report = apply_plan_seam(
+        &s.root,
+        &[write_file("docs/a~b.md", "x")],
+        &dry(),
+        true,
+        &mut |_, _| {},
+    );
+    // Only the Windows write refusal remains.
+    assert!(matches!(
+        only_status(&report, 0),
+        EntryStatus::Refused(ApplyError::UnsupportedOnWindows(_))
+    ));
+}
+
+#[test]
+fn h22_on_windows_every_mutating_entry_is_refused_and_nothing_is_written() {
+    let s = sandbox();
+    fs::write(s.root.join("old.md"), "old").unwrap();
+    let plan = [
+        write_file("new.md", "x"),
+        file("old.md", RecipeAction::Remove, None),
+        file("m.md", RecipeAction::Merge, Some("x")),
+        write_file("dir/deep.md", "x"),
+    ];
+    for dry_run in [false, true] {
+        let options = PlanOptions {
+            dry_run,
+            allow_sensitive: vec![],
+        };
+        let report = apply_plan_seam(&s.root, &plan, &options, true, &mut |_, _| {
+            panic!("nothing may be applied on Windows")
+        });
+        for (i, e) in report.entries.iter().enumerate() {
+            assert!(
+                matches!(
+                    e.status,
+                    EntryStatus::Refused(ApplyError::UnsupportedOnWindows(_))
+                ),
+                "{i}: {:?}",
+                e.status
+            );
+        }
+        assert!(!report.wrote);
+    }
+    assert_eq!(names(&s.root), ["old.md"]);
+    assert_eq!(fs::read_to_string(s.root.join("old.md")).unwrap(), "old");
+}
+
+#[cfg(unix)]
+#[test]
+fn tm17_the_resolved_destination_is_marked_as_well_as_the_written_path() {
+    let s = sandbox();
+    fs::create_dir(s.root.join(".claude")).unwrap();
+    std::os::unix::fs::symlink(".claude", s.root.join("notes")).unwrap();
+    let plan = [write_file("notes/settings.json", r#"{"hooks": {}}"#)];
+    let report = apply_plan(&s.root, &plan, &dry());
+    assert_eq!(
+        report.entries[0].warnings,
+        [HarnessWarning::AgentDirectory, HarnessWarning::Hook]
+    );
+    assert_eq!(
+        report.entries[0].resolved.as_deref(),
+        Some(".claude/settings.json")
+    );
 }

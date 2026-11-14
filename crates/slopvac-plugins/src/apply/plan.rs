@@ -1,16 +1,28 @@
 //! Applying a recipe plan.
 //!
 //! A plan is checked as a whole before anything is written. If any entry is
-//! refused, no entry is written. After that the entries apply one by one. A
-//! failure part-way (a race, a full disk) stops the run and leaves the rest as
-//! [`EntryStatus::NotAttempted`]. The files already written stay written.
+//! refused, no entry is written. After that the entries apply one by one. This
+//! is not a transaction: a failure part-way (a race, a full disk) stops the run,
+//! leaves the rest as [`EntryStatus::NotAttempted`], and keeps the files already
+//! written. The report says which is which.
+//!
+//! Each entry keeps the parent directory handle it was checked through, and
+//! writes only through it. A component swapped for a symlink after the check
+//! cannot redirect the write.
+//!
+//! On Windows the plan is checked but never applied. `cap-std` implements
+//! rename, delete and create-directory there through absolute paths rebuilt from
+//! the handle, which a junction swapped in meanwhile can redirect. Every
+//! mutating entry is refused with [`ApplyError::UnsupportedOnWindows`].
 
 use std::collections::HashSet;
 use std::path::Path;
 
 use crate::hooks::{RecipeAction, RecipeFile};
 
-use super::fs::{Current, Expect, case_twin, locate, read_current, remove, replace};
+use super::fs::{
+    Current, Expect, Located, Stage, case_twin, locate, read_current, remove, replace,
+};
 use super::sensitive::{HarnessWarning, deny_reason, harness_warnings};
 use super::{ApplyError, WriteOutcome};
 
@@ -36,7 +48,7 @@ pub enum EntryStatus {
     Done(WriteOutcome),
     /// Refused before anything was written.
     Refused(ApplyError),
-    /// Failed while applying.
+    /// Failed while applying. Entries before it stay written.
     Failed(ApplyError),
     /// Not tried because an earlier entry failed.
     NotAttempted,
@@ -56,7 +68,8 @@ pub struct PlanEntry {
     pub sensitive: Option<&'static str>,
     /// Whether the caller approved the sensitive path.
     pub approved: bool,
-    /// Agent-harness marks (O8). Show them with the plan.
+    /// Agent-harness marks (O8) for the path as written and for the resolved
+    /// path. Show them with the plan.
     pub warnings: Vec<HarnessWarning>,
     /// What happened.
     pub status: EntryStatus,
@@ -84,20 +97,35 @@ impl PlanReport {
     }
 }
 
-/// An entry that passed the checks, with the state it was checked against.
+/// An entry that passed the checks, with the state and directory it was
+/// checked against.
 struct Checked {
+    at: Located,
     expect: Current,
+}
+
+fn merge_warnings(into: &mut Vec<HarnessWarning>, more: Vec<HarnessWarning>) {
+    for w in more {
+        if !into.contains(&w) {
+            into.push(w);
+        }
+    }
 }
 
 fn check(
     root: &Path,
     file: &RecipeFile,
     options: &PlanOptions,
+    windows: bool,
     seen: &mut HashSet<String>,
     entry: &mut PlanEntry,
 ) -> Result<Checked, ApplyError> {
-    let at = locate(root, &file.path)?;
+    let at = locate(root, &file.path, windows)?;
     entry.resolved = Some(at.resolved.clone());
+    if at.resolved != file.path {
+        let content = file.content.as_deref();
+        merge_warnings(&mut entry.warnings, harness_warnings(&at.resolved, content));
+    }
     if !seen.insert(at.resolved.to_lowercase()) {
         return Err(ApplyError::DuplicatePath(file.path.clone()));
     }
@@ -132,41 +160,50 @@ fn check(
             file.path
         )));
     }
-    let Some(parent) = at.try_open_parent(false)? else {
-        return Ok(Checked {
-            expect: Current::Absent,
-        });
+    let current = match at.parent(false)? {
+        None => Current::Absent,
+        Some(parent) => {
+            if let Some(existing) = case_twin(&parent, &at.name) {
+                return Err(ApplyError::CaseCollision {
+                    path: file.path.clone(),
+                    existing,
+                });
+            }
+            read_current(&parent, &at.name, &file.path)?
+        }
     };
-    if let Some(existing) = case_twin(&parent, &at.name) {
-        return Err(ApplyError::CaseCollision {
-            path: file.path.clone(),
-            existing,
-        });
-    }
-    let current = read_current(&parent, &at.name, &file.path)?;
     if file.action == RecipeAction::Merge && current != Current::Absent {
         return Err(ApplyError::MergeUnsupported(file.path.clone()));
     }
-    Ok(Checked { expect: current })
+    if windows {
+        return Err(ApplyError::UnsupportedOnWindows(file.path.clone()));
+    }
+    Ok(Checked {
+        at,
+        expect: current,
+    })
 }
 
 fn apply_one(
-    root: &Path,
     file: &RecipeFile,
     checked: &Checked,
+    hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
-    let at = locate(root, &file.path)?;
+    let at = &checked.at;
+    let expect = match &checked.expect {
+        Current::File(bytes) => Expect::Bytes(bytes),
+        Current::Absent => Expect::Absent,
+    };
     match file.action {
-        RecipeAction::Remove => {
-            let parent = at.open_parent(false)?;
-            remove(&parent, &at.name, &file.path)
-        }
+        RecipeAction::Remove => match at.parent(false)? {
+            Some(parent) => remove(&parent, &at.name, &file.path, &expect, hook),
+            // The directory was absent when checked, so there is nothing to delete.
+            None => Ok(WriteOutcome::Absent),
+        },
         RecipeAction::Write | RecipeAction::Merge => {
-            let parent = at.open_parent(true)?;
-            let expect = match &checked.expect {
-                Current::File(bytes) => Expect::Bytes(bytes),
-                Current::Absent => Expect::Absent,
-            };
+            let parent = at
+                .parent(true)?
+                .ok_or_else(|| ApplyError::Io(format!("{}: no directory", at.resolved)))?;
             let content = file.content.as_deref().unwrap_or_default();
             replace(
                 &parent,
@@ -174,7 +211,7 @@ fn apply_one(
                 &file.path,
                 &expect,
                 content.as_bytes(),
-                || {},
+                hook,
             )
         }
     }
@@ -186,8 +223,59 @@ fn apply_one(
 /// The checks repeat the path rules, so a plan built another way is safe too.
 /// Merge into an existing file is refused until the contract defines block
 /// markers; a merge into a missing file creates it. `remove` deletes the file.
+/// On Windows every mutating entry is refused (see the module documentation).
 #[must_use]
 pub fn apply_plan(root: &Path, files: &[RecipeFile], options: &PlanOptions) -> PlanReport {
+    run(root, files, options, cfg!(windows), &mut |_, _| {})
+}
+
+/// Test seam for [`apply_plan`]: pretend to run on `windows` (or not), and call
+/// `between(index, stage)` at each point where a concurrent process could
+/// change the file system. `index` is the plan entry being applied. Not part of
+/// the supported API.
+#[doc(hidden)]
+#[must_use]
+pub fn apply_plan_seam(
+    root: &Path,
+    files: &[RecipeFile],
+    options: &PlanOptions,
+    windows: bool,
+    between: &mut dyn FnMut(usize, SeamStage),
+) -> PlanReport {
+    run(root, files, options, windows, &mut |i, s| {
+        between(
+            i,
+            match s {
+                Stage::Start => SeamStage::Start,
+                Stage::BeforeOpen => SeamStage::BeforeOpen,
+                Stage::TempWritten => SeamStage::TempWritten,
+                Stage::BeforeCommit => SeamStage::BeforeCommit,
+            },
+        );
+    })
+}
+
+/// Where [`apply_plan_seam`] lets a test act.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeamStage {
+    /// The whole plan was checked and this entry is about to be applied.
+    Start,
+    /// The target is about to be opened for its first read.
+    BeforeOpen,
+    /// The temporary file holds the new bytes.
+    TempWritten,
+    /// Just before the second source check and the rename or delete.
+    BeforeCommit,
+}
+
+fn run(
+    root: &Path,
+    files: &[RecipeFile],
+    options: &PlanOptions,
+    windows: bool,
+    between: &mut dyn FnMut(usize, Stage),
+) -> PlanReport {
     let mut seen = HashSet::new();
     let mut entries = Vec::with_capacity(files.len());
     let mut checked = Vec::with_capacity(files.len());
@@ -201,7 +289,7 @@ pub fn apply_plan(root: &Path, files: &[RecipeFile], options: &PlanOptions) -> P
             warnings: harness_warnings(&file.path, file.content.as_deref()),
             status: EntryStatus::Planned,
         };
-        match check(root, file, options, &mut seen, &mut entry) {
+        match check(root, file, options, windows, &mut seen, &mut entry) {
             Ok(c) => checked.push(Some(c)),
             Err(e) => {
                 entry.status = EntryStatus::Refused(e);
@@ -218,13 +306,19 @@ pub fn apply_plan(root: &Path, files: &[RecipeFile], options: &PlanOptions) -> P
         return report;
     }
     let mut failed = false;
-    for ((file, entry), checked) in files.iter().zip(&mut report.entries).zip(&checked) {
+    for (i, ((file, entry), checked)) in files
+        .iter()
+        .zip(&mut report.entries)
+        .zip(&checked)
+        .enumerate()
+    {
         let Some(checked) = checked else { continue };
         if failed {
             entry.status = EntryStatus::NotAttempted;
             continue;
         }
-        match apply_one(root, file, checked) {
+        between(i, Stage::Start);
+        match apply_one(file, checked, &mut |s| between(i, s)) {
             Ok(outcome) => {
                 report.wrote |= matches!(
                     outcome,

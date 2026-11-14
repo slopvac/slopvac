@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+cap-fs-ext.workspace = true
 cap-std.workspace = true
 crossbeam-channel.workspace = true
 rustix.workspace = true
