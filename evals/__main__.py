@@ -108,9 +108,16 @@ def _paths(args: argparse.Namespace) -> dict[str, Path]:
 def cmd_label_sample(args: argparse.Namespace) -> int:
     p = _paths(args)
     existing = labelling.read_jsonl(p["items"])
+    manifest = lib.load_manifest()
+    results = runner.load_results(Path(args.results))
+    try:
+        runner.check_corpus(results, manifest)
+    except runner.EngineError as exc:
+        print(f"evals label sample: {exc}", file=sys.stderr)
+        return 2
     new = labelling.sample_items(
-        lib.load_manifest(),
-        runner.load_results(Path(args.results)),
+        manifest,
+        results,
         per_rule=args.per_rule,
         existing=[i["id"] for i in existing],
     )
