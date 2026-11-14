@@ -88,7 +88,7 @@ jobs:
         if: ${{ steps.mode.outputs.publish == 'true' }}
         run: |
           set -euo pipefail
-          if ! git branch -r --contains "$GITHUB_SHA" | grep -E '^\s*origin/(main|release-please--)'; then
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -Eq '^\s*origin/(main|release-please--[^ ]+)\s*$'; then
             echo "candidate commit is not on main or a release-please branch" >&2
             exit 1
           fi

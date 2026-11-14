@@ -234,3 +234,193 @@ def test_the_parse_step_emits_the_outputs_the_jobs_read():
         )
     }
     assert read == emitted == {"cargo", "pypi"}
+
+
+# Behaviour of the guard steps, run as the workflow runs them.
+
+
+def run_step(job: str, name: str, cwd: Path, env: dict[str, str]):
+    script = step(job, name)["run"]
+    return subprocess.run(
+        ["bash", "-c", script],
+        cwd=cwd,
+        env={"PATH": os.environ["PATH"], **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("tag", "cargo", "pypi"),
+    [
+        ("rc/v3.0.0-rc.1", "3.0.0-rc.1", "3.0.0rc1"),
+        ("rc/v3.1.20-rc.12", "3.1.20-rc.12", "3.1.20rc12"),
+    ],
+)
+def test_the_parse_step_writes_both_versions_for_a_candidate_tag(
+    tmp_path, tag, cargo, pypi
+):
+    output = tmp_path / "out"
+    output.write_text("")
+    done = run_step(
+        "validate", "Parse the tag", ROOT, {"TAG": tag, "GITHUB_OUTPUT": str(output)}
+    )
+    assert done.returncode == 0, done.stderr
+    assert output.read_text().splitlines() == [f"cargo={cargo}", f"pypi={pypi}"]
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "v3.0.0",
+        "3.0.0-rc.1",
+        "rc/3.0.0-rc.1",
+        "rc/v3.0.0",
+        "rc/v3.0.0-rc.0",
+        "rc/v3.0.0-rc.01",
+        "rc/v3.0-rc.1",
+        "x/rc/v3.0.0-rc.1",
+        "rc/v3.0.0-rc.1/extra",
+        "rc/v3.0.0-rc.1 ",
+        "rc/v3.0.0-rc.1$(id)",
+        "rc/v3.0.0-rc.1`id`",
+        "rc/v3.0.0-rc.1;id",
+        "",
+    ],
+)
+def test_the_parse_step_rejects_anything_but_a_candidate_tag(tmp_path, tag):
+    output = tmp_path / "out"
+    output.write_text("")
+    done = run_step(
+        "validate", "Parse the tag", ROOT, {"TAG": tag, "GITHUB_OUTPUT": str(output)}
+    )
+    assert done.returncode != 0
+    assert output.read_text() == ""
+
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.com",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.com",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
+}
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        env={"PATH": os.environ["PATH"], **GIT_ENV},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A checkout whose origin has one commit per branch: main, main-foo, feature,
+    and release-please--branches--main."""
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    git(tmp_path, "init", "-q", "-b", "main", str(seed))
+    git(seed, "remote", "add", "origin", str(origin))
+    shas = {}
+    for branch in ("main", "main-foo", "feature", "release-please--branches--main"):
+        git(seed, "checkout", "-q", "--orphan", branch)
+        (seed / "f").write_text(branch)
+        git(seed, "add", "f")
+        git(seed, "commit", "-q", "-m", branch)
+        git(seed, "push", "-q", "origin", branch)
+        shas[branch] = git(seed, "rev-parse", "HEAD")
+    work = tmp_path / "work"
+    git(tmp_path, "clone", "-q", str(origin), str(work))
+    return work, shas
+
+
+@pytest.mark.parametrize(
+    ("branch", "passes"),
+    [
+        ("main", True),
+        ("release-please--branches--main", True),
+        ("main-foo", False),
+        ("feature", False),
+    ],
+)
+def test_the_ancestry_guard_accepts_only_main_and_release_please_branches(
+    clone, branch, passes
+):
+    work, shas = clone
+    done = run_step(
+        "validate",
+        "Require the commit to be on main or the release PR branch",
+        work,
+        {**GIT_ENV, "GITHUB_SHA": shas[branch]},
+    )
+    assert (done.returncode == 0) is passes, done.stderr
+    if not passes:
+        assert "not on main" in done.stderr
+
+
+def make_wheels(directory: Path, names: list[str]) -> None:
+    directory.mkdir()
+    for name in names:
+        (directory / name).write_text("")
+
+
+WHEEL_STEP = "Check the wheel versions"
+TARGET_TAGS = [
+    "macosx_11_0_arm64",
+    "macosx_10_12_x86_64",
+    "manylinux_2_17_x86_64",
+    "manylinux_2_17_aarch64",
+    "musllinux_1_2_x86_64",
+    "win_amd64",
+]
+
+
+def wheel_names(version: str) -> list[str]:
+    return [f"slopvac-{version}-py3-none-{t}.whl" for t in TARGET_TAGS]
+
+
+def run_wheel_guard(tmp_path: Path, names: list[str] | None, expected="3.0.0rc2"):
+    if names is not None:
+        make_wheels(tmp_path / "dist", names)
+    return run_step("publish", WHEEL_STEP, tmp_path, {"EXPECTED": expected})
+
+
+def test_the_wheel_guard_accepts_a_full_set_of_the_expected_version(tmp_path):
+    done = run_wheel_guard(tmp_path, wheel_names("3.0.0rc2"))
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        wheel_names("3.0.0rc1"),
+        wheel_names("3.0.0rc20"),
+        wheel_names("3.0.0"),
+        wheel_names("3.0.0rc2")[:-1] + wheel_names("2.18.1")[:1],
+    ],
+    ids=["older-rc", "longer-rc", "stable", "one-stray"],
+)
+def test_the_wheel_guard_rejects_a_wheel_of_another_version(tmp_path, names):
+    done = run_wheel_guard(tmp_path, names)
+    assert done.returncode == 1
+    assert "unexpected wheel" in done.stderr
+
+
+def test_the_wheel_guard_rejects_an_empty_directory(tmp_path):
+    done = run_wheel_guard(tmp_path, [])
+    assert done.returncode == 1
+    assert "no wheels downloaded" in done.stderr
+
+
+def test_the_wheel_guard_rejects_a_missing_directory(tmp_path):
+    done = run_wheel_guard(tmp_path, None)
+    assert done.returncode == 1
+    assert "no wheels downloaded" in done.stderr
