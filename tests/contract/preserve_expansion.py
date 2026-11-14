@@ -75,13 +75,11 @@ def resolve(layers: list[dict], category: str, qid: str, shipped: str, judgement
 
 
 def category_dial(layers: list[dict], category: str, key: str):
+    """Merged dial. The string none clears a budget set by a lower layer."""
     value = None
     for layer in layers:
         value = dials(layer.get("categories", {}).get(category, {})).get(key, value)
-    return value
-
-
-NO_BUDGET = 1_000_000.0
+    return None if value == "none" else value
 
 
 def matches(glob: str, path: str) -> bool:
@@ -176,7 +174,7 @@ def expand(config2: dict, ruleset) -> dict:
                     and "max_per_100_words" in base["categories"][name]
                     and "max_per_100_words" not in top_cat.get(name, {})
                 ):
-                    kept["max_per_100_words"] = NO_BUDGET
+                    kept["max_per_100_words"] = "none"
                 if kept:
                     sw_cats[name] = kept
             sw_rules = {}

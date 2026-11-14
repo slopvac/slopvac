@@ -18,7 +18,6 @@ from preserve_expansion import (
     ROOT,
     category_dial,
     expand,
-    NO_BUDGET,
     mapping,
     matches,
     resolve,
@@ -364,8 +363,6 @@ def test_expansion_reproduces_2x_for_each_file(name, ruleset):
             if settings.severity.value == "off":
                 continue
             budget = category_dial(layers, cat, "max_per_100_words")
-            if budget is not None and budget >= NO_BUDGET:
-                budget = None
             assert budget == settings.max_per_100_words, (path, cat)
             assert category_dial(layers, cat, "weight") == settings.weight, (path, cat)
 
@@ -378,3 +375,13 @@ def test_ignored_2x_rule_entry_is_dropped(ruleset):
     assert excluded.qualified_id not in expand(config2, ruleset)["rules"]
     _, _, states = mapping.engine_states("relaxed", to_2x_config(config2), "a.md")
     assert states[excluded.qualified_id] == (False, "off")
+
+
+def test_a_profile_override_clears_a_budget_with_none(ruleset):
+    # orwell-voice has a 0.5 budget at normal and none at strict.
+    config3 = expand(
+        {"profile": "normal", "overrides": [{"files": ["docs/**"], "profile": "strict"}]},
+        ruleset,
+    )
+    block = config3["overrides"][0]
+    assert block["categories"]["orwell-voice"]["max_per_100_words"] == "none"
