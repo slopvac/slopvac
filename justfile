@@ -76,3 +76,11 @@ perf-check $BASE="" $SCENARIO="": perf-wait-idle
 # Validate the v3 contract schemas and conformance corpus offline.
 contract:
     uv run --extra dev pytest tests/contract
+
+# Generate the reference docs site source into build/site-src.
+docs:
+    uv run python scripts/docs/build_site.py
+
+# Build the reference docs to a temp dir and fail on broken links or bad schema ids.
+docs-check:
+    uv run python scripts/docs/build_site.py --check
