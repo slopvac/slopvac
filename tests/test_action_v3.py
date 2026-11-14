@@ -135,6 +135,32 @@ def test_every_lint_invocation_is_offline(run, env):
     assert all(argv[0] == "--offline" for argv in log)
 
 
+def test_default_report_destinations_land_in_the_workspace_not_the_runner_temp(
+    tmp_path, binary
+):
+    workspace, temp = tmp_path / "ws", tmp_path / "tmp"
+    workspace.mkdir()
+    temp.mkdir()
+    paths = tmp_path / "paths"
+    paths.write_bytes(b"a.md\0")
+    github_output = tmp_path / "out"
+    env = {
+        "BINARY": str(binary),
+        "PATH_LIST": str(paths),
+        "RUNNER_TEMP": str(temp),
+        "GITHUB_WORKSPACE": str(workspace),
+        "GITHUB_OUTPUT": str(github_output),
+        "FAKE_LOG": str(tmp_path / "log"),
+        **{f"FAKE_EXIT_{fmt.upper()}": "0" for fmt in FORMATS},
+    }
+    assert action.lint(env) == 0
+    assert (workspace / "slopvac.rdjsonl").is_file()
+    assert (workspace / "slopvac.sarif").is_file()
+    assert (workspace / "slopvac-codeclimate.json").is_file()
+    assert (temp / "slopvac-report.json").is_file()
+    assert not (temp / "slopvac.rdjsonl").exists()
+
+
 def test_rdjsonl_is_written_to_a_nested_workspace_path(run, tmp_path):
     target = tmp_path / "reports" / "sub" / "slopvac.rdjsonl"
     code, _, outputs = run(RDJSONL_FILE=str(target))
