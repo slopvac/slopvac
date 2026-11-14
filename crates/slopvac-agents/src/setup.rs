@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command, builder::PossibleValuesParser};
 use crate::block::{self, State};
 use crate::content::{self, BlockKind};
 use crate::error::AgentsError;
+use crate::fsx::Project;
 use crate::harness::{self, Harness};
 use crate::managed;
 
@@ -103,6 +104,7 @@ fn usage(message: &str) -> AgentsError {
 }
 
 struct Plan {
+    project: Project,
     harness: Harness,
     steering: PathBuf,
     skill: Option<PathBuf>,
@@ -112,25 +114,20 @@ struct Plan {
     agent_text: Option<String>,
 }
 
-fn paths(
-    h: &Harness,
-    root: &Path,
-) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), AgentsError> {
-    Ok((
-        h.steering_path(root)?,
-        h.skill_path(root)?,
-        h.agent_path(root)?,
-    ))
+type Paths = (PathBuf, Option<PathBuf>, Option<PathBuf>);
+
+fn paths(h: &Harness, project: &Project) -> Result<Paths, AgentsError> {
+    Ok((h.steering_path(project)?, h.skill_path()?, h.agent_path()?))
 }
 
-fn list(root: &Path) -> Result<Outcome, AgentsError> {
+fn list(project: &Project) -> Result<Outcome, AgentsError> {
     let mut lines = Vec::new();
     for h in &harness::HARNESSES {
-        let (steering, skill, agent) = paths(h, root)?;
-        let mut line = format!("{:8} {}", h.name, steering.display());
+        let (steering, skill, agent) = paths(h, project)?;
+        let mut line = format!("{:8} {}", h.name, project.display(&steering));
         for extra in [skill, agent].into_iter().flatten() {
             line.push_str("  ");
-            line.push_str(&extra.display().to_string());
+            line.push_str(&project.display(&extra));
         }
         lines.push(line);
     }
@@ -167,8 +164,10 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
             return Err(usage(&format!("invalid reviewer model {m:?}.")));
         }
     }
-    let (steering, skill, agent) = paths(&harness, &opts.root)?;
+    let project = Project::open(&opts.root)?;
+    let (steering, skill, agent) = paths(&harness, &project)?;
     Ok(Plan {
+        project,
         steering,
         skill,
         agent,
@@ -183,12 +182,15 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
 }
 
 fn check(p: &Plan) -> Outcome {
-    let mut states = vec![(block::block_state(&p.steering, &p.block_text), &p.steering)];
+    let mut states = vec![(
+        block::block_state(&p.project, &p.steering, &p.block_text),
+        &p.steering,
+    )];
     if let Some(s) = &p.skill {
-        states.push((managed::state(s, p.skill_text.as_deref()), s));
+        states.push((managed::state(&p.project, s, p.skill_text.as_deref()), s));
     }
     if let Some(a) = &p.agent {
-        states.push((managed::state(a, p.agent_text.as_deref()), a));
+        states.push((managed::state(&p.project, a, p.agent_text.as_deref()), a));
     }
     let exit = if states.iter().any(|(s, _)| *s == State::Malformed) {
         EXIT_INCOMPLETE
@@ -202,63 +204,51 @@ fn check(p: &Plan) -> Outcome {
     };
     let lines = states
         .iter()
-        .map(|(s, path)| format!("{} {}", s.word(), path.display()))
+        .map(|(s, path)| format!("{} {}", s.word(), p.project.display(path)))
         .collect();
     Outcome { lines, exit }
 }
 
-fn skill_in_use_elsewhere(p: &Plan, root: &Path) -> bool {
+fn skill_in_use_elsewhere(p: &Plan) -> bool {
     harness::HARNESSES
         .iter()
         .filter(|o| p.harness.shares_skills_with(o))
         .any(|o| {
-            o.steering_path(root).is_ok_and(|s| {
-                s != p.steering && block::block_state(&s, &p.block_text) != State::Missing
+            o.steering_path(&p.project).is_ok_and(|s| {
+                s != p.steering
+                    && block::block_state(&p.project, &s, &p.block_text) != State::Missing
             })
         })
 }
 
-fn remove(p: &Plan, root: &Path) -> Result<Outcome, AgentsError> {
+fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
+    let project = &p.project;
     let mut lines = vec![status(
+        project,
         "removed from",
-        block::remove_block(&p.steering)?,
+        block::remove_block(project, &p.steering)?,
         &p.steering,
     )];
     if let Some(s) = &p.skill {
-        if skill_in_use_elsewhere(p, root) {
-            lines.push(format!("kept {} (another harness uses it)", s.display()));
+        if skill_in_use_elsewhere(p) {
+            lines.push(format!(
+                "kept {} (another harness uses it)",
+                project.display(s)
+            ));
         } else {
-            lines.push(status("removed from", managed::sync(s, None)?, s));
+            lines.push(status(
+                project,
+                "removed from",
+                managed::sync(project, s, None)?,
+                s,
+            ));
         }
     }
     if let Some(a) = &p.agent {
-        lines.push(status("removed from", managed::sync(a, None)?, a));
-    }
-    Ok(Outcome {
-        lines,
-        exit: EXIT_OK,
-    })
-}
-
-fn install(p: &Plan) -> Result<Outcome, AgentsError> {
-    let preamble = if p.harness.name == "kiro" && !p.steering.exists() {
-        "---\ninclusion: always\n---"
-    } else {
-        ""
-    };
-    let changed = block::update_block(&p.steering, &p.block_text, preamble)?;
-    let mut lines = vec![status("updated", changed, &p.steering)];
-    if let Some(s) = &p.skill {
         lines.push(status(
-            "updated",
-            managed::sync(s, p.skill_text.as_deref())?,
-            s,
-        ));
-    }
-    if let Some(a) = &p.agent {
-        lines.push(status(
-            "updated",
-            managed::sync(a, p.agent_text.as_deref())?,
+            project,
+            "removed from",
+            managed::sync(project, a, None)?,
             a,
         ));
     }
@@ -268,24 +258,47 @@ fn install(p: &Plan) -> Result<Outcome, AgentsError> {
     })
 }
 
-fn status(verb: &str, changed: bool, path: &Path) -> String {
+fn install(p: &Plan) -> Result<Outcome, AgentsError> {
+    let project = &p.project;
+    let preamble = if p.harness.name == "kiro" && !project.exists(&p.steering)? {
+        "---\ninclusion: always\n---"
+    } else {
+        ""
+    };
+    let changed = block::update_block(project, &p.steering, &p.block_text, preamble)?;
+    let mut lines = vec![status(project, "updated", changed, &p.steering)];
+    if let Some(s) = &p.skill {
+        let changed = managed::sync(project, s, p.skill_text.as_deref())?;
+        lines.push(status(project, "updated", changed, s));
+    }
+    if let Some(a) = &p.agent {
+        let changed = managed::sync(project, a, p.agent_text.as_deref())?;
+        lines.push(status(project, "updated", changed, a));
+    }
+    Ok(Outcome {
+        lines,
+        exit: EXIT_OK,
+    })
+}
+
+fn status(project: &Project, verb: &str, changed: bool, path: &Path) -> String {
     format!(
         "{} {}",
         if changed { verb } else { "unchanged" },
-        path.display()
+        project.display(path)
     )
 }
 
 /// Run setup with explicit options.
 pub fn execute(opts: &Options) -> Result<Outcome, AgentsError> {
     if opts.list {
-        return list(&opts.root);
+        return list(&Project::open(&opts.root)?);
     }
     let p = plan(opts)?;
     if opts.check {
         Ok(check(&p))
     } else if opts.remove {
-        remove(&p, &opts.root)
+        remove(&p)
     } else {
         install(&p)
     }

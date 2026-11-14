@@ -1,12 +1,12 @@
-//! Managed steering blocks and whole-file writes.
+//! Managed steering blocks.
 
-use std::fs;
-use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::ops::Range;
+use std::path::Path;
 
 use pulldown_cmark::{Event, Parser, Tag};
 
 use crate::error::AgentsError;
+use crate::fsx::Project;
 
 /// Opening marker of the managed block.
 pub const BEGIN: &str = "<!-- slopvac:begin -->";
@@ -42,72 +42,79 @@ impl State {
     }
 }
 
-/// Resolve `relative` under `root`; refuse `..`, `.git`, non-Markdown targets
-/// and symlinks that leave the project.
-pub fn safe_target(root: &Path, relative: &str) -> Result<PathBuf, AgentsError> {
-    let bad = || AgentsError::UnsafeTarget(relative.to_owned());
-    let wanted = Path::new(relative);
-    let mut clean = PathBuf::new();
-    for part in wanted.components() {
-        match part {
-            Component::Normal(p) if p != ".git" => clean.push(p),
-            _ => return Err(bad()),
-        }
-    }
-    if clean.extension().and_then(|e| e.to_str()) != Some("md") {
-        return Err(bad());
-    }
-    let project = root.canonicalize().map_err(|e| AgentsError::io(root, e))?;
-    let target = project.join(&clean);
-    let mut probe = target.as_path();
-    while !probe.exists() {
-        probe = probe.parent().ok_or_else(bad)?;
-    }
-    let real = probe
-        .canonicalize()
-        .map_err(|e| AgentsError::io(probe, e))?;
-    if !real.starts_with(&project) {
-        return Err(bad());
-    }
-    if target.exists() && !target.is_file() {
-        return Err(bad());
-    }
-    Ok(target)
-}
-
-fn read_utf8(path: &Path) -> Result<Option<(Vec<u8>, String)>, AgentsError> {
-    if !path.exists() {
+fn read_utf8(project: &Project, rel: &Path) -> Result<Option<(Vec<u8>, String)>, AgentsError> {
+    let Some(bytes) = project.read(rel)? else {
         return Ok(None);
-    }
-    let bytes = fs::read(path).map_err(|e| AgentsError::io(path, e))?;
-    let text = String::from_utf8(bytes.clone()).map_err(|_| AgentsError::NotUtf8(path.into()))?;
+    };
+    let text = String::from_utf8(bytes.clone())
+        .map_err(|_| AgentsError::NotUtf8(project.display(rel).into()))?;
     Ok(Some((bytes, text)))
 }
 
+/// Byte ranges of every line, terminator included. A terminator is `\n`, `\r\n`
+/// or a lone `\r`.
+fn line_spans(text: &str) -> Vec<Range<usize>> {
+    let bytes = text.as_bytes();
+    let mut spans = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => {
+                spans.push(start..i + 1);
+                start = i + 1;
+            }
+            b'\r' => {
+                let end = if bytes.get(i + 1) == Some(&b'\n') {
+                    i + 2
+                } else {
+                    i + 1
+                };
+                spans.push(start..end);
+                start = end;
+                i = end - 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if start < bytes.len() {
+        spans.push(start..bytes.len());
+    }
+    spans
+}
+
 /// Byte range of the managed section, ignoring markers inside code blocks.
-fn section(text: &str, path: &Path) -> Result<Option<(usize, usize)>, AgentsError> {
-    let fenced: Vec<std::ops::Range<usize>> = Parser::new(text)
+/// Runs in one pass: code block ranges and line starts both ascend.
+fn section(text: &str, shown: &str) -> Result<Option<(usize, usize)>, AgentsError> {
+    let fenced: Vec<Range<usize>> = Parser::new(text)
         .into_offset_iter()
-        .filter_map(|(event, range)| match event {
-            Event::Start(Tag::CodeBlock(_)) => Some(range),
-            _ => None,
+        .filter_map(|(event, range)| {
+            matches!(event, Event::Start(Tag::CodeBlock(_))).then_some(range)
         })
         .collect();
+    let mut cursor = 0;
     let mut found: Vec<(&str, usize, usize)> = Vec::new();
-    let mut offset = 0;
-    for line in text.split_inclusive('\n') {
-        let inside = fenced.iter().any(|r| r.contains(&offset));
+    for span in line_spans(text) {
+        while cursor < fenced.len() && fenced[cursor].end <= span.start {
+            cursor += 1;
+        }
+        let inside = cursor < fenced.len() && fenced[cursor].start <= span.start;
+        let line = &text[span.clone()];
         let value = line.trim().trim_start_matches('\u{feff}');
         if !inside && (value == BEGIN || value == END) {
-            let bom = usize::from(line.starts_with('\u{feff}')) * '\u{feff}'.len_utf8();
-            found.push((value, offset + bom, offset + line.len()));
+            let bom = if line.starts_with('\u{feff}') {
+                '\u{feff}'.len_utf8()
+            } else {
+                0
+            };
+            found.push((value, span.start + bom, span.end));
         }
-        offset += line.len();
     }
     match found.as_slice() {
         [] => Ok(None),
         [(BEGIN, start, _), (END, _, end)] => Ok(Some((*start, *end))),
-        _ => Err(AgentsError::MalformedMarkers(path.into())),
+        _ => Err(AgentsError::MalformedMarkers(shown.into())),
     }
 }
 
@@ -130,54 +137,19 @@ fn native(value: &str, nl: &str) -> String {
         .replace('\n', nl)
 }
 
-/// Write `after` atomically if `before` still matches the disk. Returns whether
-/// the file changed.
-pub fn atomic_write(path: &Path, before: Option<&[u8]>, after: &[u8]) -> Result<bool, AgentsError> {
-    if before == Some(after) {
-        return Ok(false);
-    }
-    let actual = if path.exists() {
-        Some(fs::read(path).map_err(|e| AgentsError::io(path, e))?)
-    } else {
-        None
-    };
-    if actual.as_deref() != before {
-        return Err(AgentsError::Conflict(path.into()));
-    }
-    let dir = path
-        .parent()
-        .ok_or_else(|| AgentsError::UnsafeTarget(path.display().to_string()))?;
-    fs::create_dir_all(dir).map_err(|e| AgentsError::io(dir, e))?;
-    let mut tmp = tempfile::Builder::new()
-        .prefix(".slopvac-")
-        .tempfile_in(dir)
-        .map_err(|e| AgentsError::io(dir, e))?;
-    tmp.write_all(after).map_err(|e| AgentsError::io(path, e))?;
-    if path.exists() {
-        let perms = fs::metadata(path)
-            .map_err(|e| AgentsError::io(path, e))?
-            .permissions();
-        fs::set_permissions(tmp.path(), perms).map_err(|e| AgentsError::io(path, e))?;
-    }
-    tmp.persist(path)
-        .map_err(|e| AgentsError::io(path, e.error))?;
-    Ok(true)
-}
-
-/// State of the managed block in `path` against `block`.
+/// State of the managed block in `rel` against `block`.
 #[must_use]
-pub fn block_state(path: &Path, block: &str) -> State {
-    let text = match read_utf8(path) {
+pub fn block_state(project: &Project, rel: &Path, block: &str) -> State {
+    let text = match read_utf8(project, rel) {
         Ok(Some((_, text))) => text,
         Ok(None) => return State::Missing,
         Err(_) => return State::Malformed,
     };
-    match section(&text, path) {
+    match section(&text, &project.display(rel)) {
         Err(_) => State::Malformed,
         Ok(None) => State::Missing,
         Ok(Some((s, e))) => {
-            let installed = native(text[s..e].trim(), "\n");
-            if installed == block.trim() {
+            if native(text[s..e].trim(), "\n") == block.trim() {
                 State::Current
             } else {
                 State::Stale
@@ -187,15 +159,20 @@ pub fn block_state(path: &Path, block: &str) -> State {
 }
 
 /// Insert or replace the managed block, leaving surrounding text alone.
-pub fn update_block(path: &Path, block: &str, preamble: &str) -> Result<bool, AgentsError> {
-    let existing = read_utf8(path)?;
+pub fn update_block(
+    project: &Project,
+    rel: &Path,
+    block: &str,
+    preamble: &str,
+) -> Result<bool, AgentsError> {
+    let existing = read_utf8(project, rel)?;
     let (before, text) = match &existing {
         Some((b, t)) => (Some(b.as_slice()), t.as_str()),
         None => (None, ""),
     };
     let nl = newline(text);
     let body = format!("{}{nl}", native(block.trim_end_matches(['\r', '\n']), nl));
-    let updated = if let Some((s, e)) = section(text, path)? {
+    let updated = if let Some((s, e)) = section(text, &project.display(rel))? {
         format!("{}{body}{}", &text[..s], &text[e..])
     } else {
         let mut prefix = text.trim_end_matches(['\r', '\n']).to_owned();
@@ -208,15 +185,15 @@ pub fn update_block(path: &Path, block: &str, preamble: &str) -> Result<bool, Ag
             format!("{prefix}{nl}{nl}{body}")
         }
     };
-    atomic_write(path, before, updated.as_bytes())
+    project.write_atomic(rel, before, updated.as_bytes())
 }
 
 /// Remove only the managed block.
-pub fn remove_block(path: &Path) -> Result<bool, AgentsError> {
-    let Some((bytes, text)) = read_utf8(path)? else {
+pub fn remove_block(project: &Project, rel: &Path) -> Result<bool, AgentsError> {
+    let Some((bytes, text)) = read_utf8(project, rel)? else {
         return Ok(false);
     };
-    let Some((s, e)) = section(&text, path)? else {
+    let Some((s, e)) = section(&text, &project.display(rel))? else {
         return Ok(false);
     };
     let nl = newline(&text);
@@ -227,5 +204,5 @@ pub fn remove_block(path: &Path) -> Result<bool, AgentsError> {
         (false, true) => format!("{left}{nl}"),
         _ => right.to_owned(),
     };
-    atomic_write(path, Some(&bytes), updated.as_bytes())
+    project.write_atomic(rel, Some(&bytes), updated.as_bytes())
 }

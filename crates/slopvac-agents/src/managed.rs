@@ -1,10 +1,10 @@
 //! Whole files that setup owns: the skill and the reviewer agent.
 
-use std::fs;
 use std::path::Path;
 
-use crate::block::{State, atomic_write};
+use crate::block::State;
 use crate::error::AgentsError;
+use crate::fsx::Project;
 
 /// Ownership marker, the line right after the front matter. When its wording
 /// changes, keep the old line in `KNOWN_MARKERS` so installed files stay manageable.
@@ -28,15 +28,19 @@ fn has_marker(text: &str) -> bool {
 
 /// State of a managed file against `expected`; `None` means it is not wanted.
 #[must_use]
-pub fn state(path: &Path, expected: Option<&str>) -> State {
-    if !path.exists() {
-        return if expected.is_some() {
-            State::Missing
-        } else {
-            State::Disabled
-        };
-    }
-    let Some(text) = fs::read(path).ok().and_then(|b| String::from_utf8(b).ok()) else {
+pub fn state(project: &Project, rel: &Path, expected: Option<&str>) -> State {
+    let bytes = match project.read(rel) {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            return if expected.is_some() {
+                State::Missing
+            } else {
+                State::Disabled
+            };
+        }
+        Err(_) => return State::Malformed,
+    };
+    let Ok(text) = String::from_utf8(bytes) else {
         return State::Malformed;
     };
     if !has_marker(&text) {
@@ -53,27 +57,21 @@ pub fn state(path: &Path, expected: Option<&str>) -> State {
 
 /// Write `expected`, or delete the file when `None`. Refuses files setup did
 /// not write. Removal also drops the parent directory when it is empty.
-pub fn sync(path: &Path, expected: Option<&str>) -> Result<bool, AgentsError> {
-    let before = if path.exists() {
-        let bytes = fs::read(path).map_err(|e| AgentsError::io(path, e))?;
-        if !String::from_utf8(bytes.clone()).is_ok_and(|t| has_marker(&t)) {
-            return Err(AgentsError::NotManaged(path.into()));
-        }
-        Some(bytes)
-    } else {
-        None
-    };
+pub fn sync(project: &Project, rel: &Path, expected: Option<&str>) -> Result<bool, AgentsError> {
+    let before = project.read(rel)?;
+    if let Some(bytes) = &before
+        && !String::from_utf8(bytes.clone()).is_ok_and(|t| has_marker(&t))
+    {
+        return Err(AgentsError::NotManaged(project.display(rel).into()));
+    }
     match (expected, before) {
-        (Some(e), before) => atomic_write(path, before.as_deref(), e.as_bytes()),
+        (Some(e), before) => project.write_atomic(rel, before.as_deref(), e.as_bytes()),
         (None, None) => Ok(false),
         (None, Some(b)) => {
-            if fs::read(path).map_err(|e| AgentsError::io(path, e))? != b {
-                return Err(AgentsError::Conflict(path.into()));
+            if project.read(rel)?.as_deref() != Some(b.as_slice()) {
+                return Err(AgentsError::Conflict(project.display(rel).into()));
             }
-            fs::remove_file(path).map_err(|e| AgentsError::io(path, e))?;
-            if let Some(dir) = path.parent() {
-                let _ = fs::remove_dir(dir);
-            }
+            project.remove_file(rel)?;
             Ok(true)
         }
     }

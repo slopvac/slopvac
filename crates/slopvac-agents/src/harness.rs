@@ -5,10 +5,10 @@
 //! opencode <https://opencode.ai/docs/agents/>, Agent Skills
 //! <https://agentskills.io/specification>.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::block::safe_target;
 use crate::error::AgentsError;
+use crate::fsx::{Project, target};
 
 /// Name of the skill.
 pub const SKILL_NAME: &str = "slopvac-prose";
@@ -41,28 +41,32 @@ impl Harness {
         self.agents.map(|(_, f)| f)
     }
 
-    /// The steering file. Codex prefers a non-empty `AGENTS.override.md`.
-    pub fn steering_path(&self, root: &Path) -> Result<PathBuf, AgentsError> {
+    /// The steering file, relative to the project. Codex prefers a non-empty
+    /// `AGENTS.override.md`.
+    pub fn steering_path(&self, project: &Project) -> Result<PathBuf, AgentsError> {
         if self.name == "codex" {
-            let over = safe_target(root, "AGENTS.override.md")?;
-            if over.exists() && std::fs::read(&over).is_ok_and(|b| !b.trim_ascii().is_empty()) {
+            let over = target("AGENTS.override.md")?;
+            if project
+                .read(&over)?
+                .is_some_and(|b| !b.trim_ascii().is_empty())
+            {
                 return Ok(over);
             }
         }
-        safe_target(root, self.steering)
+        target(self.steering)
     }
 
     /// The skill file, if the harness loads project skills.
-    pub fn skill_path(&self, root: &Path) -> Result<Option<PathBuf>, AgentsError> {
+    pub fn skill_path(&self) -> Result<Option<PathBuf>, AgentsError> {
         self.skills
-            .map(|d| safe_target(root, &format!("{d}/{SKILL_NAME}/SKILL.md")))
+            .map(|d| target(&format!("{d}/{SKILL_NAME}/SKILL.md")))
             .transpose()
     }
 
     /// The reviewer agent file, if the harness has agent files.
-    pub fn agent_path(&self, root: &Path) -> Result<Option<PathBuf>, AgentsError> {
+    pub fn agent_path(&self) -> Result<Option<PathBuf>, AgentsError> {
         self.agents
-            .map(|(d, _)| safe_target(root, &format!("{d}/{REVIEWER_NAME}.md")))
+            .map(|(d, _)| target(&format!("{d}/{REVIEWER_NAME}.md")))
             .transpose()
     }
 

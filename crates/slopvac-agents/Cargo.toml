@@ -11,8 +11,11 @@ publish.workspace = true
 [dependencies]
 clap.workspace = true
 pulldown-cmark.workspace = true
-tempfile.workspace = true
+cap-std.workspace = true
 thiserror.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
