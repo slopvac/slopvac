@@ -38,7 +38,7 @@ fn ranking_sorts_by_score_then_model_name() {
         .map(|r| r.model.as_str())
         .collect();
     assert_eq!(names, ["model-a", "model-b", "model-c"]);
-    assert!(s.ranked(ReviewType::Mechanical).is_empty());
+    assert!(s.ranked(ReviewType::Mechanical).first().is_none());
 }
 
 #[test]
