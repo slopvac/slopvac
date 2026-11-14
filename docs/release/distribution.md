@@ -22,7 +22,7 @@ The release-please token matters. A tag that the default `GITHUB_TOKEN` creates 
 
 ### Releases before 3.0
 
-A tag with major version below 3 does not go through dist. The `publish-legacy-release` job (the only other job with `contents: write`) publishes the release that release-please made, so a 2.x release ends as it did when release-please published it directly. Right before it publishes, the job runs the same tag protection as the dist path: the ruleset check, then `verify-tag` (the remote tag must still equal the workflow commit). It also runs `release_provenance.py check-draft`, which reads the release read-only and fails unless it is unpublished and its author is `github-actions[bot]` or `<slug>[bot]`, where the optional repository variable `RELEASE_APP_SLUG` holds the release-please App's slug. The candidate gate does not apply to 2.x. The 2.x PyPI flow (`just release X.Y.Z`, then `publish-lint.yml`) is unchanged. The `route` job fails on a tag it cannot parse instead of skipping the checks.
+A tag with major version below 3 does not go through dist. The `publish-legacy-release` job (the only other job with `contents: write`) publishes the release that release-please made, so a 2.x release ends as it did when release-please published it directly. Right before it publishes, the job runs the same tag protection as the dist path: the ruleset check, then `verify-tag` (the remote tag must still equal the workflow commit). It also runs `release_provenance.py check-draft`, which reads the release read-only and fails unless it is unpublished and its author is `github-actions[bot]` or `<slug>[bot]`, where the repository variable `RELEASE_APP_SLUG` holds the release-please App's slug. When release-please runs with the App token, its releases are authored by `<slug>[bot]`, so `RELEASE_APP_SLUG` is required: without it the legacy publish job stops at `check-draft` and the 2.x release stays unpublished. The candidate gate does not apply to 2.x. The 2.x PyPI flow (`just release X.Y.Z`, then `publish-lint.yml`) is unchanged. The `route` job fails on a tag it cannot parse instead of skipping the checks.
 
 ## Check a change without publishing
 
@@ -39,7 +39,8 @@ dist build --artifacts=local --tag v<version>
 A maintainer must do these once. No workflow does them.
 
 - Create the `srobroek/homebrew-tap` repository and the `HOMEBREW_TAP_TOKEN` repository secret, a token with write access to the tap.
-- Configure the release-please GitHub App, as the flow section describes.
+- Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
+- Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
 - Create the tag ruleset described next.
 - Enable GitHub immutable releases in the repository settings. Once a release is published, its tag and assets then cannot change. The flow above fits this: assets attach before the release is published.
 
@@ -52,15 +53,15 @@ Create a repository ruleset with these settings:
 - Target: tags, matching `refs/tags/v*`.
 - Enforcement: active. A ruleset in `evaluate` or `disabled` mode does not count.
 - Rules: restrict updates, restrict deletions, and block force pushes. In the API these are `update`, `deletion`, and `non_fast_forward`.
-- Bypass list: empty.
+- Bypass list: empty, or only the repository admin role. Any other bypass actor (a write role, a team, an app, a user, or a deploy key) lets that actor move the tag, so the check rejects the ruleset whatever the bypass mode.
 
 Without this ruleset, someone who can write tags could move a tag after the checks pass. The `verify-tag` check narrows that window, and the ruleset closes it.
 
-`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It fails the release when the ruleset is missing, inactive, too narrow, or unreadable.
+`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It also reads each covering ruleset's `bypass_actors` and counts the ruleset only when that list is present and holds nothing but the repository admin role (role id 5) or organization admins. It fails the release when the ruleset is missing, inactive, too narrow, has another bypass actor, or is unreadable.
 
 GitHub matches ref patterns with `fnmatch` under `File::FNM_PATHNAME` and adds the `~ALL` and `~DEFAULT_BRANCH` tokens (see [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)). The check does not reimplement that matching. It counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/v*`, or the exact tag ref, so use one of these. It treats an exclude as excluding the tag unless it provably cannot match.
 
-The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). That page names no token permission for them, and it is not confirmed that the default `GITHUB_TOKEN` can read them. If the first release fails with a 403 or 404 although the ruleset exists, the check has failed closed as designed. In that case grant the token read access, or pass a token that can read rulesets as `GH_TOKEN` in that step.
+The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). GitHub returns `bypass_actors` only to a token that can administer the repository, which `GITHUB_TOKEN` cannot, so the workflow passes `RULESET_READ_TOKEN` as `GH_TOKEN` to this one step and falls back to `GITHUB_TOKEN` when the secret is unset. The secret reaches only the check step, through the environment. The REST page names no permission for the list endpoints, and it is not confirmed that `GITHUB_TOKEN` can read them at all. If the first release fails with a 403 or 404 although the ruleset exists, the check failed closed as designed; set `RULESET_READ_TOKEN`.
 
 ## Tag safety
 
@@ -69,7 +70,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 - Only tags that match `v<digits>.<digits>.<digits>` start the workflow.
 - The first step of the plan job rejects any tag that is not exactly `vX.Y.Z`, before dist runs.
 - The tag reaches every shell step through an environment variable, never through `${{ }}` inside the script.
-- The `custom-release-provenance` plan job runs `release-provenance.yml` without inherited secrets. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only once the release-candidate change adds the candidate workflow, because the gate looks for a passed candidate run.
+- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the optional `RULESET_READ_TOKEN` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only once the release-candidate change adds the candidate workflow, because the gate looks for a passed candidate run.
 - The gate binds to the commit. `release_provenance.py check-stable` takes the commit the workflow runs on (`$GITHUB_SHA`) and fails when the tag points anywhere else. It reads the candidate runs page by page, up to 1000 runs, and fails closed beyond that.
 - The host job re-resolves the tag on the remote (`release_provenance.py verify-tag`, peeled for annotated tags) before dist runs and again right before it publishes the release. It fails unless the tag still equals `$GITHUB_SHA`. The tag and commit reach the script through environment variables only.
 - The Windows build step runs under bash, so the `$TAG_FLAG` environment variable expands. Under PowerShell it expanded to nothing.

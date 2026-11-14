@@ -158,6 +158,8 @@ _CUSTOM_NEW = """\
     permissions:
       "actions": "read"
       "contents": "read"
+    secrets:
+      RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
 """
 _HOST_NEEDS_OLD = "  host:\n    needs:\n      - plan\n"
 _HOST_NEEDS_NEW = (
@@ -238,6 +240,8 @@ _LEGACY_JOB = """
           persist-credentials: false
       - name: Require an immutable tag ruleset
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"
       - name: Check the release is the unpublished release-please release

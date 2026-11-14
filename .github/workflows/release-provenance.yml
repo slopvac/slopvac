@@ -7,6 +7,13 @@ name: Release provenance
 
 on:
   workflow_call:
+    secrets:
+      RULESET_READ_TOKEN:
+        description: >-
+          Fine-grained token for this repository with Administration: read, so the
+          tag ruleset check can see bypass actors. Optional; without it the check
+          fails closed.
+        required: false
 
 permissions:
   contents: read
@@ -43,6 +50,6 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || github.token }}
         run: |
           python3 scripts/release_ruleset.py check "$TAG" --repo "$REPO"

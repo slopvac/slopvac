@@ -100,6 +100,32 @@ def _covers(ruleset: dict, ref: str) -> bool:
     return included and not excluded
 
 
+# The repository admin role. Admins can change any ruleset anyway, so a bypass for
+# them adds no power; any other bypass actor can move or delete a protected tag.
+ADMIN_ROLE_ID = 5
+NO_BYPASS_FIELD = (
+    "the ruleset response has no bypass_actors field, so a bypass for a write role "
+    "cannot be ruled out. GitHub returns that field only to a token that can "
+    "administer the repository: set the RULESET_READ_TOKEN secret to a fine-grained "
+    "token for this repository with the Administration: read permission"
+)
+
+
+def _admin_only_bypass(ruleset: dict) -> bool:
+    """True when every bypass actor is the repository admin role or an organization admin."""
+    actors = ruleset.get("bypass_actors")
+    if not isinstance(actors, list):
+        raise TypeError(f"ruleset {ruleset.get('id')}: {NO_BYPASS_FIELD}")
+    return all(
+        actor.get("actor_type") == "OrganizationAdmin"
+        or (
+            actor.get("actor_type") == "RepositoryRole"
+            and actor.get("actor_id") == ADMIN_ROLE_ID
+        )
+        for actor in actors
+    )
+
+
 def check_tag_protection(tag: str, repo: str, runner: Runner | None = None) -> None:
     """Raise ``ValueError`` unless active tag rulesets cover ``tag`` with every required rule."""
     if _TAG.fullmatch(tag) is None:
@@ -115,12 +141,12 @@ def check_tag_protection(tag: str, repo: str, runner: Runner | None = None) -> N
             raise TypeError("a ruleset response is not an object")
         if ruleset.get("target") != "tag" or ruleset.get("enforcement") != "active":
             continue
-        if _covers(ruleset, ref):
+        if _covers(ruleset, ref) and _admin_only_bypass(ruleset):
             enforced |= {rule.get("type") for rule in ruleset.get("rules", [])}
     missing = sorted(REQUIRED_RULES - enforced)
     if missing:
         raise ValueError(
-            f"no active tag ruleset covers {ref} with the rules: {', '.join(missing)}"
+            f"no active tag ruleset covers {ref} with the rules: {', '.join(missing)}, and no bypass for a non-admin actor"
         )
 
 

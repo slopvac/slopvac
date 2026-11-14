@@ -315,6 +315,8 @@ jobs:
    actions: read
    contents: read
   uses: ./.github/workflows/release-provenance.yml
+  secrets:
+   RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
 
  pypi:
   name: Publish to PyPI

@@ -25,8 +25,9 @@ def ruleset(
     include=("refs/tags/v*",),
     exclude=(),
     rules=ALL_RULES,
+    bypass=(),
 ):
-    return {
+    result = {
         "id": id_,
         "target": target,
         "enforcement": enforcement,
@@ -35,6 +36,9 @@ def ruleset(
         },
         "rules": [{"type": r} for r in rules],
     }
+    if bypass is not None:
+        result["bypass_actors"] = list(bypass)
+    return result
 
 
 def fake_api(
@@ -185,3 +189,63 @@ def test_the_command_exits_one_with_the_hint_when_the_api_fails(capsys, monkeypa
     err = capsys.readouterr().err
     assert "HTTP 403" in err
     assert "refs/tags/v*" in err
+
+
+def actor(actor_type, actor_id, mode="always"):
+    return {"actor_type": actor_type, "actor_id": actor_id, "bypass_mode": mode}
+
+
+ADMIN = actor("RepositoryRole", 5)
+ORG_ADMIN = actor("OrganizationAdmin", None)
+
+
+@pytest.mark.parametrize(
+    "bypass",
+    [
+        [],
+        [ADMIN],
+        [ORG_ADMIN],
+        [ADMIN, ORG_ADMIN],
+        [actor("RepositoryRole", 5, "exempt")],
+    ],
+)
+def test_no_bypass_or_admin_only_bypass_passes(bypass):
+    check([ruleset(bypass=bypass)])
+
+
+@pytest.mark.parametrize(
+    "bypass",
+    [
+        [actor("RepositoryRole", 4)],  # write role
+        [actor("RepositoryRole", 2, "pull_request")],
+        [actor("Team", 77)],
+        [actor("Integration", 1234)],
+        [actor("User", 9)],
+        [actor("DeployKey", None)],
+        [ADMIN, actor("Team", 77)],
+        [actor("Team", 5)],  # id 5 is the admin role only for RepositoryRole
+    ],
+)
+def test_any_non_admin_bypass_is_insufficient(bypass):
+    with pytest.raises(ValueError, match="no bypass for a non-admin actor"):
+        check([ruleset(bypass=bypass)])
+
+
+def test_a_ruleset_with_a_non_admin_bypass_adds_no_rules():
+    # The clean ruleset lacks `deletion`; the complete one has a team bypass.
+    with pytest.raises(ValueError, match="deletion"):
+        check(
+            [
+                ruleset(1, rules=["update", "non_fast_forward"]),
+                ruleset(2, bypass=[actor("Team", 77)]),
+            ]
+        )
+
+
+def test_a_response_without_bypass_actors_fails_closed_with_the_token_hint():
+    with pytest.raises(TypeError, match="RULESET_READ_TOKEN"):
+        check([ruleset(bypass=None)])
+
+
+def test_an_uncovering_ruleset_without_bypass_actors_is_ignored():
+    check([ruleset(1), ruleset(2, include=["refs/heads/*"], bypass=None)])

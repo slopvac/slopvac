@@ -136,6 +136,8 @@ jobs:
     permissions:
       "actions": "read"
       "contents": "read"
+    secrets:
+      RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
 
   # Build and packages all the platform-specific things
   build-local-artifacts:
@@ -462,6 +464,8 @@ jobs:
           persist-credentials: false
       - name: Require an immutable tag ruleset
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"
       - name: Check the release is the unpublished release-please release

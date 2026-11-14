@@ -130,7 +130,8 @@ def test_host_requires_the_provenance_job(workflow):
 def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
     job = workflow["jobs"]["custom-release-provenance"]
     assert job["uses"] == "./.github/workflows/release-provenance.yml"
-    assert "secrets" not in job
+    # Only the one optional token reaches the called workflow; never `secrets: inherit`.
+    assert job["secrets"] == {"RULESET_READ_TOKEN": "${{ secrets.RULESET_READ_TOKEN }}"}
     assert job["permissions"] == {"actions": "read", "contents": "read"}
 
 
@@ -371,3 +372,20 @@ def test_release_please_makes_a_tagged_draft_that_dist_then_publishes():
     assert config["force-tag-creation"] is True
     dist = tomllib.loads((ROOT / "dist-workspace.toml").read_text(encoding="utf-8"))
     assert dist["dist"]["create-release"] is False
+
+
+def test_the_ruleset_token_reaches_only_the_check_steps(workflow):
+    expected = "${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}"
+    steps = workflow["jobs"]["publish-legacy-release"]["steps"]
+    with_token = [s for s in steps if "RULESET_READ_TOKEN" in str(s)]
+    assert [s["run"].split()[1] for s in with_token] == ["scripts/release_ruleset.py"]
+    assert with_token[0]["env"] == {"GH_TOKEN": expected}
+    for step in steps:
+        assert "RULESET_READ_TOKEN" not in step.get("run", "")
+
+
+def test_the_pypi_gate_passes_only_the_ruleset_token():
+    provenance = _publish_jobs()["provenance"]
+    assert provenance["secrets"] == {
+        "RULESET_READ_TOKEN": "${{ secrets.RULESET_READ_TOKEN }}"
+    }
