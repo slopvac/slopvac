@@ -3,7 +3,8 @@
     uv run python scripts/docs/build_site.py          # write build/site-src
     uv run python scripts/docs/build_site.py --check  # build to a temp dir, verify, exit 1 on a problem
 
-Pages are Markdown. The site renderer reads ``SUMMARY.md`` at the tree root.
+Pages are plain Markdown with no site-generator front matter, so any renderer
+can consume the tree.
 Rules, schemas and the plugin protocol reference come from real data. Styles,
 genres and plugin packs are stub generators that emit a placeholder page until
 the owning crates exist.
@@ -17,6 +18,7 @@ import re
 import shutil
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,9 +29,19 @@ RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 DEFAULT_OUT = ROOT / "build" / "site-src"
 
-# The single place the site's public address is written.
-BASE_URL = "https://srobroek.github.io/slopvac/"
-API_VERSION = "v3"
+# The site address lives only in docs/site.toml.
+SITE_CONFIG = ROOT / "docs" / "site.toml"
+
+
+def _load_site_config(path: Path = SITE_CONFIG) -> tuple[str, str]:
+    data = tomllib.loads(path.read_text())
+    site_url = data["site_url"]
+    if not site_url.endswith("/"):
+        raise SystemExit(f"{path}: site_url must end with a slash")
+    return site_url, data["api_version"]
+
+
+BASE_URL, API_VERSION = _load_site_config()
 
 Pages = dict[str, str]  # path relative to the site root -> Markdown
 
@@ -216,8 +228,8 @@ SECTIONS = (
 )
 
 
-def summary() -> str:
-    lines = ["# Summary", ""]
+def index_page() -> str:
+    lines = ["# slopvac reference", ""]
     lines += [f"- [{title}]({path})" for title, path in SECTIONS]
     return "\n".join(lines) + "\n"
 
@@ -229,7 +241,7 @@ def build() -> Pages:
             if path in pages:
                 raise SystemExit(f"two generators wrote {path}")
             pages[path] = text
-    pages["SUMMARY.md"] = summary()
+    pages["index.md"] = index_page()
     return pages
 
 

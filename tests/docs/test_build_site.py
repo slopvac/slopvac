@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,27 @@ def test_category_index_links_each_rule(tmp_path: Path) -> None:
 
 
 def test_rule_url_is_versioned_and_stable() -> None:
-    assert (
-        build_site.rule_url("demo", "no-foo")
-        == "https://srobroek.github.io/slopvac/v3/rules/demo/no-foo.html"
-    )
+    config = tomllib.loads((ROOT / "docs" / "site.toml").read_text())
+    expected = f"{config['site_url']}{config['api_version']}/rules/demo/no-foo.html"
+    assert build_site.rule_url("demo", "no-foo") == expected
+
+
+def test_site_url_without_trailing_slash_is_rejected(tmp_path: Path) -> None:
+    config = tmp_path / "site.toml"
+    config.write_text('site_url = "https://example.test/docs"\napi_version = "v3"\n')
+    with pytest.raises(SystemExit, match="slash"):
+        build_site._load_site_config(config)
+
+
+def test_every_committed_schema_id_derives_from_the_site_url() -> None:
+    config = tomllib.loads((ROOT / "docs" / "site.toml").read_text())
+    prefix = f"{config['site_url']}schemas/{config['api_version']}/"
+    ids = [
+        json.loads(p.read_text())["$id"]
+        for p in sorted((ROOT / "schemas").rglob("*.schema.json"))
+    ]
+    assert ids
+    assert all(i.startswith(prefix) for i in ids)
 
 
 def test_inline_code_survives_backticks() -> None:
@@ -97,4 +115,4 @@ def test_real_build_has_no_broken_links_and_a_page_per_rule() -> None:
         p for p in pages if p.startswith("rules/") and not p.endswith("index.md")
     ]
     assert len(rule_pages) == expected
-    assert "- [Rules](rules/index.md)" in pages["SUMMARY.md"]
+    assert "- [Rules](rules/index.md)" in pages["index.md"]

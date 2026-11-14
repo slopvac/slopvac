@@ -4,7 +4,9 @@ The reference documentation is generated, so it cannot drift from the code and d
 
 ## Hosting
 
-The site is served from GitHub Pages at `https://srobroek.github.io/slopvac/`. The address is one constant, `BASE_URL`, in `scripts/docs/build_site.py`. The schema `$id` values under `schemas/v3/` use the same base, and the builder fails when one does not.
+The site is served from GitHub Pages. The address, including the base path, is one value: `site_url` in `docs/site.toml`. A custom domain later changes that value only. The generator and the schema `$id` check both read it, and no generator or test writes the host name. Every `$id` under `schemas/` must start with `site_url` followed by `schemas/v3/`; `just docs-check` and the test suite fail when one does not.
+
+The site generator is not chosen yet. The build writes plain Markdown with no framework front matter into a neutral directory, so any renderer can consume it.
 
 ## URL layout
 
