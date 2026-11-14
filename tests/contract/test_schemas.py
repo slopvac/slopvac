@@ -29,6 +29,9 @@ LOADERS = {
     ".yml": yaml.safe_load,
 }
 
+# A schema whose keys are all in this set only defines $defs and has no root shape.
+DEFS_ONLY_KEYS = {"$schema", "$id", "$comment", "title", "description", "$defs"}
+
 SCHEMA_FILES = sorted(SCHEMA_DIR.glob("*.schema.json"))
 
 
@@ -51,7 +54,14 @@ def _validator(artifact: str, instance_name: str) -> Draft202012Validator:
     schema = _load_schema(SCHEMA_DIR / f"{artifact}.schema.json")
     if "--" in instance_name:
         definition = instance_name.split("--", 1)[0]
+        assert definition in schema.get("$defs", {}), (
+            f"{instance_name}: no $defs/{definition}"
+        )
         schema = {"$ref": f"{schema['$id']}#/$defs/{definition}"}
+    else:
+        assert not set(schema) <= DEFS_ONLY_KEYS, (
+            f"{instance_name}: {artifact} has no root shape; name it <Def>--<name>.<ext>"
+        )
     return Draft202012Validator(schema, registry=_registry())
 
 
@@ -124,8 +134,19 @@ def test_invalid_instance_fails_at_declared_pointer(artifact: str, path: Path) -
     assert cases[path.name] in {_pointer(e) for e in errors}
 
 
-@pytest.mark.parametrize("artifact", sorted({a for a, _ in _INVALID}))
-def test_cases_toml_has_no_orphan_entries(artifact: str) -> None:
-    folder = CONFORMANCE / artifact / "invalid"
-    cases = tomllib.loads((folder / "cases.toml").read_text(encoding="utf-8"))
-    assert set(cases) <= {p.name for p in folder.iterdir()}
+_MANIFESTS = sorted(CONFORMANCE.glob("*/invalid/cases.toml"))
+
+
+@pytest.mark.parametrize("manifest", _MANIFESTS, ids=lambda p: p.parts[-3])
+def test_cases_toml_keys_match_instance_files(manifest: Path) -> None:
+    cases = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    files = {p.name for p in manifest.parent.iterdir() if p.name != "cases.toml"}
+    assert set(cases) == files
+
+
+def test_every_conformance_dir_has_a_schema_and_manifest() -> None:
+    artifacts = {_artifact(s) for s in SCHEMA_FILES}
+    for folder in CONFORMANCE.iterdir():
+        assert folder.name in artifacts, f"{folder.name}: no schema"
+        if any((folder / "invalid").glob("*")):
+            assert (folder / "invalid" / "cases.toml").is_file()

@@ -45,7 +45,7 @@
       "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
     "Severity": {
-      "description": "Finding severity. Semantics owned by slopvac-8l4.2.3.",
+      "description": "Finding severity. Excludes off: 2.x config accepts off to disable a rule, so off belongs to config (owned by slopvac-8l4.2.5), not to findings. Semantics owned by slopvac-8l4.2.3.",
       "enum": ["error", "warning", "suggestion"]
     },
     "RuleProvenance": {
