@@ -144,3 +144,119 @@ pub enum Severity {
     /// Gating error.
     Error,
 }
+
+/// Text-context label such as `prose` or `code-fence`: `^[a-z][a-z0-9-]*$`.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "String", into = "String")]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+pub struct ContextTag(String);
+
+impl ContextTag {
+    /// Validate and wrap a context tag.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdError> {
+        let value = value.into();
+        if is_pack(&value) {
+            Ok(Self(value))
+        } else {
+            Err(IdError {
+                kind: "context tag",
+                value,
+            })
+        }
+    }
+
+    /// The tag as text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for ContextTag {
+    type Error = IdError;
+    fn try_from(value: String) -> Result<Self, IdError> {
+        Self::new(value)
+    }
+}
+
+impl From<ContextTag> for String {
+    fn from(tag: ContextTag) -> Self {
+        tag.0
+    }
+}
+
+/// The root artifact `schema_version`. It is always 3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SchemaVersion;
+
+impl Serialize for SchemaVersion {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(3)
+    }
+}
+
+impl<'de> Deserialize<'de> for SchemaVersion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let n = u64::deserialize(deserializer)?;
+        if n == 3 {
+            Ok(Self)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "schema_version must be 3, got {n}"
+            )))
+        }
+    }
+}
+
+impl JsonSchema for SchemaVersion {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SchemaVersion".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "const": 3 })
+    }
+}
+
+/// Plugin API version: an integer of at least 1, separate from `schema_version`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "u32", into = "u32")]
+#[schemars(with = "u32", extend("minimum" = 1))]
+pub struct ApiVersion(u32);
+
+impl ApiVersion {
+    /// Wrap a version, rejecting zero.
+    pub fn new(value: u32) -> Result<Self, IdError> {
+        if value >= 1 {
+            Ok(Self(value))
+        } else {
+            Err(IdError {
+                kind: "api version",
+                value: value.to_string(),
+            })
+        }
+    }
+
+    /// The number.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<u32> for ApiVersion {
+    type Error = IdError;
+    fn try_from(value: u32) -> Result<Self, IdError> {
+        Self::new(value)
+    }
+}
+
+impl From<ApiVersion> for u32 {
+    fn from(v: ApiVersion) -> Self {
+        v.0
+    }
+}

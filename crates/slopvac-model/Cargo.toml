@@ -17,4 +17,7 @@ schemars = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+jsonschema = "0.61.2"
 serde_json = { workspace = true }
+serde_yaml_ng = "0.10.0"
+toml = "1.2.1"

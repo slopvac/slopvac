@@ -11,11 +11,11 @@ mod source;
 mod span;
 
 pub use edit::{Edit, EditError, apply_edits};
-pub use ids::{IdError, PackId, RuleId, Severity};
+pub use ids::{ApiVersion, ContextTag, IdError, PackId, RuleId, SchemaVersion, Severity};
 pub use report::{
     AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigSource,
     Document, Finding, Fix, Gate, GenreReason, GenreResult, GenreSource, Notice, NoticeLevel,
-    Report, RuleProvenance, RunSummary, SCHEMA_VERSION,
+    Report, RuleProvenance, RunSummary,
 };
-pub use source::{ColumnUnit, SourceIndex};
-pub use span::{LineCol, PositionError, Span};
+pub use source::{BomMode, ColumnUnit, PositionEncoding, SourceIndex};
+pub use span::{LineCol, LineColError, PositionError, Span, SpanError};

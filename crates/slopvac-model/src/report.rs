@@ -2,11 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::edit::Edit;
-use crate::ids::{PackId, RuleId, Severity};
+use crate::ids::{ContextTag, PackId, RuleId, SchemaVersion, Severity};
 use crate::span::Span;
-
-/// Value of `schema_version` in every v3 report.
-pub const SCHEMA_VERSION: u32 = 3;
 
 /// How strongly a finding indicates machine-written text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -32,12 +29,15 @@ pub enum NoticeLevel {
 
 /// A stable, machine-readable fact with a human message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Notice {
     /// Stable kebab-case identifier.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub code: String,
     /// Level.
     pub level: NoticeLevel,
     /// Human message.
+    #[schemars(length(min = 1))]
     pub message: String,
     /// File the notice concerns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,6 +46,7 @@ pub struct Notice {
 
 /// Where a rule came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct RuleProvenance {
     /// Owning pack.
     pub pack: PackId,
@@ -59,6 +60,7 @@ pub struct RuleProvenance {
 
 /// Config layer and location a setting came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct ConfigSource {
     /// Layer name.
     pub layer: String,
@@ -67,47 +69,59 @@ pub struct ConfigSource {
     pub file: Option<String>,
     /// One-based line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
     pub line: Option<usize>,
     /// One-based column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
     pub column: Option<usize>,
 }
 
 /// A machine-applicable correction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Fix {
     /// Non-overlapping edits in original offsets.
+    #[schemars(length(min = 1))]
     pub edits: Vec<Edit>,
 }
 
 /// One violation at one position.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}))]
 pub struct Finding {
     /// Qualified rule id.
     pub rule_id: RuleId,
     /// Owning pack.
     pub pack: PackId,
     /// Category id.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub category: String,
     /// Severity.
     pub severity: Severity,
     /// Message.
+    #[schemars(length(min = 1))]
     pub message: String,
     /// Byte range; absent for whole-document findings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
     /// Start line.
+    #[schemars(range(min = 1))]
     pub line: usize,
     /// Start column.
+    #[schemars(range(min = 1))]
     pub column: usize,
     /// End line; present with `span`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
     pub end_line: Option<usize>,
     /// End column; present with `span`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
     pub end_column: Option<usize>,
     /// Text contexts the match sits in.
-    pub contexts: Vec<String>,
+    #[schemars(extend("uniqueItems" = true))]
+    pub contexts: Vec<ContextTag>,
     /// AI signal.
     pub ai_signal: AiSignal,
     /// Matched source text.
@@ -122,6 +136,7 @@ pub struct Finding {
 
 /// Counts for one reporting axis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct AiRegisterSummary {
     /// Findings.
     pub findings: usize,
@@ -130,11 +145,13 @@ pub struct AiRegisterSummary {
     /// Warnings.
     pub warnings: usize,
     /// Findings per 100 words.
+    #[schemars(range(min = 0))]
     pub per_100_words: f64,
 }
 
 /// Strong and weak AI-signal summaries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct AiRegister {
     /// Strong signal.
     pub strong: AiRegisterSummary,
@@ -144,8 +161,10 @@ pub struct AiRegister {
 
 /// One category rolled up across every document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct CategorySummary {
     /// Category id.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub category: String,
     /// Findings.
     pub findings: usize,
@@ -156,13 +175,16 @@ pub struct CategorySummary {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
+    #[schemars(range(min = 0))]
     pub per_100_words: f64,
     /// Score, 0 to 100.
+    #[schemars(range(min = 0, max = 100))]
     pub score: f64,
 }
 
 /// Every document rolled into one result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct RunSummary {
     /// Documents linted.
     pub documents: usize,
@@ -177,8 +199,10 @@ pub struct RunSummary {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
+    #[schemars(range(min = 0))]
     pub per_100_words: f64,
     /// Score, 0 to 100.
+    #[schemars(range(min = 0, max = 100))]
     pub score: f64,
     /// Whether every document passed.
     pub passed: bool,
@@ -204,8 +228,10 @@ pub enum GenreSource {
 
 /// One signal that led to the genre choice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct GenreReason {
     /// Kebab-case signal name.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub signal: String,
     /// Detail.
     pub detail: String,
@@ -213,8 +239,10 @@ pub struct GenreReason {
 
 /// The genre applied to a document and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct GenreResult {
     /// Genre id.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub id: String,
     /// Source of the choice.
     pub source: GenreSource,
@@ -224,8 +252,10 @@ pub struct GenreResult {
 
 /// Per-category result for one document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct CategoryScore {
     /// Category id.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub category: String,
     /// Findings.
     pub findings: usize,
@@ -236,12 +266,16 @@ pub struct CategoryScore {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
+    #[schemars(range(min = 0))]
     pub per_100_words: f64,
     /// Errors and warnings per 100 words.
+    #[schemars(range(min = 0))]
     pub gating_per_100_words: f64,
     /// Gating limit, or null.
+    #[schemars(range(min = 0))]
     pub budget: Option<f64>,
     /// Score, 0 to 100.
+    #[schemars(range(min = 0, max = 100))]
     pub score: f64,
     /// Whether the budget is exceeded.
     pub over_budget: bool,
@@ -249,6 +283,7 @@ pub struct CategoryScore {
 
 /// Pass or fail result for one document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "allOf" = [{"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}}, {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}]))]
 pub struct Gate {
     /// Whether the document passed.
     pub passed: bool,
@@ -258,15 +293,19 @@ pub struct Gate {
 
 /// The whole result for one linted file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Document {
     /// File path.
+    #[schemars(length(min = 1))]
     pub path: String,
     /// Profile name.
+    #[schemars(length(min = 1))]
     pub profile: String,
     /// Genre.
     pub genre: GenreResult,
     /// Contexts found in the document.
-    pub contexts_seen: Vec<String>,
+    #[schemars(extend("uniqueItems" = true))]
+    pub contexts_seen: Vec<ContextTag>,
     /// Config layers that applied, lowest priority first.
     pub config_sources: Vec<ConfigSource>,
     /// Words.
@@ -288,8 +327,10 @@ pub struct Document {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
+    #[schemars(range(min = 0))]
     pub per_100_words: f64,
     /// Score, 0 to 100.
+    #[schemars(range(min = 0, max = 100))]
     pub score: f64,
     /// Gate result.
     pub gate: Gate,
@@ -303,10 +344,12 @@ pub struct Document {
 
 /// The `slopvac lint --format json` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Report {
-    /// Always [`SCHEMA_VERSION`].
-    pub schema_version: u32,
+    /// Always 3.
+    pub schema_version: SchemaVersion,
     /// Version of the tool that wrote the report.
+    #[schemars(length(min = 1))]
     pub slopvac_version: String,
     /// Run summary.
     pub summary: RunSummary,
