@@ -5,11 +5,13 @@ name: Release smoke test
 # and PowerShell installers, and, for stable tags, from the Homebrew tap.
 #
 # It can only run once a GitHub release exists. Triggers:
-#   * workflow_run after "Release" succeeds on a tag push. A release created
-#     with GITHUB_TOKEN does not emit a `release` event, so this is the trigger
-#     that fires after a real release;
-#   * release published, for a release a maintainer creates by hand;
+#   * workflow_run after "Release" succeeds on a tag push. The release.yml host
+#     job undrafts the release with GITHUB_TOKEN, which emits no `release` event,
+#     and a `release: published` trigger could start before the assets exist, so
+#     there is deliberately no `release` trigger;
 #   * workflow_dispatch with a tag, to re-test any release.
+# Tags before major 3 are not built by dist, so they are skipped. Homebrew is
+# checked only for the latest stable release, because the tap serves only that.
 # The tag is untrusted input. It reaches shell steps only through the
 # environment, and scripts/release_smoke.py validates it first.
 
@@ -17,8 +19,6 @@ on:
   workflow_run:
     workflows: [Release]
     types: [completed]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-smoke-${{ inputs.tag || github.event.release.tag_name || github.event.workflow_run.head_branch }}
+  group: release-smoke-${{ inputs.tag || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
@@ -47,6 +47,8 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
       stable: ${{ steps.tag.outputs.stable }}
+      dist: ${{ steps.tag.outputs.dist }}
+      latest: ${{ steps.tag.outputs.latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,15 +57,34 @@ jobs:
       - name: Validate the tag
         id: tag
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || github.event.workflow_run.head_branch }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/release_smoke.py parse-tag "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          latest="$(gh release view --repo "$REPO" --json tagName --jq .tagName)"
+          python3 scripts/release_smoke.py parse-tag "$RELEASE_TAG" --latest-tag "$latest" | tee -a "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Say what is skipped
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          DIST: ${{ steps.tag.outputs.dist }}
+          STABLE: ${{ steps.tag.outputs.stable }}
+          LATEST: ${{ steps.tag.outputs.latest }}
+        run: |
+          if [[ "$DIST" != "true" ]]; then
+            echo "Skipping every install route: $RELEASE_TAG is before major 3 and dist did not build it."
+          elif [[ "$STABLE" != "true" ]]; then
+            echo "Skipping Homebrew: $RELEASE_TAG is a prerelease."
+          elif [[ "$LATEST" != "true" ]]; then
+            echo "Skipping Homebrew: $RELEASE_TAG is not the latest release, and the tap serves only the latest."
+          fi
 
   archive:
     name: Archive on ${{ matrix.target }}
     needs: resolve
+    if: needs.resolve.outputs.dist == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -117,6 +138,7 @@ jobs:
   shell-installer:
     name: Shell installer on ${{ matrix.os }}
     needs: resolve
+    if: needs.resolve.outputs.dist == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -144,6 +166,7 @@ jobs:
   powershell-installer:
     name: PowerShell installer on Windows
     needs: resolve
+    if: needs.resolve.outputs.dist == 'true'
     runs-on: windows-2025
     timeout-minutes: 15
     env:
@@ -170,8 +193,8 @@ jobs:
   homebrew:
     name: Homebrew on ${{ matrix.os }}
     needs: resolve
-    # Prerelease tags never reach the tap.
-    if: needs.resolve.outputs.stable == 'true'
+    # Prerelease tags never reach the tap, and it serves only the latest release.
+    if: needs.resolve.outputs.dist == 'true' && needs.resolve.outputs.latest == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
