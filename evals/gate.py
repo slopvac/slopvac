@@ -156,8 +156,14 @@ def compare(
         base = baseline["splits"].get(split)
         if base is None:
             continue
-        for rule, was in base["rules"].items():
+        # A rule the baseline never saw has a baseline of zero: no findings on
+        # human text and no false positives on controls.
+        for rule in sorted(set(base["rules"]) | set(card["rules"])):
             now_entry = card["rules"].get(rule)
+            was = dict(base["rules"].get(rule, {}))
+            was.setdefault("human_findings", 0)
+            if "control_fpr" not in was and now_entry and "control_fpr" in now_entry:
+                was["control_fpr"] = {"hits": 0, "n": now_entry["control_fpr"]["n"]}
             for name in COUNT_METRICS:
                 if name not in was or not was[name]["n"]:
                     continue

@@ -248,3 +248,118 @@ def test_committed_baseline_belongs_to_the_current_manifest():
     assert baseline["corpus"]["manifest_sha256"] == runner.manifest_digest(manifest), (
         "the corpus changed: rebuild evals/baselines/python.json with `just eval-baseline`"
     )
+
+
+OTHER = "cat.other"
+
+
+def test_a_new_rule_with_false_positives_on_controls_is_a_regression(base):
+    manifest, results, baseline = base
+    changed = copy.deepcopy(results)
+    new_manifest = copy.deepcopy(manifest)
+    for d in new_manifest["documents"]:
+        if d["id"].startswith("c"):
+            d["source"]["controls"].append({"rule": OTHER, "line": 9, "text": "x"})
+            changed["documents"][d["id"]]["findings"].append({"rule": OTHER, "line": 9})
+    changed["corpus"] = {"manifest_sha256": runner.manifest_digest(new_manifest)}
+    out = gate.compare(baseline, cards(new_manifest, changed))
+    assert {(r["rule"], r["metric"]) for r in out["regressions"]} == {
+        (OTHER, "control_fpr")
+    }
+
+
+def test_a_new_rule_that_floods_human_text_is_a_regression(base):
+    manifest, results, baseline = base
+    changed = copy.deepcopy(results)
+    for key in changed["documents"]:
+        if key.startswith("h"):
+            changed["documents"][key]["findings"] = [{"rule": OTHER, "line": 2}] * 3
+    out = gate.compare(baseline, cards(manifest, changed))
+    assert (OTHER, "human_findings") in {
+        (r["rule"], r["metric"]) for r in out["regressions"]
+    }
+
+
+def labelled_run(base_data, tmp_path, monkeypatch, bad_share):
+    """Baseline: every finding on human text labelled true. Now: `bad_share` of them false."""
+    manifest, results = build()
+    for d in manifest["documents"]:
+        d["source"].pop("defects", None)  # keep recall out of the way
+    for key in results["documents"]:
+        if key.startswith("h"):
+            results["documents"][key]["findings"] = [{"rule": R, "line": 2}]
+    results["corpus"] = {"manifest_sha256": runner.manifest_digest(manifest)}
+    monkeypatch.setattr(cli.lib, "load_manifest", lambda: manifest)
+    hum = [k for k in results["documents"] if k.startswith("h")]
+    good = tmp_path / "good.jsonl"
+    good.write_text(
+        "\n".join(
+            json.dumps({"doc": k, "rule": R, "line": 2, "label": "tp"}) for k in hum
+        )
+    )
+    cut = int(len(hum) * bad_share)
+    worse = tmp_path / "worse.jsonl"
+    worse.write_text(
+        "\n".join(
+            json.dumps(
+                {"doc": k, "rule": R, "line": 2, "label": "fp" if i < cut else "tp"}
+            )
+            for i, k in enumerate(hum)
+        )
+    )
+    res = tmp_path / "r.json"
+    res.write_text(json.dumps(results))
+    return res, good, worse
+
+
+def test_precision_is_gated_through_the_cli(tmp_path, monkeypatch, capsys):
+    res, good, worse = labelled_run(None, tmp_path, monkeypatch, bad_share=0.75)
+    baseline = tmp_path / "base.json"
+    assert (
+        cli.main(["baseline", str(res), "--labels", str(good), "--out", str(baseline)])
+        == 0
+    )
+    assert (
+        json.loads(baseline.read_text())["splits"]["tuning"]["rules"][R]["precision"][
+            "n"
+        ]
+        >= gate.MIN_N
+    )
+    code = cli.main(
+        [
+            "gate",
+            str(res),
+            "--baseline",
+            str(baseline),
+            "--labels",
+            str(worse),
+            "--mode",
+            "enforce",
+        ]
+    )
+    assert code == 1
+    assert "precision" in capsys.readouterr().out
+
+
+def test_unchanged_precision_passes_through_the_cli(tmp_path, monkeypatch):
+    res, good, _ = labelled_run(None, tmp_path, monkeypatch, bad_share=0.0)
+    baseline = tmp_path / "base.json"
+    assert (
+        cli.main(["baseline", str(res), "--labels", str(good), "--out", str(baseline)])
+        == 0
+    )
+    assert (
+        cli.main(
+            [
+                "gate",
+                str(res),
+                "--baseline",
+                str(baseline),
+                "--labels",
+                str(good),
+                "--mode",
+                "enforce",
+            ]
+        )
+        == 0
+    )
