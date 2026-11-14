@@ -55,6 +55,7 @@ saphyr = "0.3"
 saphyr-parser = "0.3.4"
 slopvac-agents = { path = "crates/slopvac-agents" }
 cap-std = "4"
+cap-fs-ext = "4"
 minijinja = "3"
 pulldown-cmark = { version = "0.13", default-features = false }
 similar = "3"
