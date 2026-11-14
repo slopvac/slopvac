@@ -91,8 +91,9 @@ def score(
         lambda: {"documents": 0, "words": 0, "findings": 0}
     )
     incomplete = 0
-    tp: dict[str, int] = defaultdict(int)
-    fp: dict[str, int] = defaultdict(int)
+    precision_cells: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: defaultdict(lambda: [0, 0])
+    )
 
     for doc_id, doc in docs.items():
         if not wanted(doc_id):
@@ -135,13 +136,13 @@ def score(
         if labels:
             for f in res["findings"]:
                 verdict = labels.get((doc_id, f["rule"], f["line"]))
-                if verdict == "tp":
-                    tp[f["rule"]] += 1
-                elif verdict == "fp":
-                    fp[f["rule"]] += 1
+                if verdict in ("tp", "fp"):
+                    cell = precision_cells[f["rule"]][doc_id]
+                    cell[0] += verdict == "tp"
+                    cell[1] += 1
 
     rules: dict[str, Any] = {}
-    names = set(pooled) | set(control) | set(human_hits) | set(tp) | set(fp)
+    names = set(pooled) | set(control) | set(human_hits) | set(precision_cells)
     for rule in sorted(names):
         entry: dict[str, Any] = {}
         if rule in pooled:
@@ -156,14 +157,10 @@ def score(
         entry["human_per_100_words"] = (
             100 * human_hits.get(rule, 0) / human_words if human_words else None
         )
-        if tp[rule] + fp[rule]:
-            interval = metrics.wilson(tp[rule], tp[rule] + fp[rule])
-            entry["precision"] = {
-                "n": tp[rule] + fp[rule],
-                "tp": tp[rule],
-                "rate": tp[rule] / (tp[rule] + fp[rule]),
-                "wilson": list(interval) if interval else None,
-            }
+        if rule in precision_cells:
+            per_doc = [(h, n) for h, n in precision_cells[rule].values()]
+            summary = _summarise(per_doc, resamples)
+            entry["precision"] = {**summary, "tp": summary["hits"]}
         rules[rule] = entry
 
     for stats in origin_stats.values():

@@ -310,3 +310,40 @@ def test_ab_lists_rules_that_only_appear_in_findings():
     assert R in report["rules"]
     assert report["rules"][R]["human_per_100_words"]["point"] == 6.0
     assert f"{R}:human_per_100_words" in ab.regressions(report)
+
+
+def test_a_relative_engine_path_is_resolved_before_the_engine_changes_directory(
+    tmp_path, monkeypatch
+):
+    script = tmp_path / "bin" / "engine.py"
+    script.parent.mkdir()
+    script.write_text(FAKE_ENGINE)
+    script.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    engine = runner.Engine.parse("./bin/engine.py")
+    assert engine.command[0] == str(script.resolve())
+    assert runner.Engine.parse("slopvac").command[0] == "slopvac"
+
+
+def test_precision_interval_resamples_documents_not_findings():
+    manifest = labelled_manifest()
+    findings = [f(n) for n in range(1, 11)]
+    results = results_for(
+        manifest,
+        {
+            "h1": {"words": 10, "findings": findings},
+            "h2": {"words": 10, "findings": findings},
+        },
+    )
+    # h1: all 10 findings true, h2: all 10 false. Pooled precision is 10/20, but the
+    # two documents are perfectly opposed, so resampling documents gives 0, 0.5 or 1.
+    labels = {("h1", R, n): "tp" for n in range(1, 11)} | {
+        ("h2", R, n): "fp" for n in range(1, 11)
+    }
+    card = scoring.score(manifest, results, labels=labels, resamples=400)["rules"][R]
+    precision = card["precision"]
+    assert (precision["tp"], precision["n"], precision["documents"]) == (10, 20, 2)
+    assert precision["bootstrap"] == [0.0, 1.0]
+    assert (
+        precision["wilson"][0] > 0.27
+    )  # a pooled interval alone would claim far more certainty
