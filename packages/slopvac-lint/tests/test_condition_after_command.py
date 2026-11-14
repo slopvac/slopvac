@@ -67,6 +67,10 @@ def _fired_lines(tmp_path, text: str) -> list[int]:
         "Don't run migrations before deployment.",
         "Never run migrations before deployment.",
         "For production, do not run migrations before deployment.",
+        "Always back up the database before deployment.",
+        "For production, always back up the database before deployment.",
+        "Do run migrations before deployment.",
+        "For production, do run migrations before deployment.",
     ],
 )
 def test_instruction_with_trailing_condition_is_reported(tmp_path, sentence):
@@ -88,6 +92,8 @@ def test_instruction_with_trailing_condition_is_reported(tmp_path, sentence):
         "Result reviews offer **Release once** or **Cancel** before the client replies.",
         "Derivation consumes one remaining delegation hop before allocating the child.",
         # A noun-phrase subject with a finite verb, with and without a lead-in.
+        "Always available, the API responds when clients reconnect.",
+        "Never again, the worker restarts when the queue empties.",
         "Release builds run before deployment.",
         "For production, release builds run before deployment.",
         "Mecatl rejects a tool call whose arguments repeat a key before any rule runs.",
@@ -204,6 +210,12 @@ _AGREEMENT = [
     ("Do not run migrations before deployment.", True),
     ("Don't run migrations before deployment.", True),
     ("For production, do not run migrations before deployment.", True),
+    ("Always back up the database before deployment.", True),
+    ("For production, always back up the database before deployment.", True),
+    ("Do run migrations before deployment.", True),
+    ("For production, do run migrations before deployment.", True),
+    ("Always available, the API responds when clients reconnect.", False),
+    ("Never again, the worker restarts when the queue empties.", False),
     ("Release builds run before deployment.", False),
     ("Always runs before deployment when the queue is empty.", False),
     ("For production, release builds run before deployment.", False),
