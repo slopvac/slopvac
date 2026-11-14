@@ -31,17 +31,28 @@ fn mapped(table: &'static [(char, &'static str)], c: char) -> Option<&'static st
 }
 
 /// `str.isspace` for one character. This is Unicode `White_Space` plus U+001C to U+001F,
-/// read from Python's tables.
-pub(crate) fn is_space(c: char) -> bool {
+/// read from Python's tables. Use it where the reference calls `str.isspace`, `strip`,
+/// `lstrip` or `split()`. For `\s` in a pattern use [`regex_space`].
+pub(crate) fn py_isspace(c: char) -> bool {
     in_ranges(SPACE, c)
 }
 
-pub(crate) fn trim(s: &str) -> &str {
-    s.trim_matches(is_space)
+/// `str.strip()`.
+pub(crate) fn py_strip(s: &str) -> &str {
+    s.trim_matches(py_isspace)
 }
 
-pub(crate) fn trim_start(s: &str) -> &str {
-    s.trim_start_matches(is_space)
+/// `str.lstrip()`.
+pub(crate) fn py_lstrip(s: &str) -> &str {
+    s.trim_start_matches(py_isspace)
+}
+
+/// The `regex` module's `\s` for one character: `White_Space`, which leaves out the
+/// U+001C to U+001F that `str.isspace` accepts. Checked against `regex` 2026.11.9 over
+/// every code point. Use it where the reference matches `\s` and the Rust code works on
+/// characters instead of a pattern.
+pub(crate) fn regex_space(c: char) -> bool {
+    py_isspace(c) && !('\u{1c}'..='\u{1f}').contains(&c)
 }
 
 /// Map each character through `table`, keeping those it does not list.

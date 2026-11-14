@@ -1439,6 +1439,76 @@
   ]
  },
  {
+  "text": "\u001fThe API works.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The API works.",
+    "start": 1,
+    "end": 15,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "\u001f\u001fThe API works.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The API works.",
+    "start": 2,
+    "end": 16,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "We asked the U.S. \u001fIt was late.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We asked the U.S. \u001fIt was late.",
+    "start": 0,
+    "end": 31,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "We asked the U.S.\u001f It was late.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We asked the U.S.\u001f It was late.",
+    "start": 0,
+    "end": 31,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "We asked the U.S.\u001fIt was late.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We asked the U.S.\u001fIt was late.",
+    "start": 0,
+    "end": 30,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
   "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
   "words": 7,
   "text_type": "descriptive",

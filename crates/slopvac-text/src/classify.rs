@@ -9,7 +9,7 @@ use crate::lexicon::{
     EXTRA_FINITE_STEMS, FINITE_VERB_FORMS, IMPERATIVE_VERBS, NON_NOUN_SECOND_TOKENS, is_imperative,
 };
 use crate::pattern::{TextError, matches_start, re, re_i};
-use crate::pyrules::{casefold, trim, upper};
+use crate::pyrules::{casefold, py_strip, upper};
 use crate::tokens::{stepless_tokens, strip_step_number};
 
 /// The procedural and descriptive split that selects the sentence word cap.
@@ -119,7 +119,7 @@ fn plain_imperative_start(p: &Patterns, text: &str) -> Result<bool, TextError> {
 /// outside the list may be classified wrongly either way.
 pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     let p = &*PATTERNS;
-    let stripped = trim(text);
+    let stripped = py_strip(text);
     if let Some(caps) = p.safety_marker.captures(stripped.as_bytes())? {
         let whole = caps.get(0).expect("group 0 exists");
         let marker = caps.name("marker").map_or(String::new(), |m| {

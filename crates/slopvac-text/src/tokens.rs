@@ -7,7 +7,7 @@ use pcre2::bytes::Regex;
 
 use crate::lexicon::IMPERATIVE_VERBS;
 use crate::pattern::{TextError, find_all, re, re_i, replace_all};
-use crate::pyrules::{is_space, lower, trim};
+use crate::pyrules::{lower, py_isspace, py_strip};
 
 pub(crate) const SENTINEL: char = '\0';
 
@@ -121,7 +121,7 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
         let matched = &text[start..end];
         let first = lower(
             matched
-                .split(is_space)
+                .split(py_isspace)
                 .find(|part| !part.is_empty())
                 .unwrap_or(""),
         );
@@ -129,7 +129,7 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
             return Ok(matched.to_owned());
         }
         let capitalised = find_all(&CAPITALISED, matched)?.len();
-        if capitalised < 2 || (capitalised == 2 && trim(&text[..start]).is_empty()) {
+        if capitalised < 2 || (capitalised == 2 && py_strip(&text[..start]).is_empty()) {
             return Ok(matched.to_owned());
         }
         Ok(format!(" {SENTINEL} "))

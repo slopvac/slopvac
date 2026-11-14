@@ -8,7 +8,7 @@ use pcre2::bytes::Regex;
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
 use crate::pattern::{TextError, find_all, matches_start, re};
-use crate::pyrules::{is_digit, is_space, is_upper, trim, trim_start};
+use crate::pyrules::{is_digit, is_upper, py_isspace, py_lstrip, py_strip, regex_space};
 use crate::tokens::{
     CODE_SPAN, IDENTIFIER, PAREN_SPAN, QUOTED_SPAN, URL_OR_PATH, WORDLIKE, count_words,
 };
@@ -74,9 +74,10 @@ fn terminal_cut(
         protected_end = Some(end);
     }
     if text.as_bytes()[index] == b'.' && DOTTED_INITIALISM.is_match(&text.as_bytes()[..=index])? {
+        // Python measures this gap with `re.match(r"\s*", ...)`: regex whitespace.
         let rest = &text[index + 1..];
-        let remainder = trim_start(rest);
-        let gap = &rest[..rest.len() - remainder.len()];
+        let gap_len = rest.find(|c| !regex_space(c)).unwrap_or(rest.len());
+        let (gap, remainder) = rest.split_at(gap_len);
         if !remainder.is_empty()
             && gap.chars().count() < 2
             && (gap != " " || !is_initialism_opener(remainder)?)
@@ -91,10 +92,10 @@ fn terminal_cut(
         }
         end += c.len_utf8();
     }
-    if text[end..].chars().next().is_some_and(|c| !is_space(c)) {
+    if text[end..].chars().next().is_some_and(|c| !py_isspace(c)) {
         return Ok(None);
     }
-    Ok(match trim_start(&text[end..]).chars().next() {
+    Ok(match py_lstrip(&text[end..]).chars().next() {
         None => Some(end),
         Some(c) if is_upper(c) || is_digit(c) => Some(end),
         Some(_) => None,
@@ -145,7 +146,7 @@ fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
         }
         let mut tail: Vec<(usize, &str)> = Vec::new();
         for (k, (_, l)) in lines[index + 1..].iter().enumerate() {
-            let part = trim(l);
+            let part = py_strip(l);
             if !part.is_empty() {
                 tail.push((index + 1 + k, part));
             }
@@ -164,11 +165,11 @@ fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
         let head_all = &text[..head_end];
         // Divergence from the Python reference, which reports offset 0 here even when
         // the text starts with whitespace. See tests/fixtures/divergences.md.
-        let lead = head_all.len() - trim_start(head_all).len();
-        let mut result = vec![(trim(head_all), lead)];
+        let lead = head_all.len() - py_lstrip(head_all).len();
+        let mut result = vec![(py_strip(head_all), lead)];
         for (line_index, part) in tail {
             let (offset, raw) = lines[line_index];
-            let leading = raw.len() - trim_start(raw).len();
+            let leading = raw.len() - py_lstrip(raw).len();
             result.push((part, offset + leading));
         }
         return Ok(result);
@@ -178,7 +179,7 @@ fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
 
 /// Split prose into sentences, applying vertical-list structure before punctuation.
 pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
-    if trim(text).is_empty() {
+    if py_strip(text).is_empty() {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
@@ -204,8 +205,8 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
         cuts.push(chunk.len());
         for end in cuts {
             let raw = &chunk[start..end];
-            let part = trim(raw);
-            let leading = raw.len() - trim_start(raw).len();
+            let part = py_strip(raw);
+            let leading = raw.len() - py_lstrip(raw).len();
             let absolute = chunk_offset + start + leading;
             start = end;
             if part.is_empty() || !WORDLIKE.is_match(part.as_bytes())? {

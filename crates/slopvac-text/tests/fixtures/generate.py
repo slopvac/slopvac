@@ -102,6 +102,11 @@ CURATED = [
     "We asked the U.S. It\u0301 was late.",
     "Check it. \u01c5 more prose follows.",
     "Check it. \u0130 more prose follows.",
+    "\x1fThe API works.",
+    "\x1f\x1fThe API works.",
+    "We asked the U.S. \x1fIt was late.",
+    "We asked the U.S.\x1f It was late.",
+    "We asked the U.S.\x1fIt was late.",
 ]
 
 
