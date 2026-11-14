@@ -2385,10 +2385,12 @@ name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "ignore",
  "insta",
  "saphyr",
  "serde_json",
  "strsim",
+ "tempfile",
  "thiserror",
  "toml_edit",
 ]
