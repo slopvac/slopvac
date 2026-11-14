@@ -1,3 +1,6 @@
 //! Plugin discovery and execution.
 //!
-//! This crate is a placeholder in the workspace skeleton.
+//! The [`lock`] module holds the `.slopvac/packs.lock` model, its strict
+//! reader, its canonical writer, the drift diff and the `outdated` query.
+
+pub mod lock;
