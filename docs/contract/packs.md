@@ -16,13 +16,14 @@ A pack is a folder or an OCI artifact with a `slopvac-pack.toml` manifest. A dat
 | genre files | [`genre`](../../schemas/v3/genre.schema.json) | Genres with detection signals. |
 | tagger files | [`tagger`](../../schemas/v3/tagger.schema.json) | Declarative context taggers. |
 | terms files | [`terms`](../../schemas/v3/terms.schema.json) | Also the format of `.slopvac/terms.toml`. |
+| blocklist files | [`blocklist`](../../schemas/v3/blocklist.schema.json) | TOML or JSON. The opt-in vocabulary check reads them. |
 | `.slopvac/packs.lock` | [`packs-lock`](../../schemas/v3/packs-lock.schema.json) | Written by `slopvac plugins sync`. |
 
 Every file carries `schema_version = 3`. Unknown keys are errors, and keys with the prefix `x-` are ignored. The manifest lists its files under `provides`. A path that leaves the pack, by an absolute path, a drive letter, a backslash or a `..` segment, is invalid.
 
 ## 2. Manifest
 
-- `slopvac_api` is the extension API the pack targets, apart from `schema_version`. A host that implements a lower API exits 2 and does not load the pack.
+- `slopvac_api` is the extension API the pack targets, apart from `schema_version`. A host that implements an earlier API exits 2 and does not load the pack.
 - `kind = "data"` forbids the `[plugin]` table. `kind = "plugin"` requires it.
 - `requires` lists other packs with a version requirement. The host resolves them first and reports a cycle as an error.
 - The `[plugin]` table embeds the [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration) fields `network`, `hooks` and `features` flat, next to `command`, `args` and `env`. The host reads the declaration from the same bytes that `slopvac plugins trust` hashes (plugin-protocol.md section 4.3). A change to any field in the table changes the hash. The manifest closes the hook entries and the `features` table, so they take only the declared keys and `x-` keys.
@@ -30,7 +31,7 @@ Every file carries `schema_version = 3`. Unknown keys are errors, and keys with 
 
 ## 3. Styles
 
-A style sets levels for categories and rules, and may bring terms. A category entry is a bare level or a table with `severity`, `minimum_severity`, `max_per_100_words` and `weight`. The host applies `extends` in the order listed. Then it applies the style. When a config lists two or more styles, the last one wins. A rule entry beats a category entry in the same style.
+A style sets levels for categories and rules, and may bring terms. A style has no id: its name is the file name without the extension, qualified by the pack id. A category entry is a bare level or a table with `severity`, `minimum_severity`, `max_per_100_words` and `weight`. The host applies `extends` in the order listed. Then it applies the style. When a config lists two or more styles, the last one wins. A rule entry beats a category entry in the same style.
 
 `conflicts` names styles that must not be active with this one. When both are active, the run reports `style-conflict` as a notice with both names and uses the order rule above. Both styles stay active, and the notice is the only effect.
 
@@ -48,9 +49,19 @@ The 2.x genres map to genre files with these profiles: `consumer` normal, `refer
 
 A declarative tagger sets one context tag on each text unit where a `match` entry matches and no `unless` entry matches. The tag span is the whole unit. Output equals what a code tagger returns for the same unit: a span, the tag as `kind`, `confidence` and `evidence`. Taggers are deterministic and read nothing but the unit text.
 
-## 6. Terms
+## 6. Terms and blocklists
 
-A terms entry needs `term`. `variants` lists spellings that checks may flag and correct to `term`. `kind` is optional. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
+A terms entry needs `term`. `variants` lists spellings that checks may accept or flag and correct to `term`. `kind` is an optional kebab-case label.
+
+Casing has three modes:
+
+- Default: the check matches `term` and its variants without regard to case. A match with a casing that is neither the canonical spelling nor a declared variant is a finding.
+- `ignore_case = true`: any casing passes. The entry works as an allow-list entry.
+- `case_sensitive = true`: only the exact spelling of `term` and its variants match. Other casings are different words and never flag. Use it for names that are also common words, such as Go, Rust, React, Windows and REST, so that `go` in running text is not a finding.
+
+The two flags cannot combine. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
+
+A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optional `replacement`. The loader trims and lower-cases `word`, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
 
 ## 7. Lockfile
 

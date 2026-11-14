@@ -142,6 +142,10 @@
         "prime": {
           "description": "Markdown snippets that `slopvac prime` appends to a topic.",
           "$ref": "#/$defs/PathList"
+        },
+        "blocklists": {
+          "description": "Word blocklist files (blocklist.schema.json).",
+          "$ref": "#/$defs/PathList"
         }
       },
       "patternProperties": {

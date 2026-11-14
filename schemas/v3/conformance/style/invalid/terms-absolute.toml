@@ -1,5 +1,4 @@
 schema_version = 3
-id = "s"
 
 [terms]
-files = ["/etc/terms.toml"]
+blocklists = ["/etc/terms.toml"]

@@ -1,6 +1,4 @@
 schema_version = 3
-id = "ste"
-title = "Simplified Technical English"
 extends = ["core:plain"]
 conflicts = ["marketing"]
 
@@ -13,4 +11,4 @@ ste-words = "error"
 
 [terms]
 allow = ["slopvac"]
-files = ["terms.toml"]
+blocklists = ["blocklist.toml"]

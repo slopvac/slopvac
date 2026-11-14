@@ -41,14 +41,19 @@
           "uniqueItems": true
         },
         "kind": {
-          "description": "What the term is. A check may treat acronyms and identifiers differently from prose words.",
-          "enum": [
-            "product",
-            "acronym",
-            "proper-noun",
-            "identifier",
-            "jargon"
-          ]
+          "description": "What the term is, as a kebab-case label. Known values: product, language, protocol, acronym, proper-noun, identifier and jargon. A check may treat acronyms and identifiers differently from prose words.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "ignore_case": {
+          "description": "Accept any casing. The term then works as an allow-list entry and no casing finding fires for it.",
+          "type": "boolean",
+          "default": false
+        },
+        "case_sensitive": {
+          "description": "Match only the exact spelling of `term` and its variants. Other casings are different words and never flag. For names that are also common words, such as Go, Rust, React, Windows and REST: `go` in running text is not a finding. Cannot combine with ignore_case.",
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
@@ -57,7 +62,21 @@
       "patternProperties": {
         "^x-": {}
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "ignore_case",
+          "case_sensitive"
+        ],
+        "properties": {
+          "ignore_case": {
+            "const": true
+          },
+          "case_sensitive": {
+            "const": true
+          }
+        }
+      }
     }
   }
 }

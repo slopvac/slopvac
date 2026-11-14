@@ -1,0 +1,7 @@
+"no-reason.toml" = "/entries/0"
+"bad-pos.toml" = "/entries/0/pos"
+"no-word.toml" = "/entries/0"
+"unknown-key.toml" = "/entries/0"
+"blank-reason.toml" = "/entries/0/reason"
+"no-version.toml" = ""
+"wrong-table.toml" = ""
