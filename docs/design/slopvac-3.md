@@ -194,13 +194,13 @@ slopvac generates every reference document from code and data, and CI fails when
 - `uvx slopvac@latest prime migrate` runs the chain of migrations from the detected version.
 - `docs/migrate-2-to-3.md` and `prime migrate` render from one source.
 - `slopvac migrate` previews the changes, then rewrites the config with comments kept. It updates directive IDs and steering blocks. It compares findings before and after migration.
-- 3.x reads 2.x configs in a compatibility mode for one minor release.
+- 3.0 has no 2.x compatibility mode. It rejects a 2.x config with exit 2 and points to `slopvac migrate`. Removed flags, options, and hooks fail with an error, with no warning period.
 
 ## Release gate and risks
 
 An adversarial review of this plan and its beads found these gaps. Each one now has a bead:
 
-- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove with deprecation) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.
+- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.
 - **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests. The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.
 - **Plugin security:** a threat model and an independent review before the plugin host and OCI client close. The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.
 - **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.
@@ -209,7 +209,7 @@ An adversarial review of this plan and its beads found these gaps. Each one now 
 - **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16. Agree these before fixes and suggestions ship.
 - **RST:** stays in core through a bundled docutils adapter. AsciiDoc is new and experimental.
 - **Performance:** budgets for the installed binary, measured before they gate releases.
-- **Policies:** network and privacy, accessibility, and API deprecation windows.
+- **Policies:** network and privacy, accessibility, and API lifecycle. Breaking changes happen at major versions, with no deprecation windows.
 - **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.
 - **Interim status:** no 2.x release ships, so the issues get status and workarounds now.
 

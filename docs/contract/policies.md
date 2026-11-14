@@ -232,7 +232,7 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 - A schema's `$id` never changes within a version. The published URL has the form `https://srobroek.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
-- A config file without `schema_version` selects the 2.x compatibility mode (section 3.7). Any other 3.0 artifact without a version is an error.
+- A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
 - A version higher than the binary supports is an error that names the file, the version found, the versions supported, and the upgrade command (`upgrade_hint`, as in 2.x).
 
 Owners: `slopvac-8l4.2.12` for the semantics, `slopvac-8l4.4.5` for the config migration chain.
@@ -282,54 +282,35 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 
-### 3.6 Deprecation windows
+### 3.6 Breaking changes
 
-A deprecation passes through three states: announced, warning, and removed.
+3.0 carries no deprecation machinery. A breaking change takes effect at a major version, and the release notes list it.
 
-| Surface | Warning period | Earliest removal |
-|---|---|---|
-| CLI command, flag, or environment variable | At least one minor release, with a one-line stderr warning that names the replacement | The next major release |
-| Config key or value | At least one minor release, with a warning from `validate` and `lint` | The next major release |
-| Output fields (JSON, SARIF, and others) | The earlier `schema_version` stays available through `--schema-version <n>` for the whole next major release | The major release after the replacement |
-| Rule ID | The old ID resolves to the new one for at least one minor release and emits a warning | The next major release |
-| Data pack `slopvac_api` | The host loads the value that the new one replaced for at least 12 months after the new one ships | After those 12 months, and not before the next major release |
-| Plugin `protocolVersion` | The host speaks the version that the new one replaced for at least 12 months after the new one ships | After those 12 months, and not before the next major release |
+- Within 3.x, minor and patch releases make additive changes only (section 3.2). A removal or rename needs a major version.
+- Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options, hooks, and rule IDs with an error and exit 2.
+- Pack `slopvac_api` and plugin `protocolVersion` follow the same rule. The host loads a pack or plugin whose version it supports, as section 3.4 describes. A pack or plugin outside that range stays unloaded and the error names both versions. No grace period applies.
 
-Release notes and the generated docs announce every deprecation. A deprecation never changes a lint verdict in its warning period. Warnings go to stderr and to JSON `notices`, and they leave the exit code alone.
+Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.
 
-The 2.x configuration window is a special case (section 3.7).
+### 3.7 2.x surfaces at 3.0
 
-Owners: `slopvac-8l4.12.1`, `slopvac-8l4.4.5`, `slopvac-8l4.9.1`.
+3.0 invalidates the 2.x surfaces at release. Slopvac has no 2.x compatibility mode.
 
-### 3.7 Compatibility window for 2.x configs
+- A config file with no `schema_version`, or with a 2.x value, is rejected with exit 2. This covers `.slopvac.toml`, `slopvac.toml`, and `[tool.slopvac]` in `pyproject.toml`. The error has the code `config-legacy-version`, names the file, and points to `slopvac migrate`.
+- Slopvac lints nothing while it holds a 2.x config. No partial run happens.
+- `slopvac migrate` is the only path from 2.x. It previews the changes, rewrites the config with comments kept, updates directive IDs and steering blocks in documents, and compares findings before and after.
+- The mapping covers every 2.x setting, including negated globs, category budgets and weights, per-path locale, vocabulary files, and guidance controls. A setting with no 3.0 equivalent produces a `config-legacy-dropped` error in `migrate` and never disappears silently.
+- A 2.x flag, option, or hook that 3.0 removes fails with an error and exit 2. The compatibility matrix (`slopvac-8l4.2.9`) lists each one with the disposition `remove`.
+- Lint JSON from 3.0 has `schema_version` 3 only. No flag emits the 2.x format.
 
-**Decision.** 3.x reads 2.x configs in compatibility mode until the later of these two events:
-
-- the release of 3.2.0;
-- six months after the release date of 3.0.0.
-
-The release before the one that ends the window must announce the end in its release notes.
-
-**Reasoning.** The plan says "one minor release" (`docs/design/slopvac-3.md`, "Migration from 2.x"). Bead `slopvac-8l4.2.5` asks for a minimum calendar period, because minor releases can ship days apart. The decision keeps both a release count and a calendar floor. The count is two minors after 3.0, which is longer than the plan's wording. No 2.x release ships, so no 2.x user gets an earlier warning.
-
-**Behavior in compatibility mode.**
-
-- A config file without `schema_version` is a 2.x config. This covers `.slopvac.toml`, `slopvac.toml`, and `[tool.slopvac]` in `pyproject.toml`.
-- Slopvac migrates the file in memory with the same pure function that `slopvac migrate` uses. The result equals what `migrate` would write.
-- Every run that reads a 2.x config prints one warning on stderr with the code `config-legacy-version` and adds a notice to JSON output. The warning names the file and the command `slopvac migrate`.
-- The mapping covers every 2.x setting, including negated globs, category budgets and weights, per-path locale, vocabulary files, and guidance controls. A setting with no 3.0 equivalent produces a `config-legacy-dropped` error and never disappears silently.
-- Findings in compatibility mode match the findings after `slopvac migrate` writes the file.
-- A config with `schema_version` 3 is always read as a 3.0 config.
-- Directive IDs and steering blocks in documents sit outside the window. `slopvac migrate` rewrites them.
-
-Owners: `slopvac-8l4.4.5` for the chain and the mode, `slopvac-8l4.2.5` for the mapping table, `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.16.2` for `prime migrate`.
+Owners: `slopvac-8l4.4.5` for the version check, `slopvac-8l4.2.5` for the mapping table, `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.16.2` for `prime migrate`.
 
 ### 3.8 SDK support
 
-- The Python SDK implements one `protocolVersion` per SDK major version. It supports the host's current and previous protocol versions for the windows in section 3.6.
+- The Python SDK implements one `protocolVersion` per SDK major version. It supports the protocol versions that the matching host release supports (section 3.4).
 - The SDK ships a conformance suite. A plugin in any language can use it, and the example plugin must pass it.
 - The SDK validates messages against the published `plugin-protocol` schema, so a protocol mistake shows up in the plugin's own tests.
-- SDK releases follow semantic versioning. A minor release can add optional capabilities. A protocol-incompatible change needs an SDK major release.
+- SDK releases follow semantic versioning. A minor release can add optional capabilities. A protocol-incompatible change needs an SDK major release (section 3.6).
 - An SDK in another language builds on the published JSON Schemas.
 
 Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
@@ -368,9 +349,10 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | V3 | A user-written file with an unknown key fails with file, line, and column, and an `x-` key passes. A plugin message with an unknown field is ignored. | `slopvac-8l4.2.5`, `slopvac-8l4.2.6` |
 | V4 | A handshake with no common protocol version, a missing required feature, or an unknown capability produces the behavior in section 3.4. | `slopvac-8l4.9.6` |
 | V5 | A pack with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
-| V6 | Every error code in the generated docs is unique and kebab-case, and the list keeps every code of release 3.0.0. | `slopvac-8l4.19.1` |
-| V7 | A 2.x config without `schema_version` produces the same findings in compatibility mode as after `slopvac migrate`, and prints `config-legacy-version` once. | `slopvac-8l4.4.5`, `slopvac-8l4.16.1` |
-| V8 | Each 2.x setting listed in section 3.7 maps, or produces `config-legacy-dropped`. | `slopvac-8l4.2.5` |
+| V6 | Every error code in the generated docs is unique and kebab-case, and a later release keeps every code of the earlier one. | `slopvac-8l4.19.1` |
+| V7 | A config without `schema_version`, or with a 2.x value, exits 2 with `config-legacy-version` and a pointer to `slopvac migrate`, and lints nothing. | `slopvac-8l4.4.5` |
+| V8 | Each removed 2.x flag, option, and hook fails with an error and exit 2. No 2.x JSON format flag exists. | `slopvac-8l4.2.9` |
+| V10 | Each 2.x setting listed in section 3.7 maps in `slopvac migrate`, or produces `config-legacy-dropped`. | `slopvac-8l4.2.5`, `slopvac-8l4.16.1` |
 | V9 | The Python SDK example plugin passes the conformance suite. | `slopvac-8l4.9.7` |
 
 The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/tests/`:
@@ -385,5 +367,4 @@ The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/t
 
 - `slopvac-8l4.12.1` owns the global `--offline`, `--color`, and `SLOPVAC_LOG` surface. Its description does not mention them yet.
 - `slopvac-8l4.4.2` adds the `[network]` table and `[review] provider` to the config schema.
-- `slopvac-8l4.4.5` says "one minor". Update it to the window in section 3.7.
 - `slopvac-8l4.12.6` adds the preview and `--submit` behavior from section 1.5.
