@@ -34,6 +34,16 @@ Run `just docs-check` locally after `just docs` to check that `build/site-src` m
 
 Run `just docs-site` to build the Starlight site in `site/dist` and copy the rustdoc output to `site/dist/api`. It needs Node from `mise.toml`. Dependabot watches `site/package.json`.
 
-Publishing to GitHub Pages is a workflow step that the Rust CI epic owns: generate, lint the generated Markdown with slopvac, build the site, build rustdoc, copy it, check links, then upload and deploy the Pages artifact. A repository owner must enable GitHub Pages with the Actions source in the repository settings.
+GitHub Pages publishes the site from `.github/workflows/docs-site.yml`. The workflow runs on pushes to `main` and on pull requests. A pull request builds everything and deploys nothing. The steps are:
+
+1. Run the generator tests.
+2. Generate the pages into a temporary directory.
+3. Lint the generated Markdown with slopvac. `docs/site-lint.toml` holds the gate settings.
+4. Build the Starlight site.
+5. Build rustdoc with warnings denied and copy it to `dist/api`.
+6. Check internal links with lychee.
+7. Upload the site as the Pages artifact, and deploy that same artifact.
+
+The repository publishes with the GitHub Actions source. Changing the source in the repository settings stops deployment.
 
 The styles, genres, and pack pages are placeholders until the style, genre, and pack code exists. The rules page generator reads the Python rule data until the Rust rule loader replaces it.
