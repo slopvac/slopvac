@@ -319,52 +319,6 @@ fn remove_from_a_mixed_file_leaves_the_other_terms() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-#[cfg(unix)]
-#[test]
-fn a_failed_save_leaves_the_original_file_and_no_temp_files() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let dir = scratch("atomic");
-    terms(&dir, &["add", "Acme"]);
-    let before = file(&dir);
-    let sub = dir.join(".slopvac");
-    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
-    let m = command()
-        .try_get_matches_from(["terms", "add", "Widget"])
-        .unwrap();
-    let result = run(&m, &dir, &mut Vec::new());
-    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
-    // Root ignores directory permissions, so only assert when the write failed.
-    if result.is_err() {
-        assert_eq!(file(&dir), before);
-        let leftovers: Vec<_> = std::fs::read_dir(&sub)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(leftovers, ["terms.toml"]);
-    }
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn a_rename_failure_cleans_up_the_temp_file() {
-    let dir = scratch("rename-fail");
-    let target = dir.join(".slopvac/terms.toml");
-    std::fs::create_dir_all(&target).unwrap();
-    std::fs::write(target.join("keep"), "x").unwrap();
-    let m = command()
-        .try_get_matches_from(["terms", "add", "Acme", "--files", ".slopvac/terms.toml"])
-        .unwrap();
-    assert!(run(&m, &dir, &mut Vec::new()).is_err());
-    let names: Vec<_> = std::fs::read_dir(dir.join(".slopvac"))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(names, ["terms.toml"]);
-    assert!(target.join("keep").exists());
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
 #[test]
 fn vale_comments_need_a_space_and_hash_tags_are_entries() {
     let dir = scratch("vale-comments");

@@ -5,6 +5,7 @@
 //! document is written to a temporary file in the same directory and renamed
 //! over the target, so a failed save leaves the original untouched.
 
+use std::io::Write;
 use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value, value};
@@ -83,29 +84,49 @@ impl TermsDoc {
 
     /// Write the document atomically, creating parent directories.
     ///
+    /// The bytes go to an exclusively created, uniquely named temporary file
+    /// in the target's directory, and `persist` renames it over the target. A
+    /// symlinked target is followed, so the link survives. A failed save
+    /// leaves the original untouched and removes only its own temporary file.
+    ///
     /// # Errors
     /// Write failures; the original file is left as it was.
     pub fn save(&self, path: &Path) -> Result<(), TermsError> {
+        self.save_with(path, |f, bytes| f.write_all(bytes))
+    }
+
+    /// [`TermsDoc::save`] with the byte writer supplied by the caller, so a
+    /// test can fail the write part-way.
+    ///
+    /// # Errors
+    /// As [`TermsDoc::save`].
+    #[doc(hidden)]
+    pub fn save_with(
+        &self,
+        path: &Path,
+        write: impl FnOnce(&mut dyn Write, &[u8]) -> std::io::Result<()>,
+    ) -> Result<(), TermsError> {
         let io = |e: &std::io::Error| TermsError::Io {
             path: path.display().to_string(),
             message: e.to_string(),
         };
-        let dir = path
+        let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let dir = target
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(dir).map_err(|e| io(&e))?;
-        let name = path.file_name().map_or_else(
-            || "terms.toml".to_owned(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        let tmp = dir.join(format!(".{name}.tmp-{}", std::process::id()));
-        let written =
-            std::fs::write(&tmp, self.doc.to_string()).and_then(|()| std::fs::rename(&tmp, path));
-        if let Err(e) = written {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(io(&e));
+        let mut tmp = tempfile::Builder::new()
+            .prefix(".terms-")
+            .suffix(".tmp")
+            .tempfile_in(dir)
+            .map_err(|e| io(&e))?;
+        write(&mut tmp, self.doc.to_string().as_bytes()).map_err(|e| io(&e))?;
+        tmp.as_file().sync_all().map_err(|e| io(&e))?;
+        if let Ok(meta) = std::fs::metadata(&target) {
+            std::fs::set_permissions(tmp.path(), meta.permissions()).map_err(|e| io(&e))?;
         }
+        tmp.persist(&target).map_err(|e| io(&e.error))?;
         Ok(())
     }
 
