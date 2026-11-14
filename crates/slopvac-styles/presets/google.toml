@@ -1,0 +1,29 @@
+# Google developer documentation style guide preset.
+#
+# Attribution: this preset encodes the parts of the Google developer
+# documentation style guide (https://developers.google.com/style) that slopvac
+# can check. The guide is licensed under CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/). The rule choices below are
+# slopvac's own reading of it; Google does not endorse them.
+schema_version = 3
+description = "Google developer documentation style: sentence-case headings, semicolons allowed, no vertical-list requirement, inclusive language."
+conflicts = ["ste"]
+
+[rules]
+# Headings: sentence case.
+"ai-tells-formatting.title-case-heading" = "warning"
+# Semicolons are allowed; STE bans them.
+"ste-punctuation.semicolon-used" = "off"
+# Google does not ask for a vertical list for complex content or its punctuation.
+"ste-sentences.complex-text-not-in-vertical-list" = "off"
+"ste-sentences.vertical-list-lead-in-missing-colon" = "off"
+"ste-sentences.vertical-list-item-punctuation" = "off"
+# Say "for example", not "e.g.".
+"ste-practices.latin-abbreviation" = "warning"
+"prose-craft.latinisms" = "warning"
+# Inclusive, unambiguous language.
+"ste-practices.gendered-or-exclusionary-language" = "warning"
+"ste-practices.unclear-pronoun" = "warning"
+"prose-inclusive.ableist" = "warning"
+"prose-inclusive.exclusive" = "warning"
+"prose-inclusive.device-assumption" = "warning"

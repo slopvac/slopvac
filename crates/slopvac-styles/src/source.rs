@@ -51,7 +51,10 @@ impl StyleSource for MapSource {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuiltinSource;
 
-const BUILTIN: &[(&str, &str)] = &[("ste", include_str!("../presets/ste.toml"))];
+const BUILTIN: &[(&str, &str)] = &[
+    ("ste", include_str!("../presets/ste.toml")),
+    ("google", include_str!("../presets/google.toml")),
+];
 
 impl BuiltinSource {
     /// Names of the bundled presets.
