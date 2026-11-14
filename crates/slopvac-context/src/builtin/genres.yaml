@@ -44,3 +44,9 @@
     - { path: '(?:^|/)(?:blog|posts?|drafts?|notes?|discussions?)/', weight: 3 }
     - { frontmatter: { key: status, matches: '^draft$' }, weight: 3 }
   prime: Keep it short and direct. Context matters more than polish.
+
+- id: security
+  extends: reference
+  description: Security guidance, threat models and policies. Declared, never detected.
+  contexts: [security]
+  prime: Name the control that enforces each guarantee. A guarantee with no mechanism is a claim.
