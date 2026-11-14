@@ -81,6 +81,6 @@ contract:
 docs:
     uv run python scripts/docs/build_site.py
 
-# Build the reference docs to a temp dir and fail on broken links or bad schema ids.
+# Fail when build/site-src is stale, or on broken links or bad schema ids. Changes nothing.
 docs-check:
     uv run python scripts/docs/build_site.py --check

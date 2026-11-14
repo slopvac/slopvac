@@ -1,5 +1,6 @@
-# The one place the published docs address is written. build_site.py reads it,
-# and every schema `$id` under schemas/ must start with `site_url` + "schemas/".
-# Include the base path. Change this when a custom domain replaces GitHub Pages.
+# The one place the published docs address is written. build_site.py reads it.
+# Publishing rewrites the `$id` prefix of every committed schema to this URL, so
+# a custom domain changes this value only. Include the base path and end it with
+# a slash.
 site_url = "https://srobroek.github.io/slopvac/"
 api_version = "v3"
