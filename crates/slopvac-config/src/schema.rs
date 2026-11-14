@@ -30,6 +30,8 @@ pub enum Shape {
         /// Inclusive upper bound.
         max: Option<i64>,
     },
+    /// A density budget: a non-negative number, or `none` to clear the budget of a lower layer.
+    Budget,
     /// An integer or float within optional bounds.
     Num {
         /// Inclusive lower bound.
@@ -257,7 +259,7 @@ fn category_settings() -> Shape {
             vec![
                 ("severity", level()),
                 ("minimum_severity", level()),
-                ("max_per_100_words", non_negative()),
+                ("max_per_100_words", Shape::Budget),
                 ("weight", non_negative()),
             ],
             &[],
@@ -518,6 +520,17 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             }
         }
         Shape::Int { min, max } => check_int(ctx, node, *min, *max, path),
+        Shape::Budget => match &node.value {
+            Value::Str(s) if s == "none" => {}
+            Value::Str(s) => ctx.value_error(
+                node,
+                path,
+                format!("`{s}` is not a budget"),
+                "not accepted",
+                Some("use a number, or `none` to clear the budget".into()),
+            ),
+            _ => check_num(ctx, node, Some(0.0), None, path),
+        },
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => match node.value {

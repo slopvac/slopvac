@@ -313,7 +313,10 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
     }
 }
 
-/// Maps byte offsets to one-based lines and columns.
+/// Maps byte offsets to one-based lines and columns, as `docs/contract/positions.md` defines.
+///
+/// A line ends at LF, CRLF or a CR that does not precede LF. Nothing else ends a line. A leading
+/// byte order mark is not part of line 1, so offsets 0 and 3 are both line 1, column 1.
 #[derive(Debug, Clone)]
 pub struct LineIndex<'a> {
     text: &'a str,
@@ -324,15 +327,26 @@ impl<'a> LineIndex<'a> {
     /// Index `text`.
     #[must_use]
     pub fn new(text: &'a str) -> Self {
-        let mut starts = vec![0];
-        starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+        let bom = if text.starts_with('\u{feff}') {
+            '\u{feff}'.len_utf8()
+        } else {
+            0
+        };
+        let bytes = text.as_bytes();
+        let mut starts = vec![bom];
+        for (i, &b) in bytes.iter().enumerate() {
+            let ends_line = b == b'\n' || (b == b'\r' && bytes.get(i + 1) != Some(&b'\n'));
+            if ends_line {
+                starts.push(i + 1);
+            }
+        }
         Self { text, starts }
     }
 
-    /// One-based line and column, counted in characters, of a byte offset.
+    /// One-based line and column of a byte offset. The column counts code points.
     #[must_use]
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
-        let offset = offset.min(self.text.len());
+        let offset = offset.clamp(self.starts[0], self.text.len());
         let line = self.starts.partition_point(|&s| s <= offset) - 1;
         let start = self.starts[line];
         let col = self

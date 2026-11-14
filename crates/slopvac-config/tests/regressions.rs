@@ -108,3 +108,22 @@ fn a_toml_date_is_not_a_string() {
     let diags = config(text);
     assert_eq!(only(&diags).pointer(), "/terms/allow/0");
 }
+
+#[test]
+fn a_budget_is_a_non_negative_number_or_none() {
+    for ok in ["1.5", "0", "3", "\"none\""] {
+        let text = format!("schema_version = 3\n\n[categories.prose]\nmax_per_100_words = {ok}\n");
+        assert_eq!(config(&text), [], "{ok}");
+    }
+    for (bad, code) in [
+        ("-1", Code::InvalidValue),
+        ("\"zero\"", Code::InvalidValue),
+        ("true", Code::InvalidType),
+    ] {
+        let text = format!("schema_version = 3\n\n[categories.prose]\nmax_per_100_words = {bad}\n");
+        let diags = config(&text);
+        let d = only(&diags);
+        assert_eq!(d.code, code, "{bad}");
+        assert_eq!(d.pointer(), "/categories/prose/max_per_100_words", "{bad}");
+    }
+}
