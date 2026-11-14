@@ -44,6 +44,7 @@ slopvac-terms = { path = "crates/slopvac-terms" }
 base64 = "0.23"
 flate2 = "1.1"
 roxmltree = "0.21"
+markdown = "1"
 clap = { version = "4.6", features = ["derive"] }
 slopvac-agents = { path = "crates/slopvac-agents" }
 cap-std = "4"
