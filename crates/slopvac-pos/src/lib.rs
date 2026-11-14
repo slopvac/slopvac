@@ -78,21 +78,46 @@ impl Tagger {
     /// Each sentence is tagged on its own, as prose does.
     #[must_use]
     pub fn tag_text<'a>(&'a self, text: &'a str) -> Vec<TaggedToken<'a>> {
-        let tokens = tokenize::tokenize(text);
-        let mut out = Vec::with_capacity(tokens.len());
-        for sentence in tokenize::sentences(text, &tokens) {
-            let words: Vec<&str> = tokens[sentence.clone()]
-                .iter()
-                .map(|t| t.word.as_str())
-                .collect();
-            let tags = self.model.tag(&words);
-            for (token, tag) in tokens[sentence].iter().zip(tags) {
-                if !token.placeholder {
-                    out.push(TaggedToken {
-                        text: &text[token.span.clone()],
-                        span: token.span.clone(),
-                        tag,
-                    });
+        self.tag_blocks(text, std::slice::from_ref(&(0..text.len())))
+    }
+
+    /// Tags the given byte ranges of `text` as separate blocks.
+    ///
+    /// Vale tags each Markdown block (a paragraph, list item, heading or table
+    /// cell) on its own, and sentences never cross blocks. A scope layer that
+    /// knows the blocks passes their ranges here. Spans in the result are
+    /// offsets into `text`, not into the block. Each range must lie on
+    /// character boundaries and inside `text`.
+    ///
+    /// # Panics
+    ///
+    /// If a range is out of bounds or splits a UTF-8 sequence.
+    #[must_use]
+    pub fn tag_blocks<'a>(
+        &'a self,
+        text: &'a str,
+        blocks: &[Range<usize>],
+    ) -> Vec<TaggedToken<'a>> {
+        let mut out = Vec::new();
+        for block in blocks {
+            let base = block.start;
+            let slice = &text[block.clone()];
+            let tokens = tokenize::tokenize(slice);
+            for sentence in tokenize::sentences(slice, &tokens) {
+                let words: Vec<&str> = tokens[sentence.clone()]
+                    .iter()
+                    .map(|t| t.word.as_str())
+                    .collect();
+                let tags = self.model.tag(&words);
+                for (token, tag) in tokens[sentence].iter().zip(tags) {
+                    if !token.placeholder {
+                        let span = base + token.span.start..base + token.span.end;
+                        out.push(TaggedToken {
+                            text: &text[span.clone()],
+                            span,
+                            tag,
+                        });
+                    }
                 }
             }
         }
@@ -142,6 +167,35 @@ mod tests {
                 (".", 28..29),
             ]
         );
+    }
+
+    #[test]
+    fn blocks_are_tagged_independently_with_spans_in_the_whole_text() {
+        // Two list items without terminal punctuation: as one text they form a
+        // single sentence; as blocks they are two.
+        let text = "- Ensure the server restarts\n- Added the feature";
+        let tagger = Tagger::english();
+        let first = 2..28;
+        let second = 31..text.len();
+        let blocks = tagger.tag_blocks(text, &[first.clone(), second.clone()]);
+        let alone: Vec<(String, usize, String)> = [first, second]
+            .into_iter()
+            .flat_map(|b| {
+                let base = b.start;
+                tagger
+                    .tag_text(&text[b])
+                    .into_iter()
+                    .map(move |t| (t.text.to_owned(), t.span.start + base, t.tag.to_owned()))
+            })
+            .collect();
+        let got: Vec<(String, usize, String)> = blocks
+            .iter()
+            .map(|t| (t.text.to_owned(), t.span.start, t.tag.to_owned()))
+            .collect();
+        assert_eq!(got, alone);
+        assert!(blocks.iter().all(|t| &text[t.span.clone()] == t.text));
+        assert_eq!(blocks.first().map(|t| t.text), Some("Ensure"));
+        assert_eq!(blocks.last().map(|t| t.text), Some("feature"));
     }
 
     #[test]

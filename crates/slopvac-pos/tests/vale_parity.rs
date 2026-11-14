@@ -16,12 +16,12 @@ const SHIPPED_BLOCKLIST: &str =
 /// Floors the acceptance criteria set (99% exact match, 95% blocklist
 /// agreement), and the numbers measured when this test was written. The
 /// measured exact-match count must not regress; raise it when the port
-/// improves. The 7 differences are mostly Vale's own reporting artefacts next
+/// improves. The 4 differences are mostly Vale's own reporting artefacts next
 /// to code spans (its star placeholder, and the word after a span, are
 /// reported at the wrong column); the rest are single-word tagger differences.
 const CORPUS_EXACT_FLOOR: f64 = 0.99;
-const CORPUS_TOKENS: usize = 20_130;
-const CORPUS_EXACT_MEASURED: usize = 20_123;
+const CORPUS_TOKENS: usize = 17_173;
+const CORPUS_EXACT_MEASURED: usize = 17_169;
 const BLOCKLIST_AGREEMENT_FLOOR: f64 = 0.95;
 
 /// `(line, byte offset in the line)` of a token, both Vale's and ours.

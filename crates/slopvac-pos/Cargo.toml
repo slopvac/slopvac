@@ -13,6 +13,7 @@ include = [
     "src/**",
     "model/en.bin",
     "model/LICENSE-MODEL.md",
+    "LICENSE-prose",
     "Cargo.toml",
     "README.md",
 ]

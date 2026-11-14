@@ -50,6 +50,10 @@ impl<'a> Reader<'a> {
         Ok(slice)
     }
 
+    fn remaining(&self) -> usize {
+        self.bytes.len() - self.pos
+    }
+
     fn u32(&mut self) -> Result<u32, ModelError> {
         let b = self.take(4)?;
         Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
@@ -133,6 +137,11 @@ impl Model {
             .collect();
 
         let word_count = r.len()?;
+        // Each record takes at least three bytes (length, one tag byte), so a
+        // count beyond that is a truncated file; check before reserving.
+        if word_count > r.remaining() / 3 {
+            return Err(ModelError::Truncated);
+        }
         let mut unambiguous = HashMap::with_capacity(word_count);
         for _ in 0..word_count {
             let word = r.str16()?;
@@ -145,7 +154,12 @@ impl Model {
 
         let mut meta = HashMap::new();
         if version >= 2 {
-            for _ in 0..r.len()? {
+            let count = r.len()?;
+            // Each entry takes at least four bytes (two empty strings).
+            if count > r.remaining() / 4 {
+                return Err(ModelError::Truncated);
+            }
+            for _ in 0..count {
                 let key = r.str16()?;
                 let value = r.str16()?;
                 meta.insert(key, value);
@@ -193,6 +207,10 @@ impl Model {
         ctx.push("-END-".to_owned());
         ctx.push("-END2-".to_owned());
 
+        let mut scratch = Scratch {
+            scores: vec![0.0; self.classes.len()],
+            key: String::new(),
+        };
         let mut p1: &'a str = "-START-";
         let mut p2: &'a str = "-START2-";
         let mut out: Vec<&'a str> = Vec::with_capacity(words.len());
@@ -202,7 +220,7 @@ impl Model {
             } else if let Some(&id) = self.unambiguous.get(word) {
                 &*self.classes[usize::from(id)]
             } else {
-                self.predict(i + 2, &ctx, word, p1, p2)
+                self.predict(&mut scratch, i + 2, &ctx, word, p1, p2)
             };
             p2 = p1;
             p1 = tag;
@@ -211,8 +229,14 @@ impl Model {
         out
     }
 
-    fn accumulate(&self, feature: &str, scores: &mut [f32]) {
-        if let Some(&(lo, hi)) = self.features.get(feature) {
+    /// Adds the weights of the feature `parts` concatenate to, if the model
+    /// knows it. `key` is scratch space, reused across features.
+    fn accumulate(&self, key: &mut String, parts: &[&str], scores: &mut [f32]) {
+        key.clear();
+        for part in parts {
+            key.push_str(part);
+        }
+        if let Some(&(lo, hi)) = self.features.get(key.as_str()) {
             for k in lo as usize..hi as usize {
                 scores[usize::from(self.class_ids[k])] += self.weights[k];
             }
@@ -221,33 +245,45 @@ impl Model {
 
     /// Scores the rune-template features of `word` (at `ctx[i]`) and returns
     /// the best class. Ties go to the lowest class id, as in prose.
-    fn predict(&self, i: usize, ctx: &[String], word: &str, p1: &str, p2: &str) -> &str {
-        let mut scores = vec![0_f32; self.classes.len()];
+    /// `scratch` holds the score vector and key buffer, reused per sentence.
+    fn predict(
+        &self,
+        scratch: &mut Scratch,
+        i: usize,
+        ctx: &[String],
+        word: &str,
+        p1: &str,
+        p2: &str,
+    ) -> &str {
+        let Scratch { scores, key } = scratch;
+        scores.fill(0.0);
         let suffix = suffix_chars(word, 3);
-        let feats = [
-            "a".to_owned(),
-            format!("b{suffix}"),
-            format!("c{}", prefix_chars(word, 1)),
-            format!("d{p1}"),
-            format!("e{p2}"),
-            format!("f{p1} {p2}"),
-            format!("g{}", ctx[i]),
-            format!("h{p1} {}", ctx[i]),
-            format!("i{}", ctx[i - 1]),
-            format!("j{}", suffix_chars(&ctx[i - 1], 3)),
-            format!("k{}", ctx[i - 2]),
-            format!("l{}", ctx[i + 1]),
-            format!("m{}", suffix_chars(&ctx[i + 1], 3)),
-            format!("n{}", ctx[i + 2]),
-            format!("o{}", suffix_chars(word, 2)),
-            format!("p{}", suffix_chars(word, 4)),
-            format!("q{}", prefix_chars(word, 2)),
-            format!("r{}", prefix_chars(word, 3)),
-            format!("s{}", shape(word)),
-            format!("t{p1} {suffix}"),
+        // One entry per feature, in the order prose builds them; each is
+        // the feature letter followed by its parts.
+        let features: [&[&str]; 20] = [
+            &["a"],
+            &["b", suffix],
+            &["c", prefix_chars(word, 1)],
+            &["d", p1],
+            &["e", p2],
+            &["f", p1, " ", p2],
+            &["g", &ctx[i]],
+            &["h", p1, " ", &ctx[i]],
+            &["i", &ctx[i - 1]],
+            &["j", suffix_chars(&ctx[i - 1], 3)],
+            &["k", &ctx[i - 2]],
+            &["l", &ctx[i + 1]],
+            &["m", suffix_chars(&ctx[i + 1], 3)],
+            &["n", &ctx[i + 2]],
+            &["o", suffix_chars(word, 2)],
+            &["p", suffix_chars(word, 4)],
+            &["q", prefix_chars(word, 2)],
+            &["r", prefix_chars(word, 3)],
+            &["s", shape(word)],
+            &["t", p1, " ", suffix],
         ];
-        for feature in &feats {
-            self.accumulate(feature, &mut scores);
+        for parts in features {
+            self.accumulate(key, parts, scores);
         }
 
         let mut best = f32::NEG_INFINITY;
@@ -260,6 +296,12 @@ impl Model {
         }
         &self.classes[best_id]
     }
+}
+
+/// Per-sentence working memory for [`Model::predict`].
+struct Scratch {
+    scores: Vec<f32>,
+    key: String,
 }
 
 /// The last `n` characters of `word`, or all of it if shorter.
@@ -288,7 +330,7 @@ fn shape(word: &str) -> &'static str {
             upper += 1;
         } else if c.is_lowercase() {
             lower += 1;
-        } else if c.is_numeric() {
+        } else if is_decimal_digit(c) {
             digit += 1;
         } else if !c.is_alphanumeric() && !c.is_whitespace() && !c.is_control() {
             punct += 1;
@@ -315,6 +357,26 @@ fn shape(word: &str) -> &'static str {
     }
 }
 
+/// Start of every run of ten decimal digits (Unicode category Nd), from
+/// Unicode 16.0. Go's `unicode.IsDigit` is exactly Nd; Rust's `is_numeric` also
+/// takes superscripts, fractions and roman numerals (Nl, No).
+const DIGIT_RUN_STARTS: [u32; 76] = [
+    0x30, 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66,
+    0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0, 0x1a80, 0x1a90,
+    0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0, 0xa9f0, 0xaa50, 0xabf0, 0xff10,
+    0x104a0, 0x10d30, 0x10d40, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0, 0x11450, 0x114d0,
+    0x11650, 0x116c0, 0x116d0, 0x116da, 0x11730, 0x118e0, 0x11950, 0x11bf0, 0x11c50, 0x11d50,
+    0x11da0, 0x11f50, 0x16130, 0x16a60, 0x16ac0, 0x16b50, 0x16d70, 0x1ccf0, 0x1d7ce, 0x1d7d8,
+    0x1d7e2, 0x1d7ec, 0x1d7f6, 0x1e140, 0x1e2f0, 0x1e4f0, 0x1e5f1, 0x1e950, 0x1fbf0,
+];
+
+/// Whether `c` is a decimal digit, as Go's `unicode.IsDigit` (category Nd).
+fn is_decimal_digit(c: char) -> bool {
+    let c = u32::from(c);
+    let idx = DIGIT_RUN_STARTS.partition_point(|&start| start <= c);
+    idx > 0 && c - DIGIT_RUN_STARTS[idx - 1] < 10
+}
+
 /// Maps a word onto the form the model was trained against.
 fn normalize(word: &str) -> String {
     let Some(&first) = word.as_bytes().first() else {
@@ -329,7 +391,12 @@ fn normalize(word: &str) -> String {
     if first.is_ascii_digit() {
         return "!DIGITS".to_owned();
     }
-    word.to_lowercase()
+    // Go lower-cases rune by rune with the simple mapping (`unicode.ToLower`):
+    // U+0130 becomes `i`, and a capital sigma is never the final sigma. Rust's
+    // `str::to_lowercase` would expand the first and contextualise the second.
+    word.chars()
+        .map(|c| c.to_lowercase().next().unwrap_or(c))
+        .collect()
 }
 
 /// Whether `s` is an optional sign followed by at least one ASCII digit (what
@@ -444,5 +511,40 @@ mod tests {
         ] {
             assert_eq!(normalize(word), want, "{word}");
         }
+    }
+
+    /// Go's `unicode.ToLower` per rune: dotted capital I is `i` (Rust's
+    /// whole-string lowering gives `i` plus a combining dot), and a capital
+    /// sigma at the end of a word stays `\u{3c3}` (Rust gives final sigma).
+    #[test]
+    fn normalize_lowers_rune_by_rune_like_go() {
+        assert_eq!(normalize("\u{130}stanbul"), "istanbul");
+        assert_eq!(
+            normalize("\u{39f}\u{394}\u{39f}\u{3a3}"),
+            "\u{3bf}\u{3b4}\u{3bf}\u{3c3}"
+        );
+    }
+
+    /// Go's `unicode.IsDigit` is Nd only: Arabic-Indic digits count,
+    /// superscripts and roman numerals do not.
+    #[test]
+    fn shape_counts_decimal_digits_only() {
+        for (word, want) in [
+            ("12", "d"),
+            ("\u{663}\u{664}", "d"),
+            ("\u{ff11}\u{ff12}", "d"),
+            ("\u{b2}", "o"),
+            ("\u{bd}", "o"),
+        ] {
+            assert_eq!(shape(word), want, "{word}");
+        }
+    }
+
+    #[test]
+    fn decimal_digit_runs_cover_exactly_ten_code_points() {
+        assert!(is_decimal_digit('0') && is_decimal_digit('9'));
+        assert!(!is_decimal_digit('/') && !is_decimal_digit(':'));
+        assert!(is_decimal_digit('\u{669}') && !is_decimal_digit('\u{66a}'));
+        assert!(is_decimal_digit('\u{1fbf9}') && !is_decimal_digit('\u{1fbfa}'));
     }
 }

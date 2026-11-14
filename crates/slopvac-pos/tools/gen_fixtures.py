@@ -13,7 +13,8 @@ Outputs, under tests/fixtures/ (all committed):
   corpus.md   a slice of the evaluation corpus, paragraphs separated by blank lines
   corpus.tsv  one row per Vale-tagged word of corpus.md:
               line (1-based), byte offset in the line, word, Vale tag
-  SOURCES.md  which corpus files the slice came from
+  NOTICES.md  per source: files, copyright holder, licence and licence text
+  licenses/   the licence texts NOTICES.md reproduces (inputs, committed)
 
 Usage:
   gen_fixtures.py --corpus DIR   regenerate (needs `vale` >= 3.27 on PATH)
@@ -22,7 +23,7 @@ Usage:
 
 The corpus is the 92-file evaluation corpus of the 3.0 POS spike
 (slopvac-8l4.3.10). Only files from permissively licensed projects feed the
-slice; see SOURCES.md.
+slice; see NOTICES.md.
 """
 
 from __future__ import annotations
@@ -45,34 +46,26 @@ PENN = (
     "RBS RP SYM TO UH VB VBD VBG VBN VBP VBZ WDT WP WP$ WRB"
 ).split()
 
-# Corpus files from projects whose documentation licence permits excerpts with
-# attribution (MIT, BSD, Apache-2.0, CC BY 4.0). OWASP
-# (CC BY-SA) and projects without a stated licence are excluded.
-PERMISSIVE = {
-    "astral-sh_ruff": "MIT",
-    "astral-sh_uv": "MIT/Apache-2.0",
-    "BurntSushi_ripgrep": "MIT/Unlicense",
-    "denoland_deno": "MIT",
-    "docker_docs": "Apache-2.0",
-    "encode_httpx": "BSD-3-Clause",
-    "fastapi_fastapi": "MIT",
-    "tiangolo_fastapi": "MIT",
-    "jqlang_jq": "MIT",
-    "kubernetes_kubernetes": "Apache-2.0",
-    "kubernetes_website": "CC-BY-4.0",
-    "junegunn_fzf": "MIT",
-    "nodejs_node": "MIT",
-    "pallets_flask": "BSD-3-Clause",
-    "psf_requests": "Apache-2.0",
-    "pydantic_pydantic": "MIT",
-    "redis_redis": "BSD-3-Clause",
-    "rust-lang_book": "MIT/Apache-2.0",
-    "rust-lang_rust": "MIT/Apache-2.0",
-    "sharkdp_bat": "MIT/Apache-2.0",
-    "tailwindlabs_tailwindcss": "MIT",
-    "tokio-rs_tokio": "MIT",
-    "vitejs_vite": "MIT",
-}
+# Corpus projects whose documentation licence lets us keep short excerpts as
+# test data, with the notice the licence asks us to retain. Each entry:
+# repo, licence id, licence URL, local licence text (None: link only), branch,
+# copyright line (None: take the first "Copyright" line of the text).
+# Projects with other or mixed licences (Apache-2.0 only, CC BY-SA, the
+# Unlicense, jq, node, redis, ruff, and so on) are not used.
+LICENSES = {
+    "astral-sh_uv": ("astral-sh/uv", "MIT", "https://github.com/astral-sh/uv/blob/main/LICENSE-MIT", "astral-sh_uv.txt", "main", None),
+    "denoland_deno": ("denoland/deno", "MIT", "https://github.com/denoland/deno/blob/main/LICENSE.md", "denoland_deno.txt", "main", None),
+    "encode_httpx": ("encode/httpx", "BSD-3-Clause", "https://github.com/encode/httpx/blob/master/LICENSE.md", "encode_httpx.txt", "master", None),
+    "fastapi_fastapi": ("fastapi/fastapi", "MIT", "https://github.com/fastapi/fastapi/blob/master/LICENSE", "fastapi_fastapi.txt", "master", None),
+    "tiangolo_fastapi": ("fastapi/fastapi", "MIT", "https://github.com/fastapi/fastapi/blob/master/LICENSE", "fastapi_fastapi.txt", "master", None),
+    "junegunn_fzf": ("junegunn/fzf", "MIT", "https://github.com/junegunn/fzf/blob/master/LICENSE", "junegunn_fzf.txt", "master", None),
+    "pallets_flask": ("pallets/flask", "BSD-3-Clause", "https://github.com/pallets/flask/blob/main/LICENSE.txt", "pallets_flask.txt", "main", None),
+    "pydantic_pydantic": ("pydantic/pydantic", "MIT", "https://github.com/pydantic/pydantic/blob/main/LICENSE", "pydantic_pydantic.txt", "main", None),
+    "tailwindlabs_tailwindcss": ("tailwindlabs/tailwindcss", "MIT", "https://github.com/tailwindlabs/tailwindcss/blob/main/LICENSE", "tailwindlabs_tailwindcss.txt", "main", None),
+    "tokio-rs_tokio": ("tokio-rs/tokio", "MIT", "https://github.com/tokio-rs/tokio/blob/master/LICENSE", "tokio-rs_tokio.txt", "master", None),
+    "rust-lang_book": ("rust-lang/book", "MIT", "https://github.com/rust-lang/book/blob/main/LICENSE-MIT", "rust-lang_book.txt", "main", None),
+    "kubernetes_website": ("kubernetes/website", "CC-BY-4.0", "https://creativecommons.org/licenses/by/4.0/", None, "main", "Copyright The Kubernetes Authors"),
+}  # fmt: skip
 
 SHIPPED_WORDS = {
     "deploy", "return", "execute", "branch", "request", "file", "key",
@@ -156,7 +149,7 @@ def paragraphs(corpus: pathlib.Path) -> list[tuple[str, str]]:
     out = []
     for f in sorted(corpus.glob("*.md")):
         project = f.name.split("__")[1]
-        if project not in PERMISSIVE:
+        if project not in LICENSES:
             continue
         fence = False
         for block in re.split(r"\n\s*\n", f.read_text()):
@@ -209,29 +202,57 @@ def corpus_rows(
     return md_text, "\n".join(rows) + "\n"
 
 
-def sources(files: list[str]) -> str:
+def notices(files: list[str], manifest: dict[str, str]) -> str:
+    """NOTICES.md: per source project, where each excerpt came from, who holds
+    the copyright, the licence, and the retained licence text."""
     head = (
-        "# Corpus slice sources\n\n"
-        "`corpus.md` holds single-paragraph excerpts from the files below, kept as\n"
-        "test input for the part-of-speech tagger. Each project's documentation is\n"
-        "under the licence shown; this list is the attribution.\n\n"
-        "| Project | Licence | Files |\n| --- | --- | --- |\n"
+        "# Notices for the corpus slice\n\n"
+        "`corpus.md` holds paragraphs copied from the documentation files below, to\n"
+        "serve as test input for the part-of-speech tagger. The paragraphs are\n"
+        "unmodified except that they were selected from their files, and soft line\n"
+        "breaks are kept as they were. Each project keeps its copyright; the\n"
+        "licence terms follow. Source links point at the project's default branch\n"
+        "as of 2026-11-14; the commit was not recorded.\n"
     )
     by_project: dict[str, list[str]] = {}
     for f in files:
-        by_project.setdefault(f.split("__")[1], []).append(f.split("__", 2)[2])
-    body = "".join(
-        f"| {p} | {PERMISSIVE[p]} | {', '.join(sorted(fs))} |\n"
-        for p, fs in sorted(by_project.items())
-    )
-    return head + body
+        by_project.setdefault(f.split("__")[1], []).append(f)
+    out = [head]
+    for project in sorted(by_project):
+        repo, lic_id, lic_url, lic_file, branch, copyright_ = LICENSES[project]
+        text = (FIX / "licenses" / lic_file).read_text() if lic_file else None
+        if copyright_ is None:
+            copyright_ = next(
+                ln.strip() for ln in text.splitlines() if "Copyright" in ln
+            )
+        out.append(f"\n## {repo}\n\n")
+        out.append(f"- Repository: <https://github.com/{repo}>\n")
+        out.append(f"- Copyright: {copyright_}\n")
+        out.append(f"- Licence: [{lic_id}]({lic_url})\n")
+        out.append("- Files:\n")
+        for f in sorted(by_project[project]):
+            path = manifest[f]
+            out.append(f"  - <https://github.com/{repo}/blob/{branch}/{path}>\n")
+        if text is None:
+            out.append(
+                "- Changes: paragraphs were selected from the files above and\n"
+                "  otherwise left as they were. Licensed under CC BY 4.0; the\n"
+                "  licence is at the link above.\n"
+            )
+        else:
+            body = "\n".join("    " + ln if ln else "" for ln in text.rstrip().splitlines())
+            out.append(f"\nLicence text, retained as the licence requires:\n\n{body}\n")
+    return "".join(out)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--corpus", type=pathlib.Path, required=True)
+    ap.add_argument("--manifest", type=pathlib.Path, help="corpus manifest.json (default: next to the corpus directory)")
     ap.add_argument("--check", action="store_true", help="diff instead of writing")
     args = ap.parse_args()
+    manifest_path = args.manifest or args.corpus.parent / "manifest.json"
+    manifest = {m["file"]: m["path"] for m in json.loads(manifest_path.read_text())}
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
         slice_, files = corpus_slice(args.corpus)
@@ -240,7 +261,7 @@ def main() -> int:
             "gold.tsv": gold_rows(work),
             "corpus.md": corpus_md,
             "corpus.tsv": corpus_tsv,
-            "SOURCES.md": sources(files),
+            "NOTICES.md": notices(files, manifest),
         }
     stale = []
     for name, text in outputs.items():

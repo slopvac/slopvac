@@ -215,140 +215,6 @@ In other words, if `manylinux_compatible` returns `True`, uv will treat the syst
 `manylinux`-compatible; if it returns `False`, uv will treat the system as `manylinux`-incompatible,
 without calling `manylinux_compatible` for every glibc version.
 
-Update your profile, email, password, and Google or GitHub sign-in.
-
-Other Docker users can see your account information.
-
-A Docker account has one verified email address. If your account uses
-single sign-on (SSO) or System for Cross-domain Identity Management
-(SCIM) provisioning, contact your administrator to change your email.
-
-If your account uses single sign-on (SSO), contact your administrator to
-change your password.
-
-Docker emails you instructions to reset your password.
-
-Sign in with Google or GitHub using the same email as your Docker account
-to add that provider as a sign-in method.
-
-The Docker container driver allows creation of a managed and customizable
-BuildKit environment in a dedicated Docker container.
-
-The `docker-container` driver supports cache persistence, as it stores all the
-BuildKit state and related cache into a dedicated Docker volume.
-
-You can customize the network that the builder container uses. This is useful
-if you need to use a specific network for your builds.
-
-The examples in the following sections focus specifically on providing service containers access to GPU devices with Docker Compose.
-
-The MSI package supports various MDM (Mobile Device Management) solutions, making it ideal for bulk installations and eliminating the need for manual setups by individual users. With this package, IT administrators can ensure standardized, policy-driven installations of Docker Desktop, enhancing efficiency and software management across their organizations.
-
-When installing Docker Desktop, you can choose between interactive or non-interactive installations.
-
-Interactive installations, without specifying `/quiet` or `/qn`, display the user interface and let you select your own properties.
-
-Non-interactive installations are silent and any additional configuration must be passed as arguments.
-
-Admin rights are required to run any of the following commands.
-
-You can use the `/passive` display option instead of `/quiet` when you want to perform a non-interactive installation but show a progress dialog.
-
-In passive mode the installer doesn't display any prompts or error messages to the user and the installation cannot be cancelled.
-
-When uninstalling Docker Desktop, you need to use the same `.msi` file that was originally used to install the application.
-
-Additionally, you can also use `/norestart` or `/forcerestart` to control reboot behaviour.
-
-By default, the installer reboots the machine after a successful installation. When run silently, the reboot is automatic and the user is not prompted.
-
-The MSI installer collects anonymous usage statistics relating to installation only. This is to better understand user behaviour and to improve the user experience by identifying and addressing issues or optimizing popular features.
-
-When you install Docker Desktop from the command line, use the `DISABLEANALYTICS` property.
-
-If you decide to disable analytics for an installation, your choice is persisted in the registry and honoured across future upgrades and uninstalls.
-
-However, the key is removed when Docker Desktop is uninstalled and must be configured again via one of the previous methods.
-
-When analytics is disabled, this key is set to `1`.
-
-Restart policies are different from the `--live-restore` flag of the `dockerd`
-command. Using `--live-restore` lets you keep your containers running during
-a Docker upgrade, though networking and user input are interrupted.
-
-The following command starts a Redis container with the `unless-stopped`
-restart policy. Docker restarts the container if it exits or if the daemon
-restarts, but not if you stopped the container yourself.
-
-The following command changes the restart policy for an already running
-container named `redis`.
-
-The following command ensures all running containers restart.
-
-When you run a container in the foreground, stopping a container causes the
-attached CLI to exit as well, regardless of the restart policy of the
-container. This behavior is illustrated in the following example.
-
-To use a process manager, configure it to start your container or service using
-the same `docker start` or `docker service` command you would normally use to
-start the container manually. Consult the documentation for the specific
-process manager for more details.
-
-Process managers can also run within the container to check whether a process is
-running and starts/restart it if not.
-
-Some applications, especially legacy applications or applications which monitor
-network traffic, expect to be directly connected to the physical network. In
-this type of situation, you can use the `macvlan` network driver to assign a MAC
-address to each container's virtual network interface, making it appear to be
-a physical network interface directly connected to the physical network. In this
-case, you need to designate a physical interface on your Docker host to use for
-the Macvlan, as well as the subnet and gateway of the network. You can even
-isolate your Macvlan networks using different physical network interfaces.
-
-The following table describes the driver-specific options that you can pass to
-`--opt` when creating a network using the `macvlan` driver.
-
-When you create a Macvlan network, it can either be in bridge mode or 802.1Q
-trunk bridge mode.
-
-To create a `macvlan` network which bridges with a given physical network
-interface, use `--driver macvlan` with the `docker network create` command. You
-also need to specify the `parent`, which is the interface the traffic will
-physically go through on the Docker host.
-
-If you specify a `parent` interface name with a dot included, such as `eth0.50`,
-Docker interprets that as a sub-interface of `eth0` and creates the sub-interface
-automatically.
-
-An `ipvlan` network created with option `-o ipvlan_mode=l2` is similar
-to a macvlan network. The main difference is that the `ipvlan` driver
-doesn't assign a MAC address to each container, the layer-2 network stack
-is shared by devices in the ipvlan network. So, containers use the parent
-interface's MAC address.
-
-The network will see fewer MAC addresses, and the host's MAC address will be
-associated with the IP address of each container.
-
-The previous example assigns IPv6 addresses from a subnet managed by Docker's
-IPAM. On a `macvlan` network, you can instead let containers receive IPv6
-addresses directly from a router on the parent network, using stateless
-address autoconfiguration (SLAAC).
-
-This section provides hands-on examples for working with macvlan networks,
-including bridge mode and 802.1Q trunk bridge mode.
-
-In bridge mode, your traffic flows through `eth0` and Docker routes traffic to
-your container using its MAC address. To network devices on your network, your
-container appears to be physically attached to the network.
-
-In 802.1Q trunk bridge mode, your traffic flows through a sub-interface of
-`eth0` (called `eth0.10`) and Docker routes traffic to your container using its
-MAC address. To network devices on your network, your container appears to be
-physically attached to the network.
-
-Look for the `Networks` section with the MAC address.
-
 Kubernetes is all about sharing machines among applications.  Typically,
 sharing machines requires ensuring that two applications do not try to use the
 same ports.  Coordinating ports across multiple developers is very difficult to
@@ -1180,52 +1046,6 @@ request at a time. Let’s examine how that can be a problem by simulating some
 slow requests. Then, we’ll fix it so that our server can handle multiple
 requests at once.
 
-In the above benchmark, passing the `-n` flag (for showing line numbers)
-increases the times to `1.664s` for ripgrep and `9.484s` for GNU grep. ugrep
-times are unaffected by the presence or absence of `-n`.
-
-In other words, use ripgrep if you like speed, filtering by default, fewer
-bugs and Unicode support.
-
-Despite initially not wanting to add every feature under the sun to ripgrep,
-over time, ripgrep has grown support for most features found in other file
-searching tools. This includes searching for results spanning across multiple
-lines, and opt-in support for PCRE2, which provides look-around and
-backreference support.
-
-Note that ripgrep has grown a few significant new features recently that
-are not yet present in Andy's table. This includes, but is not limited to,
-configuration files, passthru, support for searching compressed files,
-multiline search and opt-in fancy regex support via PCRE2.
-
-Enabling the PCRE2 feature works with a stable Rust compiler and will
-attempt to automatically find and link with your system's PCRE2 library via
-`pkg-config`. If one doesn't exist, then ripgrep will build PCRE2 from source
-using your system's C compiler and then statically link it into the final
-executable. Static linking can be forced even when there is an available PCRE2
-system library by either building ripgrep with the MUSL target or by setting
-`PCRE2_SYS_STATIC=1`.
-
-Applying the `--features` flag from above works as expected. If you want to
-build a static executable with MUSL and with PCRE2, then you will need to have
-`musl-gcc` installed, which might be in a separate package from the actual
-MUSL library, depending on your Linux distribution.
-
-The following is a list of known translations of ripgrep's documentation. These
-are unofficially maintained and may not be up to date.
-
-An extremely fast Python linter and code formatter, written in Rust.
-
-Ruff aims to be orders of magnitude faster than alternative tools while integrating more
-functionality behind a single, common interface.
-
-See `ruff help` for more on Ruff's top-level commands, or `ruff help check` and `ruff help format`
-for more on the linting and formatting commands, respectively.
-
-In some cases, Ruff includes a "direct" Rust port of the corresponding tool.
-We're grateful to the maintainers of these tools for their work, and for all
-the value they've provided to the Python community.
-
 Pass `--sync` to install the selected packages before collecting module ownership information.
 Synchronization preserves unrelated installed packages by default; add `--exact` to remove them.
 
@@ -1326,8 +1146,6 @@ Declare the body using standard Python types, thanks to Pydantic.
 
 We just scratched the surface, but you already get the idea of how it all works.
 
-If you're not using the latest git version but instead building a released tarball (available on the release page), skip the `autoreconf` step, and flex or bison won't be needed.
-
 Whether you're selecting files, browsing command history, previewing data,
 navigating complex datasets with fuzzy matching, or creating custom menus and
 workflows, fzf provides the building blocks to turn shell scripts into rich
@@ -1390,104 +1208,6 @@ Flask offers suggestions, but doesn't enforce any dependencies or
 project layout. It is up to the developer to choose the tools and
 libraries they want to use. There are many extensions provided by the
 community that make adding new functionality easy.
-
-Requests allows you to send HTTP/1.1 requests extremely easily. There’s no need to manually add query strings to your URLs, or to form-encode your `PUT` & `POST` data — but nowadays, just use the `json` method!
-
-Requests is ready for the demands of building robust and reliable HTTP–speaking applications, for the needs of today.
-
-This document serves as both a quick start guide to Redis and a detailed resource for building it from source.
-
-For developers, who are building real-time data-driven applications, Redis is the preferred, fastest, and most feature-rich cache, data structure server, and document and vector query engine.
-
-Redis Community Edition (Redis CE) was renamed Redis Open Source with the v8.0 release.
-
-To connect your application to Redis, you will need a client library. Redis has documented client libraries in most popular languages, with community-supported client libraries in additional languages.
-
-Redis can be compiled and used on Linux, OSX, OpenBSD, NetBSD, FreeBSD.
-We support big endian and little endian architectures, and both 32 bit and 64-bit systems.
-
-Redis has some dependencies which are included in the `deps` directory. `make` does not automatically rebuild dependencies even if something in the source code of dependencies changes.
-
-This will clean: jemalloc, lua, hiredis, linenoise and other dependencies.
-
-Also, if you force certain build options like 32bit target, no C compiler optimizations (for debugging purposes), and other similar build time options, those options are cached indefinitely until you issue a `make distclean`
-command.
-
-If after building Redis with a 32 bit target you need to rebuild it
-with a 64 bit target, or the other way around, you need to perform a `make distclean` in the root directory of the Redis distribution.
-
-Selecting a non-default memory allocator when building Redis is done by setting the `MALLOC` environment variable. Redis is compiled and linked against libc malloc by default, except for jemalloc being the default on Linux systems. This default was picked because jemalloc has proven to have fewer fragmentation problems than libc malloc.
-
-By default, `bat` pipes its own output to a pager (e.g. `less`) if the output is too large for one screen.
-If you would rather `bat` work like `cat` all the time (never page output), you can set `--paging=never` as an option, either on the command line or in your configuration file.
-If you intend to alias `cat` to `bat` in your shell configuration, you can use `alias cat='bat --paging=never'` to preserve the default behavior.
-
-Even with a pager set, you can still use `bat` to concatenate files :wink:.
-Whenever `bat` detects a non-interactive terminal (i.e. when you pipe into another process or into a file), `bat` will act as a drop-in replacement for `cat` and fall back to printing the plain file contents, regardless of the `--pager` option's value.
-
-Note that we have to switch off paging in order for this to work. We have also specified the syntax
-explicitly (`-l log`), as it can not be auto-detected in this case.
-
-Then you can do `$ help cp` or `$ help git commit`.
-
-This way, you can keep on using `cp --help`, but get colorized help pages.
-
-Be aware that in some cases, `-h` may not be a shorthand of `--help` (for example with `ls`). In cases where you need to use `-h` 
-as a command argument you can prepend `\` to the argument (eg. `ls \-h`) to escape the aliasing defined above.
-
-Note that additional files like the man page or shell completion
-files can not be installed automatically in both these ways.
-If installing from a local source, they will be generated by `cargo`
-and should be available in the cargo target folder under `build`.
-
-By default, `bat` enables `changes`, `grid`, `header-filename`, `numbers`, and `snip`.
-
-By default, `bat` only shows decorations (such as line numbers, file headers, grid borders, etc.) when outputting to an interactive terminal. You can control this behavior with the `--decorations` option. Use `--decorations=always` to show decorations even when piping output to another command, or `--decorations=never` to disable them entirely. Possible values are `auto` (default), `never`, and `always`.
-
-There is also the `--force-colorization` option, which is an alias for `--decorations=always --color=always`. This is useful if you want to keep colorization and decorations when piping `bat`'s output to another program.
-
-Should you find that a particular syntax is not available within `bat`, you can follow these
-instructions to easily add new syntaxes to your current `bat` installation.
-
-When using `less` as a pager, `bat` will automatically pass extra options along to `less`
-to improve the experience. Specifically, `-R`/`--RAW-CONTROL-CHARS`, `-F`/`--quit-if-one-screen`,
-`-K`/`--quit-on-intr` and under certain conditions, `-X`/`--no-init` and/or `-S`/`--chop-long-lines`.
-
-The `-R`/`--RAW-CONTROL-CHARS` option is needed to interpret ANSI colors correctly.
-
-The `-F`/`--quit-if-one-screen` option instructs `less` to exit immediately if the output size is smaller than
-the vertical size of the terminal. This is convenient for small files because you do not
-have to press `q` to quit the pager.
-
-The `-K`/`--quit-on-intr` option instructs `less` to exit immediately when an interrupt signal is received.
-This is useful to ensure that `less` quits together with `bat` on SIGINT.
-
-The `-X`/`--no-init` option is added to versions of `less` older than version 530 (older than 558 on Windows) to
-fix a bug with the `-F`/`--quit-if-one-screen` feature. Unfortunately, it also breaks mouse-wheel support in `less`.
-If you want to enable mouse-wheel scrolling on older versions of `less` and do not mind losing
-the quit-if-one-screen feature, you can set the pager (via `--pager` or `BAT_PAGER`) to `less -R`.
-For `less` 530 or newer, it should work out of the box.
-
-The `-S`/`--chop-long-lines` option is added when `bat`'s `-S`/`--chop-long-lines` option is used. This tells `less`
-to truncate any lines larger than the terminal width.
-
-If an input file contains color codes or other ANSI escape sequences or control characters, `bat` will have problems
-performing syntax highlighting and text wrapping, and thus the output can become garbled.
-
-If your version of `bat` supports the `--strip-ansi=auto` option, it can be used to remove such sequences
-before syntax highlighting. Alternatively, you may disable both syntax highlighting and wrapping by
-passing the `--color=never --wrap=never` options to `bat`.
-
-For untrusted input, the `--sanitize=auto|always|never` option additionally replaces terminal-active
-control bytes and Unicode bidi / zero-width formatting characters with the Unicode replacement
-character. It implies `--strip-ansi` at the same value.
-
-Make sure that your truecolor terminal sets the `COLORTERM` variable to either `truecolor` or
-`24bit`. Otherwise, `bat` will not be able to determine whether or not 24-bit escape sequences
-are supported (and fall back to 8-bit colors).
-
-Please try a different theme (see `bat --list-themes` for a list). The `OneHalfDark` and
-`OneHalfLight` themes provide grid and line colors that are brighter.
 
 These components provide the runtime components necessary for building
 an asynchronous application.
@@ -1566,65 +1286,6 @@ These changes should not affect users who have been working from the `httpx` doc
 
 Some areas of API which were already on the deprecation path, and were raising warnings or errors in 0.13.x have now been escalated to being fully removed.
 
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-This vulnerability was reported by Paulo Gomes @pjbgf from SUSE.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-A security issue was discovered in Kubernetes where a large number of container checkpoint requests made to the unauthenticated kubelet read-only HTTP endpoint may cause a Node Denial of Service by filling the Node's disk.
-
-This vulnerability was reported and fixed by Tim Allclair @tallclair from Google.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-A security vulnerability has been discovered in Kubernetes windows nodes
-that could allow a user with the ability to query a node's '/logs' endpoint
-to execute arbitrary commands on the host.
-
-This vulnerability was reported by Peled, Tomer and mitigated by Aravindh Puthiyaprambil.
-
-All container images are available as manifest lists and support the described
-architectures. It is also possible to pull a specific architecture directly by
-adding the "-$ARCH" suffix  to the container image name.
-
-This release includes a fix for an unexpected behavior introduced
-by the recent security release (22.23.0).
-
-Users who wish to stay on urllib3 1.x can pin to `urllib3<2`.
-
-No code modification (noted below) should be necessary any longer.
-
 Pydantic V2 introduces a number of changes to the API, including some breaking changes.
 
 This page provides a guide highlighting the most
@@ -1644,14 +1305,6 @@ The following sections provide details on the most important changes in Pydantic
 Various method names have been changed; all non-deprecated `BaseModel` methods now have names matching either the
 format `model_.*` or `__.*pydantic.*__`. Where possible, we have retained the deprecated methods with their old names
 to help ease migration, but calling them will emit `DeprecationWarning`s.
-
-These changes do not affect any public interfaces of Rust, but they represent
-significant improvements to the performance or internals of rustc and related
-tools.
-
-These changes do not affect any public interfaces of Rust, but they represent
-significant improvements to the performance or internals of rustc and related
-tools.
 
 All notable changes to this project will be documented in this file.
 

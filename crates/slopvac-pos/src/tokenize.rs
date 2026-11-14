@@ -159,16 +159,21 @@ const CONTRACTIONS: [&str; 10] = [
     "n\u{2019}t",
 ];
 
-/// Punctuation that peels off the end of a chunk.
-const SUFFIXES: [&str; 20] = [
+/// Punctuation that peels off the end of a chunk (prose v3.3.1
+/// `defaultSuffixes`).
+const SUFFIXES: [&str; 31] = [
     ",", ")", "\"", "]", "!", ";", ".", "?", ":", "'", "\u{201d}", "\u{2019}", "\u{bb}",
-    "\u{201c}", "\u{2018}", "\u{203a}", "\u{2026}", "\u{3002}", "\u{ff0c}", "\u{3001}",
+    "\u{201c}", "\u{2018}", "\u{203a}", "\u{2026}", "\u{3002}", "\u{ff0c}", "\u{3001}", "\u{ff01}",
+    "\u{ff1f}", "\u{ff1a}", "\u{ff1b}", "\u{ff09}", "\u{300d}", "\u{300f}", "\u{3011}", "\u{300b}",
+    "\u{3009}", "\u{3015}",
 ];
 
-/// Punctuation that peels off the front of a chunk.
-const PREFIXES: [&str; 12] = [
+/// Punctuation that peels off the front of a chunk (prose v3.3.1
+/// `defaultPrefixes`).
+const PREFIXES: [&str; 20] = [
     "$", "(", "\"", "[", "\u{201c}", "\u{2018}", "\u{ab}", "\u{201e}", "\u{201d}", "\u{201a}",
-    "\u{bf}", "\u{a1}",
+    "\u{2039}", "\u{bf}", "\u{a1}", "\u{ff08}", "\u{300c}", "\u{300e}", "\u{3010}", "\u{300a}",
+    "\u{3008}", "\u{3014}",
 ];
 
 /// Splits one whitespace-free chunk, which starts at byte `base` of the input.
