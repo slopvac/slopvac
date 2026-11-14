@@ -110,6 +110,14 @@ def test_extra_file_outside_the_workspace_is_rejected(tmp_path):
         rc_version.release_version_files(tmp_path)
 
 
+def test_updater_objects_in_extra_files_are_not_marker_files(tmp_path):
+    updater = {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.a.b"}
+    config = {"packages": {".": {"extra-files": ["README.md", updater]}}}
+    (tmp_path / "release-please-config.json").write_text(json.dumps(config), encoding="utf-8")
+    names = {p.name for p in rc_version.release_version_files(tmp_path)}
+    assert names == {"pyproject.toml", "README.md"}
+
+
 def test_a_later_alpha_makes_the_pending_version_stale(release_map):
     release_map["2.18.0a1"] = [{"yanked": False}]
     with pytest.raises(ValueError, match="not newer"):

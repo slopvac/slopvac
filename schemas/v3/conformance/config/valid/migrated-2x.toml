@@ -1,0 +1,18 @@
+# Shape that `slopvac migrate` writes for a typical 2.x config.
+schema_version = 3
+profile = "normal"
+exclude = [
+  "**/node_modules/**",
+  "packages/slopvac-lint/tests/fixtures/**",
+  "CHANGELOG.md",
+  ".beads/**",
+]
+
+[thresholds]
+max_errors = 0
+
+[categories.ste-descriptive]
+severity = "suggestion"
+
+[categories.ste-safety]
+severity = "error"
