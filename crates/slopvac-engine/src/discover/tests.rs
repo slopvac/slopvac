@@ -707,6 +707,22 @@ mod locked {
     }
 
     #[test]
+    fn a_recursive_glob_prunes_directories_before_the_double_star() {
+        let dir = TempDir::new().unwrap();
+        write(dir.path(), "docs/public1/deep/a.md", "");
+        let locked = dir.path().join("docs/private");
+        fs::create_dir_all(&locked).unwrap();
+        let pattern = format!("{}/docs/public*/**/*.md", dir.path().display());
+        let result = with_locked(&locked, || {
+            discover(&[pattern.as_str()], Options::default())
+        });
+        if let Some(result) = result {
+            let got: Vec<_> = result.unwrap().files.into_iter().map(|f| f.path).collect();
+            assert_eq!(got, [dir.path().join("docs/public1/deep/a.md")]);
+        }
+    }
+
+    #[test]
     fn a_recursive_glob_still_reports_an_unreadable_directory() {
         let dir = TempDir::new().unwrap();
         write(dir.path(), "docs/a.md", "");
@@ -844,5 +860,37 @@ mod symlink_paths {
         let (_dir, root, _shared) = external_link();
         let ex = Excludes::new(&root, &["guide.md", "/shared/"]).unwrap();
         assert!(!ex.is_excluded(&root.join("linked.md")));
+    }
+}
+
+#[cfg(unix)]
+mod internal_symlink_excludes {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    /// `repo/docs/link.md` points at `repo/archive/real.md`, both inside the project.
+    fn fixture() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write(&root, "archive/real.md", "");
+        fs::create_dir_all(root.join("docs")).unwrap();
+        symlink(root.join("archive/real.md"), root.join("docs/link.md")).unwrap();
+        (dir, root)
+    }
+
+    #[test]
+    fn an_exclude_for_the_links_repository_path_applies() {
+        let (_dir, root) = fixture();
+        let ex = Excludes::new(&root, &["/docs/link.md"]).unwrap();
+        assert!(ex.is_excluded(&root.join("docs/link.md")));
+    }
+
+    #[test]
+    fn an_exclude_for_the_links_destination_does_not_apply_to_the_link() {
+        let (_dir, root) = fixture();
+        let ex = Excludes::new(&root, &["/archive/"]).unwrap();
+        assert!(!ex.is_excluded(&root.join("docs/link.md")));
+        assert!(ex.is_excluded(&root.join("archive/real.md")));
     }
 }

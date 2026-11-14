@@ -13,17 +13,16 @@ use proptest::prelude::*;
 use slopvac_engine::discover::{DiscoverError, Excludes, Options, Selection, discover};
 use tempfile::TempDir;
 
-const DIRS: [&str; 3] = ["a", "b", "c"];
+const DIRS: [&str; 4] = ["a", "b", "c", "pub"];
 const FILES: [&str; 4] = ["x.md", "y.txt", "w.rs", "z.md"];
-const DIR_PARTS: [&str; 8] = ["a", "b", "c", "*", "**", "{a,b}", "{a,b/c}", "?"];
+const DIR_PARTS: [&str; 9] = ["a", "b", "c", "*", "**", "{a,b}", "{a,b/c}", "?", "p*"];
 const FILE_PARTS: [&str; 6] = ["x.md", "*.md", "*.txt", "*.{md,txt}", "{x,y}.md", "*"];
 const EXCLUDES: [&str; 8] = [
     "a/", "x.md", "*.txt", "!a/b/", "b/x.md", "!x.md", "a/b/", "c",
 ];
 
-/// Directory parts that can only descend into a literal directory, so a sibling
-/// directory the glob cannot reach may safely be unreadable.
-const LITERAL_DIR_PARTS: [&str; 5] = ["a", "b", "c", "{a,b}", "{a,b/c}"];
+/// Directory parts that can never match the decoy directory name `zz`.
+const NON_MATCHING_PARTS: [&str; 6] = ["a", "b", "c", "{a,b}", "{a,b/c}", "p*"];
 
 fn tree() -> impl Strategy<Value = Vec<(Vec<usize>, usize)>> {
     prop::collection::vec(
@@ -136,7 +135,7 @@ impl Drop for Locked {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(96))]
+    #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
     fn glob_discovery_matches_the_oracle(
@@ -158,23 +157,32 @@ proptest! {
         let pattern = format!("{}/{pattern_rel}", root.display());
         let exclude_patterns: Vec<&str> = exclude.iter().map(|i| EXCLUDES[*i]).collect();
 
-        // Lock a directory the pattern cannot reach, only when every directory
-        // part is literal so "zz" can never match.
+        // Lock decoy `zz` directories at levels the pattern's directory parts
+        // before the first `**` rule out, so reading one is a traversal bug. With
+        // `**`, only levels inside the prefix are safe; without it, levels up to
+        // the file component (which is never read) are.
         #[cfg(unix)]
         let _locked = {
-            let literal = dir_parts.iter().all(|i| LITERAL_DIR_PARTS.contains(&DIR_PARTS[*i]));
-            if lock && literal {
-                let zz = root.join("zz");
-                fs::create_dir(&zz).unwrap();
-                let mut dirs = vec![zz];
-                if root.join("a").is_dir() {
-                    let inner = root.join("a/zz");
-                    fs::create_dir(&inner).unwrap();
-                    dirs.push(inner);
+            let parts: Vec<&str> = dir_parts.iter().map(|i| DIR_PARTS[*i]).collect();
+            let prefix = parts.iter().position(|p| *p == "**");
+            let before = &parts[..prefix.unwrap_or(parts.len())];
+            let depth_limit = prefix.unwrap_or(parts.len() + 1);
+            if lock && before.iter().all(|p| NON_MATCHING_PARTS.contains(p)) && depth_limit >= 1 {
+                let mut dirs = Vec::new();
+                for (depth, parent) in [(1, root.to_path_buf()), (2, root.join("a"))] {
+                    if depth <= depth_limit && parent.is_dir() {
+                        let zz = parent.join("zz");
+                        fs::create_dir(&zz).unwrap();
+                        dirs.push(zz);
+                    }
                 }
-                let locked = Locked::lock(dirs);
-                prop_assume!(locked.enforced());
-                Some(locked)
+                if dirs.is_empty() {
+                    None
+                } else {
+                    let locked = Locked::lock(dirs);
+                    prop_assume!(locked.enforced());
+                    Some(locked)
+                }
             } else {
                 None
             }

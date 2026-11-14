@@ -409,14 +409,14 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
         .skip(base_len)
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect();
-    let recursive = rest.iter().any(|c| c.contains("**"));
-    let prefix = if recursive {
-        Vec::new()
-    } else {
-        rest.iter()
-            .map(|c| compile(c))
-            .collect::<Result<Vec<_>, _>>()?
-    };
+    // Components before the first `**` each fix one directory level; from `**`
+    // on, any depth can match and nothing is pruned.
+    let first_recursive = rest.iter().position(|c| c.contains("**"));
+    let prefix = rest[..first_recursive.unwrap_or(rest.len())]
+        .iter()
+        .map(|c| compile(c))
+        .collect::<Result<Vec<_>, _>>()?;
+    let recursive = first_recursive.is_some();
     let mut builder = WalkBuilder::new(&base);
     builder
         .standard_filters(false)
