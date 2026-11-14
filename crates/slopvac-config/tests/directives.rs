@@ -576,3 +576,52 @@ fn comments_inside_template_interpolations_and_escaped_triple_quotes_are_handled
         assert_eq!(found(doc, file), want, "{name}");
     }
 }
+#[test]
+fn regressions_that_the_first_scanner_failed() {
+    let cases = [
+        // A comment inside `${ … }` holds both a brace and a backtick; neither ends anything.
+        (
+            "brace and backtick in an interpolation comment",
+            "const s = `a ${ x /* } ` */ y } b\n// slopvac: locale=fr\n`;\n",
+            "a.js",
+            0,
+        ),
+        // The template ends after the interpolation, so the next comment is real.
+        (
+            "real comment after a template with a commented backtick",
+            "const s = `${ a /* ` */ }`;\n// slopvac: locale=en-GB\n",
+            "a.js",
+            1,
+        ),
+        // Two `'\''` literals and a string that holds an apostrophe, with no separator.
+        (
+            "adjacent character literals",
+            "m!('\\'''\\''\"'\");\n// slopvac: locale=en-GB\n",
+            "a.rs",
+            1,
+        ),
+        // A line comment inside `${ … }` holds a backtick; the template still ends at its own.
+        (
+            "backtick in an interpolation line comment",
+            "const s = `${ x // `\n }`;\n// slopvac: locale=en-GB\n",
+            "a.js",
+            1,
+        ),
+        // SConstruct is Python; its docstring is data.
+        (
+            "build file docstring",
+            "\"\"\"\n# slopvac: locale=fr\n\"\"\"\n",
+            "SConstruct",
+            0,
+        ),
+        (
+            "build file comment",
+            "# slopvac: locale=en-GB\n",
+            "SConstruct",
+            1,
+        ),
+    ];
+    for (name, doc, file, want) in cases {
+        assert_eq!(found(doc, file), want, "{name}");
+    }
+}
