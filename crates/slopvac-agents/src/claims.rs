@@ -65,7 +65,11 @@ pub struct Claim {
     pub literals_added: Vec<Literal>,
     /// Literals only the original has.
     pub literals_removed: Vec<Literal>,
-    /// The pair differs in whether it negates.
+    /// Negation words in the original sentence, 0 for `added`.
+    pub negations_original: usize,
+    /// Negation words in the revised sentence.
+    pub negations_revised: usize,
+    /// The two counts differ.
     pub negation_changed: bool,
 }
 
@@ -221,9 +225,9 @@ fn segments(text: &str) -> Vec<Segment> {
     while let Some((n, line)) = lines.next() {
         if let Some(marker) = fence(line) {
             flush(&mut para, para_line, &mut out);
-            let mut body = vec![line.trim().to_owned()];
+            let mut body = vec![line.to_owned()];
             for (_, l) in lines.by_ref() {
-                body.push(l.trim().to_owned());
+                body.push(l.to_owned());
                 if l.trim_start().starts_with(marker) {
                     break;
                 }
@@ -322,13 +326,14 @@ fn literals(text: &str) -> BTreeSet<Literal> {
         };
         if t.starts_with("--") && t.len() > 2 {
             add("flag", t);
-        } else if first.is_ascii_digit() {
+        } else if first.is_ascii_digit() || signed_number(t) {
+            let t = t.replacen('−', "-", 1);
             add(
                 "number",
                 t.trim_end_matches(['%', '-']).trim_end_matches(','),
             );
             if t.ends_with('%') {
-                add("number", t);
+                add("number", &t);
             }
         } else if t.contains('_')
             || t.contains("::")
@@ -350,13 +355,21 @@ fn literals(text: &str) -> BTreeSet<Literal> {
     found
 }
 
-fn negates(text: &str) -> bool {
+/// A number with a sign: `-5`, `+3` or `−2` (U+2212).
+fn signed_number(t: &str) -> bool {
+    let mut chars = t.chars();
+    matches!(chars.next(), Some('-' | '+' | '−'))
+        && chars.next().is_some_and(|c| c.is_ascii_digit())
+}
+
+fn negation_count(text: &str) -> usize {
     const WORDS: [&str; 8] = [
         "not", "no", "never", "cannot", "without", "none", "neither", "nor",
     ];
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '’')
-        .any(|w| WORDS.contains(&w) || w.ends_with("n't") || w.ends_with("n’t"))
+        .filter(|w| WORDS.contains(w) || w.ends_with("n't") || w.ends_with("n’t"))
+        .count()
 }
 
 fn round(x: f64) -> f64 {
@@ -426,6 +439,8 @@ pub fn compare(original: &str, revised: &str) -> Report {
                 similarity: 0.0,
                 literals_added: literals(&seg.text).into_iter().collect(),
                 literals_removed: Vec::new(),
+                negations_original: 0,
+                negations_revised: negation_count(&seg.text),
                 negation_changed: false,
             });
             continue;
@@ -445,7 +460,9 @@ pub fn compare(original: &str, revised: &str) -> Report {
             similarity: round(old_to_new[&i].1),
             literals_added: after.difference(&before).cloned().collect(),
             literals_removed: before.difference(&after).cloned().collect(),
-            negation_changed: negates(&old[i].text) != negates(&seg.text),
+            negations_original: negation_count(&old[i].text),
+            negations_revised: negation_count(&seg.text),
+            negation_changed: negation_count(&old[i].text) != negation_count(&seg.text),
         });
     }
 
