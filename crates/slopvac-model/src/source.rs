@@ -15,8 +15,9 @@ pub enum ColumnUnit {
 
 /// Line table over one source text. It maps validated byte offsets to line and column.
 ///
-/// Line terminators are LF, CRLF and a CR that does not precede LF. A leading BOM counts
-/// in offsets and never in columns.
+/// Line terminators are LF, CRLF and a CR that does not precede LF. For a file ([`Self::new`])
+/// a leading BOM counts in offsets and never in columns. For an editor buffer
+/// ([`Self::new_buffer`]) U+FEFF is an ordinary character of line 1.
 #[derive(Debug, Clone)]
 pub struct SourceIndex<'a> {
     text: &'a str,
@@ -29,6 +30,17 @@ impl<'a> SourceIndex<'a> {
     #[must_use]
     pub fn new(text: &'a str) -> Self {
         let bom_len = if text.starts_with(BOM) { BOM.len() } else { 0 };
+        Self::with_bom_len(text, bom_len)
+    }
+
+    /// Index an editor buffer, as LSP counts it: a leading U+FEFF is one character of line 1
+    /// and offsets inside it are not special. Offsets are bytes of the buffer text.
+    #[must_use]
+    pub fn new_buffer(text: &'a str) -> Self {
+        Self::with_bom_len(text, 0)
+    }
+
+    fn with_bom_len(text: &'a str, bom_len: usize) -> Self {
         let bytes = text.as_bytes();
         let mut line_starts = vec![bom_len];
         let mut i = bom_len;
