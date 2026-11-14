@@ -79,6 +79,10 @@ def _validation_regex() -> re.Pattern[str]:
         ("v3.0.0`id`", False),
         ("v3.0.0\nx", False),
         ("v3.0", False),
+        ("v0.0.0", True),
+        ("v03.0.0", False),
+        ("v3.00.0", False),
+        ("v3.0.00", False),
     ],
 )
 def test_the_plan_job_validates_the_tag(tag, accepted):

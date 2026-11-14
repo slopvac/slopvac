@@ -35,10 +35,14 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-_RC_TAG = re.compile(r"rc/v(?P<base>\d+\.\d+\.\d+)-rc\.(?P<n>[1-9]\d*)")
-_STABLE_TAG = re.compile(r"v(?P<base>\d+\.\d+\.\d+)")
-_STABLE_VERSION = re.compile(r"(?P<major>\d+)\.\d+\.\d+")
-_PRE_VERSION = re.compile(r"\d+\.\d+\.\d+(?:a|b|rc)\d+")
+# SemVer forbids leading zeros in every numeric field, and \d would also accept
+# non-ASCII digits, so each field is spelled out.
+_NUM = r"(?:0|[1-9][0-9]*)"
+_BASE = rf"{_NUM}\.{_NUM}\.{_NUM}"
+_RC_TAG = re.compile(rf"rc/v(?P<base>{_BASE})-rc\.(?P<n>[1-9][0-9]*)")
+_STABLE_TAG = re.compile(rf"v(?P<base>{_BASE})")
+_STABLE_VERSION = re.compile(rf"(?P<major>{_NUM})\.{_NUM}\.{_NUM}")
+_PRE_VERSION = re.compile(rf"{_BASE}(?:a|b|rc)[0-9]+")
 CANDIDATE_WORKFLOW = "candidate.yml"
 # Releases from this major version on need a passed candidate. 2.x candidates are
 # untagged branch builds, so they cannot satisfy a candidate-tag gate.
