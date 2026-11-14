@@ -21,3 +21,7 @@
 "finding-span-without-end-position.json" = "/documents/0/findings/1"
 "finding-span-without-end-column.json" = "/documents/0/findings/1"
 "missing-notices.json" = ""
+"category-budget-missing.json" = "/documents/0/categories/0"
+"finding-span-null.json" = "/documents/0/findings/1/span"
+"finding-end-line-null.json" = "/documents/0/findings/1/end_line"
+"gate-empty-reason.json" = "/documents/0/gate/reasons/0"
