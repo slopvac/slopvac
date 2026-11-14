@@ -101,8 +101,13 @@ pub struct Segment {
     /// Context of the segment.
     pub context: String,
     /// Converted text when it differs from the source.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present_string")]
     pub text: Option<String>,
+}
+
+/// An optional string field: absent is `None`, but a present `null` is an error.
+fn present_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 
 /// An edit from a fixer.
@@ -136,7 +141,7 @@ pub struct RecipeFile {
     /// What to do.
     pub action: RecipeAction,
     /// New content for write and merge.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present_string")]
     pub content: Option<String>,
 }
 
@@ -620,6 +625,29 @@ mod tests {
         assert!(parse_segments(&null("segments"), "ab").is_err());
         assert!(parse_edits(&null("edits"), "ab", &f).is_err());
         assert!(parse_score(&null("score")).is_err());
+    }
+
+    #[test]
+    fn an_explicit_null_segment_text_or_recipe_content_is_invalid() {
+        let seg = |extra: Value| {
+            let mut s = json!({"span": {"start": 0, "end": 2}, "context": "prose"});
+            s.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            parse_segments(&json!({ "segments": [s] }), "ab")
+        };
+        assert_eq!(seg(json!({})).unwrap()[0].text, None);
+        assert_eq!(
+            seg(json!({"text": "AB"})).unwrap()[0].text.as_deref(),
+            Some("AB")
+        );
+        assert!(seg(json!({"text": null})).is_err());
+        let recipe = |file: Value| parse_recipe(&json!({ "files": [file] }));
+        assert_eq!(
+            recipe(json!({"path": "a", "action": "remove"})).unwrap()[0].content,
+            None
+        );
+        assert!(recipe(json!({"path": "a", "action": "remove", "content": null})).is_err());
     }
 
     #[test]
