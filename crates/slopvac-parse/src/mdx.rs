@@ -11,8 +11,16 @@ use crate::markdown::{MASK, finish, resolve_body};
 use crate::mask::{CodeRegion, Masked, scan};
 use crate::{Block, BlockKind, Document, ParseError, TokenKind};
 
-/// Read `text` with the MDX options. Each call gets its own expression checker.
+/// Read `text` with the MDX options.
+///
+/// The brace checker is tried first. If the text does not parse with it, markdown-rs reads
+/// it again with plain brace counting, so the checker can only add documents, never lose
+/// one that plain counting accepts. When both fail the plain-counting error is returned.
 fn parse(text: &str) -> Result<Node, ParseError> {
+    read(text, true).or_else(|_| read(text, false))
+}
+
+fn read(text: &str, with_checker: bool) -> Result<Node, ParseError> {
     let checker = ExpressionChecker::default();
     let options = ParseOptions {
         constructs: Constructs {
@@ -21,7 +29,8 @@ fn parse(text: &str) -> Result<Node, ParseError> {
             gfm_task_list_item: true,
             ..Constructs::mdx()
         },
-        mdx_expression_parse: Some(Box::new(move |code, kind| checker.check(code, kind))),
+        mdx_expression_parse: with_checker
+            .then(|| Box::new(move |code: &str, kind: &_| checker.check(code, kind)) as _),
         mdx_esm_parse: Some(Box::new(|_| MdxSignal::Ok)),
         ..ParseOptions::mdx()
     };

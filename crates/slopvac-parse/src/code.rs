@@ -54,7 +54,7 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
     let body_lines = if value.is_empty() {
         0..=1
     } else {
-        let n = value.matches('\n').count() + 1;
+        let n = line_count(value);
         n..=n
     };
     let closed_fits = body_lines.contains(&(count - 2));
@@ -75,7 +75,7 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
         terminator_end(text, end)
     };
     let (first_start, first_end) = lines[1];
-    let first_value = value.split('\n').next().unwrap_or("");
+    let first_value = value.split(['\r', '\n']).next().unwrap_or("");
     let line = &text[first_start..first_end];
     let prefix = if !first_value.is_empty() && line.ends_with(first_value) {
         line.len() - first_value.len()
@@ -96,4 +96,15 @@ fn terminator_end(text: &str, at: usize) -> usize {
     } else {
         at
     }
+}
+
+/// Lines in `value`, where a line ends with `\n`, `\r\n` or `\r`.
+fn line_count(value: &str) -> usize {
+    let bytes = value.as_bytes();
+    let breaks = bytes
+        .iter()
+        .enumerate()
+        .filter(|&(i, &b)| b == b'\n' && (i == 0 || bytes[i - 1] != b'\r') || b == b'\r')
+        .count();
+    breaks + 1
 }

@@ -160,9 +160,10 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         if let Some(region) = region {
             let first_line = region.range.start >= line_start;
             let last_line = region.range.end <= line_full_end;
+            let marker_indent = !indented_code || lead < 4;
             if first_line
                 && region.fenced
-                && lead < 4
+                && marker_indent
                 && line_start + strip + (content.len() - t.len()) == region.range.start
                 && let Some((ch, count, info)) = fence_opener(t)
                 && let Some((name, title)) = info
@@ -192,7 +193,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                 mask_from = Some(0);
             } else if !first_line
                 && last_line
-                && lead < 4
+                && marker_indent
                 && let Some(open) = directive.as_ref()
                 && open.end == region.range.end
                 && is_fence_closer(t, open.ch, open.count)

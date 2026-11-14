@@ -61,12 +61,43 @@ fn js_comments_in_mdx_expressions_may_hold_quotes_and_braces() {
 }
 
 #[test]
+fn jsx_elements_inside_expressions_do_not_start_regexes() {
+    let cases = [
+        "a {cond && <p>text</p>} b\n",
+        "a {cond && <p>don't</p>} b\n",
+        "a {cond && <br/>} b\n",
+        "a {a && <b>x</b>} and {c && <i>it's</i>} z\n",
+        "a {list.map((x) => <li key={x}>{x}</li>)} b\n",
+        "a {x < y && /re/.test(z)} b\n",
+    ];
+    for source in cases {
+        assert!(parse_mdx(source, whole(source)).is_ok(), "{source:?}");
+    }
+}
+
+#[test]
+fn what_naive_brace_counting_accepts_is_accepted() {
+    // Not valid JavaScript, but markdown-rs without a parser accepts all of these.
+    let cases = [
+        "a {x ' y} b\n",
+        "a {x /* y} b\n",
+        "a {`} b\n",
+        "a {x ` y} b\n\nmore\n",
+        "a {(x) /y} b\n",
+        "a {/re} b\n",
+    ];
+    for source in cases {
+        assert!(parse_mdx(source, whole(source)).is_ok(), "{source:?}");
+    }
+}
+
+#[test]
 fn a_deeply_braced_mdx_expression_is_checked_in_linear_time() {
     let n = 40_000;
     let source = format!("{{{}{}}}\n", "{x".repeat(n), "}".repeat(n));
     let start = std::time::Instant::now();
-    // Too many closing braces in one expression is an error, not a slow parse.
-    assert!(parse_mdx(&source, whole(&source)).is_err());
+    // Too many closing braces for the checker: the parse falls back to plain counting.
+    assert!(parse_mdx(&source, whole(&source)).is_ok());
     assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
 }
 
@@ -440,4 +471,54 @@ fn both_parsers_expose_the_same_code_body_where_they_agree_on_the_block() {
         let in_mdx: Vec<_> = own_code(&mdx(source)).iter().map(|(_, b)| *b).collect();
         assert_eq!(in_md, in_mdx, "{source:?}");
     }
+}
+
+// ---- review round 3 ----
+
+#[test]
+fn quoted_fences_expose_the_same_body_with_every_line_ending() {
+    for eol in ["\n", "\r\n", "\r"] {
+        let cases = [
+            ("> ```js\n> a\n> b\n> ```\n", "a\n> b\n"),
+            ("- item\n\n  ```\n  a\n  b\n  ```\n", "a\n  b\n"),
+        ];
+        for (template, want) in cases {
+            let source = template.replace('\n', eol);
+            let want = want.replace('\n', eol);
+            // pulldown-cmark does not read a lone CR as a line ending inside a quote.
+            let docs = if eol == "\r" {
+                vec![mdx(&source)]
+            } else {
+                vec![md(&source), mdx(&source)]
+            };
+            for doc in docs {
+                let bodies = code_bodies(&doc);
+                assert_eq!(bodies.len(), 1, "{source:?}");
+                assert_eq!(slice(&source, bodies[0]), want, "{source:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn code_regions_equal_the_parsers_own_with_every_line_ending() {
+    for eol in ["\r\n", "\r"] {
+        for template in TRICKY {
+            let source = template.replace("\r\n", "\n").replace('\n', eol);
+            let got: Vec<_> = own_code(&md(&source)).iter().map(|(b, _)| *b).collect();
+            let want: Vec<_> = pulldown_code(&source).iter().map(|(b, _)| *b).collect();
+            assert_eq!(got, want, "{source:?}");
+            let got: Vec<_> = own_code(&mdx(&source)).iter().map(|(b, _)| *b).collect();
+            assert_eq!(got, mdast_code(&source), "{source:?}");
+        }
+    }
+}
+
+#[test]
+fn an_mdx_directive_with_an_indented_closer_does_not_swallow_prose() {
+    let source = "```{note} Title\nbody\n    ```\n\nFollowing prose.\n";
+    let doc = mdx(source);
+    assert_eq!(admonitions(&doc), 1);
+    assert_eq!(prose(&doc), ["body", "Following prose."]);
+    assert_eq!(code_bodies(&doc), []);
 }

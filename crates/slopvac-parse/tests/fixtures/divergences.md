@@ -27,7 +27,7 @@ two agree on every word and on the source text of every word. The golden suite
 
 | Area | Behavior |
 | --- | --- |
-| Expressions | markdown-rs gets a brace checker that skips string, template and comment text, because the library has no JavaScript parser. An expression, inline or standalone, is prose only when it is one plain string literal; it becomes an `opaque` token. Other expressions render nothing. An unfinished expression with more than 1000 closing braces is a `ParseError::Mdx`, because markdown-rs rebuilds the expression text on every closing brace. |
+| Expressions | markdown-rs gets a brace checker, because the library has no JavaScript parser. Plain brace counting is the baseline; the checker overrides it only while it is sure it reads a string, a template or a comment, so `{'{'}` and `{/* } */}` parse. At the first doubt it hands back to plain counting for the rest of that expression: a `<` that may open a JSX tag, a string cut off by a line break, a template substitution, or a `/` that may start a regex. If a document does not parse with the checker, it is read again with plain counting, so the checker never rejects a document that plain counting accepts. Braces in regex literals are counted. An expression, inline or standalone, is prose only when it is one plain string literal; it becomes an `opaque` token. Other expressions render nothing. |
 | ESM | `import` and `export` blocks are accepted and are not prose. The code is not validated. |
 | Fence closers | MDX has no indented code, and markdown-rs lets a closing fence use any indent. Markdown allows three columns past the opener. The admonition scan follows each parser. |
 | Table cells | markdown-rs includes the leading pipe in a cell's span. Cell prose spans are exact. |

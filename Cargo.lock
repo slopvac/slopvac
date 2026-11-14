@@ -2099,6 +2099,7 @@ name = "slopvac-parse"
 version = "0.0.0"
 dependencies = [
  "markdown",
+ "proptest",
  "pulldown-cmark",
  "serde_json",
  "slopvac-model",

@@ -1,8 +1,14 @@
 //! A brace checker for MDX expressions.
 //!
 //! Without a JavaScript parser, markdown-rs counts every `{` and `}` as code. That breaks
-//! `{'{'}`, `{/* } */}` and `{/}/.test(x)}`. This checker skips string, template, comment
-//! and regular expression text. It does not validate JavaScript.
+//! `{'{'}` and `{/* } */}`. This checker skips string, template and comment text. It does
+//! not validate JavaScript and does not read regular expression literals: a `/` that is
+//! not a division after an operand is a doubt, and plain counting takes over.
+//!
+//! The checker is conservative. It overrides plain counting only while it is sure that it
+//! reads a literal or a comment. It falls back to plain counting for the rest of the
+//! expression at the first doubt: a `<` that may open or close a JSX tag, a string that a
+//! line break cuts off, a template substitution, or a `/` that may start a regex. Plain counting is what markdown-rs does with no hook.
 //!
 //! markdown-rs calls the checker once per candidate closing brace, each time with the whole
 //! expression so far. The checker remembers how far it scanned, so a long expression costs
@@ -44,9 +50,6 @@ enum Mode {
     Str(char),
     LineComment,
     BlockComment,
-    Regex {
-        in_class: bool,
-    },
 }
 
 /// The last significant token, as far as it decides what a `/` means.
@@ -55,8 +58,10 @@ enum Prev {
     /// Start of the expression, an operator or an opening bracket: a `/` starts a regex.
     #[default]
     Other,
-    /// An identifier, number, string, or a closing bracket: a `/` divides.
+    /// An identifier, number, string or `]`: a `/` divides.
     Operand,
+    /// A `)` or `}`: a `/` may divide or start a regex, as in `if (x) /re/.test(y)`.
+    Closing,
 }
 
 #[derive(Debug, Default)]
@@ -65,12 +70,14 @@ struct Scan {
     seen: String,
     mode: Mode,
     depth: usize,
+    /// Braces counted the way markdown-rs counts them with no hook: all of them.
+    plain_depth: usize,
+    /// Set at the first doubt. From then on only `plain_depth` decides.
+    doubtful: bool,
     /// The last character was a `\` in a string or regex, or a `/` or `*` that may start
     /// or end a comment.
     pending: Option<char>,
     prev: Prev,
-    /// Whether a pending `/` would start a regex.
-    slash_is_regex: bool,
     /// The identifier being read, up to `WORD_CAP` characters.
     word: String,
     word_len: usize,
@@ -88,6 +95,11 @@ const fn is_line_terminator(c: char) -> bool {
 impl Scan {
     fn feed(&mut self, chunk: &str) {
         for c in chunk.chars() {
+            match c {
+                '{' => self.plain_depth += 1,
+                '}' => self.plain_depth = self.plain_depth.saturating_sub(1),
+                _ => {}
+            }
             self.step(c);
         }
         self.seen.push_str(chunk);
@@ -113,6 +125,16 @@ impl Scan {
                 } else if c == q {
                     self.mode = Mode::Code;
                     self.prev = Prev::Operand;
+                } else if q == '`' {
+                    if c == '$' {
+                        self.pending = Some('$');
+                    } else if c == '{' && pending == Some('$') {
+                        self.doubtful = true;
+                    }
+                } else if is_line_terminator(c) {
+                    // A string cannot span lines: this is not what it looked like.
+                    self.doubtful = true;
+                    self.mode = Mode::Code;
                 }
             }
             Mode::LineComment => {
@@ -127,26 +149,12 @@ impl Scan {
                     self.pending = Some('*');
                 }
             }
-            Mode::Regex { in_class } => {
-                if pending == Some('\\') {
-                    // An escaped character: nothing to do.
-                } else if c == '\\' {
-                    self.pending = Some('\\');
-                } else if is_line_terminator(c) {
-                    // Not a regex after all.
-                    self.mode = Mode::Code;
-                } else if in_class {
-                    if c == ']' {
-                        self.mode = Mode::Regex { in_class: false };
-                    }
-                } else if c == '[' {
-                    self.mode = Mode::Regex { in_class: true };
-                } else if c == '/' {
-                    self.mode = Mode::Code;
-                    self.prev = Prev::Operand;
-                }
-            }
             Mode::Code => {
+                if pending == Some('<') && (c.is_alphabetic() || matches!(c, '_' | '$' | '>' | '/'))
+                {
+                    // A JSX tag, or a comparison that looks like one.
+                    self.doubtful = true;
+                }
                 if pending == Some('/') {
                     if c == '/' {
                         self.mode = Mode::LineComment;
@@ -156,11 +164,9 @@ impl Scan {
                         self.mode = Mode::BlockComment;
                         return;
                     }
-                    if self.slash_is_regex {
-                        self.mode = Mode::Regex { in_class: false };
-                        self.step(c);
-                        return;
-                    }
+                    // A division after an operand is certain. Anything else may be a
+                    // regex literal, whose braces and quotes this checker does not read.
+                    self.doubtful |= self.prev != Prev::Operand;
                     self.prev = Prev::Other;
                 }
                 self.code_char(c);
@@ -181,7 +187,10 @@ impl Scan {
         match c {
             '/' => {
                 self.pending = Some('/');
-                self.slash_is_regex = self.prev == Prev::Other;
+            }
+            '<' => {
+                self.pending = Some('<');
+                self.prev = Prev::Other;
             }
             '"' | '\'' | '`' => self.mode = Mode::Str(c),
             '{' => {
@@ -190,7 +199,7 @@ impl Scan {
             }
             '}' => {
                 self.depth = self.depth.saturating_sub(1);
-                self.prev = Prev::Operand;
+                self.prev = Prev::Closing;
             }
             '+' | '-' => {
                 if let Some((sign, before)) = last_sign
@@ -203,14 +212,19 @@ impl Scan {
                     self.prev = Prev::Other;
                 }
             }
-            ')' | ']' => self.prev = Prev::Operand,
+            ')' => self.prev = Prev::Closing,
+            ']' => self.prev = Prev::Operand,
             _ if c.is_whitespace() => {}
             _ => self.prev = Prev::Other,
         }
     }
 
     fn complete(&self) -> bool {
-        self.mode == Mode::Code && self.depth == 0
+        if self.doubtful {
+            self.plain_depth == 0
+        } else {
+            self.mode == Mode::Code && self.depth == 0
+        }
     }
 }
 
@@ -247,5 +261,95 @@ impl ExpressionChecker {
                 Box::new("unexpected-eof".into()),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use markdown::mdast::Node;
+    use markdown::{Constructs, ParseOptions, to_mdast};
+    use proptest::prelude::*;
+
+    use super::ExpressionChecker;
+
+    /// Pieces with no brace inside a string, template, comment or regex, so plain counting
+    /// and the checker must agree.
+    fn piece() -> impl Strategy<Value = &'static str> {
+        prop_oneof![
+            Just("<p>text</p>"),
+            Just("<p>don't</p>"),
+            Just("<br/>"),
+            Just("<b>{x}</b>"),
+            Just("a < b"),
+            Just("/a+/g"),
+            Just("/[/']/"),
+            Just("n / 2"),
+            Just("(n) / 2"),
+            Just("x++ / 2"),
+            Just("'a'"),
+            Just("\"b\""),
+            Just("'it\\'s'"),
+            Just("`t ${x} u`"),
+            Just("/* c */"),
+            Just("/* it's */"),
+            Just("// c\n"),
+            Just("{ a: 1 }"),
+            Just("x"),
+            Just("return"),
+        ]
+    }
+
+    fn options(hooked: bool) -> ParseOptions {
+        let checker = ExpressionChecker::default();
+        ParseOptions {
+            constructs: Constructs::mdx(),
+            mdx_expression_parse: hooked
+                .then(|| Box::new(move |code: &str, kind: &_| checker.check(code, kind)) as _),
+            ..ParseOptions::mdx()
+        }
+    }
+
+    fn expressions(node: &Node, out: &mut Vec<(usize, usize)>) {
+        if matches!(
+            node,
+            Node::MdxTextExpression(_) | Node::MdxFlowExpression(_)
+        ) && let Some(p) = node.position()
+        {
+            out.push((p.start.offset, p.end.offset));
+        }
+        for child in node.children().into_iter().flatten() {
+            expressions(child, out);
+        }
+    }
+
+    fn ranges(source: &str, hooked: bool) -> Option<Vec<(usize, usize)>> {
+        let tree = to_mdast(source, &options(hooked)).ok()?;
+        let mut out = Vec::new();
+        expressions(&tree, &mut out);
+        Some(out)
+    }
+
+    proptest! {
+        #[test]
+        fn the_checker_and_plain_counting_find_the_same_expressions(
+            pieces in prop::collection::vec(piece(), 0..8),
+            more in prop::collection::vec(piece(), 0..4),
+        ) {
+            let source = format!("a {{{}}} b {{{}}} c\n", pieces.join(" "), more.join(" "));
+            let plain = ranges(&source, false);
+            let checked = ranges(&source, true);
+            // When the checker's read fails, `parse_mdx` reads again with plain counting,
+            // so the only way to differ is to succeed with other expressions.
+            if plain.is_some() && checked.is_some() {
+                prop_assert_eq!(checked, plain, "{:?}", source);
+            }
+        }
+    }
+
+    #[test]
+    fn a_brace_in_a_string_is_the_one_intended_difference() {
+        let source = "a {'{'} b\n";
+        assert!(ranges(source, false).is_none());
+        assert_eq!(ranges(source, true), Some(vec![(2, 7)]));
     }
 }
