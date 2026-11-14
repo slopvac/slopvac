@@ -63,6 +63,19 @@ run = [
 ]
 
 [[command]]
+id = "migration-e2e"
+title = "Migration end-to-end on fixture repositories"
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^migration_e2e::/)",
+]
+
+[[command]]
 id = "perf-budgets"
 title = "Performance budgets measured on the installed CLI"
 run = [

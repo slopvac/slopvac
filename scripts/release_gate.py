@@ -32,8 +32,25 @@ class Result:
     evidence: str
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Suites the 3.0.0 release cannot ship without. A config that omits one is an
+# error, so deleting an entry from release-gate.toml cannot turn the gate green.
+MANDATORY_SUITES = (
+    "golden",
+    "accuracy",
+    "compat-preserve",
+    "conformance",
+    "migration-e2e",
+    "perf-budgets",
+)
+
+
 def run_process(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(argv, capture_output=True, text=True, check=False)
+    """Run a gate command from the repository root, whatever the caller's directory."""
+    return subprocess.run(
+        argv, capture_output=True, text=True, check=False, cwd=REPO_ROOT
+    )
 
 
 def _tracker_json(runner: Runner, *args: str) -> list[dict]:
@@ -97,6 +114,26 @@ def check_soft_blocked(runner: Runner) -> Result:
     return Result("soft-blocked", title, PASS, "none")
 
 
+def check_suites_configured(config: dict) -> Result:
+    """Fail unless every mandatory suite is configured and cannot pass with zero tests."""
+    title = "Every mandatory suite is configured"
+    entries = {entry.get("id"): entry for entry in config.get("command", [])}
+    missing = [suite for suite in MANDATORY_SUITES if suite not in entries]
+    vacuous = [
+        suite
+        for suite in MANDATORY_SUITES
+        if suite in entries
+        and entries[suite]["run"][:2] == ["cargo", "nextest"]
+        and "--no-tests=fail" not in entries[suite]["run"]
+    ]
+    problems = [f"missing: {', '.join(missing)}"] if missing else []
+    if vacuous:
+        problems.append(f"can pass with zero tests: {', '.join(vacuous)}")
+    if problems:
+        return Result("suites-configured", title, FAIL, "; ".join(problems))
+    return Result("suites-configured", title, PASS, ", ".join(MANDATORY_SUITES))
+
+
 def check_command(runner: Runner, entry: dict) -> Result:
     argv = entry["run"]
     if shutil.which(argv[0]) is None:
@@ -136,6 +173,7 @@ def run_gate(config: dict, runner: Runner = run_process) -> list[Result]:
             "No open soft-blocked bead with an open swap bead",
             lambda: check_soft_blocked(runner),
         ),
+        check_suites_configured(config),
     ]
     results += [check_command(runner, entry) for entry in config.get("command", [])]
     return results

@@ -24,9 +24,11 @@ python3 scripts/release_gate.py --json   # machine-readable
 | Offline accuracy gate | `cargo nextest run -E 'test(/^accuracy::/)'` |
 | Compatibility matrix preserve rows | `cargo nextest run -E 'test(/^compat::preserve/)'` |
 | Conformance tests | `cargo nextest run -E 'test(/^conformance::/)'` |
+| Migration end-to-end | `cargo nextest run -E 'test(/^migration_e2e::/)'` |
+| Every mandatory suite is configured | `release-gate.toml` lists all six suites, and each nextest suite passes `--no-tests=fail`. |
 | Performance budgets | `cargo nextest run -E 'test(/^perf_budget::/)'` |
 
-The suite items pass `--no-tests=fail`. A suite that does not exist yet fails instead of passing with zero tests.
+The suite items pass `--no-tests=fail`. A suite that does not exist yet fails instead of passing with zero tests. The script rejects a config that drops a mandatory suite or omits that flag. It runs every command from the repository root.
 
 ## Test name convention
 
@@ -36,6 +38,7 @@ The five suite items select tests by module path prefix. An epic that owns a sui
 - `accuracy::` for the precision and recall gate.
 - `compat::preserve` for compatibility matrix rows with the `preserve` disposition.
 - `conformance::` for the tests described in `docs/contract/*.md`.
+- `migration_e2e::` for migration end-to-end tests on fixture repositories.
 - `perf_budget::` for budget measurements. These tests run the installed CLI.
 
 To use a different prefix, edit the `run` filter of that entry in `scripts/release-gate.toml`.
