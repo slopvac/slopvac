@@ -205,6 +205,10 @@ impl Feeder<'_> {
         *self.dom.current.borrow_mut() = (range, end_of);
         let mut stats = self.dom.stats.get();
         if let Token::TagToken(tag) = &token {
+            debug_assert!(
+                !matches!(&*tag.name, "template" | "object" | "applet" | "marquee"),
+                "a marker tag reached the tree builder"
+            );
             stats.marker_tags_fed += usize::from(matches!(
                 &*tag.name,
                 "template" | "object" | "applet" | "marquee"
@@ -258,10 +262,12 @@ impl Feeder<'_> {
             self.dom.charge(1);
             let state = if start {
                 self.last_start.clone_from(&self.tag_name);
-                if local == "template" {
+                let in_foreign = self.skip_foreign > 0;
+                // In SVG a self-closed template is an empty element. In HTML the slash is
+                // ignored.
+                if local == "template" && !(in_foreign && self.self_closing) {
                     self.template_depth += 1;
                 }
-                let in_foreign = self.skip_foreign > 0;
                 if matches!(local, "svg" | "math") && !self.self_closing {
                     self.skip_foreign += 1;
                 }
@@ -290,37 +296,45 @@ impl Feeder<'_> {
             self.after_markup();
             return Skip::Handled(state);
         }
-        // A template is skipped wherever it sits. In SVG a self-closed `<template/>` is an
-        // empty element and has nothing to skip.
-        let template = start
-            && local == "template"
-            && !(self.self_closing
-                && self
-                    .tb
-                    .adjusted_current_node_present_but_not_in_html_namespace());
+        // No template tag ever reaches the tree builder. A start tag with content skips to its
+        // end tag, in any context; the part skipped inherits the SVG or `MathML` around it. A
+        // self-closed `<template/>` and a stray end tag are dropped, and nothing is skipped.
+        if local == "template" {
+            self.dom.charge(1);
+            if start && !self.self_closing {
+                self.template_depth = 1;
+                self.skip_foreign = usize::from(
+                    self.tb
+                        .adjusted_current_node_present_but_not_in_html_namespace(),
+                );
+            }
+            if start {
+                self.last_start.clone_from(&self.tag_name);
+            } else {
+                self.last_start.clear();
+            }
+            self.text.raw = false;
+            self.after_markup();
+            return Skip::Handled(None);
+        }
         let transparent = matches!(local, "object" | "applet" | "marquee");
         let table = start && local == "table" && self.too_many_tables();
-        if !(template || transparent || table) {
+        if !(transparent || table) {
             return Skip::Feed;
         }
         self.dom.charge(1);
-        if template {
-            self.template_depth = 1;
-            self.skip_foreign = 0;
-        } else {
-            self.dom.tags.borrow_mut().push(TagTok {
-                range: range.clone(),
-                kind: if start {
-                    Kind::Start
-                } else {
-                    Kind::End(local.to_owned())
-                },
-            });
-            if table {
-                let mut stats = self.dom.stats.get();
-                stats.tables_dropped += 1;
-                self.dom.stats.set(stats);
-            }
+        self.dom.tags.borrow_mut().push(TagTok {
+            range: range.clone(),
+            kind: if start {
+                Kind::Start
+            } else {
+                Kind::End(local.to_owned())
+            },
+        });
+        if table {
+            let mut stats = self.dom.stats.get();
+            stats.tables_dropped += 1;
+            self.dom.stats.set(stats);
         }
         if start {
             self.last_start.clone_from(&self.tag_name);

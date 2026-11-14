@@ -15,7 +15,6 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use proptest::prelude::*;
 use proptest::test_runner::{RngAlgorithm, TestError, TestRng, TestRunner};
 use slopvac_model::Span;
-use slopvac_parse::parse_html;
 
 /// Elements that end a word in the output of both sides.
 const BREAKS: &[&str] = &[
@@ -171,7 +170,10 @@ fn oracle(source: &str) -> Vec<String> {
 
 /// Words the extractor finds.
 fn ours(source: &str) -> Vec<String> {
-    let doc = parse_html(source, Span::new(0, source.len()).unwrap()).unwrap();
+    let (doc, stats) =
+        slopvac_parse::parse_html_stats(source, Span::new(0, source.len()).unwrap()).unwrap();
+    // No `<template>`, `<object>`, `<applet>` or `<marquee>` tag may reach the tree builder.
+    assert_eq!(stats.marker_tags_fed, 0, "{source:?}");
     let text: Vec<&str> = doc
         .blocks
         .iter()

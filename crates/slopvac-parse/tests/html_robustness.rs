@@ -13,7 +13,8 @@ const UNLIMITED: usize = 1_000_000;
 
 /// Parse `source` and check every position claim the contract makes.
 fn checked(source: &str, body: Span) -> Document {
-    let (doc, _) = parse_html_budget(source, body, UNLIMITED, UNLIMITED).unwrap();
+    let (doc, stats) = parse_html_budget(source, body, UNLIMITED, UNLIMITED).unwrap();
+    assert_eq!(stats.marker_tags_fed, 0, "{source:?}");
     for block in &doc.blocks {
         assert!(body.start() <= block.span.start() && block.span.end() <= body.end());
         assert!(source.is_char_boundary(block.span.start()));
@@ -550,6 +551,10 @@ const SAFE: &[&str] = &[
     "<math>",
     "</math>",
     "<svg><title/>",
+    "<template/>",
+    "<svg><desc>",
+    "</desc>",
+    "<template/><td>",
     "<svg><foreignObject>",
     "</foreignObject>",
     "<span>",
@@ -574,11 +579,22 @@ fn safe_soup() -> impl Strategy<Value = String> {
     prop::collection::vec(prop::sample::select(SAFE), 0..20).prop_map(|v| v.concat())
 }
 
+/// The same for inside a template. A `<template/>` there opens a nested template, because
+/// HTML ignores the slash, so it would swallow the end tag that the test expects.
+fn inside_soup() -> impl Strategy<Value = String> {
+    let atoms: Vec<&str> = SAFE
+        .iter()
+        .copied()
+        .filter(|a| !a.contains("<template/>"))
+        .collect();
+    prop::collection::vec(prop::sample::select(atoms), 0..20).prop_map(|v| v.concat())
+}
+
 proptest! {
     #[test]
     fn a_paragraph_after_a_skipped_template_keeps_its_text_and_position(
         before in safe_soup(),
-        inside in safe_soup(),
+        inside in inside_soup(),
         after in safe_soup(),
     ) {
         let source = format!(
@@ -595,4 +611,41 @@ proptest! {
         let span = projection.span_for_range(0, 8);
         prop_assert_eq!(&source[span.start()..span.end()], "SENTINEL");
     }
+}
+#[test]
+fn self_closed_templates_at_an_integration_point_never_reach_the_tree_builder() {
+    // Inside `<foreignObject>` a browser opens an inert template for `<template/>`, and with
+    // a cell it leaves a marker. The scan drops the tag without skipping anything.
+    let n = 20_000;
+    let source = "<svg><foreignObject>".to_owned()
+        + &"<template/><td></template>".repeat(n)
+        + &"<b></b>".repeat(n);
+    let stats = stats(&source);
+    assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
+}
+
+#[test]
+fn a_stray_template_end_tag_is_dropped() {
+    let source = "</template><p>x</p></template>";
+    let stats = stats(source);
+    assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
+}
+
+#[test]
+fn a_skipped_template_remembers_the_svg_around_it() {
+    // The `<title/>` is an SVG element, not an HTML title that waits for its end tag.
+    let source = "<svg><template><title/></template></svg><p>after</p>";
+    let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
+    assert_eq!(doc.blocks.len(), 1);
+    let projection = doc.blocks[0].projection.as_ref().unwrap();
+    assert_eq!(projection.text(), "after");
+    let span = projection.span_for_range(0, 5);
+    assert_eq!(&source[span.start()..span.end()], "after");
+}
+
+#[test]
+fn a_self_closed_template_hides_nothing() {
+    let source = "<p>a<template/>b</p>";
+    let (doc, _) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
+    assert_eq!(doc.blocks[0].projection.as_ref().unwrap().text(), "ab");
 }

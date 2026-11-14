@@ -166,10 +166,13 @@ pub(super) const MAX_DEPTH: usize = 512;
 /// The cap, the depth cap and the input cap together bound the time the tree builder can
 /// spend, in terms nobody has to measure. Each token costs at most one walk over the stack of
 /// open elements (scope checks, at most `MAX_DEPTH`) and one walk over the list of active
-/// formatting elements. That list holds markers and formatting elements. The scan never lets
-/// `<template>`, `<object>`, `<applet>` or `<marquee>` reach the tree builder, so the only
-/// markers come from `<td>`, `<th>` and `<caption>`. An end tag or an implied end for the
-/// cell clears the list back to its marker, so at most one marker per open table is live,
+/// formatting elements. That list holds markers and formatting elements. Five kinds of start
+/// tag insert a marker: `<applet>`, `<object>` and `<marquee>`, which the scan drops (their
+/// content reads as normal flow); `<template>`, which the scan never feeds in any context,
+/// self-closed or not, and whose content it skips; and `<td>`, `<th>` and `<caption>`, which
+/// the tree builder takes only in its table insertion modes. A test counts the tags of the
+/// first four that reach the tree builder, and a debug assertion in the scan stops the run if
+/// one does. An end tag or an implied end for the cell clears the list back to its marker, so at most one marker per open table is live,
 /// `MAX_TABLES` in all, which makes `MAX_TABLES + 1` segments. Within a segment the spec keeps
 /// at most three formatting elements that are alike in name and attributes. Fourteen names
 /// qualify, and the scan keeps only `color`, `face` and `size` on `<font>`, which gives 13
