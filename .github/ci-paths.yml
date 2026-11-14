@@ -17,6 +17,7 @@ code:
   - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/vale/styles-verified/**'
+  - 'packages/slopvac-plugin/**'
   - 'tests/**'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
@@ -143,6 +144,7 @@ dependencies:
   - '.github/workflows/**'
   - 'pyproject.toml'
   - 'packages/slopvac-lint/pyproject.toml'
+  - 'packages/slopvac-plugin/pyproject.toml'
   - 'uv.lock'
 
 # Full filesystem vulnerability/misconfiguration scans are reserved for changes
@@ -158,6 +160,7 @@ filesystem:
   - 'packages/slopvac-lint/pyproject.toml'
   - 'packages/slopvac-lint/src/**'
   - 'packages/slopvac-lint/tests/**'
+  - 'packages/slopvac-plugin/**'
   - 'tests/**'
   - 'scripts/**'
 

@@ -38,7 +38,7 @@ _VALIDATE = """\
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [[ ! "$REF_NAME" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+          if [[ ! "$REF_NAME" =~ ^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$ ]]; then
             echo "refusing to release from a tag that is not vX.Y.Z" >&2
             exit 1
           fi

@@ -1,0 +1,744 @@
+[
+ {
+  "id": "paragraph",
+  "source": "One plain paragraph.\n",
+  "text": "One plain paragraph.",
+  "words": [
+   {
+    "text": "One",
+    "src": "One"
+   },
+   {
+    "text": "plain",
+    "src": "plain"
+   },
+   {
+    "text": "paragraph.",
+    "src": "paragraph."
+   }
+  ]
+ },
+ {
+  "id": "soft_wrap",
+  "source": "First line wraps\nonto the second line.\n",
+  "text": "First line wraps onto the second line.",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "wraps",
+    "src": "wraps"
+   },
+   {
+    "text": "onto",
+    "src": "onto"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "second",
+    "src": "second"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "soft_wrap_crlf",
+  "source": "First line wraps\r\nonto the second line.\r\n",
+  "text": "First line wraps onto the second line.",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "wraps",
+    "src": "wraps"
+   },
+   {
+    "text": "onto",
+    "src": "onto"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "second",
+    "src": "second"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "two_paragraphs",
+  "source": "First paragraph.\n\nSecond paragraph.\n",
+  "text": "First paragraph. Second paragraph.",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "paragraph.",
+    "src": "paragraph."
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "paragraph.",
+    "src": "paragraph."
+   }
+  ]
+ },
+ {
+  "id": "no_final_newline",
+  "source": "Ends without a newline",
+  "text": "Ends without a newline",
+  "words": [
+   {
+    "text": "Ends",
+    "src": "Ends"
+   },
+   {
+    "text": "without",
+    "src": "without"
+   },
+   {
+    "text": "a",
+    "src": "a"
+   },
+   {
+    "text": "newline",
+    "src": "newline"
+   }
+  ]
+ },
+ {
+  "id": "multibyte",
+  "source": "Café naïve 日本語のテキスト and emoji 😀 here.\n\nNext résumé line.\n",
+  "text": "Café naïve 日本語のテキスト and emoji 😀 here. Next résumé line.",
+  "words": [
+   {
+    "text": "Café",
+    "src": "Café"
+   },
+   {
+    "text": "naïve",
+    "src": "naïve"
+   },
+   {
+    "text": "日本語のテキスト",
+    "src": "日本語のテキスト"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "emoji",
+    "src": "emoji"
+   },
+   {
+    "text": "😀",
+    "src": "😀"
+   },
+   {
+    "text": "here.",
+    "src": "here."
+   },
+   {
+    "text": "Next",
+    "src": "Next"
+   },
+   {
+    "text": "résumé",
+    "src": "résumé"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "heading",
+  "source": "# Title here\n\nBody text follows.\n\n## Second heading\n",
+  "text": "Title here Body text follows. Second heading",
+  "words": [
+   {
+    "text": "Title",
+    "src": "Title"
+   },
+   {
+    "text": "here",
+    "src": "here"
+   },
+   {
+    "text": "Body",
+    "src": "Body"
+   },
+   {
+    "text": "text",
+    "src": "text"
+   },
+   {
+    "text": "follows.",
+    "src": "follows."
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "heading",
+    "src": "heading"
+   }
+  ]
+ },
+ {
+  "id": "bullet_list",
+  "source": "- First item\n- Second item\n  continues here\n- Third item\n",
+  "text": "First item Second item   continues here Third item",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "continues",
+    "src": "continues"
+   },
+   {
+    "text": "here",
+    "src": "here"
+   },
+   {
+    "text": "Third",
+    "src": "Third"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   }
+  ]
+ },
+ {
+  "id": "numbered_list",
+  "source": "1. Open the valve.\n2. Close the valve slowly.\n",
+  "text": "Open the valve. Close the valve slowly.",
+  "words": [
+   {
+    "text": "Open",
+    "src": "Open"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "valve.",
+    "src": "valve."
+   },
+   {
+    "text": "Close",
+    "src": "Close"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "valve",
+    "src": "valve"
+   },
+   {
+    "text": "slowly.",
+    "src": "slowly."
+   }
+  ]
+ },
+ {
+  "id": "task_list_text",
+  "source": "* Star item one\n* Star item two\n",
+  "text": "Star item one Star item two",
+  "words": [
+   {
+    "text": "Star",
+    "src": "Star"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "Star",
+    "src": "Star"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   }
+  ]
+ },
+ {
+  "id": "blockquote",
+  "source": "> Quoted line one\n> quoted line two\n\nAfter the quote.\n",
+  "text": "Quoted line one quoted line two After the quote.",
+  "words": [
+   {
+    "text": "Quoted",
+    "src": "Quoted"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "quoted",
+    "src": "quoted"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   },
+   {
+    "text": "After",
+    "src": "After"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "quote.",
+    "src": "quote."
+   }
+  ]
+ },
+ {
+  "id": "quote_with_list",
+  "source": "> - Quoted item\n> - Another item\n",
+  "text": "Quoted item Another item",
+  "words": [
+   {
+    "text": "Quoted",
+    "src": "Quoted"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "Another",
+    "src": "Another"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   }
+  ]
+ },
+ {
+  "id": "strong",
+  "source": "A **strong** word and __another__ one.\n",
+  "text": "A strong word and another one.",
+  "words": [
+   {
+    "text": "A",
+    "src": "A"
+   },
+   {
+    "text": "strong",
+    "src": "strong"
+   },
+   {
+    "text": "word",
+    "src": "word"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "another",
+    "src": "another"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   }
+  ]
+ },
+ {
+  "id": "strikethrough",
+  "source": "Some ~~removed~~ text stays.\n",
+  "text": "Some removed text stays.",
+  "words": [
+   {
+    "text": "Some",
+    "src": "Some"
+   },
+   {
+    "text": "removed",
+    "src": "removed"
+   },
+   {
+    "text": "text",
+    "src": "text"
+   },
+   {
+    "text": "stays.",
+    "src": "stays."
+   }
+  ]
+ },
+ {
+  "id": "link",
+  "source": "See [the guide](https://example.com/a) for details.\n",
+  "text": "See the guide for details.",
+  "words": [
+   {
+    "text": "See",
+    "src": "See"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "guide",
+    "src": "guide"
+   },
+   {
+    "text": "for",
+    "src": "for"
+   },
+   {
+    "text": "details.",
+    "src": "details."
+   }
+  ]
+ },
+ {
+  "id": "inline_code",
+  "source": "Run `cargo test` before you push.\n",
+  "text": "Run  \u0000  before you push.",
+  "words": [
+   {
+    "text": "Run",
+    "src": "Run"
+   },
+   {
+    "text": "before",
+    "src": "before"
+   },
+   {
+    "text": "you",
+    "src": "you"
+   },
+   {
+    "text": "push.",
+    "src": "push."
+   }
+  ]
+ },
+ {
+  "id": "fenced_code",
+  "source": "Before.\n\n```python\nx = 1\nprint(x)\n```\n\nAfter.\n",
+  "text": "Before. After.",
+  "words": [
+   {
+    "text": "Before.",
+    "src": "Before."
+   },
+   {
+    "text": "After.",
+    "src": "After."
+   }
+  ]
+ },
+ {
+  "id": "tilde_fence",
+  "source": "Before.\n\n~~~\ncode here\n~~~\n\nAfter.\n",
+  "text": "Before. After.",
+  "words": [
+   {
+    "text": "Before.",
+    "src": "Before."
+   },
+   {
+    "text": "After.",
+    "src": "After."
+   }
+  ]
+ },
+ {
+  "id": "indented_code",
+  "source": "Before.\n\n    indented code\n    more code\n\nAfter.\n",
+  "text": "Before. After.",
+  "words": [
+   {
+    "text": "Before.",
+    "src": "Before."
+   },
+   {
+    "text": "After.",
+    "src": "After."
+   }
+  ]
+ },
+ {
+  "id": "inline_tags",
+  "source": "A <em>tagged</em> word and <br/> a break.\n",
+  "text": "A tagged word and  a break.",
+  "words": [
+   {
+    "text": "A",
+    "src": "A"
+   },
+   {
+    "text": "tagged",
+    "src": "tagged"
+   },
+   {
+    "text": "word",
+    "src": "word"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "a",
+    "src": "a"
+   },
+   {
+    "text": "break.",
+    "src": "break."
+   }
+  ]
+ },
+ {
+  "id": "inline_comment",
+  "source": "Visible <!-- hidden --> text.\n",
+  "text": "Visible  text.",
+  "words": [
+   {
+    "text": "Visible",
+    "src": "Visible"
+   },
+   {
+    "text": "text.",
+    "src": "text."
+   }
+  ]
+ },
+ {
+  "id": "entity_inside_word",
+  "source": "AT&amp;T rocks and a&lt;b work.\n",
+  "text": "AT&T rocks and a<b work.",
+  "words": [
+   {
+    "text": "AT&T",
+    "src": "AT&amp;T"
+   },
+   {
+    "text": "rocks",
+    "src": "rocks"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "a<b",
+    "src": "a&lt;b"
+   },
+   {
+    "text": "work.",
+    "src": "work."
+   }
+  ]
+ },
+ {
+  "id": "numeric_entity",
+  "source": "Use a&#169;b and c&#x1F600;d marks.\n",
+  "text": "Use a©b and c😀d marks.",
+  "words": [
+   {
+    "text": "Use",
+    "src": "Use"
+   },
+   {
+    "text": "a©b",
+    "src": "a&#169;b"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "c😀d",
+    "src": "c&#x1F600;d"
+   },
+   {
+    "text": "marks.",
+    "src": "marks."
+   }
+  ]
+ },
+ {
+  "id": "mixed_document",
+  "source": "# Guide\n\nIntro text with `code` and **bold**.\n\n- Step one\n- Step two\n\n> Note this.\n\n```sh\nmake\n```\n\nDone.\n",
+  "text": "Guide Intro text with  \u0000  and bold. Step one Step two Note this. Done.",
+  "words": [
+   {
+    "text": "Guide",
+    "src": "Guide"
+   },
+   {
+    "text": "Intro",
+    "src": "Intro"
+   },
+   {
+    "text": "text",
+    "src": "text"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "bold.",
+    "src": "bold**."
+   },
+   {
+    "text": "Step",
+    "src": "Step"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "Step",
+    "src": "Step"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   },
+   {
+    "text": "Note",
+    "src": "Note"
+   },
+   {
+    "text": "this.",
+    "src": "this."
+   },
+   {
+    "text": "Done.",
+    "src": "Done."
+   }
+  ]
+ },
+ {
+  "id": "blank_lines_many",
+  "source": "One.\n\n\n\nTwo.\n",
+  "text": "One. Two.",
+  "words": [
+   {
+    "text": "One.",
+    "src": "One."
+   },
+   {
+    "text": "Two.",
+    "src": "Two."
+   }
+  ]
+ },
+ {
+  "id": "trailing_spaces",
+  "source": "Line with trailing spaces   \nnext line.\n",
+  "text": "Line with trailing spaces   next line.",
+  "words": [
+   {
+    "text": "Line",
+    "src": "Line"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "trailing",
+    "src": "trailing"
+   },
+   {
+    "text": "spaces",
+    "src": "spaces"
+   },
+   {
+    "text": "next",
+    "src": "next"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ }
+]

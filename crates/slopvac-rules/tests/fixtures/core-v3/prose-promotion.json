@@ -1,0 +1,186 @@
+{
+  "schema_version": 3,
+  "id": "prose-promotion",
+  "title": "Prose promotion",
+  "description": "Promotional register: travel-brochure puffery, strategy-deck vocabulary, and the adjective-noun and verb habits that carry a claim no measurement backs.",
+  "weight": 1.2,
+  "recommended_for": [
+    "consumer",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "promotional-puffery",
+      "name": "Use neutral, specific language",
+      "message": "puffery: {match} -- replace with the fact that would justify it",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\bnestled (?:in|between|among|alongside|within) (?:the|a)?\\b|\\b(?:in|at) the heart of\\b|\\brich cultural heritage\\b|\\brich (?:history and|and diverse|and vibrant)\\b|\\bvibrant (?:community|culture|ecosystem|atmosphere)\\b|\\bnatural beauty\\b|\\ba (?:hub for|hub of|dynamic hub|thriving hub|cultural hub)\\b|\\ba beacon (?:of|for)\\b|\\ba treasure trove (?:of|for)\\b|\\ba (?:shining|prime) example\\b|\\ba masterclass in\\b|\\ba testament to (?:the|its)\\b|\\brenowned for (?:its|their)\\b|\\bwidely (?:regarded as|recognized as|considered)\\b|\\bhas emerged as (?:a|the)\\b|\\bhas established itself as\\b|\\bcontinues to (?:thrive|grow|inspire)\\b|\\bleft an indelible (?:mark|impact)\\b|\\bleaving an indelible mark\\b|\\bleft a lasting (?:impact|impression)\\b|\\bleaving a lasting impact\\b|\\b(?:a lasting|enduring) legacy\\b|\\benduring impact\\b"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "named-entity"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The library has emerged as a hub for astronomy tooling.",
+          "good": "Four astronomy tools depend on the library."
+        },
+        {
+          "bad": "The rewrite left a lasting impact on latency.",
+          "good": "The rewrite cut p99 latency from 800 ms to 120 ms."
+        },
+        {
+          "bad": "The city is renowned for its harbour.",
+          "good": "The city is home to the country's largest harbour."
+        },
+        {
+          "bad": "The file format continues to thrive.",
+          "good": "The file format continues to evolve; version 3 adds streaming reads."
+        }
+      ],
+      "fix": "Delete the phrase, or replace it with the number or fact behind it.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Retired ai-tells Vale style — PromotionalPuffery.yml",
+        "note": "The register `prose-inflation.slop-lexicon` does not reach: that rule owns single marketing ADJECTIVES (robust, seamless), while this owns multi-word travel-and-biography CONSTRUCTIONS. Zero of 55 source tokens were matched by any owned rule, which is why it ships at error rather than warning -- unlike `AICompoundPhrases`, none of these phrases has an ordinary technical use. Human labelling, 2026-10: three phrases that read as neutral description were removed -- `is home to` (a containment idiom; the puffery, when present, is in the words that follow it), `continues to evolve` (states change, not merit), and `renowned for his/her` (a person's reputation in a profile or tribute is the subject, not a sales claim). `renowned for its/their` stays for places and products."
+      }
+    },
+    {
+      "id": "strategy-buzzwords",
+      "name": "Describe the mechanism",
+      "message": "strategy buzzword: {match} -- describe the actual mechanism or advantage",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\bflywheel effect\\b|\\b(?:growth|data|content|engagement|customer|revenue|sales|marketing|business|virtuous|self-?reinforcing) flywheels?\\b|\\b(?:build|building|built|create|creates|created|creating|spin|spins|spinning|start|starts|started|starting) (?:a |the |our |its |their )?flywheels?\\b|\\b(?:competitive|economic|defensible|durable|structural|wide|deep|business|data|regulatory|technological|distribution) moats?\\b|\\b(?:build|building|built|widen|widens|widening|widened|deepen|deepens|deepening|deepened|create|creates|created|creating) (?:a |the |our |its |their |wider |deeper )?moats?\\b|\\bmoats? (?:around|against) (?:the |our |its |their |your )?(?:business|company|product|platform|franchise|market|position|revenue|profits?|margins?|data|ecosystem|core)\\b|\\bnorth[- ]star metric\\b|\\bnorth-star\\b|\\b(?:our|your|their|its) north star\\b|\\bnetwork effects?\\b|\\bfirst[- ]mover advantage\\b|\\b(?:market|customer|data|talent|competitive|global|massive|enterprise) land[- ]grab\\b|\\bland[- ]grab for\\b"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "defined-term-of-art"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "Caching builds a data moat.",
+          "good": "The cache holds 8 TB no competitor can re-derive without our sensor feed."
+        },
+        {
+          "bad": "Adoption creates a growth flywheel.",
+          "good": "Each new user contributes a review, which raises search ranking."
+        }
+      ],
+      "fix": "Name the loop or the barrier, and what makes it hold.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Retired ai-tells Vale style — StrategyBuzzwords.yml",
+        "note": "`north star` alone is in `prose-inflation.business-jargon`; the flywheel, moat, network-effect, and land-grab bands are not, and they are the ones that appear in generated strategy prose. Exception `defined-term-of-art` exists because `network effect` is a real term in economics writing."
+      }
+    },
+    {
+      "id": "promotional-adjective-noun",
+      "name": "Cut the promotional adjective",
+      "message": "promotional adjective: {match} -- delete it, or give the measurement",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:multifaceted|intricate|transformative|groundbreaking|unparalleled|unprecedented|pivotal|innovative|sophisticated) [a-z]+\\b"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "quantified"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "An intricate dependency graph.",
+          "good": "A dependency graph with 340 edges."
+        },
+        {
+          "bad": "This is a pivotal release.",
+          "good": "This release removes the last Python 3.9 dependency."
+        }
+      ],
+      "fix": "Delete the adjective. If the claim matters, replace it with the number behind it.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Retired ai-tells Vale style — AIAdjectiveNounPairs.yml",
+        "note": "The source rule is Vale `extends: sequence` with a `JJ` + `NN|NNS` tag pair. This engine has no part-of-speech tagging outside `kind: vocabulary`, so the noun side is approximated by a following lowercase word -- narrower than the tagger on hyphenated and capitalised nouns, and that under-match is the safe direction. `holistic`, `seamless`, and `comprehensive` are omitted: already owned by `prose-inflation.slop-lexicon`, and a second rule on the same token would double-count in the density budget."
+      }
+    },
+    {
+      "id": "promotional-verbs",
+      "name": "Use the direct verb",
+      "message": "promotional verb: {match} -- use the direct verb",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "showcase",
+          "showcases",
+          "showcasing",
+          "embark",
+          "embarks",
+          "embarking",
+          "foster",
+          "fosters",
+          "fostering",
+          "spearhead",
+          "spearheads",
+          "spearheading"
+        ]
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "domain-term"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The demo showcases the new parser.",
+          "good": "The demo runs the new parser on three files."
+        },
+        {
+          "bad": "We embark on a migration.",
+          "good": "The migration starts on 3 March."
+        },
+        {
+          "bad": "The team spearheads the rewrite.",
+          "good": "The team leads the rewrite."
+        }
+      ],
+      "fix": "Use the plain verb: \"showcase\" is \"show\", \"harness\" is \"use\", \"embark on\" is \"start\", \"foster\" is \"encourage\" or \"cause\".",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Retired ai-tells Vale style — OverusedVocabularyVerbs.yml",
+        "note": "The source rule is `extends: sequence` with verb tags; without a tagger this is a token list. `navigate` and its inflections are omitted because they are the standard UI instruction verb. `leverage` is omitted as already in `prose-inflation.slop-lexicon`. The `harness` forms are omitted on a MEASUREMENT: the only hit across 50 files in this repo was `### Any harness, without installing APM` in the README, the noun sense. Same defect that disqualified `ai-tells.FormalRegister` for `implement`."
+      }
+    }
+  ]
+}

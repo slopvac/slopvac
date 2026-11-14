@@ -23,7 +23,8 @@ from collections.abc import Callable, Sequence
 REQUIRED_RULES = frozenset({"update", "deletion", "non_fast_forward"})
 PER_PAGE = 100
 MAX_PAGES = 5
-_TAG = re.compile(r"v\d+\.\d+\.\d+")
+_NUM = r"(?:0|[1-9][0-9]*)"  # SemVer: no leading zeros
+_TAG = re.compile(rf"v{_NUM}\.{_NUM}\.{_NUM}")
 
 Runner = Callable[[Sequence[str]], str]
 

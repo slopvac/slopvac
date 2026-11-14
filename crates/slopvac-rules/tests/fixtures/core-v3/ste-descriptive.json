@@ -1,0 +1,197 @@
+{
+  "schema_version": 3,
+  "id": "ste-descriptive",
+  "title": "STE Descriptive Writing",
+  "description": "Governs information order, connective structure, sentence length, and paragraph shape in explanatory text.",
+  "weight": 1.0,
+  "max_per_100_words": {
+    "strict": 1.0,
+    "normal": 1.5
+  },
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "information-not-gradual",
+      "name": "Give information gradually",
+      "message": "Check that this paragraph introduces one idea at a time.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "judgement",
+        "question": "Does each sentence introduce at most one new idea, and does every term appear after the sentence that introduced it? If a reader must already know a later term to parse an earlier sentence, reorder."
+      },
+      "examples": [
+        {
+          "bad": "The reconciler compares desired state from the lease store against observed state from the informer cache and writes the delta to the work queue that the shard leader drains.",
+          "good": "The reconciler reads the desired state from the lease store. It reads the observed state from the informer cache. It writes the difference between the two to the work queue. The shard leader drains that queue."
+        }
+      ],
+      "fix": "Split the paragraph so each sentence adds one idea in reading order.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.1",
+        "note": "Forward-reference detection is partly mechanizable (first-use position of each glossary term), but the one-idea-per-sentence half is not, and a checker that fires on term order alone would misjudge every summary paragraph. Judgement, with the sentence-length rule carrying most of the practical benefit."
+      }
+    },
+    {
+      "id": "missing-key-word-structure",
+      "name": "Use key words to structure the text",
+      "message": "Check that this paragraph repeats its key words instead of varying them.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "judgement",
+        "question": "Does each sentence pick up a key word or key phrase from the sentence before it, and is that key word written the same way each time?"
+      },
+      "examples": [
+        {
+          "bad": "The reconciler drains the work queue. The component then writes the outcome to the job list.",
+          "good": "The reconciler drains the work queue. The reconciler then writes the outcome to the work queue."
+        }
+      ],
+      "fix": "Repeat the key word from the previous sentence rather than substituting a synonym.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.2",
+        "note": "The consistency half overlaps ste-words/inconsistent-term-for-same-thing, which is the mechanizable part given a synonym-group list. What is unique here is the positive requirement to carry a key word forward, which no checker can measure."
+      }
+    },
+    {
+      "id": "sentence-too-long-descriptive",
+      "name": "Keep an explanatory sentence to twenty-five words",
+      "message": "This sentence has {value} words. Use twenty-five or fewer.",
+      "severity": "error",
+      "scope": "sentence",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "metric",
+        "metric": "sentence_words",
+        "threshold": 25,
+        "comparison": "gt"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The gateway terminates TLS, rewrites the Host header, adds a request identifier for tracing, and forwards the request to the service that the routing table names for the path prefix.",
+          "good": "The gateway terminates TLS and rewrites the Host header. It adds a request identifier for tracing. It then forwards the request to the service that the routing table names for the path prefix."
+        }
+      ],
+      "fix": "Split the sentence at a clause boundary.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.3",
+        "note": "Same word-counting contract as the procedural cap, five words wider. A note inside a procedure takes this cap rather than the procedural one, which is why text_type classification (see metrics.md) decides which of the two rules applies rather than document location."
+      }
+    },
+    {
+      "id": "paragraph-without-related-information",
+      "name": "Group related information in a paragraph",
+      "message": "Check that this paragraph opens with a topic sentence.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "judgement",
+        "question": "Does the first sentence of this paragraph tell the reader what the paragraph is about, and does every later sentence add to that topic?"
+      },
+      "examples": [
+        {
+          "bad": "Set the retry limit to five. The gateway terminates TLS. Each worker reads one queue.",
+          "good": "The gateway handles inbound traffic. It terminates TLS and rewrites the Host header. It then forwards each request to a worker."
+        }
+      ],
+      "fix": "Add a topic sentence, or move the unrelated sentence to its own paragraph.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.4",
+        "note": "Advisory at both upper tiers because the failure it names (a paragraph with no topic sentence) is a drafting problem a reviewer catches faster than a checker, and no threshold makes it decidable."
+      }
+    },
+    {
+      "id": "paragraph-has-multiple-topics",
+      "name": "Keep one topic per paragraph",
+      "message": "Check that this paragraph carries one topic.",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "judgement",
+        "question": "Could this paragraph be split at any sentence boundary without either half needing the other? If yes, it carries more than one topic."
+      },
+      "examples": [
+        {
+          "bad": "The gateway terminates TLS and forwards each request to a worker. The billing exporter writes a daily CSV to the audit bucket.",
+          "good": "The gateway terminates TLS and forwards each request to a worker.\nThe billing exporter writes a daily CSV to the audit bucket."
+        }
+      ],
+      "fix": "Split the paragraph at the topic change.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.5",
+        "note": "The split test above is our decidable restatement of \"one topic\", and it is a reviewer question rather than a finding because measuring topical cohesion needs a model, not a rule. Kept enforced at strict and normal so the reviewer is prompted."
+      }
+    },
+    {
+      "id": "paragraph-too-many-sentences",
+      "name": "Keep a paragraph to six sentences",
+      "message": "This paragraph has {value} sentences. Use six or fewer.",
+      "severity": "warning",
+      "scope": "paragraph",
+      "text_type": "descriptive",
+      "match": {
+        "kind": "metric",
+        "metric": "paragraph_sentences",
+        "threshold": 6,
+        "comparison": "gt"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "code-span"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The gateway terminates TLS. It rewrites the Host header. It adds a request identifier. It reads the routing table. It selects a worker. It forwards the request. It records the latency.",
+          "good": "The gateway terminates TLS. It rewrites the Host header. It adds a request identifier.\nThe gateway reads the routing table and selects a worker. It forwards the request and records the latency."
+        }
+      ],
+      "fix": "Split the paragraph into two.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "ASD-STE100",
+        "ste_ref": "9:6.6",
+        "note": "This metric uses paragraph_sentences, which is NOT the same sentence unit the word caps use. A lead-in plus its vertical list counts as one sentence here, while the word-count rules treat each list item as its own sentence. metrics.md states the resolution and the evidence for it. Getting this wrong makes almost every bulleted block a violation, which is the single largest false-positive risk in the whole set."
+      }
+    }
+  ]
+}

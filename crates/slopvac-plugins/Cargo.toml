@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+crossbeam-channel.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -18,6 +19,10 @@ sha2.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 ureq.workspace = true
+
+# Polling a pidfd shows whether its process exited.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event"] }
 
 [dev-dependencies]
 toml.workspace = true
