@@ -15,20 +15,7 @@ impl<'de> de::Deserializer<'de> for NodeDe<'de> {
     type Error = DeError;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
-        let node = self.0;
-        match &node.value {
-            Value::Null => visitor.visit_unit(),
-            Value::Bool(b) => visitor.visit_bool(*b),
-            Value::Integer(i) => visitor.visit_i64(*i),
-            Value::Float(f) => visitor.visit_f64(*f),
-            Value::String(s) | Value::Datetime(s) => visitor.visit_borrowed_str(s),
-            Value::Array(items) => visitor.visit_seq(Seq(items.iter())),
-            Value::Table(entries) => visitor.visit_map(Map {
-                entries: entries.iter(),
-                pending: None,
-            }),
-        }
-        .map_err(|e| e.or_span(&node.span))
+        self.visit(visitor).map_err(|e| e.or_span(&self.0.span))
     }
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
@@ -69,6 +56,52 @@ impl<'de> de::Deserializer<'de> for NodeDe<'de> {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
         byte_buf unit unit_struct seq tuple tuple_struct map struct identifier
         ignored_any
+    }
+}
+
+impl<'de> NodeDe<'de> {
+    /// Drive `visitor` over the node. Errors may still lack a span; the caller adds one.
+    fn visit<V: Visitor<'de>>(&self, visitor: V) -> Result<V::Value, DeError> {
+        let node = self.0;
+        match &node.value {
+            Value::Null => visitor.visit_unit(),
+            Value::Bool(b) => visitor.visit_bool(*b),
+            Value::Integer(i) => visitor.visit_i64(*i),
+            Value::Float(f) => visitor.visit_f64(*f),
+            Value::String(s) | Value::Datetime(s) => visitor.visit_borrowed_str(s),
+            Value::Array(items) => {
+                let mut seq = Seq(items.iter());
+                let value = visitor.visit_seq(&mut seq)?;
+                match seq.0.next() {
+                    // A visitor that stops early (a tuple, a fixed array) left items behind.
+                    Some(extra) => Err(DeError {
+                        message: format!(
+                            "invalid length {}, expected fewer elements in array",
+                            items.len()
+                        ),
+                        span: Some(extra.span.clone()),
+                    }),
+                    None => Ok(value),
+                }
+            }
+            Value::Table(entries) => {
+                let mut map = Map {
+                    entries: entries.iter(),
+                    pending: None,
+                };
+                let value = visitor.visit_map(&mut map)?;
+                match map.entries.next() {
+                    Some(extra) => Err(DeError {
+                        message: format!(
+                            "invalid length {}, expected fewer entries in table",
+                            entries.len()
+                        ),
+                        span: Some(extra.key_span.clone()),
+                    }),
+                    None => Ok(value),
+                }
+            }
+        }
     }
 }
 
@@ -115,6 +148,7 @@ impl<'de> MapAccess<'de> for Map<'de> {
             .take()
             .ok_or_else(|| de::Error::custom("value requested before key"))?;
         seed.deserialize(NodeDe(node))
+            .map_err(|e| e.or_span(&node.span))
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -147,7 +181,8 @@ impl<'de> VariantAccess<'de> for NodeDe<'de> {
     }
 
     fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, DeError> {
-        seed.deserialize(self)
+        let span = self.0.span.clone();
+        seed.deserialize(self).map_err(|e| e.or_span(&span))
     }
 
     fn tuple_variant<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, DeError> {

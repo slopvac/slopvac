@@ -7,26 +7,30 @@
 
 use std::ops::Range;
 
-use crate::{Entry, Format, LineIndex, Node, ParseError, Span, Value};
-
-/// Nesting limit. Deeper input is an error rather than a stack overflow.
-const MAX_DEPTH: usize = 128;
+use crate::{Entry, Format, Limits, LineIndex, Node, ParseError, Span, Value};
 
 struct Parser<'a> {
     text: &'a str,
     pos: usize,
     base: usize,
     index: &'a LineIndex<'a>,
+    max_depth: usize,
 }
 
 type Res<T> = Result<T, (String, usize)>;
 
-pub(crate) fn parse(content: &str, base: usize, index: &LineIndex<'_>) -> Result<Node, ParseError> {
+pub(crate) fn parse(
+    content: &str,
+    base: usize,
+    index: &LineIndex<'_>,
+    limits: &Limits,
+) -> Result<Node, ParseError> {
     let mut p = Parser {
         text: content,
         pos: 0,
         base,
         index,
+        max_depth: limits.max_depth,
     };
     p.ws();
     let result = p.value(0).and_then(|node| {
@@ -73,8 +77,11 @@ impl Parser<'_> {
     }
 
     fn value(&mut self, depth: usize) -> Res<Node> {
-        if depth > MAX_DEPTH {
-            return self.err("nesting is too deep");
+        if matches!(self.peek(), Some(b'{' | b'[')) && depth >= self.max_depth {
+            return Err((
+                format!("nesting is too deep (limit {})", self.max_depth),
+                self.pos,
+            ));
         }
         let start = self.pos;
         let value = match self.peek() {

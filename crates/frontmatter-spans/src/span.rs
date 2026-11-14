@@ -27,11 +27,15 @@ pub struct Span {
 
 /// Maps byte offsets of one document to lines and columns.
 ///
-/// Lines end at LF, CRLF or a lone CR. Nothing else ends a line.
+/// Lines end at LF, CRLF or a lone CR. Nothing else ends a line. Building the index is linear
+/// in the document, and each lookup is logarithmic: a column is the byte distance from the
+/// line start minus the extra bytes of the multi-byte characters in between.
 #[derive(Debug, Clone)]
 pub struct LineIndex<'a> {
     text: &'a str,
     starts: Vec<usize>,
+    /// `(byte offset, extra bytes before and including it)` for each multi-byte character.
+    wide: Vec<(usize, usize)>,
 }
 
 impl<'a> LineIndex<'a> {
@@ -52,7 +56,25 @@ impl<'a> LineIndex<'a> {
                 _ => {}
             }
         }
-        Self { text, starts }
+        let mut wide = Vec::new();
+        let mut extra = 0;
+        if !text.is_ascii() {
+            for (i, c) in text.char_indices() {
+                if c.len_utf8() > 1 {
+                    extra += c.len_utf8() - 1;
+                    wide.push((i, extra));
+                }
+            }
+        }
+        Self { text, starts, wide }
+    }
+
+    /// Extra bytes (beyond one per character) in `text[..offset]`.
+    fn extra_before(&self, offset: usize) -> usize {
+        match self.wide.partition_point(|&(at, _)| at < offset) {
+            0 => 0,
+            n => self.wide[n - 1].1,
+        }
     }
 
     /// The line and column of byte `offset`.
@@ -67,7 +89,8 @@ impl<'a> LineIndex<'a> {
             offset -= 1;
         }
         let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        let column = self.text[self.starts[line]..offset].chars().count() + 1;
+        let start = self.starts[line];
+        let column = offset - start - (self.extra_before(offset) - self.extra_before(start)) + 1;
         LineCol {
             line: line + 1,
             column,

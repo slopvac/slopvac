@@ -44,6 +44,7 @@ for any offset in the document.
 - A TOML table span runs from its header, or its first key when it has none, to the end of its
   last entry.
 - A key span covers the key as written, so JSON keys include their quotes.
+- A node with an anchor or tag starts at the anchor or tag.
 - A YAML alias takes the anchored value and the span of the alias.
 
 ## Serde
@@ -70,15 +71,31 @@ key.
 
 ## Parsers
 
-- YAML uses `saphyr`, which reports character indexes. The crate converts them to byte offsets.
-  Aliases expand within saphyr's node budget, so an alias bomb is an error.
+- YAML uses `saphyr-parser` events, the parser behind `saphyr`. The crate builds the tree from
+  the events itself, so depth and alias expansion are checked before anything recurses or
+  clones. Positions are converted from characters to bytes.
 - TOML uses `toml_edit`, which reports byte spans for keys and values.
 - JSON uses a strict RFC 8259 parser inside the crate. The common JSON crates drop spans, and a
-  YAML parser would accept comments and single quotes. Nesting deeper than 128 levels is an
-  error.
+  YAML parser would accept comments and single quotes.
 
-YAML anchors, tags and non-scalar keys have limits. A tag is ignored. A non-scalar key is an
-error. A block with more than one YAML document is an error.
+A YAML tag only steers how a scalar is read. A non-scalar key is an error, a scalar alias works
+as a key, and a block with more than one YAML document is an error. A duplicate key in YAML is
+an error at the second key. A JSON object keeps every member in order, and `get` returns the
+last one.
+
+## Limits
+
+Hostile input returns a `ParseError` and does not abort or exhaust memory. Pass a `Limits` to
+`FrontMatter::parse_with` or `parse_block_with` to change the defaults.
+
+| Limit | Default | Counts |
+| --- | --- | --- |
+| `max_depth` | 128 | Nested tables and arrays in YAML and JSON, root included |
+| `max_alias_bytes` | 1 MiB | Bytes copied by all YAML alias uses together |
+| `max_input_bytes` | 16 MiB | The block content, checked before parsing |
+
+TOML nesting is bounded by `toml_edit`. Building the line index and every span costs time
+linear in the document, with a logarithmic lookup per position.
 
 ## Tests and fuzzing
 
@@ -88,7 +105,8 @@ cargo +nightly fuzz run parse   # from crates/frontmatter-spans, needs cargo-fuz
 ```
 
 The property tests check that spans lie inside the document on character boundaries, and that
-written keys and integers sit at their spans in all three formats.
+written keys and integers sit at their spans in all three formats. The limit tests cover deep
+nesting, alias bombs, oversized blocks and a 1 MiB single-line input.
 
 ## Licence
 

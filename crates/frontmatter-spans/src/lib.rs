@@ -4,6 +4,7 @@ mod de;
 mod detect;
 mod error;
 mod json;
+mod limits;
 mod span;
 mod toml;
 mod value;
@@ -15,6 +16,7 @@ use serde::Deserialize;
 
 pub use detect::{Block, detect};
 pub use error::{DeError, ParseError};
+pub use limits::Limits;
 pub use span::{LineCol, LineIndex, Span};
 pub use value::{Entry, Node, Value};
 
@@ -51,28 +53,52 @@ pub struct FrontMatter<'a> {
 }
 
 impl<'a> FrontMatter<'a> {
-    /// Find and parse the front matter at the start of `doc`.
+    /// Find and parse the front matter at the start of `doc`, with the default [`Limits`].
     ///
     /// Returns `Ok(None)` when the document has none.
     pub fn parse(doc: &'a str) -> Result<Option<Self>, ParseError> {
+        Self::parse_with(doc, &Limits::default())
+    }
+
+    /// Like [`parse`](Self::parse), with explicit [`Limits`].
+    pub fn parse_with(doc: &'a str, limits: &Limits) -> Result<Option<Self>, ParseError> {
         let Some(block) = detect(doc) else {
             return Ok(None);
         };
-        Self::parse_block(doc, block).map(Some)
+        Self::parse_block_with(doc, block, limits).map(Some)
     }
 
-    /// Parse a block that [`detect`] found in `doc`.
+    /// Parse a block that [`detect`] found in `doc`, with the default [`Limits`].
     ///
     /// `block` must come from `detect(doc)` for this same `doc`; otherwise the spans are
     /// meaningless.
     pub fn parse_block(doc: &'a str, block: Block) -> Result<Self, ParseError> {
+        Self::parse_block_with(doc, block, &Limits::default())
+    }
+
+    /// Like [`parse_block`](Self::parse_block), with explicit [`Limits`].
+    pub fn parse_block_with(
+        doc: &'a str,
+        block: Block,
+        limits: &Limits,
+    ) -> Result<Self, ParseError> {
         let raw = &doc[block.content.clone()];
+        if raw.len() > limits.max_input_bytes {
+            return Err(ParseError {
+                format: block.format,
+                message: format!(
+                    "the block is larger than the limit of {} bytes",
+                    limits.max_input_bytes
+                ),
+                span: None,
+            });
+        }
         let index = LineIndex::new(doc);
         let base = block.content.start;
         let root = match block.format {
-            Format::Yaml => yaml::parse(raw, base, &index)?,
+            Format::Yaml => yaml::parse(raw, base, &index, limits)?,
             Format::Toml => toml::parse(raw, base, &index)?,
-            Format::Json => json::parse(raw, base, &index)?,
+            Format::Json => json::parse(raw, base, &index, limits)?,
         };
         Ok(Self { block, raw, root })
     }
@@ -118,6 +144,6 @@ pub struct Spanned<T> {
 impl Node {
     /// Deserialise this node into `T`.
     pub fn deserialize<'de, T: Deserialize<'de>>(&'de self) -> Result<T, DeError> {
-        T::deserialize(de::NodeDe(self))
+        T::deserialize(de::NodeDe(self)).map_err(|e| e.or_span(&self.span))
     }
 }
