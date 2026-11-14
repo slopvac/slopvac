@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -5,7 +6,9 @@ use thiserror::Error;
 ///
 /// Construction does not validate against a file. Use [`crate::SourceIndex::check_span`]
 /// for that.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 pub struct Span {
     /// First byte of the span.
     pub start: usize,
@@ -44,7 +47,9 @@ impl Span {
 
 /// One-based line and column. The column counts code points unless a
 /// [`crate::ColumnUnit`] says otherwise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 pub struct LineCol {
     /// One-based line.
     pub line: usize,

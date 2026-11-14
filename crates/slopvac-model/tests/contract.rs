@@ -179,3 +179,15 @@ fn finding_without_span_omits_span_and_end() {
     assert_eq!(json["ai_signal"], "none");
     assert_eq!(serde_json::from_value::<Finding>(json).unwrap(), f);
 }
+
+#[test]
+fn generated_schema_describes_span_and_rule_id() {
+    let span = serde_json::to_value(schemars::schema_for!(Span)).unwrap();
+    assert_eq!(span["required"], serde_json::json!(["start", "end"]));
+    let id = serde_json::to_value(schemars::schema_for!(RuleId)).unwrap();
+    assert_eq!(id["type"], "string");
+    assert_eq!(
+        id["pattern"],
+        "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"
+    );
+}

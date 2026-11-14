@@ -1,5 +1,6 @@
 use std::fmt;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -24,8 +25,11 @@ fn is_local(s: &str) -> bool {
 }
 
 /// Pack identifier: `^[a-z][a-z0-9-]*$`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
 pub struct PackId(String);
 
 impl PackId {
@@ -69,8 +73,11 @@ impl fmt::Display for PackId {
 }
 
 /// Qualified rule identifier `<pack>:<id>`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"))]
 pub struct RuleId(String);
 
 impl RuleId {
@@ -125,7 +132,9 @@ impl fmt::Display for RuleId {
 }
 
 /// Finding severity. `off` belongs to config, not to findings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Lowest severity.

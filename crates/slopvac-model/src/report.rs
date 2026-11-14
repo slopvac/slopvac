@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::edit::Edit;
@@ -8,7 +9,7 @@ use crate::span::Span;
 pub const SCHEMA_VERSION: u32 = 3;
 
 /// How strongly a finding indicates machine-written text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AiSignal {
     /// Strong signal.
@@ -20,7 +21,7 @@ pub enum AiSignal {
 }
 
 /// Severity of a [`Notice`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NoticeLevel {
     /// Informational.
@@ -30,7 +31,7 @@ pub enum NoticeLevel {
 }
 
 /// A stable, machine-readable fact with a human message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Notice {
     /// Stable kebab-case identifier.
     pub code: String,
@@ -44,7 +45,7 @@ pub struct Notice {
 }
 
 /// Where a rule came from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RuleProvenance {
     /// Owning pack.
     pub pack: PackId,
@@ -57,7 +58,7 @@ pub struct RuleProvenance {
 }
 
 /// Config layer and location a setting came from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigSource {
     /// Layer name.
     pub layer: String,
@@ -73,14 +74,14 @@ pub struct ConfigSource {
 }
 
 /// A machine-applicable correction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Fix {
     /// Non-overlapping edits in original offsets.
     pub edits: Vec<Edit>,
 }
 
 /// One violation at one position.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Finding {
     /// Qualified rule id.
     pub rule_id: RuleId,
@@ -120,7 +121,7 @@ pub struct Finding {
 }
 
 /// Counts for one reporting axis.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AiRegisterSummary {
     /// Findings.
     pub findings: usize,
@@ -133,7 +134,7 @@ pub struct AiRegisterSummary {
 }
 
 /// Strong and weak AI-signal summaries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AiRegister {
     /// Strong signal.
     pub strong: AiRegisterSummary,
@@ -142,7 +143,7 @@ pub struct AiRegister {
 }
 
 /// One category rolled up across every document.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CategorySummary {
     /// Category id.
     pub category: String,
@@ -161,7 +162,7 @@ pub struct CategorySummary {
 }
 
 /// Every document rolled into one result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunSummary {
     /// Documents linted.
     pub documents: usize,
@@ -190,7 +191,7 @@ pub struct RunSummary {
 }
 
 /// Where a genre choice came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GenreSource {
     /// Config, command line or front matter.
@@ -202,7 +203,7 @@ pub enum GenreSource {
 }
 
 /// One signal that led to the genre choice.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GenreReason {
     /// Kebab-case signal name.
     pub signal: String,
@@ -211,7 +212,7 @@ pub struct GenreReason {
 }
 
 /// The genre applied to a document and why.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GenreResult {
     /// Genre id.
     pub id: String,
@@ -222,7 +223,7 @@ pub struct GenreResult {
 }
 
 /// Per-category result for one document.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CategoryScore {
     /// Category id.
     pub category: String,
@@ -247,7 +248,7 @@ pub struct CategoryScore {
 }
 
 /// Pass or fail result for one document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Gate {
     /// Whether the document passed.
     pub passed: bool,
@@ -256,7 +257,7 @@ pub struct Gate {
 }
 
 /// The whole result for one linted file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Document {
     /// File path.
     pub path: String,
@@ -301,7 +302,7 @@ pub struct Document {
 }
 
 /// The `slopvac lint --format json` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Report {
     /// Always [`SCHEMA_VERSION`].
     pub schema_version: u32,

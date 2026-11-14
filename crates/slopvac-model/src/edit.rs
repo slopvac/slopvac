@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -5,7 +6,7 @@ use crate::source::SourceIndex;
 use crate::span::{PositionError, Span};
 
 /// Replace the source bytes in `span` with `text`, written verbatim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Edit {
     /// Original-file byte range to replace. A zero-width span inserts.
     pub span: Span,
