@@ -109,13 +109,25 @@ impl fmt::Debug for EnvCredentials {
 
 impl DefaultCredentials {
     /// Read the process environment: `SLOPVAC_OCI_*`, `GITHUB_TOKEN`, `DOCKER_CONFIG`
-    /// and `HOME/.docker`. The project directory is never consulted.
+    /// and the home directory's `.docker`. The project directory is never consulted.
     #[must_use]
     pub fn from_env() -> Self {
-        let get = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        Self::from_lookup(|k| std::env::var(k).ok(), cfg!(windows))
+    }
+
+    /// [`Self::from_env`] over any variable lookup. Docker finds its default
+    /// config under `USERPROFILE` on Windows and `HOME` elsewhere; on Windows
+    /// `HOME` is the fallback for shells that set only it.
+    fn from_lookup(var: impl Fn(&str) -> Option<String>, windows: bool) -> Self {
+        let get = |k: &str| var(k).filter(|v| !v.is_empty());
+        let home = if windows {
+            get("USERPROFILE").or_else(|| get("HOME"))
+        } else {
+            get("HOME")
+        };
         let docker = get("DOCKER_CONFIG")
             .map(PathBuf::from)
-            .or_else(|| get("HOME").map(|h| Path::new(&h).join(".docker")));
+            .or_else(|| home.map(|h| Path::new(&h).join(".docker")));
         Self {
             env: EnvCredentials {
                 user: get("SLOPVAC_OCI_USER"),
@@ -211,10 +223,21 @@ fn find_with_suffixes(
     let path = search
         .map(ToOwned::to_owned)
         .or_else(|| std::env::var_os("PATH"))?;
+    // A name that already ends in a runnable suffix (`desktop.exe`) is tried as
+    // written before any suffix is appended.
+    let lower = program.to_ascii_lowercase();
+    let as_written = suffixes
+        .iter()
+        .any(|ext| !ext.is_empty() && lower.ends_with(ext.as_str()));
     std::env::split_paths(&path).find_map(|dir| {
-        suffixes
-            .iter()
-            .map(|ext| dir.join(format!("{program}{ext}")))
+        let written = as_written.then(|| dir.join(program));
+        written
+            .into_iter()
+            .chain(
+                suffixes
+                    .iter()
+                    .map(|ext| dir.join(format!("{program}{ext}"))),
+            )
             .find(|p| p.is_file())
     })
 }
@@ -521,6 +544,77 @@ mod tests {
             .unwrap();
         assert_eq!(c.param("realm"), Some("https://r.example/token"));
         assert_eq!(c.param("service"), Some("reg"));
+    }
+
+    #[test]
+    fn a_helper_name_that_already_carries_a_suffix_is_found_as_written() {
+        let dir = std::env::temp_dir().join(format!("slopvac-suffixed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("docker-credential-desktop.exe"), b"").unwrap();
+        let search = std::env::join_paths([&dir]).unwrap();
+        let suffixes = [".exe".to_owned(), ".com".to_owned()];
+        let found = find_with_suffixes("docker-credential-desktop.exe", Some(&search), &suffixes);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            found.unwrap().file_name().unwrap(),
+            "docker-credential-desktop.exe"
+        );
+    }
+
+    #[test]
+    fn a_suffixed_helper_name_is_not_found_without_an_executable_suffix() {
+        let dir = std::env::temp_dir().join(format!("slopvac-notexe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("docker-credential-x.bat"), b"").unwrap();
+        let search = std::env::join_paths([&dir]).unwrap();
+        let suffixes = [".exe".to_owned(), ".com".to_owned()];
+        let found = find_with_suffixes("docker-credential-x.bat", Some(&search), &suffixes);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(found.is_none(), "batch files must never be run");
+    }
+
+    fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: std::collections::HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |k| map.get(k).cloned()
+    }
+
+    #[test]
+    fn docker_config_dir_discovery_follows_each_platforms_home() {
+        for (windows, pairs, want) in [
+            (
+                false,
+                vec![("HOME", "/h")],
+                Some(Path::new("/h").join(".docker")),
+            ),
+            (false, vec![("USERPROFILE", "C:\\u")], None),
+            (
+                true,
+                vec![("USERPROFILE", "C:\\u")],
+                Some(Path::new("C:\\u").join(".docker")),
+            ),
+            (
+                true,
+                vec![("HOME", "/h")],
+                Some(Path::new("/h").join(".docker")),
+            ),
+            (
+                true,
+                vec![("USERPROFILE", "C:\\u"), ("HOME", "/h")],
+                Some(Path::new("C:\\u").join(".docker")),
+            ),
+            (
+                true,
+                vec![("DOCKER_CONFIG", "/d"), ("USERPROFILE", "C:\\u")],
+                Some(PathBuf::from("/d")),
+            ),
+            (false, vec![], None),
+        ] {
+            let got = DefaultCredentials::from_lookup(env_of(&pairs), windows).docker_config_dir;
+            assert_eq!(got, want, "windows={windows} {pairs:?}");
+        }
     }
 
     #[test]
