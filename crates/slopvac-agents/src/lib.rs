@@ -9,6 +9,7 @@ pub mod error;
 pub mod fsx;
 pub mod harness;
 pub mod managed;
+pub mod models;
 pub mod prime;
 pub mod review;
 pub mod setup;
