@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use slopvac_plugins::lock::{
-    Digest, Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, diff, outdated,
-    parse_version_req,
+    Digest, Lockfile, PackId, ResolvedPack, Source, SourceKind, Version, VersionReq, diff,
+    outdated, parse_version_req,
 };
 
 const D1: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -123,7 +123,7 @@ fn path_with_a_quote_is_escaped_on_write() {
     let lock = Lockfile::parse(&format!("schema_version = 3\n{text}")).unwrap();
     assert_eq!(
         lock.get(&id("p")).unwrap().source,
-        Source::Path("packs/a\"b".to_owned())
+        "packs/a\"b".parse::<Source>().unwrap()
     );
     assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
 }
@@ -300,8 +300,8 @@ fn source_display_reproduces_the_stored_text() {
     let text = format!("git+https://github.com/a/b@{COMMIT}");
     let source: Source = text.parse().unwrap();
     assert_eq!(
-        source,
-        Source::Git {
+        source.kind(),
+        &SourceKind::Git {
             url: "https://github.com/a/b".into(),
             commit: COMMIT.into()
         }

@@ -24,10 +24,7 @@ pub struct OutdatedPack {
 /// each an optional operator (`^ ~ = > >= < <=`) and a version with one to
 /// three numeric parts. Wildcards are not part of the grammar.
 pub fn parse_version_req(text: &str) -> Result<VersionReq, LockError> {
-    let fail = |message: String| LockError {
-        pointer: String::new(),
-        message,
-    };
+    let fail = |message: String| LockError::new("", message);
     for comparator in text.split(',') {
         let comparator = comparator.trim();
         let after_op = comparator.trim_start_matches(['^', '~', '=', '>', '<']);

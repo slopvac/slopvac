@@ -2,15 +2,12 @@ use semver::Version;
 use toml::{Table, Value};
 
 use super::model::{
-    Digest, KeyId, LockError, LockedPack, Lockfile, NotBefore, PackId, PackKind, Signature, Source,
-    ValueError,
+    Digest, KeyId, LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, MAX_STRING_BYTES, NotBefore,
+    PackId, PackKind, Signature, Source, ValueError,
 };
 
-fn err(pointer: &str, message: impl Into<String>) -> LockError {
-    LockError {
-        pointer: pointer.to_owned(),
-        message: message.into(),
-    }
+fn err(pointer: &str, message: impl AsRef<str>) -> LockError {
+    LockError::new(pointer, message)
 }
 
 /// A TOML table with its JSON Pointer, read under the unknown-key policy.
@@ -41,9 +38,12 @@ impl<'a> Obj<'a> {
     }
 
     fn string(&self, key: &str) -> Result<&'a str, LockError> {
-        self.required(key)?
+        let text = self
+            .required(key)?
             .as_str()
-            .ok_or_else(|| err(&self.at(key), "must be a string"))
+            .ok_or_else(|| err(&self.at(key), "must be a string"))?;
+        check_length(text, &self.at(key))?;
+        Ok(text)
     }
 
     fn parsed<T: std::str::FromStr<Err = ValueError>>(&self, key: &str) -> Result<T, LockError> {
@@ -53,8 +53,26 @@ impl<'a> Obj<'a> {
     }
 }
 
+fn check_length(text: &str, pointer: &str) -> Result<(), LockError> {
+    if text.len() > MAX_STRING_BYTES {
+        return Err(err(
+            pointer,
+            format!("longer than {MAX_STRING_BYTES} bytes"),
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
-    let table: Table = toml::from_str(text).map_err(|e| err("", format!("invalid TOML: {e}")))?;
+    if text.len() > MAX_LOCK_BYTES {
+        return Err(err("", format!("larger than {MAX_LOCK_BYTES} bytes")));
+    }
+    let table: Table = toml::from_str(text).map_err(|e| {
+        let at = e
+            .span()
+            .map_or(String::new(), |s| format!(" at byte {}", s.start));
+        err("", format!("invalid TOML{at}: {}", e.message()))
+    })?;
     let root = Obj::new(&table, String::new(), &["schema_version", "packs"])?;
     match root.required("schema_version")? {
         Value::Integer(3) => {}
@@ -98,19 +116,16 @@ fn pack(table: &Table, pointer: String) -> Result<LockedPack, LockError> {
         obj.required(key)?;
     }
     let version_text = obj.string("version")?;
-    let version = Version::parse(version_text)
-        .ok()
-        .filter(|v| v.build.is_empty())
-        .ok_or_else(|| {
-            err(
-                &obj.at("version"),
-                format!("`{version_text}` is not a semantic version without build metadata"),
-            )
-        })?;
+    let version = Version::parse(version_text).map_err(|_| {
+        err(
+            &obj.at("version"),
+            format!("`{version_text}` is not a semantic version"),
+        )
+    })?;
     let slopvac_api = obj
         .required("slopvac_api")?
         .as_integer()
-        .and_then(|n| u32::try_from(n).ok())
+        .and_then(|n| u64::try_from(n).ok())
         .filter(|&n| n >= 1)
         .ok_or_else(|| err(&obj.at("slopvac_api"), "must be an integer of at least 1"))?;
     Ok(LockedPack {
@@ -151,18 +166,15 @@ fn requires(obj: &Obj<'_>) -> Result<Vec<PackId>, LockError> {
     let items = value
         .as_array()
         .ok_or_else(|| err(&pointer, "must be an array of pack ids"))?;
-    let mut ids = Vec::with_capacity(items.len());
-    for (i, item) in items.iter().enumerate() {
-        let at = format!("{pointer}/{i}");
-        let id: PackId = item
-            .as_str()
-            .ok_or_else(|| err(&at, "must be a string"))?
-            .parse()
-            .map_err(|e: ValueError| err(&at, e.to_string()))?;
-        if ids.contains(&id) {
-            return Err(err(&at, format!("`{id}` is listed twice")));
-        }
-        ids.push(id);
-    }
-    Ok(ids)
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let at = format!("{pointer}/{i}");
+            let text = item.as_str().ok_or_else(|| err(&at, "must be a string"))?;
+            check_length(text, &at)?;
+            text.parse()
+                .map_err(|e: ValueError| err(&at, e.to_string()))
+        })
+        .collect()
 }

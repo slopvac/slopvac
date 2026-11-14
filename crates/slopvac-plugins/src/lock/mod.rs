@@ -1,5 +1,14 @@
 //! The `.slopvac/packs.lock` file (contract: `docs/contract/packs.md`, section 7).
 //!
+//! # Limits
+//!
+//! The reader is a trust boundary: a pull request can change the file. It
+//! rejects input over [`MAX_LOCK_BYTES`] (1 MiB) before it parses TOML, then
+//! more than [`MAX_PACKS`] (1,000) packs, more than [`MAX_REQUIRES`] (256)
+//! `requires` entries in a pack and any string over [`MAX_STRING_BYTES`]
+//! (4 KiB). Text from the file that appears in an error is escaped, so control
+//! and bidirectional characters cannot forge output.
+//!
 //! Everything here is pure: no network, no file system, no extraction. The sync
 //! code produces [`ResolvedPack`] lists and feeds them to [`diff()`]; the update
 //! code feeds available versions to [`outdated()`].
@@ -12,8 +21,8 @@ mod write;
 
 pub use diff::{Change, Delta, LockDiff, ResolvedPack, diff};
 pub use model::{
-    Digest, KeyId, LockError, LockedPack, Lockfile, NotBefore, PackId, PackKind, Signature, Source,
-    ValueError,
+    Digest, KeyId, LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, MAX_PACKS, MAX_REQUIRES,
+    MAX_STRING_BYTES, NotBefore, PackId, PackKind, Signature, Source, SourceKind, ValueError,
 };
 pub use outdated::{OutdatedPack, outdated, parse_version_req};
 pub use semver::{Version, VersionReq};
