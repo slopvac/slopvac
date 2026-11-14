@@ -9,7 +9,8 @@ match the hand-written text.
 
 - `schemas/v3/<artifact>.schema.json` uses kebab-case names. The artifacts are:
   `common`, `lint-report`, `rule`, `category`, `config`, `frontmatter`,
-  `pack-manifest`, `style`, `genre`, `terms`, `packs-lock` and `plugin-protocol`.
+  `pack-manifest`, `style`, `genre`, `terms`, `packs-lock`, `pack-index` and
+  `plugin-protocol`.
 - `schemas/v3/conformance/<artifact>/valid/` and `invalid/` hold instances in native
   TOML, YAML or JSON.
 - `invalid/cases.toml` maps each invalid file to a JSON pointer where it must fail.
@@ -18,6 +19,7 @@ match the hand-written text.
 
 ## Specs
 
+- [pack-index.md](pack-index.md) specifies the pack index and `packs search`.
 - [policies.md](policies.md) sets the network, accessibility and API lifecycle policies.
 - [compat/](compat/) holds the 2.x to 3.0 compatibility matrix and its dispositions.
 

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "slopvac"
+description = "Command-line prose linter for AI-generated text patterns."
+readme = "PYPI.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Sjors Robroek" }]
+keywords = ["linter", "prose", "documentation", "ai-slop"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Rust",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Text Processing :: Linguistic",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/srobroek/slopvac"
+Repository = "https://github.com/srobroek/slopvac"
+
+[tool.maturin]
+# Ship the Rust binary as the wheel's script; there is no Python module.
+bindings = "bin"
+strip = true
+# cargo-dist's `dist` profile inherits `release`, so both build with the same settings.
+profile = "release"
+locked = true
