@@ -1,6 +1,10 @@
 //! Inline directives.
 
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 mod common;
 

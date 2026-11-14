@@ -13,6 +13,8 @@ extend-exclude = [
   # Generated corpus (tests/fixtures/generate.py); it holds upper-, swapped- and
   # Kelvin-cased copies of rule examples on purpose.
   "crates/slopvac-rules/tests/fixtures/pattern-parity.json",
+  # Generated parity fixture (tests/fixtures/generate.py): matched text is cut mid-word.
+  "crates/slopvac-engine/tests/fixtures/engine-parity.json",
   # Generated patterns (tests/fixtures/generate_word_class.py) join random fragments.
   "crates/slopvac-text/tests/fixtures/word_class_differential.json",
 ]

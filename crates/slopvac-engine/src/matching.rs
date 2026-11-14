@@ -114,13 +114,12 @@ pub(crate) fn format_message(template: &str, matched: &str, replacement: &str) -
                 if name.contains('{') {
                     return template.to_owned();
                 }
-                match fields.iter().find(|(k, _)| *k == name) {
-                    Some((_, v)) => out.push_str(v),
-                    None => {
-                        out.push('{');
-                        out.push_str(name);
-                        out.push('}');
-                    }
+                if let Some((_, v)) = fields.iter().find(|(k, _)| *k == name) {
+                    out.push_str(v);
+                } else {
+                    out.push('{');
+                    out.push_str(name);
+                    out.push('}');
                 }
                 while chars.next_if(|&(j, _)| j <= i + 1 + close).is_some() {}
             }

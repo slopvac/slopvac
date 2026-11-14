@@ -1,6 +1,11 @@
 //! Skip ranges and diagram rules.
 
-#![allow(missing_docs, clippy::single_range_in_vec_init)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::single_range_in_vec_init
+)]
 
 mod common;
 

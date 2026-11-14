@@ -1,7 +1,7 @@
 //! Diagram rules: rules that read the labels of a diagram instead of prose.
 //!
 //! Diagram text is short labels, not sentences, so the prose pipeline does not read it.
-//! `slopvac-diagrams` extracts [`Fragment`]s from a diagram file or from a fenced
+//! `slopvac-diagrams` extracts `Fragment`s from a diagram file or from a fenced
 //! `mermaid` or `plantuml` block, and a [`DiagramChecker`] turns them into hits. The engine
 //! owns what a hit becomes: its level, the `slopvac-allow` directives, the position and the
 //! score.

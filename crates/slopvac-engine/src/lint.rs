@@ -219,14 +219,10 @@ impl Engine {
         for DiagramRule { id, severity } in checker.rules() {
             let category = category_of(&id);
             let key = id.as_str().to_owned();
-            self.catalog
-                .insert(key.clone(), Catalog::Diagram);
+            self.catalog.insert(key.clone(), Catalog::Diagram);
             if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
                 self.running.insert(key);
-                self.diagram_rules.insert(
-                    id,
-                    ActiveDiagram { severity },
-                );
+                self.diagram_rules.insert(id, ActiveDiagram { severity });
             }
         }
         self.checkers.push(checker);
@@ -592,7 +588,7 @@ impl Run<'_> {
             let detectors: Vec<&str> = rule
                 .exceptions()
                 .iter()
-                .filter_map(|e| e.detector.as_ref().map(|d| d.as_str()))
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
             for unit in self.prepared.units(rule.scope)? {
                 for range in loaded.find_all(unit.text)? {
@@ -636,12 +632,14 @@ impl Run<'_> {
             return Ok(None);
         }
         let matched = &unit.text[range.clone()];
-        let match_all_caps = loaded.matcher().is_some_and(|m| m.match_all_caps());
+        let match_all_caps = loaded
+            .matcher()
+            .is_some_and(slopvac_rules::LexicalMatcher::match_all_caps);
         if !match_all_caps && is_all_caps(matched) {
             return Ok(None);
         }
         let span = unit.span(range);
-        if skip.overlaps(span) {
+        if skip.hides(span) {
             return Ok(None);
         }
         let gate = rule.contexts.as_ref();
@@ -776,9 +774,7 @@ impl Run<'_> {
         let blocks = &self.parsed.blocks;
         let before = blocks
             .iter()
-            .filter(paragraph)
-            .filter(|b| b.span.end() <= fence.start())
-            .next_back();
+            .rfind(|b| paragraph(b) && b.span.end() <= fence.start());
         let after = blocks
             .iter()
             .filter(paragraph)

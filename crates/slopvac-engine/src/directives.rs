@@ -207,7 +207,7 @@ fn expand_block_targets(
 /// The backtick run lengths still open after `text[..end]`.
 fn runs_toggled(open: &BTreeSet<usize>, text: &str, end: usize) -> BTreeSet<usize> {
     let mut state = open.clone();
-    let bytes = text[..end].as_bytes();
+    let bytes = &text.as_bytes()[..end];
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'`' {
@@ -272,7 +272,14 @@ fn parse_allow(text: &str) -> Option<(String, Option<String>)> {
     if id_len == 0 {
         return None;
     }
-    let (rule, rest) = rest.split_at(id_len);
+    let (mut rule, mut rest) = rest.split_at(id_len);
+    // The id class holds `-`, so `rule=a.b-->` swallowed the arrow. Give it back, as a
+    // backtracking match would.
+    if rest.starts_with('>') && rule.ends_with("--") && rule.len() > 2 {
+        let keep = rule.len() - 2;
+        rest = &text[text.len() - rest.len() - 2..];
+        rule = &rule[..keep];
+    }
     let trimmed = rest.trim_start();
     if rest.len() != trimmed.len()
         && let Some(after) = trimmed.strip_prefix("reason=")

@@ -1,6 +1,10 @@
 //! Scores and gates, with expectations worked out by hand from the 2.x formulas.
 
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 use std::collections::BTreeMap;
 

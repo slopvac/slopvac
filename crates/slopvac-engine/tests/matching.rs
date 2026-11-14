@@ -1,6 +1,11 @@
 //! Matching: scopes, position mapping, filters and exceptions.
 
-#![allow(missing_docs, clippy::single_range_in_vec_init)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::single_range_in_vec_init
+)]
 
 mod common;
 
@@ -264,7 +269,7 @@ fn a_finding_lists_the_context_tags_that_cover_it() {
     let tags: Vec<&str> = doc.findings[0]
         .contexts
         .iter()
-        .map(|t| t.as_str())
+        .map(slopvac_model::ContextTag::as_str)
         .collect();
     assert!(tags.contains(&"requirement"), "{tags:?}");
     assert!(

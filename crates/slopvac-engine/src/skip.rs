@@ -14,7 +14,12 @@ use slopvac_rules::BlockKind as ExcludeKind;
 /// Sorted, merged source ranges.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkipRanges {
+    /// Blocks and code spans together.
     ranges: Vec<Span>,
+    /// The excluded blocks alone.
+    blocks: Vec<Span>,
+    /// The code spans alone.
+    code: Vec<Span>,
     unsupported: Vec<ExcludeKind>,
 }
 
@@ -34,9 +39,18 @@ impl SkipRanges {
     /// Whether `span` touches a skipped range. An empty span counts when it sits inside one.
     #[must_use]
     pub fn overlaps(&self, span: Span) -> bool {
-        let end = span.end().max(span.start() + 1);
-        let first = self.ranges.partition_point(|r| r.end() <= span.start());
-        self.ranges.get(first).is_some_and(|r| r.start() < end)
+        touches(&self.ranges, span)
+    }
+
+    /// Whether a rule must not report a match at `span`: it touches an excluded block, or
+    /// lies wholly inside inline code. A match that only reaches into inline code stays,
+    /// because the projection masks the code and the rest of the match is prose.
+    pub(crate) fn hides(&self, span: Span) -> bool {
+        touches(&self.blocks, span)
+            || self
+                .code
+                .iter()
+                .any(|c| c.start() <= span.start() && span.end() <= c.end())
     }
 
     /// Excluded kinds that the parsed document cannot locate, so no range was built for
@@ -45,6 +59,12 @@ impl SkipRanges {
     pub fn unsupported(&self) -> &[ExcludeKind] {
         &self.unsupported
     }
+}
+
+fn touches(ranges: &[Span], span: Span) -> bool {
+    let end = span.end().max(span.start() + 1);
+    let first = ranges.partition_point(|r| r.end() <= span.start());
+    ranges.get(first).is_some_and(|r| r.start() < end)
 }
 
 /// The source ranges a rule with these `exclude_blocks` skips in `doc`: the excluded
@@ -70,27 +90,34 @@ pub(crate) fn build(
     front_matter: Option<Span>,
     inline_code: bool,
 ) -> SkipRanges {
-    let mut ranges: Vec<Span> = Vec::new();
+    let mut blocks_found: Vec<Span> = Vec::new();
     let mut unsupported = Vec::new();
-    if inline_code {
-        ranges.extend(doc.code_spans.iter().copied());
-    }
+    let code = if inline_code {
+        merge(doc.code_spans.clone())
+    } else {
+        Vec::new()
+    };
     for kind in exclude {
         match kind {
             ExcludeKind::Heading => {
-                ranges.extend(blocks(doc, |k| matches!(k, BlockKind::Heading { .. })))
+                blocks_found.extend(blocks(doc, |k| matches!(k, BlockKind::Heading { .. })));
             }
             ExcludeKind::Code => {
-                ranges.extend(blocks(doc, |k| matches!(k, BlockKind::CodeBlock { .. })));
+                blocks_found.extend(blocks(doc, |k| matches!(k, BlockKind::CodeBlock { .. })));
             }
-            ExcludeKind::Table => ranges.extend(blocks(doc, |k| matches!(k, BlockKind::Table))),
-            ExcludeKind::CodeSpan => ranges.extend(doc.code_spans.iter().copied()),
-            ExcludeKind::FrontMatter => ranges.extend(front_matter),
+            ExcludeKind::Table => {
+                blocks_found.extend(blocks(doc, |k| matches!(k, BlockKind::Table)));
+            }
+            ExcludeKind::CodeSpan => blocks_found.extend(doc.code_spans.iter().copied()),
+            ExcludeKind::FrontMatter => blocks_found.extend(front_matter),
             ExcludeKind::ListItem | ExcludeKind::Quote => unsupported.push(*kind),
         }
     }
+    let blocks_merged = merge(blocks_found);
     SkipRanges {
-        ranges: merge(ranges),
+        ranges: merge(blocks_merged.iter().chain(&code).copied().collect()),
+        blocks: blocks_merged,
+        code,
         unsupported,
     }
 }

@@ -2180,6 +2180,7 @@ version = "0.0.0"
 dependencies = [
  "frontmatter-spans",
  "rayon",
+ "serde",
  "serde_json",
  "slopvac-context",
  "slopvac-diagrams",

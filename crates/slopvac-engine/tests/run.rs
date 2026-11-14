@@ -1,6 +1,10 @@
 //! Settings, rule selection, notices and parallel runs.
 
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 mod common;
 
@@ -100,7 +104,6 @@ fn applies_to_limits_a_rule_to_modes_and_genres() {
     let mut s = settings();
     s.mode = Mode::CodeComments;
     assert_eq!(lint(&with(s, &[code_only]), text).findings.len(), 1);
-    let _ = GenreId::new("reference").unwrap();
 }
 
 #[test]

@@ -1,0 +1,56 @@
+{
+ "README.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`).",
+  "ignore": [
+   "position"
+  ]
+ },
+ "CONTRIBUTING.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`).",
+  "ignore": [
+   "position"
+  ]
+ },
+ "docs/design/slopvac-3.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ.",
+  "ignore": [
+   "position",
+   "sentences"
+  ]
+ },
+ "docs/contract/lint-report.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ.",
+  "ignore": [
+   "position",
+   "sentences"
+  ]
+ },
+ "docs/contract/config.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ.",
+  "ignore": [
+   "position",
+   "sentences"
+  ]
+ },
+ "docs/migrate-2-to-3.md": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ.",
+  "ignore": [
+   "position",
+   "sentences",
+   "words",
+   "score"
+  ]
+ },
+ "example/ai-tells-structure.negative-guarantee-core/0": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`).",
+  "ignore": [
+   "position"
+  ]
+ },
+ "example/ai-tells-structure.negative-guarantee-core/1": {
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`).",
+  "ignore": [
+   "position"
+  ]
+ }
+}
