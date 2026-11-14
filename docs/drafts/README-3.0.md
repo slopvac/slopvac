@@ -23,7 +23,8 @@ AI-generated documentation, PR descriptions, Markdown, and comments in supported
 Coding agents use the CLI to inspect findings and apply fixes. The same checks run in pre-commit,
 CI, and editors.
 
-slopvac is one native binary. It needs no Python, Vale, or network access to lint.
+slopvac is one native binary. The core needs no Python and no Vale. A plugin can need its own
+runtime.
 
 ## Install
 
@@ -47,19 +48,32 @@ slopvac lint README.md
 ```
 
 `init` creates `slopvac.toml` when absent and keeps an existing file unless you pass `--force`. A
-passing run exits 0. Findings above a threshold exit 1. An incomplete check exits 2, and it is never
-a pass.
+passing run exits 0. Findings above a threshold exit 1. An incomplete check exits 2. Treat exit 2 as
+a failed check, never as a pass.
 
 ```sh
 slopvac lint README.md --format json --out slopvac-report.json
 slopvac lint README.md --fix
 ```
 
-`--fix` applies deterministic replacements. Review the diff before you keep them.
+`--fix` applies safe substitutions only and reports the other findings. Review the diff before you
+keep the edits.
 
-Output formats are `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`,
-`markdown`, and `html`. The language server reports the same findings to editors. Each finding links
-to the page for its rule.
+Output formats:
+
+- `text`
+- `json`
+- `github`
+- `sarif`
+- `rdjsonl`
+- `codeclimate`
+- `junit`
+- `checkstyle`
+- `markdown`
+- `html`
+
+The language server reports the same findings to editors. Each output format links each finding to
+the page for its rule.
 
 ## What it checks
 
@@ -81,23 +95,44 @@ slopvac rules
 slopvac explain prose-craft.relative-date
 ```
 
-A genre sets the profile for a document. `slopvac genre <file>` prints the detected genre. The
-`normal` profile is the default. Use `strict` for reference material and `relaxed` for informal text.
-Styles are ordered presets such as `ste` and `google`. The last style listed wins when two conflict.
-
 ## Configure a project
 
-Settings live in `slopvac.toml`. The nearest config to each file applies. Run this to see where each
-value comes from:
+Settings live in `slopvac.toml`, which starts with `schema_version = 3`. The nearest config to each
+file applies. The file can set:
+
+- `styles` and `extends`, which choose the rule presets and base configs
+- `packs` and `plugins`, which add data packs and code plugins
+- `[thresholds]`, which set the gates that fail a run
+- `[[overrides]]`, which change settings for matching paths
+- `[guidance]`, which sets how much detail `prime` prints
+- `[network]`, which sets offline mode and the update check
+
+Run this to see where each value comes from:
 
 ```sh
 slopvac lint --explain-config README.md
 ```
 
-It prints the layer, the file, and the line for each value, and what the value overrode. Unknown keys
-in a user file are errors. Keys that start with `x-` are ignored.
+It prints the layer, the file, and the line for each value, and what the value overrode. An unknown
+key in a user file is an error. Keys that start with `x-` are ignored.
 
 Terms live in `.slopvac/terms.toml`. Each term needs only `term`.
+
+## Network use
+
+The update check is the only network use of `lint`. It runs only for `lint`, `doctor`, `prime`, and
+`self update`, and it caches its result for 24 hours. Pack commands such as `plugins sync` connect
+only when you run them.
+
+These settings stop the update check:
+
+- `--offline` or `SLOPVAC_OFFLINE=1`
+- `[network] offline = true` in `slopvac.toml`
+- `[network] update_check = false` in `slopvac.toml`
+- `NO_UPDATE_NOTIFIER=1`, `SLOPVAC_NO_UPDATE_CHECK=1`, or `DO_NOT_TRACK=1`
+- The `CI` environment variable
+
+Offline mode is sticky. When any source turns it on, no other source turns it off.
 
 ## Agent setup
 
@@ -117,9 +152,9 @@ slopvac prime review   # at hand-off
 ```
 
 `prime write` prints the genre table and the documentation contract. `prime review` prints the review
-workflow: lint first, then the judgment checklist for the genre, then a check of factual claims
-against the source. The agent's own model runs the review. slopvac prints the workflow and does not
-call a model. Set `[guidance] level` in `slopvac.toml` to change the detail of each topic. A
+workflow. The agent lints first, answers the judgment checklist for the genre, and checks factual
+claims against the source. The agent's own model runs the review. slopvac prints the workflow and
+does not call a model. Set `[guidance] level` in `slopvac.toml` to change the detail of each topic. A
 `.slopvac/PRIME.md` file overrides a topic.
 
 ## CI integration
@@ -141,11 +176,11 @@ repos:
 - uses: srobroek/slopvac@v3.0.0 # x-release-please-version
   with:
     paths: README.md docs/
-    profile: normal
 ```
 
-The action posts review comments with reviewdog (`reporter: auto`) or uploads SARIF. See
-[action.yml](action.yml) for the inputs and outputs.
+The action has no `profile` input in 3.0. Choose styles and thresholds in `slopvac.toml`, and point
+the action at the file with the `config` input. It posts review comments with reviewdog by default,
+or uploads SARIF. See [action.yml](action.yml) for the inputs and outputs.
 
 ## Packs and plugins
 
@@ -154,17 +189,22 @@ plugin speaks JSON-RPC 2.0 over stdio and can add taggers, extractors, reporters
 and model providers.
 
 Packs are OCI artifacts on GHCR or any registry. Release archives, local folders, and git commits
-also work. `.slopvac/packs.lock` records the version, source, and digest of each pack. A minisign
-signature covers each published pack.
+also work. `.slopvac/packs.lock` records the version, source, and digest of each pack.
 
-slopvac refuses to load a code plugin until you trust it. The refusal prints the command:
+A minisign signature covers each published OCI pack, and `plugins sync` fails with exit 2 when the
+signature is missing or invalid. Local folders and git commits carry no signature. A git pin names a
+commit, and the trust hash covers the content.
+
+slopvac refuses to load a code plugin until it is trusted. The refusal prints the command:
 
 ```sh
 slopvac plugins trust <name>
 ```
 
-Trust is recorded per content hash. Agents and CI never trust on your behalf. `pack new`, `validate`,
-`test`, and `publish` build and release your own packs.
+Trust is recorded per content hash. Two things record trust: `plugins trust`, and a `SLOPVAC_TRUST`
+variable that a person wrote into the CI configuration. `plugins sync` and `plugins update` never
+record trust. Agents never trust on your behalf. `pack new`, `validate`, `test`, and `publish` build
+and release your own packs.
 
 ## Upgrade from 2.x
 
@@ -176,19 +216,19 @@ uvx slopvac@latest prime migrate
 slopvac migrate
 ```
 
-`migrate` previews the changes, then rewrites the config with comments kept. Vale is no longer used.
-See the [migration guide](docs/migrate-2-to-3.md).
+`migrate` previews the changes, then rewrites the config with comments kept. See the
+[migration guide](docs/migrate-2-to-3.md).
 
-## Limits and evaluation
+## Limits
 
 A passing run means the selected checks stayed within the configured thresholds. It does not
-establish factual correctness. AI-signal labels describe rule evidence and do not change the gate.
+establish factual correctness.
 
 ## Inspired by Vale
 
-slopvac began as a set of Vale styles, and Vale shaped its design. The rule test format and the
-style-and-package model come from [Vale](https://vale.sh). Thank you to the Vale authors and
-contributors. slopvac 3.0 no longer runs or requires Vale.
+slopvac began as a set of Vale styles, and its rule test format and style-and-package model come
+from [Vale](https://vale.sh). Thanks to the Vale authors and contributors. slopvac 3.0 runs without
+Vale.
 
 For Markdown hygiene, use [rumdl](https://github.com/rvben/rumdl) next to slopvac.
 
