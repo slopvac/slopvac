@@ -137,3 +137,31 @@ How a label forms:
 A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
 
 A rule needs 20 adjudicated true positives before the precision gate trusts it. `stats.json` lists the count per rule.
+
+## Model evals
+
+These evals compare models on the three review types: `mechanical`, `update` and `rewrite`. Their results feed the dated recommendation table in prime and the docs.
+
+```sh
+python -m evals models plan --models models.json            # count the calls and input size
+python -m evals models run --models models.json --confirm-calls <N>
+python -m evals models summarize evals/results/models/<date>.json
+```
+
+`models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. Ask the lead before you run a paid provider.
+
+Tasks come from the corpus:
+
+| Task | Role | Source | Success |
+| --- | --- | --- | --- |
+| mechanical | author | A seeded sentence and its rule | The rule does not fire on the output and no fact is lost. |
+| update | author | A planted number change | The new number appears, the old one is gone, nothing else moves. |
+| rewrite | author | A prose paragraph | No fact is lost and findings per word do not rise. |
+| rewrite | reviewer, planted | A rewrite pair with planted damage | The reviewer quotes every planted edit with at most one false alarm. |
+| rewrite | reviewer, authored | Another model's rewrite | The reviewer names every fact the lexical alignment finds lost. |
+
+The reviewer is always a different model from the author. Every task repeats at least three times. The summary averages repeats within a task, then resamples tasks for a 95% interval, and ranks models per review type and role.
+
+Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output.
+
+The results file records the date, the prompt version, the task-set hash, the models and one row per run with an output hash. The model text itself is not stored.

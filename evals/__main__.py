@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import labelling, runner, scoring
+from . import labelling, models, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -68,6 +68,49 @@ def cmd_score(args: argparse.Namespace) -> int:
     )
     _emit(card, args.out)
     return 0
+
+
+def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
+    notes = {}
+    rules_dir = Path(args.rules_dir)
+    if rules_dir.is_dir():
+        notes = labelling.rule_notes(rules_dir)
+    tasks = models.build_tasks(
+        lib.load_manifest(), _cache(args), per_type=args.per_type, notes=notes
+    )
+    return tasks, models.load_models(Path(args.models))
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    try:
+        if args.models_command == "summarize":
+            summary = models.summarize(models.load(Path(args.results)))
+            _emit(summary, args.out)
+            return 0
+        tasks, roster = _model_tasks(args)
+        counted = models.plan(tasks, roster, args.repeats)
+        if args.models_command == "plan":
+            _emit(counted, None)
+            return 0
+        if args.confirm_calls != counted["total_calls"]:
+            print(
+                f"evals models run: the plan is {counted['total_calls']} calls; "
+                "pass that number to --confirm-calls to approve it",
+                file=sys.stderr,
+            )
+            return 2
+        engine = runner.Engine.parse(args.engine)
+        results = models.execute(
+            tasks, roster, args.repeats, models.make_linter(engine)
+        )
+        models.dump(
+            results,
+            Path(args.out) if args.out else models.default_output(results["date"]),
+        )
+        return 0
+    except (models.ModelEvalError, runner.EngineError) as exc:
+        print(f"evals models: {exc}", file=sys.stderr)
+        return 2
 
 
 def cmd_ab(args: argparse.Namespace) -> int:
@@ -260,6 +303,27 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--reason", required=True)
     lr.add_argument("--date", default=None)
     lr.set_defaults(func=cmd_label_resolve)
+
+    mo = sub.add_parser("models", help="compare models per review type")
+    msub = mo.add_subparsers(dest="models_command", required=True)
+    for name in ("plan", "run"):
+        sp = msub.add_parser(name, help=f"{name} the model runs")
+        sp.add_argument(
+            "--models", required=True, help="JSON file naming a command per model"
+        )
+        sp.add_argument("--repeats", type=int, default=models.MIN_REPEATS)
+        sp.add_argument("--per-type", type=int, default=12)
+        sp.add_argument("--cache")
+        sp.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
+        sp.set_defaults(func=cmd_models)
+    run_parser = msub.choices["run"]
+    run_parser.add_argument("--engine", default="python")
+    run_parser.add_argument("--confirm-calls", type=int, required=True)
+    run_parser.add_argument("--out")
+    sm = msub.add_parser("summarize", help="summarise a results file")
+    sm.add_argument("results")
+    sm.add_argument("--out")
+    sm.set_defaults(func=cmd_models)
 
     a = sub.add_parser("ab", help="paired comparison of two stored results")
     a.add_argument("a")
