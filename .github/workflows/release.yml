@@ -454,9 +454,27 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Publish the draft release
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Require an immutable tag ruleset
+        shell: bash
+        run: |
+          python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"
+      - name: Check the release is the unpublished release-please release
+        shell: bash
+        env:
+          APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}
+        run: |
+          python3 scripts/release_provenance.py check-draft "$RELEASE_TAG" --repo "$REPO" --app-slug "$APP_SLUG"
+      - name: Confirm the tag still points at the workflow commit
+        shell: bash
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      - name: Publish the release
         shell: bash
         run: |
           gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false

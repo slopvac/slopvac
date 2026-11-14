@@ -22,7 +22,7 @@ The release-please token matters. A tag that the default `GITHUB_TOKEN` creates 
 
 ### Releases before 3.0
 
-A tag with major version below 3 does not go through dist. The `publish-legacy-release` job (the only other job with `contents: write`) publishes the release that release-please made, with `gh release edit --draft=false`, so a 2.x release ends as it did when release-please published it directly. The 2.x PyPI flow (`just release X.Y.Z`, then `publish-lint.yml`) is unchanged. The `route` job fails on a tag it cannot parse instead of skipping the gate.
+A tag with major version below 3 does not go through dist. The `publish-legacy-release` job (the only other job with `contents: write`) publishes the release that release-please made, so a 2.x release ends as it did when release-please published it directly. Right before it publishes, the job runs the same tag protection as the dist path: the ruleset check, then `verify-tag` (the remote tag must still equal the workflow commit). It also runs `release_provenance.py check-draft`, which reads the release read-only and fails unless it is unpublished and its author is `github-actions[bot]` or `<slug>[bot]`, where the optional repository variable `RELEASE_APP_SLUG` holds the release-please App's slug. The candidate gate does not apply to 2.x. The 2.x PyPI flow (`just release X.Y.Z`, then `publish-lint.yml`) is unchanged. The `route` job fails on a tag it cannot parse instead of skipping the checks.
 
 ## Check a change without publishing
 
@@ -56,7 +56,11 @@ Create a repository ruleset with these settings:
 
 Without this ruleset, someone who can write tags could move a tag after the checks pass. The `verify-tag` check narrows that window, and the ruleset closes it.
 
-`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It fails the release when the ruleset is missing, inactive, too narrow, or unreadable. The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). That page names no token permission for them, and it is not confirmed that the default `GITHUB_TOKEN` can read them. If the first release fails with a 403 or 404 although the ruleset exists, the check has failed closed as designed. In that case grant the token read access, or pass a token that can read rulesets as `GH_TOKEN` in that step.
+`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It fails the release when the ruleset is missing, inactive, too narrow, or unreadable.
+
+GitHub matches ref patterns with `fnmatch` under `File::FNM_PATHNAME` and adds the `~ALL` and `~DEFAULT_BRANCH` tokens (see [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)). The check does not reimplement that matching. It counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/v*`, or the exact tag ref, so use one of these. It treats an exclude as excluding the tag unless it provably cannot match.
+
+The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). That page names no token permission for them, and it is not confirmed that the default `GITHUB_TOKEN` can read them. If the first release fails with a 403 or 404 although the ruleset exists, the check has failed closed as designed. In that case grant the token read access, or pass a token that can read rulesets as `GH_TOKEN` in that step.
 
 ## Tag safety
 

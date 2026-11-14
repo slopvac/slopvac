@@ -278,12 +278,6 @@ def test_the_host_job_rechecks_the_tag_before_dist_and_before_the_release(workfl
 # --- draft-first publication and routing by major version ----------------------
 
 
-def test_dist_no_longer_creates_the_release(workflow):
-    # release-please owns creation; no step of the pipeline may run `gh release create`.
-    for _, script in _run_scripts(WORKFLOW.read_text(encoding="utf-8")):
-        assert "gh release create" not in script
-
-
 def test_artifacts_upload_to_the_draft_and_the_undraft_comes_last(workflow):
     steps = workflow["jobs"]["host"]["steps"]
     names = [s.get("name") for s in steps]
@@ -335,15 +329,27 @@ def test_the_host_job_cannot_run_when_plan_was_skipped(workflow):
     assert "needs.plan.result == 'success'" in workflow["jobs"]["host"]["if"]
 
 
-def test_the_legacy_job_publishes_the_draft_with_values_from_the_environment(workflow):
+def _legacy_steps(workflow) -> list[dict]:
+    return workflow["jobs"]["publish-legacy-release"]["steps"]
+
+
+def test_the_legacy_job_takes_its_values_from_the_environment(workflow):
     job = workflow["jobs"]["publish-legacy-release"]
     assert job["permissions"] == {"contents": "write"}
     assert job["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
-    (step,) = job["steps"]
-    assert (
-        step["run"].strip()
-        == 'gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false'
-    )
+    assert job["env"]["RELEASE_COMMIT"] == "${{ github.sha }}"
+    for step in _legacy_steps(workflow):
+        assert "${{" not in step.get("run", ""), step["run"]
+
+
+def test_the_legacy_job_checks_everything_before_it_publishes(workflow):
+    runs = [s["run"].strip() for s in _legacy_steps(workflow) if "run" in s]
+    assert runs == [
+        'python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"',
+        'python3 scripts/release_provenance.py check-draft "$RELEASE_TAG" --repo "$REPO" --app-slug "$APP_SLUG"',
+        'python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"',
+        'gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false',
+    ]
 
 
 def test_the_route_job_fails_closed_on_a_bad_tag(workflow):

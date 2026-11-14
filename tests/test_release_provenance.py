@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import json
 import sys
@@ -63,7 +64,7 @@ def make_runner(trees: dict[str, str], tags: list[str], runs: dict[str, list[dic
             name, kind = ref.rsplit("^", 1)
             return (trees[name] if kind == "{tree}" else f"sha-{name}") + "\n"
         if argv[:2] == ["git", "tag"]:
-            return "\n".join(tags)
+            return "\n".join(t for t in tags if fnmatch.fnmatchcase(t, argv[3]))
         assert argv[:2] == ["gh", "api"]
         query = dict(part.split("=") for part in argv[2].split("?")[1].split("&"))
         page, per_page = int(query["page"]), int(query["per_page"])
@@ -138,7 +139,10 @@ def test_a_prerelease_tag_is_not_a_stable_tag():
 
 
 def test_candidate_tags_of_other_versions_do_not_count():
-    runner = make_runner({"v3.0.0": "T1"}, [], {})
+    other = "rc/v3.1.0-rc.1"
+    runner = make_runner(
+        {"v3.0.0": "T1", other: "T1"}, [other], {f"sha-{other}": [good_run(other)]}
+    )
     with pytest.raises(ValueError, match="no candidate tag rc/v3.0.0-rc.N"):
         prov.check_stable("v3.0.0", "o/r", STABLE_SHA, runner)
 
@@ -244,3 +248,44 @@ def test_the_route_command_prints_the_output_line(capsys):
     assert prov.main(["route-tag", "v3.0.0"]) == 0
     assert capsys.readouterr().out == "gated=true\n"
     assert prov.main(["route-tag", "v3.0"]) == 1
+
+
+def release_view(is_draft, login):
+    def runner(argv):
+        assert argv[:3] == ["gh", "release", "view"]
+        return json.dumps({"isDraft": is_draft, "author": {"login": login}})
+
+    return runner
+
+
+@pytest.mark.parametrize(
+    ("login", "slug"),
+    [("github-actions[bot]", ""), ("release-app[bot]", "release-app")],
+)
+def test_an_unpublished_release_by_a_release_bot_passes(login, slug):
+    prov.check_draft("v2.19.0", "o/r", slug, release_view(True, login))
+
+
+@pytest.mark.parametrize(
+    ("is_draft", "login", "slug", "message"),
+    [
+        (False, "github-actions[bot]", "", "already published"),
+        (True, "some-maintainer", "", "was created by 'some-maintainer'"),
+        (True, "other-app[bot]", "release-app", "was created by 'other-app\\[bot\\]'"),
+        (True, "release-app[bot]", "", "was created by 'release-app\\[bot\\]'"),
+        (True, None, "", "was created by None"),
+    ],
+)
+def test_a_published_release_or_a_human_author_is_rejected(
+    is_draft, login, slug, message
+):
+    with pytest.raises(ValueError, match=message):
+        prov.check_draft("v2.19.0", "o/r", slug, release_view(is_draft, login))
+
+
+def test_a_missing_release_fails_closed():
+    def runner(argv):
+        raise RuntimeError("release not found")
+
+    with pytest.raises(RuntimeError, match="not found"):
+        prov.check_draft("v2.19.0", "o/r", "", runner)

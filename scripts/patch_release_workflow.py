@@ -230,9 +230,27 @@ _LEGACY_JOB = """
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Publish the draft release
+      - uses: {checkout}
+        with:
+          persist-credentials: false
+      - name: Require an immutable tag ruleset
+        shell: bash
+        run: |
+          python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"
+      - name: Check the release is the unpublished release-please release
+        shell: bash
+        env:
+          APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}
+        run: |
+          python3 scripts/release_provenance.py check-draft "$RELEASE_TAG" --repo "$REPO" --app-slug "$APP_SLUG"
+      - name: Confirm the tag still points at the workflow commit
+        shell: bash
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      - name: Publish the release
         shell: bash
         run: |
           gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false
@@ -269,7 +287,7 @@ def _route_by_major_version(text: str) -> str:
         + "    uses: ./.github/workflows/release-provenance.yml\n",
         "routed provenance job",
     )
-    return text.rstrip("\n") + "\n" + _LEGACY_JOB
+    return text.rstrip("\n") + "\n" + _LEGACY_JOB.replace("{checkout}", checkout[1])
 
 
 def _gate_on_provenance(text: str) -> str:

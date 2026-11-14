@@ -16,6 +16,9 @@ Subcommands:
       publishing, so a tag moved after the check cannot be released
   requires-gate VERSION
       print true when a stable release of VERSION needs the gate
+  check-draft TAG --repo OWNER/NAME [--app-slug SLUG]
+      exit 0 when the release for TAG is unpublished and was created by
+      github-actions[bot] or SLUG[bot] (release-please); read-only
   route-tag TAG
       print ``gated=true`` for vX.Y.Z of major 3 or later (the dist pipeline) and
       ``gated=false`` for earlier majors (publish the release-please draft only);
@@ -193,6 +196,29 @@ def verify_tag(tag: str, sha: str, runner: Runner = run_command) -> None:
         raise ValueError(f"{tag} moved to {current}; the release was built from {sha}")
 
 
+def check_draft(
+    tag: str, repo: str, app_slug: str = "", runner: Runner = run_command
+) -> None:
+    """Fail unless ``tag``'s release exists, is unpublished, and a release bot made it."""
+    if _STABLE_TAG.fullmatch(tag) is None:
+        raise ValueError(f"not a stable tag (expected vX.Y.Z): {tag}")
+    release = json.loads(
+        runner(
+            ["gh", "release", "view", tag, "--repo", repo, "--json", "isDraft,author"]
+        )
+    )
+    if release.get("isDraft") is not True:
+        raise ValueError(f"the release for {tag} is already published")
+    allowed = {"github-actions[bot]"}
+    if app_slug:
+        allowed.add(f"{app_slug}[bot]")
+    login = (release.get("author") or {}).get("login")
+    if login not in allowed:
+        raise ValueError(
+            f"the release for {tag} was created by {login!r}, not by {sorted(allowed)}"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
@@ -209,6 +235,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify.add_argument("sha")
     gate = sub.add_parser("requires-gate")
     gate.add_argument("version")
+    draft = sub.add_parser("check-draft")
+    draft.add_argument("tag")
+    draft.add_argument("--repo", required=True, help="owner/name")
+    draft.add_argument("--app-slug", default="")
     route = sub.add_parser("route-tag")
     route.add_argument("tag")
     args = parser.parse_args(argv)
@@ -221,6 +251,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"candidate={check_stable(args.tag, args.repo, args.sha)}")
         elif args.command == "verify-tag":
             verify_tag(args.tag, args.sha)
+        elif args.command == "check-draft":
+            check_draft(args.tag, args.repo, args.app_slug)
         elif args.command == "route-tag":
             print(f"gated={'true' if route_tag(args.tag) else 'false'}")
         else:
