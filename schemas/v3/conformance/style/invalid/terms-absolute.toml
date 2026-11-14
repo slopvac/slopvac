@@ -1,0 +1,5 @@
+schema_version = 3
+id = "s"
+
+[terms]
+files = ["/etc/terms.toml"]

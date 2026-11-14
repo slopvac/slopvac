@@ -13,3 +13,6 @@ weight = 0.5
 
 [categories.ste-vocabulary]
 severity = "off"
+
+[categories.prose-scope]
+minimum_severity = "warning"

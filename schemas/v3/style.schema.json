@@ -38,7 +38,7 @@
       "uniqueItems": true
     },
     "categories": {
-      "description": "Category dials, keyed by category name. A bare level sets the severity of every rule in the category.",
+      "description": "Category dials, keyed by category name. A bare level sets the severity of every rule in the category. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/Key"
@@ -48,7 +48,7 @@
       }
     },
     "rules": {
-      "description": "Rule levels, keyed by rule name. A rule entry wins over the category entry.",
+      "description": "Rule levels, keyed by rule name. A rule entry wins over the category entry. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/Key"
@@ -104,8 +104,7 @@
           "description": "Terms files, relative to this style file.",
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/$defs/RelPath"
           }
         }
       },
@@ -145,6 +144,12 @@
       "else": {
         "$ref": "#/$defs/Level"
       }
+    },
+    "RelPath": {
+      "description": "A path relative to this file: no leading slash or drive letter, no backslash and no .. segment.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))"
     }
   }
 }

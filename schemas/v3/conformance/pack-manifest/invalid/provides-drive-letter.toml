@@ -1,0 +1,8 @@
+schema_version = 3
+id = "t"
+version = "1.0.0"
+slopvac_api = 1
+kind = "data"
+
+[provides]
+styles = ["C:/x.toml"]

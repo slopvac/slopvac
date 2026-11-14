@@ -89,9 +89,9 @@
   "additionalProperties": false,
   "$defs": {
     "Semver": {
-      "description": "Semantic version 2.0.0 without build metadata.",
+      "description": "Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no leading zeros.",
       "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
     },
     "VersionReq": {
       "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts.",
@@ -169,7 +169,7 @@
       "additionalProperties": false
     },
     "Plugin": {
-      "description": "How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network, hooks, features) sit flat in this table, so the host reads them from the same bytes that it hashes. See the PluginDeclaration def in plugin-protocol.schema.json.",
+      "description": "How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network, hooks, features) sit flat in this table, so the host reads them from the same bytes that it hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the hook entries and the features table: they take only the declared keys and x- keys, so the hashed bytes carry no unreviewed data.",
       "allOf": [
         {
           "$ref": "plugin-protocol.schema.json#/$defs/PluginDeclaration"
@@ -195,6 +195,27 @@
             "pattern": "^[A-Z_][A-Z0-9_]*$"
           },
           "uniqueItems": true
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "plugin-protocol.schema.json#/$defs/HookDecl",
+            "patternProperties": {
+              "^x-": {}
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "features": {
+          "type": "object",
+          "properties": {
+            "required": true,
+            "optional": true
+          },
+          "patternProperties": {
+            "^x-": {}
+          },
+          "additionalProperties": false
         }
       },
       "required": [

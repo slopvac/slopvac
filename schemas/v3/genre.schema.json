@@ -58,7 +58,8 @@
       },
       "additionalProperties": {
         "$ref": "style.schema.json#/$defs/Level"
-      }
+      },
+      "description": "Levels keyed by category name. Keys are data, so the x- convention does not apply."
     },
     "rules": {
       "type": "object",
@@ -67,7 +68,8 @@
       },
       "additionalProperties": {
         "$ref": "style.schema.json#/$defs/Level"
-      }
+      },
+      "description": "Levels keyed by rule name. Keys are data, so the x- convention does not apply."
     }
   },
   "required": [

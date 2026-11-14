@@ -49,9 +49,9 @@
           "$ref": "common.schema.json#/$defs/ApiVersion"
         },
         "source": {
-          "description": "An oci:// reference, a git+https:// URL pinned to a full commit hash after @, or a path relative to the lockfile's project root.",
+          "description": "An oci:// reference, an https:// release archive URL, a git+https:// URL pinned to a full commit hash after @, or a path relative to the project root. http:// is rejected.",
           "type": "string",
-          "pattern": "^(oci://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$"
+          "pattern": "^(oci://\\S+|https://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$"
         },
         "digest": {
           "$ref": "#/$defs/Digest"
@@ -64,10 +64,16 @@
               "description": "Minisign key id, 16 hex digits.",
               "type": "string",
               "pattern": "^[0-9A-F]{16}$"
+            },
+            "not_before": {
+              "description": "The notBefore time of the signed statement, in UTC. `plugins update` refuses an older value than the lockfile holds unless the user passes the downgrade flag.",
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
             }
           },
           "required": [
-            "key_id"
+            "key_id",
+            "not_before"
           ],
           "patternProperties": {
             "^x-": {}

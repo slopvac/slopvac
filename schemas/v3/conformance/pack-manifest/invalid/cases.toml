@@ -11,3 +11,8 @@
 "provides-absolute.toml" = "/provides/terms/0"
 "requires-without-version.toml" = "/requires/0"
 "kind-missing.toml" = ""
+"plugin-features-unknown-key.toml" = "/plugin/features"
+"plugin-hook-unknown-key.toml" = "/plugin/hooks/0"
+"version-prerelease-leading-zero.toml" = "/version"
+"provides-drive-letter.toml" = "/provides/styles/0"
+"provides-backslash.toml" = "/provides/styles/0"

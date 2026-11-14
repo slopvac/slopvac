@@ -1,0 +1,5 @@
+schema_version = 3
+id = "s"
+
+[categories.prose-craft]
+minimum_severity = "fatal"

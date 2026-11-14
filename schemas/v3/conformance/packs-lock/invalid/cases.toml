@@ -6,3 +6,8 @@
 "digest-missing.toml" = "/packs/0"
 "trust-recorded.toml" = "/packs/0"
 "key-id-short.toml" = "/packs/0/signature/key_id"
+"source-http.toml" = "/packs/0/source"
+"source-drive-letter.toml" = "/packs/0/source"
+"source-backslash.toml" = "/packs/0/source"
+"sig-no-not-before.toml" = "/packs/0/signature"
+"sig-not-before-offset.toml" = "/packs/0/signature/not_before"

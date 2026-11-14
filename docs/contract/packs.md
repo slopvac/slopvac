@@ -25,7 +25,7 @@ Every file carries `schema_version = 3`. Unknown keys are errors, and keys with 
 - `slopvac_api` is the extension API the pack targets, apart from `schema_version`. A host that implements a lower API exits 2 and does not load the pack.
 - `kind = "data"` forbids the `[plugin]` table. `kind = "plugin"` requires it.
 - `requires` lists other packs with a version requirement. The host resolves them first and reports a cycle as an error.
-- The `[plugin]` table embeds the [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration) fields `network`, `hooks` and `features` flat, next to `command`, `args` and `env`. The host reads the declaration from the same bytes that `slopvac plugins trust` hashes (plugin-protocol.md section 4.3). A change to any field in the table changes the hash.
+- The `[plugin]` table embeds the [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration) fields `network`, `hooks` and `features` flat, next to `command`, `args` and `env`. The host reads the declaration from the same bytes that `slopvac plugins trust` hashes (plugin-protocol.md section 4.3). A change to any field in the table changes the hash. The manifest closes the hook entries and the `features` table, so they take only the declared keys and `x-` keys.
 - Rule ids take the pack id as their prefix: `<pack>:<category>.<rule>`. The pack id `core` belongs to the built-in pack.
 
 ## 3. Styles
@@ -57,8 +57,9 @@ A terms entry needs `term`. `variants` lists spellings that checks may flag and 
 `slopvac plugins sync` writes `.slopvac/packs.lock` sorted by pack id. An entry pins `version`, `source` and `digest`.
 
 - A `git+https` source ends in `@` and a full 40-digit commit hash. A branch or tag name is invalid.
+- An `https://` release archive is a valid source. `http://` is invalid.
 - A path source is relative to the project root.
-- `signature.key_id` appears only when the host verified a minisign signature.
+- `signature` appears only when the host verified a minisign signature. It holds `key_id` and `not_before`, the `notBefore` time of the signed statement. `plugins update` refuses an older `not_before` than the lockfile holds unless the user passes the downgrade flag (threat-model.md, section 5.3).
 - The lockfile records no trust. `slopvac plugins trust` keeps trust apart, per content hash.
 - A run recomputes the digest of each loaded pack. A mismatch is an error with exit 2.
 
