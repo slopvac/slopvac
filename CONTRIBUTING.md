@@ -31,6 +31,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace --no-tests=pass
 ```
 
+A new crate needs a `Cargo.lock` entry in `extra-files` in `release-please-config.json`, or the release PR does not bump its version.
+
 ## Prose checks
 
 Run Slopvac's repository prose gate on the files you changed:
