@@ -201,3 +201,161 @@ fn directives_sit_above_front_matter_and_below_flags() {
     );
     drop(cli);
 }
+
+fn found(doc: &str, file: &str) -> usize {
+    find(doc, file).len()
+}
+
+#[test]
+fn markdown_code_blocks_are_examples_not_directives() {
+    let directive = "<!-- slopvac: locale=en-GB -->\n";
+    let cases = [
+        ("backtick fence", format!("```\n{directive}```\n"), 0),
+        ("tilde fence", format!("~~~\n{directive}~~~\n"), 0),
+        ("info string", format!("```markdown\n{directive}```\n"), 0),
+        (
+            "longer closing fence",
+            format!("```\n{directive}`````\n{directive}"),
+            1,
+        ),
+        (
+            "shorter fence does not close",
+            format!("````\n```\n{directive}````\n{directive}"),
+            1,
+        ),
+        ("indented code", format!("    {directive}"), 0),
+        ("tab indented code", format!("\t{directive}"), 0),
+        (
+            "inline code",
+            "`<!-- slopvac: locale=en-GB -->`\n".to_owned(),
+            0,
+        ),
+        (
+            "after a closed fence",
+            format!("```\ncode\n```\n{directive}"),
+            1,
+        ),
+        ("plain", directive.to_owned(), 1),
+    ];
+    for (name, doc, want) in cases {
+        assert_eq!(found(&doc, "a.md"), want, "{name}");
+    }
+}
+
+#[test]
+fn html_raw_elements_hold_text_not_directives() {
+    let d = "<!-- slopvac: locale=en-GB -->\n";
+    assert_eq!(found(&format!("<pre>\n{d}</pre>\n"), "a.html"), 0);
+    assert_eq!(found(&format!("<script>\n{d}</script>\n{d}"), "a.html"), 1);
+}
+
+#[test]
+fn restructuredtext_literal_blocks_hold_text_not_directives() {
+    let d = ".. slopvac: locale=en-GB\n";
+    let cases = [
+        ("literal block", format!("Example::\n\n    {d}\n"), 0),
+        ("code-block", format!(".. code-block:: rst\n\n   {d}\n"), 0),
+        (
+            "after the block",
+            format!("Example::\n\n    code\n\n{d}"),
+            1,
+        ),
+        ("plain", d.to_owned(), 1),
+    ];
+    for (name, doc, want) in cases {
+        assert_eq!(found(&doc, "a.rst"), want, "{name}");
+    }
+}
+
+#[test]
+fn multi_line_strings_in_code_hold_data_not_directives() {
+    let cases = [
+        (
+            "python docstring",
+            "\"\"\"\n# slopvac: locale=fr\n\"\"\"\n",
+            "a.py",
+            0,
+        ),
+        (
+            "single line docstring",
+            "\"\"\"doc\"\"\"\n# slopvac: locale=en-GB\n",
+            "a.py",
+            1,
+        ),
+        (
+            "after a docstring",
+            "\"\"\"\ntext\n\"\"\"\n# slopvac: locale=en-GB\n",
+            "a.py",
+            1,
+        ),
+        (
+            "template literal",
+            "const s = `\n// slopvac: locale=fr\n`;\n",
+            "a.js",
+            0,
+        ),
+        (
+            "comment with one backtick",
+            "// it`s fine\n// slopvac: locale=en-GB\n",
+            "a.js",
+            1,
+        ),
+    ];
+    for (name, doc, file, want) in cases {
+        assert_eq!(found(doc, file), want, "{name}");
+    }
+}
+
+#[test]
+fn a_directive_in_an_example_does_not_change_the_settings() {
+    let doc = "```\n<!-- slopvac: locale=fr -->\n```\n<!-- slopvac: locale=en-GB -->\n";
+    let out = read(doc, "a.md", &default_policy());
+    assert_eq!(out.diagnostics, []);
+    assert_eq!(out.settings.len(), 1);
+    assert_eq!(out.settings[0].source.line, Some(4));
+}
+
+#[test]
+fn a_directive_can_pick_the_genre_that_supplies_the_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(root.join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    let cfg = load(&root.join("slopvac.toml"), &Genres).unwrap();
+    let policy = Policy::from_config(&cfg);
+    let dirs = read("<!-- slopvac: genre=reference -->\n", "a.md", &policy);
+    let r = cfg.resolve(
+        Path::new("a.md"),
+        &Inputs {
+            presets: &Genres,
+            front_matter: &[],
+            directives: &dirs.settings,
+            cli: &[],
+            env: &[],
+        },
+    );
+    assert_eq!(r.get(&["locale"]), Some(&json!("en-GB")));
+}
+
+struct Genres;
+
+impl slopvac_config::Presets for Genres {
+    fn style(&self, _name: &str) -> Option<Vec<slopvac_config::Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, name: &str) -> Vec<Vec<slopvac_config::Setting>> {
+        if name == "reference" {
+            vec![vec![slopvac_config::Setting::bare(
+                Layer::Genre,
+                &["locale"],
+                json!("en-GB"),
+            )]]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<slopvac_config::PackFile> {
+        None
+    }
+}

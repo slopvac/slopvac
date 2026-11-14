@@ -53,13 +53,18 @@ fn style_of(file: &str) -> Style {
 }
 
 /// Find the directives in `doc`. `file` picks the comment style by its extension.
+///
+/// Only real comments count. Lines inside a Markdown or HTML code block, a reStructuredText
+/// literal block, or a multi-line string in code are examples or data, not directives.
 #[must_use]
 pub fn find(doc: &str, file: &str) -> Vec<Directive> {
     let style = style_of(file);
+    let mut literal = Literals::new(style);
     let mut out = Vec::new();
     let mut offset = 0;
     for line in doc.split_inclusive('\n') {
-        if let Some(payload) = payload_of(line, style) {
+        let in_literal = literal.step(line);
+        if !in_literal && let Some(payload) = payload_of(line, style) {
             let start = offset + payload.start;
             let range = start..offset + payload.end;
             out.push(Directive {
@@ -70,6 +75,136 @@ pub fn find(doc: &str, file: &str) -> Vec<Directive> {
         offset += line.len();
     }
     out
+}
+
+/// Tracks, line by line, whether the text is inside a code block or string.
+struct Literals {
+    style: Style,
+    fence: Option<(char, usize)>,
+    raw_tag: Option<&'static str>,
+    rst_pending: bool,
+    rst_active: bool,
+    string: Option<&'static str>,
+}
+
+const RAW_TAGS: &[&str] = &["pre", "script", "style", "code", "textarea"];
+const STRING_DELIMITERS: &[&str] = &["\"\"\"", "'''", "`"];
+const RST_LITERAL_DIRECTIVES: &[&str] = &[
+    ".. code-block::",
+    ".. code::",
+    ".. sourcecode::",
+    ".. parsed-literal::",
+];
+
+impl Literals {
+    fn new(style: Style) -> Self {
+        Self {
+            style,
+            fence: None,
+            raw_tag: None,
+            rst_pending: false,
+            rst_active: false,
+            string: None,
+        }
+    }
+
+    /// Feed the next line; true when that line is inside a literal context.
+    fn step(&mut self, line: &str) -> bool {
+        match self.style {
+            Style::Html => self.step_markup(line),
+            Style::Rst => self.step_rst(line),
+            Style::Line => self.step_code(line),
+        }
+    }
+
+    fn step_markup(&mut self, line: &str) -> bool {
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        let body = line.trim_start_matches(' ');
+        if let Some((ch, len)) = self.fence {
+            let run = body.chars().take_while(|c| *c == ch).count();
+            if run >= len && body[run..].trim().is_empty() {
+                self.fence = None;
+            }
+            return true;
+        }
+        if indent <= 3
+            && let Some(ch) = body.chars().next().filter(|c| *c == '`' || *c == '~')
+        {
+            let run = body.chars().take_while(|c| *c == ch).count();
+            if run >= 3 && !(ch == '`' && body[run..].contains('`')) {
+                self.fence = Some((ch, run));
+                return true;
+            }
+        }
+        if let Some(tag) = self.raw_tag {
+            if line.to_ascii_lowercase().contains(&format!("</{tag}")) {
+                self.raw_tag = None;
+            }
+            return true;
+        }
+        let lower = line.to_ascii_lowercase();
+        for tag in RAW_TAGS {
+            if let Some(at) = lower.find(&format!("<{tag}"))
+                && !lower[at..].contains(&format!("</{tag}"))
+            {
+                self.raw_tag = Some(tag);
+                return true;
+            }
+        }
+        indent >= 4 || line.starts_with('\t')
+    }
+
+    fn step_rst(&mut self, line: &str) -> bool {
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        let blank = line.trim().is_empty();
+        if self.rst_active {
+            if blank || indented {
+                return true;
+            }
+            self.rst_active = false;
+        }
+        if self.rst_pending {
+            if blank {
+                return false;
+            }
+            self.rst_pending = false;
+            if indented {
+                self.rst_active = true;
+                return true;
+            }
+        }
+        let trimmed = line.trim_end();
+        let lower = trimmed.to_ascii_lowercase();
+        if RST_LITERAL_DIRECTIVES.iter().any(|d| lower.starts_with(d))
+            || (trimmed.ends_with("::") && !trimmed.starts_with(".. "))
+        {
+            self.rst_pending = true;
+        }
+        false
+    }
+
+    fn step_code(&mut self, line: &str) -> bool {
+        if let Some(open) = self.string {
+            if line.matches(open).count() % 2 == 1 {
+                self.string = None;
+            }
+            return true;
+        }
+        let t = line.trim_start();
+        if ["#", "//", "--", ";", "/*", "*"]
+            .iter()
+            .any(|c| t.starts_with(c))
+        {
+            return false;
+        }
+        for delim in STRING_DELIMITERS {
+            if line.matches(delim).count() % 2 == 1 {
+                self.string = Some(delim);
+                return false;
+            }
+        }
+        false
+    }
 }
 
 /// The byte range of the text after `slopvac:` in a directive comment, if `line` is one.
