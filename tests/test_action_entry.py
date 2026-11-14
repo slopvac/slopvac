@@ -6,6 +6,8 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
+import pytest
+
 from scripts import action_entry
 
 
@@ -149,3 +151,36 @@ def test_changed_only_missing_merge_base_fails_closed(tmp_path, monkeypatch, cap
     with patch("scripts.action_entry.subprocess.run", side_effect=missing_base):
         assert action_entry.resolve_targets() == 1
     assert "merge base" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("name", "logged"),
+    [
+        ("a.md\n::error::forged.md", "a.md%0A::error::forged.md"),
+        ("a.md\r::add-mask::secret.md", "a.md%0D::add-mask::secret.md"),
+        ("a.md\n::stop-commands::tok.md", "a.md%0A::stop-commands::tok.md"),
+        ("::error::lead.md", "::error::lead.md"),
+        ("100%0A.md", "100%250A.md"),
+        ("bell\x07esc\x1b.md", "bell%07esc%1B.md"),
+    ],
+)
+def test_changed_file_names_are_escaped_in_log_output(
+    tmp_path, monkeypatch, capsys, name, logged
+):
+    monkeypatch.setenv("CHANGED_ONLY", "true")
+    monkeypatch.setenv("BASE_SHA", "abc123")
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+
+    def fake_run(command, **kwargs):
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(command, 0, stdout=name.encode() + b"\0", stderr=b"")
+
+    with patch("scripts.action_entry.subprocess.run", side_effect=fake_run):
+        assert action_entry.resolve_targets() == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [f"- {logged}"]
+    assert not any(line.lstrip().startswith("::") for line in lines)
+    # The linter still receives the exact, unescaped name.
+    assert action_entry._read_paths(tmp_path / "slopvac-paths") == [name]

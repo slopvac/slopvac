@@ -32,6 +32,20 @@ class ActionError(RuntimeError):
     """Raised for an action failure that should produce exit code 2."""
 
 
+def _escape_log(text: str) -> str:
+    """Encode text so GitHub cannot read it as a workflow command.
+
+    Uses the runner's encoding (`%` -> `%25`, CR -> `%0D`, LF -> `%0A`) and
+    extends it to the other C0 controls and DEL.
+    """
+    return "".join(
+        f"%{ord(char):02X}"
+        if char == "%" or ord(char) < 0x20 or ord(char) == 0x7F
+        else char
+        for char in text
+    )
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
@@ -139,7 +153,9 @@ def resolve_targets() -> int:
 
     _write_paths(paths_file, paths)
     _write_output({"list": paths_file})
-    print(*paths, sep="\n")
+    # Prefix each line: a name that begins with "::" must not start a command.
+    for path in paths:
+        print(f"- {_escape_log(path)}")
     return 0
 
 
