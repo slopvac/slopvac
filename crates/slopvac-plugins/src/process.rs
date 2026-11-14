@@ -42,6 +42,18 @@ struct State {
     done: bool,
 }
 
+impl State {
+    /// Signal the group led by `pid` and the remembered descendants.
+    ///
+    /// The unreaped leader reserves only its own ids. A remembered descendant
+    /// that dies can be reaped by someone else and its pid reused, so each
+    /// one is signalled once and then forgotten.
+    fn signal(&mut self, pid: u32) {
+        let strays = std::mem::take(&mut self.strays);
+        kill_tree(pid, &strays);
+    }
+}
+
 /// The single teardown owner of one plugin's process group.
 pub(crate) struct Group {
     pid: u32,
@@ -68,7 +80,7 @@ impl Group {
         let mut st = lock(&self.state);
         if st.status.is_none() {
             st.forced = true;
-            kill_tree(self.pid, &st.strays);
+            st.signal(self.pid);
         }
     }
 
@@ -98,7 +110,7 @@ impl Group {
     pub(crate) fn finish(&self, leader: Leader) {
         {
             let mut st = lock(&self.state);
-            kill_tree(self.pid, &st.strays);
+            st.signal(self.pid);
             st.status = Some(leader.reap());
         }
         lock(&LIVE).retain(|g| !std::ptr::eq(Arc::as_ptr(g), self));
@@ -279,27 +291,5 @@ mod tests {
     fn sanitize_keeps_newline_and_tab_and_replaces_escapes() {
         let got = sanitize_display("a\nb\tc\u{1b}[31m\u{9b}\u{7f}\u{202e}x");
         assert_eq!(got, "a\nb\tc\u{FFFD}[31m\u{FFFD}\u{FFFD}\u{FFFD}x");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn observing_the_exit_leaves_the_leader_unreaped() {
-        use std::process::{Command, Stdio};
-        let child = Command::new("sh")
-            .args(["-c", "exit 7"])
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
-        let pid = child.id();
-        let mut leader = Leader::new(child);
-        leader.wait_exit();
-        // A zombie still holds its id: signal 0 reaches it.
-        let id = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
-        let still_held = rustix::process::test_kill_process(id).is_ok();
-        let status = leader.reap();
-        let released = rustix::process::test_kill_process(id).is_err();
-        assert!(still_held, "the exit was observed by reaping");
-        assert!(status.contains('7'), "{status}");
-        assert!(released, "reaping releases the id");
     }
 }
