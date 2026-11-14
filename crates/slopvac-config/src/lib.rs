@@ -22,6 +22,8 @@ pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
 pub use load::{LoadedConfig, load};
 pub use presets::{NoPresets, PackFile, Presets};
-pub use resolve::{Explained, Inputs, Resolved, core_defaults, describe, render_explain};
+pub use resolve::{
+    Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,
+};
 pub use schema::{validate_config, validate_frontmatter};
 pub use source::{Layer, Setting, Source};

@@ -35,6 +35,7 @@ pub struct Block {
     pub files: Vec<String>,
     /// The settings it patches in, in layer `override`.
     pub settings: Vec<Setting>,
+    order: usize,
     matcher: Gitignore,
 }
 
@@ -113,12 +114,10 @@ impl LoadedConfig {
 
 /// Load the config at `path` and everything it extends.
 pub fn load(path: &Path, presets: &dyn Presets) -> Result<LoadedConfig, ConfigError> {
-    let abs = fs::canonicalize(path).map_err(|source| ConfigError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
+    let given = path.display().to_string();
+    let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(&given, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = read(&abs)?;
+    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(&given, source))?;
     let mut loader = Loader {
         root: &root,
         presets,
@@ -166,13 +165,6 @@ fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
         let _ = builder.add_line(None, p);
     }
     builder.build().unwrap_or_else(|_| Gitignore::empty())
-}
-
-fn read(path: &Path) -> Result<String, ConfigError> {
-    fs::read_to_string(path).map_err(|source| ConfigError::Io {
-        path: path.display().to_string(),
-        source,
-    })
 }
 
 /// Lexically normalise `path`: drop `.` and fold `..` against the preceding component.
@@ -353,6 +345,7 @@ impl Loader<'_> {
                 out.push(Block {
                     index,
                     kind,
+                    order: item.span.start,
                     files,
                     settings: flatten(
                         item,
@@ -367,6 +360,7 @@ impl Loader<'_> {
                 });
             }
         }
+        out.sort_by_key(|b| b.order);
         out
     }
 

@@ -697,3 +697,180 @@ fn explain_text_names_the_root_the_files_and_each_replaced_value() {
         "{text}"
     );
 }
+
+#[test]
+fn genre_and_override_blocks_apply_in_the_order_they_are_written() {
+    let fx = Fixture::new();
+    fx.write(
+        "slopvac.toml",
+        "schema_version = 3\n\n[[overrides]]\nfiles = [\"docs/**\"]\nlocale = \"en-US\"\n\n[[genres]]\ngenre = \"reference\"\nfiles = [\"docs/**\"]\nlocale = \"en-GB\"\n",
+    );
+    let r = load_at(&fx, "slopvac.toml").resolve(Path::new("docs/a.md"), &inputs(&NoPresets));
+    assert_eq!(r.get(&["locale"]), Some(&json!("en-GB")));
+
+    fx.write(
+        "slopvac.toml",
+        "schema_version = 3\n\n[[genres]]\ngenre = \"reference\"\nfiles = [\"docs/**\"]\nlocale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nlocale = \"en-US\"\n",
+    );
+    let r = load_at(&fx, "slopvac.toml").resolve(Path::new("docs/a.md"), &inputs(&NoPresets));
+    assert_eq!(r.get(&["locale"]), Some(&json!("en-US")));
+}
+
+#[test]
+fn a_flag_can_pick_the_genre_before_its_chain_loads() {
+    let fx = Fixture::new();
+    fx.write("slopvac.toml", "schema_version = 3\n");
+    let cfg = load(&fx.root().join("slopvac.toml"), &Packs).unwrap();
+    let cli = [Setting::bare(Layer::Cli, &["genre"], json!("reference"))];
+    let r = cfg.resolve(
+        Path::new("a.md"),
+        &Inputs {
+            cli: &cli,
+            ..inputs(&Packs)
+        },
+    );
+    assert_eq!(r.get(&["locale"]), Some(&json!("en-GB")));
+}
+
+#[test]
+fn read_failures_have_a_stable_code_and_no_system_text() {
+    let missing = load(Path::new("missing/slopvac.toml"), &NoPresets).unwrap_err();
+    assert_eq!(missing.code(), Code::Io);
+    assert_eq!(
+        missing.to_string(),
+        "cannot read missing/slopvac.toml: no such file"
+    );
+
+    let fx = Fixture::new();
+    let p = fx.write("slopvac.toml", "");
+    fs::write(&p, [0xff, 0xfe, 0x41]).unwrap();
+    let bad = load(&p, &NoPresets).unwrap_err();
+    assert_eq!(bad.code(), Code::Io);
+    assert!(bad.to_string().ends_with(": not valid UTF-8"), "{bad}");
+    assert_eq!(bad.exit_code(), 2);
+}
+
+#[test]
+fn a_budget_of_none_clears_the_budget_of_a_lower_layer() {
+    let fx = Fixture::new();
+    fx.write(
+        "slopvac.toml",
+        "schema_version = 3\n\n[categories.prose]\nmax_per_100_words = 2.5\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\n[overrides.categories.prose]\nmax_per_100_words = \"none\"\n",
+    );
+    let cfg = load_at(&fx, "slopvac.toml");
+    let plain = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+    assert_eq!(plain.budget("prose"), Some(2.5));
+    let cleared = cfg.resolve(Path::new("docs/a.md"), &inputs(&NoPresets));
+    assert_eq!(cleared.budget("prose"), None);
+    assert_eq!(
+        cleared.get(&["categories", "prose", "max_per_100_words"]),
+        Some(&Json::Null)
+    );
+    assert_eq!(
+        cleared.to_json()["categories"]["prose"]["max_per_100_words"],
+        Json::Null
+    );
+    let history = cleared.history(&["categories", "prose", "max_per_100_words"]);
+    assert_eq!(history[0].value, json!(2.5));
+    assert_eq!(history[1].source.layer, Layer::Override);
+}
+
+struct Styled(Vec<Setting>);
+
+impl Presets for Styled {
+    fn style(&self, name: &str) -> Option<Vec<Setting>> {
+        (name == "acme:house").then(|| self.0.clone())
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<PackFile> {
+        None
+    }
+}
+
+fn style_rule(path: &[&str], level: &str) -> Setting {
+    Setting::bare(Layer::Style, path, json!(level))
+}
+
+/// A name, the style settings, the config body, and the expected level with its entry kind.
+type LevelCase = (
+    &'static str,
+    Vec<Setting>,
+    &'static str,
+    Option<(&'static str, slopvac_config::LevelFrom)>,
+);
+
+#[test]
+fn level_precedence_follows_the_profile_contract() {
+    // (style settings, project/override config body, expected level and entry kind)
+    use slopvac_config::LevelFrom::{Category, Rule};
+    let cases: [LevelCase; 9] = [
+        (
+            "a rule at off holds against a category in a higher layer",
+            vec![],
+            "[rules]\n\"core:r\" = \"off\"\n\n[[overrides]]\nfiles = [\"**\"]\n[overrides.categories.cat]\nseverity = \"error\"\n",
+            Some(("off", Rule)),
+        ),
+        (
+            "a rule in a higher layer revives it",
+            vec![style_rule(&["rules", "core:r"], "off")],
+            "[rules]\n\"core:r\" = \"warning\"\n",
+            Some(("warning", Rule)),
+        ),
+        (
+            "in one layer a rule beats a category",
+            vec![],
+            "[rules]\n\"core:r\" = \"warning\"\n[categories.cat]\nseverity = \"error\"\n",
+            Some(("warning", Rule)),
+        ),
+        (
+            "a category in a higher layer beats a rule that is not off",
+            vec![],
+            "[rules]\n\"core:r\" = \"warning\"\n\n[[overrides]]\nfiles = [\"**\"]\n[overrides.categories.cat]\nseverity = \"error\"\n",
+            Some(("error", Category)),
+        ),
+        (
+            "a category level rises to the minimum severity",
+            vec![],
+            "[categories.cat]\nseverity = \"suggestion\"\nminimum_severity = \"warning\"\n",
+            Some(("warning", Category)),
+        ),
+        (
+            "off as the minimum severity sets no floor",
+            vec![style_rule(
+                &["categories", "cat", "minimum_severity"],
+                "warning",
+            )],
+            "[categories.cat]\nseverity = \"suggestion\"\nminimum_severity = \"off\"\n",
+            Some(("suggestion", Category)),
+        ),
+        (
+            "a rule entry does not rise to the floor",
+            vec![],
+            "[rules]\n\"core:r\" = \"suggestion\"\n[categories.cat]\nminimum_severity = \"error\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "a style category level loses to a project rule",
+            vec![style_rule(&["categories", "cat", "severity"], "error")],
+            "[rules]\n\"core:r\" = \"suggestion\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        ("a rule no layer names has no level", vec![], "", None),
+    ];
+    for (name, style, body, want) in cases {
+        let fx = Fixture::new();
+        fx.write(
+            "slopvac.toml",
+            &format!("schema_version = 3\nstyles = [\"acme:house\"]\n\n{body}"),
+        );
+        let presets = Styled(style);
+        let cfg = load(&fx.root().join("slopvac.toml"), &presets).unwrap();
+        let r = cfg.resolve(Path::new("a.md"), &inputs(&presets));
+        let got = r.level("core:r", Some("cat")).map(|l| (l.level, l.from));
+        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+    }
+}

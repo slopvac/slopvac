@@ -38,10 +38,8 @@ impl<'p> Discovery<'p> {
     /// `slopvac.toml`, then ends if that directory holds `.git`. A 2.x config met on the way is
     /// an error.
     pub fn nearest(&self, dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
-        let dir = fs::canonicalize(dir).map_err(|source| ConfigError::Io {
-            path: dir.display().to_string(),
-            source,
-        })?;
+        let dir = fs::canonicalize(dir)
+            .map_err(|source| ConfigError::io(dir.display().to_string(), source))?;
         let Some(path) = self.find(&dir)? else {
             return Ok(None);
         };
@@ -50,10 +48,8 @@ impl<'p> Discovery<'p> {
 
     /// Load the config at `path` and apply it to every file, as `--config` does.
     pub fn explicit(&self, path: &Path) -> Result<Arc<LoadedConfig>, ConfigError> {
-        let abs = fs::canonicalize(path).map_err(|source| ConfigError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
+        let abs = fs::canonicalize(path)
+            .map_err(|source| ConfigError::io(path.display().to_string(), source))?;
         self.load_cached(abs)
     }
 
@@ -135,10 +131,10 @@ fn tool_slopvac_span(root: &Node) -> Option<std::ops::Range<usize>> {
 }
 
 fn read(path: &Path) -> Result<String, ConfigError> {
-    fs::read_to_string(path).map_err(|source| ConfigError::Io {
-        path: path.display().to_string(),
-        source,
-    })
+    let label = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    fs::read_to_string(path).map_err(|source| ConfigError::io(label, source))
 }
 
 fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str) -> ConfigError {

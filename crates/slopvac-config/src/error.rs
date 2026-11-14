@@ -33,17 +33,28 @@ impl Rejected {
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A file could not be read.
-    #[error("cannot read {path}: {source}")]
+    #[error("cannot read {path}: {}", reason(.source))]
     Io {
-        /// The path that failed.
+        /// The path as the caller gave it, or relative to the project root. Never an absolute
+        /// path that the caller did not supply.
         path: String,
-        /// The operating-system error.
+        /// The operating-system error, kept for debugging and left out of the message.
         #[source]
         source: io::Error,
     },
     /// A file was read and refused.
     #[error("{}: {}", .0.file, summary(&.0.diagnostics))]
     Rejected(Box<Rejected>),
+}
+
+/// A fixed phrase per error kind, so the message does not change with the operating system.
+fn reason(e: &io::Error) -> &'static str {
+    match e.kind() {
+        io::ErrorKind::NotFound => "no such file",
+        io::ErrorKind::PermissionDenied => "permission denied",
+        io::ErrorKind::InvalidData => "not valid UTF-8",
+        _ => "the file cannot be read",
+    }
 }
 
 fn summary(diagnostics: &[Diagnostic]) -> String {
@@ -54,6 +65,24 @@ fn summary(diagnostics: &[Diagnostic]) -> String {
 }
 
 impl ConfigError {
+    /// An I/O failure on `label`, the path as the user would recognise it.
+    #[must_use]
+    pub fn io(label: impl Into<String>, source: io::Error) -> Self {
+        ConfigError::Io {
+            path: label.into(),
+            source,
+        }
+    }
+
+    /// The stable error class: the first diagnostic's code, or `config-io` for a read failure.
+    #[must_use]
+    pub fn code(&self) -> Code {
+        match self {
+            ConfigError::Io { .. } => Code::Io,
+            ConfigError::Rejected(r) => r.diagnostics.first().map_or(Code::Parse, |d| d.code),
+        }
+    }
+
     /// Process exit code for this error. Config errors never lint anything, so they are 2.
     #[must_use]
     pub fn exit_code(&self) -> u8 {

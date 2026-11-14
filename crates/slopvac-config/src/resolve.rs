@@ -65,14 +65,19 @@ pub struct Inputs<'a> {
 pub struct Contribution {
     /// Where it came from.
     pub source: Source,
-    /// The value.
+    /// The value. A category budget of `"none"` is stored as `null`.
     pub value: Json,
+    /// Which layer instance set it: a style, a genre layer, a config file, a block, and so on,
+    /// numbered in the order they apply. Level resolution compares these.
+    #[serde(skip)]
+    scope: usize,
 }
 
 /// The merged settings of one file, with the history of each key.
 #[derive(Debug, Clone, Default)]
 pub struct Resolved {
     entries: BTreeMap<Vec<String>, Vec<Contribution>>,
+    scopes: usize,
 }
 
 fn is_sticky(path: &[String]) -> bool {
@@ -80,19 +85,32 @@ fn is_sticky(path: &[String]) -> bool {
 }
 
 impl Resolved {
-    fn apply(&mut self, setting: Setting) {
+    fn apply(&mut self, setting: Setting, scope: usize) {
+        let clears_budget = matches!(
+            setting.path.as_slice(),
+            [c, _, f] if c == "categories" && f == "max_per_100_words"
+        ) && setting.value == json!("none");
+        let value = if clears_budget {
+            Json::Null
+        } else {
+            setting.value
+        };
         self.entries
             .entry(setting.path)
             .or_default()
             .push(Contribution {
                 source: setting.source,
-                value: setting.value,
+                value,
+                scope,
             });
     }
 
+    /// Apply the settings of one layer instance. A later instance outranks an earlier one.
     fn apply_all(&mut self, settings: impl IntoIterator<Item = Setting>) {
+        let scope = self.scopes;
+        self.scopes += 1;
         for s in settings {
-            self.apply(s);
+            self.apply(s, scope);
         }
     }
 
@@ -129,6 +147,56 @@ impl Resolved {
     #[must_use]
     pub fn history(&self, path: &[&str]) -> &[Contribution] {
         self.lookup(path).map_or(&[], |(_, h)| h.as_slice())
+    }
+
+    /// The density budget of a category, or `None` when no layer sets one or a higher layer
+    /// cleared it with `"none"`.
+    #[must_use]
+    pub fn budget(&self, category: &str) -> Option<f64> {
+        self.get(&["categories", category, "max_per_100_words"])
+            .and_then(Json::as_f64)
+    }
+
+    /// The level a rule reports at, by the precedence in `docs/contract/profiles.md`, section 3.
+    ///
+    /// The highest layer that names the rule or its category wins, and within one layer a
+    /// `rules` entry beats a `categories` entry. A `rules` entry at `off` holds against every
+    /// category entry, and only a higher `rules` entry revives the rule. A category level rises
+    /// to the category's merged `minimum_severity`, where `off` sets no floor. `None` means no
+    /// layer names the rule, so it reports at the level of its definition.
+    #[must_use]
+    pub fn level(&self, rule: &str, category: Option<&str>) -> Option<ResolvedLevel> {
+        let last = |path: &[&str]| self.lookup(path).and_then(|(_, h)| h.last());
+        let by_rule = last(&["rules", rule]);
+        let by_category = category.and_then(|c| last(&["categories", c, "severity"]));
+        let as_level = |c: &Contribution, from| {
+            Some(ResolvedLevel {
+                level: c.value.as_str()?.to_owned(),
+                source: c.source.clone(),
+                from,
+            })
+        };
+        match (by_rule, by_category) {
+            (Some(r), Some(c)) if r.value != json!("off") && c.scope > r.scope => {
+                Some(self.floored(as_level(c, LevelFrom::Category)?, category))
+            }
+            (Some(r), _) => as_level(r, LevelFrom::Rule),
+            (None, Some(c)) => Some(self.floored(as_level(c, LevelFrom::Category)?, category)),
+            (None, None) => None,
+        }
+    }
+
+    fn floored(&self, mut level: ResolvedLevel, category: Option<&str>) -> ResolvedLevel {
+        let floor = category
+            .and_then(|c| self.get(&["categories", c, "minimum_severity"]))
+            .and_then(Json::as_str);
+        if let Some(floor) = floor
+            && let (Some(have), Some(min)) = (severity_rank(&level.level), severity_rank(floor))
+            && have < min
+        {
+            floor.clone_into(&mut level.level);
+        }
+        level
     }
 
     /// Whether the run is offline. Once any layer sets it, no layer can unset it.
@@ -191,6 +259,35 @@ fn insert_at(map: &mut Map<String, Json>, path: &[String], value: Json) {
     }
 }
 
+fn severity_rank(level: &str) -> Option<u8> {
+    match level {
+        "suggestion" => Some(0),
+        "warning" => Some(1),
+        "error" => Some(2),
+        _ => None,
+    }
+}
+
+/// Which entry set a resolved level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelFrom {
+    /// A `rules` entry.
+    Rule,
+    /// A `categories` entry.
+    Category,
+}
+
+/// The level of one rule after layer precedence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedLevel {
+    /// `error`, `warning`, `suggestion` or `off`.
+    pub level: String,
+    /// The layer and location of the entry that set it.
+    pub source: Source,
+    /// Whether a rule entry or a category entry set it.
+    pub from: LevelFrom,
+}
+
 /// One key in the `--explain-config` data.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Explained {
@@ -228,20 +325,17 @@ impl LoadedConfig {
             }
         }
 
-        let genre = inputs
-            .front_matter
+        // The genre can come from any layer above the genre layer, so pick the winner first.
+        let genre_blocks = matching
             .iter()
+            .filter(|b| b.kind == BlockKind::Genre)
+            .flat_map(|b| b.settings.iter());
+        let genre = genre_blocks
+            .chain(inputs.front_matter)
+            .chain(inputs.directives)
+            .chain(inputs.cli)
             .rfind(|s| s.path == ["genre"])
-            .map(|s| &s.value)
-            .or_else(|| {
-                matching
-                    .iter()
-                    .rev()
-                    .find(|b| b.kind == BlockKind::Genre)
-                    .and_then(|b| b.settings.iter().find(|s| s.path == ["genre"]))
-                    .map(|s| &s.value)
-            })
-            .and_then(Json::as_str);
+            .and_then(|s| s.value.as_str());
         if let Some(name) = genre {
             for layer in inputs.presets.genre_chain(name) {
                 out.apply_all(layer);

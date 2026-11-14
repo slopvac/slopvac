@@ -10,6 +10,8 @@ use crate::tree::LineIndex;
 /// Stable identifier of a diagnostic, printed in brackets and matched by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Code {
+    /// A file could not be read.
+    Io,
     /// The file is not valid TOML or YAML.
     Parse,
     /// A key the schema does not define.
@@ -37,6 +39,7 @@ impl Code {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Code::Io => "config-io",
             Code::Parse => "config-parse",
             Code::UnknownKey => "config-unknown-key",
             Code::InvalidType => "config-invalid-type",
