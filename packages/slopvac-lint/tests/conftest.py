@@ -25,6 +25,14 @@ from __future__ import annotations
 
 import pytest
 
+# The Vale pin guard: its hooks skip or stop runs that select `vale`-marked tests.
+from vale_pin_guard import (
+    pytest_collection_modifyitems,
+    pytest_configure,
+)
+
+__all__ = ["pytest_collection_modifyitems", "pytest_configure"]
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolated_session_cache(tmp_path_factory):
@@ -37,6 +45,4 @@ def _isolated_session_cache(tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def _isolated_cache(tmp_path_factory, monkeypatch):
-    monkeypatch.setenv(
-        "SLOPVAC_CACHE_DIR", str(tmp_path_factory.mktemp("slopvac-cache"))
-    )
+    monkeypatch.setenv("SLOPVAC_CACHE_DIR", str(tmp_path_factory.mktemp("slopvac-cache")))

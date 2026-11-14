@@ -63,7 +63,7 @@ def test_validated_compile_rejects_unsupported_vale(tmp_path):
 
 
 VALE = shutil.which("vale")
-needs_vale = pytest.mark.skipif(VALE is None, reason="vale is not on PATH")
+needs_vale = pytest.mark.vale
 EXAMPLE_BLOCKLIST = Path(__file__).parent.parent / "examples" / "blocklist.toml"
 
 # Reads the style directory as Vale does, in name order, and stops at the first
