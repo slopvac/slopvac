@@ -6,7 +6,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use globset::{Glob, GlobSetBuilder};
 use serde::Deserialize;
 
 use crate::{BlockKind, DocumentView, Error, FrontmatterCondition, Pattern};
@@ -278,12 +277,7 @@ impl GenreRegistry {
         let rel = opts.relative_path.unwrap_or_else(|| doc.path());
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
-            let mut b = GlobSetBuilder::new();
-            for f in &a.files {
-                b.add(Glob::new(f).map_err(|e| Error::Parse(format!("glob `{f}`: {e}")))?);
-            }
-            let set = b.build().map_err(|e| Error::Parse(e.to_string()))?;
-            if set.is_match(rel) {
+            if files_match(&a.files, rel)? {
                 assigned = Some((i, a));
             }
         }
@@ -370,6 +364,21 @@ impl GenreRegistry {
 }
 
 type Candidate<'a> = (&'a Genre, f32, Vec<Reason>);
+
+/// Whether a `files` list matches a path relative to the config directory. Patterns use
+/// gitignore semantics (`docs/config.md`, `exclude` and `files`): a leading `!` negates and
+/// the last matching pattern wins, so a later `!pattern` re-includes a file.
+///
+/// STUB(slopvac-8l4.5.11): replace with the config crate's matcher once it lands.
+pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
+    let mut b = ignore::gitignore::GitignoreBuilder::new("");
+    for p in patterns {
+        b.add_line(None, p.trim())
+            .map_err(|e| Error::Parse(format!("glob `{p}`: {e}")))?;
+    }
+    let set = b.build().map_err(|e| Error::Parse(e.to_string()))?;
+    Ok(set.matched_path_or_any_parents(rel, false).is_ignore())
+}
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {
     let mut signals = Vec::new();

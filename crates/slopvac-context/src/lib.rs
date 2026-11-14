@@ -15,7 +15,7 @@ pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, FrontmatterCondition, Scope, TaggerSpec, When};
 pub use genre::{
     DetectSignal, GenreAssignment, GenreRegistry, GenreResult, GenreSource, GenreSpec, Reason,
-    ResolveOptions, parse_genres,
+    ResolveOptions, files_match, parse_genres,
 };
 pub use pattern::Pattern;
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
