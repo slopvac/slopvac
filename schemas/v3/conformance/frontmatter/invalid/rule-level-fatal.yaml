@@ -1,0 +1,4 @@
+slopvac:
+  v: 3
+  rules:
+    core:no-dash: fatal
