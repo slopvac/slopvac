@@ -17,10 +17,11 @@ fn doc_matches_the_guide_source() {
     if std::env::var_os("UPDATE_DOCS").is_some() {
         fs::write(&path, guide_doc()).unwrap();
     }
-    let on_disk = fs::read_to_string(&path).unwrap();
+    // Git may check files out with CRLF on Windows; compare line content only.
+    let on_disk = fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
     assert_eq!(
         on_disk,
-        guide_doc(),
+        guide_doc().replace("\r\n", "\n"),
         "docs/migrate-2-to-3.md is stale; run UPDATE_DOCS=1 cargo test -p slopvac-migrate --test guide"
     );
 }
