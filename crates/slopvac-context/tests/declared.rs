@@ -76,3 +76,28 @@ fn security_context_carries_the_name_the_enforcement_hint() {
     assert!(hint.contains("Name the enforcement"));
     assert_eq!(context_hint("requirement"), None);
 }
+
+#[test]
+fn security_span_covers_every_original_byte_including_front_matter() {
+    let src = "---\ngenre: security\n---\n# Überblick\n\nDer Zugriff ist nur über Token erlaubt.\n";
+    let doc = PlainDocument::from_markdown("a.md", src);
+    let genres = builtin_genres().unwrap();
+    let result = genres.resolve(&doc, &ResolveOptions::default()).unwrap();
+    let mut reg = TagRegistry::new();
+    reg.register(Box::new(
+        DeclaredContextTagger::for_genre(&genres, &result)
+            .unwrap()
+            .unwrap(),
+    ))
+    .unwrap();
+    let idx = reg.tag_document(&doc).unwrap();
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].kind, "security");
+    assert_eq!(idx.tags()[0].span, 0..src.len());
+    assert_eq!(idx.tags()[0].evidence, "declared by genre `security`");
+    let last_char = src.len() - 1..src.len();
+    assert_eq!(idx.kinds_at(&(0..1)), vec!["security"]);
+    assert_eq!(idx.kinds_at(&last_char), vec!["security"]);
+    assert_eq!(idx.kinds_at(&(src.len()..src.len())), vec!["security"]);
+    assert!(idx.kinds_at(&(0..src.len() + 1)).is_empty());
+}
