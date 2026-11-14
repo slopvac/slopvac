@@ -1,6 +1,9 @@
 <!-- summary: Move a 2.x project to 3.0 -->
 # Prime: migrate
 
+{% if migrate_guide %}
+{{ migrate_guide }}
+{% else %}
 Slopvac 3.0 has no 2.x compatibility mode and no deprecation window.
 
 1. Run `slopvac migrate` to preview the changes. It compares findings before and after.
@@ -14,4 +17,5 @@ Slopvac 3.0 has no 2.x compatibility mode and no deprecation window.
 {% if level == "full" %}
 - Lint JSON has `schema_version` {{ schema_version }}. `version` is now `slopvac_version`, and `notes` is now `notices`.
 - Branch on notice and error codes, never on message text.
+{% endif %}
 {% endif %}

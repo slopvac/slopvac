@@ -58,7 +58,10 @@ fn words(text: &str) -> usize {
 fn render(topic: Option<&str>, level: Level) -> String {
     prime::render(
         topic,
-        &Settings { level },
+        &Settings {
+            level,
+            ..Settings::default()
+        },
         &tree(),
         std::path::Path::new("/nonexistent"),
     )
@@ -196,4 +199,22 @@ fn run_renders_the_requested_topic_and_level() {
             .try_get_matches_from(["prime", "bogus"])
             .is_err()
     );
+}
+
+#[test]
+fn migrate_topic_prints_the_supplied_guide_instead_of_its_fallback() {
+    let settings = Settings {
+        migrate_guide: Some("GUIDE FROM ONE SOURCE".into()),
+        ..Settings::default()
+    };
+    let text = prime::render(
+        Some("migrate"),
+        &settings,
+        &tree(),
+        std::path::Path::new("/nonexistent"),
+    )
+    .unwrap();
+    assert!(text.contains("GUIDE FROM ONE SOURCE"));
+    assert!(!text.contains("no 2.x compatibility mode"));
+    assert!(render(Some("migrate"), Level::Default).contains("no 2.x compatibility mode"));
 }
