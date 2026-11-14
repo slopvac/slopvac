@@ -1,0 +1,78 @@
+name: Rust supply chain
+
+# Dependency and manifest hygiene for the Cargo workspace. Called from test.yml
+# on Rust changes, and run nightly on its own so new advisories surface without
+# a code change.
+
+on:
+  workflow_call:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deny:
+    name: cargo-deny (licenses, bans, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Check
+        run: cargo deny --locked check licenses bans sources
+
+  # Advisories change without any commit, so they must never block an unrelated
+  # pull request. They gate the nightly run and report on pull requests.
+  advisories:
+    name: cargo-deny (advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ github.event_name != 'schedule' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Check
+        run: cargo deny --locked check advisories
+
+  manifests:
+    name: Manifests (shear, sort, typos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install tools
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: cargo-shear@1.14.1,cargo-sort@2.1.4,typos-cli@1.51.1
+
+      - name: Unused dependencies
+        run: cargo shear
+
+      - name: Sorted manifests
+        run: cargo sort --workspace --check
+
+      - name: Spelling
+        run: typos Cargo.toml deny.toml crates

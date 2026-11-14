@@ -39,6 +39,7 @@ rust:
   - 'crates/**'
   - 'rust-toolchain.toml'
   - 'rustfmt.toml'
+  - 'deny.toml'
   - '.config/nextest.toml'
 
 package:

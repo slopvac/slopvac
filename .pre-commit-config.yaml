@@ -7,3 +7,32 @@ repos:
         language: system
         pass_filenames: false
         files: ^packages/slopvac-lint/.*\.py$
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        files: ^(crates/.*\.rs|Cargo\.toml|rustfmt\.toml)$
+      - id: cargo-sort
+        name: cargo sort
+        entry: cargo sort --workspace --check
+        language: system
+        pass_filenames: false
+        files: (^|/)Cargo\.toml$
+      - id: cargo-shear
+        name: cargo shear
+        entry: cargo shear
+        language: system
+        pass_filenames: false
+        files: (^|/)Cargo\.(toml|lock)$|^crates/.*\.rs$
+      - id: cargo-deny
+        name: cargo deny
+        entry: cargo deny --locked check licenses bans sources
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.(toml|lock)|deny\.toml|crates/.*/Cargo\.toml)$
+      - id: typos
+        name: typos
+        entry: typos --force-exclude
+        language: system
+        files: \.(rs|toml|md)$
