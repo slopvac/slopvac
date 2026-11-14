@@ -600,7 +600,15 @@ fn check_num(ctx: &mut Ctx<'_>, node: &Node, min: Option<f64>, max: Option<f64>,
             return;
         }
     };
-    if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) {
+    if !n.is_finite() {
+        ctx.value_error(
+            node,
+            path,
+            format!("{n} is not a finite number"),
+            "must be finite",
+            None,
+        );
+    } else if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) {
         ctx.value_error(
             node,
             path,
@@ -759,15 +767,25 @@ pub fn validate_config(root: &Node, text: &str) -> Vec<Diagnostic> {
 
 /// Check the `slopvac:` block of a parsed front-matter mapping.
 ///
-/// A mapping without a `slopvac` key has nothing to check.
+/// The front matter must be a mapping, so a sequence, a scalar or an empty document is an
+/// error at the root. A mapping without a `slopvac` key has nothing to check. A caller that
+/// treats an empty front-matter block as absent skips it before calling this.
 #[must_use]
 pub fn validate_frontmatter(root: &Node, text: &str) -> Vec<Diagnostic> {
-    let Some(block) = root.get("slopvac") else {
-        return Vec::new();
-    };
     let mut ctx = Ctx {
         text,
         out: Vec::new(),
+    };
+    if !matches!(root.value, Value::Table(_)) {
+        let mut shown = root.clone();
+        if shown.span.is_empty() {
+            shown.span = 0..text.find('\n').unwrap_or(text.len());
+        }
+        ctx.type_error(&shown, &[], "a mapping", None);
+        return ctx.out;
+    }
+    let Some(block) = root.get("slopvac") else {
+        return Vec::new();
     };
     check(&mut ctx, block, &block_shape(), &["slopvac".to_owned()]);
     ctx.out
