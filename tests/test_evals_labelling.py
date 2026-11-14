@@ -305,3 +305,48 @@ def test_resolve_rejects_unknown_items(tmp_path):
         )
         == 2
     )
+
+
+def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_repeats(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(cli.lib, "load_manifest", manifest)
+    path = tmp_path / "d.txt"
+    path.write_text(DOC_TEXT)
+    monkeypatch.setattr(lab.runner, "text_path", lambda doc, cache: path)
+    items_ = [{**ITEM, "id": f"i{n}", "line": 5} for n in range(3)]
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items_)
+    asked = []
+
+    def run(provider_calls_before_crash):
+        def ask(prompt):
+            if len(asked) >= provider_calls_before_crash:
+                raise lab.runner.EngineError("provider crashed")
+            asked.append(prompt)
+            return "A"
+
+        monkeypatch.setattr(cli.labelling, "command_asker", lambda command: ask)
+        return cli.main(
+            [
+                "label",
+                "--dir",
+                str(d),
+                "judge",
+                "--family",
+                "x",
+                "--model",
+                "m",
+                "--provider-cmd",
+                "ignored",
+                "--rules-dir",
+                str(tmp_path),
+            ]
+        )
+
+    assert run(4) == 2  # 3 items x 2 orders = 6 calls; the 5th call crashes
+    saved = lab.read_jsonl(d / "judgments" / "x.jsonl")
+    assert len(saved) == 4
+    assert run(99) == 0
+    assert len(asked) == 6  # the 4 finished calls were not repeated
+    assert len(lab.read_jsonl(d / "judgments" / "x.jsonl")) == 6

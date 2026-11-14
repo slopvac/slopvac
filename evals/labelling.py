@@ -245,8 +245,14 @@ def judge_items(
     cache: Path,
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
+    sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Judge every pending (item, order) pair. `ask` maps a prompt to an answer."""
+    """Judge every pending (item, order) pair. `ask` maps a prompt to an answer.
+
+    `sink` receives each judgment as soon as it exists, so a caller can persist it
+    before the next paid call. A run that stops half way then resumes without
+    asking the same question twice.
+    """
     docs = {d["id"]: d for d in manifest["documents"]}
     skip = set(done)
     texts: dict[str, str] = {}
@@ -260,16 +266,17 @@ def judge_items(
                     docs[item["doc"]], cache
                 ).read_text("utf-8")
             prompt, letters = build_prompt(item, order, texts[item["doc"]], notes)
-            rows.append(
-                {
-                    "item": item["id"],
-                    "family": family,
-                    "model": model,
-                    "order": order,
-                    "prompt_version": PROMPT_VERSION,
-                    "verdict": parse_answer(ask(prompt), letters),
-                }
-            )
+            row = {
+                "item": item["id"],
+                "family": family,
+                "model": model,
+                "order": order,
+                "prompt_version": PROMPT_VERSION,
+                "verdict": parse_answer(ask(prompt), letters),
+            }
+            if sink:
+                sink(row)
+            rows.append(row)
     return rows
 
 

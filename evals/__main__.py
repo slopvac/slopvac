@@ -140,11 +140,11 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
             cache=_cache(args),
             notes=labelling.rule_notes(Path(args.rules_dir)),
             done=done,
+            sink=lambda row: labelling.append_jsonl(out, [row]),
         )
     except runner.EngineError as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
-    labelling.append_jsonl(out, rows)
     print(f"{len(rows)} judgments written to {out}")
     return 0
 
