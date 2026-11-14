@@ -12,8 +12,12 @@ mod fences;
 mod json;
 mod mermaid;
 mod plantuml;
+mod signals;
 
 pub use fences::{DiagramBlock, find_markdown_blocks};
+pub use signals::{
+    DiagramFinding, JUDGEMENT_RULES, ProseBlock, Severity, check_labels, check_prose,
+};
 
 use std::ops::Range;
 
