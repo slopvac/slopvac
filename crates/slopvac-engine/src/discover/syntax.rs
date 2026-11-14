@@ -69,14 +69,18 @@ pub(super) fn resolve_target(path: &Path) -> PathBuf {
 /// separators inside alternatives included. `None` means more than `limit`
 /// results. Escaped braces and braces inside a character class stay literal; a
 /// group with no closing brace is left for the glob parser to reject.
-pub(super) fn expand_braces(pattern: &str, limit: usize) -> Option<Vec<String>> {
+pub(super) fn expand_braces(pattern: &str, limit: usize, escapes: bool) -> Option<Vec<String>> {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = Vec::new();
-    expand(&chars, limit, &mut out).then_some(out)
+    expand(&chars, limit, escapes, &mut out).then_some(out)
 }
 
-fn expand(chars: &[char], limit: usize, out: &mut Vec<String>) -> bool {
-    let Some((open, close, commas)) = first_group(chars) else {
+/// Whether `\` escapes the next character in a glob. On Windows it is a path
+/// separator instead: `C:\repo\{a,b}` holds a real brace group.
+pub(super) const BACKSLASH_ESCAPES: bool = cfg!(not(windows));
+
+fn expand(chars: &[char], limit: usize, escapes: bool, out: &mut Vec<String>) -> bool {
+    let Some((open, close, commas)) = first_group(chars, escapes) else {
         out.push(chars.iter().collect());
         return out.len() <= limit;
     };
@@ -88,7 +92,7 @@ fn expand(chars: &[char], limit: usize, out: &mut Vec<String>) -> bool {
         let mut next: Vec<char> = chars[..open].to_vec();
         next.extend(&chars[start..end]);
         next.extend(&chars[close + 1..]);
-        if !expand(&next, limit, out) {
+        if !expand(&next, limit, escapes, out) {
             return false;
         }
     }
@@ -96,26 +100,26 @@ fn expand(chars: &[char], limit: usize, out: &mut Vec<String>) -> bool {
 }
 
 /// The first top-level `{...}`: its open and close index and its top-level commas.
-fn first_group(chars: &[char]) -> Option<(usize, usize, Vec<usize>)> {
+fn first_group(chars: &[char], escapes: bool) -> Option<(usize, usize, Vec<usize>)> {
     let mut i = 0;
     while i < chars.len() {
         match chars[i] {
-            '\\' => i += 2,
+            '\\' if escapes => i += 2,
             '[' => i = class_end(chars, i).unwrap_or(i + 1),
-            '{' => return group_from(chars, i),
+            '{' => return group_from(chars, i, escapes),
             _ => i += 1,
         }
     }
     None
 }
 
-fn group_from(chars: &[char], open: usize) -> Option<(usize, usize, Vec<usize>)> {
+fn group_from(chars: &[char], open: usize, escapes: bool) -> Option<(usize, usize, Vec<usize>)> {
     let mut depth = 0usize;
     let mut commas = Vec::new();
     let mut i = open;
     while i < chars.len() {
         match chars[i] {
-            '\\' => i += 1,
+            '\\' if escapes => i += 1,
             '[' => i = class_end(chars, i).map_or(i, |end| end - 1),
             '{' => depth += 1,
             '}' => {
@@ -130,4 +134,27 @@ fn group_from(chars: &[char], open: usize) -> Option<(usize, usize, Vec<usize>)>
         i += 1;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_braces;
+
+    #[test]
+    fn a_backslash_before_a_brace_is_a_separator_when_escapes_are_off() {
+        let got = expand_braces(r"C:\repo\{a,b\c}\x.md", 1024, false);
+        assert_eq!(
+            got,
+            Some(vec![
+                r"C:\repo\a\x.md".to_owned(),
+                r"C:\repo\b\c\x.md".to_owned()
+            ])
+        );
+    }
+
+    #[test]
+    fn a_backslash_before_a_brace_keeps_it_literal_when_escapes_are_on() {
+        let got = expand_braces(r"a\{b,c}", 1024, true);
+        assert_eq!(got, Some(vec![r"a\{b,c}".to_owned()]));
+    }
 }

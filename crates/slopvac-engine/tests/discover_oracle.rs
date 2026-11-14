@@ -22,6 +22,7 @@ const EXCLUDES: [&str; 8] = [
 ];
 
 /// Directory parts that can never match the decoy directory name `zz`.
+#[cfg(unix)]
 const NON_MATCHING_PARTS: [&str; 6] = ["a", "b", "c", "{a,b}", "{a,b/c}", "p*"];
 
 fn tree() -> impl Strategy<Value = Vec<(Vec<usize>, usize)>> {
@@ -107,6 +108,7 @@ fn rel(root: &Path, path: &Path) -> String {
 }
 
 /// Makes directories unreadable and restores them on drop.
+#[cfg(unix)]
 struct Locked(Vec<PathBuf>);
 
 #[cfg(unix)]
@@ -154,7 +156,7 @@ proptest! {
             .chain([FILE_PARTS[file_part]])
             .collect::<Vec<_>>()
             .join("/");
-        let pattern = format!("{}/{pattern_rel}", root.display());
+        let pattern = root.join(&pattern_rel).display().to_string();
         let exclude_patterns: Vec<&str> = exclude.iter().map(|i| EXCLUDES[*i]).collect();
 
         // Lock decoy `zz` directories at levels the pattern's directory parts

@@ -352,12 +352,12 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
         .filter(|c| *c != Component::CurDir)
         .collect();
     let normalised = normalised.to_string_lossy();
-    let alternatives = syntax::expand_braces(&normalised, MAX_ALTERNATIVES).ok_or_else(|| {
-        DiscoverError::TooManyAlternatives {
-            pattern: pattern.to_owned(),
-            limit: MAX_ALTERNATIVES,
-        }
-    })?;
+    let alternatives =
+        syntax::expand_braces(&normalised, MAX_ALTERNATIVES, syntax::BACKSLASH_ESCAPES)
+            .ok_or_else(|| DiscoverError::TooManyAlternatives {
+                pattern: pattern.to_owned(),
+                limit: MAX_ALTERNATIVES,
+            })?;
     let mut matches = BTreeSet::new();
     for alternative in &alternatives {
         matches.extend(glob_files(alternative, pattern)?);

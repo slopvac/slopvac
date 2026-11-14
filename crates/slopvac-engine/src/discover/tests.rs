@@ -693,7 +693,12 @@ mod locked {
         write(dir.path(), "docs/b.txt", "");
         let locked = dir.path().join("docs/locked");
         fs::create_dir(&locked).unwrap();
-        let pattern = format!("{}/docs/*.{{md,txt}}", dir.path().display());
+        let pattern = dir
+            .path()
+            .join("docs")
+            .join("*.{md,txt}")
+            .display()
+            .to_string();
         let result = with_locked(&locked, || {
             discover(&[pattern.as_str()], Options::default())
         });
@@ -746,7 +751,7 @@ fn brace_alternatives_may_hold_separators_and_nest() {
     write(dir.path(), "d/x.md", "");
     write(dir.path(), "b/x.md", "");
     for pattern in ["{a,b/c}/x.md", "{a,{b/c,zz}}/x.md"] {
-        let full = format!("{}/{pattern}", dir.path().display());
+        let full = dir.path().join(pattern).display().to_string();
         let found = discover(&[full.as_str()], Options::default()).unwrap();
         let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
         assert_eq!(
@@ -761,7 +766,7 @@ fn brace_alternatives_may_hold_separators_and_nest() {
 fn overlapping_brace_alternatives_list_each_file_once() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "a.md", "");
-    let full = format!("{}/{{a,a*}}.md", dir.path().display());
+    let full = dir.path().join("{a,a*}.md").display().to_string();
     let found = discover(&[full.as_str()], Options::default()).unwrap();
     assert_eq!(found.files.len(), 1);
 }
@@ -770,7 +775,7 @@ fn overlapping_brace_alternatives_list_each_file_once() {
 fn too_many_brace_alternatives_are_rejected() {
     let dir = TempDir::new().unwrap();
     let groups = ["{a,b}"; 11].join("/");
-    let full = format!("{}/{groups}", dir.path().display());
+    let full = dir.path().join(&groups).display().to_string();
     let err = discover(&[full.as_str()], Options::default()).unwrap_err();
     assert!(matches!(
         err,
