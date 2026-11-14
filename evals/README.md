@@ -148,7 +148,7 @@ python -m evals models run --models models.json --confirm-calls <N>
 python -m evals models summarize evals/results/models/<date>.json
 ```
 
-`models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. Ask the lead before you run a paid provider.
+`models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. Provider logins stay with opencode. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. Ask the lead before you run a paid provider.
 
 Tasks come from the corpus:
 

@@ -331,6 +331,18 @@ def _hits(quote: str, sentence: str) -> bool:
     return len(q) >= MIN_QUOTE_WORDS and len(q & s) / len(q) >= QUOTE_OVERLAP
 
 
+def _mentions(fact: str, text: str) -> bool:
+    """True when `fact` appears as a whole token, so "3" does not match "13" or "3.5"."""
+    pattern = rf"(?<![\w.]){re.escape(fact.lower())}(?!\w)(?!\.\d)"
+    return re.search(pattern, text.lower()) is not None
+
+
+def _mentions(fact: str, text: str) -> bool:
+    """True when `fact` appears as a whole token, so "3" does not match "13" or "3.5"."""
+    pattern = rf"(?<![\w.]){re.escape(fact.lower())}(?!\w)(?!\.\d)"
+    return re.search(pattern, text.lower()) is not None
+
+
 def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
     reported = _parse_findings(answer)
     if task.get("variant") == "authored":
@@ -338,17 +350,13 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         found = [
             f
             for f in lost
-            if any(
-                f.lower() in (r["quote"] + " " + r["problem"]).lower() for r in reported
-            )
+            if any(_mentions(f, r["quote"] + " " + r["problem"]) for r in reported)
         ]
         edits_total, edits_found = len(lost), len(found)
         alarms = sum(
             1
             for r in reported
-            if not any(
-                f.lower() in (r["quote"] + " " + r["problem"]).lower() for f in lost
-            )
+            if not any(_mentions(f, r["quote"] + " " + r["problem"]) for f in lost)
         )
     else:
         edits = task["edits"]
@@ -375,17 +383,17 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
 
 def authored_review_task(
     author_task: Mapping[str, Any], author_output: str
-) -> dict[str, Any] | None:
-    """Turn an author rewrite into a review task. None when nothing was lost."""
+) -> dict[str, Any]:
+    """Turn an author rewrite into a review task with the facts it lost."""
     output = _clean(author_output)
     lost = [
         item["fact"]
         for item in facts.preservation(author_task["source"], output)["lost"]
     ]
     return {
-        "id": task_id(
-            "authored", author_task["id"], hashlib.sha256(output.encode()).hexdigest()
-        ),
+        # The id follows the source task only. Resampling needs a key that does not
+        # change with what a model happened to write.
+        "id": task_id("authored", author_task["id"]),
         "type": "rewrite",
         "role": "reviewer",
         "variant": "authored",
@@ -451,18 +459,19 @@ def plan(
     }
 
 
-def command_ask(command: str) -> Callable[[str], str]:
+def command_ask(command: str, attempts: int = 3) -> Callable[[str], str]:
     argv = shlex.split(command)
 
     def ask(prompt: str) -> str:
-        proc = subprocess.run(
-            argv, input=prompt, capture_output=True, text=True, check=False
-        )
-        if proc.returncode != 0:
-            raise ModelEvalError(
-                f"model command exited {proc.returncode}: {proc.stderr[:300]}"
+        last = ""
+        for _ in range(attempts):
+            proc = subprocess.run(
+                argv, input=prompt, capture_output=True, text=True, check=False
             )
-        return proc.stdout
+            if proc.returncode == 0 and proc.stdout.strip():
+                return proc.stdout
+            last = f"model command exited {proc.returncode}: {proc.stderr[:300]}"
+        raise ModelEvalError(last)
 
     return ask
 
@@ -547,6 +556,7 @@ def execute(
         second, replies, strict=True
     ):
         row = _row(review_task, reviewer, repeat, reply)
+        row["task"] = f"{review_task['id']}:{author['name']}"
         row["author_model"] = author["name"]
         row["author_family"] = author["family"]
         if error:

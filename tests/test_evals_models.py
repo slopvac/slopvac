@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -365,3 +366,74 @@ def test_the_cli_never_starts_a_model_for_plan(tmp_path, monkeypatch, capsys):
         == 0
     )
     assert calls == [] and json.loads(capsys.readouterr().out)["total_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    ("reply", "found"),
+    [
+        ("the 13 limit changed", 0),
+        ("the limit 3.5 changed", 0),
+        ("retries 3 is gone", 1),
+        ("lost: 3.", 1),
+    ],
+)
+def test_authored_review_matches_whole_fact_tokens(reply, found):
+    task = {"variant": "authored", "lost": ["3"]}
+    answer = json.dumps([{"quote": "x", "problem": reply}])
+    assert models.score_review(task, answer)["found"] == found
+
+
+def test_authored_review_rows_cluster_by_source_task_and_author_not_by_output():
+    tasks = [t for t in tiny_tasks() if t["id"] == "a2"]
+    answers = iter(["Cache items.", "Cache 40 items.", "Cache one item."] * 4)
+
+    def ask_for(model):
+        def ask(prompt):
+            if prompt.startswith("Rewrite the passage"):
+                return next(answers)
+            return json.dumps([{"quote": "z", "problem": "40 lost"}])
+
+        return ask
+
+    out = models.execute(
+        tasks, roster("a", "b"), 3, NO_FINDINGS, ask_for=ask_for, date="d"
+    )
+    keys = {r["task"] for r in out["runs"] if r.get("variant") == "authored"}
+    stable = models.task_id("authored", "a2")
+    assert keys == {f"{stable}:a", f"{stable}:b"}
+
+
+def test_opencode_events_join_text_parts_and_report_errors():
+    from evals import opencode_model
+
+    stream = "\n".join(
+        [
+            json.dumps({"type": "step_start"}),
+            json.dumps({"type": "text", "part": {"text": "Hello "}}),
+            json.dumps({"type": "text", "part": {"text": "world"}}),
+            "not json",
+        ]
+    )
+    assert opencode_model.parse_events(stream) == "Hello world"
+    failure = json.dumps({"type": "error", "error": {"message": "throttled"}})
+    with pytest.raises(opencode_model.ModelCallError, match="throttled"):
+        opencode_model.parse_events(failure)
+
+
+def test_a_flaky_command_is_retried_and_a_dead_one_fails_after_three_attempts(tmp_path):
+    counter = tmp_path / "n"
+    counter.write_text("0")
+    script = tmp_path / "flaky.py"
+    script.write_text(
+        "import sys, pathlib\n"
+        f"p = pathlib.Path({str(counter)!r})\n"
+        "n = int(p.read_text()) + 1\n"
+        "p.write_text(str(n))\n"
+        "if n < 3:\n    sys.exit(1)\n"
+        "print('ok')\n"
+    )
+    ask = models.command_ask(f"{sys.executable} {script}")
+    assert ask("x").strip() == "ok" and counter.read_text() == "3"
+    dead = models.command_ask(f"{sys.executable} -c 'import sys; sys.exit(1)'")
+    with pytest.raises(models.ModelEvalError, match="exited 1"):
+        dead("x")
