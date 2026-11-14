@@ -114,6 +114,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
+dependencies = [
+ "memchr",
+ "serde_core",
+]
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -565,6 +575,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
+name = "similar"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f8bec09ae8fae0f4f265a4559a9334be3929d8504e9b536df0a41302bd1733"
+dependencies = [
+ "bstr",
+]
+
+[[package]]
 name = "slopvac"
 version = "0.0.0"
 dependencies = [
@@ -576,12 +595,27 @@ name = "slopvac-config"
 version = "0.0.0"
 
 [[package]]
+name = "slopvac-diagrams"
+version = "0.0.0"
+
+[[package]]
 name = "slopvac-engine"
 version = "0.0.0"
 
 [[package]]
 name = "slopvac-lsp"
 version = "0.0.0"
+
+[[package]]
+name = "slopvac-migrate"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "similar",
+ "tempfile",
+ "thiserror",
+ "toml_edit",
+]
 
 [[package]]
 name = "slopvac-model"
@@ -699,6 +733,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
