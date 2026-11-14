@@ -11,6 +11,7 @@ pub mod error;
 pub mod flatten;
 pub mod frontmatter;
 pub mod load;
+pub mod migrate;
 pub mod presets;
 pub mod resolve;
 pub mod schema;

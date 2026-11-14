@@ -32,6 +32,8 @@ pub enum Code {
     DuplicateScope,
     /// A front-matter field that `[frontmatter] allow` does not list.
     FrontmatterFieldDenied,
+    /// A 2.x setting that has no 3.0 equivalent, found while migrating.
+    LegacyDropped,
 }
 
 impl Code {
@@ -50,6 +52,7 @@ impl Code {
             Code::ExtendsMissing => "config-extends-missing",
             Code::DuplicateScope => "config-duplicate-scope",
             Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
+            Code::LegacyDropped => "config-legacy-dropped",
         }
     }
 }
