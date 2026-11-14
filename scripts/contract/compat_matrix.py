@@ -1,7 +1,8 @@
 """Generate the 2.x compatibility matrix.
 
 Rows come from the 2.x click tree (``slopvac.cli:main``), ``action.yml`` and
-``.pre-commit-hooks.yaml``. Behaviour rows exist only in ``dispositions.toml``.
+``sources/pre-commit-hooks-2x.yaml`` (a frozen copy of the 2.x hooks file). Behaviour
+rows exist only in ``dispositions.toml``.
 The hand-written dispositions supply the disposition, note and owner per row.
 
     uv run python scripts/contract/compat_matrix.py          # rewrite the files
@@ -74,7 +75,7 @@ def action_rows() -> list[dict]:
 
 
 def hook_rows() -> list[dict]:
-    hooks = yaml.safe_load((ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8"))
+    hooks = yaml.safe_load((ROOT / "docs/contract/compat/sources/pre-commit-hooks-2x.yaml").read_text(encoding="utf-8"))
     return [{"id": f"hook:{h['id']}", "source": ".pre-commit-hooks.yaml", "summary": h["entry"], "detail": {}} for h in hooks]
 
 
