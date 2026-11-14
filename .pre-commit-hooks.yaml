@@ -1,13 +1,12 @@
 - id: slopvac
   name: slopvac prose gate
   description: >-
-    Lint staged prose with Slopvac's unified ruleset for AI writing patterns,
-    prose quality, documentation discipline, and technical-writing constraints.
+    Lint staged prose with Slopvac for AI writing patterns, prose quality,
+    documentation discipline, and technical-writing constraints.
+  # `language: system` runs the `slopvac` binary already on PATH. Install it with
+  # Homebrew, the shell installer, or `uv tool install slopvac`; see docs/hooks.md.
   entry: slopvac lint
-  language: python
-  # The repository root has no Python project, so the hook environment gets the
-  # linter from PyPI. release-please keeps the pin current.
-  additional_dependencies: ["slopvac==2.18.1"] # x-release-please-version
+  language: system
   types_or: [markdown, rst, plain-text, html]
   # pre-commit passes filenames positionally, which is what `lint` wants. It runs
   # only on staged files, so the gate sees the change rather than the repository.
@@ -16,25 +15,12 @@
 - id: slopvac-strict
   name: slopvac prose gate (strict)
   description: >-
-    The strict tier, for reference material, runbooks, and procedures. Scope it
-    with `files:` in your .pre-commit-config.yaml.
-  entry: slopvac lint --profile strict
-  language: python
-  # The repository root has no Python project, so the hook environment gets the
-  # linter from PyPI. release-please keeps the pin current.
-  additional_dependencies: ["slopvac==2.18.1"] # x-release-please-version
-  types_or: [markdown, rst, plain-text, html]
-  require_serial: false
-
-- id: slopvac-no-vale
-  name: slopvac prose gate (no Vale)
-  description: >-
-    Skips the Vale sub-gate, so the hook needs no external binary. Vale-backed
-    rules report as unchecked.
-  entry: slopvac lint --no-vale
-  language: python
-  # The repository root has no Python project, so the hook environment gets the
-  # linter from PyPI. release-please keeps the pin current.
-  additional_dependencies: ["slopvac==2.18.1"] # x-release-please-version
+    Lint with the bundled core:legacy-strict style, for reference material,
+    runbooks, and procedures. Scope it with `files:` in your
+    .pre-commit-config.yaml.
+  # --profile is removed in 3.0; the bundled core:legacy-strict style replaces it.
+  # STUB(slopvac-8l4.13.13): --style is a placeholder until the CLI exposes its style-selection option.
+  entry: slopvac lint --style core:legacy-strict
+  language: system
   types_or: [markdown, rst, plain-text, html]
   require_serial: false
