@@ -306,8 +306,16 @@ def test_a_malformed_report_is_rejected(check, good, report, match):
         check(good)
 
 
-def test_a_line_separator_inside_a_message_is_not_a_line_break(check, good):
-    report = line(message="one\u2028two\u0085three") + line(message="x")
+@pytest.mark.parametrize("separator", ["\u2028", "\u0085"])
+def test_a_line_separator_inside_a_message_is_not_a_line_break(check, good, separator):
+    # ensure_ascii=False puts the raw character in the bytes. Escaped, the
+    # parser would never see it and str.splitlines() would pass this test.
+    raw = json.dumps(
+        {"message": f"one{separator}two", "location": {"path": "a.md"}},
+        ensure_ascii=False,
+    ).encode()
+    assert separator.encode() in raw
+    report = raw + b"\n" + line(message="x")
     good["findings.rdjsonl"] = report
     assert check(good)["findings.rdjsonl"] == report
 
@@ -343,14 +351,6 @@ def test_extract_writes_only_the_report_under_a_fixed_name(tmp_path, good):
     assert (out / "findings.rdjsonl").read_bytes() == good["findings.rdjsonl"]
 
 
-def test_a_rejected_artifact_leaves_nothing_behind(tmp_path, good, capsys):
-    archive = make_archive(tmp_path / "a.zip", good)
-    code, out = run_cli(tmp_path, archive, pr="43")
-    assert code == 1
-    assert not out.exists()
-    assert "different pull request" in capsys.readouterr().out
-
-
 def test_extract_refuses_an_existing_destination(tmp_path, good):
     archive = make_archive(tmp_path / "a.zip", good)
     (tmp_path / "out").mkdir()
@@ -374,38 +374,39 @@ def test_the_documented_template_writes_the_files_the_consumer_requires():
 
 
 def malicious_cases(good):
+    """name -> (entries, expected PR, expected head, rejection reason)."""
+    swapped = {k: v for k, v in good.items() if k != "pr-number"}
     return {
-        "oversize archive": ({"findings.rdjsonl": os.urandom(1_000_001)}, PR, SHA),
-        "path traversal": ({**good, "../../etc/cron.d/x": b"x"}, PR, SHA),
-        "traversal replaces entry": (
-            {
-                "../pr-number": good["pr-number"],
-                **{k: v for k, v in good.items() if k != "pr-number"},
-            },
+        "oversize archive": (
+            {**good, "findings.rdjsonl": os.urandom(1_000_001)},
             PR,
             SHA,
+            "over the cap",
         ),
-        "wrong head": (good, PR, OTHER_SHA),
-        "wrong pull request": (good, "43", SHA),
+        "path traversal": (
+            {**good, "../../etc/cron.d/x": b"x"},
+            PR,
+            SHA,
+            "archive has 4 entries",
+        ),
+        "traversal replaces entry": (
+            {"../pr-number": good["pr-number"], **swapped},
+            PR,
+            SHA,
+            "entries must be exactly",
+        ),
+        "wrong head": (good, PR, OTHER_SHA, "different commit"),
+        "wrong pull request": (good, "43", SHA, "different pull request"),
     }
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        "oversize archive",
-        "path traversal",
-        "traversal replaces entry",
-        "wrong head",
-        "wrong pull request",
-    ],
-)
+@pytest.mark.parametrize("case", list(malicious_cases({"pr-number": b"", "x": b""})))
 def test_the_command_line_rejects_a_malicious_artifact(tmp_path, good, capsys, case):
-    entries, pr, sha = malicious_cases(good)[case]
-    if case == "oversize archive":
-        entries = {**good, **entries}
+    entries, pr, sha, reason = malicious_cases(good)[case]
     archive = make_archive(tmp_path / "a.zip", entries)
     code, out = run_cli(tmp_path, archive, pr=pr, sha=sha)
+    printed = capsys.readouterr().out
     assert code == 1
-    assert capsys.readouterr().out.startswith("::error title=fork review::")
+    assert printed.startswith("::error title=fork review::")
+    assert reason in printed
     assert not out.exists()
