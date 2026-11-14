@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Hand transcription of the Issues, Categories, Locations and Positions sections of https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md (master, 2026-11). The spec defines no JSON Schema. Location requires a path and lines or positions; slopvac emits both (docs/contract/positions.md), which the prose allows. Unknown issue fields are rejected.",
+  "title": "Code Climate issue",
+  "type": "object",
+  "required": ["type", "check_name", "description", "categories", "location"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {"const": "issue"},
+    "check_name": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1, "pattern": "^[^\\r\\n]*$"},
+    "content": {"type": "object", "required": ["body"], "properties": {"body": {"type": "string"}}},
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"enum": ["Bug Risk", "Clarity", "Compatibility", "Complexity", "Duplication", "Performance", "Security", "Style"]}
+    },
+    "location": {"$ref": "#/definitions/Location"},
+    "other_locations": {"type": "array", "items": {"$ref": "#/definitions/Location"}},
+    "remediation_points": {"type": "integer", "minimum": 0},
+    "severity": {"enum": ["info", "minor", "major", "critical", "blocker"]},
+    "fingerprint": {"type": "string", "minLength": 1}
+  },
+  "definitions": {
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1},
+        "offset": {"type": "integer", "minimum": 0}
+      },
+      "oneOf": [{"required": ["line", "column"]}, {"required": ["offset"]}]
+    },
+    "Location": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "anyOf": [{"required": ["lines"]}, {"required": ["positions"]}],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "lines": {
+          "type": "object",
+          "required": ["begin", "end"],
+          "additionalProperties": false,
+          "properties": {"begin": {"type": "integer", "minimum": 1}, "end": {"type": "integer", "minimum": 1}}
+        },
+        "positions": {
+          "type": "object",
+          "required": ["begin", "end"],
+          "additionalProperties": false,
+          "properties": {"begin": {"$ref": "#/definitions/Position"}, "end": {"$ref": "#/definitions/Position"}}
+        }
+      }
+    }
+  }
+}

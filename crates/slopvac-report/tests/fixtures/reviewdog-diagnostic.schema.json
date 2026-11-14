@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Hand transcription of message Diagnostic and the messages it uses in https://github.com/reviewdog/reviewdog/blob/master/proto/rdf/reviewdog.proto (master, 2026-11). The proto defines no JSON Schema. Proto3 fields are optional, so only the fields that slopvac emits are required. Unknown fields are rejected so a typo cannot pass.",
+  "title": "reviewdog Diagnostic (rdjson)",
+  "type": "object",
+  "required": ["message", "location"],
+  "additionalProperties": false,
+  "properties": {
+    "message": {"type": "string"},
+    "location": {"$ref": "#/definitions/Location"},
+    "severity": {"enum": ["UNKNOWN_SEVERITY", "ERROR", "WARNING", "INFO"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"name": {"type": "string"}, "url": {"type": "string"}}
+    },
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"value": {"type": "string"}, "url": {"type": "string"}}
+    },
+    "suggestions": {"type": "array", "items": {"$ref": "#/definitions/Suggestion"}},
+    "original_output": {"type": "string"},
+    "related_locations": {"type": "array"}
+  },
+  "definitions": {
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "column": {"type": "integer", "minimum": 0, "maximum": 2147483647}
+      }
+    },
+    "Range": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start": {"$ref": "#/definitions/Position"},
+        "end": {"$ref": "#/definitions/Position"}
+      }
+    },
+    "Location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {"path": {"type": "string"}, "range": {"$ref": "#/definitions/Range"}}
+    },
+    "Suggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["range", "text"],
+      "properties": {"range": {"$ref": "#/definitions/Range"}, "text": {"type": "string"}}
+    }
+  }
+}

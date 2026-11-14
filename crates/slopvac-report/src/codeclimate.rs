@@ -11,6 +11,14 @@ fn pos(p: Pos) -> Value {
     json!({"line": p.line, "column": p.column})
 }
 
+/// The spec wants a description on one line.
+fn single_line(text: &str) -> String {
+    text.split(['\r', '\n'])
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// FNV-1a, 64 bit. Stable across releases, unlike the standard hasher.
 fn fingerprint(parts: &[&str]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -49,7 +57,7 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
             issues.push(json!({
                 "type": "issue",
                 "check_name": f.rule_id.as_str(),
-                "description": f.message,
+                "description": single_line(&f.message),
                 "categories": ["Style"],
                 "severity": severity,
                 "fingerprint": fingerprint(&[&document.path, f.rule_id.as_str(), &key, &f.message]),

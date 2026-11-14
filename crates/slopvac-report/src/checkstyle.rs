@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use slopvac_model::{Report, Severity};
 
-use crate::escape::xml;
+use crate::escape::xml_attr as xml;
 
 pub(crate) fn render(report: &Report) -> String {
     let mut out =

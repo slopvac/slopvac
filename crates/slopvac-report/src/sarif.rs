@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use slopvac_model::{ColumnUnit, Finding, NoticeLevel, Report, Severity};
 
 use crate::locate::DocIndex;
-use crate::{RenderError, Sources};
+use crate::{RenderError, RenderOptions, Sources};
 
 const SCHEMA: &str =
     "https://docs.oasis-open.org/sarif/sarif/2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
@@ -41,7 +41,9 @@ fn region(doc: &DocIndex<'_>, finding: &Finding) -> Result<Value, RenderError> {
             "endLine": end.line,
             "endColumn": end.column,
         }),
-        None => json!({"startLine": at.start.line, "startColumn": at.start.column}),
+        // No source range: the stored column counts code points, which SARIF does not
+        // declare, so the location carries the line only.
+        None => json!({"startLine": at.start.line}),
     })
 }
 
@@ -69,7 +71,11 @@ fn fix(doc: &DocIndex<'_>, path: &str, finding: &Finding) -> Result<Option<Value
     })))
 }
 
-pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, RenderError> {
+pub(crate) fn render(
+    report: &Report,
+    sources: &dyn Sources,
+    options: &RenderOptions,
+) -> Result<String, RenderError> {
     let mut rules: Vec<Value> = Vec::new();
     let mut rule_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut results = Vec::new();
@@ -79,11 +85,15 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
             let id = f.rule_id.as_str().to_owned();
             let next = rules.len();
             let index = *rule_index.entry(id.clone()).or_insert_with(|| {
-                rules.push(json!({
+                let mut rule = json!({
                     "id": id,
                     "shortDescription": {"text": f.message},
                     "properties": {"category": f.category, "pack": f.pack.as_str()},
-                }));
+                });
+                if let Some(url) = options.rule_url(&f.category, f.rule_id.local()) {
+                    rule["helpUri"] = json!(url);
+                }
+                rules.push(rule);
                 next
             });
             let mut result = json!({

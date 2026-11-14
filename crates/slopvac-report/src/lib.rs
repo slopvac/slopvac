@@ -131,18 +131,57 @@ pub enum RenderError {
     Json(#[from] serde_json::Error),
 }
 
-/// Render `report` in `format`. Output ends with one newline, or is empty (no findings in a line format).
+/// Options that change rendered output without changing its structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderOptions {
+    /// Base URL of the published docs, ending in `/` (for example `https://host/slopvac/`).
+    /// Rule pages sit at `<base>v3/rules/<category>/<rule>/`. `None` omits rule links.
+    pub docs_base: Option<String>,
+}
+
+impl Default for RenderOptions {
+    /// The docs address from `docs/site.toml` at build time, or none when the file is absent.
+    fn default() -> Self {
+        Self {
+            docs_base: option_env!("SLOPVAC_DOCS_BASE").map(str::to_owned),
+        }
+    }
+}
+
+impl RenderOptions {
+    /// The page for a rule, when a docs address is set.
+    #[must_use]
+    pub fn rule_url(&self, category: &str, rule: &str) -> Option<String> {
+        let base = self.docs_base.as_deref()?.trim_end_matches('/');
+        Some(format!("{base}/{API_VERSION}/rules/{category}/{rule}/"))
+    }
+}
+
+/// The docs path segment for this schema line.
+pub const API_VERSION: &str = "v3";
+
+/// Render `report` in `format` with default options. Output ends with one newline, or is empty (no findings in a line format).
 pub fn render(
     format: Format,
     report: &Report,
     sources: &dyn Sources,
 ) -> Result<String, RenderError> {
+    render_with(format, report, sources, &RenderOptions::default())
+}
+
+/// Render `report` in `format`.
+pub fn render_with(
+    format: Format,
+    report: &Report,
+    sources: &dyn Sources,
+    options: &RenderOptions,
+) -> Result<String, RenderError> {
     let mut out = match format {
         Format::Text => text::render(report),
         Format::Json => serde_json::to_string_pretty(report)?,
         Format::Github => github::render(report),
-        Format::Sarif => sarif::render(report, sources)?,
-        Format::Rdjsonl => rdjsonl::render(report, sources)?,
+        Format::Sarif => sarif::render(report, sources, options)?,
+        Format::Rdjsonl => rdjsonl::render(report, sources, options)?,
         Format::CodeClimate => codeclimate::render(report, sources)?,
         Format::Junit => junit::render(report),
         Format::Checkstyle => checkstyle::render(report),

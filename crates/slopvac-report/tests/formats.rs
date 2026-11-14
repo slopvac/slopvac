@@ -155,7 +155,7 @@ fn findings_without_a_span_need_no_source_anywhere() {
     let sarif: Value =
         serde_json::from_str(&render(Format::Sarif, &report, &NoSources).unwrap()).unwrap();
     let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
-    assert_eq!(region, &json!({"startLine": 3, "startColumn": 7}));
+    assert_eq!(region, &json!({"startLine": 3}));
 }
 
 #[test]
@@ -239,4 +239,57 @@ fn outputs_end_with_one_newline() {
         );
     }
     let _: &dyn Sources = &NoSources;
+}
+
+fn sarif_validator() -> jsonschema::Validator {
+    let schema: Value =
+        serde_json::from_str(include_str!("fixtures/sarif-schema-2.1.0.json")).unwrap();
+    jsonschema::draft4::new(&schema).expect("official SARIF schema compiles")
+}
+
+#[test]
+fn sarif_output_validates_against_the_official_schema() {
+    let validator = sarif_validator();
+    let v = read("conformance/positions/vectors.json");
+    for case in v["spans"].as_array().unwrap() {
+        let text = v["documents"][case["document"].as_str().unwrap()]["text"]
+            .as_str()
+            .unwrap();
+        let (s, e) = (&case["start"], &case["end"]);
+        let coords = [
+            num(&s["line"]),
+            num(&s["utf32"]),
+            num(&e["line"]),
+            num(&e["utf32"]),
+        ];
+        let span = (num(&case["span"]["start"]), num(&case["span"]["end"]));
+        let mut report = report_for(Some(span), coords, "msg");
+        report.documents[0].findings[0].fix = Some(
+            serde_json::from_value(
+                json!({"edits": [{"span": {"start": span.0, "end": span.1}, "text": "X"}]}),
+            )
+            .unwrap(),
+        );
+        let sarif: Value = serde_json::from_str(&out(Format::Sarif, &report, text)).unwrap();
+        let errors: Vec<String> = validator
+            .iter_errors(&sarif)
+            .map(|e| e.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{}: {errors:?}", case["id"]);
+    }
+}
+
+#[test]
+fn sarif_with_notices_and_no_findings_validates() {
+    let report: Report =
+        serde_json::from_value(read("conformance/lint-report/valid/multi-document.json")).unwrap();
+    let mut report = report;
+    for doc in &mut report.documents {
+        doc.findings.clear();
+    }
+    let sarif: Value =
+        serde_json::from_str(&render(Format::Sarif, &report, &NoSources).unwrap()).unwrap();
+    assert!(sarif_validator().is_valid(&sarif));
+    let notes = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"];
+    assert!(notes.as_array().unwrap().len() >= 2);
 }

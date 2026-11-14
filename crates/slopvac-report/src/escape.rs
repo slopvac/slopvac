@@ -20,6 +20,17 @@ pub(crate) fn xml(text: &str) -> String {
     out
 }
 
+/// Escape text for an XML attribute value.
+///
+/// Parsers normalise literal tabs and newlines in attributes to spaces, so they become
+/// character references here and survive a round trip.
+pub(crate) fn xml_attr(text: &str) -> String {
+    xml(text)
+        .replace('\t', "&#9;")
+        .replace('\n', "&#10;")
+        .replace('\r', "&#13;")
+}
+
 /// Escape a GitHub workflow-command message (`::error ::message`).
 pub(crate) fn github_data(text: &str) -> String {
     text.replace('%', "%25")
@@ -42,6 +53,11 @@ mod tests {
             xml("<a href=\"x\">&'\u{1}</a>"),
             "&lt;a href=&quot;x&quot;&gt;&amp;&#39;\u{fffd}&lt;/a&gt;"
         );
+    }
+
+    #[test]
+    fn attribute_whitespace_becomes_character_references() {
+        assert_eq!(xml_attr("a\tb\nc\rd"), "a&#9;b&#10;c&#13;d");
     }
 
     #[test]
