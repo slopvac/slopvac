@@ -101,6 +101,8 @@ const fn is_line_terminator(c: char) -> bool {
 impl Scan {
     fn feed(&mut self, chunk: &str) {
         for c in chunk.chars() {
+            #[cfg(test)]
+            crate::work::add(&crate::work::CHECKER_STEPS, 1);
             match c {
                 '{' => self.plain_depth += 1,
                 '}' => self.plain_depth = self.plain_depth.saturating_sub(1),
@@ -279,11 +281,13 @@ impl ExpressionChecker {
 
 #[cfg(test)]
 mod tests {
+    use markdown::MdxSignal;
     use markdown::mdast::Node;
     use markdown::{Constructs, ParseOptions, to_mdast};
     use proptest::prelude::*;
 
-    use super::ExpressionChecker;
+    use super::{ExpressionChecker, MAX_WORK};
+    use crate::work::{CHECKER_STEPS, take};
 
     /// Pieces with no brace inside a string, template, comment or regex, so plain counting
     /// and the checker must agree.
@@ -364,5 +368,55 @@ mod tests {
         let source = "a {'{'} b\n";
         assert!(ranges(source, false).is_none());
         assert_eq!(ranges(source, true), Some(vec![(2, 7)]));
+    }
+
+    /// Calls the checker as markdown-rs does: once per closing brace, with all of the
+    /// expression so far. Returns the signals.
+    fn call_per_brace(content: &str, mut on_signal: impl FnMut(&MdxSignal) -> bool) {
+        let checker = ExpressionChecker::default();
+        let kind = markdown::MdxExpressionKind::Expression;
+        for (i, c) in content.char_indices() {
+            if c == '}' && !on_signal(&checker.check(&content[..i], &kind)) {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn the_checker_reads_each_character_once_however_many_braces_come() {
+        for n in [500_usize, 2_000] {
+            let content = format!("{}{}", "{x".repeat(n), "}".repeat(n));
+            take(&CHECKER_STEPS);
+            call_per_brace(&content, |_| true);
+            let steps = take(&CHECKER_STEPS);
+            // Re-reading the expression on each call would cost about n * len / 2.
+            assert!(
+                steps <= content.len(),
+                "{steps} steps for {} bytes",
+                content.len()
+            );
+        }
+    }
+
+    #[test]
+    fn the_work_budget_ends_a_huge_unfinished_expression() {
+        let content = format!("{}{}", "{x".repeat(60_000), "}".repeat(60_000));
+        let mut asked = 0_usize;
+        let mut failed = false;
+        let kind = markdown::MdxExpressionKind::Expression;
+        let checker = ExpressionChecker::default();
+        for (i, c) in content.char_indices() {
+            if c != '}' {
+                continue;
+            }
+            asked += i;
+            if matches!(checker.check(&content[..i], &kind), MdxSignal::Error(..)) {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "no error after asking for {asked} bytes");
+        // The error comes as soon as the budget is spent, one call late at most.
+        assert!(asked <= MAX_WORK + content.len(), "{asked}");
     }
 }

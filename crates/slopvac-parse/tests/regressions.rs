@@ -92,13 +92,12 @@ fn what_naive_brace_counting_accepts_is_accepted() {
 }
 
 #[test]
-fn a_deeply_braced_mdx_expression_is_checked_in_linear_time() {
-    let n = 40_000;
+fn a_deeply_braced_mdx_expression_still_parses() {
+    // More closing braces than the checker reads: it hands back to plain counting. The
+    // work bounds are unit tests in `jsexpr.rs`.
+    let n = 3_000;
     let source = format!("{{{}{}}}\n", "{x".repeat(n), "}".repeat(n));
-    let start = std::time::Instant::now();
-    // Too many closing braces for the checker: the parse falls back to plain counting.
     assert!(parse_mdx(&source, whole(&source)).is_ok());
-    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
 }
 
 #[test]
@@ -143,13 +142,12 @@ fn a_standalone_expression_that_is_not_a_string_renders_nothing() {
 }
 
 #[test]
-fn long_runs_of_ampersands_parse_in_linear_time() {
-    let source = format!("{}\n", "&".repeat(600_000));
-    let start = std::time::Instant::now();
-    let (a, b) = (mdx(&source), md(&source));
-    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
-    assert_eq!(prose(&a)[0].len(), 600_000);
-    assert_eq!(prose(&b)[0].len(), 600_000);
+fn long_runs_of_ampersands_stay_literal() {
+    // The work bound is a unit test in `align.rs`.
+    let source = format!("{}\n", "&".repeat(20_000));
+    for doc in [mdx(&source), md(&source)] {
+        assert_eq!(prose(&doc)[0].len(), 20_000);
+    }
 }
 
 #[test]
@@ -234,19 +232,19 @@ fn an_unknown_or_double_encoded_entity_is_literal_or_exact() {
 }
 
 #[test]
-fn deeply_nested_bang_blocks_parse_in_linear_time() {
+fn deeply_nested_bang_blocks_all_become_admonitions() {
+    // The work bound is a unit test in `mask.rs`.
+    let depth = 300;
     let mut source = String::new();
-    for depth in 0..3000 {
-        source.push_str(&" ".repeat(4 * depth));
+    for level in 0..depth {
+        source.push_str(&" ".repeat(4 * level));
         source.push_str("!!! note\n");
     }
-    for _ in 0..3000 {
-        source.push_str(&" ".repeat(4 * 2999));
+    for _ in 0..depth {
+        source.push_str(&" ".repeat(4 * (depth - 1)));
         source.push_str("text\n\n");
     }
-    let start = std::time::Instant::now();
-    let _ = md(&source);
-    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+    assert_eq!(admonitions(&md(&source)), depth);
 }
 
 // ---- review round 2: JavaScript scanning ----

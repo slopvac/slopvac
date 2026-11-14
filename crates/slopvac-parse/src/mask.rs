@@ -118,6 +118,8 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
             let cols = leading_cols(line);
             while indents.last().is_some_and(|f| f.body_cols > cols) {
                 if let Some(frame) = indents.pop() {
+                    #[cfg(test)]
+                    crate::work::add(&crate::work::FRAME_OPS, 1);
                     pending[frame.block].end = last_nonblank_end;
                 }
             }
@@ -486,4 +488,31 @@ fn parse_alert(body: &str) -> Option<(String, Option<&str>)> {
     }
     let after = after.strip_prefix(['+', '-']).unwrap_or(after).trim();
     Some((kind.to_lowercase(), (!after.is_empty()).then_some(after)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan;
+    use crate::work::{FRAME_OPS, take};
+
+    #[test]
+    fn nested_bang_blocks_touch_each_frame_once() {
+        for depth in [100_usize, 400] {
+            let mut text = String::new();
+            for level in 0..depth {
+                text.push_str(&" ".repeat(4 * level));
+                text.push_str("!!! note\n");
+            }
+            for _ in 0..depth {
+                text.push_str(&" ".repeat(4 * (depth - 1)));
+                text.push_str("text\n\n");
+            }
+            take(&FRAME_OPS);
+            let masked = scan(&text, 0, &[], true);
+            assert_eq!(masked.admonitions.len(), depth);
+            let ops = take(&FRAME_OPS);
+            // Updating every open frame on every line would cost depth * lines.
+            assert!(ops <= 2 * depth, "{ops} frame updates for depth {depth}");
+        }
+    }
 }

@@ -1,7 +1,7 @@
 //! Document parsing: Markdown and MDX blocks with exact byte positions.
 //!
 //! [`parse_markdown`] and [`parse_mdx`] turn a document body into a [`Document`]: a list
-//! of [`Block`]s in source order, each with a byte [`Span`] into the original source.
+//! of [`Block`]s in source order, each with a byte [`slopvac_model::Span`] into the original source.
 //! Prose blocks carry a [`Projection`] that maps the text rules read back to source
 //! bytes. See `docs/contract/positions.md`.
 //!
@@ -17,6 +17,8 @@ mod markdown;
 mod mask;
 mod mdx;
 mod projection;
+#[cfg(test)]
+mod work;
 
 pub use document::{Admonition, AdmonitionSyntax, Block, BlockKind, Document, ParseError};
 pub use markdown::parse_markdown;

@@ -237,6 +237,8 @@ fn entity_len(s: &str) -> Option<usize> {
     let body = s.strip_prefix('&')?.as_bytes();
     let mut end = None;
     for (k, &b) in body.iter().take(MAX_REFERENCE + 1).enumerate() {
+        #[cfg(test)]
+        crate::work::add(&crate::work::ENTITY_BYTES, 1);
         match b {
             b';' => {
                 end = Some(k);
@@ -272,4 +274,35 @@ fn decode_entity(reference: &str) -> Option<String> {
         })
         .collect();
     (decoded != reference).then_some(decoded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::walk;
+    use crate::work::{ENTITY_BYTES, take};
+
+    /// Bytes examined for references while aligning `n` ampersands.
+    fn entity_work(n: usize) -> usize {
+        let text = "&".repeat(n);
+        take(&ENTITY_BYTES);
+        assert!(walk(&text, 0, &text).is_some());
+        take(&ENTITY_BYTES)
+    }
+
+    #[test]
+    fn a_run_of_ampersands_costs_constant_work_per_character() {
+        // A search for `;` over the rest of the text would cost n * n / 2.
+        for n in [1_000, 8_000, 64_000] {
+            let work = entity_work(n);
+            assert!(work <= 2 * n, "{work} bytes examined for {n} ampersands");
+        }
+    }
+
+    #[test]
+    fn a_long_name_costs_at_most_the_reference_limit_per_ampersand() {
+        let text = format!("&{}", "a".repeat(50_000));
+        take(&ENTITY_BYTES);
+        let _ = walk(&text, 0, &text);
+        assert!(take(&ENTITY_BYTES) <= 40);
+    }
 }
