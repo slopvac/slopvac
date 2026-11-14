@@ -244,26 +244,71 @@ fn drain(t: &mut dyn TableLike, key: &str) -> Option<Vec<(toml_edit::Key, Item)>
     Some(out)
 }
 
-fn restore(t: &mut dyn TableLike, key: &str, entries: Vec<(String, toml_edit::Key, Item)>) {
+/// An entry ready to go back into its map: the new name, the old key (for its decor),
+/// the new item, and comment text that sat on a table header or inner key and now
+/// leads the entry.
+type Entry = (String, toml_edit::Key, Item, String);
+
+fn restore(t: &mut dyn TableLike, key: &str, entries: Vec<Entry>) {
     let Some(sub) = t.get_mut(key).and_then(Item::as_table_like_mut) else {
         return;
     };
-    for (name, old, item) in entries {
+    for (name, old, item, carried) in entries {
         let is_value = item.is_value();
         sub.insert(&name, item);
         if let Some(mut k) = sub.key_mut(&name) {
             *k.leaf_decor_mut() = old.leaf_decor().clone();
             *k.dotted_decor_mut() = old.dotted_decor().clone();
             if is_value {
+                let own = k
+                    .leaf_decor()
+                    .prefix()
+                    .and_then(RawString::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                k.leaf_decor_mut().set_prefix(format!("{own}{carried}"));
                 k.leaf_decor_mut().set_suffix(" ");
             }
         }
     }
 }
 
-fn level_only(item: Item, path: &str, allowed: &[&str], cx: &mut Cx<'_>) -> Option<Item> {
+/// When a table holds only `severity`, the bare level that replaces it and the
+/// comments the table carried: the text before its header and before the key.
+fn collapse_severity(item: &Item) -> Option<(Item, String)> {
+    let tl = item.as_table_like().filter(|tl| tl.len() == 1)?;
+    let sev = tl.get("severity")?.clone();
+    let mut carried = String::new();
+    if let Item::Table(table) = item {
+        carried.push_str(&comments(
+            table
+                .decor()
+                .prefix()
+                .and_then(RawString::as_str)
+                .unwrap_or(""),
+        ));
+        carried.push_str(&comments(
+            table
+                .decor()
+                .suffix()
+                .and_then(RawString::as_str)
+                .unwrap_or(""),
+        ));
+    }
+    if let Some(key) = tl.key("severity") {
+        carried.push_str(&comments(
+            key.leaf_decor()
+                .prefix()
+                .and_then(RawString::as_str)
+                .unwrap_or(""),
+        ));
+    }
+    Some((sev, carried))
+}
+
+fn level_only(item: Item, path: &str, allowed: &[&str], cx: &mut Cx<'_>) -> Option<(Item, String)> {
     if item.is_str() {
-        return Some(item);
+        return Some((item, String::new()));
     }
     let Some(tl) = item.as_table_like() else {
         cx.drop_key(path, "expected a level or a table");
@@ -279,12 +324,10 @@ fn level_only(item: Item, path: &str, allowed: &[&str], cx: &mut Cx<'_>) -> Opti
     if !ok {
         return None;
     }
-    let only_severity = tl.len() == 1 && tl.contains_key("severity");
-    if only_severity {
-        let sev = tl.get("severity").cloned()?;
-        return Some(sev);
+    if let Some(collapsed) = collapse_severity(&item) {
+        return Some(collapsed);
     }
-    Some(item)
+    Some((item, String::new()))
 }
 
 fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) {
@@ -296,12 +339,12 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
             cx.drop_key(&kp, "unknown 2.x category; the rename table has no entry");
             continue;
         };
-        if let Some(item) = level_only(item, &kp, CATEGORY_KEYS, cx) {
+        if let Some((item, carried)) = level_only(item, &kp, CATEGORY_KEYS, cx) {
             if new != k.get() {
                 cx.notes
                     .push(format!("renamed category {} to {new}", k.get()));
             }
-            out.push((new, k, item));
+            out.push((new, k, item, carried));
         }
     }
     restore(t, key, out);
@@ -317,21 +360,16 @@ fn migrate_rules(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) 
             continue;
         };
         if item.is_table_like() {
-            let Some(sev) = item
-                .as_table_like()
-                .filter(|tl| tl.len() == 1)
-                .and_then(|tl| tl.get("severity"))
-                .cloned()
-            else {
+            let Some((sev, carried)) = collapse_severity(&item) else {
                 cx.drop_key(
                     &kp,
                     "a rule takes a level only; 3.0 has no other rule field",
                 );
                 continue;
             };
-            out.push((new, k, sev));
+            out.push((new, k, sev, carried));
         } else if item.is_str() {
-            out.push((new, k, item));
+            out.push((new, k, item, String::new()));
         } else {
             cx.drop_key(&kp, "expected a level");
         }
@@ -346,31 +384,49 @@ fn terms_table(t: &mut dyn TableLike) -> Option<&mut dyn TableLike> {
     t.get_mut("terms")?.as_table_like_mut()
 }
 
-/// The comment and blank lines before an entry: its key's leading text and, for a
-/// table, the text before its header.
+/// The comment lines in a run of decor text. Blank lines are layout, not content.
+fn comments(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(str::trim_start)
+        .filter(|l| l.starts_with('#'))
+        .map(|l| {
+            if l.ends_with('\n') {
+                l.to_owned()
+            } else {
+                format!("{l}\n")
+            }
+        })
+        .collect()
+}
+
+/// The comments before an entry: those before its key and, for a table, those before
+/// its header.
 fn leading(parent: &dyn TableLike, name: &str) -> String {
     let mut out = String::new();
     if let Some(Item::Table(table)) = parent.get(name) {
-        out.push_str(
+        out.push_str(&comments(
             table
                 .decor()
                 .prefix()
                 .and_then(RawString::as_str)
                 .unwrap_or(""),
-        );
+        ));
     }
     if let Some(key) = parent.key(name) {
-        out.push_str(
+        out.push_str(&comments(
             key.leaf_decor()
                 .prefix()
                 .and_then(RawString::as_str)
                 .unwrap_or(""),
-        );
+        ));
     }
     out
 }
 
 fn set_leading(t: &mut dyn TableLike, name: &str, prefix: &str) {
+    if prefix.is_empty() {
+        return;
+    }
     if let Some(mut key) = t.key_mut(name) {
         let decor = key.leaf_decor_mut();
         decor.set_prefix(prefix);
@@ -385,7 +441,10 @@ fn migrate_locale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     };
     let mut ok = true;
     for (k, _) in tl.iter() {
-        if k != "default" && k != "allow" {
+        if k.starts_with("x-") {
+            cx.notes
+                .push(format!("dropped extension key {}", join(path, k)));
+        } else if k != "default" && k != "allow" {
             cx.drop_key(&join(path, k), "no 3.0 equivalent");
             ok = false;
         }
@@ -426,7 +485,10 @@ fn migrate_vocabulary(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     };
     let mut ok = true;
     for (k, _) in tl.iter() {
-        if k != "path" {
+        if k.starts_with("x-") {
+            cx.notes
+                .push(format!("dropped extension key {}", join(path, k)));
+        } else if k != "path" {
             cx.drop_key(&join(path, k), "no 3.0 equivalent");
             ok = false;
         }
