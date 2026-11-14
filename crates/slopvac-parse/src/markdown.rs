@@ -8,7 +8,7 @@ use slopvac_model::{SourceIndex, Span};
 use crate::align::{ProseBuilder, align};
 use crate::code::{code_kind, trim_terminator};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, ParseError, TokenKind};
 
 const BOM: &str = "\u{feff}";
 
@@ -86,6 +86,7 @@ struct Open {
     /// Range of the inline events seen so far.
     inline: Option<Range<usize>>,
     prose: ProseBuilder,
+    containers: Vec<Container>,
 }
 
 /// A code block under construction.
@@ -95,6 +96,7 @@ struct OpenCode {
     range: Range<usize>,
     /// Hull of the block's text events: the body without fences and container prefixes.
     hull: Option<Range<usize>>,
+    containers: Vec<Container>,
 }
 
 struct Collector<'a> {
@@ -109,6 +111,10 @@ struct Collector<'a> {
     prev_end: usize,
     row: usize,
     column: usize,
+    /// The lists and block quotes the parser is inside.
+    containers: Vec<Container>,
+    /// Whether each enclosing list is ordered.
+    lists: Vec<bool>,
 }
 
 impl<'a> Collector<'a> {
@@ -124,6 +130,8 @@ impl<'a> Collector<'a> {
             prev_end: 0,
             row: 0,
             column: 0,
+            containers: Vec::new(),
+            lists: Vec::new(),
         }
     }
 
@@ -148,16 +156,19 @@ impl<'a> Collector<'a> {
             tag: Some(range),
             inline: None,
             prose: ProseBuilder::default(),
+            containers: self.containers.clone(),
         });
     }
 
     /// The open block, or a tight-list paragraph opened now.
     fn prose(&mut self) -> &mut Open {
+        let containers = &self.containers;
         self.open.get_or_insert_with(|| Open {
             kind: BlockKind::Paragraph,
             tag: None,
             inline: None,
             prose: ProseBuilder::default(),
+            containers: containers.clone(),
         })
     }
 
@@ -172,6 +183,7 @@ impl<'a> Collector<'a> {
                 kind: open.kind,
                 span: self.span(&range),
                 projection: Some(projection),
+                containers: open.containers,
             });
         }
     }
@@ -291,6 +303,7 @@ impl<'a> Collector<'a> {
                     kind: BlockKind::Table,
                     span,
                     projection: None,
+                    containers: self.containers.clone(),
                 });
             }
             Tag::TableHead => {
@@ -310,7 +323,23 @@ impl<'a> Collector<'a> {
                     },
                     range,
                     hull: None,
+                    containers: self.containers.clone(),
                 });
+            }
+            Tag::List(first) => {
+                self.flush();
+                self.lists.push(first.is_some());
+            }
+            Tag::Item => {
+                self.flush();
+                self.containers.push(Container::ListItem {
+                    ordered: self.lists.last().copied().unwrap_or(false),
+                    depth: self.lists.len(),
+                });
+            }
+            Tag::BlockQuote(_) => {
+                self.flush();
+                self.containers.push(Container::BlockQuote);
             }
             Tag::Image { .. } => {
                 self.inline_range(&range);
@@ -340,8 +369,17 @@ impl<'a> Collector<'a> {
                         kind: code_kind(code.info.as_deref(), body),
                         span,
                         projection: None,
+                        containers: code.containers,
                     });
                 }
+            }
+            TagEnd::List(_) => {
+                self.flush();
+                self.lists.pop();
+            }
+            TagEnd::Item | TagEnd::BlockQuote(_) => {
+                self.flush();
+                self.containers.pop();
             }
             TagEnd::Image => {
                 self.inline_range(range);
