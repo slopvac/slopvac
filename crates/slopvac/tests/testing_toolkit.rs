@@ -34,7 +34,9 @@ fn help_flags_succeed(#[case] flag: &str) {
 #[test]
 fn help_text_snapshot() {
     let output = slopvac().arg("--help").output().expect("binary runs");
-    insta::assert_snapshot!(String::from_utf8(output.stdout).expect("utf-8 help"));
+    let help = String::from_utf8(output.stdout).expect("utf-8 help");
+    // Normalise what differs by platform: Windows prints `slopvac.exe` and CRLF.
+    insta::assert_snapshot!(help.replace("\r\n", "\n").replace("slopvac.exe", "slopvac"));
 }
 
 proptest! {
