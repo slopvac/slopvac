@@ -29,6 +29,7 @@ slopvac-styles = { path = "crates/slopvac-styles" }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 thiserror = "2"
+slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 clap = { version = "4.6", features = ["derive"] }
 
 [workspace.lints.rust]
