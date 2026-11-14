@@ -33,7 +33,7 @@ The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto
 
 When the project has a `.slopvac/packs.lock` lockfile, a separate `Sync packs` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
 
-The lint steps run with `--offline`, so they never reach the network. Installing slopvac still does. Set `offline: false` to allow network access during the lint.
+The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing packs still do.
 
 Set `fail-on-findings: false` to report without failing the job. That softens only exit 1. An incomplete check (exit 2), any other exit status and a crash from a signal always fail the job.
 

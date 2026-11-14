@@ -67,10 +67,6 @@ inputs:
     description: Write a Code Climate report and upload it as a workflow artifact.
     required: false
     default: "true"
-  offline:
-    description: Run the lint steps with no network access. Installing slopvac still uses the network.
-    required: false
-    default: "true"
   version:
     description: slopvac version to install, for example "3.0.0". Empty installs the latest stable release. Pin it for reproducible CI.
     required: false
@@ -168,7 +164,6 @@ runs:
         MIN_SCORE: ${{ inputs.min-score }}
         MAX_PER_100: ${{ inputs.max-per-100-words }}
         FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
-        OFFLINE: ${{ inputs.offline }}
         RDJSONL_FILE: ${{ inputs.rdjsonl-file }}
         SARIF: ${{ inputs.sarif }}
         SARIF_FILE: ${{ inputs.sarif-file }}

@@ -125,11 +125,58 @@ def test_each_report_is_rendered_and_arguments_stay_whole(run, tmp_path):
     assert outputs["sarif-file"] == str(tmp_path / "x.sarif")
 
 
-def test_the_binary_runs_offline_by_default_and_online_on_request(run):
-    _, log, _ = run()
+@pytest.mark.parametrize(
+    "env", [{}, {"OFFLINE": "false"}], ids=["default", "env-override"]
+)
+def test_every_lint_invocation_is_offline(run, env):
+    _, log, _ = run(**env)
+    assert len(log) == len(FORMATS)
     assert all(argv[0] == "--offline" for argv in log)
-    _, log, _ = run(OFFLINE="false")
-    assert all(argv[0] == "lint" for argv in log)
+
+
+def test_the_action_has_no_offline_input():
+    inputs = yaml.safe_load(ACTION.read_text(encoding="utf-8"))["inputs"]
+    assert "offline" not in inputs
+    assert "OFFLINE" not in _step("Lint")["env"]
+
+
+def test_rdjsonl_is_written_to_a_nested_workspace_path(run, tmp_path):
+    target = tmp_path / "reports" / "sub" / "slopvac.rdjsonl"
+    code, _, outputs = run(RDJSONL_FILE=str(target))
+    assert code == 0
+    assert outputs["rdjsonl-file"] == str(target)
+    assert json.loads(target.read_text(encoding="utf-8"))["source"] == {
+        "name": "slopvac"
+    }
+
+
+def test_rdjsonl_survives_a_findings_failure_at_the_requested_path(run, tmp_path):
+    target = tmp_path / "findings" / "findings.rdjsonl"
+    code, _, _ = run(RDJSONL_FILE=str(target), FAKE_EXIT_JSON="1")
+    assert code == 1
+    assert target.is_file()
+
+
+def test_the_lint_step_receives_the_rdjsonl_input():
+    action_yml = yaml.safe_load(ACTION.read_text(encoding="utf-8"))
+    assert action_yml["inputs"]["rdjsonl-file"]["default"]
+    assert _step("Lint")["env"]["RDJSONL_FILE"] == "${{ inputs.rdjsonl-file }}"
+
+
+def _fork_template_steps():
+    doc = (ROOT / "docs" / "ci" / "github-action.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```yaml\n(.*?)```", doc, re.S)
+    template = next(b for b in blocks if "slopvac-findings" in b)
+    workflow = yaml.safe_load(template.replace("# .github", "#"))
+    return workflow["jobs"]["lint"]["steps"]
+
+
+def test_fork_template_uploads_the_report_path_it_asks_the_action_to_write():
+    steps = _fork_template_steps()
+    written = next(s for s in steps if s.get("id") == "slopvac")["with"]["rdjsonl-file"]
+    upload = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
+    assert upload["if"] == f"${{{{ !cancelled() && hashFiles('{written}') != '' }}}}"
+    assert Path(written).parent.as_posix() == upload["with"]["path"]
 
 
 def test_reports_can_be_switched_off(run):

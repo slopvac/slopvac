@@ -79,9 +79,7 @@ def _binary(env: Mapping[str, str]) -> str:
 def _command(
     env: Mapping[str, str], fmt: str, out: Path, targets: Sequence[str]
 ) -> list[str]:
-    command = [_binary(env)]
-    if env.get("OFFLINE", "true") == "true":
-        command.append("--offline")
+    command = [_binary(env), "--offline"]  # policies.md 1.4: no opt-out
     command += ["lint", "--format", fmt, "--out", str(out)]
     if env.get("CONFIG"):
         command += ["--config", env["CONFIG"]]

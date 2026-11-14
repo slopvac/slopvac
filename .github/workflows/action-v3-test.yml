@@ -43,7 +43,6 @@ jobs:
           fail-on-findings: ${{ matrix.fail-on-findings }}
           reporter: none
           sarif: "false"
-          offline: "false"
 
       - name: Check the gate and the outputs
         env:
