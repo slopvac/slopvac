@@ -1,0 +1,740 @@
+//! Sync, status, offline cache and CI lock check (bead 8l4.9.3; threat model
+//! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
+
+mod oci_server;
+
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::io::{Cursor, Write};
+use std::path::{Path, PathBuf};
+
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use oci_server::{Response, Server};
+use slopvac_plugins::lock::{
+    Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, parse_version_req,
+};
+use slopvac_plugins::oci::{
+    Anonymous, Client, Descriptor, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
+};
+use slopvac_plugins::sign::{
+    ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
+    SignError, Statement,
+};
+use slopvac_plugins::sync::{
+    ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, PackState, Store, SyncError, Syncer,
+    available_versions, check_lock, status, update_notices,
+};
+
+const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
+
+struct Key {
+    pk: minisign::PublicKey,
+    sk: minisign::SecretKey,
+}
+
+impl Key {
+    fn new() -> Self {
+        let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+        Self {
+            pk: kp.pk,
+            sk: kp.sk,
+        }
+    }
+    fn public(&self) -> PublicKey {
+        PublicKey::from_base64(&self.pk.to_base64()).unwrap()
+    }
+    fn sign(&self, bytes: &[u8]) -> String {
+        minisign::sign(Some(&self.pk), &self.sk, Cursor::new(bytes), None, None)
+            .unwrap()
+            .to_string()
+    }
+}
+
+fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut builder = tar::Builder::new(Vec::new());
+    for (name, data) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_entry_type(tar::EntryType::Regular);
+        builder.append_data(&mut header, name, *data).unwrap();
+    }
+    let raw = builder.into_inner().unwrap();
+    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+    gz.write_all(&raw).unwrap();
+    gz.finish().unwrap()
+}
+
+/// A signed pack artifact, ready to serve.
+struct Published {
+    manifest: Vec<u8>,
+    digest: String,
+    blobs: HashMap<String, Vec<u8>>,
+    key_id: String,
+}
+
+fn publish(key: &Key, namespace: &str, files: &[(&str, &[u8])]) -> Published {
+    let layer = targz(files);
+    let mut manifest = Manifest {
+        schema_version: 2,
+        media_type: Some(MEDIA_MANIFEST.into()),
+        artifact_type: Some(ARTIFACT_TYPE_PACK.into()),
+        config: Descriptor::for_bytes("application/vnd.oci.empty.v1+json", b"{}"),
+        layers: vec![Descriptor::for_bytes(MEDIA_PACK_LAYER, &layer)],
+        subject: None,
+        annotations: BTreeMap::from([
+            (ANNOTATION_ID.to_owned(), "style".to_owned()),
+            (ANNOTATION_VERSION.to_owned(), "1.2.0".to_owned()),
+        ]),
+    };
+    let key_id = key.public().key_id();
+    let statement =
+        Statement::for_manifest(namespace, "style", "1.2.0", &key_id, NOT_BEFORE, &manifest)
+            .canonical_bytes();
+    let minisig = key.sign(&statement);
+    manifest
+        .layers
+        .push(Descriptor::for_bytes(MEDIA_STATEMENT, &statement));
+    manifest
+        .layers
+        .push(Descriptor::for_bytes(MEDIA_MINISIG, minisig.as_bytes()));
+    let body = serde_json::to_vec(&manifest).unwrap();
+    let mut blobs = HashMap::new();
+    blobs.insert(Digest::of(&layer).to_string(), layer);
+    blobs.insert(Digest::of(&statement).to_string(), statement);
+    blobs.insert(
+        Digest::of(minisig.as_bytes()).to_string(),
+        minisig.into_bytes(),
+    );
+    blobs.insert(Digest::of(b"{}").to_string(), b"{}".to_vec());
+    Published {
+        digest: Digest::of(&body).to_string(),
+        manifest: body,
+        blobs,
+        key_id,
+    }
+}
+
+/// A registry that serves `artifacts` by digest (and any manifest tag as the first one).
+fn registry(artifacts: &[&Published]) -> Server {
+    let mut manifests: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut blobs: HashMap<String, Vec<u8>> = HashMap::new();
+    for a in artifacts {
+        manifests.insert(a.digest.clone(), a.manifest.clone());
+        blobs.extend(a.blobs.clone());
+    }
+    let first = artifacts.first().map(|a| a.manifest.clone());
+    Server::start(move |req| {
+        let last = req.path.rsplit('/').next().unwrap_or_default();
+        if req.path.contains("/tags/list") {
+            return Response::new(200).json(&serde_json::json!({
+                "name": "acme/style",
+                "tags": ["1.0.0", "latest", "1.2.0", "1.3.0", "2.0.0-rc.1"]
+            }));
+        }
+        if req.path.contains("/manifests/") {
+            let body = manifests.get(last).cloned().or_else(|| first.clone());
+            return body.map_or_else(
+                || Response::new(404),
+                |b| {
+                    Response::new(200)
+                        .header("Content-Type", MEDIA_MANIFEST)
+                        .body(b)
+                },
+            );
+        }
+        blobs.get(last).map_or_else(
+            || Response::new(404),
+            |b| Response::new(200).body(b.clone()),
+        )
+    })
+}
+
+fn client() -> Client {
+    Client::with_loopback_http_for_tests(Box::new(Anonymous))
+}
+
+fn policy(namespace: &str, keys: &[&Key]) -> KeyPolicy {
+    KeyPolicy {
+        pinned: BTreeMap::from([(
+            namespace.to_owned(),
+            keys.iter().map(|k| k.public()).collect(),
+        )]),
+        ..KeyPolicy::default()
+    }
+}
+
+fn lock_text(entries: &[String]) -> Lockfile {
+    let mut text = String::from("schema_version = 3\n");
+    for e in entries {
+        text.push_str(e);
+    }
+    Lockfile::parse(&text).unwrap()
+}
+
+fn oci_entry(id: &str, registry: &str, digest: &str, key_id: &str) -> String {
+    format!(
+        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+         source = \"oci://{registry}/acme/style:1.2.0\"\ndigest = \"{digest}\"\n\n\
+         [packs.signature]\nkey_id = \"{key_id}\"\nnot_before = \"{NOT_BEFORE}\"\n"
+    )
+}
+
+fn oci_lock(registry: &str, p: &Published) -> Lockfile {
+    lock_text(&[oci_entry("style", registry, &p.digest, &p.key_id)])
+}
+
+struct Env {
+    data: tempfile::TempDir,
+    project: tempfile::TempDir,
+}
+
+impl Env {
+    fn new() -> Self {
+        Self {
+            data: tempfile::tempdir().unwrap(),
+            project: tempfile::tempdir().unwrap(),
+        }
+    }
+    fn store(&self) -> Store {
+        Store::new(self.data.path().join("slopvac"))
+    }
+    fn assert_no_trees(&self) {
+        let trees = self.trees();
+        assert!(trees.is_empty(), "unexpected trees: {trees:?}");
+    }
+    fn trees(&self) -> Vec<PathBuf> {
+        let dir = self.data.path().join("slopvac/trees");
+        fs::read_dir(dir)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().starts_with("tree-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+fn run(
+    env: &Env,
+    network: Network<'_>,
+    policy: &KeyPolicy,
+    lock: &Lockfile,
+) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+    let store = env.store();
+    Syncer::new(&store, network, policy, env.project.path()).sync(lock)
+}
+
+const FILES: &[(&str, &[u8])] = &[
+    ("pack.toml", b"id = \"style\"\n"),
+    ("rules/a.yml", b"rule: a\n"),
+];
+
+#[test]
+fn sync_installs_exactly_the_locked_pack() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let report = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap();
+
+    assert_eq!(report.packs.len(), 1);
+    assert_eq!(report.packs[0].change, Change::Installed);
+    let tree = &report.packs[0].tree;
+    assert_eq!(fs::read(tree.join("rules/a.yml")).unwrap(), b"rule: a\n");
+    assert_eq!(
+        fs::read(tree.join("pack.toml")).unwrap(),
+        b"id = \"style\"\n"
+    );
+    assert_eq!(env.trees(), vec![tree.clone()]);
+    // The lock names the digest, so the manifest is fetched by digest and never by the tag.
+    let by_tag = server.count("/v2/acme/style/manifests/1.2.0");
+    assert_eq!(by_tag, 0);
+    assert_eq!(
+        server.count(&format!("/v2/acme/style/manifests/{}", p.digest)),
+        1
+    );
+}
+
+#[test]
+fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
+    let key = Key::new();
+    let locked_pack = publish(&key, "acme", FILES);
+    let forged = publish(&key, "acme", &[("pack.toml", b"evil\n")]);
+    let server = registry(&[&forged]);
+    let env = Env::new();
+    let c = client();
+    // The lock pins `locked_pack`, but the registry answers with the forged manifest.
+    let lock = oci_lock(&server.registry(), &locked_pack);
+    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            SyncError::Fetch {
+                source: OciError::DigestMismatch { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
+    // TM-22: the artifact verifies against a key the user did not pin.
+    let signer = Key::new();
+    let pinned = Key::new();
+    let p = publish(&signer, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&pinned]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            SyncError::Sign {
+                source: SignError::KeyNotPinned { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(err.code(), "signature-invalid");
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_first_party_namespace_fails_closed_without_compiled_keys() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let mut pol = policy("acme", &[&key]);
+    pol.first_party_namespaces.push("acme".into());
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &pol,
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            SyncError::Sign {
+                source: SignError::KeyNotPinned { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_lock_entry_without_a_signature_is_refused() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
+    entry.truncate(entry.find("\n[packs.signature]").unwrap());
+    let env = Env::new();
+    let c = client();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &lock_text(&[entry]),
+    )
+    .unwrap_err();
+    assert!(matches!(err, SyncError::Unsigned { .. }), "{err:?}");
+    assert_eq!(server.requests().len(), 0, "nothing is fetched first");
+}
+
+#[test]
+fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
+    let locked_key = Key::new();
+    let other = Key::new();
+    let p = publish(&other, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let lock = lock_text(&[oci_entry(
+        "style",
+        &server.registry(),
+        &p.digest,
+        &locked_key.public().key_id(),
+    )]);
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&locked_key, &other]),
+        &lock,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, SyncError::SignatureDiffersFromLock { .. }),
+        "{err:?}"
+    );
+    env.assert_no_trees();
+}
+
+#[test]
+fn one_bad_pack_leaves_the_store_without_any_tree() {
+    let key = Key::new();
+    let good = publish(&key, "acme", FILES);
+    let server = registry(&[&good]);
+    let env = Env::new();
+    let c = client();
+    let missing = format!("sha256:{}", "ab".repeat(32));
+    // `style` sorts first and would install before `z-bad` fails, if sync did not verify all first.
+    let lock = lock_text(&[
+        oci_entry("style", &server.registry(), &good.digest, &good.key_id),
+        oci_entry("z-bad", &server.registry(), &missing, &good.key_id),
+    ]);
+    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Fetch { .. }), "{err:?}");
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_second_sync_changes_nothing_and_makes_no_request() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    let requests = server.requests().len();
+    let second = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    assert_eq!(second.packs[0].change, Change::Unchanged);
+    assert_eq!(second.packs[0].tree, first.packs[0].tree);
+    assert_eq!(server.requests().len(), requests);
+}
+
+#[test]
+fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let env = Env::new();
+    let pol = policy("acme", &[&key]);
+    let (lock, requests) = {
+        let server = registry(&[&p]);
+        let c = client();
+        let lock = oci_lock(&server.registry(), &p);
+        run(&env, Network::Online(&c), &pol, &lock).unwrap();
+        (lock, server.requests().len())
+    };
+    assert!(requests > 0);
+    // The trees are gone (for example a cleaned data dir), the downloads are not.
+    slopvac_plugins::extract::evict(&env.data.path().join("slopvac/trees")).unwrap();
+    fs::remove_dir_all(env.data.path().join("slopvac/refs")).unwrap();
+    let report = run(&env, Network::Offline, &pol, &lock).unwrap();
+    assert_eq!(report.packs[0].change, Change::Installed);
+    assert_eq!(
+        fs::read(report.packs[0].tree.join("rules/a.yml")).unwrap(),
+        b"rule: a\n"
+    );
+}
+
+#[test]
+fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let env = Env::new();
+    let lock = oci_lock("127.0.0.1:9", &p);
+    let err = run(&env, Network::Offline, &policy("acme", &[&key]), &lock).unwrap_err();
+    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.exit_code(), 2);
+    let text = err.to_string();
+    assert!(text.contains("style") && text.contains(&p.digest), "{text}");
+    env.assert_no_trees();
+}
+
+#[test]
+fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let env = Env::new();
+    let pol = policy("acme", &[&key]);
+    let server = registry(&[&p]);
+    let c = client();
+    let lock = oci_lock(&server.registry(), &p);
+    run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    // Replace the downloaded manifest by other bytes under the same name.
+    let blob = env
+        .data
+        .path()
+        .join("slopvac/blobs")
+        .join(p.digest.trim_start_matches("sha256:"));
+    fs::write(&blob, b"{}").unwrap();
+    let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
+    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+}
+
+fn tamper_edit(tree: &Path) {
+    let file = tree.join("rules/a.yml");
+    let mut perms = fs::metadata(&file).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&file, perms).unwrap();
+    fs::write(&file, b"rule: evil\n").unwrap();
+}
+
+#[cfg(unix)]
+fn tamper_add(tree: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(tree, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(tree.join("extra.yml"), b"x").unwrap();
+}
+
+#[cfg(not(unix))]
+fn tamper_add(tree: &Path) {
+    fs::write(tree.join("extra.yml"), b"x").unwrap();
+}
+
+#[test]
+fn a_tampered_tree_is_reinstalled_online() {
+    // TM-46: edit a file; add a file.
+    for tamper in [tamper_edit as fn(&Path), tamper_add] {
+        let key = Key::new();
+        let p = publish(&key, "acme", FILES);
+        let server = registry(&[&p]);
+        let env = Env::new();
+        let c = client();
+        let pol = policy("acme", &[&key]);
+        let lock = oci_lock(&server.registry(), &p);
+        let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+        let tree = first.packs[0].tree.clone();
+        tamper(&tree);
+        let states = status(&env.store(), env.project.path(), &lock).unwrap();
+        assert!(
+            matches!(states[0].state, PackState::Tampered(_)),
+            "{states:?}"
+        );
+
+        let again = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+        assert_eq!(again.packs[0].change, Change::Reinstalled);
+        assert_eq!(fs::read(tree.join("rules/a.yml")).unwrap(), b"rule: a\n");
+        assert!(!tree.join("extra.yml").exists());
+        let states = status(&env.store(), env.project.path(), &lock).unwrap();
+        assert!(states[0].is_current(), "{states:?}");
+    }
+}
+
+#[test]
+fn a_tampered_tree_is_refused_offline_and_removed() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    tamper_edit(&first.packs[0].tree);
+    let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
+    assert!(matches!(err, SyncError::CacheTampered { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
+
+#[test]
+fn status_reports_missing_then_installed() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let lock = oci_lock(&server.registry(), &p);
+    let before = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(before[0].state, PackState::NotInstalled);
+    assert!(!before[0].is_current());
+    let report = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap();
+    let after = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(
+        after[0].state,
+        PackState::Installed(report.packs[0].tree.clone())
+    );
+}
+
+fn path_archive_entry(digest: &str) -> String {
+    format!(
+        "\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+         source = \"dist/style.tar.gz\"\ndigest = \"{digest}\"\n"
+    )
+}
+
+#[test]
+fn a_path_archive_is_installed_by_its_digest_and_cached_for_offline_use() {
+    let env = Env::new();
+    let archive = targz(FILES);
+    fs::create_dir_all(env.project.path().join("dist")).unwrap();
+    fs::write(env.project.path().join("dist/style.tar.gz"), &archive).unwrap();
+    let lock = lock_text(&[path_archive_entry(&Digest::of(&archive).to_string())]);
+    let pol = KeyPolicy::default();
+    let report = run(&env, Network::Offline, &pol, &lock).unwrap();
+    assert_eq!(report.packs[0].change, Change::Installed);
+    assert_eq!(
+        fs::read(report.packs[0].tree.join("rules/a.yml")).unwrap(),
+        b"rule: a\n"
+    );
+}
+
+#[test]
+fn a_path_archive_that_does_not_match_the_lock_digest_installs_nothing() {
+    let env = Env::new();
+    fs::create_dir_all(env.project.path().join("dist")).unwrap();
+    fs::write(env.project.path().join("dist/style.tar.gz"), targz(FILES)).unwrap();
+    let lock = lock_text(&[path_archive_entry(&format!("sha256:{}", "00".repeat(32)))]);
+    let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
+    assert_eq!(err.code(), "digest-mismatch");
+    env.assert_no_trees();
+}
+
+#[test]
+fn download_reads_up_to_the_limit_and_production_clients_refuse_http() {
+    let server = Server::start(|_| Response::new(200).body(vec![7u8; 100]));
+    let url = format!("http://{}/a.tar.gz", server.registry());
+    let mut out = Vec::new();
+    client().download(&url, 100, &mut out).unwrap();
+    assert_eq!(out.len(), 100);
+    let err = client().download(&url, 99, &mut Vec::new()).unwrap_err();
+    assert!(
+        matches!(err, OciError::TooLarge { limit: 99, .. }),
+        "{err:?}"
+    );
+    let err = Client::new()
+        .download(&url, 100, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(err, OciError::InsecureUrl(_)), "{err:?}");
+}
+
+#[test]
+fn a_path_source_directory_is_checked_by_tree_hash_and_used_in_place() {
+    let env = Env::new();
+    let dir = env.project.path().join("packs/local");
+    fs::create_dir_all(dir.join("rules")).unwrap();
+    fs::write(dir.join("pack.toml"), b"id = \"local\"\n").unwrap();
+    fs::write(dir.join("rules/a.yml"), b"rule: a\n").unwrap();
+    let hash = slopvac_plugins::extract::tree_hash(&dir).unwrap();
+    let entry = |digest: &str| {
+        format!(
+            "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+             source = \"packs/local\"\ndigest = \"{digest}\"\n"
+        )
+    };
+    let pol = KeyPolicy::default();
+    let lock = lock_text(&[entry(hash.as_str())]);
+    let report = run(&env, Network::Offline, &pol, &lock).unwrap();
+    assert_eq!(report.packs[0].change, Change::InPlace);
+    assert_eq!(report.packs[0].tree, dir);
+    let states = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(states[0].state, PackState::InPlace(dir.clone()));
+
+    fs::write(dir.join("rules/a.yml"), b"rule: changed\n").unwrap();
+    let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
+    assert_eq!(err.code(), "digest-mismatch");
+    let states = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(states[0].state, PackState::InPlaceChanged(dir));
+}
+
+#[test]
+fn a_git_source_is_reported_as_unsupported_not_skipped() {
+    let env = Env::new();
+    let lock = lock_text(&[format!(
+        "\n[[packs]]\nid = \"tagger\"\nkind = \"plugin\"\nversion = \"0.3.1\"\nslopvac_api = 1\n\
+         source = \"git+https://github.com/acme/tagger@{}\"\ndigest = \"sha256:{}\"\n",
+        "0123456789abcdef0123456789abcdef01234567",
+        "fe".repeat(32)
+    )]);
+    let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Unsupported { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+}
+
+fn resolved(id: &str, version: &str, digest: &str) -> ResolvedPack {
+    ResolvedPack {
+        id: id.parse().unwrap(),
+        version: version.parse().unwrap(),
+        source: "oci://ghcr.io/acme/style:1.2.0".parse::<Source>().unwrap(),
+        digest: digest.parse().unwrap(),
+    }
+}
+
+#[test]
+fn ci_check_passes_on_a_match_and_exits_2_on_a_mismatch() {
+    let digest = format!("sha256:{}", "ab".repeat(32));
+    let lock = lock_text(&[oci_entry("style", "ghcr.io", &digest, "A1B2C3D4E5F60718")]);
+    assert!(check_lock(&lock, &[resolved("style", "1.2.0", &digest)]).is_ok());
+
+    let other = format!("sha256:{}", "cd".repeat(32));
+    let err = check_lock(&lock, &[resolved("style", "1.2.0", &other)]).unwrap_err();
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "lock-mismatch");
+    let text = err.to_string();
+    assert!(
+        text.contains(&format!("digest {digest} -> {other}")),
+        "{text}"
+    );
+}
+
+#[test]
+fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
+    let digest = format!("sha256:{}", "ab".repeat(32));
+    let lock = lock_text(&[oci_entry("style", "ghcr.io", &digest, "A1B2C3D4E5F60718")]);
+    let id: PackId = "style".parse().unwrap();
+    let ranges = BTreeMap::from([(id.clone(), parse_version_req("^1").unwrap())]);
+    let v = |s: &str| s.parse::<Version>().unwrap();
+    let available = BTreeMap::from([(id.clone(), vec![v("1.2.0"), v("1.3.0"), v("2.0.0")])]);
+    assert_eq!(
+        update_notices(&lock, &ranges, &available),
+        vec![
+            "pack style: 1.3.0 is available (locked 1.2.0); run `slopvac plugins update`",
+            "pack style: 2.0.0 is available but outside the configured range; change the range to use it",
+        ]
+    );
+    let none: BTreeMap<PackId, VersionReq> = BTreeMap::new();
+    assert_eq!(
+        update_notices(&lock, &none, &available),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn available_versions_lists_semver_tags_in_order() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let c = client();
+    let repo = Reference::parse(&format!("{}/acme/style:1.2.0", server.registry())).unwrap();
+    let got: Vec<String> = available_versions(&c, &repo)
+        .unwrap()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(got, ["1.0.0", "1.2.0", "1.3.0", "2.0.0-rc.1"]);
+}

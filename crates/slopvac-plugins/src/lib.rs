@@ -8,7 +8,7 @@
 //!
 //! The other modules: the OCI client ([`oci`]), the `.slopvac/packs.lock`
 //! model ([`lock`]: strict reader, canonical writer, drift diff and the
-//! `outdated` query) and the pack [`index`] reader, builder and search. The
+//! `outdated` query), [`sync`] (install the lock, status, CI check) and the pack [`index`] reader, builder and search. The
 //! trust store lands in its own module.
 
 pub mod api;
@@ -25,6 +25,7 @@ pub mod process;
 pub mod protocol;
 pub mod sign;
 pub mod strict;
+pub mod sync;
 
 pub use api::{DocOutcome, plan_batches};
 pub use error::{PluginError, RpcError, StartError};

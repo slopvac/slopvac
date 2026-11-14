@@ -155,6 +155,13 @@ impl TreeHash {
     pub fn hex(&self) -> &str {
         &self.0[7..]
     }
+
+    /// Parse the 64 lowercase hex digits of a hash, for example read back from a record.
+    #[must_use]
+    pub fn from_hex(hex: &str) -> Option<Self> {
+        (hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+            .then(|| Self(format!("sha256:{hex}")))
+    }
 }
 
 impl std::fmt::Display for TreeHash {
@@ -414,7 +421,7 @@ fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
 /// or a new dependency. The directory therefore keeps the ACL it inherits from
 /// its parent, and the store must live under a per-user location such as
 /// `%LOCALAPPDATA%`. This is a documented residual risk (CWE-732).
-fn ensure_private_dir(path: &Path) -> Result<(), ExtractError> {
+pub(crate) fn ensure_private_dir(path: &Path) -> Result<(), ExtractError> {
     fs::create_dir_all(path).map_err(io_err(format!("creating {}", path.display())))?;
     set_mode(path, 0o700).map_err(io_err(format!("securing {}", path.display())))
 }
@@ -423,7 +430,7 @@ fn ensure_private_dir(path: &Path) -> Result<(), ExtractError> {
 /// owner. A link, a non-directory, or on Unix a directory owned by someone else
 /// is refused before any permission change, so a planted link cannot redirect
 /// the chmod (CWE-59).
-fn ensure_private_child(path: &Path) -> Result<(), ExtractError> {
+pub(crate) fn ensure_private_child(path: &Path) -> Result<(), ExtractError> {
     match fs::create_dir(path) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
