@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Hand transcription of message Diagnostic and the messages it uses in https://github.com/reviewdog/reviewdog/blob/master/proto/rdf/reviewdog.proto (master, 2026-11). The proto defines no JSON Schema. Proto3 fields are optional, so only the fields that slopvac emits are required. Unknown fields are rejected so a typo cannot pass.",
+  "$comment": "Hand transcription of message Diagnostic and the messages it uses in https://github.com/reviewdog/reviewdog/blob/87e520d8cd363fdd84386e440f8fcb919662b0d0/proto/rdf/reviewdog.proto. The proto defines no JSON Schema. Proto3 fields are optional, so only the fields that slopvac emits are required. Unknown fields are rejected so a typo cannot pass.",
   "title": "reviewdog Diagnostic (rdjson)",
   "type": "object",
   "required": ["message", "location"],

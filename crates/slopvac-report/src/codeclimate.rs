@@ -1,15 +1,12 @@
-//! Code Climate issues. Both `lines` and `positions` are emitted (positions.md decision):
-//! ends are inclusive and columns count code points.
+//! Code Climate issues. Only `location.lines` is emitted (docs/contract/positions.md): GitLab
+//! Code Quality requires it, and the spec treats lines and positions as alternatives. The end
+//! line is inclusive.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use slopvac_model::{ColumnUnit, Report, Severity};
 
-use crate::locate::{DocIndex, Pos};
+use crate::locate::DocIndex;
 use crate::{RenderError, Sources};
-
-fn pos(p: Pos) -> Value {
-    json!({"line": p.line, "column": p.column})
-}
 
 /// The spec wants a description on one line.
 fn single_line(text: &str) -> String {
@@ -37,16 +34,9 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
         let doc = DocIndex::new(document, sources, "codeclimate");
         for f in &document.findings {
             let at = doc.locate(f, ColumnUnit::CodePoint)?;
-            let (end_pos, lines_end) = match f.span {
-                Some(span) => {
-                    let last = if span.is_empty() {
-                        at.start
-                    } else {
-                        doc.last_included(span)?
-                    };
-                    (last, last.line)
-                }
-                None => (at.start, at.start.line),
+            let lines_end = match f.span {
+                Some(span) if !span.is_empty() => doc.last_included(span)?.line,
+                _ => at.start.line,
             };
             let severity = match f.severity {
                 Severity::Error => "major",
@@ -64,7 +54,6 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
                 "location": {
                     "path": document.path,
                     "lines": {"begin": at.start.line, "end": lines_end},
-                    "positions": {"begin": pos(at.start), "end": pos(end_pos)},
                 },
             }));
         }

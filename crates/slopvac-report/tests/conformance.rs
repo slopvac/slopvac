@@ -22,7 +22,7 @@ fn read(path: &str) -> Value {
 
 fn finding(severity: &str, message: &str, span: Option<(u64, u64, [u64; 4])>) -> Value {
     let mut f = json!({
-        "rule_id": "core:test.rule", "pack": "core", "category": "orwell",
+        "rule_id": "core:orwell.not-un", "pack": "core", "category": "orwell",
         "severity": severity, "message": message, "line": 1, "column": 1,
         "contexts": ["prose"], "ai_signal": "weak", "matched_text": "x",
         "provenance": {"pack": "core", "version": "3.0.0"},
@@ -329,7 +329,17 @@ fn rule_links_use_the_docs_base() {
     let options = RenderOptions {
         docs_base: Some("https://example.test/slopvac/".into()),
     };
-    let want = "https://example.test/slopvac/v3/rules/orwell/test.rule/";
+    let want = "https://example.test/slopvac/v3/rules/orwell/not-un/";
+    assert_eq!(
+        options.rule_url("orwell", "orwell.not-un").as_deref(),
+        Some("https://example.test/slopvac/v3/rules/orwell/not-un/")
+    );
+    assert_eq!(
+        options
+            .rule_url("prose-inflation", "prose-inflation.slop-lexicon")
+            .as_deref(),
+        Some("https://example.test/slopvac/v3/rules/prose-inflation/slop-lexicon/")
+    );
     let sarif: Value =
         serde_json::from_str(&render_with(Format::Sarif, &report(), &sources(), &options).unwrap())
             .unwrap();
@@ -377,4 +387,98 @@ fn spanless_findings_need_no_source_in_sarif_and_rdjsonl() {
     for format in [Format::Sarif, Format::Rdjsonl] {
         render(format, &r, &NoSources).unwrap();
     }
+}
+
+/// Parse `#rgb` or `#rrggbb`.
+fn hex(color: &str) -> [f64; 3] {
+    let h = color.trim_start_matches('#');
+    let h = if h.len() == 3 {
+        h.chars().flat_map(|c| [c, c]).collect::<String>()
+    } else {
+        h.to_owned()
+    };
+    let channel = |i: usize| f64::from(u8::from_str_radix(&h[i..i + 2], 16).unwrap()) / 255.0;
+    [channel(0), channel(2), channel(4)]
+}
+
+fn luminance(color: &str) -> f64 {
+    let [r, g, b] = hex(color).map(|c| {
+        if c <= 0.039_28 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    });
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/// WCAG 2.x contrast ratio.
+fn contrast(a: &str, b: &str) -> f64 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// The `--name:value` pairs of the first `:root{...}` block at or after `from`.
+fn root_vars(css: &str, from: usize) -> (HashMap<String, String>, usize) {
+    let start = css[from..].find(":root{").unwrap() + from + ":root{".len();
+    let end = css[start..].find('}').unwrap() + start;
+    let vars = css[start..end]
+        .split(';')
+        .filter_map(|decl| decl.split_once(':'))
+        .filter(|(name, _)| name.starts_with("--"))
+        .map(|(name, value)| (name.trim_start_matches("--").to_owned(), value.to_owned()))
+        .collect();
+    (vars, end)
+}
+
+#[test]
+fn html_colours_meet_wcag_aa_in_both_schemes_and_focus_is_visible() {
+    let page = Html::parse_document(&out(Format::Html));
+    let css: String = page
+        .select(&Selector::parse("style").unwrap())
+        .next()
+        .unwrap()
+        .text()
+        .collect();
+    let (light, after_light) = root_vars(&css, 0);
+    let media = css.find("prefers-color-scheme:dark").unwrap();
+    assert!(media > after_light, "the dark scheme follows the light one");
+    let (dark, _) = root_vars(&css, media);
+    for (scheme, vars) in [("light", &light), ("dark", &dark)] {
+        for text in ["fg", "muted", "pass", "fail"] {
+            for ground in ["bg", "panel"] {
+                let ratio = contrast(&vars[text], &vars[ground]);
+                assert!(ratio >= 4.5, "{scheme}: {text} on {ground} is {ratio:.2}");
+            }
+        }
+        for ground in ["bg", "panel"] {
+            let ratio = contrast(&vars["focus"], &vars[ground]);
+            assert!(
+                ratio >= 3.0,
+                "{scheme}: focus ring on {ground} is {ratio:.2}"
+            );
+        }
+        // Table borders and panel outlines use --muted: UI components need 3:1.
+        assert!(
+            contrast(&vars["muted"], &vars["bg"]) >= 3.0,
+            "{scheme}: border"
+        );
+    }
+    // A visible focus indicator on each interactive element, drawn with the focus colour.
+    for selector in ["a:focus", "summary:focus"] {
+        let rule = css
+            .split('}')
+            .find(|r| r.contains(selector))
+            .unwrap_or_else(|| panic!("{selector}"));
+        assert!(
+            rule.contains("outline:3px solid var(--focus)"),
+            "{selector}: {rule}"
+        );
+    }
+}
+
+#[test]
+fn contrast_helper_matches_known_ratios() {
+    assert!((contrast("#000", "#fff") - 21.0).abs() < 1e-9);
+    assert!((contrast("#767676", "#fff") - 4.54).abs() < 0.01);
 }

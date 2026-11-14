@@ -80,10 +80,11 @@ fn spans_render_as_the_vectors_say() {
             loc["lines"], f["codeclimate"]["lines"],
             "codeclimate lines {id}"
         );
-        assert_eq!(
-            loc["positions"], f["codeclimate"]["positions"],
-            "codeclimate positions {id}"
+        assert!(
+            loc.get("positions").is_none(),
+            "codeclimate emits lines only {id}"
         );
+        assert!(f["codeclimate"].get("positions").is_none(), "{id}");
 
         let checkstyle = out(Format::Checkstyle, &report, text);
         assert!(

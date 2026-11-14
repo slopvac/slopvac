@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Hand transcription of the Issues, Categories, Locations and Positions sections of https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md (master, 2026-11). The spec defines no JSON Schema. Location requires a path and lines or positions; slopvac emits both (docs/contract/positions.md), which the prose allows. Unknown issue fields are rejected.",
+  "$comment": "Hand transcription of the Issues, Categories, Locations and Positions sections of https://github.com/codeclimate/platform/blob/690633cb2a08839a5bfa350ed925ddb6de55bbdc/spec/analyzers/SPEC.md. The spec defines no JSON Schema. The spec allows lines or positions per location. slopvac emits lines only (docs/contract/positions.md), because GitLab Code Quality requires lines.begin, so this schema requires lines and forbids positions. Unknown issue fields are rejected.",
   "title": "Code Climate issue",
   "type": "object",
   "required": ["type", "check_name", "description", "categories", "location"],
@@ -22,21 +22,10 @@
     "fingerprint": {"type": "string", "minLength": 1}
   },
   "definitions": {
-    "Position": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "line": {"type": "integer", "minimum": 1},
-        "column": {"type": "integer", "minimum": 1},
-        "offset": {"type": "integer", "minimum": 0}
-      },
-      "oneOf": [{"required": ["line", "column"]}, {"required": ["offset"]}]
-    },
     "Location": {
       "type": "object",
-      "required": ["path"],
+      "required": ["path", "lines"],
       "additionalProperties": false,
-      "anyOf": [{"required": ["lines"]}, {"required": ["positions"]}],
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "lines": {
@@ -44,12 +33,6 @@
           "required": ["begin", "end"],
           "additionalProperties": false,
           "properties": {"begin": {"type": "integer", "minimum": 1}, "end": {"type": "integer", "minimum": 1}}
-        },
-        "positions": {
-          "type": "object",
-          "required": ["begin", "end"],
-          "additionalProperties": false,
-          "properties": {"begin": {"$ref": "#/definitions/Position"}, "end": {"$ref": "#/definitions/Position"}}
         }
       }
     }

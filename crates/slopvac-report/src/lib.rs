@@ -150,10 +150,18 @@ impl Default for RenderOptions {
 
 impl RenderOptions {
     /// The page for a rule, when a docs address is set.
+    ///
+    /// `local` is the part of the rule ID after the pack, which has the form
+    /// `<category>.<name>` (`core:orwell.not-un` is `orwell.not-un`). The page is
+    /// `<base>v3/rules/<category>/<name>/`, so the category appears once.
     #[must_use]
-    pub fn rule_url(&self, category: &str, rule: &str) -> Option<String> {
+    pub fn rule_url(&self, category: &str, local: &str) -> Option<String> {
         let base = self.docs_base.as_deref()?.trim_end_matches('/');
-        Some(format!("{base}/{API_VERSION}/rules/{category}/{rule}/"))
+        let name = local
+            .strip_prefix(category)
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or(local);
+        Some(format!("{base}/{API_VERSION}/rules/{category}/{name}/"))
     }
 }
 
