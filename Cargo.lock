@@ -2178,6 +2178,7 @@ dependencies = [
 name = "slopvac-engine"
 version = "0.0.0"
 dependencies = [
+ "frontmatter-spans",
  "rayon",
  "serde_json",
  "slopvac-context",

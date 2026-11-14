@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use frontmatter_spans::FrontMatter;
 use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, SentenceView, TagIndex,
     TagRegistry,
@@ -27,12 +28,18 @@ struct View<'a> {
     path: &'a str,
     source_len: usize,
     title: Option<&'a str>,
+    front_matter: Option<&'a FrontMatter<'a>>,
     entries: Vec<Entry<'a>>,
     by_span: BTreeMap<(usize, usize), usize>,
 }
 
 impl<'a> View<'a> {
-    fn new(path: &'a str, source: &'a str, doc: &'a Document) -> Self {
+    fn new(
+        path: &'a str,
+        source: &'a str,
+        doc: &'a Document,
+        front_matter: Option<&'a FrontMatter<'a>>,
+    ) -> Self {
         let mut entries: Vec<Entry<'a>> = Vec::new();
         let mut headings: Vec<(u8, &'a str)> = Vec::new();
         let mut title = None;
@@ -90,6 +97,7 @@ impl<'a> View<'a> {
             path,
             source_len: source.len(),
             title,
+            front_matter,
             entries,
             by_span,
         }
@@ -102,12 +110,14 @@ impl DocumentView for View<'_> {
     }
 
     fn title(&self) -> Option<&str> {
-        self.title
+        self.front_matter
+            .and_then(|f| f.get("title"))
+            .and_then(|n| n.as_str())
+            .or(self.title)
     }
 
-    // STUB(slopvac-8l4.5.11): front matter has no parser yet, so conditions on it never hold.
-    fn front_matter(&self, _key: &str) -> Option<&str> {
-        None
+    fn front_matter(&self, key: &str) -> Option<&str> {
+        self.front_matter?.get(key)?.as_str()
     }
 
     fn source_len(&self) -> usize {
@@ -159,6 +169,7 @@ pub(crate) fn tag(
     path: &str,
     source: &str,
     doc: &Document,
+    front_matter: Option<&FrontMatter<'_>>,
 ) -> Result<TagIndex, ContextError> {
-    registry.tag_document(&View::new(path, source, doc))
+    registry.tag_document(&View::new(path, source, doc, front_matter))
 }

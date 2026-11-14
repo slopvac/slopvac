@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+frontmatter-spans = { workspace = true }
 rayon = { workspace = true }
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }

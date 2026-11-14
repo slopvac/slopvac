@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_context::{TagIndex, TagRegistry};
 use slopvac_diagrams::{Extraction, Format as DiagramFormat, extract};
@@ -58,8 +59,6 @@ pub struct Input<'a> {
     pub source: &'a str,
     /// The kind of file.
     pub kind: Kind,
-    /// The part of `source` to read, after any front matter. `None` reads all of it.
-    pub body: Option<Span>,
     /// How a leading byte order mark counts in columns.
     pub bom: BomMode,
 }
@@ -72,7 +71,6 @@ impl<'a> Input<'a> {
             path,
             source,
             kind: Kind::Markdown,
-            body: None,
             bom: BomMode::Disk,
         }
     }
@@ -94,28 +92,7 @@ impl<'a> Input<'a> {
             ..Self::markdown(path, source)
         }
     }
-
-    /// Read only `body`.
-    #[must_use]
-    pub const fn with_body(mut self, body: Span) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    /// The front matter span: everything before the body.
-    fn front_matter(&self) -> Option<Span> {
-        self.body
-            .filter(|b| b.start() > 0)
-            .map(|b| Span::empty(0).pipe(|z| Span::new(z.start(), b.start()).expect("0 <= start")))
-    }
 }
-
-trait Pipe: Sized {
-    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
-        f(self)
-    }
-}
-impl Pipe for Span {}
 
 /// Why a document could not be linted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -150,13 +127,12 @@ struct Active {
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
-    checker: usize,
 }
 
 /// Where a rule id points.
 enum Catalog {
     Loaded(usize),
-    Diagram(Vec<String>),
+    Diagram,
 }
 
 /// The engine.
@@ -240,20 +216,16 @@ impl Engine {
     /// Add a checker for diagram rules.
     #[must_use]
     pub fn with_diagram_checker(mut self, checker: Box<dyn DiagramChecker>) -> Self {
-        let index = self.checkers.len();
         for DiagramRule { id, severity } in checker.rules() {
             let category = category_of(&id);
             let key = id.as_str().to_owned();
             self.catalog
-                .insert(key.clone(), Catalog::Diagram(Vec::new()));
+                .insert(key.clone(), Catalog::Diagram);
             if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
                 self.running.insert(key);
                 self.diagram_rules.insert(
                     id,
-                    ActiveDiagram {
-                        severity,
-                        checker: index,
-                    },
+                    ActiveDiagram { severity },
                 );
             }
         }
@@ -333,9 +305,6 @@ impl Engine {
                 }
             }
         }
-        // The catalog maps an id to its place in `active` or to its set. Rebuild it with the
-        // real coordinates now that every rule is known.
-        self.catalog.clear();
         for (s, set) in self.sets.iter().enumerate() {
             for rule in set.rules() {
                 self.catalog
@@ -372,9 +341,18 @@ impl Engine {
 
     /// Lint one input.
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
-        let body = input
-            .body
-            .unwrap_or_else(|| Span::new(0, input.source.len()).expect("0 <= len"));
+        // Front matter is metadata, not prose: the parser reads only what follows it.
+        let front = match input.kind {
+            Kind::Diagram(_) => None,
+            _ => detect(input.source),
+        };
+        let body_start = front.as_ref().map_or(0, |b| b.body_start);
+        let front_span = front
+            .as_ref()
+            .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
+            .filter(|s| !s.is_empty());
+        let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
+        let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
         let parsed = match input.kind {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
@@ -383,13 +361,19 @@ impl Engine {
         let prepared = Prepared::new(input.source, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
-            _ => tagging::tag(&self.tagger, input.path, input.source, &parsed)
-                .map_err(|e| EngineError::Context(e.to_string()))?,
+            _ => tagging::tag(
+                &self.tagger,
+                input.path,
+                input.source,
+                &parsed,
+                front_matter.as_ref(),
+            )
+            .map_err(|e| EngineError::Context(e.to_string()))?,
         };
         let lines = Lines::new(input.source);
         let directives = match input.kind {
             Kind::Diagram(_) => Directives::default(),
-            _ => scan(&parsed, &lines, input.front_matter(), |id| {
+            _ => scan(&parsed, &lines, front_span, |id| {
                 match self.catalog.get(id) {
                     None => Target::Unknown,
                     Some(_) if !self.running.contains(id) => Target::Inactive,
@@ -404,7 +388,7 @@ impl Engine {
                             })
                             .unwrap_or_default(),
                     ),
-                    Some(Catalog::Diagram(_)) => Target::Active(Vec::new()),
+                    Some(Catalog::Diagram) => Target::Active(Vec::new()),
                 }
             }),
         };
@@ -416,6 +400,7 @@ impl Engine {
             tags: &tags,
             lines: &lines,
             directives: &directives,
+            front_matter: front_span,
             index: SourceIndex::new(input.source, input.bom),
         };
         let mut findings = run.lexical()?;
@@ -527,6 +512,7 @@ struct Run<'a> {
     tags: &'a TagIndex,
     lines: &'a Lines<'a>,
     directives: &'a Directives,
+    front_matter: Option<Span>,
     index: SourceIndex<'a>,
 }
 
@@ -592,12 +578,8 @@ impl Run<'_> {
             let exclusions;
             let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
                 (Some(kinds), scope) => {
-                    exclusions = skip::build(
-                        self.parsed,
-                        kinds,
-                        self.input.front_matter(),
-                        scope != Scope::Raw,
-                    );
+                    exclusions =
+                        skip::build(self.parsed, kinds, self.front_matter, scope != Scope::Raw);
                     &exclusions
                 }
                 (None, Scope::Raw) => {
@@ -826,7 +808,6 @@ impl Run<'_> {
             PackId::new(hit.rule.pack()).map_err(|e| EngineError::Internal(e.to_string()))?;
         let rule_id = hit.rule.clone();
         let matched = self.input.source[span.start()..span.end()].to_owned();
-        let _ = active.checker;
         self.finding(Candidate {
             rule_id: &rule_id,
             pack: &pack,

@@ -8,9 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use slopvac_model::{
-    CategoryId, ConfigSource, GenreResult, NonEmptyString, RuleId, Severity,
-};
+use slopvac_model::{CategoryId, ConfigSource, GenreResult, NonEmptyString, RuleId, Severity};
 use slopvac_rules::ApplyMode;
 
 /// The level a rule or category reports at.
