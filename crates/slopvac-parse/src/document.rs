@@ -65,6 +65,24 @@ pub enum BlockKind {
     },
 }
 
+/// A container that holds a block: a list item or a block quote.
+///
+/// A table cell and an admonition are not listed here. A cell is a [`BlockKind::TableCell`]
+/// and an admonition is a [`BlockKind::Admonition`] block whose span contains its children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Container {
+    /// A list item.
+    ListItem {
+        /// Whether the list is ordered.
+        ordered: bool,
+        /// How many lists enclose the item, counting its own: 1 for a top-level list.
+        depth: usize,
+    },
+    /// A block quote.
+    BlockQuote,
+}
+
 /// One block and where it sits in the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -74,6 +92,9 @@ pub struct Block {
     pub span: Span,
     /// The prose of a paragraph, heading or table cell.
     pub projection: Option<Projection>,
+    /// The lists and block quotes that hold the block, outermost first. Empty at the top
+    /// level. A parser that cannot tell leaves it empty.
+    pub containers: Vec<Container>,
 }
 
 /// A parsed document.

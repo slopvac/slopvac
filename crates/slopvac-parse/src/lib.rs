@@ -21,7 +21,9 @@ mod projection;
 #[cfg(test)]
 mod work;
 
-pub use document::{Admonition, AdmonitionSyntax, Block, BlockKind, Document, ParseError};
+pub use document::{
+    Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, ParseError,
+};
 pub use html::parse_html;
 #[doc(hidden)]
 pub use html::{

@@ -286,6 +286,8 @@ impl<'a> Walker<'a> {
                 kind,
                 span: self.span(start.start, end),
                 projection: None,
+                // STUB(slopvac-8l4.3.31): HTML container ancestry
+                containers: Vec::new(),
             });
             return;
         }
@@ -491,6 +493,8 @@ impl<'a> Walker<'a> {
                 kind,
                 span: self.span(first, last),
                 projection: Some(projection),
+                // STUB(slopvac-8l4.3.31): HTML container ancestry
+                containers: Vec::new(),
             });
         }
     }
