@@ -1,0 +1,92 @@
+# slopvac-plugin
+
+A Python SDK for slopvac plugin protocol v1, and a conformance suite that tests plugins written in any language. The protocol is in [`docs/contract/plugin-protocol.md`](../../docs/contract/plugin-protocol.md).
+
+The SDK uses only the standard library. The conformance suite needs `jsonschema`, which the `conformance` extra installs.
+
+## Write a plugin
+
+Register one handler for each hook, then call `run()`:
+
+```python
+from slopvac_plugin import Document, Plugin, Tag
+
+plugin = Plugin("my-tagger", "0.1.0")
+
+
+@plugin.tagger("main")
+def tag(doc: Document, ctx) -> list[Tag]:
+    return [Tag("prose", doc.span(0, len(doc.text)), 1.0, "whole document")]
+
+
+if __name__ == "__main__":
+    plugin.run()
+```
+
+The decorators are `tagger`, `extractor`, `reporter`, `fixer`, `scorer`, `provider` and `recipe`. Their docstrings give each handler signature. Document hooks receive one `Document` at a time. The SDK batches, echoes document ids, and turns `DocumentInvalid` into a per-document error.
+
+What the SDK does for you:
+
+- **Framing.** It reads and writes `Content-Length` frames. It rejects an oversized body before it reads the body, and then exits with status 1. It rejects duplicate keys, nesting over 64 levels, and integers outside ±(2^53-1).
+- **Lifecycle.** It answers `initialize`, `shutdown` and `exit`, and builds the capability reply from the registered hooks. `maxInFlight` defaults to 1.
+- **Cancellation.** The host's `$/cancelRequest` sets `ctx.cancelled`. Call `ctx.raise_if_cancelled()` in long loops.
+- **Standard output.** `run()` points `print`, logging and descriptor 1 at standard error. Only frames reach the real standard output.
+- **Offline mode.** When the host sets `offline`, the SDK answers a provider request with `offline` (-32007) and skips the handler.
+- **Output checks.** Before it sends a result, it checks that spans are in range and on character boundaries, that fixer edits lie inside the span of the finding they name, and that recipe paths are relative. A violation becomes `internal-error`, and the SDK logs the cause without document text.
+
+Spans are UTF-8 byte offsets. `Document.span(start, end)` converts character offsets, and `Document.data` holds the bytes.
+
+`Plugin(network=...)` must equal the `network` value in the pack manifest. The hooks you register must be a subset of the hooks the manifest declares.
+
+## Run the conformance suite
+
+```sh
+pip install "slopvac-plugin[conformance]"
+slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
+```
+
+`python -m slopvac_plugin.conformance` runs the same command. The suite starts the plugin command, drives cases P1 to P19 from section 12.2 of the contract over standard input and output, and prints a report. The plugin can use any language. The suite checks every message the plugin sends against `plugin-protocol.schema.json`.
+
+| Option | Meaning |
+|---|---|
+| `--manifest FILE` | Pack manifest (TOML) or declaration (JSON). Enables P19. |
+| `--inputs FILE` | JSON with sample requests for each hook kind. |
+| `--only P1,P13` | Run only these cases. |
+| `--timeout`, `--exit-timeout` | Seconds to wait for a reply and for an exit. |
+| `--format json` | Machine-readable report. |
+
+Exit 0 means every applicable case passed. Exit 1 means a case failed. Exit 2 means the suite could not run, for example because the command does not start. A skipped case prints its reason and does not fail the run.
+
+### Sample requests
+
+The suite sends built-in documents, findings and recipe options. To test with your own, pass `--inputs`:
+
+```json
+{
+  "tagger": {
+    "documents": [{"id": "a", "text": "Some text.\n"}],
+    "invalid_document": {"id": "bad", "text": "bad\u0000bytes"}
+  },
+  "provider": {}
+}
+```
+
+- Keys under a hook kind replace the matching request params.
+- `invalid_document` turns on P7. The suite sends it with a valid document and expects an error for it alone.
+- A `provider` key lets the suite call the provider hook, which may reach a model. Without it, only P16 touches a provider, and only with offline mode on.
+
+### What the cases cannot see
+
+- P16 checks the `offline` error. It cannot observe whether the plugin opened a socket.
+- P17 compares the working directory before and after `recipe/plan`. A plugin that writes elsewhere is not caught.
+- P9 cancels a request right after it sends it. A fast plugin answers first, which the case allows.
+
+## Example
+
+[`examples/fence-tagger`](examples/fence-tagger) is a tagger built on the SDK with a pack manifest. Run the suite against it from that directory:
+
+```sh
+slopvac-plugin-conformance --manifest slopvac-pack.toml --inputs conformance-inputs.json -- python plugin.py
+```
+
+It passes P1 to P15 and P19. P16 to P18 skip because it declares no provider, recipe or fixer.
