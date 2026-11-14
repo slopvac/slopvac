@@ -357,7 +357,7 @@ impl ModelProvider for Recorder {
     fn name(&self) -> &'static str {
         "recorder"
     }
-    fn model(&self) -> &str {
+    fn model(&self) -> &'static str {
         "gpt-5"
     }
     fn review(&self, payload: &Payload) -> Result<String, AgentsError> {
