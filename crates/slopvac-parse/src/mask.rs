@@ -61,10 +61,23 @@ impl Masked {
     }
 }
 
+/// The end of a pending admonition. Every update goes through [`End::set`], which counts
+/// it in test builds, so the linearity test measures the work whatever the algorithm.
+#[derive(Clone, Copy)]
+struct End(usize);
+
+impl End {
+    fn set(&mut self, end: usize) {
+        #[cfg(test)]
+        crate::work::add(&crate::work::FRAME_OPS, 1);
+        self.0 = end;
+    }
+}
+
 struct Pending {
     admonition: Admonition,
     start: usize,
-    end: usize,
+    end: End,
 }
 
 struct IndentFrame {
@@ -118,9 +131,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
             let cols = leading_cols(line);
             while indents.last().is_some_and(|f| f.body_cols > cols) {
                 if let Some(frame) = indents.pop() {
-                    #[cfg(test)]
-                    crate::work::add(&crate::work::FRAME_OPS, 1);
-                    pending[frame.block].end = last_nonblank_end;
+                    pending[frame.block].end.set(last_nonblank_end);
                 }
             }
         }
@@ -138,7 +149,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         let quote = quote_body(content);
         if let Some(index) = alert {
             if quote.is_some() {
-                pending[index].end = line_end;
+                pending[index].end.set(line_end);
             } else {
                 alert = None;
             }
@@ -184,7 +195,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                         syntax: AdmonitionSyntax::Directive,
                     },
                     start: t_abs,
-                    end: line_end,
+                    end: End(line_end),
                 });
                 directive = Some(Directive {
                     end: region.range.end,
@@ -200,7 +211,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                 && open.end == region.range.end
                 && is_fence_closer(t, open.ch, open.count)
             {
-                pending[open.block].end = line_end;
+                pending[open.block].end.set(line_end);
                 directive = None;
                 mask_from = Some(0);
             }
@@ -215,7 +226,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
             pending.push(Pending {
                 admonition: parsed.into_admonition(t, t_abs, AdmonitionSyntax::Bang),
                 start: t_abs,
-                end: line_end,
+                end: End(line_end),
             });
             indents.push(IndentFrame {
                 body_cols: leading_cols(line) + 4,
@@ -236,7 +247,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                     syntax: AdmonitionSyntax::Alert,
                 },
                 start: t_abs,
-                end: line_end,
+                end: End(line_end),
             });
             mask_from = Some(offset_in(content, body) + bracket);
         }
@@ -256,19 +267,19 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         out.push_str(terminator);
     }
     for frame in &indents {
-        pending[frame.block].end = last_nonblank_end;
+        pending[frame.block].end.set(last_nonblank_end);
     }
     for (_, block) in &colons {
-        pending[*block].end = last_nonblank_end;
+        pending[*block].end.set(last_nonblank_end);
     }
     if let Some(open) = &directive {
-        pending[open.block].end = last_nonblank_end;
+        pending[open.block].end.set(last_nonblank_end);
     }
     let admonitions = pending
         .into_iter()
         .map(|p| Block {
             kind: BlockKind::Admonition(p.admonition),
-            span: Span::new(p.start, p.end.max(p.start)).expect("end is clamped to start"),
+            span: Span::new(p.start, p.end.0.max(p.start)).expect("end is clamped to start"),
             projection: None,
         })
         .collect();
@@ -457,7 +468,7 @@ fn colon_line(
         if let Some(&(open, block)) = colons.last()
             && count >= open
         {
-            pending[block].end = line_end;
+            pending[block].end.set(line_end);
             colons.pop();
             return Some(0);
         }
@@ -468,7 +479,7 @@ fn colon_line(
     pending.push(Pending {
         admonition: parsed.into_admonition(t, t_abs, AdmonitionSyntax::Colon),
         start: t_abs,
-        end: line_end,
+        end: End(line_end),
     });
     colons.push((count, block));
     Some(0)
