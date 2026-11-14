@@ -44,3 +44,6 @@ globs:
   # setup, so the finding would come back on a branch nobody touched.
   - "!.agents/**"
   - "!.beads/**"
+  # Test fixtures are input text, not repository prose. Their trailing spaces can be
+  # part of what the test checks, so they are left as written.
+  - "!crates/*/tests/fixtures/**"
