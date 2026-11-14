@@ -6,6 +6,7 @@
 //! failures as coded diagnostics.
 
 pub mod diag;
+pub mod directives;
 pub mod discover;
 pub mod error;
 pub mod flatten;

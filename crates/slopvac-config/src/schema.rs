@@ -416,6 +416,18 @@ pub fn block_shape() -> Shape {
     )
 }
 
+/// The shape of an inline directive: the front-matter fields, with no version.
+#[must_use]
+pub fn directive_shape() -> Shape {
+    let Shape::Table(mut t) = block_shape() else {
+        unreachable!("the block shape is a table");
+    };
+    t.fields.retain(|(name, _)| *name != "v");
+    t.required.clear();
+    t.scope = Some("an inline directive");
+    Shape::Table(t)
+}
+
 struct Ctx<'a> {
     text: &'a str,
     out: Vec<Diagnostic>,
@@ -808,5 +820,21 @@ pub fn validate_frontmatter(root: &Node, text: &str) -> Vec<Diagnostic> {
         return Vec::new();
     };
     check(&mut ctx, block, &block_shape(), &["slopvac".to_owned()]);
+    ctx.out
+}
+
+/// Check the fields of one inline directive, parsed into a table.
+#[must_use]
+pub fn validate_directive(node: &Node, text: &str) -> Vec<Diagnostic> {
+    let mut ctx = Ctx {
+        text,
+        out: Vec::new(),
+    };
+    check(
+        &mut ctx,
+        node,
+        &directive_shape(),
+        &["directive".to_owned()],
+    );
     ctx.out
 }
