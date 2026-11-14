@@ -235,6 +235,8 @@ impl Project {
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(self.display(&rel)))?;
         parent.remove_file(name).map_err(|e| self.map(&rel, e))?;
+        // Windows cannot delete a directory while a handle to it is open.
+        drop(parent);
         if let Some(dir) = rel.parent().filter(|p| !p.as_os_str().is_empty()) {
             let _ = self.dir.remove_dir(dir);
         }
