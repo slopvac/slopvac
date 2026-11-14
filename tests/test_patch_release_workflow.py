@@ -91,10 +91,6 @@ def test_validation_is_the_first_plan_step(workflow):
     assert first["env"] == {"REF_NAME": "${{ github.ref_name }}"}
 
 
-def test_no_run_script_interpolates_the_tag():
-    patcher._assert_clean(WORKFLOW.read_text(encoding="utf-8"))
-
-
 def test_only_the_host_job_can_write_contents(workflow):
     assert workflow["permissions"] == {"contents": "read"}
     writers = {
@@ -102,7 +98,7 @@ def test_only_the_host_job_can_write_contents(workflow):
         for name, job in workflow["jobs"].items()
         if (job.get("permissions") or {}).get("contents") == "write"
     }
-    assert writers == {"host"}
+    assert writers == {"host", "publish-legacy-release"}
 
 
 @pytest.mark.parametrize(
@@ -117,10 +113,12 @@ def test_a_changed_template_makes_the_patcher_fail(text):
         patcher.harden(text)
 
 
-def test_the_checker_rejects_tag_interpolation_in_a_script():
-    bad = "jobs:\n  a:\n    steps:\n      - run: |\n          echo ${{ github.ref_name }}\n"
+def test_hardening_refuses_a_tag_expression_it_did_not_rewrite(raw):
+    marker = "rm -f artifacts/*-dist-manifest.json"
+    assert marker in raw
+    injected = raw.replace(marker, marker + "\n          echo ${{ github.ref_name }}")
     with pytest.raises(ValueError, match="tag interpolated"):
-        patcher._assert_clean(bad)
+        patcher.harden(injected)
 
 
 def test_host_requires_the_provenance_job(workflow):
@@ -185,15 +183,15 @@ def test_hardening_the_pinned_dist_output_reproduces_the_committed_workflow(hard
 ANCHORS = [
     "      - '**[0-9]+.[0-9]+.[0-9]+*'\n",
     "dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json",
-    'gh release create "${{ needs.plan.outputs.tag }}"',
-    '          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest)',
+    '          gh release upload "${{ needs.plan.outputs.tag }}" artifacts/*\n',
+    '          gh release edit "${{ needs.plan.outputs.tag }}" --target',
+    '  plan:\n    runs-on: "ubuntu-22.04"\n',
     'permissions:\n  "contents": "write"\n',
     "  custom-release-provenance:\n    uses: $/.github/workflows/release-provenance.yml\n    secrets: inherit\n",
     "  host:\n    needs:\n      - plan\n",
     "      - name: Build artifacts\n        run: |\n",
     "steps.cargo-cyclonedx.output.paths",
     "      - id: host\n",
-    "      - name: Create GitHub Release\n",
     "      publishing: ${{ !github.event.pull_request }}\n",
 ]
 
@@ -262,10 +260,12 @@ def test_the_host_job_rechecks_the_tag_before_dist_and_before_the_release(workfl
     steps = workflow["jobs"]["host"]["steps"]
     checks = [i for i, s in enumerate(steps) if "verify-tag" in s.get("run", "")]
     host = next(i for i, s in enumerate(steps) if s.get("id") == "host")
-    create = next(
-        i for i, s in enumerate(steps) if s.get("name") == "Create GitHub Release"
+    publish = next(
+        i for i, s in enumerate(steps) if s.get("name") == "Publish the release"
     )
-    assert checks == [host - 1, create - 1]
+    assert checks == [host - 1, publish - 1]
+    assert "gh release edit" in steps[publish]["run"]
+    assert "--draft=false" in steps[publish]["run"]
     for index in checks:
         step = steps[index]
         assert step["env"] == {
@@ -273,3 +273,95 @@ def test_the_host_job_rechecks_the_tag_before_dist_and_before_the_release(workfl
             "RELEASE_COMMIT": "${{ github.sha }}",
         }
         assert '"$RELEASE_TAG" "$RELEASE_COMMIT"' in step["run"]
+
+
+# --- draft-first publication and routing by major version ----------------------
+
+
+def test_dist_no_longer_creates_the_release(workflow):
+    # release-please owns creation; no step of the pipeline may run `gh release create`.
+    for _, script in _run_scripts(WORKFLOW.read_text(encoding="utf-8")):
+        assert "gh release create" not in script
+
+
+def test_artifacts_upload_to_the_draft_and_the_undraft_comes_last(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    names = [s.get("name") for s in steps]
+    upload = names.index("Upload the artifacts to the draft release")
+    publish = names.index("Publish the release")
+    assert upload < publish
+    assert "gh release upload" in steps[upload]["run"]
+
+
+def _transitive_needs(jobs: dict, name: str) -> set[str]:
+    seen: set[str] = set()
+    todo = _as_list(jobs[name].get("needs"))
+    while todo:
+        dep = todo.pop()
+        if dep not in seen:
+            seen.add(dep)
+            todo.extend(_as_list(jobs[dep].get("needs")))
+    return seen
+
+
+def _as_list(needs) -> list[str]:
+    return [needs] if isinstance(needs, str) else list(needs or [])
+
+
+def test_only_the_dist_entry_jobs_and_the_legacy_job_read_the_route(workflow):
+    jobs = workflow["jobs"]
+    routed = {n for n, j in jobs.items() if "route" in _as_list(j.get("needs"))}
+    assert routed == {"plan", "custom-release-provenance", "publish-legacy-release"}
+    assert jobs["plan"]["if"] == "${{ needs.route.outputs.gated == 'true' }}"
+    assert jobs["custom-release-provenance"]["if"] == jobs["plan"]["if"]
+    legacy = jobs["publish-legacy-release"]
+    assert legacy["if"] == "${{ needs.route.outputs.gated == 'false' }}"
+
+
+def test_every_dist_job_depends_on_the_routed_plan(workflow):
+    jobs = workflow["jobs"]
+    others = set(jobs) - {
+        "route",
+        "plan",
+        "custom-release-provenance",
+        "publish-legacy-release",
+    }
+    assert others
+    for name in others:
+        assert "plan" in _transitive_needs(jobs, name), name
+
+
+def test_the_host_job_cannot_run_when_plan_was_skipped(workflow):
+    assert "needs.plan.result == 'success'" in workflow["jobs"]["host"]["if"]
+
+
+def test_the_legacy_job_publishes_the_draft_with_values_from_the_environment(workflow):
+    job = workflow["jobs"]["publish-legacy-release"]
+    assert job["permissions"] == {"contents": "write"}
+    assert job["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
+    (step,) = job["steps"]
+    assert (
+        step["run"].strip()
+        == 'gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false'
+    )
+
+
+def test_the_route_job_fails_closed_on_a_bad_tag(workflow):
+    steps = workflow["jobs"]["route"]["steps"]
+    route = next(s for s in steps if s.get("id") == "route")
+    assert route["env"]["REF_NAME"] == "${{ github.ref_name }}"
+    assert 'route-tag "$REF_NAME" >> "$GITHUB_OUTPUT"' in route["run"]
+    assert "set +e" not in route["run"]
+
+
+def test_release_please_makes_a_tagged_draft_that_dist_then_publishes():
+    import json
+    import tomllib
+
+    config = json.loads(
+        (ROOT / "release-please-config.json").read_text(encoding="utf-8")
+    )
+    assert config["draft"] is True
+    assert config["force-tag-creation"] is True
+    dist = tomllib.loads((ROOT / "dist-workspace.toml").read_text(encoding="utf-8"))
+    assert dist["dist"]["create-release"] is False

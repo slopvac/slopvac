@@ -16,6 +16,10 @@ Subcommands:
       publishing, so a tag moved after the check cannot be released
   requires-gate VERSION
       print true when a stable release of VERSION needs the gate
+  route-tag TAG
+      print ``gated=true`` for vX.Y.Z of major 3 or later (the dist pipeline) and
+      ``gated=false`` for earlier majors (publish the release-please draft only);
+      exit 1 for any other tag, so a bad tag never skips the gate
 """
 
 from __future__ import annotations
@@ -67,6 +71,14 @@ def requires_gate(version: str) -> bool:
     if _PRE_VERSION.fullmatch(version):
         return False
     raise ValueError(f"not a version: {version}")
+
+
+def route_tag(tag: str) -> bool:
+    """True when the dist pipeline and its provenance gate apply to ``tag``."""
+    match = _STABLE_TAG.fullmatch(tag)
+    if match is None:
+        raise ValueError(f"not a stable tag (expected vX.Y.Z): {tag}")
+    return requires_gate(match["base"])
 
 
 def run_command(argv: Sequence[str]) -> str:
@@ -197,6 +209,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify.add_argument("sha")
     gate = sub.add_parser("requires-gate")
     gate.add_argument("version")
+    route = sub.add_parser("route-tag")
+    route.add_argument("tag")
     args = parser.parse_args(argv)
     try:
         if args.command == "parse-tag":
@@ -207,6 +221,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"candidate={check_stable(args.tag, args.repo, args.sha)}")
         elif args.command == "verify-tag":
             verify_tag(args.tag, args.sha)
+        elif args.command == "route-tag":
+            print(f"gated={'true' if route_tag(args.tag) else 'false'}")
         else:
             print("true" if requires_gate(args.version) else "false")
     except (ValueError, RuntimeError) as err:

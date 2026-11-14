@@ -23,6 +23,7 @@ here instead of silently dropping a protection.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -63,14 +64,34 @@ _PLAN_RUN_NEW = """\
 """
 
 _TAG_FLAG = "${{ needs.plan.outputs.tag-flag }}"
-_RELEASE_OLD = 'gh release create "${{ needs.plan.outputs.tag }}"'
-_RELEASE_NEW = 'gh release create "$RELEASE_TAG"'
-_RELEASE_ENV_OLD = (
-    '          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest)'
-)
-_RELEASE_ENV_NEW = (
-    "          RELEASE_TAG: ${{ needs.plan.outputs.tag }}\n" + _RELEASE_ENV_OLD
-)
+# With `create-release = false` dist uploads to the draft release-please made, then
+# undrafts it. Split that step so the tag check sits right before the undraft.
+_RELEASE_OLD = """\
+      - name: Create GitHub Release
+        env:
+          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
+        run: |
+          # If we're editing a release in place, we need to upload things ahead of time
+          gh release upload "${{ needs.plan.outputs.tag }}" artifacts/*
+
+          gh release edit "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
+"""
+_RELEASE_NEW = """\
+      - name: Upload the artifacts to the draft release
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" artifacts/*
+{verify}\
+      - name: Publish the release
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
+        run: |
+          gh release edit "$RELEASE_TAG" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
+"""
 _JOB_ENV = "      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
 _HOST_ENV = (
     "    env:\n"
@@ -91,8 +112,12 @@ def harden(text: str) -> str:
     text = _replace_once(text, *_TRIGGER, "tag trigger")
     text = _insert_validation(text)
     text = _replace_once(text, _PLAN_RUN_OLD, _PLAN_RUN_NEW, "plan command")
-    text = _replace_once(text, _RELEASE_OLD, _RELEASE_NEW, "release command")
-    text = _replace_once(text, _RELEASE_ENV_OLD, _RELEASE_ENV_NEW, "release env block")
+    text = _replace_once(
+        text,
+        _RELEASE_OLD,
+        _RELEASE_NEW.replace("{verify}", _VERIFY_STEP),
+        "release step",
+    )
     # Every remaining `needs.plan.outputs.tag-flag` is a shell word in `dist ...`.
     count = text.count(_TAG_FLAG + " ")
     if count < 1:
@@ -117,6 +142,7 @@ def harden(text: str) -> str:
     text = _replace_once(text, _BUILD_OLD, _BUILD_NEW, "build artifacts step")
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
+    text = _route_by_major_version(text)
     _assert_clean(text)
     return text
 
@@ -157,17 +183,93 @@ _VERIFY_STEP = """\
         run: |
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
 """
-# Before dist can touch the release, and again right before `gh release create`.
-_VERIFY_ANCHORS = ("      - id: host\n", "      - name: Create GitHub Release\n")
+_HOST_STEP = "      - id: host\n"
 
 
 def _verify_tag_before_publishing(text: str) -> str:
-    """A tag-writer may move the tag after the provenance check; catch it at publish time."""
-    for anchor in _VERIFY_ANCHORS:
-        text = _replace_once(
-            text, anchor, _VERIFY_STEP + anchor, f"anchor {anchor.strip()}"
-        )
-    return text
+    """A tag-writer may move the tag after the provenance check; catch it at publish time.
+
+    One check runs before dist touches the release, and one sits right before the
+    step that undrafts it (see ``_RELEASE_NEW``).
+    """
+    return _replace_once(text, _HOST_STEP, _VERIFY_STEP + _HOST_STEP, "host step")
+
+
+_ROUTE_JOB = """\
+  # Tags of major 3 and later go through dist. Earlier tags (2.x) only publish the
+  # draft release release-please made, so they release as they always did.
+  route:
+    runs-on: "ubuntu-22.04"
+    outputs:
+      gated: ${{ steps.route.outputs.gated }}
+    steps:
+      - uses: {checkout}
+        with:
+          persist-credentials: false
+      - id: route
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IS_PULL_REQUEST: ${{ github.event.pull_request != null }}
+        run: |
+          if [[ "$IS_PULL_REQUEST" == "true" ]]; then
+            echo "gated=true" >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/release_provenance.py route-tag "$REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+"""
+_LEGACY_JOB = """
+  publish-legacy-release:
+    name: Publish the release-please release (before 3.0)
+    needs: route
+    if: ${{ needs.route.outputs.gated == 'false' }}
+    runs-on: "ubuntu-22.04"
+    permissions:
+      "contents": "write"
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the draft release
+        shell: bash
+        run: |
+          gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false
+"""
+_ROUTED = "    if: ${{ needs.route.outputs.gated == 'true' }}\n"
+_CHECKOUT = re.compile(r"uses: (actions/checkout@\S+ # \S+)\n")
+
+
+def _route_by_major_version(text: str) -> str:
+    """Skip the dist pipeline for tags before major 3, and publish their draft instead."""
+    checkout = _CHECKOUT.search(text)
+    if checkout is None:
+        raise ValueError("expected a pinned actions/checkout step, found 0")
+    job = _ROUTE_JOB.replace("{checkout}", checkout[1])
+    jobs_head, plan = (
+        "jobs:\n",
+        (
+            "  # Run 'dist plan' (or host) to determine what tasks we need to do\n"
+            "  plan:\n"
+        ),
+    )
+    text = _replace_once(text, jobs_head + plan, jobs_head + job + plan, "jobs header")
+    text = _replace_once(
+        text,
+        '  plan:\n    runs-on: "ubuntu-22.04"\n',
+        "  plan:\n    needs: route\n" + _ROUTED + '    runs-on: "ubuntu-22.04"\n',
+        "plan job",
+    )
+    text = _replace_once(
+        text,
+        "  custom-release-provenance:\n    uses: ./.github/workflows/release-provenance.yml\n",
+        "  custom-release-provenance:\n    needs: route\n"
+        + _ROUTED
+        + "    uses: ./.github/workflows/release-provenance.yml\n",
+        "routed provenance job",
+    )
+    return text.rstrip("\n") + "\n" + _LEGACY_JOB
 
 
 def _gate_on_provenance(text: str) -> str:

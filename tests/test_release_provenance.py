@@ -220,3 +220,27 @@ def test_only_stable_releases_from_major_three_are_gated(version, gated):
 def test_a_malformed_version_is_an_error():
     with pytest.raises(ValueError, match="not a version"):
         prov.requires_gate("three")
+
+
+@pytest.mark.parametrize(
+    ("tag", "gated"),
+    [("v2.19.0", False), ("v2.0.0", False), ("v3.0.0", True), ("v12.1.0", True)],
+)
+def test_tags_route_by_major_version(tag, gated):
+    assert prov.route_tag(tag) is gated
+
+
+@pytest.mark.parametrize(
+    "tag", ["v3", "3.0.0", "v3.0.0-rc.1", "rc/v3.0.0-rc.1", "v3.0.0$(id)", ""]
+)
+def test_a_tag_that_is_not_vx_y_z_is_an_error_not_a_skip(tag):
+    with pytest.raises(ValueError, match="not a stable tag"):
+        prov.route_tag(tag)
+
+
+def test_the_route_command_prints_the_output_line(capsys):
+    assert prov.main(["route-tag", "v2.19.0"]) == 0
+    assert capsys.readouterr().out == "gated=false\n"
+    assert prov.main(["route-tag", "v3.0.0"]) == 0
+    assert capsys.readouterr().out == "gated=true\n"
+    assert prov.main(["route-tag", "v3.0"]) == 1
