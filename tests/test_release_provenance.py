@@ -239,6 +239,25 @@ def test_only_stable_releases_from_major_three_are_gated(version, gated):
     assert prov.requires_gate(version) is gated
 
 
+@pytest.mark.parametrize(
+    "version",
+    [
+        "03.0.0",
+        "3.00.0",
+        "3.0.00",
+        "03.0.0rc1",
+        "3.00.0rc1",
+        "3.0.00rc1",
+        "\u0663.0.0",
+    ],
+)
+def test_a_version_with_a_leading_zero_is_an_error(capsys, version):
+    with pytest.raises(ValueError, match="not a version"):
+        prov.requires_gate(version)
+    assert prov.main(["requires-gate", version]) == 1
+    assert capsys.readouterr().out == ""
+
+
 def test_a_malformed_version_is_an_error():
     with pytest.raises(ValueError, match="not a version"):
         prov.requires_gate("three")
