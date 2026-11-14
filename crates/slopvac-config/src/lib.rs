@@ -20,7 +20,7 @@ pub mod version;
 pub use diag::{Code, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
-pub use load::{LoadedConfig, load};
+pub use load::{LoadedConfig, load, load_labeled};
 pub use presets::{NoPresets, PackFile, Presets};
 pub use resolve::{
     Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,

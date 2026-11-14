@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
-use crate::load::{LoadedConfig, load};
+use crate::load::{LoadedConfig, load_labeled};
 use crate::presets::Presets;
 use crate::tree::{Node, parse_toml};
 
@@ -43,21 +43,31 @@ impl<'p> Discovery<'p> {
         let Some(path) = self.find(&dir)? else {
             return Ok(None);
         };
-        self.load_cached(path).map(Some)
+        let label = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        self.load_cached(path, &label).map(Some)
     }
 
     /// Load the config at `path` and apply it to every file, as `--config` does.
     pub fn explicit(&self, path: &Path) -> Result<Arc<LoadedConfig>, ConfigError> {
-        let abs = fs::canonicalize(path)
-            .map_err(|source| ConfigError::io(path.display().to_string(), source))?;
-        self.load_cached(abs)
+        self.explicit_in(Path::new(""), path)
     }
 
-    fn load_cached(&self, path: PathBuf) -> Result<Arc<LoadedConfig>, ConfigError> {
+    /// Like [`Discovery::explicit`] for a `--config` value `given` relative to `cwd`. Errors
+    /// name the path as given, not the joined absolute path.
+    pub fn explicit_in(&self, cwd: &Path, given: &Path) -> Result<Arc<LoadedConfig>, ConfigError> {
+        let label = given.display().to_string();
+        let abs =
+            fs::canonicalize(cwd.join(given)).map_err(|source| ConfigError::io(&label, source))?;
+        self.load_cached(abs, &label)
+    }
+
+    fn load_cached(&self, path: PathBuf, label: &str) -> Result<Arc<LoadedConfig>, ConfigError> {
         if let Some(hit) = lock(&self.loaded).get(&path) {
             return Ok(Arc::clone(hit));
         }
-        let config = Arc::new(load(&path, self.presets)?);
+        let config = Arc::new(load_labeled(&path, label, self.presets)?);
         lock(&self.loaded).insert(path, Arc::clone(&config));
         Ok(config)
     }

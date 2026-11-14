@@ -99,7 +99,7 @@ impl ConfigError {
     #[must_use]
     pub fn render(&self) -> String {
         match self {
-            ConfigError::Io { .. } => self.to_string(),
+            ConfigError::Io { .. } => format!("error[{}]: {self}", Code::Io.as_str()),
             ConfigError::Rejected(r) => r.render(),
         }
     }

@@ -874,3 +874,23 @@ fn level_precedence_follows_the_profile_contract() {
         assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
     }
 }
+
+#[test]
+fn a_read_failure_renders_with_its_code() {
+    let err = load(Path::new("missing/slopvac.toml"), &NoPresets).unwrap_err();
+    assert_eq!(
+        err.render(),
+        "error[config-io]: cannot read missing/slopvac.toml: no such file"
+    );
+}
+
+#[test]
+fn a_missing_explicit_config_is_named_as_the_user_typed_it() {
+    let fx = Fixture::new();
+    let d = Discovery::new(&NoPresets);
+    let err = d
+        .explicit_in(&fx.root(), Path::new("conf/team.toml"))
+        .unwrap_err();
+    assert_eq!(err.to_string(), "cannot read conf/team.toml: no such file");
+    assert!(!err.render().contains(fx.root().to_str().unwrap()));
+}

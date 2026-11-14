@@ -114,10 +114,19 @@ impl LoadedConfig {
 
 /// Load the config at `path` and everything it extends.
 pub fn load(path: &Path, presets: &dyn Presets) -> Result<LoadedConfig, ConfigError> {
-    let given = path.display().to_string();
-    let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(&given, source))?;
+    load_labeled(path, &path.display().to_string(), presets)
+}
+
+/// Load the config at `path`, naming it `label` in errors. Use it when `path` is an absolute
+/// form of what the user typed, so a failure shows the user's own words.
+pub fn load_labeled(
+    path: &Path,
+    label: &str,
+    presets: &dyn Presets,
+) -> Result<LoadedConfig, ConfigError> {
+    let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(&given, source))?;
+    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(label, source))?;
     let mut loader = Loader {
         root: &root,
         presets,
