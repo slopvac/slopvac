@@ -84,7 +84,7 @@ pub struct DefaultCredentials {
     pub docker_config_dir: Option<PathBuf>,
     /// Directories searched for `docker-credential-*`. `None` uses `PATH`.
     pub helper_search_path: Option<std::ffi::OsString>,
-    /// Helper time limit. `None` means [`HELPER_TIMEOUT`]; tests shorten it.
+    /// Helper time limit. `None` means the default of 10 seconds; tests shorten it.
     pub helper_timeout: Option<Duration>,
 }
 
