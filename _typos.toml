@@ -27,6 +27,8 @@ ned = "ned"
 fter = "fter"
 struc = "struc"
 utiliz = "utiliz"
+# Product names in data files, not misspellings: Azure Kubernetes Service.
+AKS = "AKS"
 retrie = "retrie"
 
 # Crate name `flate2` (gzip/deflate) cited in the v3 design doc.
