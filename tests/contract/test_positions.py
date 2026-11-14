@@ -147,7 +147,10 @@ def test_empty_range_at_the_end_anchors_to_the_last_token_source_end() -> None:
         {"kind": "masked", "text": "", "src": [3, 8]},
     ]
     assert project_range(trailing, 3, 3) == (8, 8)
-    assert project_range([{"kind": "masked", "text": "", "src": [0, 5]}], 0, 0) == (5, 5)
+    assert project_range([{"kind": "masked", "text": "", "src": [0, 5]}], 0, 0) == (
+        5,
+        5,
+    )
 
 
 @pytest.mark.parametrize(
