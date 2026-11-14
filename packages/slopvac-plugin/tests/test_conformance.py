@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 from conftest import EXAMPLE, FIXTURES, SDK_ENV, bounded, script
-from slopvac_plugin.conformance import SuiteError, load_declaration, run_conformance
+from slopvac_plugin.conformance import (
+    SuiteError,
+    cases,
+    load_declaration,
+    run_conformance,
+)
 from slopvac_plugin.conformance.cases import CASES, check_edits, handshake
 from slopvac_plugin.conformance.session import CaseFailure, CaseSkip, Session
 
@@ -650,3 +655,111 @@ def test_a_case_whose_cleanup_runs_past_its_budget_fails(quiet_cwd):
     )
     assert statuses(report) == {"P1": "fail"}, report.to_text()
     assert "budget" in report.results[0].detail
+
+
+# The report renders text a plugin chose, so it must not pass terminal controls on.
+CONTROLS = ("\x1b", "\x07", "\u202e", "\u200b")
+
+
+@pytest.mark.parametrize("case_id", ["P13", "P14"])
+def test_cli_text_report_escapes_controls_from_a_frame_printed_after_exit(
+    case_id, tmp_path
+):
+    done = cli(
+        "--only",
+        case_id,
+        "--",
+        *script("raw_plugin.py", "scalar-after-exit"),
+        cwd=tmp_path,
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert not any(c in done.stdout for c in CONTROLS), repr(done.stdout)
+    assert "\\x1b[31mred\\u202eevil\\u200bz\\x07" in done.stdout
+
+
+# P17 walks the working directory before and after the recipe calls.
+def p17_report(**kwargs):
+    return run_conformance(
+        script("all_hooks_plugin.py"),
+        inputs=ALL_HOOKS_INPUTS,
+        pass_env=SDK_ENV,
+        only=["P17"],
+        **kwargs,
+    )
+
+
+@pytest.fixture
+def entered(monkeypatch):
+    """Record each directory P17 opens and each entry the walk reads from it."""
+    log = {"dirs": [], "entries": 0}
+    real = os.scandir
+
+    def spy(path):
+        log["dirs"].append(Path(path).name)
+        handle = real(path)
+        inner = handle.__iter__
+
+        def counted():
+            for item in inner():
+                log["entries"] += 1
+                yield item
+
+        class Wrapper:
+            def __enter__(self):
+                handle.__enter__()
+                return counted()
+
+            def __exit__(self, *exc):
+                return handle.__exit__(*exc)
+
+        return Wrapper()
+
+    monkeypatch.setattr(cases.os, "scandir", spy)
+    return log
+
+
+def test_p17_does_not_enter_a_skipped_directory(quiet_cwd, entered):
+    (quiet_cwd / "node_modules").mkdir()
+    for n in range(50):
+        (quiet_cwd / "node_modules" / f"f{n}").write_text("x")
+    (quiet_cwd / "src").mkdir()
+    report = p17_report()
+    assert statuses(report) == {"P17": "pass"}, report.to_text()
+    assert "src" in entered["dirs"]
+    assert "node_modules" not in entered["dirs"]
+
+
+def test_p17_stops_reading_at_the_entry_bound(quiet_cwd, entered, monkeypatch):
+    for n in range(40):
+        (quiet_cwd / f"f{n}").write_text("x")
+    monkeypatch.setattr(cases, "SNAPSHOT_ENTRIES", 5)
+    report = p17_report()
+    assert statuses(report) == {"P17": "pass"}, report.to_text()
+    # Two walks, each reading the bound and the one entry that trips it.
+    assert entered["entries"] == 2 * (5 + 1)
+
+
+def test_p17_fails_when_the_walk_outlasts_the_case_deadline(quiet_cwd, monkeypatch):
+    for n in range(40):
+        (quiet_cwd / f"f{n}").write_text("x")
+    real = os.scandir
+
+    def slow(path):
+        handle = real(path)
+
+        class Slow:
+            def __enter__(self):
+                inner = handle.__enter__()
+                return (time.sleep(0.2) or item for item in inner)
+
+            def __exit__(self, *exc):
+                return handle.__exit__(*exc)
+
+        return Slow()
+
+    monkeypatch.setattr(cases.os, "scandir", slow)
+    started = time.monotonic()
+    report = p17_report(case_budget=2.0)
+    assert statuses(report) == {"P17": "fail"}, report.to_text()
+    assert report.results[0].detail == "the time budget ran out"
+    assert time.monotonic() - started < 6  # 40 entries at 0.2 s would take 8 s

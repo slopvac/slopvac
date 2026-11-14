@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import tomllib
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,43 @@ from .schemas import Schemas
 from .session import CaseFailure, CaseSkip, SuiteError
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
+
+
+# Default-ignorable code points outside the Cf category: fillers and selectors.
+_IGNORABLE = (
+    0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180C, 0x180D, 0x180F,
+    0x3164, 0xFFA0,
+)  # fmt: skip
+_IGNORABLE_RANGES = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+
+
+def _unsafe(char: str) -> bool:
+    code = ord(char)
+    return (
+        unicodedata.category(char) in _UNSAFE_CATEGORIES
+        or code in _IGNORABLE
+        or any(low <= code <= high for low, high in _IGNORABLE_RANGES)
+    )
+
+
+def escape_text(text: str) -> str:
+    """Show control, format, bidi, zero-width and other invisible characters as escapes.
+
+    Case details quote text the plugin chose, and a terminal acts on raw controls.
+    """
+    out = []
+    for char in text:
+        code = ord(char)
+        if not _unsafe(char):
+            out.append(char)
+        elif code < 0x100:
+            out.append(f"\\x{code:02x}")
+        elif code < 0x10000:
+            out.append(f"\\u{code:04x}")
+        else:
+            out.append(f"\\U{code:08x}")
+    return "".join(out)
 
 
 @dataclass(frozen=True)
@@ -43,8 +81,8 @@ class Report:
 
     def to_text(self) -> str:
         lines = [
-            f"{r.status.upper():4} {r.id:4} {r.title}"
-            + (f"\n       {r.detail}" if r.detail else "")
+            f"{r.status.upper():4} {r.id:4} {escape_text(r.title)}"
+            + (f"\n       {escape_text(r.detail)}" if r.detail else "")
             for r in self.results
         ]
         counts = {

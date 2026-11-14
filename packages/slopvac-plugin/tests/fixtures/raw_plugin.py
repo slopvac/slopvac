@@ -66,6 +66,17 @@ if mode == "drip-after-exit":
     atexit.register(escape, DRIP)
 
 
+def scalar_after_exit():
+    # A framed JSON string with terminal controls, a bidi override and a zero-width space.
+    body = json.dumps("\x1b[31mred\u202eevil\u200bz\x07").encode()
+    out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    out.flush()
+
+
+if mode == "scalar-after-exit":
+    atexit.register(scalar_after_exit)
+
+
 def read():
     length = None
     while True:
