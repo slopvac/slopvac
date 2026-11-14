@@ -73,12 +73,12 @@ pub fn kill_all_live() {
 
 /// Where a teardown reads the process table. A test seam only.
 ///
-/// `None` in [`HostConfig`](crate::HostConfig) means `/bin/ps`, which is
-/// what production uses; no lookup ever goes through `PATH`. Tests point this
-/// at a script. The program runs exactly as `/bin/ps` would: an environment of
-/// only `LC_ALL=C` and `PATH=/usr/bin:/bin`, no input, the walk deadline and
-/// the output limit. It must print what
-/// `ps -A -o pid=,ppid=,pgid=,stat=,lstart=` prints.
+/// `None` in [`HostConfig`](crate::HostConfig) means `/bin/ps` with a two
+/// second deadline, which is what production uses; no lookup ever goes
+/// through `PATH`. Tests point this at a script. The program runs exactly as
+/// `/bin/ps` would: an environment of only `LC_ALL=C` and
+/// `PATH=/usr/bin:/bin`, no input, the deadline and the output limit. It must
+/// print what `ps -A -o pid=,ppid=,pgid=,stat=,lstart=` prints.
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct TableSource {
@@ -86,6 +86,8 @@ pub struct TableSource {
     pub program: PathBuf,
     /// Its arguments.
     pub args: Vec<OsString>,
+    /// How long one teardown may spend on the walk.
+    pub deadline: Duration,
 }
 
 #[derive(Default)]
@@ -309,7 +311,8 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) {
             Then::Resume => Signal::CONT,
         },
     );
-    let strays = unix::freeze_strays(leader, table, Instant::now() + WALK_DEADLINE);
+    let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
+    let strays = unix::freeze_strays(leader, table, Instant::now() + within);
     for s in strays.iter().rev() {
         s.signal(Signal::KILL);
     }
@@ -559,7 +562,9 @@ mod unix {
             .ok()?;
         let out = read_bounded(child.stdout.take(), deadline);
         let exited = out.is_some() && exited_by(&child, deadline);
-        // Still unreaped, so the helper's group id is its own.
+        // Still unreaped, so the helper's ids are its own. The helper itself
+        // is killed too, in case it moved to another group.
+        let _ = child.kill();
         if let Some(g) = pid(child.id()) {
             let _ = rustix::process::kill_process_group(g, Signal::KILL);
         }
@@ -746,26 +751,71 @@ mod tests {
             assert_eq!(sh("echo partial; exit 3", Duration::from_secs(10)), None);
         }
 
+        /// Whether `pid` still runs: a killed process may stay a zombie
+        /// until its new parent reaps it, so poll for up to ten seconds.
+        fn still_running(pid: &str) -> bool {
+            let end = Instant::now() + Duration::from_secs(10);
+            loop {
+                let out = std::process::Command::new("/bin/ps")
+                    .args(["-o", "stat=", "-p", pid])
+                    .output()
+                    .unwrap();
+                let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                if stat.is_empty() || stat.starts_with('Z') {
+                    return false;
+                }
+                if Instant::now() > end {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+
+        /// Run `script` with a 500 ms deadline; it writes a pid to the file
+        /// named by `$0`. Returns the output, the time taken and that pid.
+        fn hung(script: &str) -> (Option<Vec<u8>>, Duration, String) {
+            let dir = std::env::temp_dir().join(format!(
+                "slopvac-hung-{}-{}",
+                std::process::id(),
+                script.len()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let pidfile = dir.join("pid");
+            let started = Instant::now();
+            let got = run_bounded(
+                Path::new("/bin/sh"),
+                &[
+                    std::ffi::OsStr::new("-c"),
+                    script.as_ref(),
+                    pidfile.as_os_str(),
+                ],
+                started + Duration::from_millis(500),
+            );
+            let took = started.elapsed();
+            let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_owned();
+            std::fs::remove_dir_all(&dir).unwrap();
+            (got, took, pid)
+        }
+
         #[test]
         fn a_hung_helper_and_its_children_are_killed_at_the_deadline() {
-            let dir = std::env::temp_dir().join(format!("slopvac-hung-{}", std::process::id()));
-            std::fs::create_dir_all(&dir).unwrap();
-            let pidfile = dir.join("child");
-            let script = format!("sleep 60 & echo $! > {}; wait", pidfile.display());
-            let started = Instant::now();
-            let got = sh(&script, Duration::from_millis(500));
-            let took = started.elapsed();
-            let child: i32 = std::fs::read_to_string(&pidfile)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap();
-            std::fs::remove_dir_all(&dir).unwrap();
-            let alive = rustix::process::Pid::from_raw(child)
-                .is_some_and(|p| rustix::process::test_kill_process(p).is_ok());
+            let (got, took, child) = hung(r#"sleep 60 & echo $! > "$0"; wait"#);
             assert_eq!(got, None);
             assert!(took < Duration::from_secs(30), "{took:?}");
-            assert!(!alive, "the helper's child {child} survived");
+            assert!(
+                !still_running(&child),
+                "the helper's child {child} survived"
+            );
+        }
+
+        #[test]
+        fn a_hung_helper_that_left_its_group_is_killed_at_the_deadline() {
+            // The helper leads its own group, so it moves into the host's.
+            let script = r#"echo $$ > "$0"; exec /usr/bin/perl -e 'setpgrp(0, getpgrp(getppid())) or die; sleep 60'"#;
+            let (got, took, helper) = hung(script);
+            assert_eq!(got, None);
+            assert!(took < Duration::from_secs(30), "{took:?}");
+            assert!(!still_running(&helper), "the helper {helper} survived");
         }
 
         const ROW: &str = "Sat Nov 14 23:00:07 2026";

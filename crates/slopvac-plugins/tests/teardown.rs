@@ -22,6 +22,9 @@ use slopvac_plugins::{HostConfig, Plugin, kill_all_live};
 /// One test at a time, so one test's `kill_all_live` cannot end another's plugin.
 static SERIAL: Mutex<()> = Mutex::new(());
 
+/// The production walk deadline.
+const WALK: Duration = Duration::from_secs(2);
+
 const PS: &str = "exec /bin/ps -A -o pid=,ppid=,pgid=,stat=,lstart=\n";
 
 /// Log the plugin leader's state, then print the real table. With a `hold`
@@ -39,8 +42,9 @@ if [ -e "$d/hold" ] && mkdir "$d/held" 2>/dev/null; then
 fi
 "#;
 
-/// A scratch directory and a config whose table helper runs `script`.
-fn seam(name: &str, script: &str) -> (PathBuf, HostConfig) {
+/// A scratch directory and a config whose table helper runs `script`, with
+/// `deadline` for each teardown's walk.
+fn seam(name: &str, script: &str, deadline: Duration) -> (PathBuf, HostConfig) {
     let dir = scratch(name);
     let file = dir.join("table.sh");
     std::fs::write(&file, script).unwrap();
@@ -52,6 +56,7 @@ fn seam(name: &str, script: &str) -> (PathBuf, HostConfig) {
                 dir.clone().into(),
                 std::process::id().to_string().into(),
             ],
+            deadline,
         }),
         ..cfg()
     };
@@ -80,7 +85,7 @@ fn the_group_is_signalled_before_its_exited_leader_is_reaped() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (dir, cfg) = seam("reap-order", &format!("{OBSERVE}{PS}"));
+    let (dir, cfg) = seam("reap-order", &format!("{OBSERVE}{PS}"), WALK);
     // A plugin that leaves a same-group child holding its pipes, then exits.
     let _p = start_mode("orphan-init", &dir, &cfg);
     let pids = pids_from(&dir.join("pids"));
@@ -107,7 +112,8 @@ fn waits_for_held_teardown(
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (dir, cfg) = seam(name, &format!("{OBSERVE}{PS}"));
+    // The deadline outlasts the hold, so only the release ends the teardown.
+    let (dir, cfg) = seam(name, &format!("{OBSERVE}{PS}"), NO_HANG * 3);
     std::fs::write(dir.join("hold"), "").unwrap();
     let p = start_mode("orphan-init", &dir, &cfg);
     let pids = pids_from(&dir.join("pids"));
@@ -120,7 +126,7 @@ fn waits_for_held_teardown(
         drop(rest);
     });
     // Nothing lets the action finish while the helper holds, so a return
-    // inside this window is the bug. The helper's own deadline is longer.
+    // inside this window is the bug.
     let early = rx.recv_timeout(Duration::from_secs(1)).is_ok();
     std::fs::write(dir.join("release"), "").unwrap();
     t.join().unwrap();
@@ -151,7 +157,11 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (dir, cfg) = seam("hung", "echo $$ > \"$1/helper\"\nexec /bin/sleep 60\n");
+    let (dir, cfg) = seam(
+        "hung",
+        "echo $$ > \"$1/helper\"\nexec /bin/sleep 60\n",
+        WALK,
+    );
     let p = start_mode("children", &dir, &cfg);
     // pids[0] stays in the plugin's group; pids[1] left it with `setsid`.
     let pids = pids_from(&dir.join("pids"));
@@ -189,7 +199,7 @@ echo "1 $leader 1 T $t"
 echo "$leader $2 $leader T $t"
 echo "$2 $leader $2 T $t"
 "#;
-    let (dir, cfg) = seam("forged", forged);
+    let (dir, cfg) = seam("forged", forged, WALK);
     let p = start_mode("hang", &dir, &cfg);
     let leader = pids_n(&dir.join("pids"), 1);
     // A stopped host would hang here; a killed one would end the test binary.
@@ -221,7 +231,7 @@ echo "{v} $leader {v} S $t"
 "#,
         v = victim.id()
     );
-    let (dir, cfg) = seam("forged-parent", &forged);
+    let (dir, cfg) = seam("forged-parent", &forged, WALK);
     let p = start_mode("hang", &dir, &cfg);
     let leader = pids_n(&dir.join("pids"), 1);
     kill_all_live();
