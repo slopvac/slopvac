@@ -42,8 +42,10 @@ def valid_report(tmp_path_factory) -> bytes:
     return out.read_bytes()
 
 
-def make_archive(path: Path, entries: dict[str, bytes]) -> Path:
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+def make_archive(
+    path: Path, entries: dict[str, bytes], method: int = zipfile.ZIP_DEFLATED
+) -> Path:
+    with zipfile.ZipFile(path, "w", method) as zf:
         for name, data in entries.items():
             zf.writestr(name, data)
     return path
@@ -100,34 +102,59 @@ def test_other_valid_diagnostic_shapes_are_accepted(check, good, report):
 
 def test_an_oversize_archive_is_rejected(check, good):
     # Incompressible data makes the archive itself exceed its cap.
-    good["findings.rdjsonl"] = os.urandom(fork.MAX_ARCHIVE_BYTES + 1)
+    good["findings.rdjsonl"] = os.urandom(1_000_001)
     with pytest.raises(fork.Rejected, match="over the cap"):
         check(good)
 
 
 def test_a_zip_bomb_is_rejected_by_its_declared_size(check, good):
-    good["findings.rdjsonl"] = b"\n" * (fork.MAX_REPORT_BYTES + 1)
+    good["findings.rdjsonl"] = b"\n" * (2_000_001)
     with pytest.raises(fork.Rejected, match="over the cap"):
         check(good)
 
 
 def test_an_oversize_metadata_file_is_rejected(check, good):
-    good["pr-number"] = b"1" * (fork.MAX_SMALL_BYTES + 1)
+    good["pr-number"] = b"1" * (65)
     with pytest.raises(fork.Rejected, match="over the cap"):
         check(good)
 
 
-def test_a_header_that_understates_the_size_is_rejected(tmp_path, good):
-    archive = make_archive(tmp_path / "a.zip", good)
+def understate_size(archive: Path, name: str, size: int) -> None:
+    """Rewrite the central directory's uncompressed size of one member."""
     raw = bytearray(archive.read_bytes())
-    # Shrink file_size in the central directory entry of head-sha.
-    central = raw.rindex(
-        b"PK\x01\x02", 0, raw.index(b"head-sha", raw.rindex(b"PK\x01\x02"))
-    )
-    raw[central + 24 : central + 28] = (1).to_bytes(4, "little")
-    archive.write_bytes(raw)
+    start = 0
+    while (start := raw.find(b"PK\x01\x02", start)) != -1:
+        name_len = int.from_bytes(raw[start + 28 : start + 30], "little")
+        if bytes(raw[start + 46 : start + 46 + name_len]) == name.encode():
+            raw[start + 24 : start + 28] = size.to_bytes(4, "little")
+            archive.write_bytes(raw)
+            return
+        start += 4
+    raise AssertionError(name)
+
+
+def test_a_deflate_bomb_with_an_understated_header_is_rejected(tmp_path, good):
+    # 3 MB of newlines deflates to a few KB, under the archive cap.
+    good["findings.rdjsonl"] = b"\n" * 3_000_000
+    archive = make_archive(tmp_path / "a.zip", good)
+    assert archive.stat().st_size < 1_000_000
+    understate_size(archive, "findings.rdjsonl", 10)
     with pytest.raises(fork.Rejected):
         fork.validate(archive, expected_pr=PR, expected_sha=SHA)
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_unbounded_compression_methods_are_rejected_before_opening(
+    tmp_path, good, method
+):
+    archive = make_archive(tmp_path / "a.zip", good, method)
+    with pytest.raises(fork.Rejected, match="compression method"):
+        fork.validate(archive, expected_pr=PR, expected_sha=SHA)
+
+
+def test_stored_members_are_accepted(tmp_path, good):
+    archive = make_archive(tmp_path / "a.zip", good, zipfile.ZIP_STORED)
+    assert fork.validate(archive, expected_pr=PR, expected_sha=SHA)
 
 
 @pytest.mark.parametrize(
@@ -241,6 +268,32 @@ def test_the_event_side_bindings_must_be_well_formed(check, good, kwargs, match)
             "invalid",
         ),
         (line(severity="FATAL"), "severity"),
+        (line(severity=["ERROR"]), "severity"),
+        (
+            line(
+                location={
+                    "path": "a",
+                    "range": {"start": {"line": 5}, "end": {"line": 4}},
+                }
+            ),
+            "ends before",
+        ),
+        (
+            line(
+                location={
+                    "path": "a",
+                    "range": {
+                        "start": {"line": 3, "column": 9},
+                        "end": {"line": 3, "column": 2},
+                    },
+                }
+            ),
+            "ends before",
+        ),
+        (
+            line(location={"path": "a", "range": {"start": {"line": 10_000_001}}}),
+            "invalid",
+        ),
         (line(source={"name": "s", "x": 1}), "unknown fields"),
         (line(suggestions="x"), "suggestions"),
         (line(suggestions=[{"text": "x"}]), "range"),
@@ -253,14 +306,25 @@ def test_a_malformed_report_is_rejected(check, good, report, match):
         check(good)
 
 
+def test_a_line_separator_inside_a_message_is_not_a_line_break(check, good):
+    report = line(message="one\u2028two\u0085three") + line(message="x")
+    good["findings.rdjsonl"] = report
+    assert check(good)["findings.rdjsonl"] == report
+
+
+def test_crlf_line_endings_are_accepted(check, good):
+    good["findings.rdjsonl"] = line().replace(b"\n", b"\r\n") * 2
+    assert check(good)
+
+
 def test_too_many_diagnostics_are_rejected(check, good):
-    good["findings.rdjsonl"] = line() * (fork.MAX_DIAGNOSTICS + 1)
+    good["findings.rdjsonl"] = line() * (2_001)
     with pytest.raises(fork.Rejected, match="more than"):
         check(good)
 
 
 def test_the_diagnostic_cap_itself_is_accepted(check, good):
-    good["findings.rdjsonl"] = line() * fork.MAX_DIAGNOSTICS
+    good["findings.rdjsonl"] = line() * 2_000
     assert check(good)
 
 
@@ -307,3 +371,41 @@ def test_the_documented_template_writes_the_files_the_consumer_requires():
     written = set(re.findall(r"> findings/([\w.-]+)", template))
     written.add(re.search(r"rdjsonl-file: findings/([\w.-]+)", template).group(1))
     assert written == fork.ENTRIES
+
+
+def malicious_cases(good):
+    return {
+        "oversize archive": ({"findings.rdjsonl": os.urandom(1_000_001)}, PR, SHA),
+        "path traversal": ({**good, "../../etc/cron.d/x": b"x"}, PR, SHA),
+        "traversal replaces entry": (
+            {
+                "../pr-number": good["pr-number"],
+                **{k: v for k, v in good.items() if k != "pr-number"},
+            },
+            PR,
+            SHA,
+        ),
+        "wrong head": (good, PR, OTHER_SHA),
+        "wrong pull request": (good, "43", SHA),
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "oversize archive",
+        "path traversal",
+        "traversal replaces entry",
+        "wrong head",
+        "wrong pull request",
+    ],
+)
+def test_the_command_line_rejects_a_malicious_artifact(tmp_path, good, capsys, case):
+    entries, pr, sha = malicious_cases(good)[case]
+    if case == "oversize archive":
+        entries = {**good, **entries}
+    archive = make_archive(tmp_path / "a.zip", entries)
+    code, out = run_cli(tmp_path, archive, pr=pr, sha=sha)
+    assert code == 1
+    assert capsys.readouterr().out.startswith("::error title=fork review::")
+    assert not out.exists()

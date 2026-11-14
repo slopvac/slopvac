@@ -30,6 +30,7 @@ import sys
 import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 REPORT = "findings.rdjsonl"
 PR_NUMBER = "pr-number"
@@ -44,6 +45,11 @@ MAX_FILES = len(ENTRIES)
 MAX_DIAGNOSTICS = 2_000
 MAX_STRING = 10_000
 MAX_LIST = 50
+MAX_COORDINATE = 10_000_000
+CHUNK = 8192
+# STORED and DEFLATE only: CPython decompresses BZIP2 and LZMA members with no
+# output bound before it truncates to the declared size (CWE-409).
+ALLOWED_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 _NUMBER = re.compile(r"[1-9][0-9]{0,8}")
@@ -90,15 +96,23 @@ def _object(value: object, what: str, allowed: set[str]) -> dict[str, object]:
     return value
 
 
+def _order(point: dict[str, object]) -> tuple[Any, Any]:
+    return (point.get("line", 1), point.get("column", 1))
+
+
 def _check_range(value: object, what: str) -> None:
     fields = _object(value, what, {"start", "end"})
     _require("start" in fields, f"{what} has no start")
     for key, position in fields.items():
         point = _object(position, f"{what}.{key}", {"line", "column"})
         _require(
-            all(_is_int(v, minimum=1) for v in point.values()),
+            all(_is_int(v, minimum=1) and v <= MAX_COORDINATE for v in point.values()),
             f"{what}.{key} is invalid",
         )
+    if "end" in fields:
+        start, end = fields["start"], fields["end"]
+        assert isinstance(start, dict) and isinstance(end, dict)
+        _require(_order(end) >= _order(start), f"{what} ends before it starts")
 
 
 def _check_location(value: object, what: str) -> None:
@@ -135,7 +149,11 @@ def check_diagnostic(item: object, line_number: int) -> None:
     _require("location" in fields, f"{where} has no location")
     _check_location(fields["location"], f"{where} location")
     if "severity" in fields:
-        _require(fields["severity"] in _SEVERITIES, f"{where} severity is invalid")
+        severity = fields["severity"]
+        _require(
+            isinstance(severity, str) and severity in _SEVERITIES,
+            f"{where} severity is invalid",
+        )
     if "source" in fields:
         _check_named(fields["source"], f"{where} source", "name")
     if "code" in fields:
@@ -164,7 +182,10 @@ def check_report(data: bytes) -> int:
     except UnicodeDecodeError as err:
         raise Rejected(f"{REPORT} is not UTF-8: {err}") from err
     count = 0
-    for number, line in enumerate(text.splitlines(), start=1):
+    # Split on "\n" only: str.splitlines also breaks on U+2028 and others, which
+    # are legal inside a JSON string.
+    for number, raw in enumerate(text.split("\n"), start=1):
+        line = raw.removesuffix("\r")
         if not line.strip():
             continue
         count += 1
@@ -182,6 +203,20 @@ def check_report(data: bytes) -> int:
 
 def _entry_limit(name: str) -> int:
     return MAX_REPORT_BYTES if name == REPORT else MAX_SMALL_BYTES
+
+
+def _read_bounded(zf: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int) -> bytes:
+    """Read a member in chunks under a running cap that ignores header sizes."""
+    chunks: list[bytes] = []
+    total = 0
+    with zf.open(info) as handle:
+        while chunk := handle.read(CHUNK):
+            total += len(chunk)
+            _require(
+                total <= limit, f"entry {info.filename!r} expands past {limit} bytes"
+            )
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def read_entries(archive: Path) -> dict[str, bytes]:
@@ -222,9 +257,12 @@ def read_entries(archive: Path) -> dict[str, bytes]:
         entries: dict[str, bytes] = {}
         for info in infos:
             # Read one byte past the limit so a lying header is still caught.
+            _require(
+                info.compress_type in ALLOWED_COMPRESSION,
+                f"entry {info.filename!r} uses compression method {info.compress_type}",
+            )
             try:
-                with zf.open(info) as handle:
-                    data = handle.read(_entry_limit(info.filename) + 1)
+                data = _read_bounded(zf, info, _entry_limit(info.filename))
             except (zipfile.BadZipFile, NotImplementedError, RuntimeError) as err:
                 raise Rejected(f"entry {info.filename!r} is unreadable: {err}") from err
             _require(

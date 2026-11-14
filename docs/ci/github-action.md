@@ -77,7 +77,7 @@ The second workflow runs on `workflow_run` of the first. Treat the artifact as u
 
 - Find the pull request from the `workflow_run` event and the API, never from the artifact. Require one open pull request whose head repository and commit are the ones the event names.
 - Require the artifact's `pr-number` and `head-sha` to equal those values. A mismatch rejects the artifact.
-- Accept exactly three files: `findings.rdjsonl`, `pr-number` and `head-sha`. Reject any other name, a path with `..` or a separator, a symlink, a duplicate, and a size over the caps: 1 MB for the archive, 2 MB for the report and 64 bytes for each other file.
+- Accept exactly three files: `findings.rdjsonl`, `pr-number` and `head-sha`. Reject any other name, a path with `..` or a separator, a symlink, a duplicate, and a size over the caps: 1 MB for the archive, 2 MB for the report and 64 bytes for each other file. Allow only stored and deflate compression, and read each file in chunks under its own byte cap instead of trusting header sizes.
 - Parse every line of the report as a reviewdog Diagnostic. Reject unknown fields, an absolute or `..` file path, and more than 2,000 diagnostics.
 - Check out nothing from the pull request, and run nothing from the artifact. Pipe the validated report to `reviewdog -f=rdjsonl -reporter=github-pr-review`.
 

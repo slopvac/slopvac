@@ -113,6 +113,10 @@ jobs:
                   if "pr-number" not in names:
                       reject(f"artifact {name} has no pr-number")
                   for info in infos:
+                      # STORED and DEFLATE only: CPython decompresses BZIP2 and LZMA
+                      # members without an output bound (CWE-409).
+                      if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                          reject(f"artifact {name} entry {info.filename!r} uses compression {info.compress_type}")
                       mode = info.external_attr >> 16
                       if info.is_dir() or stat.S_IFMT(mode) not in (0, stat.S_IFREG):
                           reject(f"artifact {name} entry {info.filename!r} is not a regular file")
@@ -121,7 +125,13 @@ jobs:
                       reject(f"artifact {name} expands to {total} bytes, limit {limit}")
                   for info in infos:
                       # Fixed destination names; the archive's own paths are never used.
-                      data = zf.open(info).read(info.file_size + 1)
+                      # Chunked read under a running cap; header sizes are not trusted.
+                      data = b""
+                      with zf.open(info) as handle:
+                          while chunk := handle.read(8192):
+                              data += chunk
+                              if len(data) > min(info.file_size, limit):
+                                  reject(f"artifact {name} entry {info.filename!r} expands past its size")
                       if len(data) != info.file_size:
                           reject(f"artifact {name} entry {info.filename!r} size mismatch")
                       (destination / info.filename).write_bytes(data)
@@ -245,9 +255,14 @@ jobs:
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
           # Open pull requests from the run's own head branch, kept when the head
           # repository and commit are the ones the event names. Exactly one may match.
-          mapfile -t numbers < <(gh api -X GET "repos/$REPO/pulls" --paginate \
+          # Capture first so an API failure stops the job instead of reading as "no PR".
+          listing="$(gh api -X GET "repos/$REPO/pulls" --paginate \
             -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
-            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .number')
+            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .number')"
+          numbers=()
+          if [[ -n "$listing" ]]; then
+            mapfile -t numbers <<< "$listing"
+          fi
           if (( ${#numbers[@]} == 0 )); then
             echo "No open pull request at $HEAD_SHA; nothing to report."
             echo "number=" >> "$GITHUB_OUTPUT"
@@ -288,6 +303,8 @@ jobs:
             exit 1
           fi
           timeout 120 gh api "repos/$REPO/actions/artifacts/$id/zip" > "$RUNNER_TEMP/slopvac-findings.zip"
+          # System python3 is acceptable: the script is standard library only and
+          # runs on the hosted image, so there is no dependency to pin or install.
           python3 scripts/fork_review.py extract "$RUNNER_TEMP/slopvac-findings.zip" "$RUNNER_TEMP/findings-v3"
       - name: Post review comments
         if: ${{ steps.pr.outputs.number != '' }}
