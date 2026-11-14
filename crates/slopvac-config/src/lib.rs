@@ -18,6 +18,7 @@ pub mod resolve;
 pub mod schema;
 pub mod source;
 pub mod tree;
+pub mod validate;
 pub mod version;
 
 pub use diag::{Code, Diagnostic, SourceFile, render};
