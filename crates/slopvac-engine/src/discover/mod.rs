@@ -381,7 +381,7 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
             .map(|g| g.compile_matcher())
             .map_err(invalid)
     };
-    let glob = compile(pattern)?;
+    compile(pattern)?; // reject a malformed pattern before touching the disk
 
     // Walk from the longest leading run of components without glob syntax. The
     // last component is never part of it: it names what to match.
@@ -395,9 +395,9 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
         base.push(component);
     }
     let base_len = base.components().count();
-    if base.as_os_str().is_empty() {
-        base.push(".");
-    }
+    // Resolve the base once, as a direct target would be, so every match is
+    // emitted under the resolved directory (`link/..` is the link target's parent).
+    let base = syntax::resolve_target(&base);
     if !base.is_dir() {
         return Ok(Vec::new());
     }
@@ -417,6 +417,8 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
         .map(|c| compile(c))
         .collect::<Result<Vec<_>, _>>()?;
     let recursive = first_recursive.is_some();
+    // Matching uses the part below the base, so the resolved base needs no escaping.
+    let below = compile(&rest.join("/"))?;
     let mut builder = WalkBuilder::new(&base);
     builder
         .standard_filters(false)
@@ -437,12 +439,15 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
             source,
         })?;
         let path = entry.path();
-        let candidate: PathBuf = path
-            .components()
-            .filter(|c| *c != Component::CurDir)
-            .collect();
-        if glob.is_match(&candidate) && path.is_file() {
-            matches.push(candidate);
+        let Ok(relative) = path.strip_prefix(&base) else {
+            continue;
+        };
+        if below.is_match(relative) && path.is_file() {
+            matches.push(
+                path.components()
+                    .filter(|c| *c != Component::CurDir)
+                    .collect(),
+            );
         }
     }
     Ok(matches)

@@ -894,3 +894,95 @@ mod internal_symlink_excludes {
         assert!(ex.is_excluded(&root.join("archive/real.md")));
     }
 }
+
+#[cfg(unix)]
+mod target_forms {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    /// `docs-link` points at `manuals/current`, so `docs-link/..` is `manuals`.
+    fn layout() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write(&root, "README.md", "root");
+        write(&root, "manuals/README.md", "manuals");
+        write(&root, "manuals/current/page.md", "");
+        symlink(root.join("manuals/current"), root.join("docs-link")).unwrap();
+        (dir, root)
+    }
+
+    fn run(target: &str, root: &Path, excludes: &[&str]) -> Vec<PathBuf> {
+        let options = Options {
+            excludes: Some(Excludes::new(root, excludes).unwrap()),
+            ..Options::default()
+        };
+        discover(&[target], options)
+            .unwrap()
+            .files
+            .into_iter()
+            .map(|f| f.path)
+            .collect()
+    }
+
+    /// The same documents named as a directory, a file, a glob and a recursive
+    /// glob, all through the symlinked parent, must select and exclude alike.
+    fn forms(root: &Path) -> Vec<String> {
+        let r = root.display();
+        vec![
+            format!("{r}/docs-link/../README.md"),
+            format!("{r}/docs-link/../*.md"),
+            format!("{r}/docs-link/../**/README.md"),
+            format!("{r}/docs-link/../{{README,none}}.md"),
+        ]
+    }
+
+    #[test]
+    fn every_target_form_selects_the_resolved_document() {
+        let (_dir, root) = layout();
+        for target in forms(&root) {
+            assert_eq!(
+                run(&target, &root, &[]),
+                [root.join("manuals/README.md")],
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_target_form_is_excluded_by_the_resolved_repository_path() {
+        let (_dir, root) = layout();
+        for target in forms(&root) {
+            assert_eq!(
+                run(&target, &root, &["/manuals/"]),
+                Vec::<PathBuf>::new(),
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_target_form_ignores_an_exclude_for_the_unresolved_path() {
+        let (_dir, root) = layout();
+        for target in forms(&root) {
+            assert_eq!(
+                run(&target, &root, &["/README.md"]),
+                [root.join("manuals/README.md")],
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_directory_target_through_the_symlinked_parent_selects_and_excludes_the_same_way() {
+        let (_dir, root) = layout();
+        let target = format!("{}/docs-link/..", root.display());
+        let all = [
+            root.join("manuals/README.md"),
+            root.join("manuals/current/page.md"),
+        ];
+        assert_eq!(run(&target, &root, &[]), all);
+        assert_eq!(run(&target, &root, &["/README.md"]), all);
+        assert_eq!(run(&target, &root, &["/manuals/"]), Vec::<PathBuf>::new());
+    }
+}
