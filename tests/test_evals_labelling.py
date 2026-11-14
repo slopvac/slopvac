@@ -244,7 +244,15 @@ def test_precision_uses_labels_and_ignores_unlabelled_findings(tmp_path):
 def test_cli_roundtrip_sample_merge_resolve(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.lib, "load_manifest", manifest)
     res = tmp_path / "r.json"
-    res.write_text(json.dumps({"schema": 1, **results()}))
+    res.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "corpus": {"manifest_sha256": cli.runner.manifest_digest(manifest())},
+                **results(),
+            }
+        )
+    )
     d = str(tmp_path / "labels")
     assert cli.main(["label", "--dir", d, "sample", str(res), "--per-rule", "2"]) == 0
     items_ = lab.read_jsonl(tmp_path / "labels" / "items.jsonl")
