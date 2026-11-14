@@ -140,6 +140,10 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<DiagramFinding>
             span: f.span.clone(),
             message,
         };
+        let has_code = words(label).iter().any(|w| is_code_token(w));
+        if has_code && matches!(f.role, Role::Node | Role::Edge | Role::Group | Role::Note) {
+            continue;
+        }
         match f.role {
             Role::Note => {
                 if count >= NOTE_WORDS {
@@ -151,9 +155,6 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<DiagramFinding>
                 }
             }
             Role::Node | Role::Edge | Role::Group => {
-                if words(label).iter().any(|w| is_code_token(w)) {
-                    continue;
-                }
                 if count >= RUN_ON_WORDS {
                     out.push(finding(
                         "diagram.label-run-on",
@@ -203,29 +204,38 @@ fn spans(text: &str) -> Vec<(Range<usize>, String)> {
     out
 }
 
+/// Find phrases that point at the diagram. Each match is a complete phrase that ends in a
+/// diagram noun or a locating word, so "as shown in the logs" and a cut-off prefix do not match.
 fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
     const NOUNS: &[&str] = &["diagram", "flowchart", "figure", "chart", "graph"];
     const VERBS: &[&str] = &["above", "below", "shows", "illustrates", "depicts"];
+    const DEMONSTRATIVES: &[&str] = &["the", "this"];
     let w = spans(block.text);
     let mut out = Vec::new();
     for i in 0..w.len() {
-        let at = |k: usize| w.get(i + k).map(|(_, s)| s.as_str());
-        let len = match (at(0), at(1), at(2), at(3)) {
-            (Some("the" | "this"), Some(n), Some(v), _)
-                if NOUNS.contains(&n) && VERBS.contains(&v) =>
-            {
-                3
-            }
-            (Some("as"), Some("shown"), Some("in"), Some("the" | "this")) => 5,
-            (Some("in"), Some("the" | "this"), Some(n), Some(v))
-                if NOUNS.contains(&n) && matches!(v, "above" | "below") =>
-            {
-                4
-            }
-            _ => continue,
+        let at = |k: usize| w.get(i + k).map_or("", |(_, s)| s.as_str());
+        let len = if DEMONSTRATIVES.contains(&at(0))
+            && NOUNS.contains(&at(1))
+            && VERBS.contains(&at(2))
+        {
+            3
+        } else if at(0) == "as"
+            && matches!(at(1), "shown" | "illustrated" | "depicted")
+            && at(2) == "in"
+            && DEMONSTRATIVES.contains(&at(3))
+            && NOUNS.contains(&at(4))
+        {
+            5
+        } else if at(0) == "in"
+            && DEMONSTRATIVES.contains(&at(1))
+            && NOUNS.contains(&at(2))
+            && matches!(at(3), "above" | "below")
+        {
+            4
+        } else {
+            continue;
         };
-        let last = (i + len - 1).min(w.len() - 1);
-        out.push(block.span.start + w[i].0.start..block.span.start + w[last].0.end);
+        out.push(block.span.start + w[i].0.start..block.span.start + w[i + len - 1].0.end);
     }
     out
 }
@@ -371,6 +381,12 @@ mod tests {
     }
 
     #[test]
+    fn code_tokens_exempt_long_notes_too() {
+        let note = "reads config from src/app/config.rs on every start";
+        assert_eq!(rules(note, &[(Role::Note, note)]), Vec::<&str>::new());
+    }
+
+    #[test]
     fn note_long_flags_six_words() {
         let five = "keys rotate every night here";
         let six = "keys rotate every night at midnight";
@@ -410,6 +426,28 @@ mod tests {
         assert_eq!(found[0].rule, "diagram.meta-reference");
         let start = text.find("the diagram above").unwrap() + 100;
         assert_eq!(found[0].span, start..start + "the diagram above".len());
+    }
+
+    #[test]
+    fn meta_reference_needs_a_complete_phrase_ending_in_a_diagram_noun() {
+        for text in [
+            "As shown in the logs, requests fan out.",
+            "As shown in the",
+            "As shown in the diagrams team notes.",
+            "In the diagram",
+            "The diagram",
+            "This chart is blue.",
+            "as shown in",
+        ] {
+            assert_eq!(prose_rules("", &[], text), Vec::new(), "{text}");
+        }
+        let text = "Requests fan out, as shown in the diagram.";
+        let found = prose_rules("", &[], text);
+        let start = text.find("as shown").unwrap() + 100;
+        assert_eq!(
+            found[0].span,
+            start..start + "as shown in the diagram".len()
+        );
     }
 
     #[test]
