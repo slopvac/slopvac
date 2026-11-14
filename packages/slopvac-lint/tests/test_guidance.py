@@ -51,7 +51,11 @@ def _tree(root: Path) -> dict[str, bytes]:
     [
         ("self", "self (review_depth = self)", "fresh-context subagent"),
         ("subagent", "give one fresh-context subagent one pass", "Give each new round"),
-        ("adversary", "Give each new round the findings you rebutted", "When the user asks"),
+        (
+            "adversary",
+            "Give each new round the findings you rebutted",
+            "When the user asks",
+        ),
     ],
 )
 def test_review_depth_renders_its_reviewer_workflow(depth, expected, unexpected):
@@ -87,6 +91,7 @@ def test_base_prime_handoff_matches_configured_review_depth():
     assert "including the adversary loop" in adversary
 
 
+@pytest.mark.vale
 def test_lint_accepts_every_prime_output_at_strict_profile(tmp_path):
     """Base prime and writing, review, and reporting topics pass their strict gate."""
     runner = CliRunner()
@@ -124,7 +129,9 @@ def test_topics_list_no_rule_and_print_the_rules_command(ruleset, topic):
     runner = CliRunner()
     with runner.isolated_filesystem():
         output = _prime(runner, topic)
-    listed = [rule.qualified_id for rule in ruleset.all_rules if rule.qualified_id in output]
+    listed = [
+        rule.qualified_id for rule in ruleset.all_rules if rule.qualified_id in output
+    ]
     assert not listed, listed
     assert f"\n```bash\n{RULES_COMMAND}\n```\n" in output
     assert "`--rules-dir <dir>`" in output, "house rules need the same option"
@@ -265,6 +272,7 @@ def test_report_topic_off_prints_the_disabled_notice_without_ruleset_loading():
     assert result.output.count("\n") == 1
     assert 'report = "off"' in result.output
 
+
 def test_report_topic_contains_workflow_commands_and_category_skeletons():
     from slopvac.reporting import REPORT_CATEGORIES
 
@@ -281,16 +289,18 @@ def test_report_topic_contains_workflow_commands_and_category_skeletons():
         "When it is newer, rerun with `uvx --from slopvac@latest slopvac ...`.",
     ):
         assert expected in output
-    search_url = next(
-        line for line in output.splitlines() if "/issues?q=" in line
-    )
+    search_url = next(line for line in output.splitlines() if "/issues?q=" in line)
     assert "is%3Aissue" in search_url
     assert "is%3Aopen" not in search_url and "state%3A" not in search_url, (
         "the no-gh duplicate search must cover closed issues"
     )
-    assert output.index("slopvac lint --stdin --format json") < output.index("6. Search for duplicates")
+    assert output.index("slopvac lint --stdin --format json") < output.index(
+        "6. Search for duplicates"
+    )
     assert "repro.md" not in output
-    assert output.index("5. When you need a reproduction") < output.index("6. Search for duplicates")
+    assert output.index("5. When you need a reproduction") < output.index(
+        "6. Search for duplicates"
+    )
     for category in REPORT_CATEGORIES:
         category_skeleton = output.split(f"### `{category.key}`\n", 1)[1]
         category_skeleton = category_skeleton.split("### `", 1)[0]
@@ -311,7 +321,10 @@ def test_report_skeletons_use_github_checkbox_markdown():
 
     skeleton = "\n".join(_skeleton(REPORT_CATEGORIES[0]))
     assert "### Reporter\n\n- [ ] Reported by an AI agent" in skeleton
-    assert "### Duplicate search\n\n- [ ] I searched existing issues for duplicates" in skeleton
+    assert (
+        "### Duplicate search\n\n- [ ] I searched existing issues for duplicates"
+        in skeleton
+    )
 
 
 def test_report_discloses_agents_in_forms_and_comments():
@@ -344,18 +357,26 @@ def _steps(output: str) -> dict[int, str]:
 
     workflow = output.split("## Workflow", 1)[1].split("\n## ", 1)[0]
     parts = re.split(r"^(\d+)\. ", workflow, flags=re.M)
-    return {int(number): text for number, text in zip(parts[1::2], parts[2::2], strict=True)}
+    return {
+        int(number): text for number, text in zip(parts[1::2], parts[2::2], strict=True)
+    }
 
 
 def test_report_approval_comes_from_the_shown_preview_before_posting():
     runner = CliRunner()
     with runner.isolated_filesystem():
         steps = _steps(_prime(runner, "report"))
-    preview = next(n for n, text in steps.items() if "Send this preview to the user" in text)
+    preview = next(
+        n for n, text in steps.items() if "Send this preview to the user" in text
+    )
     post = next(n for n, text in steps.items() if "gh issue create" in text)
     assert preview < post
     assert "Remove or replace secrets" in steps[preview]
-    assert all("gh issue" not in steps[n] for n in steps if n < post and "gh issue list" not in steps[n])
+    assert all(
+        "gh issue" not in steps[n]
+        for n in steps
+        if n < post and "gh issue list" not in steps[n]
+    )
 
 
 def test_report_untrusted_issue_rule_sits_in_the_duplicate_search():

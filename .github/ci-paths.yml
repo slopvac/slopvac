@@ -15,11 +15,13 @@ code:
   - 'packages/slopvac-lint/pyproject.toml'
   - 'packages/slopvac-lint/src/**'
   - 'packages/slopvac-lint/tests/**'
+  - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/vale/styles-verified/**'
   - 'tests/**'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
   - 'mise.toml'
+  - '**/conftest.py'
 
 package:
   - '.github/workflows/**'

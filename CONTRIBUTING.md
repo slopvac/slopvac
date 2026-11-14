@@ -17,7 +17,7 @@ Run the test suite from the repository root:
 mise exec -- uv run pytest
 ```
 
-Run it through `mise exec --` so `vale` resolves to the version pinned in `mise.toml`. The root `conftest.py` stops the session when a different `vale` (for example a Homebrew install) is first on `PATH`. CI installs the same pin.
+Run it through `mise exec --` so `vale` resolves to the version pinned in `mise.toml`. Tests marked `vale` run only when a `vale` is on `PATH`. If the `vale` on `PATH` is not the pin (for example a Homebrew install), the run stops with a usage error. CI installs the same pin.
 
 The root `pyproject.toml` configures pytest to discover `packages/slopvac-lint/tests` and `tests`. CI runs the full suite with `python -m pytest` from the repository root. For documentation changes, CI runs the Slopvac prose gate and Markdown checks.
 

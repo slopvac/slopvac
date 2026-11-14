@@ -9,7 +9,6 @@ prose file type, diff scope, and `--fix`. Each assertion is a behaviour that
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from collections import Counter
 from pathlib import Path
@@ -27,7 +26,7 @@ from slopvac.suppression import (
 )
 from slopvac.vale_probe import rst_converter
 
-needs_vale = pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+needs_vale = pytest.mark.vale
 
 META = "meta.invalid-suppression"
 # A rule the native engine runs, and the text that triggers it once. The baseline
@@ -515,24 +514,24 @@ def comments(request, tmp_path_factory) -> dict[str, list[dict]]:
 @pytest.mark.parametrize(
     ("name", "rule_id", "line", "reported"),
     [
-        ("a.py", VALE, 2, False),
+        pytest.param("a.py", VALE, 2, False, marks=needs_vale),
         ("a.py", NATIVE, 3, False),
-        ("a.py", VALE, 6, True),
+        pytest.param("a.py", VALE, 6, True, marks=needs_vale),
         ("a.py", NATIVE, 7, True),
-        ("a.py", VALE, 10, False),
+        pytest.param("a.py", VALE, 10, False, marks=needs_vale),
         ("a.py", NATIVE, 11, False),
-        ("a.py", VALE, 14, False),
+        pytest.param("a.py", VALE, 14, False, marks=needs_vale),
         ("a.py", NATIVE, 15, False),
-        ("a.py", VALE, 17, True),
+        pytest.param("a.py", VALE, 17, True, marks=needs_vale),
         ("a.py", NATIVE, 18, True),
-        ("a.py", VALE, 20, True),
-        ("a.py", VALE, 22, False),
+        pytest.param("a.py", VALE, 20, True, marks=needs_vale),
+        pytest.param("a.py", VALE, 22, False, marks=needs_vale),
         ("a.py", NATIVE, 24, False),
         ("a.py", NATIVE, 26, True),
-        ("a.ts", VALE, 2, False),
-        ("a.ts", VALE, 4, True),
-        ("a.ts", VALE, 7, False),
-        ("a.ts", VALE, 9, True),
+        pytest.param("a.ts", VALE, 2, False, marks=needs_vale),
+        pytest.param("a.ts", VALE, 4, True, marks=needs_vale),
+        pytest.param("a.ts", VALE, 7, False, marks=needs_vale),
+        pytest.param("a.ts", VALE, 9, True, marks=needs_vale),
     ],
 )
 def test_a_comment_directive_covers_the_next_comment_block(

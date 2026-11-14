@@ -381,9 +381,7 @@ def test_locale_flag(runner, tmp_path, locale, text, should_find):
     assert not spelling, "Vale-owned locale spelling stays unchecked without Vale"
 
 
-requires_vale = pytest.mark.skipif(
-    shutil.which("vale") is None, reason="title-case-heading runs in Vale"
-)
+requires_vale = pytest.mark.vale
 
 
 def _title_case_headings(runner, tmp_path, headings, allow=()):
@@ -1683,7 +1681,7 @@ _PROSE_WITH_INTERNAL_REF = (
 )
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+@pytest.mark.vale
 def test_a_rule_turned_off_for_one_file_still_compiles_for_the_next(tmp_path):
     """Vale compiles once per group; the first file's settings must not decide
     which rules exist for the rest. `docs-discipline` is a Vale-owned category:
@@ -1719,7 +1717,7 @@ def test_a_rule_turned_off_for_one_file_still_compiles_for_the_next(tmp_path):
     assert "docs-discipline.internal-refs" in ids(by_path["b.md"])
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+@pytest.mark.vale
 def test_a_rule_turned_off_for_a_later_file_is_dropped_there(tmp_path):
     _write(tmp_path, "a.md", _PROSE_WITH_INTERNAL_REF)
     _write(tmp_path, "b.md", _PROSE_WITH_INTERNAL_REF)
@@ -1756,7 +1754,7 @@ def _levels(report: dict, name: str) -> dict[str, str]:
     return {f["rule_id"]: f["severity"] for f in doc["findings"]}
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+@pytest.mark.vale
 def test_a_later_file_demoting_a_vale_category_keeps_its_own_level(tmp_path):
     """The case that exposed the grouping bug: the same category is a warning in
     the first file and a suggestion in the second, in one invocation."""
@@ -1788,7 +1786,7 @@ def test_a_later_file_demoting_a_vale_category_keeps_its_own_level(tmp_path):
     assert _levels(report, "b.md")["docs-discipline.internal-refs"] == "suggestion"
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+@pytest.mark.vale
 def test_a_file_reports_the_same_levels_alone_and_inside_its_directory(tmp_path):
     """How the caller selects a file must not change what it reports."""
     _write(tmp_path, "a.md", _PROSE_WITH_INTERNAL_REF)
@@ -2076,7 +2074,7 @@ def test_stdin_temp_directory_is_removed_when_config_fails(runner, tmp_path, mon
     assert len(seen) == 1
     assert not seen[0].exists()
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="vale is not on PATH")
+@pytest.mark.vale
 @pytest.mark.parametrize("output_format", ["json", "sarif", "text"])
 def test_stdin_reports_vale_findings_under_stdin_only(tmp_path, monkeypatch, output_format):
     """A Vale-owned rule fires on piped text, and no staging path leaks."""

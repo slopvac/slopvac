@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -491,7 +490,7 @@ def test_comments_mode_filters_source_comments_to_changed_hunks(
     assert {finding["line"] for finding in findings} == {2}
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="Vale is not installed")
+@pytest.mark.vale
 def test_cli_hunk_mode_keeps_changed_vale_finding(tmp_path, monkeypatch) -> None:
     repo, _ = _repo(tmp_path)
     doc = repo / "doc.md"
@@ -666,7 +665,7 @@ def test_comments_directory_excludes_markdown_documents(tmp_path) -> None:
     assert _expand_paths((str(tmp_path),), comments=True) == [tmp_path / "source.py"]
 
 
-@pytest.mark.skipif(shutil.which("vale") is None, reason="Vale is not installed")
+@pytest.mark.vale
 def test_cli_soft_break_span_fails_closed_before_unchanged_line(
     tmp_path, monkeypatch
 ) -> None:

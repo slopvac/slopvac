@@ -46,7 +46,7 @@ from slopvac.vale_probe import resolved_checks
 from slopvac.vocabulary import load_blocklist
 
 VALE = shutil.which("vale")
-needs_vale = pytest.mark.skipif(VALE is None, reason="vale is not on PATH")
+needs_vale = pytest.mark.vale
 
 
 @pytest.fixture(scope="module")
