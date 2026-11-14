@@ -750,6 +750,82 @@ mod helpers {
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 
+    /// Run `script` as the helper, with `$MARKER` naming a file. Returns the
+    /// lookup result and the pid that the script's background job wrote there.
+    fn lookup_with_descendant(name: &str, script: &str) -> (Result<(), OciError>, u32) {
+        use slopvac_plugins::oci::CredentialSource;
+        let (dir, creds) = setup(name, "tree", None);
+        let marker = dir.join("descendant.pid");
+        let bin = dir.join("bin").join("docker-credential-tree");
+        let body = script.replace("$MARKER", marker.to_str().unwrap());
+        std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let result = creds.credential("ghcr.io").map(drop);
+        let pid = std::fs::read_to_string(&marker)
+            .unwrap_or_default()
+            .trim()
+            .parse::<u32>()
+            .expect("the descendant wrote its pid before the lookup ended");
+        std::fs::remove_dir_all(&dir).unwrap();
+        (result, pid)
+    }
+
+    fn process_is_gone(pid: u32) -> bool {
+        let alive = || {
+            std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        // Killing is asynchronous: wait for it, with a generous limit.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while alive() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        true
+    }
+
+    const SPAWN_SLEEPER: &str = "sh -c 'echo $$ >\"$MARKER\"; exec sleep 300' &";
+
+    #[test]
+    fn tm38_a_timeout_kills_the_helpers_descendants() {
+        let script = format!("cat >/dev/null\n{SPAWN_SLEEPER}\nsleep 300");
+        let (result, pid) = lookup_with_descendant("tree-timeout", &script);
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        assert!(
+            process_is_gone(pid),
+            "descendant {pid} survived the timeout"
+        );
+    }
+
+    #[test]
+    fn tm38_a_timeout_after_the_helper_exited_kills_the_descendant_holding_stdout() {
+        let script = format!("cat >/dev/null\n{SPAWN_SLEEPER}");
+        let (result, pid) = lookup_with_descendant("tree-orphan", &script);
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        assert!(
+            process_is_gone(pid),
+            "descendant {pid} survived the timeout"
+        );
+    }
+
+    #[test]
+    fn tm38_an_output_flood_kills_the_descendant_that_writes_it() {
+        let script = "cat >/dev/null\nsh -c 'echo $$ >\"$MARKER\"; exec yes' &\nsleep 300";
+        let (result, pid) = lookup_with_descendant("tree-flood", script);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("printed more than")
+        );
+        assert!(process_is_gone(pid), "descendant {pid} survived the flood");
+    }
+
     #[test]
     fn tm38_helper_output_over_64_kib_is_refused() {
         let err = lookup(

@@ -17,6 +17,7 @@
 mod auth;
 mod client;
 mod http;
+mod process;
 mod reference;
 mod types;
 

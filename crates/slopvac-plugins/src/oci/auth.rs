@@ -19,6 +19,7 @@ use base64::Engine as _;
 use serde::Deserialize;
 
 use super::OciError;
+use super::process::Contained;
 
 /// Longest a credential helper may run.
 pub(crate) const HELPER_TIMEOUT: Duration = Duration::from_secs(10);
@@ -241,52 +242,51 @@ fn run_helper(
     };
     // One deadline covers the helper's exit and the draining of its output.
     let deadline = Instant::now() + timeout;
-    let mut child = Command::new(path)
+    let mut command = Command::new(path);
+    command
         .arg("get")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut helper = Contained::spawn(&mut command)
         .map_err(|e| cred(format!("cannot start `{program}`: {e}")))?;
-    if let Some(mut stdin) = child.stdin.take() {
+    if let Some(mut stdin) = helper.child_mut().stdin.take() {
         // A helper that never reads is caught by the deadline below.
         let reg = registry.to_owned();
         std::thread::spawn(move || {
             let _ = stdin.write_all(reg.as_bytes());
         });
     }
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| cred("no helper stdout".into()))?;
+    let Some(mut stdout) = helper.child_mut().stdout.take() else {
+        helper.kill_tree();
+        return Err(cred("no helper stdout".into()));
+    };
     let (tx, rx) = std::sync::mpsc::channel();
+    // The reader ends at end-of-file or after one byte past the cap. Killing the
+    // helper's whole tree closes every write end, so it never outlives a lookup.
     std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = (&mut stdout)
             .take(HELPER_MAX_OUTPUT as u64 + 1)
             .read_to_end(&mut buf);
         let _ = tx.send(buf);
-        // Keep draining so a chatty helper does not block, but keep nothing.
-        let _ = std::io::copy(&mut stdout, &mut std::io::sink());
     });
-    // Only the helper itself is killed; a descendant that keeps the pipe open is
-    // abandoned together with its reader thread.
-    let kill = |child: &mut std::process::Child| {
-        let _ = child.kill();
-        let _ = child.wait();
-    };
-    let mut status = None;
+    let mut exited = false;
     let mut output = None;
-    while status.is_none() || output.is_none() {
-        if status.is_none() {
-            status = child
-                .try_wait()
-                .map_err(|e| cred(format!("waiting for `{program}`: {e}")))?;
+    while !exited || output.is_none() {
+        if !exited {
+            exited = match helper.has_exited() {
+                Ok(done) => done,
+                Err(e) => {
+                    helper.kill_tree();
+                    return Err(cred(format!("waiting for `{program}`: {e}")));
+                }
+            };
         }
         if output.is_none() {
             match rx.try_recv() {
                 Ok(buf) if buf.len() > HELPER_MAX_OUTPUT => {
-                    kill(&mut child);
+                    helper.kill_tree();
                     return Err(cred(format!(
                         "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
                     )));
@@ -294,23 +294,26 @@ fn run_helper(
                 Ok(buf) => output = Some(buf),
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    kill(&mut child);
+                    helper.kill_tree();
                     return Err(cred("helper reader failed".into()));
                 }
             }
         }
-        if status.is_some() && output.is_some() {
+        if exited && output.is_some() {
             break;
         }
         if Instant::now() >= deadline {
-            kill(&mut child);
+            helper.kill_tree();
             return Err(cred(format!("`{program}` timed out")));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let (Some(status), Some(out)) = (status, output) else {
+    let Some(out) = output else {
         return Err(cred("helper did not finish".into()));
     };
+    let status = helper
+        .reap()
+        .map_err(|e| cred(format!("waiting for `{program}`: {e}")))?;
     if !status.success() {
         // "credentials not found in native keychain" is a normal miss.
         return Ok(None);
