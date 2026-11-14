@@ -25,7 +25,7 @@
         "ste-nouns.multiword-noun-too-long": 7,
         "ste-practices.omitted-conjunction-that": 2,
         "ste-practices.phrasal-verb": 1,
-        "ste-procedural.condition-after-command": 15,
+        "ste-procedural.condition-after-command": 4,
         "ste-procedural.instruction-not-imperative": 1,
         "ste-procedural.multiple-instructions-per-sentence": 3,
         "ste-punctuation.colon-terminates-sentence-for-count": 1,
@@ -60,7 +60,6 @@
         "ste-nouns.multiword-noun-too-long": 3,
         "ste-practices.omitted-conjunction-that": 4,
         "ste-practices.phrasal-verb": 1,
-        "ste-procedural.condition-after-command": 7,
         "ste-procedural.instruction-not-imperative": 1,
         "ste-procedural.multiple-instructions-per-sentence": 3,
         "ste-punctuation.hyphen-missing-in-compound-modifier": 1,
@@ -99,7 +98,7 @@
       },
       "expected": {
         "ai-tells-formatting.bold-spray": 1,
-        "ste-procedural.condition-after-command": 4,
+        "ste-procedural.condition-after-command": 1,
         "ste-punctuation.semicolon-used": 1
       }
     },
