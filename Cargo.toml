@@ -26,7 +26,7 @@ slopvac-report = { path = "crates/slopvac-report" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-context = { path = "crates/slopvac-context" }
-globset = "0.4"
+ignore = "0.4"
 pcre2 = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "2"
