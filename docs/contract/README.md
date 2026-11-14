@@ -16,6 +16,11 @@ match the hand-written text.
 - `docs/contract/<topic>.md` holds one spec per bead. A spec states semantics and links
   `$defs` by pointer. Field descriptions live in the schema `description`, not in tables.
 
+## Specs
+
+- [policies.md](policies.md) sets the network, accessibility and API lifecycle policies.
+- [compat/](compat/) holds the 2.x to 3.0 compatibility matrix and its dispositions.
+
 ## Conventions
 
 - Schemas use the JSON Schema 2020-12 dialect.
