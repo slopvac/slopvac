@@ -76,7 +76,7 @@ rules:
         formatting catalog's "Emoji as list markers or in headings" entry -- the
         list-marker half needs judgement, see
         ai-tells-formatting.emoji-list-markers.
-        Go->Python: `\x{1F300}` becomes `\U0001F300`.
+        Go->Python: the pattern holds the literal characters, which PCRE2 also reads.
 
   - id: prose-block
     name: Convert a long paragraph to a list or table

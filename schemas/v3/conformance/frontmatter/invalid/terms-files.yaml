@@ -1,0 +1,4 @@
+slopvac:
+  v: 3
+  terms:
+    files: [other.toml]

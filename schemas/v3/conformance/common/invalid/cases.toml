@@ -11,3 +11,4 @@
 "ApiVersion--zero.json" = ""
 "ApiVersion--string.json" = ""
 "Severity--off.json" = ""
+"ConfigSource--unknown-layer.yaml" = "/layer"
