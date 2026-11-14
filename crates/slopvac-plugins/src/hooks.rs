@@ -266,7 +266,7 @@ pub fn match_entries<'a>(
 
 fn array_of<'a>(entry: &'a Value, field: &str) -> Result<&'a [Value], PluginError> {
     match entry.get(field) {
-        None | Some(Value::Null) => Ok(&[]),
+        None => Ok(&[]),
         Some(Value::Array(a)) => Ok(a),
         Some(_) => Err(invalid(format!("`{field}` is not an array"))),
     }
@@ -332,7 +332,7 @@ pub fn parse_segments(entry: &Value, text: &str) -> Result<Vec<Segment>, PluginE
 /// [`PluginError::OutputInvalid`] for a negative or non-finite score.
 pub fn parse_score(entry: &Value) -> Result<Option<f64>, PluginError> {
     match entry.get("score") {
-        None | Some(Value::Null) => Ok(None),
+        None => Ok(None),
         Some(v) => {
             let s = v.as_f64().ok_or_else(|| invalid("score is not a number"))?;
             if s.is_finite() && s >= 0.0 {
@@ -606,6 +606,20 @@ mod tests {
             span: Span { start, end },
             message: "m".into(),
         }
+    }
+
+    #[test]
+    fn an_explicit_null_is_invalid_where_an_absent_field_is_empty() {
+        let f = [finding(0, 2)];
+        assert_eq!(parse_tags(&json!({}), "ab").unwrap(), vec![]);
+        assert_eq!(parse_segments(&json!({}), "ab").unwrap(), vec![]);
+        assert_eq!(parse_edits(&json!({}), "ab", &f).unwrap(), vec![]);
+        assert_eq!(parse_score(&json!({})).unwrap(), None);
+        let null = |k: &str| json!({ k: null });
+        assert!(parse_tags(&null("tags"), "ab").is_err());
+        assert!(parse_segments(&null("segments"), "ab").is_err());
+        assert!(parse_edits(&null("edits"), "ab", &f).is_err());
+        assert!(parse_score(&null("score")).is_err());
     }
 
     #[test]
