@@ -3,7 +3,7 @@
 //! The tree is built here from the event stream rather than by saphyr's recursive loader, so
 //! nesting depth is bounded before anything recurses.
 //!
-//! Like StrictYAML, this reader refuses anchors, aliases and explicit tags. Front matter is
+//! Like `StrictYAML`, this reader refuses anchors, aliases and explicit tags. Front matter is
 //! small, human-written metadata; those features add expansion attacks and type surprises.
 //! Mapping keys are always strings, exactly as written.
 

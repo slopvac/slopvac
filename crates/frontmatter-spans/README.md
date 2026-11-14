@@ -78,7 +78,7 @@ key.
 
 ### The YAML subset
 
-The YAML reader is strict, like StrictYAML. This is a deliberate choice for small,
+The YAML reader is strict, like `StrictYAML`. This is a deliberate choice for small,
 human-written metadata. It removes alias expansion attacks and tag-driven type surprises.
 
 - **Anchors (`&x`), aliases (`*x`) and explicit tags (`!tag`, `!!str`) are errors.** The

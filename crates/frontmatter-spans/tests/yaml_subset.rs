@@ -193,7 +193,7 @@ fn plain_scalars_resolve_by_the_yaml_core_schema() {
             (Null, Value::Null) => true,
             (Bool(w), Value::Bool(g)) => w == g,
             (Int(w), Value::Integer(g)) => w == g,
-            (Float(w), Value::Float(g)) => w == g,
+            (Float(w), Value::Float(g)) => w.to_bits() == g.to_bits(),
             (Nan, Value::Float(g)) => g.is_nan(),
             (Str(w), Value::String(g)) => w == g,
             _ => false,
