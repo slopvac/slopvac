@@ -1,0 +1,16 @@
+schema_version = 3
+id = "ste"
+title = "Simplified Technical English"
+extends = ["core:plain"]
+conflicts = ["marketing"]
+
+[categories]
+ste-words = "error"
+"core:ai-residue" = "off"
+
+[rules]
+"core:ste-words.approved-verb" = "warning"
+
+[terms]
+allow = ["slopvac"]
+files = ["terms.toml"]

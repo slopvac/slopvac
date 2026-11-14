@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/genre.schema.json",
+  "$comment": "STUB(slopvac-8l4.2.20): GenreId and GenreRef mirror Genre from rule.schema.json (PR #281).",
+  "title": "slopvac v3 genre",
+  "description": "A document purpose class as data. A genre may extend other genres, so a content type such as how-to extends a broader genre. Detection signals score a document, and the genre with the highest score at or above its threshold wins. A config [[genres]] block or front matter overrides detection. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "id": {
+      "$ref": "#/$defs/GenreId"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surfaces": {
+      "description": "Typical documents, for people.",
+      "type": "string",
+      "minLength": 1
+    },
+    "extends": {
+      "description": "Genres this one builds on, lowest first. Their settings apply below this genre's.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GenreRef"
+      },
+      "uniqueItems": true
+    },
+    "profile": {
+      "description": "Strictness profile that the genre selects when no other layer sets one.",
+      "enum": [
+        "strict",
+        "normal",
+        "relaxed"
+      ]
+    },
+    "detect": {
+      "$ref": "#/$defs/Detect"
+    },
+    "styles": {
+      "description": "Styles the genre activates, in order.",
+      "type": "array",
+      "items": {
+        "$ref": "style.schema.json#/$defs/Ref"
+      }
+    },
+    "categories": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "style.schema.json#/$defs/Key"
+      },
+      "additionalProperties": {
+        "$ref": "style.schema.json#/$defs/Level"
+      }
+    },
+    "rules": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "style.schema.json#/$defs/Key"
+      },
+      "additionalProperties": {
+        "$ref": "style.schema.json#/$defs/Level"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "id"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "GenreId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "GenreRef": {
+      "description": "A genre name: bare when unambiguous across the active packs, or <pack>:<name>.",
+      "type": "string",
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
+    },
+    "Detect": {
+      "description": "Signals that suggest the genre. A document scores the sum of the weights of the signals that match. The genre is a candidate when the score reaches min_score.",
+      "type": "object",
+      "properties": {
+        "min_score": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Signal"
+          }
+        }
+      },
+      "required": [
+        "signals"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Signal": {
+      "description": "One detection signal. kind selects which other field applies: path takes a glob over the file path, front-matter takes a key and an optional value, heading takes a PCRE2 pattern over heading text, and text takes a PCRE2 pattern over the body.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "path",
+            "front-matter",
+            "heading",
+            "text"
+          ]
+        },
+        "weight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "glob": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "equals": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "path"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "glob"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "key"
+                  ]
+                },
+                {
+                  "required": [
+                    "equals"
+                  ]
+                },
+                {
+                  "required": [
+                    "pattern"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "front-matter"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "key"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "glob"
+                  ]
+                },
+                {
+                  "required": [
+                    "pattern"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "heading",
+                  "text"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pattern"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "glob"
+                  ]
+                },
+                {
+                  "required": [
+                    "key"
+                  ]
+                },
+                {
+                  "required": [
+                    "equals"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

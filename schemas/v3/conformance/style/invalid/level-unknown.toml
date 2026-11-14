@@ -1,0 +1,5 @@
+schema_version = 3
+id = "ste"
+
+[categories]
+ste-words = "fatal"

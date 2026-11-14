@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/tagger.schema.json",
+  "title": "slopvac v3 declarative tagger",
+  "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tag": {
+      "description": "The context tag the tagger sets.",
+      "$ref": "common.schema.json#/$defs/ContextTag"
+    },
+    "unit": {
+      "description": "The text unit that receives the tag. The span of a tag is the whole unit.",
+      "enum": [
+        "sentence",
+        "paragraph",
+        "heading",
+        "list-item",
+        "table-cell"
+      ],
+      "default": "sentence"
+    },
+    "match": {
+      "description": "The tagger fires when at least one entry matches the unit.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Matcher"
+      }
+    },
+    "unless": {
+      "description": "The tagger stays silent for a unit where any of these entries matches.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Matcher"
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 1
+    },
+    "evidence": {
+      "description": "Short text that explains the tag in reports.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "tag",
+    "match"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Matcher": {
+      "description": "One condition on a text unit: a PCRE2 pattern, or a list of words and phrases. Matching is case-insensitive unless `case_sensitive` is true.",
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "words": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "pattern"
+          ],
+          "not": {
+            "required": [
+              "words"
+            ]
+          }
+        },
+        {
+          "required": [
+            "words"
+          ],
+          "not": {
+            "required": [
+              "pattern"
+            ]
+          }
+        }
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

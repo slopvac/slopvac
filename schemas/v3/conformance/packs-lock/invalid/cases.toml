@@ -1,0 +1,8 @@
+"digest-short.toml" = "/packs/0/digest"
+"digest-algo.toml" = "/packs/0/digest"
+"source-git-unpinned.toml" = "/packs/0/source"
+"source-traversal.toml" = "/packs/0/source"
+"source-absolute.toml" = "/packs/0/source"
+"digest-missing.toml" = "/packs/0"
+"trust-recorded.toml" = "/packs/0"
+"key-id-short.toml" = "/packs/0/signature/key_id"

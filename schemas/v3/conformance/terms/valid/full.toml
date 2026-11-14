@@ -1,0 +1,13 @@
+schema_version = 3
+
+[[terms]]
+term = "GitHub"
+variants = ["Github", "github"]
+kind = "product"
+
+[[terms]]
+term = "OCI"
+kind = "acronym"
+
+[[terms]]
+term = "slopvac"

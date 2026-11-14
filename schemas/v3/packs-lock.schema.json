@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/packs-lock.schema.json",
+  "title": "slopvac v3 packs lockfile",
+  "description": "The .slopvac/packs.lock file. `slopvac plugins sync` writes it and a run reads it. It pins each pack and plugin to a version, a source and a content digest, so a run on another machine loads the same bytes. A digest mismatch makes the run fail with exit 2. The lockfile records no trust: trust is a separate per-user record. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "packs": {
+      "description": "Locked entries, sorted by id, so diffs stay small.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Locked"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "packs"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Digest": {
+      "description": "sha256 digest of the pack content, as the OCI manifest digest or the hash of the extracted tree.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "Locked": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "kind": {
+          "enum": [
+            "data",
+            "plugin"
+          ]
+        },
+        "version": {
+          "$ref": "pack-manifest.schema.json#/$defs/Semver"
+        },
+        "slopvac_api": {
+          "$ref": "common.schema.json#/$defs/ApiVersion"
+        },
+        "source": {
+          "description": "An oci:// reference, a git+https:// URL pinned to a full commit hash after @, or a path relative to the lockfile's project root.",
+          "type": "string",
+          "pattern": "^(oci://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$"
+        },
+        "digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "signature": {
+          "description": "Present when the host verified a minisign signature.",
+          "type": "object",
+          "properties": {
+            "key_id": {
+              "description": "Minisign key id, 16 hex digits.",
+              "type": "string",
+              "pattern": "^[0-9A-F]{16}$"
+            }
+          },
+          "required": [
+            "key_id"
+          ],
+          "patternProperties": {
+            "^x-": {}
+          },
+          "additionalProperties": false
+        },
+        "requires": {
+          "description": "Ids of locked packs this entry needs.",
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/PackId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "version",
+        "slopvac_api",
+        "source",
+        "digest"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}
