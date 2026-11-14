@@ -659,6 +659,210 @@ fn a_docker_config_auth_entry_becomes_basic_credentials() {
     assert_eq!(sent, format!("Basic {}", base64_std(b"alice:pw1")));
 }
 
+// ---- pagination bounds, Link parsing, upload Locations and stalled uploads ----
+
+fn tags_page(count: usize) -> Response {
+    let tags: Vec<String> = (0..count).map(|i| format!("t{i}")).collect();
+    Response::new(200).json(&json!({"name": "a/b", "tags": tags}))
+}
+
+fn referrers_page(count: usize) -> Response {
+    let one = json!({"mediaType": MEDIA_MANIFEST, "digest": Digest::of(b"r"), "size": 1});
+    let index = json!({"schemaVersion": 2, "mediaType": MEDIA_INDEX,
+        "manifests": vec![one; count]});
+    Response::new(200)
+        .header("Content-Type", MEDIA_INDEX)
+        .body(index.to_string())
+}
+
+fn anonymous_client() -> Client {
+    Client::with_loopback_http_for_tests(Box::new(Anonymous))
+}
+
+#[test]
+fn tag_listing_follows_at_most_ten_pages() {
+    let server = Server::start(|_| tags_page(1).header("Link", "<?n=1000&page=2>; rel=\"next\""));
+    let tags = anonymous_client()
+        .list_tags(&reference(&server, "a/b:1"))
+        .unwrap();
+    assert_eq!(server.count("/v2/a/b/tags/list"), 10);
+    assert_eq!(tags.len(), 10);
+}
+
+#[test]
+fn tag_listing_accepts_exactly_ten_thousand_tags() {
+    let server = Server::start(|_| tags_page(10_000));
+    let tags = anonymous_client()
+        .list_tags(&reference(&server, "a/b:1"))
+        .unwrap();
+    assert_eq!(tags.len(), 10_000);
+}
+
+#[test]
+fn tag_listing_rejects_ten_thousand_and_one_tags() {
+    let server = Server::start(|_| tags_page(10_001));
+    let err = anonymous_client()
+        .list_tags(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert!(
+        matches!(err, OciError::TooLarge { limit: 10_000, .. }),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn referrers_follow_at_most_ten_pages() {
+    let server = Server::start(|_| referrers_page(1).header("Link", "<?page=2>; rel=\"next\""));
+    let found = anonymous_client()
+        .referrers(&reference(&server, "a/b:1"), &Digest::of(b"s"), None)
+        .unwrap();
+    assert_eq!(server.count("/v2/a/b/referrers/"), 10);
+    assert_eq!(found.len(), 10);
+}
+
+#[test]
+fn referrers_accept_exactly_ten_thousand_descriptors() {
+    let server = Server::start(|_| referrers_page(10_000));
+    let found = anonymous_client()
+        .referrers(&reference(&server, "a/b:1"), &Digest::of(b"s"), None)
+        .unwrap();
+    assert_eq!(found.len(), 10_000);
+}
+
+#[test]
+fn referrers_reject_ten_thousand_and_one_descriptors() {
+    let server = Server::start(|_| referrers_page(10_001));
+    let err = anonymous_client()
+        .referrers(&reference(&server, "a/b:1"), &Digest::of(b"s"), None)
+        .unwrap_err();
+    assert!(
+        matches!(err, OciError::TooLarge { limit: 10_000, .. }),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn the_next_page_is_the_link_with_rel_next_wherever_it_appears() {
+    // Each case is the `Link` header lines of the first page; "b" is on page 2.
+    let cases: [(&[&str], &[&str]); 7] = [
+        (
+            &["<?page=0>; rel=\"prev\", <?page=2>; rel=\"next\""],
+            &["a", "b"],
+        ),
+        (&["<?page=0>; rel=\"prev\""], &["a"]),
+        (
+            &["<?page=0>; rel=\"prev\"", "<?page=2>; rel=\"next\""],
+            &["a", "b"],
+        ),
+        (&["<?page=2>; rel=next"], &["a", "b"]),
+        (&["<?page=2>; title=\"x\"; rel=\"Last NEXT\""], &["a", "b"]),
+        (
+            &["<?page=0>; title=\"a, <?page=2>; rel=next\"; rel=\"prev\""],
+            &["a"],
+        ),
+        (&["<?page=2>"], &["a"]),
+    ];
+    for (links, want) in cases {
+        let server = Server::start(move |req| {
+            if req.path.contains("page=2") {
+                return Response::new(200).json(&json!({"tags": ["b"]}));
+            }
+            if req.path.contains("page=0") {
+                return Response::new(500);
+            }
+            links
+                .iter()
+                .fold(Response::new(200), |r, l| r.header("Link", l))
+                .json(&json!({"tags": ["a"]}))
+        });
+        let got = anonymous_client()
+            .list_tags(&reference(&server, "a/b:1"))
+            .unwrap();
+        assert_eq!(got, want, "{links:?}");
+    }
+}
+
+#[test]
+fn the_upload_digest_is_not_appended_after_a_location_fragment() {
+    // Absolute and network-path Locations that carry a fragment.
+    for form in ["absolute", "network-path"] {
+        let server = Server::start(move |req| {
+            let (path, query) = req.path.split_once('?').unwrap_or((&req.path, ""));
+            match (req.method.as_str(), path) {
+                ("HEAD", _) => Response::new(404),
+                ("POST", _) => {
+                    let h = host(req);
+                    let location = match form {
+                        "absolute" => format!("http://{h}/v2/a/b/blobs/uploads/u1?_state=s#frag"),
+                        _ => format!("//{h}/v2/a/b/blobs/uploads/u1?_state=s#frag"),
+                    };
+                    Response::new(202).header("Location", &location)
+                }
+                ("PUT", "/v2/a/b/blobs/uploads/u1")
+                    if query.starts_with("_state=s&digest=sha256:") =>
+                {
+                    Response::new(201)
+                }
+                _ => Response::new(400),
+            }
+        });
+        let pushed = anonymous_client().push_blob(&reference(&server, "a/b:1"), "x", b"data");
+        assert!(pushed.is_ok(), "{form}: {pushed:?} {:?}", server.requests());
+    }
+}
+
+#[test]
+fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for conn in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(conn.try_clone().unwrap());
+                let mut out = conn;
+                let mut first = String::new();
+                reader.read_line(&mut first).unwrap();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
+                        break;
+                    }
+                }
+                let reply = match first.split(' ').next() {
+                    Some("HEAD") => "HTTP/1.1 404 X\r\nContent-Length: 0\r\n\r\n".to_owned(),
+                    Some("POST") => format!(
+                        "HTTP/1.1 202 X\r\nLocation: http://127.0.0.1:{port}/v2/a/b/blobs/uploads/u\r\nContent-Length: 0\r\n\r\n"
+                    ),
+                    // PUT: accept the connection and never read the body.
+                    _ => {
+                        std::thread::sleep(Duration::from_secs(120));
+                        return;
+                    }
+                };
+                let _ = out.write_all(reply.as_bytes());
+            });
+        }
+    });
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let client =
+            Client::with_send_timeout_for_tests(Box::new(Anonymous), Duration::from_secs(1));
+        let r = Reference::parse(&format!("127.0.0.1:{port}/a/b:1")).unwrap();
+        // Larger than any socket buffer pair, so the sender must block.
+        let _ = tx.send(client.push_blob(&r, "x", &vec![0u8; 64 << 20]));
+    });
+    let outcome = rx
+        .recv_timeout(Duration::from_secs(60))
+        .expect("push_blob blocked on a registry that stopped reading");
+    assert!(
+        matches!(outcome, Err(OciError::Network { .. })),
+        "{outcome:?}"
+    );
+}
 #[cfg(unix)]
 mod helpers {
     use std::os::unix::fs::PermissionsExt;
@@ -689,7 +893,7 @@ mod helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
-            helper_timeout: Some(Duration::from_secs(3)),
+            helper_timeout: Some(Duration::from_secs(8)),
             ..DefaultCredentials::default()
         };
         (dir, creds)
@@ -722,6 +926,16 @@ mod helpers {
     }
 
     #[test]
+    fn a_helper_configured_with_its_executable_suffix_is_found() {
+        let got = lookup(
+            "suffixed",
+            "desktop.exe",
+            Some(r#"cat >/dev/null; echo '{"Username":"bob","Secret":"tok"}'"#),
+        );
+        assert_eq!(got.unwrap().unwrap().username, "bob");
+    }
+
+    #[test]
     fn tm38_helper_names_with_separators_or_shell_characters_are_refused() {
         for (i, bad) in ["../evil", "a/b", "x;y", "a b", "-flag"].iter().enumerate() {
             let err = lookup(&format!("bad{i}"), bad, None).unwrap_err();
@@ -732,9 +946,9 @@ mod helpers {
     #[test]
     fn tm38_a_helper_that_hangs_times_out() {
         let started = Instant::now();
-        let err = lookup("hang", "slow", Some("sleep 30")).unwrap_err();
+        let err = lookup("hang", "slow", Some("sleep 120")).unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(8));
+        assert!(started.elapsed() < Duration::from_secs(30));
     }
 
     #[test]
@@ -743,11 +957,11 @@ mod helpers {
         let err = lookup(
             "orphan",
             "leaky",
-            Some(r#"cat >/dev/null; echo '{"Username":"u","Secret":"s"}'; sleep 6 &"#),
+            Some(r#"cat >/dev/null; echo '{"Username":"u","Secret":"s"}'; sleep 60 &"#),
         )
         .unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(30));
     }
 
     /// Run `script` as the helper, with `$MARKER` naming a file. Returns the

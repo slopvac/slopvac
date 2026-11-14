@@ -13,7 +13,7 @@ use ureq::http::Response;
 
 use super::auth::{Challenge, CredentialSource, DefaultCredentials};
 use super::http::{
-    Req, Transport, bare_host, host_of, is_loopback_host, origin_of, resolve, url_allowed,
+    Req, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, resolve, url_allowed,
 };
 use super::reference::{Reference, Target};
 use super::types::{
@@ -103,7 +103,7 @@ impl Client {
     /// Client with a given credential source.
     #[must_use]
     pub fn with_credentials(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, false)
+        Self::build(creds, false, Timeouts::default())
     }
 
     /// Test seam: like [`Client::with_credentials`] but speaks plain HTTP to
@@ -115,12 +115,31 @@ impl Client {
     #[doc(hidden)]
     #[must_use]
     pub fn with_loopback_http_for_tests(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, true)
+        Self::build(creds, true, Timeouts::default())
     }
 
-    fn build(creds: Box<dyn CredentialSource>, allow_loopback_http: bool) -> Self {
+    /// Test seam: like [`Client::with_loopback_http_for_tests`] with a short limit
+    /// on sending a request body, so a stalled upload fails within seconds.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_send_timeout_for_tests(
+        creds: Box<dyn CredentialSource>,
+        send_body: std::time::Duration,
+    ) -> Self {
+        let timeouts = Timeouts {
+            send_body,
+            ..Timeouts::default()
+        };
+        Self::build(creds, true, timeouts)
+    }
+
+    fn build(
+        creds: Box<dyn CredentialSource>,
+        allow_loopback_http: bool,
+        timeouts: Timeouts,
+    ) -> Self {
         Self {
-            transport: Transport::new(allow_loopback_http),
+            transport: Transport::new(allow_loopback_http, timeouts),
             creds,
             tokens: Mutex::new(HashMap::new()),
             allow_loopback_http,
@@ -646,14 +665,74 @@ impl Default for Client {
     }
 }
 
-/// The `Link` target of a paginated response, resolved against `url`. A link to
-/// another origin is ignored, so a page can never steer the client elsewhere.
+/// The `rel="next"` target of a paginated response, resolved against `url`.
+/// Every link-value of every `Link` header is considered. A link to another
+/// origin is ignored, so a page can never steer the client elsewhere.
 fn next_link(resp: &Response<Body>, url: &str) -> Option<String> {
-    let value = resp.headers().get("link")?.to_str().ok()?;
-    let (_, tail) = value.split_once('<')?;
-    let (target, _) = tail.split_once('>')?;
+    let target = resp
+        .headers()
+        .get_all("link")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(next_target)?;
     let next = resolve(url, target)?;
     (origin_of(&next) == origin_of(url)).then_some(next)
+}
+
+/// The URI reference of the first link-value with `rel` `next` (RFC 8288).
+fn next_target(header: &str) -> Option<&str> {
+    let mut rest = header;
+    while let Some(open) = rest.find('<') {
+        let after = &rest[open + 1..];
+        let close = after.find('>')?;
+        let (target, tail) = (&after[..close], &after[close + 1..]);
+        // The parameters end at the next comma outside a quoted string.
+        let (mut quoted, mut escaped, mut end) = (false, false, tail.len());
+        for (i, c) in tail.char_indices() {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' if quoted => escaped = true,
+                '"' => quoted = !quoted,
+                ',' if !quoted => {
+                    end = i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if has_rel_next(&tail[..end]) {
+            return Some(target);
+        }
+        rest = &tail[(end + 1).min(tail.len())..];
+    }
+    None
+}
+
+fn has_rel_next(params: &str) -> bool {
+    let mut quoted = false;
+    let mut start = 0;
+    let mut pieces = Vec::new();
+    for (i, c) in params.char_indices() {
+        match c {
+            '"' => quoted = !quoted,
+            ';' if !quoted => {
+                pieces.push(&params[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    pieces.push(&params[start..]);
+    pieces.iter().any(|piece| {
+        piece.split_once('=').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("rel")
+                && value
+                    .trim()
+                    .trim_matches('"')
+                    .split_ascii_whitespace()
+                    .any(|rel| rel.eq_ignore_ascii_case("next"))
+        })
+    })
 }
 
 fn check_declared_length(resp: &Response<Body>, limit: u64, what: &str) -> Result<(), OciError> {

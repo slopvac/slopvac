@@ -10,6 +10,24 @@ use ureq::{Agent, Body};
 
 use super::{MAX_REDIRECTS, OciError, redact_url};
 
+/// Time limits for one exchange.
+#[derive(Clone, Copy)]
+pub(crate) struct Timeouts {
+    /// Longest the request body may take to send.
+    pub send_body: Duration,
+    /// Longest a whole exchange may take, from connect to the last body byte.
+    pub global: Duration,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            send_body: Duration::from_mins(30),
+            global: Duration::from_hours(1),
+        }
+    }
+}
+
 pub(crate) struct Transport {
     agent: Agent,
     allow_loopback_http: bool,
@@ -116,14 +134,16 @@ pub(crate) fn resolve(base: &str, reference: &str) -> Option<String> {
     };
     let base_path = if base_path.is_empty() { "/" } else { base_path };
 
-    let first_seg = reference.split(['/', '?', '#']).next().unwrap_or("");
+    // A fragment is never sent to a server, and a query added later would land
+    // inside it.
+    let reference = reference.split('#').next().unwrap_or(reference);
+    let first_seg = reference.split(['/', '?']).next().unwrap_or("");
     if first_seg.contains(':') {
         return Some(reference.to_owned());
     }
     if let Some(r) = reference.strip_prefix("//") {
         return Some(format!("{scheme}://{r}"));
     }
-    let reference = reference.split('#').next().unwrap_or(reference);
     if reference.is_empty() {
         let q = base_query.map_or(String::new(), |q| format!("?{q}"));
         return Some(format!("{scheme}://{authority}{base_path}{q}"));
@@ -149,7 +169,7 @@ pub(crate) fn resolve(base: &str, reference: &str) -> Option<String> {
 impl Transport {
     /// `allow_loopback_http` is set only by the test-only client constructor;
     /// production transports refuse every `http://` URL, redirects included.
-    pub(crate) fn new(allow_loopback_http: bool) -> Self {
+    pub(crate) fn new(allow_loopback_http: bool, timeouts: Timeouts) -> Self {
         let tls = TlsConfig::builder()
             .root_certs(RootCerts::PlatformVerifier)
             .build();
@@ -161,11 +181,25 @@ impl Transport {
             .timeout_connect(Some(Duration::from_secs(15)))
             .timeout_recv_response(Some(Duration::from_secs(60)))
             .timeout_recv_body(Some(Duration::from_secs(600)))
+            .timeout_send_body(Some(timeouts.send_body))
+            .timeout_global(Some(timeouts.global))
             .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
             .build();
         Self {
             agent: config.into(),
             allow_loopback_http,
+        }
+    }
+
+    /// Where a redirect from `url` to `location` may go. This is the only check a
+    /// redirect target passes before the next request, so production transports
+    /// stop here at any `http://` target, loopback included.
+    fn redirect_target(&self, url: &str, location: &str) -> Result<String, &'static str> {
+        let next = resolve(url, location).ok_or("unusable Location")?;
+        if url_allowed(&next, self.allow_loopback_http) {
+            Ok(next)
+        } else {
+            Err("target is not HTTPS")
         }
     }
 
@@ -211,10 +245,7 @@ impl Transport {
                 .get("location")
                 .and_then(|v| v.to_str().ok())
                 .ok_or_else(|| bad("no Location header"))?;
-            let next = resolve(&url, loc).ok_or_else(|| bad("unusable Location"))?;
-            if !url_allowed(&next, self.allow_loopback_http) {
-                return Err(bad("target is not HTTPS"));
-            }
+            let next = self.redirect_target(&url, loc).map_err(bad)?;
             if host_of(&next).map(|h| h.1) != host_of(&url).map(|h| h.1) {
                 auth = None;
             }
@@ -251,6 +282,40 @@ mod tests {
             assert!(!url_allowed(bad, false), "{bad}");
             assert!(!url_allowed(bad, true), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_production_redirect_never_leaves_https_even_for_loopback() {
+        let production = Transport::new(false, Timeouts::default());
+        for location in [
+            "http://127.0.0.1:5000/v2/",
+            "http://localhost/x",
+            "http://[::1]:5000/x",
+            "//127.0.0.1:5000/x",
+            "http://cdn.example/x",
+        ] {
+            // `//` resolves against the https base, so it stays HTTPS; the rest
+            // name http:// and must be refused.
+            let got = production.redirect_target("https://ghcr.io/v2/a/blobs/d", location);
+            if location.starts_with("//") {
+                assert_eq!(got.as_deref(), Ok("https://127.0.0.1:5000/x"));
+            } else {
+                assert_eq!(got, Err("target is not HTTPS"), "{location}");
+            }
+        }
+        assert_eq!(
+            production.redirect_target("https://ghcr.io/a", "https://cdn.example/b"),
+            Ok("https://cdn.example/b".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_test_transport_alone_follows_a_redirect_to_loopback_http() {
+        let testing = Transport::new(true, Timeouts::default());
+        assert_eq!(
+            testing.redirect_target("http://127.0.0.1:1/a", "http://127.0.0.1:2/b"),
+            Ok("http://127.0.0.1:2/b".to_owned())
+        );
     }
 
     #[test]
