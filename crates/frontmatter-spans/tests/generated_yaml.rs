@@ -53,7 +53,7 @@ fn scalar() -> impl Strategy<Value = N> {
         "[a-zé日 #:,'\\[\\]{}]{0,6}".prop_map(|s| N::Str(s, Style::Single)),
         "[a-zé日 #:,'\\[\\]{}\"\\\\\n\t]{0,6}".prop_map(|s| N::Str(s, Style::Double)),
         (
-            prop::collection::vec("[a-zé日]{1,5}", 0..3),
+            prop::collection::vec("[a-zé日]{1,5}[ \t]{0,2}", 0..3),
             any::<bool>(),
             any::<bool>()
         )
@@ -118,7 +118,7 @@ fn normalize(n: N, in_flow: bool) -> N {
             if lines.is_empty() {
                 "e".into()
             } else {
-                lines.join(" ")
+                lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join(" ")
             },
             Style::Plain,
         ),

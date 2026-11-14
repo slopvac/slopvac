@@ -168,3 +168,27 @@ fn a_very_wide_single_line_flow_array_parses_in_linear_time() {
         start.elapsed()
     );
 }
+
+#[test]
+fn block_scalar_spans_keep_significant_trailing_whitespace() {
+    // `(body, key, exact slice)`: only the line terminator, trailing blank lines and the
+    // parser-consumed indentation are left out.
+    let cases = [
+        ("a: |-\n  hi  \nb: 1", "hi  "),
+        ("a: |\n  hi  \nb: 1", "hi  "),
+        ("a: |+\n  hi  \n\nb: 1", "hi  "),
+        ("a: >-\n  hi\t\nb: 1", "hi\t"),
+        ("a: >\n  hi \t\nb: 1", "hi \t"),
+        ("a: >+\n  hi  \n\nb: 1", "hi  "),
+        ("a: >-\n  one  \n  two \nb: 1", "one  \n  two "),
+        ("a: |\n  hi\n  \nb: 1", "hi"),
+        ("a: |-\n  hi  \n", "hi  "),
+        ("a: |\r\n  hi  \r\nb: 1", "hi  "),
+    ];
+    for (body, want) in cases {
+        let doc = format!("---\n{body}\n---\n");
+        let fm = FrontMatter::parse(&doc).unwrap().unwrap();
+        let a = fm.get("a").unwrap();
+        assert_eq!(text(&doc, a), want, "{body:?}");
+    }
+}

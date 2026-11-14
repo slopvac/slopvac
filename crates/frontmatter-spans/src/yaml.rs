@@ -26,6 +26,8 @@ struct Offsets<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Plain,
+    /// Non-empty `|` or `>` content.
+    Block,
     Quoted(u8),
 }
 
@@ -60,10 +62,14 @@ impl Offsets<'_> {
             }
             _ => {}
         }
-        if !matches!(kind, Kind::Quoted(_)) {
-            while hi > lo && bytes[hi - 1].is_ascii_whitespace() {
-                hi -= 1;
+        match kind {
+            Kind::Quoted(_) => {}
+            Kind::Plain => {
+                while hi > lo && bytes[hi - 1].is_ascii_whitespace() {
+                    hi -= 1;
+                }
             }
+            Kind::Block => hi = block_content_end(bytes, lo, hi),
         }
         self.index.span(self.base + lo..self.base + hi)
     }
@@ -174,6 +180,37 @@ impl Offsets<'_> {
             .into_iter()
             .find(|&(s, _)| bytes[s] == sigil)
             .map(|(s, e)| self.index.span(self.base + s..self.base + e))
+    }
+}
+
+/// The end of block scalar content that saphyr reports as `lo..hi`.
+///
+/// Trailing spaces and tabs on a content line are part of the value, so they stay. Dropped are
+/// the final line terminator, blank lines after the content, and the indentation of a blank
+/// last line, which the parser consumes (a blank line is no longer than the first content
+/// line's own indentation `indent`).
+fn block_content_end(bytes: &[u8], lo: usize, hi: usize) -> usize {
+    let line_start = bytes[..lo]
+        .iter()
+        .rposition(|b| matches!(b, b'\n' | b'\r'))
+        .map_or(0, |i| i + 1);
+    let indent = lo - line_start;
+    let mut hi = hi;
+    loop {
+        while hi > lo && matches!(bytes[hi - 1], b'\n' | b'\r') {
+            hi -= 1;
+        }
+        let last_start = bytes[lo..hi]
+            .iter()
+            .rposition(|b| matches!(b, b'\n' | b'\r'))
+            .map_or(lo, |i| lo + i + 1);
+        let last = &bytes[last_start..hi];
+        let blank = last.iter().all(|b| matches!(b, b' ' | b'\t'));
+        if last_start > lo && blank && last.len() <= indent {
+            hi = last_start;
+        } else {
+            return hi;
+        }
     }
 }
 
@@ -317,6 +354,7 @@ impl Builder<'_> {
                 let kind = match style {
                     ScalarStyle::SingleQuoted => Kind::Quoted(b'\''),
                     ScalarStyle::DoubleQuoted => Kind::Quoted(b'"'),
+                    ScalarStyle::Literal | ScalarStyle::Folded => Kind::Block,
                     _ => Kind::Plain,
                 };
                 let span = if text.is_empty() && style == ScalarStyle::Plain {

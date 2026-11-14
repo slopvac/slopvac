@@ -181,6 +181,28 @@ pub(crate) fn check(doc: &str) -> String {
             }
             continue;
         }
+        if format == Format::Yaml && after_block_header(doc, node.span.range.start) {
+            // Block scalar content keeps its significant trailing blanks, but not its line end.
+            assert!(
+                !slice.ends_with(['\n', '\r']),
+                "terminator in {slice:?} of {doc:?}"
+            );
+            assert_eq!(
+                slice.trim_start(),
+                slice,
+                "indentation in {slice:?} of {doc:?}"
+            );
+            if let Value::String(value) = &node.value {
+                // Significant trailing blanks of the last content line are inside the span.
+                let body = value.trim_end_matches(['\n', '\r']);
+                let blanks = &body[body.trim_end_matches([' ', '\t']).len()..];
+                assert!(
+                    slice.ends_with(blanks),
+                    "lost blanks in {slice:?} of {doc:?}"
+                );
+            }
+            continue; // and it is not a fragment on its own
+        }
         assert_eq!(slice, slice.trim(), "padding in {slice:?} of {doc:?}");
         // TOML tables written with headers or dotted keys are not fragments.
         let toml_table_form = format == Format::Toml
