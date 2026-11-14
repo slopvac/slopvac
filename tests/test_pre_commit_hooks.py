@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -25,7 +26,7 @@ def test_published_hook_ids():
     ("hook_id", "entry"),
     [
         ("slopvac", "slopvac lint"),
-        ("slopvac-strict", "slopvac lint --profile strict"),
+        ("slopvac-strict", "slopvac lint --config slopvac.strict.toml"),
     ],
 )
 def test_hooks_run_the_binary_from_path(hook_id, entry):
@@ -39,6 +40,7 @@ def _run_hook(tmp_path: Path, runner: str, hook_id: str) -> list[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "argv.log"
+    # STUB(slopvac-8l4.13.11): a shell script stands in for the 3.0 binary, whose lint command is not built yet.
     fake = bin_dir / "slopvac"
     fake.write_text(f'#!/bin/sh\necho "$@" > "{log}"\n', encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
@@ -80,10 +82,34 @@ def _run_hook(tmp_path: Path, runner: str, hook_id: str) -> list[str]:
     ("hook_id", "argv"),
     [
         ("slopvac", ["lint", "README.md"]),
-        ("slopvac-strict", ["lint", "--profile", "strict", "README.md"]),
+        ("slopvac-strict", ["lint", "--config", "slopvac.strict.toml", "README.md"]),
     ],
 )
 def test_hook_runs_in_a_sample_repo(tmp_path, runner, hook_id, argv):
     if shutil.which(runner) is None:
         pytest.skip(f"{runner} is not installed")
     assert _run_hook(tmp_path, runner, hook_id) == argv
+
+
+@pytest.mark.parametrize("hook_id", ["slopvac", "slopvac-strict"])
+def test_hook_flags_are_accepted_by_the_real_cli(hook_id):
+    """Every flag in a hook entry must parse in the built binary (`--profile` is gone in 3.0)."""
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        pytest.skip("cargo is not installed")
+    subprocess.run([cargo, "build", "--quiet", "-p", "slopvac"], cwd=ROOT, check=True)
+    binary = ROOT / "target" / "debug" / "slopvac"
+    entry = _hooks()[hook_id]["entry"].split()
+    top_help = subprocess.run(
+        [str(binary), "--help"], capture_output=True, text=True, check=False
+    ).stdout
+    if not re.search(r"^\s+lint\s", top_help, re.MULTILINE):
+        pytest.skip("the 3.0 binary has no lint command yet")  # STUB(slopvac-8l4.13.11)
+    help_text = subprocess.run(
+        [str(binary), *entry[1:2], "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    for flag in (word for word in entry[2:] if word.startswith("--")):
+        assert flag in help_text

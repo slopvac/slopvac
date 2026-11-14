@@ -122,3 +122,10 @@ def test_a_later_alpha_makes_the_pending_version_stale(release_map):
     release_map["2.18.0a1"] = [{"yanked": False}]
     with pytest.raises(ValueError, match="not newer"):
         rc_version.next_rc_version("2.17.0", release_map)
+
+
+def test_every_release_version_file_carries_a_marker():
+    """A markerless file in extra-files makes `rc_version.py --rewrite` abort an RC build."""
+    root = Path(__file__).resolve().parents[1]
+    for path in rc_version.release_version_files(root):
+        assert rc_version._RELEASE_MARKER in path.read_text(encoding="utf-8"), path
