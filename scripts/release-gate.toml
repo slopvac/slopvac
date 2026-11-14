@@ -13,24 +13,64 @@ allowed_open = ["slopvac-8l4", "slopvac-8l4.13", "slopvac-8l4.13.9"]
 [[command]]
 id = "golden"
 title = "Golden suite"
-run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^golden::/)"]
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^golden::/)",
+]
 
 [[command]]
 id = "accuracy"
 title = "Offline accuracy gate (precision and recall)"
-run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^accuracy::/)"]
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^accuracy::/)",
+]
 
 [[command]]
 id = "compat-preserve"
 title = "Compatibility matrix preserve rows"
-run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^compat::preserve/)"]
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^compat::preserve/)",
+]
 
 [[command]]
 id = "conformance"
 title = "Conformance tests (plugin protocol, positions, lint report, policies)"
-run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^conformance::/)"]
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^conformance::/)",
+]
 
 [[command]]
 id = "perf-budgets"
 title = "Performance budgets measured on the installed CLI"
-run = ["cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E", "test(/^perf_budget::/)"]
+run = [
+  "cargo",
+  "nextest",
+  "run",
+  "--workspace",
+  "--no-tests=fail",
+  "-E",
+  "test(/^perf_budget::/)",
+]
