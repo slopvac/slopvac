@@ -22,11 +22,11 @@ use crate::prepare::Prepared;
 
 /// The sentence or paragraph that a hit measured.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Unit {
+pub(crate) struct Unit<'t> {
     /// Where it sits in the source.
     pub(crate) span: Span,
     /// The projected text that holds it: its block.
-    pub(crate) text: String,
+    pub(crate) text: &'t str,
     /// The part of `text` that the measurement covers, without the quotation marks and the
     /// closing punctuation that wrap a quoted unit, so that a quotation detector sees a
     /// range inside the marks.
@@ -50,10 +50,10 @@ fn interior(text: &str, range: Range<usize>) -> Range<usize> {
 
 /// A measurement over the threshold.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Hit {
+pub(crate) struct Hit<'t> {
     /// The measured unit, for the guards that read a source range. A document-wide
     /// measurement has none.
-    pub(crate) unit: Option<Unit>,
+    pub(crate) unit: Option<Unit<'t>>,
     /// The byte offset whose line the finding reports.
     pub(crate) at: usize,
     /// The measured value, as `{match}` shows it.
@@ -182,10 +182,10 @@ impl<'a> Subject<'a> {
     /// Every hit of `m`. `text_type` is the rule's: a sentence-length rule skips sentences
     /// of another type.
     pub(crate) fn measure(
-        &self,
+        &'a self,
         m: &MetricMatch,
         text_type: TextType,
-    ) -> Result<Vec<Hit>, TextError> {
+    ) -> Result<Vec<Hit<'a>>, TextError> {
         let (cmp, limit) = (m.comparison, m.threshold);
         match m.metric.as_str() {
             "sentence_words" => {
@@ -280,7 +280,7 @@ impl<'a> Subject<'a> {
         limit: impl Fn(&slopvac_text::Sentence) -> f64,
         offset: usize,
         count: impl Fn(&slopvac_text::Sentence) -> Result<Option<usize>, TextError>,
-    ) -> Result<Vec<Hit>, TextError> {
+    ) -> Result<Vec<Hit<'a>>, TextError> {
         let mut hits = Vec::new();
         for block in self.prepared.blocks() {
             for sentence in &block.sentences {
@@ -293,7 +293,7 @@ impl<'a> Subject<'a> {
                     hits.push(Hit {
                         unit: Some(Unit {
                             span,
-                            text: block.projection.text().to_owned(),
+                            text: block.projection.text(),
                             range: interior(block.projection.text(), sentence.start..sentence.end),
                         }),
                         at: span.start(),
@@ -312,7 +312,7 @@ impl<'a> Subject<'a> {
         cmp: Comparison,
         limit: f64,
         count: impl Fn(&crate::prepare::ProseBlock<'_>) -> Result<Option<usize>, TextError>,
-    ) -> Result<Vec<Hit>, TextError> {
+    ) -> Result<Vec<Hit<'a>>, TextError> {
         let mut hits = Vec::new();
         for block in self.prepared.blocks() {
             if !matches!(block.kind, BlockKind::Paragraph) || block.contained {
@@ -326,7 +326,7 @@ impl<'a> Subject<'a> {
                 hits.push(Hit {
                     unit: Some(Unit {
                         span,
-                        text: block.projection.text().to_owned(),
+                        text: block.projection.text(),
                         range: interior(block.projection.text(), 0..block.projection.text().len()),
                     }),
                     at: span.start(),
@@ -339,7 +339,7 @@ impl<'a> Subject<'a> {
     }
 
     /// A hit at the top of the file when a document-wide value exceeds the threshold.
-    fn document_hit(value: f64, cmp: Comparison, limit: f64) -> Vec<Hit> {
+    fn document_hit(value: f64, cmp: Comparison, limit: f64) -> Vec<Hit<'a>> {
         if exceeds(value, cmp, limit) {
             vec![Hit {
                 unit: None,
@@ -353,7 +353,7 @@ impl<'a> Subject<'a> {
     }
 
     /// A markup count per 1000 words of prose.
-    fn density(&self, count: usize, cmp: Comparison, limit: f64) -> Vec<Hit> {
+    fn density(&self, count: usize, cmp: Comparison, limit: f64) -> Vec<Hit<'a>> {
         let words = plain_words(self.prose());
         let value = if words == 0 {
             0.0
@@ -361,5 +361,37 @@ impl<'a> Subject<'a> {
             float(count) / float(words) * 1000.0
         };
         Self::document_hit(value, cmp, limit)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_unit_of_a_block_reads_the_one_text_of_that_block() {
+        let source = "One two. Three four. Five six. Seven eight.\n\nNine ten. Eleven twelve.\n";
+        let body = Span::new(0, source.len()).unwrap();
+        let parsed = slopvac_parse::parse_markdown(source, body).unwrap();
+        let prepared = Prepared::new(source, &parsed).unwrap();
+        let lines = Lines::new(source);
+        let subject = Subject::new(&prepared, &parsed, &lines, None);
+        let m: MetricMatch = serde_json::from_value(serde_json::json!(
+            {"metric": "sentence_words", "threshold": 1, "comparison": "gt"}
+        ))
+        .unwrap();
+        let hits = subject.measure(&m, TextType::Any).unwrap();
+        assert_eq!(hits.len(), 6);
+        let starts: Vec<*const u8> = prepared
+            .blocks()
+            .iter()
+            .map(|b| b.projection.text().as_ptr())
+            .collect();
+        let texts: Vec<*const u8> = hits
+            .iter()
+            .map(|h| h.unit.as_ref().unwrap().text.as_ptr())
+            .collect();
+        // Four hits read the first block's text and two the second's, with no copy.
+        assert_eq!(texts[..4], [starts[0]; 4]);
+        assert_eq!(texts[4..], [starts[1]; 2]);
     }
 }

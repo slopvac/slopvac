@@ -687,7 +687,7 @@ impl Run<'_> {
                 // measurement has no unit to guard.
                 if let Some(unit) = &hit.unit
                     && (skip.hides(unit.span)
-                        || self.guarded(rule, &detectors, &unit.text, &unit.range, unit.span))
+                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span))
                 {
                     continue;
                 }
