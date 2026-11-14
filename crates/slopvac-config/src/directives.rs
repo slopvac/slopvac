@@ -16,6 +16,7 @@
 use std::ops::Range;
 use std::path::Path;
 
+use crate::comments::{Family, comments, family_of};
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::frontmatter::{Policy, Read, denied};
@@ -34,9 +35,12 @@ pub struct Directive {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Style {
+    /// Source code whose comment syntax is known, so strings can be told from comments.
+    Code(Family),
+    /// Text with no known comment syntax: a marker at the start of a line counts.
+    Plain,
     Html,
     Rst,
-    Line,
 }
 
 fn style_of(file: &str) -> Style {
@@ -48,7 +52,8 @@ fn style_of(file: &str) -> Style {
     {
         Some("md" | "markdown" | "mdx" | "html" | "htm") => Style::Html,
         Some("rst") => Style::Rst,
-        _ => Style::Line,
+        Some(other) => family_of(other).map_or(Style::Plain, Style::Code),
+        None => Style::Plain,
     }
 }
 
@@ -59,6 +64,9 @@ fn style_of(file: &str) -> Style {
 #[must_use]
 pub fn find(doc: &str, file: &str) -> Vec<Directive> {
     let style = style_of(file);
+    if let Style::Code(family) = style {
+        return find_in_code(doc, family);
+    }
     let mut literal = Literals::new(style);
     let mut out = Vec::new();
     let mut offset = 0;
@@ -77,6 +85,33 @@ pub fn find(doc: &str, file: &str) -> Vec<Directive> {
     out
 }
 
+/// Directives in the comments of source code, found with a scanner that knows the language's
+/// strings. A comment counts when it is the first thing on its line.
+fn find_in_code(doc: &str, family: Family) -> Vec<Directive> {
+    let mut out = Vec::new();
+    for c in comments(doc, family) {
+        let line_start = doc.as_bytes()[..c.marker]
+            .iter()
+            .rposition(|&b| b == b'\n' || b == b'\r')
+            .map_or(0, |p| p + 1);
+        if !doc[line_start..c.marker].trim().is_empty() {
+            continue;
+        }
+        let body = &doc[c.body.clone()];
+        let text = body.trim_start();
+        let Some(rest) = text.strip_prefix("slopvac:") else {
+            continue;
+        };
+        let start = c.body.start + (body.len() - rest.len());
+        let end = (c.body.start + body.trim_end().len()).max(start);
+        out.push(Directive {
+            node: parse_pairs(doc, start..end),
+            payload: start..end,
+        });
+    }
+    out
+}
+
 /// Tracks, line by line, whether the text is inside a code block or string.
 struct Literals {
     style: Style,
@@ -84,11 +119,9 @@ struct Literals {
     raw_tag: Option<&'static str>,
     rst_pending: bool,
     rst_active: bool,
-    string: Option<&'static str>,
 }
 
 const RAW_TAGS: &[&str] = &["pre", "script", "style", "code", "textarea"];
-const STRING_DELIMITERS: &[&str] = &["\"\"\"", "'''", "`"];
 const RST_LITERAL_DIRECTIVES: &[&str] = &[
     ".. code-block::",
     ".. code::",
@@ -104,7 +137,6 @@ impl Literals {
             raw_tag: None,
             rst_pending: false,
             rst_active: false,
-            string: None,
         }
     }
 
@@ -113,7 +145,7 @@ impl Literals {
         match self.style {
             Style::Html => self.step_markup(line),
             Style::Rst => self.step_rst(line),
-            Style::Line => self.step_code(line),
+            Style::Code(_) | Style::Plain => false,
         }
     }
 
@@ -182,29 +214,6 @@ impl Literals {
         }
         false
     }
-
-    fn step_code(&mut self, line: &str) -> bool {
-        if let Some(open) = self.string {
-            if line.matches(open).count() % 2 == 1 {
-                self.string = None;
-            }
-            return true;
-        }
-        let t = line.trim_start();
-        if ["#", "//", "--", ";", "/*", "*"]
-            .iter()
-            .any(|c| t.starts_with(c))
-        {
-            return false;
-        }
-        for delim in STRING_DELIMITERS {
-            if line.matches(delim).count() % 2 == 1 {
-                self.string = Some(delim);
-                return false;
-            }
-        }
-        false
-    }
 }
 
 /// The byte range of the text after `slopvac:` in a directive comment, if `line` is one.
@@ -214,7 +223,7 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     let (opens, closes): (&[&str], &[&str]) = match style {
         Style::Html => (&["<!--"], &["-->"]),
         Style::Rst => (&[".."], &[]),
-        Style::Line => (&["//", "#", "--", ";", "/*"], &["*/"]),
+        Style::Plain | Style::Code(_) => (&["//", "#", "--", ";", "/*"], &["*/"]),
     };
     let open = opens.iter().find(|p| body.starts_with(**p))?;
     let after_open = lead + open.len();

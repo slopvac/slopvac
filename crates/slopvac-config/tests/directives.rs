@@ -359,3 +359,149 @@ impl slopvac_config::Presets for Genres {
         None
     }
 }
+#[test]
+fn rust_raw_strings_character_literals_and_lifetimes_do_not_confuse_the_scan() {
+    let cases = [
+        (
+            "raw string",
+            "let s = r#\"\n// slopvac: locale=fr\n\"#;\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "raw string with hashes inside",
+            "let s = r##\"a\"#b\n// slopvac: locale=fr\n\"##;\n",
+            0,
+        ),
+        (
+            "byte raw string",
+            "let s = br#\"\n// slopvac: locale=fr\n\"#;\n",
+            0,
+        ),
+        (
+            "string spanning lines",
+            "let s = \"a\n// slopvac: locale=fr\nb\";\n",
+            0,
+        ),
+        (
+            "quote character literal",
+            "let q = '\"';\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "escaped character literal",
+            "let q = '\\'';\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "lifetime",
+            "fn f<'a>(x: &'a str) {}\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "nested block comment",
+            "/* a /* b */ // slopvac: locale=fr */\n",
+            0,
+        ),
+        (
+            "identifier ending in r",
+            "let bar = 1;\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+    ];
+    for (name, doc, want) in cases {
+        assert_eq!(found(doc, "lib.rs"), want, "{name}");
+    }
+}
+
+#[test]
+fn javascript_strings_and_templates_do_not_hide_or_fake_comments() {
+    let cases = [
+        (
+            "backtick in a string",
+            "const s = \"`\";\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "backtick in a comment",
+            "// don`t\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "template literal",
+            "const s = `\n// slopvac: locale=fr\n`;\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+        (
+            "template with an expression",
+            "const s = `a ${ \"`\" } b\n// slopvac: locale=fr\n`;\n",
+            0,
+        ),
+        (
+            "nested template",
+            "const s = `a ${ `b` } c\n// slopvac: locale=fr\n`;\n",
+            0,
+        ),
+        (
+            "escaped backtick",
+            "const s = `a \\` b\n// slopvac: locale=fr\n`;\n",
+            0,
+        ),
+        (
+            "single quote in a string",
+            "const s = \"it's\";\n// slopvac: locale=en-GB\n",
+            1,
+        ),
+    ];
+    for (name, doc, want) in cases {
+        assert_eq!(found(doc, "a.ts"), want, "{name}");
+    }
+    assert_eq!(
+        found("const s = `\n// slopvac: locale=fr\n`;\n", "main.go"),
+        0
+    );
+}
+
+#[test]
+fn python_strings_and_apostrophes_do_not_hide_or_fake_comments() {
+    let cases = [
+        ("docstring", "\"\"\"\n# slopvac: locale=fr\n\"\"\"\n", 0),
+        (
+            "single quoted triple",
+            "'''\n# slopvac: locale=fr\n'''\n",
+            0,
+        ),
+        (
+            "apostrophe in a comment",
+            "# don't\n# slopvac: locale=en-GB\n",
+            1,
+        ),
+        ("hash in a string", "x = '#'\n# slopvac: locale=en-GB\n", 1),
+        (
+            "after a docstring",
+            "\"\"\"doc\n\"\"\"\n# slopvac: locale=en-GB\n",
+            1,
+        ),
+    ];
+    for (name, doc, want) in cases {
+        assert_eq!(found(doc, "a.py"), want, "{name}");
+    }
+}
+
+#[test]
+fn a_directive_must_be_the_first_thing_on_its_line() {
+    assert_eq!(found("x = 1 // slopvac: locale=en-GB\n", "a.rs"), 0);
+    assert_eq!(found("    // slopvac: locale=en-GB\n", "a.rs"), 1);
+    assert_eq!(found("x = 1  # slopvac: locale=en-GB\n", "a.py"), 0);
+}
+
+#[test]
+fn block_comment_directives_stop_before_the_closing_marker() {
+    let out = read(
+        "/* slopvac: locale=en-GB */\nint x;\n",
+        "a.c",
+        &default_policy(),
+    );
+    assert_eq!(out.diagnostics, []);
+    assert_eq!(out.settings[0].value, json!("en-GB"));
+    assert_eq!(found("/* slopvac: locale=en-GB\n */\n", "a.c"), 1);
+}

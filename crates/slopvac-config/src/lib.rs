@@ -5,6 +5,7 @@
 //! merges the layers for one file with per-value provenance, and renders
 //! failures as coded diagnostics.
 
+mod comments;
 pub mod diag;
 pub mod directives;
 pub mod discover;
