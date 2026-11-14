@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use slopvac_config::validate::{FRONTMATTER_SCHEMA, command, run};
+use slopvac_config::validate::{CONFIG_SCHEMA, FRONTMATTER_SCHEMA, command, run};
 use slopvac_config::{Code, NoPresets};
 use tempfile::TempDir;
 
@@ -222,5 +222,76 @@ fn the_schema_flag_prints_the_front_matter_schema_for_editors() {
             .as_str()
             .unwrap()
             .ends_with("/frontmatter.schema.json")
+    );
+}
+
+#[test]
+fn a_document_that_is_not_utf8_makes_the_check_incomplete() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    fs::write(p.root().join("a.md"), [0x23, 0xff, 0xfe, 0x0a]).unwrap();
+    let (code, out) = p.validate(&["a.md"]);
+    assert_eq!(code, 2);
+    assert!(out.contains("cannot read a.md: not valid UTF-8"), "{out}");
+}
+
+#[test]
+fn a_path_that_does_not_exist_makes_the_check_incomplete() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    let (code, out) = p.validate(&["nope.md"]);
+    assert_eq!(code, 2);
+    assert!(out.contains("cannot read nope.md: no such file"), "{out}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_that_cannot_be_read_makes_the_check_incomplete() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    p.write("docs/ok.md", "text\n");
+    p.write("docs/locked/hidden.md", "text\n");
+    let locked = p.root().join("docs/locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    let (code, out) = p.validate(&["docs"]);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("cannot read inside docs"), "{out}");
+}
+
+#[test]
+fn every_distinct_config_gets_its_terms_files_checked_once() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    p.write(
+        "pkg/slopvac.toml",
+        "schema_version = 3\n\n[terms]\nblocklists = [\"words.toml\"]\n",
+    );
+    p.write("pkg/a.md", "text\n");
+    p.write("pkg/b.md", "text\n");
+    p.write("other/c.md", "text\n");
+    let (code, out) = p.validate(&["pkg", "other"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        out.matches("`terms.blocklists` names `words.toml`, which is not a file")
+            .count(),
+        1,
+        "{out}"
+    );
+}
+
+#[test]
+fn the_schema_flag_prints_the_config_schema_for_editors() {
+    let p = Project::new();
+    let (code, out) = p.validate(&["--schema", "config"]);
+    assert_eq!(code, 0);
+    assert_eq!(out, CONFIG_SCHEMA);
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(
+        json["$id"]
+            .as_str()
+            .unwrap()
+            .ends_with("/config.schema.json")
     );
 }

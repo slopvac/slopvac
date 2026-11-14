@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use ignore::WalkBuilder;
@@ -33,7 +34,7 @@ const DOCUMENT_EXTENSIONS: &[&str] = &["md", "markdown", "mdx", "rst", "txt", "h
 pub struct Problem {
     /// The file it was found in.
     pub file: String,
-    /// The error class. `None` for an unreadable file.
+    /// The error class.
     pub code: Option<Code>,
     /// Plain-text output with the source line and a pointer.
     pub rendered: String,
@@ -46,15 +47,16 @@ pub struct Report {
     pub checked: usize,
     /// Every problem, in the order found.
     pub problems: Vec<Problem>,
-    config_failed: bool,
+    incomplete: bool,
 }
 
 impl Report {
-    /// Process exit code: 0 when clean, 1 for problems in documents, 2 when a config could
-    /// not be loaded, since then nothing else can be judged.
+    /// Process exit code: 0 when clean, 1 for problems in documents, and 2 when the check is
+    /// incomplete: a config did not load, a path did not exist, or a file or directory could not
+    /// be read. A run that skipped something never reports clean.
     #[must_use]
     pub fn exit_code(&self) -> u8 {
-        if self.config_failed {
+        if self.incomplete {
             2
         } else {
             u8::from(!self.problems.is_empty())
@@ -81,32 +83,50 @@ pub fn validate(
     let config = match config {
         Ok(c) => c,
         Err(e) => {
-            report.config_failed = true;
+            report.incomplete = true;
             report.problems.push(config_problem(&e));
             return report;
         }
     };
+    let mut seen: Vec<*const LoadedConfig> = Vec::new();
     if let Some(c) = &config {
-        report.checked += c.files.len();
-        report.problems.extend(missing_term_files(c));
+        check_config_once(c, &mut seen, &mut report);
     }
-    let files = collect(paths, cwd);
+    let files = collect(paths, cwd, &mut report);
     for file in files {
         let config = match (&config, explicit) {
             (Some(c), Some(_)) => Some(c.clone()),
             _ => match file.parent().map(|d| discovery.nearest(d)) {
                 Some(Ok(c)) => c,
                 Some(Err(e)) => {
-                    report.config_failed = true;
+                    report.incomplete = true;
                     report.problems.push(config_problem(&e));
                     continue;
                 }
                 None => None,
             },
         };
+        if let Some(c) = &config {
+            check_config_once(c, &mut seen, &mut report);
+        }
         check_document(&file, cwd, config.as_deref(), &mut report);
     }
     report
+}
+
+/// Count a loaded config and check its referenced files, once per distinct config.
+fn check_config_once(
+    config: &Arc<LoadedConfig>,
+    seen: &mut Vec<*const LoadedConfig>,
+    report: &mut Report,
+) {
+    let id = Arc::as_ptr(config);
+    if seen.contains(&id) {
+        return;
+    }
+    seen.push(id);
+    report.checked += config.files.len();
+    report.problems.extend(missing_term_files(config));
 }
 
 fn config_problem(e: &ConfigError) -> Problem {
@@ -118,13 +138,13 @@ fn config_problem(e: &ConfigError) -> Problem {
         },
         ConfigError::Io { path, .. } => Problem {
             file: path.clone(),
-            code: None,
+            code: Some(Code::Io),
             rendered: e.to_string(),
         },
     }
 }
 
-fn collect(paths: &[PathBuf], cwd: &Path) -> Vec<PathBuf> {
+fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for p in paths {
         let p = if p.is_absolute() {
@@ -132,22 +152,56 @@ fn collect(paths: &[PathBuf], cwd: &Path) -> Vec<PathBuf> {
         } else {
             cwd.join(p)
         };
+        let shown = p.strip_prefix(cwd).unwrap_or(&p).display().to_string();
         if p.is_dir() {
-            let mut found: Vec<PathBuf> = WalkBuilder::new(&p)
+            let mut found = Vec::new();
+            for entry in WalkBuilder::new(&p)
                 .standard_filters(false)
                 .hidden(true)
                 .build()
-                .filter_map(Result::ok)
-                .map(ignore::DirEntry::into_path)
-                .filter(|f| f.is_file() && has_document_extension(f))
-                .collect();
+            {
+                match entry {
+                    Ok(e) => {
+                        let f = e.into_path();
+                        if f.is_file() && has_document_extension(&f) {
+                            found.push(f);
+                        }
+                    }
+                    Err(err) => {
+                        let reason = err
+                            .io_error()
+                            .map_or("the directory cannot be read", crate::error::reason);
+                        unreadable(
+                            report,
+                            &shown,
+                            &format!("cannot read inside {shown}: {reason}"),
+                        );
+                    }
+                }
+            }
             found.sort();
             out.extend(found);
-        } else {
+        } else if p.exists() {
             out.push(p);
+        } else {
+            unreadable(
+                report,
+                &shown,
+                &format!("cannot read {shown}: no such file"),
+            );
         }
     }
     out
+}
+
+/// Record a path that could not be read. The check is incomplete.
+fn unreadable(report: &mut Report, file: &str, message: &str) {
+    report.incomplete = true;
+    report.problems.push(Problem {
+        file: file.to_owned(),
+        code: Some(Code::Io),
+        rendered: message.to_owned(),
+    });
 }
 
 fn has_document_extension(path: &Path) -> bool {
@@ -168,11 +222,8 @@ fn check_document(file: &Path, cwd: &Path, config: Option<&LoadedConfig>, report
     let text = match fs::read_to_string(file) {
         Ok(t) => t,
         Err(e) => {
-            report.problems.push(Problem {
-                file: shown.clone(),
-                code: None,
-                rendered: format!("cannot read {shown}: {e}"),
-            });
+            let message = format!("cannot read {shown}: {}", crate::error::reason(&e));
+            unreadable(report, &shown, &message);
             return;
         }
     };
