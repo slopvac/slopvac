@@ -41,11 +41,12 @@
 //! A stopped parent cannot fork, so a process that a pidfd names and that
 //! still has the parent from the snapshot is the process from the snapshot.
 //!
-//! Residual risk R2 (`slopvac-8l4.9.13`): on macOS and any Unix without
-//! pidfds, a descendant that left the group survives the teardown and is
-//! only reported. A descendant whose parent exited before the walk was
-//! reparented to init and is not found at all; the Linux subreaper of that
-//! bead closes the gap on Linux.
+//! Residual risk R2: on macOS and any Unix without pidfds, a descendant that
+//! left the group survives the teardown and is only reported. On Linux the
+//! group leader is the launcher, a child subreaper (see
+//! [`launch`](crate::launch)), so a descendant whose parent exited before the
+//! walk is reparented to it and found. Elsewhere such a descendant is
+//! reparented to init and not found at all.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -103,7 +104,9 @@ pub struct Teardown {
     /// started, may still run.
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
-    /// deadline or the cap on held descendants was reached. On Windows,
+    /// deadline or the cap on held descendants was reached. On Linux, also
+    /// a launcher that died of SIGKILL before any kill from the host: its
+    /// cleanup missed something, or the plugin killed it. On Windows,
     /// `taskkill` did not exit with status 0; it does not run after the
     /// plugin answered `shutdown` and exited with status 0 without a kill.
     /// Descendants it did not reach may still run.
@@ -255,6 +258,14 @@ impl Group {
     fn kill_once(&self, st: &mut State) {
         if !st.killed {
             st.killed = true;
+            // The host has sent no SIGKILL yet. On Linux the launcher dies of
+            // one before that only if its cleanup could not account for every
+            // descendant, or if the plugin killed it; either way something
+            // may have escaped.
+            #[cfg(target_os = "linux")]
+            if unix::died_of_sigkill(self.pid) {
+                st.left.incomplete = true;
+            }
             let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
             st.left.merge(left);
         }
@@ -349,7 +360,8 @@ impl Group {
     }
 }
 
-/// The plugin's top process, owned by the waiter.
+/// The plugin's top process, owned by the waiter: the launcher on Linux, the
+/// plugin itself elsewhere.
 pub(crate) struct Leader {
     child: Child,
     exited: Option<std::io::Result<ExitStatus>>,
@@ -572,6 +584,21 @@ mod unix {
         i32::try_from(raw).ok().and_then(Pid::from_raw)
     }
 
+    /// Whether the unreaped `leader` has died of SIGKILL, observed without
+    /// reaping it.
+    #[cfg(target_os = "linux")]
+    pub(super) fn died_of_sigkill(leader: u32) -> bool {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+        let Some(p) = pid(leader) else {
+            return false;
+        };
+        let opts = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
+        matches!(
+            waitid(WaitId::Pid(p), opts),
+            Ok(Some(s)) if s.terminating_signal() == Some(Signal::KILL.as_raw())
+        )
+    }
+
     /// One row of the process table.
     #[derive(Debug, PartialEq, Eq)]
     pub(super) struct Entry {
@@ -752,11 +779,13 @@ mod unix {
 
     /// The parent of `pid` from `/proc/<pid>/stat`.
     #[cfg(target_os = "linux")]
-    fn proc_ppid(pid: u32) -> std::io::Result<u32> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    pub(crate) fn proc_ppid(pid: u32) -> std::io::Result<u32> {
+        // Bytes, not text: a process may give itself a name that is not UTF-8.
+        let stat = std::fs::read(format!("/proc/{pid}/stat"))?;
         let bad = || std::io::Error::from(std::io::ErrorKind::InvalidData);
         // The command name may hold spaces and parentheses; it ends at the last `)`.
-        let rest = &stat[stat.rfind(')').ok_or_else(bad)? + 1..];
+        let end = stat.iter().rposition(|&b| b == b')').ok_or_else(bad)?;
+        let rest = std::str::from_utf8(&stat[end + 1..]).map_err(|_| bad())?;
         rest.split_ascii_whitespace()
             .nth(1)
             .and_then(|s| s.parse().ok())
@@ -1000,6 +1029,9 @@ mod unix {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) use unix::proc_ppid;
+
 /// Replace control characters other than newline and tab, plus bidi overrides.
 #[must_use]
 pub fn sanitize_display(text: &str) -> String {
@@ -1065,6 +1097,25 @@ mod tests {
             let got = revalidated(parent, seen, || exited);
             assert_eq!(got, want, "{seen:?}, exited {exited}");
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_parent_of_a_process_with_a_name_that_is_not_utf8_is_read() {
+        // `read` keeps the shell itself waiting, with no child of its own.
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", r"printf '\377(x) ' > /proc/$$/comm; echo; read _"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // The newline comes once the name is set.
+        let mut line = [0u8; 1];
+        let _ = std::io::Read::read(child.stdout.as_mut().unwrap(), &mut line);
+        let got = super::proc_ppid(child.id()).ok();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(got, Some(std::process::id()));
     }
 
     #[cfg(target_os = "linux")]

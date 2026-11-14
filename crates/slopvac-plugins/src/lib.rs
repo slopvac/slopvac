@@ -18,6 +18,7 @@ pub mod frame;
 pub mod hooks;
 pub mod host;
 pub mod index;
+pub mod launch;
 pub mod lock;
 pub mod oci;
 pub mod process;

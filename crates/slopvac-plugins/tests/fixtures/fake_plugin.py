@@ -126,6 +126,8 @@ def tags_for(params):
             evidence = str(tag_requests)
         if mode in ("ids", "ids-cancel"):
             evidence = str(current_id)
+        if mode == "rlimits":
+            evidence = limits_evidence()
         results.append(
             {
                 "document": doc["id"],
@@ -149,6 +151,12 @@ def write_pids(path, pids):
     os.rename(path + ".tmp", path)
 
 
+if pidfile:
+    # The host's leader heads the plugin's process group: the launcher on
+    # Linux, the plugin itself elsewhere.
+    write_pids(pidfile + ".leader", [os.getpgrp()])
+
+
 def wait_for(path):
     """The contents of a file that a child creates by rename."""
     end = time.time() + 10
@@ -165,11 +173,12 @@ def spawn_orphan():
         write_pids(pidfile, [child, os.getpid()])
 
 
-def spawn_children():
+def spawn_children(write=True):
     pids = [subprocess.Popen(["sleep", "300"]).pid]
     pids.append(subprocess.Popen(["sleep", "300"], start_new_session=True).pid)
-    if pidfile:
+    if pidfile and write:
         write_pids(pidfile, pids)
+    return pids
 
 
 def spawn_nested():
@@ -201,6 +210,43 @@ def move_group():
     child = subprocess.Popen(["sleep", "300"], preexec_fn=lambda: os.setpgid(0, 0)).pid
     os.setpgid(0, child)
     write_pids(pidfile, [os.getpid(), child])
+
+
+def spawn_daemon():
+    """Double fork: a child in a new session starts a grandchild and exits first."""
+    inner = pidfile + ".daemon"
+    sh = subprocess.Popen(
+        ["sh", "-c", 'sleep 300 & echo $! > "$0.tmp"; mv "$0.tmp" "$0"', inner],
+        start_new_session=True,
+    )
+    sh.wait()
+    return int(wait_for(inner))
+
+
+def fork_loop():
+    """Fork a sleeping child every 10 ms until the host ends the plugin."""
+    while True:
+        if os.fork() == 0:
+            time.sleep(300)
+            os._exit(0)
+        time.sleep(0.01)
+
+
+def allocate():
+    """Allocate and touch 1 MiB every 10 ms until an allocation fails."""
+    held = []
+    while True:
+        held.append(bytearray(1 << 20))
+        time.sleep(0.01)
+
+
+def limits_evidence():
+    import resource
+
+    names = ["CPU", "NOFILE", "CORE", "FSIZE", "DATA"]
+    return json.dumps(
+        {n: resource.getrlimit(getattr(resource, "RLIMIT_" + n)) for n in names}
+    )
 
 
 if mode == "stray-stdout":
@@ -277,6 +323,41 @@ while True:
             move_group()
             time.sleep(300)
         if mode == "no-read":
+            time.sleep(300)
+        if mode == "three-children":
+            # TM-4: one in the group, one after `setsid`, one by double fork.
+            write_pids(pidfile, spawn_children(write=False) + [spawn_daemon()])
+            time.sleep(300)
+        if mode == "busy":
+            while True:
+                pass
+        if mode == "alloc":
+            allocate()
+        if mode == "fork-loop":
+            fork_loop()
+        if mode == "stall-idle":
+            # Part of a frame, then nothing, with no request in flight.
+            out.write(b"Content-Length: 100\r\n\r\n{")
+            out.flush()
+            time.sleep(300)
+        if mode == "stderr-lines":
+            sys.stderr.write("first line\nsecond \x1b[31mline\nthird\r\n")
+            sys.stderr.write("x" * 5000 + "\n")
+            sys.stderr.flush()
+            if pidfile:
+                write_pids(pidfile, [os.getpid()])
+        if mode == "kill-launcher":
+            # On Linux the parent is the launcher.
+            os.kill(os.getppid(), 9)
+            time.sleep(300)
+        if mode == "big-file":
+            # Python ignores SIGXFSZ; restore the default so the limit kills.
+            import signal
+
+            signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
+            with open(pidfile + ".big", "wb") as f:
+                f.write(b"x" * (2 << 20))
+                f.flush()
             time.sleep(300)
         if mode == "stderr-flood":
             sys.stderr.write("x" * (10 * 1024 * 1024))

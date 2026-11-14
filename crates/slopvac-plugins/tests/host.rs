@@ -23,7 +23,8 @@ fn a_well_behaved_plugin_tags_documents_and_shuts_down_cleanly() {
     let tags = out[0].outcome.as_ref().unwrap();
     assert_eq!(tags[0].kind, "code-fence");
     assert_eq!((tags[0].span.start, tags[0].span.end), (0, 6));
-    assert!(p.shutdown().clean());
+    let down = p.shutdown();
+    assert!(down.clean(), "{down:?}");
 }
 
 #[test]
@@ -262,6 +263,30 @@ fn tm4_a_child_outside_the_group_is_reported_and_never_signalled() {
     assert!(!out.clean(), "{out:?}");
     // Sleeping, not stopped or gone: no signal reached it.
     assert!(state.starts_with('S'), "{state:?}");
+}
+
+/// TM-4 as the threat model states it. The double-forked grandchild left the
+/// group and lost its parent before the kill, so only the launcher, a child
+/// subreaper, still links it to the plugin.
+#[cfg(target_os = "linux")]
+#[test]
+fn tm4_children_in_the_group_after_setsid_and_by_double_fork_die_with_a_hung_plugin() {
+    let dir = scratch("tm4-three");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("three-children", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    let pids = pids_n(&pidfile, 3);
+    drop(p);
+    let gone = wait_gone(&pids);
+    if !gone {
+        end(&pids);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "children {pids:?} survived");
 }
 
 #[cfg(target_os = "linux")]
