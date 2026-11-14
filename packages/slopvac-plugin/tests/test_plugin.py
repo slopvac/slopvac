@@ -182,3 +182,15 @@ def test_a_request_while_not_initialized_is_not_a_hang(start):
     error_of(s.request("tagger/tag", tag_params("words")), -32003, "not-initialized")
     with pytest.raises(CaseFailure):
         s.next_frame(0.3)  # nothing else arrives
+
+
+@pytest.mark.parametrize("ending", ["end of input", "framing error"])
+def test_a_plugin_with_a_busy_hook_still_ends_at_once(start, ending):
+    s = start(script("behaviour_plugin.py"))
+    handshake(s)
+    s.start_request("tagger/tag", tag_params("stuck"))  # busy for 30 s, maxInFlight 1
+    if ending == "end of input":
+        s.close_stdin()
+    else:
+        s.send_bytes(b"Content-Length: nope\r\n\r\n")
+    assert s.wait(10) == 1

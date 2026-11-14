@@ -29,7 +29,7 @@ def schema_dir() -> Path:
 class Schemas:
     def __init__(self) -> None:
         try:
-            from jsonschema import Draft202012Validator
+            from jsonschema import Draft202012Validator, validators
             from referencing import Registry, Resource
         except ImportError as exc:  # pragma: no cover - exercised by the CLI only
             raise MissingDependency(
@@ -43,7 +43,17 @@ class Schemas:
         self._registry = Registry().with_resources(
             [(s["$id"], Resource.from_contents(s)) for s in (self._protocol, common)]
         )
-        self._validator_class = Draft202012Validator
+        # Draft 2020-12 accepts 1.0 as an integer. Protocol v1 does not (section 2.2),
+        # and the strict parser keeps 1.0 a float, so only an int token is an integer.
+        checker = Draft202012Validator.TYPE_CHECKER.redefine(
+            "integer",
+            lambda _checker, value: (
+                isinstance(value, int) and not isinstance(value, bool)
+            ),
+        )
+        self._validator_class = validators.extend(
+            Draft202012Validator, type_checker=checker
+        )
 
     def errors(self, definition: str | None, instance: Any) -> list[str]:
         """Schema violations of ``instance`` against a ``$defs`` entry, or the root."""

@@ -32,6 +32,12 @@ def slow(doc, ctx):
     return []
 
 
+@plugin.tagger("stuck")
+def stuck(doc, ctx):
+    time.sleep(30)  # ignores cancellation
+    return []
+
+
 @plugin.tagger("gate")
 def meet(doc, ctx):
     gate.wait()  # both requests must be in flight at once

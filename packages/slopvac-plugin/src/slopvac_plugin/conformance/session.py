@@ -1,19 +1,37 @@
-"""One plugin process driven over stdio, with a strict reader for what it prints."""
+"""One plugin process driven over stdio, with a strict reader for what it prints.
+
+The plugin under test is untrusted (threat model TM-2, TM-3, TM-4, TM-8). The session
+gives it a minimal environment, its own process group, bounded memory for what it
+prints, and a deadline on every write.
+"""
 
 from __future__ import annotations
 
 import json
+import os
 import queue
+import signal
 import subprocess
 import threading
-from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 from .. import framing
 from .schemas import Schemas
 
-READ_LIMIT = 64 * 1024 * 1024
+# Limits on what a plugin may print, from the host's (section 3 and TM-2).
+MAX_OUTPUT_BYTES = 512 * 1024 * 1024  # stdout and stderr together
+MAX_QUEUED_MESSAGES = 1000  # frames the suite has not read yet
+MAX_QUEUED_BYTES = 64 * 1024 * 1024
+STDERR_TAIL_BYTES = 4096
+STDERR_CHUNK = 64 * 1024
+
+# Environment names every plugin gets, as the host passes them (section 11.1).
+BASE_ENVIRONMENT = ("PATH", "LANG")
+# A Windows process does not start without these.
+WINDOWS_ENVIRONMENT = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP")
 
 
 class CaseFailure(Exception):
@@ -28,71 +46,239 @@ class SuiteError(Exception):
     """The suite cannot run, for example because the command does not start."""
 
 
+def plugin_environment(
+    extra: Iterable[str] = (), base: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The allowlisted environment: PATH, LANG, the Windows basics, and ``extra`` names.
+
+    A name that is not set in ``base`` is left out. CI tokens and credentials never
+    reach the plugin unless the caller names them.
+    """
+    source = os.environ if base is None else base
+    names = [*BASE_ENVIRONMENT, *extra]
+    if os.name == "nt":
+        names += WINDOWS_ENVIRONMENT
+    for name in extra:
+        if not name or "=" in name:
+            raise ValueError(f"not an environment variable name: {name!r}")
+    return {name: source[name] for name in dict.fromkeys(names) if name in source}
+
+
+def taskkill_command(pid: int, system_root: str | None = None) -> list[str]:
+    """The Windows command that ends a process and its descendants."""
+    root = system_root or os.environ.get("SystemRoot") or r"C:\Windows"
+    return [
+        str(Path(root) / "System32" / "taskkill.exe"),
+        "/PID",
+        str(pid),
+        "/T",
+        "/F",
+    ]
+
+
+def kill_tree(proc: subprocess.Popen[bytes]) -> None:
+    """End the plugin and everything it started. Safe to call twice."""
+    if os.name == "nt":
+        with suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                taskkill_command(proc.pid),
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
+    else:
+        # The plugin leads its own process group (start_new_session).
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    with suppress(OSError):
+        proc.kill()
+
+
+def _bounded(fn: Callable[[], Any], seconds: float) -> bool:
+    """Run ``fn`` on a helper thread. False when it is still running after ``seconds``."""
+    thread = threading.Thread(target=fn, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    return not thread.is_alive()
+
+
 class Session:
     def __init__(
-        self, command: Sequence[str], schemas: Schemas, timeout: float
+        self,
+        command: Sequence[str],
+        schemas: Schemas,
+        timeout: float,
+        *,
+        env_names: Iterable[str] = (),
+        max_output_bytes: int = MAX_OUTPUT_BYTES,
+        max_queued_messages: int = MAX_QUEUED_MESSAGES,
+        max_queued_bytes: int = MAX_QUEUED_BYTES,
     ) -> None:
         self.schemas = schemas
         self.timeout = timeout
+        self._max_output = max_output_bytes
+        self._max_messages = max_queued_messages
+        self._max_queued_bytes = max_queued_bytes
         self._ids = 0
-        self._events: queue.Queue[tuple[str, Any]] = queue.Queue()
-        self._stderr: deque[bytes] = deque(maxlen=64)
+        self._events: queue.Queue[tuple[str, Any, int]] = queue.Queue()
+        self._lock = threading.Lock()
+        self._output = 0
+        self._queued = 0
+        self._queued_bytes = 0
+        self._violation: str | None = None
+        self._swept = False
+        self._stderr = bytearray()
+        # Reply limit: 1 MiB until the initialize reply, then the negotiated limit.
+        self._limit = framing.PRE_INITIALIZE_LIMIT
+        self._initialize_id: int | None = None
+        self._proposed = framing.PRE_INITIALIZE_LIMIT
+        options: dict[str, Any]
+        if os.name == "nt":
+            options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            options = {"start_new_session": True}
         try:
             self.proc = subprocess.Popen(
                 list(command),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=plugin_environment(env_names),
+                **options,
             )
         except OSError as exc:
             raise SuiteError(f"cannot start the plugin: {exc}") from exc
-        self._threads = [
+        self._readers = [
             threading.Thread(target=target, daemon=True)
             for target in (self._read_stdout, self._drain_stderr)
         ]
-        for thread in self._threads:
+        for thread in self._readers:
             thread.start()
 
     # Streams ---------------------------------------------------------------
+
+    def _violate(self, message: str) -> None:
+        """Record the first violation, tell the reader of events, end the plugin."""
+        with self._lock:
+            if self._violation is not None:
+                return
+            self._violation = message
+        self._events.put(("violation", message, 0))
+        kill_tree(self.proc)
+
+    def _count_output(self, size: int) -> bool:
+        with self._lock:
+            self._output += size
+            over = self._output > self._max_output
+        if over:
+            self._violate(f"the plugin printed more than {self._max_output} bytes")
+        return not over
+
+    def _enqueue(self, kind: str, value: Any, size: int) -> bool:
+        with self._lock:
+            self._queued += 1
+            self._queued_bytes += size
+            over = (
+                self._queued > self._max_messages
+                or self._queued_bytes > self._max_queued_bytes
+            )
+        if over:
+            self._violate(
+                "too many unread messages from the plugin "
+                f"(limits: {self._max_messages} messages, {self._max_queued_bytes} bytes)"
+            )
+            return False
+        self._events.put((kind, value, size))
+        return True
+
+    def _put_eof(self) -> None:
+        if self._violation is None:
+            self._events.put(("eof", None, 0))
+
+    def _note_reply(self, message: Any) -> None:
+        """Take the negotiated limit from the initialize reply, as the plugin must."""
+        if (
+            self._initialize_id is None
+            or not isinstance(message, dict)
+            or type(message.get("id")) is not int
+            or message["id"] != self._initialize_id
+            or "result" not in message
+        ):
+            return
+        self._initialize_id = None
+        result = message["result"]
+        limits = result.get("limits") if isinstance(result, dict) else None
+        offered = limits.get("maxMessageBytes") if isinstance(limits, dict) else None
+        if type(offered) is int and offered >= framing.MIN_MESSAGE_BYTES:
+            self._limit = min(self._proposed, offered)
+        else:
+            self._limit = self._proposed
 
     def _read_stdout(self) -> None:
         stream = self.proc.stdout
         assert stream is not None
         try:
             while True:
-                body = framing.read_frame(stream, lambda: READ_LIMIT)
+                body = framing.read_frame(stream, lambda: self._limit)
                 if body is None:
-                    self._events.put(("eof", None))
+                    self._put_eof()
                     return
-                self._events.put(("frame", framing.loads_strict(body)))
+                # Count the header too, so a flood of empty frames is not free.
+                if not self._count_output(len(body) + 32):
+                    return
+                message = framing.loads_strict(body)
+                self._note_reply(message)
+                if not self._enqueue("frame", message, len(body)):
+                    return
         except (framing.FramingError, framing.ParseError) as exc:
-            self._events.put(("violation", str(exc)))
+            self._violate(str(exc))
         except (OSError, ValueError):
-            self._events.put(("eof", None))
+            self._put_eof()
 
     def _drain_stderr(self) -> None:
         stream = self.proc.stderr
         assert stream is not None
         try:
-            for line in stream:
-                self._stderr.append(line[:512])
+            while True:
+                chunk = stream.read1(STDERR_CHUNK)  # type: ignore[attr-defined]
+                if not chunk:
+                    return
+                if not self._count_output(len(chunk)):
+                    return
+                self._stderr += chunk
+                del self._stderr[:-STDERR_TAIL_BYTES]
         except (OSError, ValueError):
             pass
 
     def stderr_tail(self) -> str:
-        return b"".join(self._stderr).decode("utf-8", "replace")[-400:]
+        return bytes(self._stderr).decode("utf-8", "replace")[-400:]
 
     # Sending -----------------------------------------------------------------
 
     def send_bytes(self, data: bytes, *, tolerate_closed: bool = False) -> None:
+        """Write to the plugin within ``timeout`` seconds, else end it and fail."""
         stdin = self.proc.stdin
         assert stdin is not None
-        try:
-            stdin.write(data)
-            stdin.flush()
-        except OSError as exc:
-            if not tolerate_closed:
-                raise CaseFailure(f"the plugin closed its input early: {exc}") from exc
+        problem: list[Exception] = []
+
+        def write() -> None:
+            try:
+                stdin.write(data)
+                stdin.flush()
+            except (OSError, ValueError) as exc:
+                problem.append(exc)
+
+        writer = threading.Thread(target=write, daemon=True)
+        writer.start()
+        writer.join(self.timeout)
+        if writer.is_alive():
+            kill_tree(self.proc)  # the broken pipe frees the writer
+            writer.join(5)
+            raise CaseFailure(
+                f"the plugin did not read its input within {self.timeout} s"
+            )
+        if problem and not tolerate_closed:
+            raise CaseFailure(f"the plugin closed its input early: {problem[0]}")
 
     def send(self, message: dict[str, Any]) -> None:
         self.send_bytes(framing.encode_frame(json.dumps(message).encode("utf-8")))
@@ -108,23 +294,36 @@ class Session:
         message: dict[str, Any] = {"jsonrpc": "2.0", "id": self._ids, "method": method}
         if params is not None:
             message["params"] = params
+        if method == "initialize":
+            self._initialize_id = self._ids
+            proposed = ((params or {}).get("limits") or {}).get("maxMessageBytes")
+            self._proposed = (
+                proposed if type(proposed) is int else framing.PRE_INITIALIZE_LIMIT
+            )
         self.send(message)
         return self._ids
 
     def close_stdin(self) -> None:
-        try:
-            assert self.proc.stdin is not None
-            self.proc.stdin.close()
-        except OSError:
-            pass
+        def close() -> None:
+            with suppress(OSError, ValueError):
+                assert self.proc.stdin is not None
+                self.proc.stdin.close()
+
+        _bounded(close, 1)
 
     # Receiving -----------------------------------------------------------------
 
+    def _get(self, timeout: float) -> tuple[str, Any]:
+        kind, value, size = self._events.get(timeout=timeout)
+        if kind == "frame":
+            with self._lock:
+                self._queued -= 1
+                self._queued_bytes -= size
+        return kind, value
+
     def next_event(self, timeout: float | None = None) -> tuple[str, Any]:
         try:
-            return self._events.get(
-                timeout=self.timeout if timeout is None else timeout
-            )
+            return self._get(self.timeout if timeout is None else timeout)
         except queue.Empty:
             raise CaseFailure("no reply in time") from None
 
@@ -145,7 +344,12 @@ class Session:
         self, request_id: int, timeout: float | None = None
     ) -> dict[str, Any]:
         message = self.next_frame(timeout)
-        if message.get("id") != request_id or "method" in message:
+        # type() is int: JSON 1.0 equals 1 in Python, and the contract forbids it.
+        if (
+            type(message.get("id")) is not int
+            or message["id"] != request_id
+            or "method" in message
+        ):
             raise CaseFailure(
                 f"expected the response to request {request_id}, got {message}"
             )
@@ -161,7 +365,7 @@ class Session:
         events: list[tuple[str, Any]] = []
         while True:
             try:
-                kind, value = self._events.get(timeout=timeout)
+                kind, value = self._get(timeout)
             except queue.Empty:
                 return events
             events.append((kind, value))
@@ -170,21 +374,34 @@ class Session:
 
     # Ending --------------------------------------------------------------------
 
+    def _sweep(self) -> None:
+        """End descendants that outlive the plugin. They would hold the pipes open."""
+        if not self._swept:
+            self._swept = True
+            kill_tree(self.proc)
+
     def wait(self, timeout: float) -> int:
         try:
-            return self.proc.wait(timeout=timeout)
+            status = self.proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             raise CaseFailure(f"the plugin did not exit within {timeout} s") from None
+        self._sweep()
+        return status
 
     def close(self) -> None:
         self.close_stdin()
-        try:
+        with suppress(subprocess.TimeoutExpired):
             self.proc.wait(timeout=0.5)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-            self.proc.wait()
-        for thread in self._threads:
-            thread.join(timeout=2)  # a blocked reader would hold the stream lock
-        for stream in (self.proc.stdout, self.proc.stderr):
-            if stream is not None:
-                stream.close()
+        self._sweep()
+        with suppress(subprocess.TimeoutExpired):
+            self.proc.wait(timeout=5)
+        for thread in self._readers:
+            thread.join(timeout=2)
+        # A reader that is still blocked holds the stream lock, and close() would wait
+        # for it. That happens only when a descendant left the process group.
+        for stream, thread in zip(
+            (self.proc.stdout, self.proc.stderr), self._readers, strict=True
+        ):
+            if stream is not None and not thread.is_alive():
+                with suppress(OSError, ValueError):
+                    stream.close()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -8,12 +10,38 @@ import pytest
 from slopvac_plugin.conformance.schemas import Schemas
 from slopvac_plugin.conformance.session import Session
 
+SRC = Path(__file__).parents[1] / "src"
+SDK_ENV = ("PYTHONPATH",)
 FIXTURES = Path(__file__).parent / "fixtures"
 EXAMPLE = Path(__file__).parents[1] / "examples" / "fence-tagger"
 
 
 def script(name: str, *args: str) -> list[str]:
     return [sys.executable, str(FIXTURES / name), *args]
+
+
+def bounded(fn: Callable[[], object], seconds: float) -> bool:
+    """Run ``fn`` on a helper thread. False when it is still running after ``seconds``.
+
+    A hang then fails one test instead of the whole run.
+    """
+    thread = threading.Thread(target=fn, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    return not thread.is_alive()
+
+
+@pytest.fixture(autouse=True)
+def sdk_on_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plugins under test import the SDK from the source tree, installed or not.
+
+    The session gives a plugin PATH and LANG only, so tests name PYTHONPATH in
+    ``pass_env`` when the plugin needs it.
+    """
+    existing = os.environ.get("PYTHONPATH")
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join([str(SRC), *([existing] if existing else [])])
+    )
 
 
 @pytest.fixture(scope="session")
@@ -27,7 +55,7 @@ def start(schemas: Schemas) -> Iterator[Callable[..., Session]]:
     sessions: list[Session] = []
 
     def spawn(command: list[str]) -> Session:
-        sessions.append(Session(command, schemas, timeout=10))
+        sessions.append(Session(command, schemas, timeout=10, env_names=SDK_ENV))
         return sessions[-1]
 
     yield spawn

@@ -47,12 +47,16 @@ class Env:
     schemas: Schemas
     timeout: float = 10.0
     exit_timeout: float = 2.0
+    cancel_grace: float = 2.0  # section 6.3: an answer this long after the cancel
+    pass_env: Sequence[str] = ()  # extra environment names the plugin may see
     inputs: dict[str, Any] = field(default_factory=dict)
     declaration: dict[str, Any] | None = None
     hooks: list[tuple[str, str]] = field(default_factory=list)
 
     def spawn(self) -> Session:
-        return Session(self.command, self.schemas, self.timeout)
+        return Session(
+            self.command, self.schemas, self.timeout, env_names=self.pass_env
+        )
 
     @contextlib.contextmanager
     def session(self) -> Iterator[Session]:
@@ -369,7 +373,8 @@ def p9(env: Env) -> None:
             kind, hook_id = hooks[0]
             request_id = s.start_request(METHODS[kind], env.params(kind, hook_id))
             s.notify("$/cancelRequest", {"id": request_id})
-            response = s.response_to(request_id, env.exit_timeout + env.timeout)
+            # The grace runs from the cancel, not from the request.
+            response = s.response_to(request_id, env.cancel_grace)
             if "error" in response:
                 error_of(response, -32005, "request-cancelled")
         s.notify("$/cancelRequest", {"id": 987654})
@@ -404,33 +409,30 @@ def p12(env: Env) -> None:
         s.wait(env.exit_timeout)
 
 
+def expect_rejected_at_the_header(env: Env, s: Session, length: int) -> None:
+    """Send a header that announces ``length`` bytes and no body.
+
+    A plugin that rejects on the header exits 1 and prints nothing. One that waits for
+    the body keeps running, so the exit check fails it. A valid body would not help
+    it: the contract says the body is not read.
+    """
+    s.send_bytes(b"Content-Length: %d\r\n\r\n" % length, tolerate_closed=True)
+    status = s.wait(env.exit_timeout)
+    require(status == 1, f"an oversized body gave status {status}, not 1")
+    require(
+        all(kind == "eof" for kind, _ in s.drain_events()),
+        "the plugin printed output for an oversized body",
+    )
+
+
 @case("P13", "a body over the limit is not read and the plugin exits with status 1")
 def p13(env: Env) -> None:
-    pad = b'{"jsonrpc":"2.0","id":2,"method":"x-conformance/pad","params":{"x-pad":"'
     with env.ready(max_message_bytes=FLOOR) as (s, result):
         limit = result["limits"]["maxMessageBytes"]
         require(limit <= FLOOR, f"the reply raised maxMessageBytes to {limit}")
-        total = limit + 1
-        body = pad + b"a" * (total - len(pad) - 2) + b'"}'
-        s.send_bytes(
-            b"Content-Length: %d\r\n\r\n" % len(body) + body, tolerate_closed=True
-        )
-        status = s.wait(env.exit_timeout)
-        require(status == 1, f"an oversized body gave status {status}, not 1")
-        require(
-            all(kind == "eof" for kind, _ in s.drain_events()),
-            "the plugin printed output for an oversized body",
-        )
+        expect_rejected_at_the_header(env, s, limit + 1)
     with env.session() as s:
-        s.send_bytes(
-            b"Content-Length: %d\r\n\r\n" % (PRE_INITIALIZE_LIMIT + 1),
-            tolerate_closed=True,
-        )
-        status = s.wait(env.exit_timeout)
-        require(
-            status == 1,
-            f"a body over 1 MiB before initialize gave status {status}, not 1",
-        )
+        expect_rejected_at_the_header(env, s, PRE_INITIALIZE_LIMIT + 1)
 
 
 @case("P14", "standard output holds frames only")

@@ -35,6 +35,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--exit-timeout", type=float, default=2.0, help="seconds to wait for exit"
     )
+    parser.add_argument(
+        "--cancel-grace",
+        type=float,
+        default=2.0,
+        help="seconds a plugin may take to answer after a cancel (section 6.3)",
+    )
+    parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="pass this environment variable to the plugin. The plugin otherwise gets "
+        "only PATH and LANG (and the basics Windows needs). Repeat for more names",
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument(
         "command", nargs=argparse.REMAINDER, help="-- <plugin command...>"
@@ -52,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
             else None,
             timeout=args.timeout,
             exit_timeout=args.exit_timeout,
+            cancel_grace=args.cancel_grace,
+            pass_env=args.env,
             only=args.only.split(",") if args.only else None,
         )
     except (SuiteError, MissingDependency, OSError, ValueError) as exc:

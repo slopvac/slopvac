@@ -1,14 +1,17 @@
 """The conformance suite, run against good and deliberately broken plugins."""
 
 import json
+import os
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 import pytest
-from conftest import EXAMPLE, script
+from conftest import EXAMPLE, FIXTURES, SDK_ENV, bounded, script
 from slopvac_plugin.conformance import SuiteError, load_declaration, run_conformance
+from slopvac_plugin.conformance.cases import handshake
+from slopvac_plugin.conformance.session import CaseFailure
 
 ALL_IDS = [f"P{i}" for i in range(1, 20)]
 REPO = Path(__file__).resolve().parents[3]
@@ -34,6 +37,7 @@ def test_example_plugin_passes_every_applicable_case(quiet_cwd):
         command,
         declaration=load_declaration(EXAMPLE / "slopvac-pack.toml"),
         inputs=inputs,
+        pass_env=SDK_ENV,
     )
     assert report.failed == []
     assert report.exit_code == 0
@@ -63,6 +67,7 @@ def test_plugin_with_every_hook_kind_passes_all_19_cases(tmp_path, quiet_cwd):
         script("all_hooks_plugin.py"),
         declaration=load_declaration(path),
         inputs=ALL_HOOKS_INPUTS,
+        pass_env=SDK_ENV,
     )
     assert statuses(report) == dict.fromkeys(ALL_IDS, "pass"), report.to_text()
 
@@ -81,12 +86,61 @@ def test_plugin_written_without_the_sdk_passes(quiet_cwd):
         ("split-char-span", "P15"),  # span ends inside a multi-byte character
         ("exit-zero-without-shutdown", "P11"),  # exit status 0 where 1 is required
         ("no-version-check", "P2"),  # accepts a version range without 1
+        ("read-oversized-body", "P13"),  # waits for a body it must not read
+        ("float-id", "P1"),  # answers with id 1.0
+        ("float-limit", "P1"),  # maxMessageBytes spelled 65536.0
+        ("big-init-reply", "P1"),  # an initialize reply over 1 MiB
     ],
 )
 def test_suite_fails_a_broken_plugin_on_the_violated_case(mode, failing, quiet_cwd):
     report = run_conformance(script("raw_plugin.py", mode), timeout=5)
     assert statuses(report)[failing] == "fail", report.to_text()
     assert report.exit_code == 1
+
+
+def test_a_reply_over_the_negotiated_limit_is_a_framing_violation(start):
+    s = start(script("raw_plugin.py", "big-reply"))
+    handshake(s, max_message_bytes=65536)
+    with pytest.raises(CaseFailure, match="exceeds the limit of 65536"):
+        s.request(
+            "tagger/tag", {"tagger": "main", "documents": [{"id": "d", "text": "t"}]}
+        )
+
+
+def test_a_reply_over_the_pre_initialize_limit_names_the_limit(quiet_cwd):
+    report = run_conformance(script("raw_plugin.py", "big-init-reply"), only=["P1"])
+    assert "exceeds the limit of 1048576" in report.failed[0].detail
+
+
+def test_cancel_grace_runs_from_the_cancel_not_from_the_request(quiet_cwd):
+    # The plugin ignores the cancel and answers after 3 s: far past the 0.5 s grace.
+    report = run_conformance(
+        script("raw_plugin.py", "slow-tagger"), only=["P9"], cancel_grace=0.5
+    )
+    assert statuses(report) == {"P9": "fail"}
+    assert "no reply in time" in report.failed[0].detail
+
+
+def test_cancel_grace_passes_a_plugin_that_answers_at_once(quiet_cwd):
+    report = run_conformance(script("raw_plugin.py"), only=["P9"], cancel_grace=0.5)
+    assert statuses(report) == {"P9": "pass"}
+
+
+def test_a_plugin_that_stops_reading_fails_p13_instead_of_hanging(quiet_cwd):
+    outcome = []
+
+    def run() -> None:
+        outcome.append(
+            run_conformance(
+                script("raw_plugin.py", "deaf-after-init"),
+                only=["P13"],
+                timeout=1,
+                exit_timeout=1,
+            )
+        )
+
+    assert bounded(run, 60), "the suite hung on a plugin that never reads"
+    assert statuses(outcome[0]) == {"P13": "fail"}
 
 
 def test_a_failure_names_the_reason(quiet_cwd):
@@ -175,3 +229,34 @@ def test_example_manifest_validates_against_the_pack_manifest_schema():
     manifest = tomllib.loads((EXAMPLE / "slopvac-pack.toml").read_text("utf-8"))
     errors = list(Draft202012Validator(schema, registry=registry).iter_errors(manifest))
     assert errors == []
+
+
+def test_cli_gives_the_plugin_only_the_environment_it_is_told_to(tmp_path):
+    dump = tmp_path / "env.txt"
+    env = {**os.environ, "CI_DEPLOY_TOKEN": "hunter2", "OPTED_IN": "yes"}
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "slopvac_plugin.conformance",
+            "--only",
+            "P1",
+            "--env",
+            "OPTED_IN",
+            "--",
+            sys.executable,
+            str(FIXTURES / "hostile_plugin.py"),
+            "env-probe",
+            str(dump),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        timeout=120,
+    )
+    assert done.returncode == 1, done.stdout + done.stderr  # the probe is no plugin
+    names = set(dump.read_text("utf-8").split())
+    assert "OPTED_IN" in names
+    assert "CI_DEPLOY_TOKEN" not in names

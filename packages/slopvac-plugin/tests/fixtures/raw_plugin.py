@@ -1,12 +1,14 @@
 """Protocol v1 plugin without the SDK, with optional misbehaviour.
 
 Usage: raw_plugin.py [MODE]. Modes: no-limit, stdout-noise, bad-span, split-char-span,
-exit-zero-without-shutdown, no-version-check. Standard library only, like a plugin in
+exit-zero-without-shutdown, no-version-check, read-oversized-body, slow-tagger,
+float-id, float-limit, big-init-reply, big-reply, deaf-after-init. Standard library only, like a plugin in
 any other language would be.
 """
 
 import json
 import sys
+import time
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
 inp, out = sys.stdin.buffer, sys.stdout.buffer
@@ -26,6 +28,11 @@ def read():
         name, _, value = line.partition(b":")
         if name.lower() == b"content-length":
             length = int(value)
+    if mode == "read-oversized-body" and state != "new":
+        body = inp.read(length)  # after initialize it reads first and rejects after
+        if length > limit:
+            sys.exit(1)
+        return json.loads(body)
     if length > limit and mode != "no-limit":
         sys.exit(1)
     return json.loads(inp.read(length))
@@ -38,7 +45,13 @@ def send(obj):
 
 
 def reply(i, result):
-    send({"jsonrpc": "2.0", "id": i, "result": result})
+    send(
+        {
+            "jsonrpc": "2.0",
+            "id": float(i) if mode == "float-id" else i,
+            "result": result,
+        }
+    )
 
 
 def fail(i, code, slug, **data):
@@ -80,20 +93,25 @@ while True:
             i,
             {
                 "protocolVersion": 1,
-                "pluginInfo": {"name": "raw", "version": "0"},
+                "pluginInfo": {
+                    "name": "raw" + "a" * (1100000 if mode == "big-init-reply" else 0),
+                    "version": "0",
+                },
                 "capabilities": {
                     "hooks": [{"kind": "tagger", "id": "main"}],
                     "features": {"required": [], "optional": []},
                     "requiresNetwork": False,
                 },
                 "limits": {
-                    "maxMessageBytes": limit,
+                    "maxMessageBytes": float(limit) if mode == "float-limit" else limit,
                     "maxBatchDocuments": 64,
                     "maxInFlight": 1,
                 },
             },
         )
         state = "ready"
+        if mode == "deaf-after-init":
+            time.sleep(60)
     elif state == "new":
         fail(i, -32003, "not-initialized")
     elif state == "shutdown":
@@ -105,6 +123,8 @@ while True:
         if params.get("tagger") != "main":
             fail(i, -32602, "invalid-params")
             continue
+        if mode == "slow-tagger":
+            time.sleep(3)  # ignores the cancel
         if mode == "stdout-noise":
             out.write(b"debug: handling a request\n")
             out.flush()
@@ -120,7 +140,7 @@ while True:
                             "kind": "prose",
                             "span": {"start": 0, "end": end},
                             "confidence": 1,
-                            "evidence": "e",
+                            "evidence": "e" * (70000 if mode == "big-reply" else 1),
                         }
                     ],
                 }

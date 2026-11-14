@@ -89,6 +89,8 @@ def run_conformance(
     inputs: dict[str, Any] | None = None,
     timeout: float = 10.0,
     exit_timeout: float = 2.0,
+    cancel_grace: float = 2.0,
+    pass_env: Sequence[str] = (),
     only: Sequence[str] | None = None,
 ) -> Report:
     """Run P1 to P19 against ``command``. Raises SuiteError when it cannot start."""
@@ -97,6 +99,8 @@ def run_conformance(
         Schemas(),
         timeout=timeout,
         exit_timeout=exit_timeout,
+        cancel_grace=cancel_grace,
+        pass_env=pass_env,
         inputs=inputs or {},
         declaration=declaration,
     )

@@ -53,7 +53,11 @@ slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
 | `--inputs FILE` | JSON with sample requests for each hook kind. |
 | `--only P1,P13` | Run only these cases. |
 | `--timeout`, `--exit-timeout` | Seconds to wait for a reply and for an exit. |
+| `--cancel-grace` | Seconds a plugin may take to answer after a cancel. The default is 2, from section 6.3. |
+| `--env NAME` | Pass this environment variable to the plugin. Repeat for more names. |
 | `--format json` | Machine-readable report. |
+
+The suite treats the plugin as untrusted. It gets only `PATH` and `LANG` (and the variables Windows needs to start a process), plus the names you give with `--env`, so CI tokens and credentials stay out of it. The plugin runs in its own process group, and the suite ends the whole group when it closes the session. The suite also caps how much the plugin may print, ends a plugin that stops reading its input, and checks each reply against the 1 MiB limit before `initialize` and the negotiated `maxMessageBytes` after it.
 
 Exit 0 means every applicable case passed. Exit 1 means a case failed. Exit 2 means the suite could not run, for example because the command does not start. A skipped case prints its reason and does not fail the run.
 

@@ -179,11 +179,9 @@ class Plugin:
         threading.Thread(
             target=self._read_loop, args=(stdin, inbox), name="reader", daemon=True
         ).start()
-        pool = (
-            ThreadPoolExecutor(self.max_in_flight, thread_name_prefix="hook")
-            if self.max_in_flight > 1
-            else None
-        )
+        # Hooks never run on this thread, even for maxInFlight 1: end of input and
+        # framing errors must not wait behind a slow handler (section 3, P12).
+        pool = ThreadPoolExecutor(self.max_in_flight, thread_name_prefix="hook")
         state = "new"
         try:
             while True:
@@ -204,8 +202,7 @@ class Plugin:
             with self._events_lock:
                 for event in self._events.values():
                     event.set()
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+            pool.shutdown(wait=False, cancel_futures=True)
 
     # Reader thread ----------------------------------------------------------
 
@@ -258,9 +255,7 @@ class Plugin:
 
     # Main thread --------------------------------------------------------------
 
-    def _handle(
-        self, message: Any, state: str, pool: ThreadPoolExecutor | None
-    ) -> str | int:
+    def _handle(self, message: Any, state: str, pool: ThreadPoolExecutor) -> str | int:
         """Process one message. Returns the next state, or an exit status."""
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             self._respond_error(
@@ -300,7 +295,7 @@ class Plugin:
         method: str,
         params: Any,
         state: str,
-        pool: ThreadPoolExecutor | None,
+        pool: ThreadPoolExecutor,
     ) -> str:
         if method == "initialize":
             if state != "new":
@@ -319,10 +314,7 @@ class Plugin:
         kind = BY_METHOD.get(method)
         if kind is None or not any(k == kind.kind for k, _ in self._hooks):
             raise RpcError(METHOD_NOT_FOUND, f"unknown method: {method}")
-        if pool is None:
-            self._execute(msg_id, kind, params)
-        else:
-            pool.submit(self._execute, msg_id, kind, params)
+        pool.submit(self._execute, msg_id, kind, params)
         return state
 
     def _initialize(self, params: Any) -> dict[str, Any]:
