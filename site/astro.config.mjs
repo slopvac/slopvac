@@ -13,6 +13,27 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'slopvac',
+      // Static site: no framing, no plugins, no external fetches. Starlight and Pagefind
+      // need inline scripts and styles, and Pagefind loads WebAssembly.
+      head: [
+        {
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data:",
+              "font-src 'self'",
+              "connect-src 'self'",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join('; '),
+          },
+        },
+      ],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/srobroek/slopvac' }],
       sidebar: [
         { label: 'Reference (v3)', items: [{ autogenerate: { directory: 'v3' } }] },
