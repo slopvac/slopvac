@@ -74,13 +74,83 @@ fn first_word_lower(t: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// What the detection pass skips because it is not a structural statement.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Skip {
+    None,
+    Comment,
+    Note,
+    Legend,
+    Text,
+    Body,
+    Action,
+}
+
+/// Advance the skip state over one line. Return whether the line is inside a skipped region.
+fn skipped(skip: &mut Skip, l: &str) -> bool {
+    let lower = l.to_ascii_lowercase();
+    let ends = match *skip {
+        Skip::None => return false,
+        Skip::Comment => l.ends_with("'/"),
+        Skip::Note => lower == "end note" || lower == "endnote",
+        Skip::Legend => lower == "end legend" || lower == "endlegend",
+        Skip::Text => lower.starts_with("end"),
+        Skip::Body => l.starts_with('}'),
+        Skip::Action => l.contains(';'),
+    };
+    if ends {
+        *skip = Skip::None;
+    }
+    true
+}
+
 fn detect(lines: &[(usize, &str)]) -> Kind {
     let mut state = false;
     let mut class = false;
     let mut activity = false;
     let mut component = false;
+    let mut skip = Skip::None;
     for (_, l) in lines {
+        if skipped(&mut skip, l) {
+            continue;
+        }
+        if l.starts_with("/'") {
+            if !l.ends_with("'/") {
+                skip = Skip::Comment;
+            }
+            continue;
+        }
+        if l.starts_with('\'') || l.starts_with('!') {
+            continue;
+        }
+        if l.starts_with(':') {
+            activity = true;
+            if !l.contains(';') {
+                skip = Skip::Action;
+            }
+            continue;
+        }
         let w = first_word_lower(l);
+        let rest = l[w.len().min(l.len())..].trim();
+        match w.as_str() {
+            "title" | "header" | "footer" | "caption" => {
+                if rest.is_empty() {
+                    skip = Skip::Text;
+                }
+                continue;
+            }
+            "legend" => {
+                skip = Skip::Legend;
+                continue;
+            }
+            "note" | "rnote" | "hnote" | "floating" => {
+                if colon_outside_quotes(l).is_none() && !l.contains('"') {
+                    skip = Skip::Note;
+                }
+                continue;
+            }
+            _ => {}
+        }
         match w.as_str() {
             "participant" | "autonumber" | "activate" | "deactivate" | "alt" | "loop" | "opt"
             | "par" | "critical" | "group" | "ref" | "return" => return Kind::Sequence,
@@ -91,11 +161,12 @@ fn detect(lines: &[(usize, &str)]) -> Kind {
             "start" | "stop" | "fork" | "while" | "repeat" | "if" | "partition" => activity = true,
             _ => {}
         }
-        if l.contains("[*]") {
-            state = true;
+        if BODY_DECLS.contains(&w.as_str()) && l.ends_with('{') {
+            skip = Skip::Body;
         }
-        if l.starts_with(':') && l.trim_end().ends_with(';') {
-            activity = true;
+        let head = colon_outside_quotes(l).map_or(*l, |k| &l[..k]);
+        if head.contains("[*]") {
+            state = true;
         }
     }
     if state {
@@ -384,7 +455,7 @@ fn line(out: &mut Out, block: &mut Block, at: usize, t: &str) {
         w if SKIPPED.contains(&w) => return,
         _ => {}
     }
-    if t.starts_with("==") && t.ends_with("==") && out.kind == Kind::Sequence {
+    if t.len() >= 4 && t.starts_with("==") && t.ends_with("==") && out.kind == Kind::Sequence {
         out.push(at, t, (2, t.len() - 2), Role::Group, "separator");
         return;
     }
@@ -597,5 +668,54 @@ mod line_terminator_tests {
             .map(|f| (f.role, &src[f.span.clone()]))
             .collect();
         assert_eq!(got, [(Role::Message, "one"), (Role::Message, "two")]);
+    }
+}
+
+#[cfg(test)]
+mod robustness_tests {
+    use crate::{Format, Role, extract};
+
+    #[test]
+    fn short_equals_runs_do_not_panic() {
+        for line in ["==", "===", "= =", "====", "==x", "=", "== =="] {
+            let src = format!("@startuml\nparticipant A\n{line}\n@enduml\n");
+            let _ = extract(Format::PlantUml, &src, 0);
+        }
+    }
+
+    #[test]
+    fn four_equals_is_an_empty_separator_and_yields_no_fragment() {
+        let src = "@startuml\nparticipant A\n====\n@enduml\n";
+        assert_eq!(extract(Format::PlantUml, src, 0).fragments, Vec::new());
+    }
+
+    #[test]
+    fn keywords_in_comments_notes_and_message_text_do_not_pick_the_type() {
+        for src in [
+            "@startuml\n' participant A\ncomponent [W] as W\nW --> W : x\n@enduml\n",
+            "@startuml\n/' participant A\nalt x '/\ncomponent [W] as W\n@enduml\n",
+            "@startuml\ncomponent [W] as W\nnote over W\n  participant B\nend note\n@enduml\n",
+            "@startuml\ncomponent [W] as W\nlegend\n  activate me\nendlegend\n@enduml\n",
+            "@startuml\ncomponent [W] as W\nW --> W : go [*]\n@enduml\n",
+        ] {
+            let ex = extract(Format::PlantUml, src, 0);
+            assert_eq!(ex.diagram.as_deref(), Some("plantuml.component"), "{src}");
+        }
+    }
+
+    #[test]
+    fn real_structure_still_picks_the_type() {
+        let ex = extract(
+            Format::PlantUml,
+            "@startuml\n[*] --> Idle\nIdle --> Busy : x\n@enduml\n",
+            0,
+        );
+        assert_eq!(ex.diagram.as_deref(), Some("plantuml.state"));
+        let ex = extract(
+            Format::PlantUml,
+            "@startuml\nparticipant A\nA -> B : hi\n@enduml\n",
+            0,
+        );
+        assert_eq!(ex.fragments[0].role, Role::Message);
     }
 }
