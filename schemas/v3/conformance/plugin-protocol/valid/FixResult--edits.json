@@ -4,11 +4,20 @@
       "document": "d1",
       "edits": [
         {
+          "finding": 0,
           "span": {
             "start": 3,
             "end": 7
           },
           "text": "should"
+        },
+        {
+          "finding": 0,
+          "span": {
+            "start": 5,
+            "end": 5
+          },
+          "text": "x"
         }
       ]
     }

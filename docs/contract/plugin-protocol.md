@@ -12,7 +12,7 @@ A code plugin is a separate program. The host starts it as a subprocess and spea
 
 - The host uses no async runtime. It runs one reader thread per plugin, joined to the work threads by `crossbeam-channel`, and enforces deadlines with `recv_deadline` or `select!`. The spike in `slopvac-8l4.2.17` ran this design with three children, one of which hung, in 49 lines.
 - The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust.
-- A plugin that may open connections declares it (section 4.2). The host starts it only when offline mode is off, and policies.md sections 1.5 and 1.6 apply.
+- A plugin that may open connections declares it in its trusted manifest (section 4.3). The host spawns it only when offline mode is off, and policies.md sections 1.5 and 1.6 apply.
 - The unknown-field rule of policies.md section 3.3 applies in both directions (section 9).
 
 ## 2. Transport
@@ -28,7 +28,8 @@ Content-Length: 87\r\n
 ```
 
 - The body is one JSON value in UTF-8 without a byte order mark. `Content-Length` counts the body bytes.
-- `Content-Length` is required. It is a decimal number with no sign and no leading zeros, except for the single digit 0. A reader treats any other value as a framing error.
+- `Content-Length` is required. It is a decimal number with no sign and no leading zeros, except for the single digit 0. A reader parses it with checked arithmetic into an unsigned 64-bit value and then into the platform size type. A value that overflows either conversion, or that exceeds the limit, is a framing error.
+- A second `Content-Length` header, even with the same value, is a framing error.
 - A sender may add a `Content-Type` header. A reader accepts and ignores every header other than `Content-Length`. A header line has at most 1024 bytes, and a header block has at most 8 lines.
 - Header names compare without regard to case. Lines end in `\r\n`. A bare `\n` is a framing error.
 - The body is a JSON object. A top-level array (JSON-RPC batch) is invalid in v1 and gets the error `invalid-request`. Batching happens inside the params of a hook (section 5.3).
@@ -49,6 +50,10 @@ A sender must not send a body over the limit. A reader checks `Content-Length` b
 
 A duplicate key in an object is a framing error in v1, because readers disagree about which value wins.
 
+Numbers follow checked rules in v1. A field the schema types as an integer must parse as an integer: `1.0` and `1e2` are invalid. An integer outside 0 to 2^53-1 (the range that JSON readers in every language keep exact) is invalid. A reader converts to its internal type with checked arithmetic, and a failed conversion makes the message invalid. All size and span arithmetic in the host is checked. Overflow is a `plugin-output-invalid` or a framing error, never a wrap.
+
+Before `initialize` completes, no negotiated limit exists. Until then the host applies a 1 MiB body limit and the 10 s `initialize` deadline to everything the plugin sends. The host's own `initialize` request must fit in the same limit. The negotiated limits take effect with the reply, and the host applies them to later messages only.
+
 ## 3. Lifecycle
 
 ```text
@@ -64,7 +69,7 @@ host                                plugin
  |                                      | exit status 0
 ```
 
-1. **Spawn.** The host starts the plugin from the verified, trusted copy (section 11.1). It passes the arguments from the plugin manifest and an environment built from an allowlist. It pipes all three standard streams.
+1. **Spawn.** The host checks the trusted manifest declaration against the run (section 4.3), then starts the plugin from the verified, trusted copy (section 11.1). It passes the arguments from the plugin manifest and an environment built from an allowlist. It pipes all three standard streams.
 2. **Initialize.** The first message from the host must be the `initialize` request. A plugin that gets another request first answers `not-initialized` (-32003). The reply fixes the protocol version, the hooks, the features and the limits. Section 4 describes the negotiation.
 3. **Initialized.** The host then sends the `initialized` notification. A plugin must not expect hook requests before it, and must not send a request of its own. The v1 protocol has no plugin-to-host requests.
 4. **Work.** The host sends hook requests (section 5).
@@ -86,7 +91,7 @@ The plugin picks the highest version both sides support and returns it as `proto
 
 A version is a major version in the sense of policies.md section 3.6. A change within version 1 is additive. Version 1 is the only version in 3.0.
 
-### 4.2 Hooks and features
+### 4.2 Hooks and features (negotiated)
 
 - The host lists in `capabilities.hooks` the hook kinds it can call. The plugin lists in its reply each hook it implements as a kind and an id. The host calls only declared hooks, and only with a kind in its own list. A hook kind that the host does not know is ignored.
 - A hook id is local to the plugin and to its kind. The host qualifies it as `<plugin>:<kind>/<id>` in diagnostics.
@@ -94,7 +99,18 @@ A version is a major version in the sense of policies.md section 3.6. A change w
 - A required feature that the host lacks stops the load. The host reports `required-feature-missing` (-32002) with the feature name. A missing optional feature is skipped without notice. The plugin finds out from the host's list in `initialize`.
 - The registry of v1 holds one feature, `document-path`. With it granted, each `Document` carries a `path` (section 8). Without it the plugin sees no path.
 - A name with the prefix `x-` is a private extension. Two parties may agree on one. Everyone else ignores it. A name that is neither registered nor prefixed is ignored as unknown, and as a required feature it stops the load.
-- `requiresNetwork` tells the host that the plugin may open network connections. The host does not start such a plugin when `offline` is true in `initialize` or in sticky offline mode, and prints `offline: <plugin> needs the network` (exit 2) when the user asked for it. A plugin that declares `requiresNetwork: false` and connects anyway breaks the contract. The host cannot detect that in 3.0 (section 11.2).
+- `requiresNetwork` in the reply repeats the manifest declaration (section 4.3). It informs and grants nothing. A plugin that declares no network and connects anyway breaks the contract. The host cannot detect that in 3.0 (section 11.2).
+
+### 4.3 Pre-spawn declaration
+
+Anything that decides whether the host may start the plugin comes from the plugin manifest, never from the `initialize` reply. The reply arrives after the process runs, so a decision based on it would come too late.
+
+- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The pack manifest schema (`slopvac-8l4.2.4`) must reference this def. The host reads the declaration from the same bytes that it hashes.
+- The manifest is part of the content hash that `slopvac plugins trust` records. A change to the declaration changes the hash and revokes trust.
+- Before spawn the host checks: trust for the hash, `network` against offline mode (`--offline`, `SLOPVAC_OFFLINE`, `[network] offline`, and the `offline` state at the call site), and the declared hook kinds against the hooks the command needs. A plugin with `network: true` does not spawn in offline mode. The host prints `offline: <plugin> needs the network` and exits 2 when the user asked for the operation.
+- The host also decides from the declaration which features it can grant. It does not spawn a plugin whose declared required feature it lacks.
+- After spawn the host compares the reply with the declaration. The reply is valid only when `requiresNetwork` equals `network`, every hook in the reply appears in the manifest, and each required feature appears in the manifest's required list. A mismatch is `plugin-declaration-mismatch`. The host kills the plugin and does not reuse it.
+- A plugin may offer fewer hooks than it declared. It may not offer more.
 
 ## 5. Hooks
 
@@ -119,12 +135,15 @@ The lifecycle methods are `initialize`, `initialized`, `shutdown`, `exit` and `$
 - **Hooks are pure.** A hook reads the request and returns a result. It may keep a cache, but its result for a request must not depend on earlier requests. The host may retry or reorder requests, or skip them on a cache hit.
 - **Taggers, extractors, fixers and scorers are deterministic.** The same request gets the same result. Run-to-run differences would break the golden suite and the cache. A provider is the one exception.
 - **A provider is the only hook that may use the network.** Slopvac core calls a provider only from `slopvac review`, and `lint` leaves every provider idle. The call needs a plugin that the user trusted and named under `[review] provider`. The host sends the text the review type needs and no more (policies.md section 1.5). The `model` in the result is the name the provider reports, and the host compares it with the author model.
+- **A fixer works inside host-authorized envelopes.** The request holds only the findings the user selected. Each edit names one of them by index in `finding` and must lie inside that finding's span, endpoints included. A zero-width edit at the start or end of the span counts as inside. The host rejects every edit of a document when one edit names a missing finding, lies outside its finding span, or overlaps another edit. It reports that document as failed with `plugin-output-invalid`. v1 has no approval path for wider edits, so a fixer that needs a wider range reports the finding unfixed. The host applies accepted edits atomically per file (section 11.2).
 - **A recipe writes nothing.** It returns a plan. The host checks each path, shows the plan, and applies it only when the command allows writes (section 8.2).
 - **A reporter returns text.** It does not write files. The host strips terminal control characters, other than newline and tab, before it prints to a terminal.
 
 ### 5.3 Batching
 
 Every hook that works on documents takes a `documents` array. The host sends all the documents of one request in one message, up to `maxBatchDocuments` and `maxMessageBytes`. A result holds exactly one entry per document, and each entry echoes the document `id`. Order does not matter, because the host matches by id. A missing or extra entry, or a duplicate id, makes the whole result invalid (`plugin-output-invalid`).
+
+A provider result follows the same rule with the item id. The `item` of each entry must match exactly one requested item. A missing, extra, or duplicate item makes the whole result invalid, and the host does not guess a match by position or text. An entry without `error` must carry `text` and `model`.
 
 A document entry may carry `error`. That fails the one document, and the run exits 2 for it. Other documents in the batch stand. A request-level error fails the whole batch.
 
@@ -140,8 +159,8 @@ A segment from an extractor keeps the span of the source it came from. When the 
 
 ### 6.1 Concurrency
 
-- Request ids are positive integers, unique among the in-flight requests of one sender. The host counts up from 1.
-- A plugin states `maxInFlight` in its reply. The host keeps at most that many requests pending. The default plugin value in the Python SDK is 1.
+- Request ids are integers from 1 to 2^53-1. The host counts up from 1 and never reuses an id on a connection, including the ids of finished and cancelled requests. A late answer to a cancelled request then cannot match a newer request. When the counter reaches the maximum, the host treats it as a fatal host error (`request-id-exhausted`), shuts the plugin down, and does not wrap.
+- A plugin states `maxInFlight` in its reply. The host keeps at most that many requests pending. The host also has ceilings of its own: `maxInFlight` 16, `maxBatchDocuments` as proposed in `initialize`, and `maxMessageBytes` as proposed. A reply value above a host ceiling is `plugin-output-invalid`, and the host does not clamp it silently. The default plugin value in the Python SDK is 1.
 - A plugin may answer in any order.
 - A response with an id that matches no pending request is ignored and logged. Two responses to one id: the second is ignored.
 
@@ -149,7 +168,7 @@ A segment from an extractor keeps the span of the source it came from. When the 
 
 The host sends `$/cancelRequest` with the `id` it does not want. The plugin should stop work on that request and answer it, with the result or with `request-cancelled` (-32005). The host discards either answer. The timeout rule covers a plugin that does not reply.
 
-Cancellation is advisory. A cancel for an unknown or finished id is ignored. The host sends a cancel when a deadline passes, when the user interrupts the run, and when another failure makes the result useless.
+Cancellation is advisory. A cancel for an unknown or finished id is ignored. The cancel does not change a deadline outcome. A request that passed its deadline is a `plugin-timeout` and exits 2, whatever the plugin answers to the cancel afterwards. The host sends a cancel when a deadline passes, when the user interrupts the run, and when another failure makes the result useless.
 
 ### 6.3 Timeouts
 
@@ -163,6 +182,8 @@ The host owns every timeout. The plugin has no way to ask for more time.
 | Cancel grace | 2 s | The host kills the plugin if it has not answered the cancelled request. It reports `plugin-timeout`. |
 | `shutdown` reply | 3 s | The host sends `exit` and goes on to the kill rule. |
 | Exit after `exit` | 2 s | The host kills the process group. |
+
+Every deadline is wall-clock time from the moment the host starts the operation. It covers the write of the request, the plugin's work, and the read of the reply. A frame that arrives only in part when the deadline passes counts as no reply. A write to a full input pipe counts the same way. The host writes on its own thread, and a blocked write ends at the deadline with a kill. A stalled frame outside any request, with no bytes for 10 s, is a `plugin-protocol-violation`.
 
 The config can change the hook timeouts for each plugin. The config bead owns that key (`slopvac-8l4.4.2`). A value of 0 is invalid. A plugin killed by a timeout is not reused in the run, and its pending requests fail with `plugin-timeout`. A run with a timeout exits 2. A timeout never changes a lint verdict into a pass.
 
@@ -229,6 +250,8 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
 | `plugin-output-invalid` | A result does not match its schema, or breaks a rule such as span bounds. |
 | `plugin-spawn-failed` | The program did not start. |
+| `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
+| `request-id-exhausted` | The request counter reached 2^53-1. |
 
 Exit codes stay as policies.md section 3.5 defines them. Any plugin failure makes the affected run exit 2, never 0, and never 1 unless findings fail the gate.
 
@@ -238,7 +261,8 @@ The following hand-offs go to the threat-model bead. The threat model and indepe
 
 ### 11.1 What the protocol fixes
 
-- The trust check runs before spawn. Trust is a content hash recorded by `slopvac plugins trust`. No message, flag or prompt records it.
+- The trust check runs before spawn. Trust is a content hash recorded by `slopvac plugins trust`. No message, flag or prompt records it. Trust says who wrote the code. It is not containment: a trusted plugin still runs with the user's rights.
+- Spawn-gating facts come from the hashed manifest (section 4.3), not from the reply.
 - The plugin runs from a verified copy. The host hashes the files, then runs them from a read-only, content-addressed directory, so a swap between check and use does not apply.
 - The environment is an allowlist: `PATH` set by the host, a locale, and variables the plugin manifest names and the user allowed. No tokens, no `HOME`, no CI variables. A provider that needs a key gets it by an explicit config entry.
 - All file descriptors other than the three standard streams are closed in the child.
@@ -256,7 +280,15 @@ The following hand-offs go to the threat-model bead. The threat model and indepe
 | Trust scope | What the hash covers: the entry file only, or the whole directory, interpreter and dependencies. Python plugins run in their own environment. | The hash must cover everything that executes. Open for Python environments built at install time. |
 | Output as input | Terminal escape injection through a reporter or an error, and Markdown or HTML injection in reports. | The host strips control characters from terminal output (sections 5.2 and 7). The model reviews the other formats. |
 | Provider data flow | What leaves the machine, and whether a plugin can read secrets from the environment. | policies.md section 1.5 limits the text. The allowlist in section 11.1 limits the environment. The plugin can still send any text it receives. |
-| Malicious plugin | A plugin that lies about `requiresNetwork`, reports false spans, or stalls. | Spans are checked, stalls hit timeouts. The false declaration is a 3.0 gap. |
+| Malicious plugin | A plugin that lies about `network: false`, reports false spans, or stalls. | Spans are checked, stalls hit timeouts. A reply that disagrees with the manifest is rejected. A false `network: false` is a 3.0 gap until containment exists. |
+| Trust is not containment | What a trusted plugin can still do. | Trust records authorship only. Every control in this table must hold against a trusted plugin that turns hostile after an update the user approved. |
+| Channels and output volume | Unbounded queues between the reader thread and workers, aggregate output per plugin and per run, message rate, and stderr draining. | Use bounded `crossbeam-channel` queues with backpressure. Cap bytes and messages per plugin and per run. Drain stderr on its own thread (section 7). The threat model sets the numbers. |
+| Atomic application | Torn or raced writes when the host applies fixer edits and recipe plans. | Apply per file with a temporary file in the same directory and an atomic rename. Check the file did not change since the read. The model reviews hardlinks (refuse files with a link count above 1), rename races and time-of-check to time-of-use gaps. |
+| Sensitive in-project targets | Recipe or fixer targets such as `.git/`, `.slopvac/` state and trust files, CI workflows, hooks, `.env` files and the config. | Not decided in v1. The model sets a deny list and whether recipes may touch them without a separate approval. |
+| Plugin text in output | Terminal escapes, Markdown, HTML and SARIF injection through reporter output, finding messages, recipe content and stderr. | The host strips control characters for terminals (sections 5.2 and 7). The threat model sets escaping for the Markdown, HTML and SARIF renderers and for text that the host embeds from a plugin. |
+| Provider disclosure | Which text leaves the machine, credential handling for providers, and prompt injection from documents into the provider and back into recipe, fixer or review output. | policies.md section 1.5 limits the text. The threat model sets how provider credentials reach the plugin, how provider output is marked as untrusted, and whether provider output may feed a fixer or recipe at all. |
+| Declaration drift | The manifest declaration against the reply, and against later updates. | Section 4.3 rejects a reply wider than the manifest. A manifest change changes the hash. |
+| Fixer envelope | Whether the finding-span rule is tight enough, for example a fixer that rewrites a whole sentence through many one-finding edits. | Section 5.2. The model sets per-document limits on edit count and inserted bytes. |
 | Duplicate keys and parser differences | Ambiguity between the host parser and the plugin parser. | Section 2.2 rejects duplicate keys. |
 | Log leakage | Plugin standard error in host logs. | Section 7. The host cannot redact free text. |
 
@@ -270,8 +302,8 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 
 | ID | Setup | Expected |
 |---|---|---|
-| H1 | Plugin sends a body of exactly `maxMessageBytes`, then one byte more. | The first passes. The second is a `plugin-protocol-violation` and a kill, before the body is read. |
-| H2 | Frames with a bad `Content-Length` (sign, hex, leading zero, missing), a bare `\n`, a long header line. | Each is a framing error. |
+| H1 | Plugin sends a body of exactly `maxMessageBytes`, then one byte more. Before `initialize` completes, the same test uses the 1 MiB limit. | The first passes. The second is a `plugin-protocol-violation` and a kill, before the body is read. |
+| H2 | Frames with a bad `Content-Length` (sign, hex, leading zero, missing, duplicate with equal or different values, a value above 2^64 or above the platform size), a bare `\n`, a long header line. | Each is a framing error. |
 | H3 | Stray text on plugin standard output before a frame. | Framing error and kill. |
 | H4 | Plugin stays silent after `initialize`. | Kill after 10 s, `plugin-timeout`. |
 | H5 | Plugin returns a version outside the host range. | Not loaded, both ranges printed. (V4) |
@@ -282,13 +314,23 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H10 | Result with a missing document, an extra one, a duplicate id. | `plugin-output-invalid`, whole result rejected. |
 | H11 | Result with a span past the text end, or inside a multi-byte character. | `plugin-output-invalid`. |
 | H12 | Per-document `error` in a batch of three. | The other two stand. The run exits 2. |
-| H13 | Plugin takes longer than the hook timeout, then ignores `$/cancelRequest`. | Cancel sent, kill after the 2 s grace, `plugin-timeout`, plugin not reused. |
-| H14 | Plugin answers a cancel with `request-cancelled`. | The answer is discarded. No error is reported. |
+| H13 | Plugin takes longer than the hook timeout, then ignores `$/cancelRequest`. | Cancel sent, kill after the 2 s grace, `plugin-timeout`, plugin not reused, run exits 2. |
+| H14 | The host cancels a request for a reason other than a deadline, and the plugin answers `request-cancelled`. Then repeat with a request past its deadline, answered with `request-cancelled` after the cancel. | The first answer is discarded with no diagnostic. In the second case the answer suppresses only the extra cancellation diagnostic. `plugin-timeout` stands and the run exits 2. |
 | H15 | Plugin exits mid-request. | Pending requests fail with `plugin-exited`. The exit status and stderr tail are shown. No restart. |
 | H16 | Plugin writes 10 MiB to standard error. | The host keeps reading. Only the last 64 KiB is kept. |
 | H17 | Plugin ignores `shutdown`. | `exit` after 3 s, kill 2 s later, the process group is gone. |
 | H18 | The run is interrupted by a signal. | Process groups are killed. |
-| H19 | `requiresNetwork: true` with offline mode on. | The plugin does not start. Message `offline: <plugin> needs the network`. (N12) |
+| H19 | Manifest `network: true` with offline mode on, by flag, environment, config, and a sticky unset attempt. | The plugin does not spawn: a process probe shows no start. Message `offline: <plugin> needs the network`. (N12) |
+| H26 | Manifest `network: false`, reply `requiresNetwork: true`. Also a reply hook missing from the manifest, and a required feature missing from it. | `plugin-declaration-mismatch`, kill, no reuse. |
+| H27 | Edit in a fixer result outside its finding span, with a missing finding index, with an index past the findings, and a whole-file edit. | The whole document's edits are rejected as `plugin-output-invalid`. Nothing is applied. Other documents stand. |
+| H28 | Two fixer edits that overlap, from different findings. | Same as H27. |
+| H29 | Zero-width edits at the start and the end of a finding span, and one byte outside. | The first two are accepted. The third is rejected. |
+| H30 | Reply limits above the host ceilings. | `plugin-output-invalid`. The host does not clamp. |
+| H31 | Provider result with a missing, an extra, and a duplicate `item`. | Whole result rejected. |
+| H32 | A write to a plugin that does not read its input, with a request larger than the pipe buffer. | The deadline expires, the host kills the plugin, `plugin-timeout`. The host threads stay unblocked. |
+| H33 | A frame whose body stops halfway. | The request deadline expires, `plugin-timeout`. |
+| H34 | Request ids after completion and after cancel. | No id repeats. At the maximum id the host reports `request-id-exhausted` and sends no wrapped id. |
+| H35 | Integer fields given as `1.0`, `1e2` and `9007199254740992`. | Rejected. |
 | H20 | An untrusted plugin, and a plugin whose files changed after trust. | No spawn. The error names `slopvac plugins trust`. (N8) |
 | H21 | A document with a path outside the root, and `document-path` granted. | The plugin sees `<external>/<file name>`. |
 | H22 | A recipe returns an absolute path, a `..` path, and a symlink target outside the root. | All three are refused. Nothing is written. |
@@ -317,6 +359,8 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | P15 | Every non-error result. | Validates against its `$defs`. Spans are in range, on boundaries. |
 | P16 | `offline: true` in `initialize` with a provider plugin. | The provider answers `offline` (-32007) and opens no connection. |
 | P17 | A recipe plan. | Relative paths only. No write by the plugin. |
+| P18 | A fixer request with selected findings. | Every edit names a finding index and lies inside that finding's span. |
+| P19 | An initialize reply compared with the manifest. | Hooks, network and features are a subset of the manifest declaration. |
 
 ## 13. Owners
 
@@ -330,3 +374,4 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Span and edit semantics | `slopvac-8l4.2.11` |
 | Threat model and review | `slopvac-8l4.9.11` |
 | Config keys for timeouts and the provider | `slopvac-8l4.4.2` |
+| Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |

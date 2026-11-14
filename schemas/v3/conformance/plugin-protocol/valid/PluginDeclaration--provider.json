@@ -1,0 +1,14 @@
+{
+  "network": true,
+  "hooks": [
+    {
+      "kind": "provider",
+      "id": "claude"
+    }
+  ],
+  "features": {
+    "required": [],
+    "optional": []
+  },
+  "x-note": "ok"
+}

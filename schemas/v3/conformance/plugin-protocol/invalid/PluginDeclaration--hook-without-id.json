@@ -1,0 +1,12 @@
+{
+  "network": false,
+  "hooks": [
+    {
+      "kind": "tagger"
+    }
+  ],
+  "features": {
+    "required": [],
+    "optional": []
+  }
+}
