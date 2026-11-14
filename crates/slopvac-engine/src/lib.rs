@@ -16,8 +16,12 @@
 //! deterministic: findings sort by position and rule id.
 //!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (metrics, structure checks, vocabulary and
-//! capitalization) are skipped, and each document says so in an `info` notice.
+//! kinds the engine does not run yet (metrics, structure checks and capitalization) are
+//! skipped, and each document says so in an `info` notice.
+//!
+//! Vocabulary rules enforce a word blocklist ([`Engine::with_blocklist`]) on the
+//! part-of-speech tagger of `slopvac-pos`. One rule owns the sweep. Without a blocklist
+//! they do not run, and a notice says so.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.

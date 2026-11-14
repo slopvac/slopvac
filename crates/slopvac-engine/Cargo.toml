@@ -20,7 +20,9 @@ slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
+slopvac-pos = { workspace = true }
 slopvac-rules = { workspace = true }
+slopvac-terms = { workspace = true }
 slopvac-text = { workspace = true }
 thiserror = { workspace = true }
 

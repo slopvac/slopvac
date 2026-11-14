@@ -19,6 +19,7 @@ use slopvac_model::{
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
+use slopvac_terms::Blocklist;
 use slopvac_text::{TextError, TextType};
 
 use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
@@ -32,6 +33,9 @@ use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
 use crate::tagging;
+
+mod vocabulary;
+use vocabulary::Vocabulary;
 
 /// The id of the finding for a directive that does not hold.
 const INVALID_SUPPRESSION: &str = "meta.invalid-suppression";
@@ -148,6 +152,10 @@ pub struct Engine {
     checkers: Vec<Box<dyn DiagramChecker>>,
     /// Lexical rules that run.
     active: Vec<Active>,
+    /// Vocabulary rules that run. They share one sweep over the word blocklist.
+    vocabulary_rules: Vec<Active>,
+    /// The blocklist sweep and the notices about it.
+    vocabulary: Vocabulary,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
     /// Every known rule id.
@@ -181,8 +189,8 @@ impl Engine {
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
-    /// Rules of kinds the engine does not run yet (metrics, structure checks, vocabulary
-    /// and capitalization) are skipped, and each document says so in an `info` notice.
+    /// Rules of kinds the engine does not run yet (metrics, structure checks and
+    /// capitalization) are skipped, and each document says so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
@@ -193,6 +201,8 @@ impl Engine {
             tagger,
             checkers: Vec::new(),
             active: Vec::new(),
+            vocabulary_rules: Vec::new(),
+            vocabulary: Vocabulary::default(),
             diagram_rules: HashMap::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
@@ -200,7 +210,15 @@ impl Engine {
             categories: std::collections::BTreeMap::new(),
         };
         engine.resolve()?;
+        engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
+    }
+
+    /// Set the word blocklist that the vocabulary rules enforce. Without one, or with an
+    /// empty one, they have nothing to check and each document says so in an `info` notice.
+    pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
+        self.plan_vocabulary(blocklist)?;
+        Ok(self)
     }
 
     /// Replace the exception detectors.
@@ -293,7 +311,13 @@ impl Engine {
                         MatchKind::Judgement => {}
                         MatchKind::Metric => *unrun.entry("metric").or_default() += 1,
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
-                        MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
+                        MatchKind::Vocabulary => self.vocabulary_rules.push(Active {
+                            set: s,
+                            category: c,
+                            rule: r,
+                            severity,
+                            replacements: LazyReplacements::default(),
+                        }),
                         MatchKind::Capitalization => {
                             *unrun.entry("capitalization").or_default() += 1;
                         }
@@ -400,6 +424,7 @@ impl Engine {
             index: SourceIndex::new(input.source, input.bom),
         };
         let mut findings = run.lexical()?;
+        findings.extend(run.vocabulary()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
@@ -414,7 +439,8 @@ impl Engine {
         findings: Vec<Finding>,
     ) -> Document {
         let words = prepared.words();
-        let unchecked = self.notices.clone();
+        let mut unchecked = self.notices.clone();
+        unchecked.extend(self.vocabulary.notices().iter().cloned());
         let scoring = score_document(
             &findings,
             words,
@@ -626,35 +652,8 @@ impl Run<'_> {
         if skip.hides(span) {
             return Ok(None);
         }
-        let gate = rule.contexts.as_ref();
-        let kinds = if gate.is_some() || !detectors.is_empty() {
-            self.tags.kinds_at(&(span.start()..span.end()))
-        } else {
-            Vec::new()
-        };
-        if let Some(gate) = gate {
-            let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
-                tags.as_ref()
-                    .map(|t| t.iter().any(|t| kinds.contains(&t.as_str())))
-            };
-            if has(&gate.skip) == Some(true) || has(&gate.only) == Some(false) {
-                return Ok(None);
-            }
-        }
-        if !detectors.is_empty() {
-            let site = MatchSite {
-                text: unit.text,
-                range,
-                span,
-                document: self.parsed,
-                tags: &kinds,
-            };
-            if detectors
-                .iter()
-                .any(|d| self.engine.detectors.detects(d, &site))
-            {
-                return Ok(None);
-            }
+        if !self.passes_context(rule.contexts.as_ref(), detectors, unit.text, range, span) {
+            return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
         let source_text = &self.input.source[span.start()..span.end()];
@@ -697,6 +696,47 @@ impl Run<'_> {
             fix,
             extra_context: None,
         }))
+    }
+
+    /// Whether the context gate and the exception detectors let a match through.
+    fn passes_context(
+        &self,
+        gate: Option<&slopvac_rules::ContextGate>,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+    ) -> bool {
+        let kinds = if gate.is_some() || !detectors.is_empty() {
+            self.tags.kinds_at(&(span.start()..span.end()))
+        } else {
+            Vec::new()
+        };
+        if let Some(gate) = gate {
+            let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
+                tags.as_ref()
+                    .map(|t| t.iter().any(|t| kinds.contains(&t.as_str())))
+            };
+            if has(&gate.skip) == Some(true) || has(&gate.only) == Some(false) {
+                return false;
+            }
+        }
+        if !detectors.is_empty() {
+            let site = MatchSite {
+                text,
+                range,
+                span,
+                document: self.parsed,
+                tags: &kinds,
+            };
+            if detectors
+                .iter()
+                .any(|d| self.engine.detectors.detects(d, &site))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// Findings of diagram rules, over diagram files and fenced diagram blocks.
