@@ -1,0 +1,45 @@
+{
+  "genres": {
+    "change-comms": "normal",
+    "consumer": "normal",
+    "informal": "relaxed",
+    "internal": "normal",
+    "reference": "strict"
+  },
+  "profiles": {
+    "normal": {
+      "categories": 30,
+      "rule_entries": 51,
+      "severity_shift": 0,
+      "style": "core:legacy-normal",
+      "thresholds": {
+        "max_errors": 0,
+        "max_total_per_100_words": 3.0,
+        "max_unicode_dashes": 0,
+        "min_score": 70.0
+      }
+    },
+    "relaxed": {
+      "categories": 30,
+      "rule_entries": 47,
+      "severity_shift": 0,
+      "style": "core:legacy-relaxed",
+      "thresholds": {
+        "max_total_per_100_words": 8.0,
+        "max_unicode_dashes": 0
+      }
+    },
+    "strict": {
+      "categories": 30,
+      "rule_entries": 15,
+      "severity_shift": 0,
+      "style": "core:legacy-strict",
+      "thresholds": {
+        "max_errors": 0,
+        "max_total_per_100_words": 1.5,
+        "max_unicode_dashes": 0,
+        "min_score": 85.0
+      }
+    }
+  }
+}
