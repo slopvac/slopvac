@@ -471,9 +471,36 @@ pub fn parse_completions(
         .collect()
 }
 
-const WINDOWS_RESERVED: [&str; 22] = [
-    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
-    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+const WINDOWS_RESERVED: [&str; 28] = [
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+    // Superscript digits are device names too (U+00B9, U+00B2, U+00B3).
+    "com\u{b9}",
+    "com\u{b2}",
+    "com\u{b3}",
+    "lpt\u{b9}",
+    "lpt\u{b2}",
+    "lpt\u{b3}",
 ];
 
 /// Check a recipe path as text: relative, normal segments, no Windows tricks.
@@ -834,6 +861,12 @@ mod tests {
             "a|b",
             "a?b",
             "a*b",
+            "com\u{b9}",
+            "COM\u{b2}",
+            "dir/com\u{b3}.txt",
+            "LPT\u{b9}",
+            "lpt\u{b2}.log",
+            "Lpt\u{b3}",
         ] {
             assert!(check_relative_path(bad).is_err(), "{bad:?}");
             let plan = json!({"files": [{"path": bad, "action": "remove"}]});
