@@ -74,7 +74,17 @@ def test_rules_may_come_from_several_active_rulesets():
     )
 
 
-@pytest.mark.parametrize("include", [["~ALL"], ["refs/tags/*"], ["refs/tags/v3.0.0"]])
+@pytest.mark.parametrize(
+    "include",
+    [
+        ["~ALL"],
+        ["refs/tags/*"],
+        ["refs/tags/**"],
+        ["refs/tags/**/*"],
+        ["refs/tags/v*"],
+        ["refs/tags/v3.0.0"],
+    ],
+)
 def test_other_patterns_that_cover_the_tag_pass(include):
     check([ruleset(include=include)])
 
@@ -88,6 +98,14 @@ def test_other_patterns_that_cover_the_tag_pass(include):
         ([ruleset(target="branch")], "update"),
         ([ruleset(include=["refs/tags/release-*"])], "update"),
         ([ruleset(include=["refs/heads/v*"])], "update"),
+        ([ruleset(include=["refs/*"])], "update"),
+        ([ruleset(include=["refs/**"])], "update"),
+        ([ruleset(include=["~DEFAULT_BRANCH"])], "update"),
+        ([ruleset(exclude=["refs/tags/**/v*"])], "update"),
+        ([ruleset(exclude=["refs/tags/v?.0.0"])], "update"),
+        ([ruleset(exclude=["refs/tags/[v]3.0.0"])], "update"),
+        ([ruleset(exclude=["~ALL"])], "update"),
+        ([ruleset(exclude=["refs/tags/v3.0.0"])], "update"),
         ([ruleset(exclude=["refs/tags/v3.*"])], "update"),
         ([ruleset(rules=["update", "deletion"])], "non_fast_forward"),
         ([ruleset(rules=["deletion", "non_fast_forward"])], "update"),
@@ -106,6 +124,20 @@ def test_other_patterns_that_cover_the_tag_pass(include):
 def test_missing_or_inactive_protection_fails(rulesets, message):
     with pytest.raises(ValueError, match=message):
         check(rulesets)
+
+
+@pytest.mark.parametrize(
+    "exclude",
+    [
+        ["refs/heads/**"],
+        ["refs/tags/release-*"],
+        ["~DEFAULT_BRANCH"],
+        ["refs/tags/v2.0.0"],
+        ["refs/tags/legacy/**"],
+    ],
+)
+def test_excludes_that_cannot_match_the_tag_do_not_exclude_it(exclude):
+    check([ruleset(exclude=exclude)])
 
 
 def test_a_tag_that_is_not_a_release_tag_is_rejected():

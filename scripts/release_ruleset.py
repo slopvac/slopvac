@@ -14,7 +14,6 @@ Usage: release_ruleset.py check TAG --repo OWNER/NAME
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import re
 import subprocess
@@ -64,16 +63,41 @@ def _list_tag_rulesets(repo: str, runner: Runner) -> list[dict]:
     raise ValueError(f"more than {MAX_PAGES * PER_PAGE} rulesets; refusing to guess")
 
 
+# GitHub matches ruleset ref patterns with fnmatch under File::FNM_PATHNAME and adds
+# the tokens ~ALL and ~DEFAULT_BRANCH (docs.github.com, "Creating rulesets for a
+# repository", "Targeting by name"). Python's fnmatch lets `*` cross `/` and has no
+# `**/` zero-directory rule, so it must not decide here. Instead only include
+# patterns known to cover every refs/tags/v<semver> ref count, and any exclude that
+# might match counts as excluding. Both choices fail closed.
+_TAG_INCLUDES = frozenset(
+    {"~ALL", "refs/tags/*", "refs/tags/**/*", "refs/tags/**", "refs/tags/v*"}
+)
+_WILDCARDS = "*?[\\"
+
+
+def _includes(pattern: str, ref: str) -> bool:
+    return pattern == ref or pattern in _TAG_INCLUDES
+
+
+def _might_exclude(pattern: str, ref: str) -> bool:
+    """False only when ``pattern`` provably cannot match ``ref``."""
+    if pattern == "~ALL":
+        return True
+    if pattern == "~DEFAULT_BRANCH":
+        return False  # a branch token; it never names a tag
+    cut = min((pattern.find(c) for c in _WILDCARDS if c in pattern), default=-1)
+    if cut == -1:
+        return pattern == ref
+    # A wildcard only widens the match after its literal prefix.
+    return ref.startswith(pattern[:cut])
+
+
 def _covers(ruleset: dict, ref: str) -> bool:
-    """The ruleset's ref conditions include ``ref`` and no exclude matches it."""
+    """The ruleset's ref conditions surely include ``ref`` and no exclude may match it."""
     ref_name = (ruleset.get("conditions") or {}).get("ref_name") or {}
-
-    def matches(pattern: str) -> bool:
-        return pattern == "~ALL" or fnmatch.fnmatchcase(ref, pattern)
-
-    return any(matches(p) for p in ref_name.get("include", [])) and not any(
-        matches(p) for p in ref_name.get("exclude", [])
-    )
+    included = any(_includes(p, ref) for p in ref_name.get("include", []))
+    excluded = any(_might_exclude(p, ref) for p in ref_name.get("exclude", []))
+    return included and not excluded
 
 
 def check_tag_protection(tag: str, repo: str, runner: Runner | None = None) -> None:
