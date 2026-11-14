@@ -172,6 +172,7 @@ jobs:
         run: |
           ${{ matrix.packages_install }}
       - name: Build artifacts
+        shell: bash
         run: |
           # Actually do builds and make zips and whatnot
           dist build $TAG_FLAG --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
@@ -265,7 +266,7 @@ jobs:
           name: artifacts-build-global
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
-            ${{ steps.cargo-cyclonedx.output.paths }}
+            ${{ steps.cargo-cyclonedx.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
   # Determines if we should publish/announce
   host:
@@ -302,6 +303,13 @@ jobs:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
+      - name: Confirm the tag still points at the built commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
       - id: host
         shell: bash
         run: |
@@ -326,6 +334,13 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Confirm the tag still points at the built commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
       - name: Create GitHub Release
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}

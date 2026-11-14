@@ -9,7 +9,12 @@ so that is command injection. This script rewrites the generated text:
   tags never do;
 * the plan job rejects any tag that is not `vX.Y.Z` before dist runs;
 * every tag reaches a shell through an environment variable, never `${{ }}`;
-* the root token is read-only, and only the host job may write contents.
+* the root token is read-only, and only the host job may write contents;
+* the host job re-resolves the tag on the remote right before it publishes and
+  fails unless it still points at the commit the workflow runs on (CWE-367);
+* the Windows build step runs under bash, where `$TAG_FLAG` is an environment
+  variable (under PowerShell it expands to nothing);
+* the CycloneDX step output is read as `outputs`, which dist spells `output`.
 
 Run `scripts/dist_generate.sh` instead of `dist generate`. Each rewrite must
 match exactly once, so a dist upgrade that changes the template fails loudly
@@ -109,6 +114,9 @@ def harden(text: str) -> str:
     )
     text = _add_tag_flag_env(text)
     text = _gate_on_provenance(text)
+    text = _replace_once(text, _BUILD_OLD, _BUILD_NEW, "build artifacts step")
+    text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
+    text = _verify_tag_before_publishing(text)
     _assert_clean(text)
     return text
 
@@ -134,6 +142,30 @@ _HOST_IF_NEW = (
     "if: ${{ always() && needs.plan.result == 'success' && needs.custom-release-provenance.result == 'success'"
     " && needs.plan.outputs.publishing == 'true' &&"
 )
+
+
+_BUILD_OLD = "      - name: Build artifacts\n        run: |\n"
+_BUILD_NEW = "      - name: Build artifacts\n        shell: bash\n        run: |\n"
+_SBOM_OLD = "steps.cargo-cyclonedx.output.paths"
+_SBOM_NEW = "steps.cargo-cyclonedx.outputs.paths"
+_VERIFY_STEP = """\
+      - name: Confirm the tag still points at the built commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+"""
+# Before dist can touch the release, and again right before `gh release create`.
+_VERIFY_ANCHORS = ("      - id: host\n", "      - name: Create GitHub Release\n")
+
+
+def _verify_tag_before_publishing(text: str) -> str:
+    """A tag-writer may move the tag after the provenance check; catch it at publish time."""
+    for anchor in _VERIFY_ANCHORS:
+        text = _replace_once(text, anchor, _VERIFY_STEP + anchor, f"anchor {anchor.strip()}")
+    return text
 
 
 def _gate_on_provenance(text: str) -> str:

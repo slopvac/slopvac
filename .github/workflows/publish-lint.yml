@@ -69,6 +69,7 @@ jobs:
   outputs:
    version: ${{ steps.version.outputs.version }}
    rc: ${{ steps.version.outputs.rc }}
+   gated: ${{ steps.gate.outputs.gated }}
   steps:
    - name: Checkout
      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,6 +113,21 @@ jobs:
       fi
       echo "version=$version" >> "$GITHUB_OUTPUT"
       echo "rc=$RC" >> "$GITHUB_OUTPUT"
+
+   # 3.x and later stable releases need a passed, tagged candidate. 2.x
+   # candidates are untagged branch builds, so 2.x publishing stays ungated.
+   - name: Decide the provenance gate
+     id: gate
+     env:
+      VERSION: ${{ steps.version.outputs.version }}
+      RC: ${{ steps.version.outputs.rc }}
+     run: |
+      set -euo pipefail
+      gated=false
+      if [[ "$RC" != "true" ]]; then
+       gated="$(python3 scripts/release_provenance.py requires-gate "$VERSION")"
+      fi
+      echo "gated=$gated" >> "$GITHUB_OUTPUT"
 
    - name: Build
      working-directory: packages/slopvac-lint
@@ -287,8 +303,9 @@ jobs:
  provenance:
   name: Stable release has a passed candidate
   needs: build
-  # Same condition as the stable job below, so a stable upload always passes the gate.
+  # Same condition as the stable job below, for versions the gate covers (3.x on).
   if: >-
+   needs.build.outputs.gated == 'true' &&
    needs.build.outputs.rc != 'true' &&
    github.event_name == 'workflow_dispatch' &&
    github.ref_type == 'tag' &&
@@ -304,8 +321,12 @@ jobs:
   needs: [build, provenance]
   # Stable publishing is manual and only from a tag the build step accepted as
   # exactly v<package version>. A push to the release PR branch is an RC and
-  # never reaches this job.
+  # never reaches this job. The provenance job is skipped for 2.x, which keeps
+  # its ungated flow; for 3.x it must succeed.
   if: >-
+   !cancelled() &&
+   needs.build.result == 'success' &&
+   (needs.build.outputs.gated != 'true' || needs.provenance.result == 'success') &&
    needs.build.outputs.rc != 'true' &&
    github.event_name == 'workflow_dispatch' &&
    github.ref_type == 'tag' &&

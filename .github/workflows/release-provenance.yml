@@ -30,6 +30,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
+          EVENT_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/release_provenance.py check-stable "$TAG" --repo "$REPO"
+          python3 scripts/release_provenance.py check-stable "$TAG" --repo "$REPO" --sha "$EVENT_SHA"
