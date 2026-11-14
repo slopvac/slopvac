@@ -8,10 +8,14 @@
 
 mod blocklist;
 mod casing;
+pub mod cli;
+mod edit;
 mod error;
+pub mod import;
 mod shape;
 
 pub use blocklist::{Blocklist, BlocklistEntry, Pos};
 pub use casing::{CasingFinding, TermSet};
+pub use edit::{TermsDoc, infer_ignore_case};
 pub use error::TermsError;
 pub use shape::{TermEntry, TermsFile};
