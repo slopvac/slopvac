@@ -31,7 +31,7 @@ The `--help` snapshot in `testing_toolkit.rs` changes whenever the command tree 
 
 ## Property tests
 
-Failing cases are saved to `proptest-regressions/` beside the test. Commit that directory so a fixed bug stays fixed. Keep generators small: a property that needs thousands of cases to find a fault belongs in the nightly fuzzing job instead.
+proptest saves failing cases to a `<test file>.proptest-regressions` file next to an integration test, for example `crates/slopvac/tests/cli.proptest-regressions`. For a test inside `src/`, it uses a `proptest-regressions/` directory. Commit these files so a fixed bug stays fixed. Keep generators small: a property that needs thousands of cases to find a fault belongs in the nightly fuzzing job instead.
 
 ## Dependencies
 
