@@ -1,3 +1,5 @@
 //! Document parsing and front matter.
-//!
-//! This crate is a placeholder in the workspace skeleton.
+
+mod projection;
+
+pub use projection::{Projection, Token, TokenKind};
