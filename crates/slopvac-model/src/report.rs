@@ -1,10 +1,11 @@
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 
-use crate::edit::Edit;
-use crate::ids::{ContextTag, PackId, RuleId, SchemaVersion, Severity};
-use crate::span::Span;
+use crate::edit::{Edit, EditError, sorted_without_overlap};
+use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::span::{LineCol, LineColError, Span};
 
 /// Optional producer fields are omitted when unset, never written as `null`; drop the
 /// `null` alternative schemars adds for `Option` so the schema says the same.
@@ -139,68 +140,214 @@ pub struct ConfigSource {
     pub column: Option<usize>,
 }
 
-/// A machine-applicable correction.
+/// A machine-applicable correction: at least one edit, none overlapping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[serde(try_from = "FixWire", into = "FixWire")]
+#[schemars(with = "FixWire")]
 pub struct Fix {
+    edits: Vec<Edit>,
+}
+
+/// Wire shape of [`Fix`].
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Fix", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+struct FixWire {
     /// Non-overlapping edits in original offsets.
     #[schemars(length(min = 1))]
-    pub edits: Vec<Edit>,
+    edits: Vec<Edit>,
+}
+
+/// Why a [`Fix`] cannot exist.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum FixError {
+    /// A fix needs at least one edit.
+    #[error("a fix needs at least one edit")]
+    Empty,
+    /// Two edits overlap.
+    #[error(transparent)]
+    Overlap(#[from] EditError),
+}
+
+impl Fix {
+    /// Build a fix, rejecting an empty or overlapping edit set.
+    pub fn new(edits: Vec<Edit>) -> Result<Self, FixError> {
+        if edits.is_empty() {
+            return Err(FixError::Empty);
+        }
+        sorted_without_overlap(&edits)?;
+        Ok(Self { edits })
+    }
+
+    /// The edits in array order.
+    #[must_use]
+    pub fn edits(&self) -> &[Edit] {
+        &self.edits
+    }
+}
+
+impl TryFrom<FixWire> for Fix {
+    type Error = FixError;
+    fn try_from(wire: FixWire) -> Result<Self, FixError> {
+        Self::new(wire.edits)
+    }
+}
+
+impl From<Fix> for FixWire {
+    fn from(fix: Fix) -> Self {
+        Self { edits: fix.edits }
+    }
+}
+
+/// Where a finding ends: the byte range and the display end position, always together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Extent {
+    /// Byte range of the match.
+    pub span: Span,
+    /// Display position of the end.
+    pub end: LineCol,
+}
+
+/// Why a finding cannot exist.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum FindingError {
+    /// A line or column is zero.
+    #[error(transparent)]
+    Position(#[from] LineColError),
+    /// `span`, `end_line` and `end_column` must all be present or all absent.
+    #[error("span, end_line and end_column must all be present or all absent")]
+    PartialExtent,
 }
 
 /// One violation at one position.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}))]
+#[serde(try_from = "FindingWire", into = "FindingWire")]
+#[schemars(with = "FindingWire")]
 pub struct Finding {
     /// Qualified rule id.
     pub rule_id: RuleId,
     /// Owning pack.
     pub pack: PackId,
     /// Category id.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub category: String,
     /// Severity.
     pub severity: Severity,
     /// Message.
-    #[schemars(length(min = 1))]
     pub message: String,
-    /// Byte range; absent for whole-document findings.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(transform = absent_not_null)]
-    pub span: Option<Span>,
-    /// Start line.
-    #[schemars(range(min = 1))]
-    pub line: usize,
-    /// Start column.
-    #[schemars(range(min = 1))]
-    pub column: usize,
-    /// End line; present with `span`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(transform = absent_not_null)]
-    #[schemars(range(min = 1))]
-    pub end_line: Option<usize>,
-    /// End column; present with `span`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(transform = absent_not_null)]
-    #[schemars(range(min = 1))]
-    pub end_column: Option<usize>,
+    /// Display position of the start.
+    pub start: LineCol,
+    /// Byte range and end position; absent for whole-document findings.
+    pub extent: Option<Extent>,
     /// Text contexts the match sits in.
-    #[schemars(extend("uniqueItems" = true))]
-    pub contexts: Vec<ContextTag>,
+    pub contexts: Contexts,
     /// AI signal.
     pub ai_signal: AiSignal,
     /// Matched source text.
     pub matched_text: String,
     /// Suggested fix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(transform = absent_not_null)]
     pub fix: Option<Fix>,
     /// Rule provenance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(transform = absent_not_null)]
     pub provenance: Option<RuleProvenance>,
 }
 
+/// Wire shape of [`Finding`].
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Finding", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}))]
+struct FindingWire {
+    /// Qualified rule id.
+    rule_id: RuleId,
+    /// Owning pack.
+    pack: PackId,
+    /// Category id.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
+    category: String,
+    /// Severity.
+    severity: Severity,
+    /// Message.
+    #[schemars(length(min = 1))]
+    message: String,
+    /// Byte range; absent for whole-document findings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
+    span: Option<Span>,
+    /// Start line.
+    #[schemars(range(min = 1))]
+    line: usize,
+    /// Start column.
+    #[schemars(range(min = 1))]
+    column: usize,
+    /// End line; present with `span`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1), transform = absent_not_null)]
+    end_line: Option<usize>,
+    /// End column; present with `span`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1), transform = absent_not_null)]
+    end_column: Option<usize>,
+    /// Text contexts the match sits in.
+    contexts: Contexts,
+    /// AI signal.
+    ai_signal: AiSignal,
+    /// Matched source text.
+    matched_text: String,
+    /// Suggested fix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
+    fix: Option<Fix>,
+    /// Rule provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
+    provenance: Option<RuleProvenance>,
+}
+
+impl TryFrom<FindingWire> for Finding {
+    type Error = FindingError;
+    fn try_from(w: FindingWire) -> Result<Self, FindingError> {
+        let extent = match (w.span, w.end_line, w.end_column) {
+            (None, None, None) => None,
+            (Some(span), Some(line), Some(column)) => Some(Extent {
+                span,
+                end: LineCol::new(line, column)?,
+            }),
+            _ => return Err(FindingError::PartialExtent),
+        };
+        Ok(Self {
+            rule_id: w.rule_id,
+            pack: w.pack,
+            category: w.category,
+            severity: w.severity,
+            message: w.message,
+            start: LineCol::new(w.line, w.column)?,
+            extent,
+            contexts: w.contexts,
+            ai_signal: w.ai_signal,
+            matched_text: w.matched_text,
+            fix: w.fix,
+            provenance: w.provenance,
+        })
+    }
+}
+
+impl From<Finding> for FindingWire {
+    fn from(f: Finding) -> Self {
+        Self {
+            rule_id: f.rule_id,
+            pack: f.pack,
+            category: f.category,
+            severity: f.severity,
+            message: f.message,
+            span: f.extent.map(|e| e.span),
+            line: f.start.line(),
+            column: f.start.column(),
+            end_line: f.extent.map(|e| e.end.line()),
+            end_column: f.extent.map(|e| e.end.column()),
+            contexts: f.contexts,
+            ai_signal: f.ai_signal,
+            matched_text: f.matched_text,
+            fix: f.fix,
+            provenance: f.provenance,
+        }
+    }
+}
 /// Counts for one reporting axis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
@@ -348,26 +495,102 @@ pub struct CategoryScore {
     pub over_budget: bool,
 }
 
-/// Pass or fail result for one document.
+/// Pass or fail result for one document. It passes exactly when no reason is recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "allOf" = [{"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}}, {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}]))]
+#[serde(try_from = "GateWire", into = "GateWire")]
+#[schemars(with = "GateWire")]
 pub struct Gate {
+    reasons: Vec<String>,
+}
+
+/// Wire shape of [`Gate`].
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Gate", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "allOf" = [{"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}}, {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}]))]
+struct GateWire {
     /// Whether the document passed.
-    pub passed: bool,
+    passed: bool,
     /// Each failed threshold; empty when passed.
-    #[serde(deserialize_with = "non_empty_reasons")]
     #[schemars(inner(length(min = 1)))]
-    pub reasons: Vec<String>,
+    reasons: Vec<String>,
 }
 
-fn non_empty_reasons<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
-    let reasons = Vec::<String>::deserialize(d)?;
-    if reasons.iter().any(String::is_empty) {
-        return Err(serde::de::Error::custom("gate reasons must not be empty"));
+/// Why a [`Gate`] cannot exist.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum GateError {
+    /// A failed gate names at least one reason.
+    #[error("a failed gate needs at least one reason")]
+    NoReasons,
+    /// A reason is an empty string.
+    #[error("a gate reason must not be empty")]
+    EmptyReason,
+    /// `passed` disagrees with the reasons.
+    #[error("passed is {passed} but there are {count} reasons")]
+    Mismatch {
+        /// The `passed` value given.
+        passed: bool,
+        /// How many reasons came with it.
+        count: usize,
+    },
+}
+
+impl Gate {
+    /// A gate that passed.
+    #[must_use]
+    pub const fn passed() -> Self {
+        Self {
+            reasons: Vec::new(),
+        }
     }
-    Ok(reasons)
+
+    /// A gate that failed, naming each failed threshold.
+    pub fn failed(reasons: Vec<String>) -> Result<Self, GateError> {
+        if reasons.is_empty() {
+            return Err(GateError::NoReasons);
+        }
+        if reasons.iter().any(String::is_empty) {
+            return Err(GateError::EmptyReason);
+        }
+        Ok(Self { reasons })
+    }
+
+    /// Whether the document passed.
+    #[must_use]
+    pub fn is_passed(&self) -> bool {
+        self.reasons.is_empty()
+    }
+
+    /// The failed thresholds; empty when passed.
+    #[must_use]
+    pub fn reasons(&self) -> &[String] {
+        &self.reasons
+    }
 }
 
+impl TryFrom<GateWire> for Gate {
+    type Error = GateError;
+    fn try_from(wire: GateWire) -> Result<Self, GateError> {
+        if wire.passed != wire.reasons.is_empty() {
+            return Err(GateError::Mismatch {
+                passed: wire.passed,
+                count: wire.reasons.len(),
+            });
+        }
+        if wire.passed {
+            Ok(Self::passed())
+        } else {
+            Self::failed(wire.reasons)
+        }
+    }
+}
+
+impl From<Gate> for GateWire {
+    fn from(gate: Gate) -> Self {
+        Self {
+            passed: gate.reasons.is_empty(),
+            reasons: gate.reasons,
+        }
+    }
+}
 /// The whole result for one linted file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
@@ -381,8 +604,7 @@ pub struct Document {
     /// Genre.
     pub genre: GenreResult,
     /// Contexts found in the document.
-    #[schemars(extend("uniqueItems" = true))]
-    pub contexts_seen: Vec<ContextTag>,
+    pub contexts_seen: Contexts,
     /// Config layers that applied, lowest priority first.
     pub config_sources: Vec<ConfigSource>,
     /// Words.

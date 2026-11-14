@@ -260,3 +260,61 @@ impl From<ApiVersion> for u32 {
         v.0
     }
 }
+/// Text contexts a match or document sits in. Each tag appears once.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "Vec<ContextTag>", into = "Vec<ContextTag>")]
+pub struct Contexts(Vec<ContextTag>);
+
+/// A context tag listed twice.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("context tag {0:?} is listed twice")]
+pub struct DuplicateContext(String);
+
+impl Contexts {
+    /// Wrap a tag list, rejecting duplicates. Order is kept.
+    pub fn new(tags: Vec<ContextTag>) -> Result<Self, DuplicateContext> {
+        for (i, tag) in tags.iter().enumerate() {
+            if tags[..i].contains(tag) {
+                return Err(DuplicateContext(tag.as_str().to_owned()));
+            }
+        }
+        Ok(Self(tags))
+    }
+
+    /// The tags in order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[ContextTag] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Contexts {
+    type Target = [ContextTag];
+    fn deref(&self) -> &[ContextTag] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<ContextTag>> for Contexts {
+    type Error = DuplicateContext;
+    fn try_from(tags: Vec<ContextTag>) -> Result<Self, DuplicateContext> {
+        Self::new(tags)
+    }
+}
+
+impl From<Contexts> for Vec<ContextTag> {
+    fn from(contexts: Contexts) -> Self {
+        contexts.0
+    }
+}
+
+impl JsonSchema for Contexts {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Contexts".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let item = generator.subschema_for::<ContextTag>();
+        schemars::json_schema!({ "type": "array", "items": item, "uniqueItems": true })
+    }
+}

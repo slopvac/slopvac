@@ -31,16 +31,8 @@ pub enum EditError {
     },
 }
 
-/// Apply an edit set atomically to `text`.
-///
-/// All spans use original offsets. Edits sort by `(start, end)` and keep array order for
-/// equal pairs. Edits that touch do not overlap. An invalid or overlapping set applies
-/// nothing.
-pub fn apply_edits(text: &str, edits: &[Edit]) -> Result<String, EditError> {
-    let index = SourceIndex::disk(text);
-    for edit in edits {
-        index.check_span(edit.span)?;
-    }
+/// Edits in `(start, end)` order, or the first overlapping pair. Touching edits are fine.
+pub(crate) fn sorted_without_overlap(edits: &[Edit]) -> Result<Vec<&Edit>, EditError> {
     let mut sorted: Vec<&Edit> = edits.iter().collect();
     sorted.sort_by_key(|e| (e.span.start(), e.span.end()));
     for pair in sorted.windows(2) {
@@ -51,6 +43,20 @@ pub fn apply_edits(text: &str, edits: &[Edit]) -> Result<String, EditError> {
             });
         }
     }
+    Ok(sorted)
+}
+
+/// Apply an edit set atomically to `text`.
+///
+/// All spans use original offsets. Edits sort by `(start, end)` and keep array order for
+/// equal pairs. Edits that touch do not overlap. An invalid or overlapping set applies
+/// nothing.
+pub fn apply_edits(text: &str, edits: &[Edit]) -> Result<String, EditError> {
+    let index = SourceIndex::disk(text);
+    for edit in edits {
+        index.check_span(edit.span)?;
+    }
+    let sorted = sorted_without_overlap(edits)?;
     let mut out = String::with_capacity(text.len());
     let mut cursor = 0;
     for edit in sorted {

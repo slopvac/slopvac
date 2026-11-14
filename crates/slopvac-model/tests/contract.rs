@@ -258,12 +258,12 @@ fn finding_without_span_omits_span_and_end() {
         category: "metrics".into(),
         severity: Severity::Warning,
         message: "m".into(),
-        span: None,
-        line: 1,
-        column: 1,
-        end_line: None,
-        end_column: None,
-        contexts: vec![slopvac_model::ContextTag::new("prose").unwrap()],
+        start: LineCol::new(1, 1).unwrap(),
+        extent: None,
+        contexts: slopvac_model::Contexts::new(vec![
+            slopvac_model::ContextTag::new("prose").unwrap(),
+        ])
+        .unwrap(),
         ai_signal: slopvac_model::AiSignal::None,
         matched_text: String::new(),
         fix: None,
