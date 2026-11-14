@@ -6,6 +6,8 @@
 //! cannot lead outside the project (CWE-59, CWE-367). Absolute symlinks and links
 //! that climb out of the root fail with [`AgentsError::UnsafeTarget`].
 
+use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
@@ -23,6 +25,31 @@ pub struct Project {
     root: PathBuf,
 }
 
+/// One step of a path being resolved.
+enum Step {
+    Name(OsString),
+    Up,
+}
+
+/// Split a relative path into steps; `None` for an absolute path or a prefix.
+fn steps(path: &Path) -> Option<VecDeque<Step>> {
+    let mut out = VecDeque::new();
+    for part in path.components() {
+        match part {
+            Component::Normal(p) => out.push_back(Step::Name(p.to_owned())),
+            Component::ParentDir => out.push_back(Step::Up),
+            Component::CurDir => {}
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(out)
+}
+
+fn is_git(name: &std::ffi::OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|n| n.eq_ignore_ascii_case(".git"))
+}
+
 /// Check a project-relative target lexically: normal components only, no
 /// `.git`, and a `.md` file name.
 pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
@@ -30,7 +57,7 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
     let mut clean = PathBuf::new();
     for part in Path::new(relative).components() {
         match part {
-            Component::Normal(p) if p != ".git" => clean.push(p),
+            Component::Normal(p) if !is_git(p) => clean.push(p),
             _ => return Err(bad()),
         }
     }
@@ -65,34 +92,54 @@ impl Project {
         }
     }
 
-    /// Follow a symlink at `rel` (inside the project) to the file it names.
+    /// Resolve every symlink in `rel`, ancestors included, to a plain path inside
+    /// the project, then apply the target policy to the destination: no `.git`
+    /// component (any case) and a `.md` file name. A link that climbs out of the
+    /// project, is absolute, or loops fails with `UnsafeTarget`.
     fn resolve(&self, rel: &Path) -> Result<PathBuf, AgentsError> {
-        let mut current = rel.to_owned();
-        for _ in 0..MAX_LINKS {
-            let is_link = match self.dir.symlink_metadata(&current) {
+        let bad = || AgentsError::UnsafeTarget(self.display(rel));
+        let mut pending: VecDeque<Step> = steps(rel).ok_or_else(bad)?;
+        let mut done = PathBuf::new();
+        let mut hops = 0;
+        while let Some(step) = pending.pop_front() {
+            let name = match step {
+                Step::Up => {
+                    if !done.pop() {
+                        return Err(bad());
+                    }
+                    continue;
+                }
+                Step::Name(name) => name,
+            };
+            if is_git(&name) {
+                return Err(bad());
+            }
+            let candidate = done.join(&name);
+            let is_link = match self.dir.symlink_metadata(&candidate) {
                 Ok(m) => m.file_type().is_symlink(),
                 Err(e) if e.kind() == ErrorKind::NotFound => false,
-                Err(e) => return Err(self.map(&current, e)),
+                Err(e) => return Err(self.map(&candidate, e)),
             };
             if !is_link {
-                return Ok(current);
+                done = candidate;
+                continue;
+            }
+            hops += 1;
+            if hops > MAX_LINKS {
+                return Err(bad());
             }
             let link = self
                 .dir
-                .read_link_contents(&current)
-                .map_err(|e| self.map(&current, e))?;
-            let mut next = current.parent().map(Path::to_path_buf).unwrap_or_default();
-            for part in link.components() {
-                match part {
-                    Component::Normal(p) => next.push(p),
-                    Component::CurDir => {}
-                    Component::ParentDir if next.pop() => {}
-                    _ => return Err(AgentsError::UnsafeTarget(self.display(rel))),
-                }
+                .read_link_contents(&candidate)
+                .map_err(|e| self.map(&candidate, e))?;
+            for step in steps(&link).ok_or_else(bad)?.into_iter().rev() {
+                pending.push_front(step);
             }
-            current = next;
         }
-        Err(AgentsError::UnsafeTarget(self.display(rel)))
+        if done.extension().and_then(|e| e.to_str()) != Some("md") {
+            return Err(bad());
+        }
+        Ok(done)
     }
 
     /// The bytes of the file at `rel`, or `None` if it does not exist.

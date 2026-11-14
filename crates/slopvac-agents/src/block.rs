@@ -158,7 +158,35 @@ pub fn block_state(project: &Project, rel: &Path, block: &str) -> State {
     }
 }
 
-/// Insert or replace the managed block, leaving surrounding text alone.
+/// Length of the line terminator that ends `s`, or 0.
+fn trailing_term(s: &str) -> usize {
+    if s.ends_with("\r\n") {
+        2
+    } else {
+        usize::from(s.ends_with(['\n', '\r']))
+    }
+}
+
+/// Length of the line terminator that starts `s`, or 0.
+fn leading_term(s: &str) -> usize {
+    if s.starts_with("\r\n") {
+        2
+    } else {
+        usize::from(s.starts_with(['\n', '\r']))
+    }
+}
+
+/// Whether `s` ends with an empty line: two terminators in a row.
+fn ends_with_blank_line(s: &str) -> bool {
+    let first = trailing_term(s);
+    first > 0 && trailing_term(&s[..s.len() - first]) > 0
+}
+
+/// Insert or replace the managed block.
+///
+/// Every byte outside the block survives. A new block goes at the end of the file
+/// after exactly one inserted line terminator, so `remove_block` can take that one
+/// terminator back out and restore the original bytes.
 pub fn update_block(
     project: &Project,
     rel: &Path,
@@ -174,21 +202,22 @@ pub fn update_block(
     let body = format!("{}{nl}", native(block.trim_end_matches(['\r', '\n']), nl));
     let updated = if let Some((s, e)) = section(text, &project.display(rel))? {
         format!("{}{body}{}", &text[..s], &text[e..])
+    } else if text.is_empty() && !preamble.is_empty() {
+        let head = native(preamble.trim_end_matches(['\r', '\n']), nl);
+        format!("{head}{nl}{nl}{body}")
+    } else if text.is_empty() {
+        body
     } else {
-        let mut prefix = text.trim_end_matches(['\r', '\n']).to_owned();
-        if prefix.is_empty() && !preamble.is_empty() {
-            prefix = native(preamble.trim_end_matches(['\r', '\n']), nl);
-        }
-        if prefix.is_empty() {
-            body
-        } else {
-            format!("{prefix}{nl}{nl}{body}")
-        }
+        format!("{text}{nl}{body}")
     };
     project.write_atomic(rel, before, updated.as_bytes())
 }
 
 /// Remove only the managed block.
+///
+/// A block at the end of the file also takes back the one line terminator that
+/// `update_block` inserted before it. A block in the middle leaves the text around
+/// it as it was, except that two blank lines in a row collapse to one.
 pub fn remove_block(project: &Project, rel: &Path) -> Result<bool, AgentsError> {
     let Some((bytes, text)) = read_utf8(project, rel)? else {
         return Ok(false);
@@ -196,13 +225,13 @@ pub fn remove_block(project: &Project, rel: &Path) -> Result<bool, AgentsError> 
     let Some((s, e)) = section(&text, &project.display(rel))? else {
         return Ok(false);
     };
-    let nl = newline(&text);
-    let left = text[..s].trim_end_matches(['\r', '\n']);
-    let right = text[e..].trim_start_matches(['\r', '\n']);
-    let updated = match (left.is_empty(), right.is_empty()) {
-        (false, false) => format!("{left}{nl}{nl}{right}"),
-        (false, true) => format!("{left}{nl}"),
-        _ => right.to_owned(),
+    let (left, right) = (&text[..s], &text[e..]);
+    let updated = if right.is_empty() {
+        left[..left.len() - trailing_term(left)].to_owned()
+    } else if left.is_empty() || ends_with_blank_line(left) {
+        format!("{left}{}", &right[leading_term(right)..])
+    } else {
+        format!("{left}{right}")
     };
     project.write_atomic(rel, Some(&bytes), updated.as_bytes())
 }

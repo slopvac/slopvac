@@ -138,6 +138,53 @@ mod containment {
     }
 
     #[test]
+    fn symlinks_into_dot_git_are_refused_for_files_and_ancestors() {
+        let cases = [
+            ("CLAUDE.md", ".git/config"),
+            ("CLAUDE.md", ".git/info/x.md"),
+            ("CLAUDE.md", "docs/../.git/y.md"),
+            (".claude", ".git"),
+            (".claude", "sub/../.git"),
+        ];
+        for (link, to) in cases {
+            let project = tempfile::tempdir().unwrap();
+            let git = project.path().join(".git");
+            fs::create_dir_all(git.join("info")).unwrap();
+            fs::create_dir(project.path().join("docs")).unwrap();
+            fs::create_dir(project.path().join("sub")).unwrap();
+            fs::write(git.join("config"), "[core]\n").unwrap();
+            symlink(to, project.path().join(link)).unwrap();
+            for (check, remove) in [(false, false), (true, false), (false, true)] {
+                let o = Options {
+                    check,
+                    remove,
+                    ..opts(project.path(), "claude")
+                };
+                match execute(&o) {
+                    Err(e) => assert_eq!(e.code(), "steering-unsafe-target", "{link}->{to}"),
+                    Ok(out) => assert_ne!(out.exit, 0, "{link}->{to} {check} {remove}"),
+                }
+            }
+            assert_eq!(fs::read_to_string(git.join("config")).unwrap(), "[core]\n");
+            assert!(!git.join("info/x.md").exists() && !git.join("y.md").exists());
+            assert_eq!(fs::read_dir(&git).unwrap().count(), 2, "{link}->{to}");
+        }
+    }
+
+    #[test]
+    fn a_symlink_to_a_non_markdown_file_is_refused() {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("notes.txt"), "keep\n").unwrap();
+        symlink("notes.txt", project.path().join("CLAUDE.md")).unwrap();
+        let err = execute(&opts(project.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-unsafe-target");
+        assert_eq!(
+            fs::read_to_string(project.path().join("notes.txt")).unwrap(),
+            "keep\n"
+        );
+    }
+
+    #[test]
     fn a_symlink_loop_is_refused() {
         let project = tempfile::tempdir().unwrap();
         symlink("CLAUDE.md", project.path().join("CLAUDE.md")).unwrap();
@@ -183,6 +230,14 @@ fn remove_restores_the_original_bytes_for_every_line_ending() {
         "\u{feff}# A\n",
         "```md\n<!-- slopvac:begin -->\n```\n",
         "# A\n\n<!-- x -->\n\nMore\n",
+        "# A",
+        "# A\n\n\n",
+        "# A\r\n\r\n\r\n",
+        "# A\r\r\r",
+        "# A\n  \n",
+        "\n",
+        "\n\n",
+        "# A\n```\ncode\n```",
     ];
     for original in cases {
         let project = tempfile::tempdir().unwrap();
@@ -230,7 +285,7 @@ fn the_block_uses_the_file_line_ending() {
 }
 
 #[test]
-fn a_file_without_a_final_newline_gains_exactly_one_on_remove() {
+fn a_file_without_a_final_newline_keeps_none_after_remove() {
     let project = tempfile::tempdir().unwrap();
     let file = project.path().join("CLAUDE.md");
     fs::write(&file, "# A").unwrap();
@@ -241,5 +296,5 @@ fn a_file_without_a_final_newline_gains_exactly_one_on_remove() {
     };
     execute(&o).unwrap();
     execute(&Options { remove: true, ..o }).unwrap();
-    assert_eq!(fs::read_to_string(&file).unwrap(), "# A\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "# A");
 }
