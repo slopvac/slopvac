@@ -13,19 +13,6 @@ from referencing import Registry, Resource
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas" / "v3"
-# These rules hold \\u or \\U escapes or unbounded lookbehinds until PR #276
-# replaces them with literal characters and bounded lookbehinds. Strict xfail: the
-# marks must go in the PR that lands after #276 merges.
-PENDING_276_RULES = {
-    "prose-craft.future-tense",
-    "ai-tells-formatting.emoji-list-markers",
-    "ai-tells-structure.negative-guarantee-core",
-}
-PENDING_276 = pytest.mark.xfail(
-    strict=True,
-    raises=Exception,
-    reason="PR #276 (fix/pcre2-compatible-patterns) removes Unicode escapes and unbounded lookbehinds",
-)
 
 
 def _load_converter():
@@ -60,9 +47,7 @@ PAIRS = [(c, r) for c in SOURCES for r in c["rules"]]
 
 
 def _case(category: dict, rule: dict):
-    qualified = f"{category['id']}.{rule['id']}"
-    marks = [PENDING_276] if qualified in PENDING_276_RULES else []
-    return pytest.param(category, rule, id=qualified, marks=marks)
+    return pytest.param(category, rule, id=f"{category['id']}.{rule['id']}")
 
 
 RULE_PARAMS = [_case(c, r) for c, r in PAIRS]
@@ -96,13 +81,9 @@ def test_converted_category_envelope_validates(category: dict) -> None:
     assert _errors(_validator(), converted) == []
 
 
-def test_every_rule_but_the_pending_ones_converts_without_tiers() -> None:
-    converted = [
-        convert.convert_rule(rule)
-        for category, rule in PAIRS
-        if f"{category['id']}.{rule['id']}" not in PENDING_276_RULES
-    ]
-    assert len(converted) == len(PAIRS) - len(PENDING_276_RULES)
+def test_every_rule_converts_without_tiers() -> None:
+    converted = [convert.convert_rule(rule) for _, rule in PAIRS]
+    assert len(converted) == len(PAIRS)
     assert all("tiers" not in r for r in converted)
 
 

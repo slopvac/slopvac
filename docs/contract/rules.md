@@ -184,10 +184,7 @@ The mapping:
 - A judgement rule gets severity `suggestion`, as the 2.x loader forced.
 - A missing `severity` becomes `warning`, and a missing `scope` becomes `prose`.
 - The converter fails, naming the rule id, on a `\u` or `\U` escape and on an unbounded
-  lookbehind. It does not rewrite either. PR #276 replaces the escapes with literal characters
-  and bounds the lookbehinds in the 2.x data. Until it merges, `prose-craft.future-tense`,
-  `ai-tells-formatting.emoji-list-markers` and `ai-tells-structure.negative-guarantee-core`
-  fail to convert, and the conversion test marks them as expected failures.
+  lookbehind. It does not rewrite either. The shipped 2.x data has neither since PR #276.
 - The `title-case-heading` pattern gets `match.placeholders` for `ALLOWED_WORDS`. No other rule is checked, because 2.x substitutes the placeholder for that rule alone.
 - A null member of `provenance` is dropped from `citation`.
 - A category id outside `[a-z][a-z0-9-]*` is rejected before any output path is built.
