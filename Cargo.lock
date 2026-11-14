@@ -1076,10 +1076,12 @@ version = "0.0.0"
 dependencies = [
  "base64",
  "rustix",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
  "thiserror",
+ "toml",
  "ureq",
 ]
 

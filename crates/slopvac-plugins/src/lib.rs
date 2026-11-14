@@ -1,6 +1,8 @@
 //! Plugin discovery, execution and distribution.
 //!
-//! This crate holds the OCI client (`oci`). The plugin host and the trust store
-//! land in their own modules.
+//! Modules: the OCI client ([`oci`]) and the `.slopvac/packs.lock` model
+//! ([`lock`]: strict reader, canonical writer, drift diff and the `outdated`
+//! query). The plugin host and the trust store land in their own modules.
 
+pub mod lock;
 pub mod oci;
