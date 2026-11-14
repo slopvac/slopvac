@@ -281,3 +281,31 @@ fn front_matter_ended_by_lone_cr_terminators_is_read() {
     assert_eq!(out.settings[0].source.line, Some(4));
     assert_eq!(extract("---\ra: 1\r---\r").map(|b| b.content), Some(4..9));
 }
+
+#[test]
+fn only_top_level_keys_make_a_broken_block_ours() {
+    // A broken block is reported when a top-level key decodes to `slopvac`: YAML key, JSON key,
+    // TOML table header, dotted TOML header, dotted TOML root key.
+    for doc in [
+        "---\n\"sl\\u006fpvac\": [\n---\n",
+        "{\"sl\\u006fpvac\": [1, }\n",
+        "+++\n[\"sl\\u006fpvac\"]\nv = = 3\n+++\n",
+        "+++\n[\"sl\\u006fpvac\".terms]\nallow = = 1\n+++\n",
+        "+++\n\"sl\\u006fpvac\".v = = 3\n+++\n",
+    ] {
+        let out = read(doc, "a.md", &default_policy());
+        assert_eq!(out.diagnostics.len(), 1, "{doc:?}");
+        assert_eq!(out.diagnostics[0].code, Code::Parse, "{doc:?}");
+    }
+    // A value or a nested key that decodes to `slopvac` is the document's own data.
+    for doc in [
+        "---\ntags: [\"sl\\u006fpvac\"]\nbroken: [\n---\n",
+        "---\nouter:\n  \"sl\\u006fpvac\": 1\nbroken: [\n---\n",
+        "{\"tags\": [\"sl\\u006fpvac\"], \"nested\": {\"sl\\u006fpvac\": 1, }}\n",
+        "+++\n[\"x\".\"sl\\u006fpvac\"]\nv = = 3\n+++\n",
+        "+++\ntags = [\"sl\\u006fpvac\"]\n[other]\nv = = 3\n+++\n",
+    ] {
+        let out = read(doc, "a.md", &default_policy());
+        assert_eq!(out.diagnostics, [], "{doc:?}");
+    }
+}

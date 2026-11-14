@@ -206,7 +206,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     let raw = &doc[block.content.clone()];
     // The key `slopvac` can be spelled another way only through an escape, so text with neither
     // the word nor a backslash cannot hold the block. Otherwise the decoded keys decide.
-    let names_slopvac = raw.contains("slopvac") || has_escaped_slopvac_key(raw);
+    let names_slopvac = raw.contains("slopvac") || has_slopvac_key(raw, block.format);
     if !names_slopvac && !raw.contains('\\') {
         return Read::default();
     }
@@ -283,34 +283,102 @@ fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
         .collect()
 }
 
-/// Whether `raw` holds a quoted key that decodes to `slopvac`, such as `"sl\u006fpvac":`.
+/// Whether the top-level keys of `raw` include `slopvac` once escapes are decoded.
 ///
 /// This runs only when the block does not parse, so the parser cannot say which keys it holds.
-fn has_escaped_slopvac_key(raw: &str) -> bool {
-    let bytes = raw.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'"' {
-            i += 1;
-            continue;
-        }
-        let start = i + 1;
-        let mut j = start;
-        while j < bytes.len() && bytes[j] != b'"' && bytes[j] != b'\n' {
+/// It reads the text by format and looks at top-level keys only: a quoted value or a nested
+/// key that decodes to `slopvac` does not count. It is a best effort on broken text.
+fn has_slopvac_key(raw: &str, format: Format) -> bool {
+    match format {
+        Format::Yaml => raw.lines().any(|line| {
+            !line.starts_with([' ', '\t', '#', '-'])
+                && leading_key(line).is_some_and(|k| k == "slopvac")
+        }),
+        Format::Json => json_top_level_keys(raw).iter().any(|k| k == "slopvac"),
+        Format::Toml => toml_top_level_names(raw).iter().any(|k| k == "slopvac"),
+    }
+}
+
+/// The key a YAML line starts with: a quoted string followed by a colon, or a bare word.
+fn leading_key(line: &str) -> Option<String> {
+    let (key, rest) = take_key(line)?;
+    rest.trim_start().starts_with(':').then_some(key)
+}
+
+/// A bare or quoted key at the start of `s`, and the text after it.
+fn take_key(s: &str) -> Option<(String, &str)> {
+    let s = s.trim_start_matches([' ', '\t']);
+    if let Some(body) = s.strip_prefix('"') {
+        let bytes = body.as_bytes();
+        let mut j = 0;
+        while j < bytes.len() && bytes[j] != b'"' {
             j += if bytes[j] == b'\\' { 2 } else { 1 };
         }
-        if j >= bytes.len() || bytes[j] != b'"' {
-            i = start;
+        if j >= bytes.len() {
+            return None;
+        }
+        return Some((decode_escapes(&body[..j]), &body[j + 1..]));
+    }
+    if let Some(body) = s.strip_prefix('\'') {
+        let end = body.find('\'')?;
+        return Some((body[..end].to_owned(), &body[end + 1..]));
+    }
+    let end = s
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(s.len());
+    (end > 0).then(|| (s[..end].to_owned(), &s[end..]))
+}
+
+/// Keys of the outermost JSON object, found by tracking nesting and strings.
+fn json_top_level_keys(raw: &str) -> Vec<String> {
+    let bytes = raw.as_bytes();
+    let mut keys = Vec::new();
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b'"' => {
+                let start = i + 1;
+                let mut j = start;
+                while j < bytes.len() && bytes[j] != b'"' {
+                    j += if bytes[j] == b'\\' { 2 } else { 1 };
+                }
+                let end = j.min(bytes.len());
+                let after = raw.get(end + 1..).unwrap_or("").trim_start();
+                if depth == 1 && after.starts_with(':') {
+                    keys.push(decode_escapes(&raw[start..end]));
+                }
+                i = end;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    keys
+}
+
+/// The first key of every TOML table header, and of each root key before the first header.
+fn toml_top_level_names(raw: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_root = true;
+    for line in raw.lines() {
+        let t = line.trim_start();
+        if t.starts_with('#') || t.is_empty() {
             continue;
         }
-        let after = raw[j + 1..].trim_start_matches([' ', '\t']);
-        let key_position = after.starts_with([':', '=', ']']);
-        if key_position && decode_escapes(&raw[start..j]) == "slopvac" {
-            return true;
+        if let Some(header) = t.strip_prefix('[') {
+            in_root = false;
+            let header = header.strip_prefix('[').unwrap_or(header);
+            if let Some((name, _)) = take_key(header) {
+                names.push(name);
+            }
+        } else if in_root && let Some((name, _)) = take_key(t) {
+            names.push(name);
         }
-        i = j + 1;
     }
-    false
+    names
 }
 
 /// Decode the escapes that YAML, JSON and TOML double-quoted strings share.
