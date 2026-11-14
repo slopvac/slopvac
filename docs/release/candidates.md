@@ -28,14 +28,14 @@ Run the workflow from the Actions tab with `workflow_dispatch`. Pick the branch,
 
 ## Promote to stable
 
-A stable `vX.Y.Z` tag starts the cargo-dist release workflow. Its provenance gate (`release-provenance.yml`, backed by `scripts/release_provenance.py`) requires all of these:
+A stable `vX.Y.Z` tag starts the cargo-dist release workflow. Its provenance gate (`release-provenance.yml`, backed by `scripts/release_provenance.py`) requires all of these. The release workflow's `host` job and the stable PyPI job both need the gate:
 
 - An `rc/vX.Y.Z-rc.N` tag exists for the same version.
 - That candidate's tree equals the stable tag's tree. A squash merge of the tested release PR keeps the tree.
-- A `Release candidate` run on the candidate commit finished with success.
+- A `Release candidate` push run of that exact tag, at that commit, finished with success. Runs of other workflows, other events, other refs or other commits do not count.
 
 Otherwise the stable release stops before it builds. Prerelease tags skip the gate.
 
 ## Maintainer setup
 
-The PyPI Trusted Publisher, the `pypi` environment, the Homebrew tap and its token are set up by hand. See [maintainer setup](maintainer-setup.md). To wire the provenance gate into cargo-dist, add `plan-jobs = ["./release-provenance"]` to `dist-workspace.toml` and run `dist generate`.
+The PyPI Trusted Publisher, the `pypi` environment, the Homebrew tap and its token are set up by hand. See [maintainer setup](maintainer-setup.md).

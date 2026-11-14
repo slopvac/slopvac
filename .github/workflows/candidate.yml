@@ -59,26 +59,36 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 scripts/release_provenance.py parse-tag "$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Require the commit to be on main or the release PR branch
-        if: ${{ github.event_name == 'push' }}
-        run: |
-          set -euo pipefail
-          if ! git branch -r --contains "$GITHUB_SHA" | grep -E '^\s*origin/(main|release-please--)'; then
-            echo "candidate commit is not on main or a release-please branch" >&2
-            exit 1
-          fi
-
       - name: Decide whether this run may publish
         id: mode
         env:
           EVENT: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry-run }}
+          INPUT_TAG: ${{ inputs.tag }}
           REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "$EVENT" == "push" ]] || [[ "$DRY_RUN" == "false" && "$REF_TYPE" == "tag" ]]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          publish=false
+          if [[ "$EVENT" == "push" ]]; then
+            publish=true
+          elif [[ "$DRY_RUN" == "false" ]]; then
+            # A real dispatch run must be started on the candidate tag itself.
+            if [[ "$REF_TYPE" != "tag" || "$REF_NAME" != "$INPUT_TAG" ]]; then
+              echo "dry-run is off: run this workflow on the tag $INPUT_TAG, not on $REF_NAME" >&2
+              exit 1
+            fi
+            publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+      - name: Require the commit to be on main or the release PR branch
+        if: ${{ steps.mode.outputs.publish == 'true' }}
+        run: |
+          set -euo pipefail
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -E '^\s*origin/(main|release-please--)'; then
+            echo "candidate commit is not on main or a release-please branch" >&2
+            exit 1
           fi
 
   evals:
