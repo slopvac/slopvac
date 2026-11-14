@@ -142,36 +142,65 @@ def tags_for(params):
     return {"results": results}
 
 
+def write_pids(path, pids):
+    """Write the pids to a temporary name, then rename, so a reader never sees part."""
+    with open(path + ".tmp", "w") as f:
+        f.write("\n".join(map(str, pids)))
+    os.rename(path + ".tmp", path)
+
+
+def wait_for(path):
+    """The contents of a file that a child creates by rename."""
+    end = time.time() + 10
+    while not os.path.exists(path) and time.time() < end:
+        time.sleep(0.01)
+    with open(path) as f:
+        return f.read().strip()
+
+
 def spawn_orphan():
     """A child in the same group that keeps the stdio pipes open, then the parent leaves."""
     child = subprocess.Popen(["sleep", "300"]).pid
     if pidfile:
-        with open(pidfile, "w") as f:
-            f.write("%d\n%d" % (child, os.getpid()))
+        write_pids(pidfile, [child, os.getpid()])
 
 
 def spawn_children():
     pids = [subprocess.Popen(["sleep", "300"]).pid]
     pids.append(subprocess.Popen(["sleep", "300"], start_new_session=True).pid)
     if pidfile:
-        with open(pidfile, "w") as f:
-            f.write("\n".join(map(str, pids)))
+        write_pids(pidfile, pids)
 
 
 def spawn_nested():
     """A child that leaves the group with `setsid` and starts a child of its own."""
     inner = pidfile + ".inner"
     sh = subprocess.Popen(
-        ["sh", "-c", 'sleep 300 & echo $! > "$0"; wait', inner],
+        ["sh", "-c", 'sleep 300 & echo $! > "$0.tmp"; mv "$0.tmp" "$0"; wait', inner],
         start_new_session=True,
     ).pid
-    end = time.time() + 10
-    while not os.path.exists(inner) and time.time() < end:
-        time.sleep(0.01)
-    with open(inner) as f:
-        grandchild = f.read().strip()
-    with open(pidfile, "w") as f:
-        f.write("%d\n%s" % (sh, grandchild))
+    write_pids(pidfile, [sh, wait_for(inner)])
+
+
+# Generation $2 writes its pid to "$1.$2", starts generation $2 - 1 and waits.
+# Generation 1 sleeps.
+CHAIN = """echo $$ > "$1.$2.tmp"; mv "$1.$2.tmp" "$1.$2"
+if [ "$2" -gt 1 ]; then sh -c "$0" "$0" "$1" $(($2 - 1)) & wait; else exec sleep 300; fi"""
+
+
+def spawn_chain(depth):
+    """A chain of `depth` generations outside the group, each a child of the one before."""
+    subprocess.Popen(
+        ["sh", "-c", CHAIN, CHAIN, pidfile, str(depth)], start_new_session=True
+    )
+    write_pids(pidfile, [wait_for("%s.%d" % (pidfile, g)) for g in range(depth, 0, -1)])
+
+
+def move_group():
+    """Start a child in a new process group of the session, then move into that group."""
+    child = subprocess.Popen(["sleep", "300"], preexec_fn=lambda: os.setpgid(0, 0)).pid
+    os.setpgid(0, child)
+    write_pids(pidfile, [os.getpid(), child])
 
 
 if mode == "stray-stdout":
@@ -203,8 +232,7 @@ while True:
             error(id_, -32001, "protocol-version-unsupported")
             continue
         if mode == "hang" and pidfile:
-            with open(pidfile, "w") as f:
-                f.write(str(os.getpid()))
+            write_pids(pidfile, [os.getpid()])
         if init_sized:
             send_sized(
                 {"jsonrpc": "2.0", "id": id_, "result": init_result()}, init_sized
@@ -228,6 +256,12 @@ while True:
             spawn_children()
         if mode == "nested":
             spawn_nested()
+        if mode.startswith("chain:"):
+            spawn_chain(int(mode.split(":")[1]))
+        if mode == "move-group":
+            # The leader stops reading, so only a kill ends it.
+            move_group()
+            time.sleep(300)
         if mode == "no-read":
             time.sleep(300)
         if mode == "stderr-flood":
