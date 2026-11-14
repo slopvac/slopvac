@@ -245,17 +245,25 @@ fn role_of(cell: Node<'_, '_>, style: &str) -> Role {
 }
 
 fn html_to_text(html: &str) -> String {
+    html_to_text_counted(html, &mut 0)
+}
+
+/// Convert HTML to text. `work` adds the bytes that each search examined.
+fn html_to_text_counted(html: &str, work: &mut usize) -> String {
     let mut text = String::new();
     let mut rest = html;
     // No tag can close after the last `>`, so one reverse scan bounds every later search.
     let last_close = html.rfind('>');
     while let Some(open) = rest.find('<') {
+        *work += open + 1;
         text.push_str(&rest[..open]);
         let after = &rest[open + 1..];
         let consumed = html.len() - rest.len() + open + 1;
         let starts_tag = after.starts_with(|c: char| c.is_ascii_alphabetic() || c == '/');
         let close = if starts_tag && last_close.is_some_and(|last| last >= consumed) {
-            after.find('>')
+            let found = after.find('>');
+            *work += found.map_or(after.len(), |c| c + 1);
+            found
         } else {
             None
         };
@@ -276,19 +284,22 @@ fn html_to_text(html: &str) -> String {
             rest = after;
         }
     }
+    *work += rest.len();
     text.push_str(rest);
-    let text = decode_entities(&text);
+    let text = decode_entities(&text, work);
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     lines.join("\n").trim().to_string()
 }
 
-fn decode_entities(s: &str) -> String {
+fn decode_entities(s: &str, work: &mut usize) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(amp) = rest.find('&') {
+        *work += amp + 1;
         out.push_str(&rest[..amp]);
         let after = &rest[amp + 1..];
         let window = &after.as_bytes()[..after.len().min(9)];
+        *work += window.len();
         let decoded = window.iter().position(|&b| b == b';').and_then(|n| {
             let ch = match &after[..n] {
                 "amp" => '&',
@@ -600,12 +611,26 @@ mod limit_tests {
     }
 
     #[test]
-    fn unmatched_markup_openers_cost_linear_time_and_keep_their_text() {
-        let lt = "<1 ".repeat(100_000);
+    fn unmatched_markup_openers_examine_a_linear_number_of_bytes() {
+        for unit in ["<1 ", "<a ", "&x", "&amp", "</", "<a>&"] {
+            let html = unit.repeat(20_000);
+            let mut work = 0;
+            let _ = html_to_text_counted(&html, &mut work);
+            assert!(
+                work <= 16 * html.len(),
+                "{unit:?}: examined {work} bytes of {}",
+                html.len()
+            );
+        }
+    }
+
+    #[test]
+    fn unmatched_openers_keep_their_text_and_entities_decode() {
+        let lt = "<1 ".repeat(1_000);
         assert_eq!(html_to_text(&lt), lt.trim());
-        let tags = "<a ".repeat(100_000);
+        let tags = "<a ".repeat(1_000);
         assert_eq!(html_to_text(&tags), tags.trim());
-        let amp = "&x".repeat(100_000);
+        let amp = "&x".repeat(1_000);
         assert_eq!(html_to_text(&amp), amp);
         assert_eq!(
             html_to_text("a &amp; b &#65; &bogus; c"),
