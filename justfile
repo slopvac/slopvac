@@ -88,3 +88,15 @@ docs-check:
 # Build rustdoc for every workspace crate with warnings denied.
 doc-rust:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+
+# Lint the eval corpus with ENGINE ('python' or a slopvac command) and store OUT.
+eval-run ENGINE="python" OUT="evals/.cache/results/latest.json":
+    uv run python -m evals run --engine {{quote(ENGINE)}} --out {{quote(OUT)}}
+
+# Offline tier: score stored results without starting an engine.
+eval-score RESULTS SPLIT="all":
+    uv run python -m evals score {{quote(RESULTS)}} --split {{quote(SPLIT)}}
+
+# Paired A/B of two stored results; exits 1 when B regresses beyond noise.
+eval-ab A B SPLIT="all":
+    uv run python -m evals ab {{quote(A)}} {{quote(B)}} --split {{quote(SPLIT)}} --fail-on-regression

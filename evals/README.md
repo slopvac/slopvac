@@ -61,3 +61,37 @@ uv run pytest tests/test_evals_manifest.py
 ```
 
 The tests need no network. They validate the schema, committed hashes, attribution, and the generator output.
+
+## Run the evals
+
+The harness lints the corpus with an engine, stores the findings, and scores them. An engine is any command that accepts `lint <paths> --format json`. `python` selects the Python reference. After cutover, pass the Rust binary.
+
+```sh
+just eval-run python evals/.cache/results/a.json        # tier 1: run an engine
+just eval-score evals/.cache/results/a.json holdout     # tier 2: offline re-score
+just eval-ab a.json b.json                              # paired A/B between two runs
+```
+
+The runner reads committed documents first and the cache second. Run `python -m evals.fetch` and `python -m evals.build_derived --materialise` to fill the cache. Model twins with status `pending` are skipped.
+
+### Results
+
+A results file holds the engine name, command and version, the manifest hash, and the findings per document (rule, line, severity). The offline tier needs only that file and the manifest, so CI can re-score stored outputs without a Vale install or an engine build.
+
+### Scorecard
+
+`score` reports, for each rule and for a split (`all`, `tuning` or `holdout`):
+
+- `recall`: seeded defects where the rule fires within one line of the insertion.
+- `control_fpr`: clean-control sentences where the rule fires within one line.
+- `human_per_100_words`: findings on pre-2022 human text, a floor on false positives.
+
+Each rate carries a Wilson interval and a bootstrap interval that resamples whole documents. Findings in one document are correlated, so the document is the unit of resampling.
+
+### Splits
+
+A document lands in `holdout` or `tuning` by a hash of its root parent, about 20% holdout. Seeded documents, controls, rewrite pairs and twins follow their parent, so no held-out text reaches rule tuning.
+
+### A/B
+
+`ab` resamples documents once and scores both arms on each draw. The interval is for B minus A. It lists a rule as a regression when the interval for recall falls below zero, or the interval for control false positives or human findings rises above zero.
