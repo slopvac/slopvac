@@ -25,14 +25,26 @@ pub struct Span {
     pub end: u64,
 }
 
+/// Whether `offset` is a valid position in `text` (positions.md, "Valid
+/// offsets"): on a code point boundary, outside a leading BOM and not between
+/// the CR and LF of one CRLF.
+fn offset_is_valid(text: &str, offset: usize) -> bool {
+    let bytes = text.as_bytes();
+    let inside_bom = text.starts_with('\u{feff}') && (1..3).contains(&offset);
+    let inside_crlf =
+        offset > 0 && bytes.get(offset - 1) == Some(&b'\r') && bytes.get(offset) == Some(&b'\n');
+    text.is_char_boundary(offset) && !inside_bom && !inside_crlf
+}
+
 impl Span {
-    /// Whether the span lies inside `text` on character boundaries.
+    /// Whether the span lies inside `text` on valid offsets: character
+    /// boundaries, outside a leading BOM, not between the CR and LF of a CRLF.
     #[must_use]
     pub fn fits(&self, text: &str) -> bool {
         let (Ok(s), Ok(e)) = (usize::try_from(self.start), usize::try_from(self.end)) else {
             return false;
         };
-        s <= e && e <= text.len() && text.is_char_boundary(s) && text.is_char_boundary(e)
+        s <= e && e <= text.len() && offset_is_valid(text, s) && offset_is_valid(text, e)
     }
 
     /// Whether `inner` lies inside `self`, endpoints included.
@@ -352,7 +364,8 @@ pub fn parse_score(entry: &Value) -> Result<Option<f64>, PluginError> {
 /// Parse and check the edits of one fixer entry against the sent document.
 ///
 /// Every edit must name a sent finding and lie inside that finding's span,
-/// endpoints included. Edits must not overlap. The count and inserted bytes
+/// endpoints included. Edits must not overlap; zero-width inserts at one
+/// offset do not, and keep array order (the sort is stable). The count and inserted bytes
 /// are capped. Any violation rejects every edit of the document.
 ///
 /// # Errors
@@ -393,8 +406,7 @@ pub fn parse_edits(
     order.sort_by_key(|e| (e.span.start, e.span.end));
     for pair in order.windows(2) {
         let (a, b) = (pair[0].span, pair[1].span);
-        let same_point_insert = a.start == a.end && b.start == b.end && a.start == b.start;
-        if a.end > b.start || same_point_insert {
+        if a.end > b.start {
             return Err(invalid("edits overlap"));
         }
     }
@@ -459,9 +471,36 @@ pub fn parse_completions(
         .collect()
 }
 
-const WINDOWS_RESERVED: [&str; 22] = [
-    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
-    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+const WINDOWS_RESERVED: [&str; 28] = [
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+    // Superscript digits are device names too (U+00B9, U+00B2, U+00B3).
+    "com\u{b9}",
+    "com\u{b2}",
+    "com\u{b3}",
+    "lpt\u{b9}",
+    "lpt\u{b2}",
+    "lpt\u{b3}",
 ];
 
 /// Check a recipe path as text: relative, normal segments, no Windows tricks.
@@ -484,6 +523,12 @@ pub fn check_relative_path(p: &str) -> Result<(), String> {
     let bytes = p.as_bytes();
     if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
         return Err("drive letter".into());
+    }
+    if let Some(c) = p
+        .chars()
+        .find(|c| matches!(c, ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return Err(format!("character `{c}` is reserved on Windows"));
     }
     let segments: Vec<&str> = p.split('/').collect();
     if segments.len() > 32 {
@@ -739,7 +784,6 @@ mod tests {
         for bad in [
             json!({"edits": [edit(0, 4), edit(3, 5)]}),
             json!({"edits": [edit(0, 4), edit(2, 2)]}),
-            json!({"edits": [edit(3, 3), edit(3, 3)]}),
         ] {
             assert!(parse_edits(&bad, text, &findings).is_err(), "{bad}");
         }
@@ -808,8 +852,29 @@ mod tests {
             "trail.",
             "sp ace ",
             "nul\0",
+            "a:b",
+            "file.txt:stream",
+            "dir/a:$DATA",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a|b",
+            "a?b",
+            "a*b",
+            "com\u{b9}",
+            "COM\u{b2}",
+            "dir/com\u{b3}.txt",
+            "LPT\u{b9}",
+            "lpt\u{b2}.log",
+            "Lpt\u{b3}",
         ] {
             assert!(check_relative_path(bad).is_err(), "{bad:?}");
+            let plan = json!({"files": [{"path": bad, "action": "remove"}]});
+            let err = parse_recipe(&plan).unwrap_err();
+            assert!(
+                matches!(err, PluginError::OutputInvalid(_)),
+                "{bad:?}: {err}"
+            );
         }
         for good in ["AGENTS.md", ".claude/settings.json", "a/b/c.txt"] {
             assert!(check_relative_path(good).is_ok(), "{good}");

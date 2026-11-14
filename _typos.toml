@@ -58,6 +58,10 @@ AKS = "AKS"
 # `Caf\u{e9}` escapes in slopvac-pos test strings.
 Caf = "Caf"
 
+# Mixed-case YAML boolean probe in frontmatter-spans tests.
+[default.extend-identifiers]
+TrUe = "TrUe"
+
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).
 extend-ignore-re = ["\\b[0-9a-f]{10,40}\\b"]

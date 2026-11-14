@@ -12,6 +12,7 @@
 //! trust store lands in its own module.
 
 pub mod api;
+pub mod apply;
 pub mod error;
 pub mod extract;
 pub mod frame;
@@ -22,6 +23,7 @@ pub mod lock;
 pub mod oci;
 pub mod process;
 pub mod protocol;
+pub mod sign;
 pub mod strict;
 
 pub use api::{DocOutcome, plan_batches};
