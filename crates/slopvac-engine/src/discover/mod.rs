@@ -160,7 +160,7 @@ pub fn discover<S: AsRef<str>>(
 
     for target in targets {
         let target = target.as_ref();
-        let cleaned = syntax::lexical_clean(Path::new(target));
+        let cleaned = syntax::resolve_target(Path::new(target));
         let path = cleaned.as_path();
         if path.is_dir() {
             walk_dir(path, &options, &mut out)?;

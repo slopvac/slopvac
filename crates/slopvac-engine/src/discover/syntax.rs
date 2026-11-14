@@ -46,6 +46,25 @@ pub(super) fn lexical_clean(path: &Path) -> PathBuf {
     out
 }
 
+/// Normalise a command-line target.
+///
+/// A path with `..` that exists is resolved through the file system up to its last
+/// `..`, because `link/..` names the parent of the link's *target*. The final
+/// components stay as written, so a symlink named as a target remains one. A path
+/// without `..`, or one that does not exist, is only cleaned lexically.
+pub(super) fn resolve_target(path: &Path) -> PathBuf {
+    let components: Vec<_> = path.components().collect();
+    let Some(last_parent) = components.iter().rposition(|c| *c == Component::ParentDir) else {
+        return lexical_clean(path);
+    };
+    let prefix: PathBuf = components[..=last_parent].iter().collect();
+    let Ok(mut resolved) = prefix.canonicalize() else {
+        return lexical_clean(path);
+    };
+    resolved.extend(&components[last_parent + 1..]);
+    lexical_clean(&resolved)
+}
+
 /// Expand `{a,b}` alternation into brace-free patterns, nested groups and
 /// separators inside alternatives included. `None` means more than `limit`
 /// results. Escaped braces and braces inside a character class stay literal; a

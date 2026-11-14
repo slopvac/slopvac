@@ -765,13 +765,14 @@ fn too_many_brace_alternatives_are_rejected() {
 #[test]
 fn parent_traversal_in_a_target_does_not_leak_into_exclude_matching() {
     let dir = TempDir::new().unwrap();
-    write(dir.path(), "drafts/wip.md", "");
-    write(dir.path(), "docs/guide.md", "");
-    let target = dir.path().join("drafts/../docs");
-    let opts = with_excludes(dir.path(), &["drafts/"]);
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "drafts/wip.md", "");
+    write(&root, "docs/guide.md", "");
+    let target = root.join("drafts/../docs");
+    let opts = with_excludes(&root, &["drafts/"]);
     let found = discover(&[target.to_str().unwrap()], opts).unwrap();
     let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
-    assert_eq!(got, [dir.path().join("docs/guide.md")]);
+    assert_eq!(got, [root.join("docs/guide.md")]);
 }
 
 #[test]
@@ -780,4 +781,68 @@ fn lexical_dot_dot_is_collapsed_when_the_path_does_not_exist() {
     let ex = Excludes::new(root, &["drafts/"]).unwrap();
     assert!(!ex.is_excluded(Path::new("/project/drafts/../docs/guide.md")));
     assert!(ex.is_excluded(Path::new("/project/docs/../drafts/wip.md")));
+}
+
+#[test]
+fn the_root_itself_is_never_excluded() {
+    let ex = Excludes::new(Path::new("/project"), &["*", "**", "/", "project"]).unwrap();
+    assert!(!ex.is_excluded(Path::new("/project")));
+    assert!(!ex.is_excluded(Path::new("/project/.")));
+    assert!(ex.is_excluded(Path::new("/project/a.md")));
+}
+
+#[cfg(unix)]
+mod symlink_paths {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    #[test]
+    fn dot_dot_after_a_symlinked_directory_follows_the_link() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write(&root, "README.md", "root");
+        write(&root, "manuals/README.md", "manuals");
+        write(&root, "manuals/current/page.md", "");
+        symlink(root.join("manuals/current"), root.join("docs-link")).unwrap();
+        let target = root.join("docs-link/../README.md");
+        let found = discover(&[target.to_str().unwrap()], Options::default()).unwrap();
+        let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+        assert_eq!(got, [root.join("manuals/README.md")]);
+    }
+
+    #[test]
+    fn a_symlink_named_last_after_dot_dot_stays_a_symlink() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write(&root, "sub/real.md", "");
+        symlink(root.join("sub/real.md"), root.join("link.md")).unwrap();
+        let target = root.join("sub/../link.md");
+        let found = discover(&[target.to_str().unwrap()], Options::default()).unwrap();
+        assert_eq!(found.files[0].path, root.join("link.md"));
+    }
+
+    fn external_link() -> (TempDir, PathBuf, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap().join("repo");
+        let shared = dir.path().canonicalize().unwrap().join("shared");
+        write(&shared, "guide.md", "");
+        fs::create_dir_all(&root).unwrap();
+        symlink(shared.join("guide.md"), root.join("linked.md")).unwrap();
+        (dir, root, shared)
+    }
+
+    #[test]
+    fn an_external_symlink_is_excluded_by_its_repository_path() {
+        let (_dir, root, _shared) = external_link();
+        let ex = Excludes::new(&root, &["/linked.md"]).unwrap();
+        assert!(ex.is_excluded(&root.join("linked.md")));
+    }
+
+    #[test]
+    fn an_external_symlink_is_not_excluded_by_a_pattern_for_its_target() {
+        let (_dir, root, _shared) = external_link();
+        let ex = Excludes::new(&root, &["guide.md", "/shared/"]).unwrap();
+        assert!(!ex.is_excluded(&root.join("linked.md")));
+    }
 }

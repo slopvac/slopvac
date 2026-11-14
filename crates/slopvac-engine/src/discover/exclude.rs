@@ -7,6 +7,12 @@
 //! compiles each pattern alone and lets the last matching one decide, instead of
 //! using git's "an excluded parent cannot be re-included" rule. The parity table in
 //! `tests/fixtures/exclude_parity.tsv` is generated from `pathspec` itself.
+//!
+//! Paths are matched as the project sees them. The lexical path relative to the
+//! root decides, so a symlink is excluded by its own repository path and not by
+//! the location it points to. A path that is lexically outside the root is tried
+//! again after resolving symlinks, so an aliased root works. A path outside the
+//! root both ways matches nothing, and the root itself is never excluded.
 
 use std::path::{Path, PathBuf};
 
@@ -66,21 +72,25 @@ impl Excludes {
             .is_some_and(|m| m.is_ignore())
     }
 
-    /// `path` relative to the root. Existing paths are resolved first, so
-    /// symlinks and `..` cannot change which directories the matcher sees. When
-    /// either side does not exist, `.` and `..` are collapsed lexically instead.
+    /// `path` relative to the root, or `None` when it is outside.
+    ///
+    /// The lexical path decides first (`.` and `..` collapsed, no file system
+    /// access), because users write excludes in terms of the paths they see in the
+    /// repository: `/linked.md` excludes `repo/linked.md` even when that symlink
+    /// points elsewhere. Only a path that is lexically outside the root gets a
+    /// second try through resolved paths, which makes an aliased root (a symlink
+    /// to the project directory) work.
     fn relative(&self, path: &Path) -> Option<PathBuf> {
-        if let (Ok(p), Ok(r)) = (path.canonicalize(), self.root.canonicalize())
-            && let Ok(rest) = p.strip_prefix(&r)
-        {
-            return Some(rest.to_path_buf());
-        }
-        let lexical = |p: &Path| lexical_clean(p);
-        if let Ok(rest) = lexical(path).strip_prefix(lexical(&self.root)) {
+        if let Ok(rest) = lexical_clean(path).strip_prefix(lexical_clean(&self.root)) {
             return Some(rest.to_path_buf());
         }
         let absolute = |p: &Path| std::path::absolute(p).map(|a| lexical_clean(&a));
-        let (p, r) = (absolute(path).ok()?, absolute(&self.root).ok()?);
+        if let (Ok(p), Ok(r)) = (absolute(path), absolute(&self.root))
+            && let Ok(rest) = p.strip_prefix(r)
+        {
+            return Some(rest.to_path_buf());
+        }
+        let (p, r) = (path.canonicalize().ok()?, self.root.canonicalize().ok()?);
         p.strip_prefix(r).ok().map(Path::to_path_buf)
     }
 }
