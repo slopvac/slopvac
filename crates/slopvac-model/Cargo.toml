@@ -18,6 +18,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-jsonschema = "0.61.2"
+jsonschema = { workspace = true }
+proptest = { workspace = true }
 serde_yaml_ng = "0.10.0"
 toml = "1.2.1"

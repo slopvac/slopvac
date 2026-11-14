@@ -9,6 +9,7 @@ mod ids;
 mod report;
 mod source;
 mod span;
+mod values;
 
 pub use edit::{Edit, EditError, apply_edits};
 pub use ids::{
@@ -22,3 +23,4 @@ pub use report::{
 };
 pub use source::{BomMode, ColumnUnit, PositionEncoding, SourceIndex};
 pub use span::{LineCol, LineColError, PositionError, Span, SpanError};
+pub use values::{CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, ValueError};

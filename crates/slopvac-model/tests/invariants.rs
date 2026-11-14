@@ -2,11 +2,17 @@
 
 #![allow(missing_docs)]
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 
+use common::patch_layer;
 use serde_json::{Value, json};
-use slopvac_model::{ContextTag, Contexts, Edit, Finding, Fix, Gate, Report, Span};
+use slopvac_model::{
+    ConfigSource, ContextTag, Contexts, Edit, Finding, Fix, Gate, Notice, Report, RuleProvenance,
+    Span,
+};
 
 fn fixture(dir: &str, name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -152,7 +158,64 @@ fn contexts_construction_rejects_duplicates() {
 #[test]
 fn document_rejects_duplicate_contexts_seen() {
     let mut report = fixture("valid", "multi-document.json");
+    patch_layer(&mut report);
+    assert!(
+        serde_json::from_value::<Report>(report.clone()).is_ok(),
+        "the baseline must decode before duplicates are injected"
+    );
     report["documents"][0]["contexts_seen"] = json!(["prose", "prose"]);
+    let error = serde_json::from_value::<Report>(report).unwrap_err();
+    assert!(
+        error.to_string().contains("listed twice"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn finding_rejects_every_optional_member_set_to_null() {
+    for key in ["span", "end_line", "end_column", "fix", "provenance"] {
+        let mut finding = spanned_finding();
+        finding[key] = Value::Null;
+        assert!(
+            serde_json::from_value::<Finding>(finding).is_err(),
+            "{key}: null must not read as absent"
+        );
+    }
+}
+
+#[test]
+fn finding_rejects_the_whole_range_set_to_null() {
+    let mut finding = spanned_finding();
+    for key in ["span", "end_line", "end_column"] {
+        finding[key] = Value::Null;
+    }
+    assert!(serde_json::from_value::<Finding>(finding).is_err());
+}
+
+#[test]
+fn optional_members_reject_null_elsewhere() {
+    assert!(
+        serde_json::from_value::<Notice>(
+            json!({"code": "a-b", "level": "info", "message": "m", "path": null})
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ConfigSource>(json!({"layer": "core", "line": null})).is_err()
+    );
+    assert!(
+        serde_json::from_value::<RuleProvenance>(json!({"pack": "core", "version": null})).is_err()
+    );
+}
+
+#[test]
+fn category_score_budget_must_be_present_but_may_be_null() {
+    let mut report = fixture("valid", "multi-document.json");
+    patch_layer(&mut report);
+    report["documents"][0]["categories"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("budget");
     assert!(serde_json::from_value::<Report>(report).is_err());
 }
 

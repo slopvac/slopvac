@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -6,6 +8,9 @@ use thiserror::Error;
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
 use crate::span::{LineCol, LineColError, Span};
+use crate::values::{
+    CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
+};
 
 /// Optional producer fields are omitted when unset, never written as `null`; drop the
 /// `null` alternative schemars adds for `Option` so the schema says the same.
@@ -63,15 +68,17 @@ pub enum NoticeLevel {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Notice {
     /// Stable kebab-case identifier.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
-    pub code: String,
+    pub code: KebabName,
     /// Level.
     pub level: NoticeLevel,
     /// Human message.
-    #[schemars(length(min = 1))]
-    pub message: String,
+    pub message: NonEmptyString,
     /// File the notice concerns.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     pub path: Option<String>,
 }
@@ -83,11 +90,19 @@ pub struct RuleProvenance {
     /// Owning pack.
     pub pack: PackId,
     /// Pack version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     pub version: Option<String>,
     /// Pack source.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     pub source: Option<String>,
 }
@@ -125,19 +140,29 @@ pub struct ConfigSource {
     /// Layer name.
     pub layer: ConfigLayer,
     /// File.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     pub file: Option<String>,
     /// One-based line.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
-    #[schemars(range(min = 1))]
-    pub line: Option<usize>,
+    pub line: Option<NonZeroUsize>,
     /// One-based column.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
-    #[schemars(range(min = 1))]
-    pub column: Option<usize>,
+    pub column: Option<NonZeroUsize>,
 }
 
 /// A machine-applicable correction: at least one edit, none overlapping.
@@ -228,11 +253,11 @@ pub struct Finding {
     /// Owning pack.
     pub pack: PackId,
     /// Category id.
-    pub category: String,
+    pub category: CategoryId,
     /// Severity.
     pub severity: Severity,
     /// Message.
-    pub message: String,
+    pub message: NonEmptyString,
     /// Display position of the start.
     pub start: LineCol,
     /// Byte range and end position; absent for whole-document findings.
@@ -258,15 +283,17 @@ struct FindingWire {
     /// Owning pack.
     pack: PackId,
     /// Category id.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
-    category: String,
+    category: CategoryId,
     /// Severity.
     severity: Severity,
     /// Message.
-    #[schemars(length(min = 1))]
-    message: String,
+    message: NonEmptyString,
     /// Byte range; absent for whole-document findings.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     span: Option<Span>,
     /// Start line.
@@ -276,11 +303,19 @@ struct FindingWire {
     #[schemars(range(min = 1))]
     column: usize,
     /// End line; present with `span`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(range(min = 1), transform = absent_not_null)]
     end_line: Option<usize>,
     /// End column; present with `span`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(range(min = 1), transform = absent_not_null)]
     end_column: Option<usize>,
     /// Text contexts the match sits in.
@@ -290,11 +325,19 @@ struct FindingWire {
     /// Matched source text.
     matched_text: String,
     /// Suggested fix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     fix: Option<Fix>,
     /// Rule provenance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
     #[schemars(transform = absent_not_null)]
     provenance: Option<RuleProvenance>,
 }
@@ -359,8 +402,7 @@ pub struct AiRegisterSummary {
     /// Warnings.
     pub warnings: usize,
     /// Findings per 100 words.
-    #[schemars(range(min = 0))]
-    pub per_100_words: f64,
+    pub per_100_words: Density,
 }
 
 /// Strong and weak AI-signal summaries.
@@ -378,8 +420,7 @@ pub struct AiRegister {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct CategorySummary {
     /// Category id.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
-    pub category: String,
+    pub category: CategoryId,
     /// Findings.
     pub findings: usize,
     /// Errors.
@@ -389,11 +430,9 @@ pub struct CategorySummary {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
-    #[schemars(range(min = 0))]
-    pub per_100_words: f64,
+    pub per_100_words: Density,
     /// Score, 0 to 100.
-    #[schemars(range(min = 0, max = 100))]
-    pub score: f64,
+    pub score: Score,
 }
 
 /// Every document rolled into one result.
@@ -413,11 +452,9 @@ pub struct RunSummary {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
-    #[schemars(range(min = 0))]
-    pub per_100_words: f64,
+    pub per_100_words: Density,
     /// Score, 0 to 100.
-    #[schemars(range(min = 0, max = 100))]
-    pub score: f64,
+    pub score: Score,
     /// Whether every document passed.
     pub passed: bool,
     /// Per-category rollup.
@@ -445,8 +482,7 @@ pub enum GenreSource {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct GenreReason {
     /// Kebab-case signal name.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
-    pub signal: String,
+    pub signal: KebabName,
     /// Detail.
     pub detail: String,
 }
@@ -456,8 +492,7 @@ pub struct GenreReason {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct GenreResult {
     /// Genre id.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
-    pub id: String,
+    pub id: GenreId,
     /// Source of the choice.
     pub source: GenreSource,
     /// Reasons.
@@ -469,8 +504,7 @@ pub struct GenreResult {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct CategoryScore {
     /// Category id.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
-    pub category: String,
+    pub category: CategoryId,
     /// Findings.
     pub findings: usize,
     /// Errors.
@@ -480,17 +514,15 @@ pub struct CategoryScore {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
-    #[schemars(range(min = 0))]
-    pub per_100_words: f64,
+    pub per_100_words: Density,
     /// Errors and warnings per 100 words.
-    #[schemars(range(min = 0))]
-    pub gating_per_100_words: f64,
+    pub gating_per_100_words: Density,
     /// Gating limit, or null.
+    #[serde(deserialize_with = "required_nullable")]
     #[schemars(schema_with = "nullable_budget")]
-    pub budget: Option<f64>,
+    pub budget: Option<Density>,
     /// Score, 0 to 100.
-    #[schemars(range(min = 0, max = 100))]
-    pub score: f64,
+    pub score: Score,
     /// Whether the budget is exceeded.
     pub over_budget: bool,
 }
@@ -596,11 +628,9 @@ impl From<Gate> for GateWire {
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Document {
     /// File path.
-    #[schemars(length(min = 1))]
-    pub path: String,
+    pub path: NonEmptyString,
     /// Profile name.
-    #[schemars(length(min = 1))]
-    pub profile: String,
+    pub profile: NonEmptyString,
     /// Genre.
     pub genre: GenreResult,
     /// Contexts found in the document.
@@ -626,11 +656,9 @@ pub struct Document {
     /// Suggestions.
     pub suggestions: usize,
     /// Findings per 100 words.
-    #[schemars(range(min = 0))]
-    pub per_100_words: f64,
+    pub per_100_words: Density,
     /// Score, 0 to 100.
-    #[schemars(range(min = 0, max = 100))]
-    pub score: f64,
+    pub score: Score,
     /// Gate result.
     pub gate: Gate,
     /// What did not run, and why.
@@ -648,8 +676,7 @@ pub struct Report {
     /// Always 3.
     pub schema_version: SchemaVersion,
     /// Version of the tool that wrote the report.
-    #[schemars(length(min = 1))]
-    pub slopvac_version: String,
+    pub slopvac_version: NonEmptyString,
     /// Run summary.
     pub summary: RunSummary,
     /// Documents.

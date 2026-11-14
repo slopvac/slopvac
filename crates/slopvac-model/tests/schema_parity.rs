@@ -4,42 +4,17 @@
 
 #![allow(missing_docs)]
 
-use std::fs;
-use std::path::{Path, PathBuf};
+mod common;
 
+use std::path::Path;
+
+use common::{corpus, instances, load, patch_layer};
 use schemars::generate::SchemaSettings;
 use schemars::{Schema, schema_for};
-use serde_json::Value;
 use slopvac_model::{
     ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, Report, RuleId, RuleProvenance,
     SchemaVersion, Severity, Span,
 };
-
-fn corpus() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance")
-}
-
-fn load(path: &Path) -> Value {
-    let text = fs::read_to_string(path).unwrap();
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("json") => serde_json::from_str(&text).unwrap(),
-        Some("toml") => serde_json::to_value(text.parse::<toml::Table>().unwrap()).unwrap(),
-        Some("yaml") => serde_yaml_ng::from_str(&text).unwrap(),
-        other => panic!("unknown corpus extension {other:?} in {}", path.display()),
-    }
-}
-
-fn instances(dir: &Path) -> Vec<PathBuf> {
-    let Ok(read) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = read
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.file_name().unwrap() != "cases.toml")
-        .collect();
-    files.sort();
-    files
-}
 
 fn check(schema: &Schema, dir: &Path, only_prefix: Option<&str>) -> usize {
     let value = serde_json::to_value(schema).unwrap();
@@ -51,7 +26,8 @@ fn check(schema: &Schema, dir: &Path, only_prefix: Option<&str>) -> usize {
             if only_prefix.is_some_and(|p| !name.starts_with(&format!("{p}--"))) {
                 continue;
             }
-            let instance = load(&path);
+            let mut instance = load(&path);
+            patch_layer(&mut instance);
             assert_eq!(
                 validator.is_valid(&instance),
                 want_valid,

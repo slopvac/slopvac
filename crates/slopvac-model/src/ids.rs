@@ -12,16 +12,38 @@ pub struct IdError {
     value: String,
 }
 
-fn is_pack(s: &str) -> bool {
+pub(crate) fn is_pack(s: &str) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`.
+pub(crate) fn is_kebab(s: &str) -> bool {
+    let mut parts = s.split('-');
+    let first_ok = parts.next().is_some_and(|p| {
+        p.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+            && p.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    });
+    first_ok
+        && parts.all(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        })
 }
 
 fn is_local(s: &str) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+impl IdError {
+    pub(crate) fn new(kind: &'static str, value: String) -> Self {
+        Self { kind, value }
+    }
 }
 
 /// Pack identifier: `^[a-z][a-z0-9-]*$`.
