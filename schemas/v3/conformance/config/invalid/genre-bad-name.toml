@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[genres]]
+genre = "Reference"
+files = ["docs/**"]

@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[packs]]
+id = "Acme"
+source = "oci://ghcr.io/acme/p"
