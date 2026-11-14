@@ -38,6 +38,8 @@ fn h18_an_interrupt_still_reaches_a_child_after_its_parent_exited_first() {
     .unwrap();
     // The child keeps the plugin's pipes open, so the reader never sees end of stream.
     let pids = pids_from(&pidfile);
+    // Interrupt only once the host has reaped the exited parent.
+    assert!(wait_gone(&pids[1..]), "parent {} never exited", pids[1]);
     kill_all_live();
     let gone = wait_gone(&pids);
     std::fs::remove_dir_all(&dir).unwrap();

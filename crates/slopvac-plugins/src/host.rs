@@ -6,9 +6,13 @@
 //! watchdog. Callers block in `crossbeam_channel::select!` against a
 //! wall-clock deadline.
 //!
-//! The process group stays registered for `kill_all_live` until `kill` has
-//! run. The waiter drives teardown when the child exits, even if a descendant
-//! keeps standard output open and the reader never sees end of stream.
+//! Teardown has one owner, the plugin's `process::Group`. The waiter sees the
+//! leader exit without reaping it, kills the group, reaps the leader and only
+//! then unregisters the group from `kill_all_live`. Every other kill goes
+//! through the same group lock and does nothing once the leader is reaped. The
+//! waiter drives teardown even if a descendant keeps standard output open and
+//! the reader never sees end of stream. Dropping a plugin waits for the reap,
+//! up to five seconds after the kill.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Read, Write};
@@ -25,7 +29,7 @@ use serde_json::{Value, json};
 use crate::error::PluginError;
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
-use crate::process::{descendants, kill_tree, register, sanitize_display, unregister};
+use crate::process::{Group, Leader, sanitize_display};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
     PROTOCOL_VERSION, PluginDeclaration,
@@ -40,6 +44,9 @@ pub const MIN_MESSAGE_BYTES: u64 = 65_536;
 pub const MAX_REQUEST_ID: u64 = (1 << 53) - 1;
 const STDERR_RING: usize = 64 * 1024;
 const STDERR_SHOWN: usize = 4 * 1024;
+/// How long a drop waits for a killed leader to be reaped. A leader that is
+/// still unreaped after this stays registered for `kill_all_live`.
+const REAP_WAIT: Duration = Duration::from_secs(5);
 
 /// Timers from plugin-protocol.md section 6.3. Zero is invalid.
 #[derive(Debug, Clone, Copy)]
@@ -210,18 +217,14 @@ struct Pending {
 
 struct Shared {
     name: String,
-    pid: u32,
+    group: Arc<Group>,
     pending: Mutex<HashMap<u64, Pending>>,
     dead: Mutex<Option<PluginError>>,
     max_body: AtomicUsize,
     shutting_down: AtomicBool,
-    killed: AtomicBool,
-    strays: Mutex<Vec<u32>>,
     frames: Mutex<Option<Sender<Vec<u8>>>>,
     stderr: Mutex<VecDeque<u8>>,
     stderr_done: Receiver<()>,
-    exited: Receiver<()>,
-    exit_status: Mutex<Option<String>>,
     caps: RunCaps,
     exit_timeout: Duration,
 }
@@ -231,30 +234,14 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Shared {
-    fn kill(&self) {
-        if !self.killed.swap(true, Ordering::SeqCst) {
-            let known = lock(&self.strays).clone();
-            kill_tree(self.pid, &known);
-            // Only now may `kill_all_live` forget the group.
-            unregister(self.pid);
-        }
-    }
-
-    /// Remember the current descendants, so a daemon that outlives its parent is still found.
-    fn remember_descendants(&self) {
-        if !self.killed.load(Ordering::SeqCst) {
-            *lock(&self.strays) = descendants(self.pid);
-        }
-    }
-
     /// First failure wins. Kills the plugin and fails every pending request.
     fn fail(&self, err: PluginError) -> PluginError {
         let first = {
             let mut dead = lock(&self.dead);
             dead.get_or_insert_with(|| err).clone()
         };
-        self.remember_descendants();
-        self.kill();
+        self.group.remember_descendants();
+        self.group.kill();
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
@@ -287,12 +274,12 @@ impl Shared {
         }
     }
 
-    /// Kill the group, collect the exit status and stderr tail, fail every pending request.
+    /// Collect the exit status and stderr tail, fail every pending request.
     fn tear_down_after_exit(&self) {
-        self.kill();
         let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
-        let status = lock(&self.exit_status)
-            .clone()
+        let status = self
+            .group
+            .status()
             .unwrap_or_else(|| "status unknown".into());
         self.fail(PluginError::Exited {
             plugin: self.name.clone(),
@@ -307,9 +294,9 @@ impl Shared {
             self.release_pending();
             return;
         }
-        // Let the process status arrive first, so the error carries it.
-        self.kill();
-        let _ = self.exited.recv_timeout(self.exit_timeout);
+        // Let the waiter reap the leader first, so the error carries its status.
+        self.group.kill();
+        let _ = self.group.wait_done(self.exit_timeout);
         self.tear_down_after_exit();
     }
 
@@ -330,7 +317,8 @@ impl Shared {
         )));
     }
 
-    fn dispatch(&self, msg: &Value, unsolicited: &mut u32) -> Result<(), String> {
+    /// Route one message. `Ok(true)` means a pending request got its reply.
+    fn dispatch(&self, msg: &Value, unsolicited: &mut u32) -> Result<bool, String> {
         let obj = msg.as_object().ok_or("message is not a JSON object")?;
         if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
             return Err("`jsonrpc` is not \"2.0\"".into());
@@ -343,7 +331,7 @@ impl Shared {
                     self.caps.unsolicited_messages
                 ))
             } else {
-                Ok(())
+                Ok(false)
             }
         };
         if obj.contains_key("method") {
@@ -369,19 +357,25 @@ impl Shared {
         match lock(&self.pending).remove(&id) {
             Some(p) => {
                 let _ = p.reply.try_send(reply);
-                Ok(())
+                Ok(true)
             }
             None => unmatched(unsolicited),
         }
     }
 }
 
-fn reader_loop(shared: &Shared, stdout: impl Read) {
+/// Read and route frames until the stream ends or breaks.
+///
+/// The first reply is the `initialize` reply. After it the reader stops until
+/// `limits_ready` fires, so the next frame meets the negotiated body limit
+/// rather than the pre-initialize one (plugin-protocol.md section 2.2). A
+/// closed `limits_ready` means the handshake failed and the reader stops.
+fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) {
     let mut r = BufReader::new(stdout);
     let mut total: u64 = 0;
     let mut unsolicited = 0u32;
+    let mut negotiated = false;
     loop {
-        // The limit is read per frame, once its header is in, so the negotiated one applies.
         match read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst)) {
             Ok(None) | Err(FrameError::Io(_)) => return shared.on_stream_end(),
             Err(FrameError::Framing(m)) => return shared.violation(m),
@@ -394,8 +388,15 @@ fn reader_loop(shared: &Shared, stdout: impl Read) {
                     Ok(v) => v,
                     Err(m) => return shared.violation(m),
                 };
-                if let Err(m) = shared.dispatch(&msg, &mut unsolicited) {
-                    return shared.violation(m);
+                match shared.dispatch(&msg, &mut unsolicited) {
+                    Err(m) => return shared.violation(m),
+                    Ok(true) if !negotiated => {
+                        if limits_ready.recv().is_err() {
+                            return;
+                        }
+                        negotiated = true;
+                    }
+                    Ok(_) => {}
                 }
             }
         }
@@ -434,8 +435,36 @@ struct Conn {
     shared: Arc<Shared>,
     ids: IdAllocator,
     cancel_grace: Duration,
+    /// Releases the reader once the negotiated limits are installed.
+    limits_ready: Option<Sender<()>>,
     /// Dropping this stops the lifetime watchdog.
     _watchdog_stop: Sender<()>,
+}
+
+/// What ended a caller's wait for a reply.
+#[derive(Debug)]
+enum Wake {
+    /// The reply, or `None` when the request was dropped without one.
+    Reply(Option<Reply>),
+    /// `cancel_pending` asked the request to stop.
+    Cancel,
+    /// The deadline passed.
+    Deadline,
+}
+
+/// Wait for a reply, an explicit cancel or the deadline.
+///
+/// Delivering a reply drops the request's cancel sender. A closed cancel
+/// channel is therefore no cancel: the reply is already in `reply_rx`.
+fn wait_for(reply_rx: &Receiver<Reply>, cancel_rx: &Receiver<()>, deadline: Instant) -> Wake {
+    select! {
+        recv(reply_rx) -> r => Wake::Reply(r.ok()),
+        recv(cancel_rx) -> c => match c {
+            Ok(()) => Wake::Cancel,
+            Err(_) => Wake::Reply(reply_rx.try_recv().ok()),
+        },
+        recv(crossbeam_channel::at(deadline)) -> _ => Wake::Deadline,
+    }
 }
 
 impl Conn {
@@ -528,15 +557,16 @@ impl Conn {
             lock(&self.shared.pending).remove(&id);
             return Err(e);
         }
-        select! {
-            recv(reply_rx) -> r => r.unwrap_or_else(|_| Err(self.dead().unwrap_or(PluginError::Cancelled))),
-            recv(cancel_rx) -> _ => self.cancel_and_wait(id, &reply_rx, false, method),
-            recv(crossbeam_channel::at(deadline)) -> _ => if escalate {
-                self.cancel_and_wait(id, &reply_rx, true, method)
-            } else {
+        match wait_for(&reply_rx, &cancel_rx, deadline) {
+            Wake::Reply(r) => {
+                r.unwrap_or_else(|| Err(self.dead().unwrap_or(PluginError::Cancelled)))
+            }
+            Wake::Cancel => self.cancel_and_wait(id, &reply_rx, false, method),
+            Wake::Deadline if escalate => self.cancel_and_wait(id, &reply_rx, true, method),
+            Wake::Deadline => {
                 lock(&self.shared.pending).remove(&id);
                 Err(self.timeout(&format!("`{method}` got no reply")))
-            },
+            }
         }
     }
 
@@ -579,8 +609,10 @@ impl Drop for Conn {
             self.shared
                 .fail(PluginError::Usage("plugin dropped".into()));
         }
-        self.shared.kill();
-        unregister(self.shared.pid);
+        // Blocks while another kill is in flight; does nothing once reaped.
+        self.shared.group.kill();
+        // The waiter reaps the leader and unregisters the group.
+        let _ = self.shared.group.wait_done(REAP_WAIT);
     }
 }
 
@@ -739,7 +771,7 @@ impl Plugin {
         gate: &dyn SpawnGate,
     ) -> Result<Self, PluginError> {
         prespawn(spec, cfg, gate)?;
-        let conn = spawn(spec, cfg)?;
+        let mut conn = spawn(spec, cfg)?;
         let params = json!({
             "protocolVersion": PROTOCOL_VERSION,
             "minProtocolVersion": MIN_PROTOCOL_VERSION,
@@ -774,6 +806,10 @@ impl Plugin {
         conn.shared
             .max_body
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
+        // The reader stopped after the reply; it resumes under the new limit.
+        if let Some(ready) = conn.limits_ready.take() {
+            let _ = ready.send(());
+        }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
         let (inflight_tx, inflight_rx) = bounded(negotiated.max_in_flight);
         Ok(Self {
@@ -862,7 +898,7 @@ impl Plugin {
     pub fn shutdown(self) -> bool {
         let shared = Arc::clone(&self.conn.shared);
         shared.shutting_down.store(true, Ordering::SeqCst);
-        shared.remember_descendants();
+        shared.group.remember_descendants();
         if self.conn.dead().is_none() {
             let _ = self
                 .conn
@@ -871,10 +907,10 @@ impl Plugin {
         }
         // Closing the pipe ends the writer after it flushes `exit`.
         lock(&shared.frames).take();
-        let left = shared.exited.recv_timeout(self.timeouts.exit)
-            == Err(crossbeam_channel::RecvTimeoutError::Disconnected);
-        let clean = left && !shared.killed.load(Ordering::SeqCst);
-        shared.kill();
+        // The waiter reaps the leader and kills what is left of its group.
+        let left = shared.group.wait_done(self.timeouts.exit);
+        let clean = left && !shared.group.forced();
+        shared.group.kill();
         clean
     }
 }
@@ -917,16 +953,13 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
-    let mut child = cmd
+    let child = cmd
         .spawn()
         .map_err(|e| PluginError::SpawnFailed(format!("{}: {e}", spec.name)))?;
-    let pid = child.id();
-    register(pid);
-    let (Some(stdin), Some(stdout), Some(stderr)) =
-        (child.stdin.take(), child.stdout.take(), child.stderr.take())
-    else {
-        kill_tree(pid, &[]);
-        unregister(pid);
+    let group = Group::register(child.id());
+    let mut leader = Leader::new(child);
+    let (Some(stdin), Some(stdout), Some(stderr)) = leader.take_pipes() else {
+        group.finish(leader);
         return Err(PluginError::SpawnFailed(format!(
             "{}: missing pipes",
             spec.name
@@ -934,34 +967,27 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     };
     let (frames_tx, frames_rx) = bounded::<Vec<u8>>(2 * cfg.max_in_flight + 4);
     let (stderr_done_tx, stderr_done) = bounded::<()>(0);
-    let (exited_tx, exited) = bounded::<()>(0);
+    let (limits_ready, limits_rx) = bounded::<()>(1);
     let (watchdog_stop, watchdog_rx) = bounded::<()>(0);
     let shared = Arc::new(Shared {
         name: spec.name.clone(),
-        pid,
+        group,
         pending: Mutex::new(HashMap::new()),
         dead: Mutex::new(None),
         max_body: AtomicUsize::new(PRE_INIT_MAX_BODY),
         shutting_down: AtomicBool::new(false),
-        killed: AtomicBool::new(false),
-        strays: Mutex::new(Vec::new()),
         frames: Mutex::new(Some(frames_tx)),
         stderr: Mutex::new(VecDeque::new()),
         stderr_done,
-        exited,
-        exit_status: Mutex::new(None),
         caps: cfg.caps,
         exit_timeout: cfg.timeouts.exit,
     });
     {
         let shared = Arc::clone(&shared);
         thread::spawn(move || {
-            let status = child.wait();
-            *lock(&shared.exit_status) = Some(match status {
-                Ok(s) => s.to_string(),
-                Err(e) => format!("wait failed: {e}"),
-            });
-            drop(exited_tx);
+            // Kill the group while the exited leader still holds its ids, then reap.
+            leader.wait_exit();
+            shared.group.finish(leader);
             shared.on_process_exit();
         });
     }
@@ -984,12 +1010,13 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     }
     {
         let shared = Arc::clone(&shared);
-        thread::spawn(move || reader_loop(&shared, stdout));
+        thread::spawn(move || reader_loop(&shared, stdout, &limits_rx));
     }
     Ok(Conn {
         shared,
         ids: IdAllocator::with_max(MAX_REQUEST_ID),
         cancel_grace: cfg.timeouts.cancel_grace,
+        limits_ready: Some(limits_ready),
         _watchdog_stop: watchdog_stop,
     })
 }
@@ -1006,5 +1033,23 @@ mod tests {
         assert_eq!(got[2], Ok(3));
         assert_eq!(got[3], Err(PluginError::RequestIdExhausted));
         assert_eq!(ids.next_id(), Err(PluginError::RequestIdExhausted));
+    }
+
+    #[test]
+    fn a_delivered_reply_wins_over_the_closed_cancel_channel() {
+        // Delivery sends the reply, then drops the cancel sender, so both
+        // channels are ready. `select!` picks at random: 64 rounds would all
+        // miss a wrong pick with odds of 2^-64.
+        for round in 0..64 {
+            let (reply_tx, reply_rx) = bounded::<Reply>(1);
+            let (cancel_tx, cancel_rx) = bounded::<()>(1);
+            reply_tx.send(Ok(json!(round))).unwrap();
+            drop(cancel_tx);
+            let far = Instant::now() + Duration::from_secs(60);
+            match wait_for(&reply_rx, &cancel_rx, far) {
+                Wake::Reply(Some(Ok(v))) => assert_eq!(v, json!(round)),
+                other => panic!("round {round}: {other:?}"),
+            }
+        }
     }
 }

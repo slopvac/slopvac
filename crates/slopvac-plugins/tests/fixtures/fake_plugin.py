@@ -3,7 +3,9 @@
 Usage: fake_plugin.py MODE [OVERRIDES_JSON] [PIDFILE]
 
 MODE picks a misbehaviour; OVERRIDES_JSON is deep-merged into the initialize
-result. Standard library only.
+result. With PIDFILE, every message received is appended to PIDFILE.log as a
+JSON line before the plugin acts on it, so a test can wait for receipt and
+check what the host sent. Standard library only.
 """
 
 import json
@@ -17,6 +19,28 @@ overrides = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
 pidfile = sys.argv[3] if len(sys.argv) > 3 else None
 inp = sys.stdin.buffer
 out = sys.stdout.buffer
+
+
+def record(msg):
+    if pidfile:
+        with open(pidfile + ".log", "a") as f:
+            f.write(json.dumps(msg) + "\n")
+
+
+def frame(obj):
+    body = json.dumps(obj).encode()
+    return b"Content-Length: %d\r\n\r\n" % len(body) + body
+
+
+def sized_frame(obj, size):
+    """Frame obj with an envelope `pad` field so the body is exactly `size` bytes."""
+    obj = dict(obj, pad="")
+    base = len(json.dumps(obj).encode())
+    assert size >= base, (size, base)
+    obj["pad"] = "p" * (size - base)
+    body = json.dumps(obj).encode()
+    assert len(body) == size
+    return b"Content-Length: %d\r\n\r\n" % len(body) + body
 
 
 def read_msg():
@@ -36,20 +60,12 @@ def read_msg():
 
 
 def send(obj):
-    body = json.dumps(obj).encode()
-    out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    out.write(frame(obj))
     out.flush()
 
 
 def send_sized(obj, size):
-    """Send obj with an envelope `pad` field so the body is exactly `size` bytes."""
-    obj = dict(obj, pad="")
-    base = len(json.dumps(obj).encode())
-    assert size >= base, (size, base)
-    obj["pad"] = "p" * (size - base)
-    body = json.dumps(obj).encode()
-    assert len(body) == size
-    out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    out.write(sized_frame(obj, size))
     out.flush()
 
 
@@ -152,10 +168,13 @@ tag_requests = 0
 current_id = None
 sized = int(mode.split(":")[1]) if mode.startswith("body:") else None
 init_sized = int(mode.split(":")[1]) if mode.startswith("init-body:") else None
+# init-then:N writes the initialize reply and an N-byte notification in one write.
+init_then = int(mode.split(":")[1]) if mode.startswith("init-then:") else None
 while True:
     msg = read_msg()
     if msg is None:
         sys.exit(0)
+    record(msg)
     method = msg.get("method")
     id_ = msg.get("id")
     current_id = id_
@@ -171,7 +190,15 @@ while True:
             with open(pidfile, "w") as f:
                 f.write(str(os.getpid()))
         if init_sized:
-            send_sized({"jsonrpc": "2.0", "id": id_, "result": init_result()}, init_sized)
+            send_sized(
+                {"jsonrpc": "2.0", "id": id_, "result": init_result()}, init_sized
+            )
+            continue
+        if init_then:
+            reply = frame({"jsonrpc": "2.0", "id": id_, "result": init_result()})
+            noise = sized_frame({"jsonrpc": "2.0", "method": "noise"}, init_then)
+            out.write(reply + noise)
+            out.flush()
             continue
         result(id_, init_result())
     elif method == "initialized":
@@ -194,6 +221,16 @@ while True:
         shut = True
         result(id_, None)
     elif method == "exit":
+        if mode == "eof-before-exit":
+            # Standard output ends first; the process leaves only after the
+            # host has closed standard input, which it does after `exit`, and
+            # a further pause. A host that treats this end of stream as a
+            # failure has killed the plugin by then; the host's 10 s exit
+            # timer leaves the pause no way to fail a correct host.
+            os.close(1)
+            while inp.read(65536):
+                pass
+            time.sleep(0.3)
         sys.exit(0 if shut else 1)
     elif method == "$/cancelRequest":
         if mode in ("cancel-ok", "ids-cancel") and pending_tag is not None:
@@ -281,5 +318,60 @@ while True:
                 }
             )
         result(id_, {"results": results})
+    elif method == "extractor/extract":
+        # One segment over the first word, converted to upper case.
+        res = []
+        for doc in msg["params"]["documents"]:
+            word = doc["text"].split(" ")[0]
+            seg = {"span": {"start": 0, "end": len(word.encode())}, "context": "prose"}
+            res.append(
+                {"document": doc["id"], "segments": [dict(seg, text=word.upper())]}
+            )
+        result(id_, {"results": res})
+    elif method == "scorer/score":
+        # 1.5 per finding; a document without findings gets no score.
+        res = []
+        for doc in msg["params"]["documents"]:
+            entry = {"document": doc["id"]}
+            if doc["findings"]:
+                entry["score"] = 1.5 * len(doc["findings"])
+            res.append(entry)
+        result(id_, {"results": res})
+    elif method == "reporter/render":
+        p = msg["params"]
+        out_text = "%s:%s" % (p["report"]["schema_version"], p["options"]["width"])
+        result(id_, {"output": out_text, "media_type": "text/plain"})
+    elif method == "provider/complete":
+        # The text reversed; an item whose instruction is "fail" gets an error.
+        p = msg["params"]
+        res = []
+        for item in p["items"]:
+            if item.get("instruction") == "fail":
+                err = {
+                    "code": -32007,
+                    "message": "off",
+                    "data": {"slopvac_code": "offline"},
+                }
+                res.append({"item": item["id"], "error": err})
+            else:
+                res.append(
+                    {
+                        "item": item["id"],
+                        "text": item["text"][::-1],
+                        "model": p["model"] + "-echo",
+                    }
+                )
+        result(id_, {"results": res})
+    elif method == "recipe/plan":
+        p = msg["params"]
+        files = [
+            {
+                "path": p["harness"] + "/AGENTS.md",
+                "action": "write",
+                "content": p["options"]["marker"],
+            },
+            {"path": "old.md", "action": "remove"},
+        ]
+        result(id_, {"files": files})
     elif id_ is not None:
         error(id_, -32601, "method-not-found")

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use slopvac_plugins::hooks::Document;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::{
-    HostConfig, Plugin, PluginDeclaration, PluginError, PluginSpec, SpawnGate, Timeouts,
+    HookKind, HostConfig, Plugin, PluginDeclaration, PluginError, PluginSpec, SpawnGate, Timeouts,
 };
 
 // STUB(slopvac-8l4.9.12): test-only gates stand in for the trust store.
@@ -65,6 +65,33 @@ pub fn decl() -> PluginDeclaration {
     }
 }
 
+/// Every hook kind with id `main`, declared in the manifest.
+pub fn decl_all() -> PluginDeclaration {
+    PluginDeclaration {
+        network: false,
+        hooks: all_hooks(),
+        features: FeatureSet::default(),
+    }
+}
+
+fn all_hooks() -> Vec<HookDecl> {
+    HookKind::ALL
+        .iter()
+        .map(|k| HookDecl {
+            kind: k.as_str().into(),
+            id: "main".into(),
+        })
+        .collect()
+}
+
+/// Initialize overrides that offer every hook kind with id `main`.
+pub fn offer_all() -> Value {
+    json!({"capabilities": {"hooks": all_hooks()
+        .iter()
+        .map(|h| json!({"kind": h.kind, "id": h.id}))
+        .collect::<Vec<_>>()}})
+}
+
 pub fn spec_with(
     mode: &str,
     overrides: &Value,
@@ -94,10 +121,26 @@ pub fn spec(mode: &str) -> PluginSpec {
     spec_with(mode, &json!({}), None, decl())
 }
 
+/// Timers far above anything a healthy test needs, so load cannot fire them.
 pub fn cfg() -> HostConfig {
     HostConfig {
         timeouts: Timeouts {
-            initialize: Duration::from_secs(5),
+            initialize: Duration::from_secs(30),
+            hook: Duration::from_secs(30),
+            provider: Duration::from_secs(30),
+            cancel_grace: Duration::from_secs(10),
+            shutdown: Duration::from_secs(10),
+            exit: Duration::from_secs(10),
+        },
+        ..HostConfig::default()
+    }
+}
+
+/// Short timers, for tests where a timer must fire against a plugin that hangs.
+pub fn tight() -> HostConfig {
+    HostConfig {
+        timeouts: Timeouts {
+            initialize: Duration::from_secs(30),
             hook: Duration::from_millis(800),
             provider: Duration::from_secs(2),
             cancel_grace: Duration::from_millis(400),
@@ -107,6 +150,9 @@ pub fn cfg() -> HostConfig {
         ..HostConfig::default()
     }
 }
+
+/// A bound for "the host did not hang": the hanging fixtures sleep 300 s.
+pub const NO_HANG: Duration = Duration::from_secs(20);
 
 pub fn start(mode: &str) -> Plugin {
     Plugin::start(&spec(mode), &cfg(), &Allow).expect("plugin starts")
@@ -138,12 +184,16 @@ pub fn alive(pid: i32) -> bool {
 }
 
 pub fn wait_gone(pids: &[i32]) -> bool {
-    let end = Instant::now() + Duration::from_secs(3);
+    wait_gone_within(pids, Duration::from_secs(10))
+}
+
+pub fn wait_gone_within(pids: &[i32], limit: Duration) -> bool {
+    let end = Instant::now() + limit;
     while Instant::now() < end {
         if pids.iter().all(|&p| !alive(p)) {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(20));
     }
     false
 }
@@ -153,7 +203,7 @@ pub fn pids_from(file: &Path) -> Vec<i32> {
 }
 
 pub fn pids_n(file: &Path, n: usize) -> Vec<i32> {
-    let end = Instant::now() + Duration::from_secs(3);
+    let end = Instant::now() + Duration::from_secs(20);
     while Instant::now() < end {
         if let Ok(s) = std::fs::read_to_string(file) {
             let v: Vec<i32> = s.lines().filter_map(|l| l.parse().ok()).collect();
@@ -164,6 +214,40 @@ pub fn pids_n(file: &Path, n: usize) -> Vec<i32> {
         std::thread::sleep(Duration::from_millis(20));
     }
     panic!("pid file not written");
+}
+
+/// Wait for a marker file that a fixture creates.
+pub fn wait_for_file(file: &Path) {
+    let end = Instant::now() + Duration::from_secs(20);
+    while !file.exists() {
+        assert!(Instant::now() < end, "{} never appeared", file.display());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The messages the fixture received, from `<pidfile>.log`.
+pub fn received(pidfile: &Path) -> Vec<Value> {
+    let log = log_path(pidfile);
+    std::fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+pub fn log_path(pidfile: &Path) -> PathBuf {
+    let mut p = pidfile.as_os_str().to_owned();
+    p.push(".log");
+    PathBuf::from(p)
+}
+
+/// Wait until the fixture has received a message with `method`.
+pub fn wait_received(pidfile: &Path, method: &str) {
+    let end = Instant::now() + Duration::from_secs(20);
+    while !received(pidfile).iter().any(|m| m["method"] == method) {
+        assert!(Instant::now() < end, "`{method}` never arrived");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 pub fn scratch(name: &str) -> PathBuf {

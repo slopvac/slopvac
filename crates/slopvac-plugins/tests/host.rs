@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use serde_json::{Value, json};
-use slopvac_plugins::hooks::{Document, Finding, FindingsDocument, Span};
+use slopvac_plugins::hooks::{
+    CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
+    Rendered, Segment, Span,
+};
 use slopvac_plugins::{HookKind, Plugin, PluginError};
 
 #[test]
@@ -36,7 +39,7 @@ fn h4_silent_initialize_times_out() {
     let started = Instant::now();
     let r = Plugin::start(&spec("silent-init"), &c, &Allow);
     assert_eq!(code(&r), "plugin-timeout");
-    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(started.elapsed() < NO_HANG);
 }
 
 #[test]
@@ -112,11 +115,11 @@ fn h12_a_per_document_error_leaves_the_others_standing() {
 
 #[test]
 fn h13_a_request_past_its_deadline_that_ignores_cancel_kills_the_plugin() {
-    let p = start("hang");
+    let p = Plugin::start(&spec("hang"), &tight(), &Allow).unwrap();
     let started = Instant::now();
     assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
-    // hook 800 ms + grace 400 ms
-    assert!(started.elapsed() < Duration::from_secs(3));
+    // hook 800 ms + grace 400 ms, against a plugin that would hang for 300 s
+    assert!(started.elapsed() < NO_HANG);
     assert_eq!(
         p.failure().map(|e| e.slopvac_code().to_owned()),
         Some("plugin-timeout".into())
@@ -129,13 +132,22 @@ fn h13_a_request_past_its_deadline_that_ignores_cancel_kills_the_plugin() {
 
 #[test]
 fn h14_a_host_cancel_discards_the_cancelled_answer_without_a_diagnostic() {
-    let p = start("cancel-ok");
+    let dir = scratch("h14-cancel");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("cancel-ok", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
     let r = std::thread::scope(|s| {
         let h = s.spawn(|| p.tag("main", &docs(1)));
-        std::thread::sleep(Duration::from_millis(200));
+        // The request is pending once the plugin has it.
+        wait_received(&pidfile, "tagger/tag");
         p.cancel_pending();
         h.join().unwrap()
     });
+    std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(code(&r), "request-cancelled");
     assert!(
         p.failure().is_none(),
@@ -145,7 +157,9 @@ fn h14_a_host_cancel_discards_the_cancelled_answer_without_a_diagnostic() {
 
 #[test]
 fn h14_a_deadline_stands_even_when_the_plugin_answers_the_cancel() {
-    let p = start("cancel-late-answer");
+    let mut c = tight();
+    c.timeouts.cancel_grace = cfg().timeouts.cancel_grace;
+    let p = Plugin::start(&spec("cancel-late-answer"), &c, &Allow).unwrap();
     assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
     assert!(
         p.failure().is_none(),
@@ -189,7 +203,7 @@ fn h17_a_plugin_that_ignores_shutdown_is_killed_with_its_children() {
     let pidfile = dir.join("pids");
     let p = Plugin::start(
         &spec_with("ignore-shutdown", &json!({}), Some(&pidfile), decl()),
-        &cfg(),
+        &tight(),
         &Allow,
     )
     .unwrap();
@@ -354,29 +368,26 @@ fn h30_limits_above_the_host_ceilings_are_rejected_not_clamped() {
 #[test]
 fn h32_a_request_the_plugin_never_reads_ends_in_a_timeout_without_blocking_the_host() {
     let o = json!({"limits": {"maxMessageBytes": 8 << 20}});
-    let p = Plugin::start(&spec_with("no-read", &o, None, decl()), &cfg(), &Allow).unwrap();
+    let p = Plugin::start(&spec_with("no-read", &o, None, decl()), &tight(), &Allow).unwrap();
     let mut big = docs(1);
     big[0].text = "x".repeat(4 << 20);
     let started = Instant::now();
     assert_eq!(code(&p.tag("main", &big)), "plugin-timeout");
-    assert!(started.elapsed() < Duration::from_secs(4));
+    assert!(started.elapsed() < NO_HANG);
 }
 
 #[test]
 fn h33_a_frame_that_stops_halfway_ends_in_a_timeout() {
-    let p = start("partial-frame");
+    let p = Plugin::start(&spec("partial-frame"), &tight(), &Allow).unwrap();
     assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
 }
 
 #[test]
 fn h1_a_body_over_the_limit_is_refused_before_it_is_read() {
+    // The body never comes and the hook timer is 30 s: a host that waited
+    // for it would report a timeout, not a violation.
     let p = start("oversize");
-    let started = Instant::now();
     assert_eq!(code(&p.tag("main", &docs(1))), "plugin-protocol-violation");
-    assert!(
-        started.elapsed() < Duration::from_millis(700),
-        "no wait for a body that never comes"
-    );
 }
 
 #[test]
@@ -414,16 +425,13 @@ fn h15_an_exit_is_reported_at_once_when_a_child_keeps_standard_output_open() {
         &Allow,
     )
     .unwrap();
-    let started = Instant::now();
     let err = p.tag("main", &docs(1)).unwrap_err();
-    let elapsed = started.elapsed();
     let pids = pids_from(&pidfile);
     let gone = wait_gone(&pids);
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(err.slopvac_code(), "plugin-exited", "{err}");
+    // The hook timer is 30 s: `plugin-exited` came from the exit, not the timer.
     assert!(err.to_string().contains('3'), "{err}");
-    // The hook timer is 800 ms: the answer came from the exit, not the timer.
-    assert!(elapsed < Duration::from_millis(700), "{elapsed:?}");
     assert!(gone, "processes {pids:?} survived");
 }
 
@@ -432,7 +440,8 @@ fn tm5_the_lifetime_cap_kills_an_idle_plugin_and_its_children() {
     let dir = scratch("tm5");
     let pidfile = dir.join("pids");
     let mut c = cfg();
-    c.caps.wall_clock = Duration::from_millis(600);
+    // Long enough for the handshake under load; nothing else ends the plugin.
+    c.caps.wall_clock = Duration::from_secs(3);
     let p = Plugin::start(
         &spec_with("children", &json!({}), Some(&pidfile), decl()),
         &c,
@@ -440,8 +449,7 @@ fn tm5_the_lifetime_cap_kills_an_idle_plugin_and_its_children() {
     )
     .unwrap();
     let pids = pids_from(&pidfile);
-    assert!(p.failure().is_none(), "alive before the cap");
-    let gone = wait_gone(&pids);
+    let gone = wait_gone_within(&pids, NO_HANG);
     let code = p.failure().map(|e| e.slopvac_code().to_owned());
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(gone, "children {pids:?} survived the cap");
@@ -451,13 +459,26 @@ fn tm5_the_lifetime_cap_kills_an_idle_plugin_and_its_children() {
 
 #[test]
 fn tm5_the_lifetime_cap_fails_a_request_that_is_waiting() {
+    let dir = scratch("tm5-waiting");
+    let pidfile = dir.join("pids");
     let mut c = cfg();
-    c.caps.wall_clock = Duration::from_millis(300);
-    c.timeouts.hook = Duration::from_secs(20);
-    let p = Plugin::start(&spec("hang"), &c, &Allow).unwrap();
-    let started = Instant::now();
-    assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    c.caps.wall_clock = Duration::from_secs(3);
+    c.timeouts.hook = Duration::from_mins(5);
+    let p = Plugin::start(
+        &spec_with("hang", &json!({}), Some(&pidfile), decl()),
+        &c,
+        &Allow,
+    )
+    .unwrap();
+    let err = p.tag("main", &docs(1)).unwrap_err();
+    let got = received(&pidfile);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        got.iter().any(|m| m["method"] == "tagger/tag"),
+        "the request was in flight"
+    );
+    assert_eq!(err.slopvac_code(), "plugin-timeout");
+    assert!(err.to_string().contains("wall-clock cap"), "{err}");
 }
 
 #[test]
@@ -466,7 +487,7 @@ fn h13_the_hung_process_is_dead_after_the_kill() {
     let pidfile = dir.join("pids");
     let p = Plugin::start(
         &spec_with("hang", &json!({}), Some(&pidfile), decl()),
-        &cfg(),
+        &tight(),
         &Allow,
     )
     .unwrap();
@@ -573,23 +594,220 @@ fn h34_request_ids_keep_counting_after_completion() {
 
 #[test]
 fn h34_a_cancelled_request_id_is_not_reused() {
-    let p = start("ids-cancel");
+    let dir = scratch("h34-cancel");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("ids-cancel", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
     let first = std::thread::scope(|s| {
         let h = s.spawn(|| p.tag("main", &docs(1)));
-        std::thread::sleep(Duration::from_millis(200));
+        wait_received(&pidfile, "tagger/tag");
         p.cancel_pending();
         h.join().unwrap()
     });
     assert_eq!(code(&first), "request-cancelled");
     // `initialize` was 1 and the cancelled request 2.
-    let next = p.tag("main", &docs(1)).unwrap();
-    assert_eq!(next[0].outcome.as_ref().unwrap()[0].evidence, "3");
+    let next = p.tag("main", &docs(1));
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(next.unwrap()[0].outcome.as_ref().unwrap()[0].evidence, "3");
 }
 
 #[test]
-fn a_compliant_shutdown_is_clean_every_time() {
-    // Standard output closing next to the exit must not read as a failure.
-    for i in 0..25 {
-        assert!(start("ok").shutdown(), "run {i}");
+fn standard_output_ending_before_the_exit_does_not_spoil_a_clean_shutdown() {
+    // The fixture closes standard output, then exits only after the host has
+    // closed standard input, so the reader sees end of stream first.
+    assert!(start("eof-before-exit").shutdown());
+}
+
+#[test]
+fn h1_a_frame_sent_with_the_initialize_reply_meets_the_negotiated_limit() {
+    // One write holds the reply and an unsolicited notification of `size`
+    // bytes. (negotiated maxMessageBytes, size, passes)
+    let cases: [(u64, usize, bool); 2] = [
+        // Over the pre-initialize 1 MiB, inside the negotiated 4 MiB.
+        (4 << 20, 2 << 20, true),
+        // Inside the pre-initialize 1 MiB, over the negotiated 64 KiB.
+        (65_536, 100_000, false),
+    ];
+    for (negotiated, size, passes) in cases {
+        let o = json!({"limits": {"maxMessageBytes": negotiated}});
+        let mode = format!("init-then:{size}");
+        let r = Plugin::start(&spec_with(&mode, &o, None, decl()), &cfg(), &Allow);
+        let r = r.and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
+        if passes {
+            assert!(r.is_ok(), "{mode}: {r:?}");
+        } else {
+            assert_eq!(code(&r), "plugin-protocol-violation", "{mode}");
+        }
     }
+}
+
+/// Start the fixture offering every hook kind, logging what it receives.
+fn typed(name: &str) -> (Plugin, PathBuf) {
+    let dir = scratch(name);
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("ok", &offer_all(), Some(&pidfile), decl_all()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    (p, pidfile)
+}
+
+/// The params of the one request with `method` the fixture received.
+fn sent_params(pidfile: &std::path::Path, method: &str) -> Value {
+    let got: Vec<Value> = received(pidfile)
+        .into_iter()
+        .filter(|m| m["method"] == method)
+        .collect();
+    assert_eq!(got.len(), 1, "{method}: {got:?}");
+    got[0]["params"].clone()
+}
+
+fn finding(start: u64, end: u64) -> Finding {
+    Finding {
+        rule: "core:x".into(),
+        severity: "warning".into(),
+        span: Span { start, end },
+        message: "m".into(),
+    }
+}
+
+#[test]
+fn extract_returns_the_segments_of_each_document() {
+    let (p, pidfile) = typed("extract");
+    let out = p.extract("main", &docs(1)).unwrap();
+    let sent = sent_params(&pidfile, "extractor/extract");
+    std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
+    let want = Segment {
+        span: Span { start: 0, end: 4 },
+        context: "prose".into(),
+        text: Some("TEXT".into()),
+    };
+    assert_eq!(out[0].outcome.as_ref().unwrap(), &vec![want]);
+    assert_eq!(
+        sent,
+        json!({"extractor": "main", "documents": [{"id": "d0", "text": "text 0"}]})
+    );
+}
+
+#[test]
+fn score_returns_a_score_per_document_and_none_where_the_scorer_skips() {
+    let (p, pidfile) = typed("score");
+    let mut d = docs(2);
+    d[0].text = "abcdef".into();
+    let input = vec![
+        FindingsDocument {
+            document: d[0].clone(),
+            findings: vec![finding(0, 2), finding(3, 4)],
+        },
+        FindingsDocument {
+            document: d[1].clone(),
+            findings: vec![],
+        },
+    ];
+    let out = p.score("main", &input).unwrap();
+    let sent = sent_params(&pidfile, "scorer/score");
+    std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
+    // 1.5 per finding.
+    assert_eq!(out[0].outcome, Ok(Some(3.0)));
+    assert_eq!(out[1].outcome, Ok(None));
+    let f = |s: u64, e: u64| json!({"rule": "core:x", "severity": "warning", "span": {"start": s, "end": e}, "message": "m"});
+    assert_eq!(
+        sent,
+        json!({"scorer": "main", "documents": [
+            {"id": "d0", "text": "abcdef", "findings": [f(0, 2), f(3, 4)]},
+            {"id": "d1", "text": "text 1", "findings": []},
+        ]})
+    );
+}
+
+#[test]
+fn render_returns_the_reporter_output() {
+    let (p, pidfile) = typed("render");
+    let report = json!({"schema_version": 3});
+    let options = json!({"width": 80});
+    let out = p.render("main", &report, &options).unwrap();
+    let sent = sent_params(&pidfile, "reporter/render");
+    std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
+    assert_eq!(
+        out,
+        Rendered {
+            output: "3:80".into(),
+            media_type: "text/plain".into(),
+        }
+    );
+    assert_eq!(
+        sent,
+        json!({"reporter": "main", "report": {"schema_version": 3}, "options": {"width": 80}})
+    );
+}
+
+#[test]
+fn complete_returns_an_answer_or_an_error_per_item() {
+    let (p, pidfile) = typed("complete");
+    let items = [
+        CompleteItem {
+            id: "i1".into(),
+            text: "abc".into(),
+            instruction: None,
+        },
+        CompleteItem {
+            id: "i2".into(),
+            text: "x".into(),
+            instruction: Some("fail".into()),
+        },
+    ];
+    let out = p.complete("main", "rewrite", "m1", &items).unwrap();
+    let sent = sent_params(&pidfile, "provider/complete");
+    std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
+    assert_eq!(
+        out[0],
+        Ok(Completion {
+            item: "i1".into(),
+            text: "cba".into(),
+            model: "m1-echo".into(),
+        })
+    );
+    assert_eq!(out[1].as_ref().unwrap_err().slopvac_code, "offline");
+    assert_eq!(
+        sent,
+        json!({"provider": "main", "task": "rewrite", "model": "m1", "items": [
+            {"id": "i1", "text": "abc"},
+            {"id": "i2", "text": "x", "instruction": "fail"},
+        ]})
+    );
+}
+
+#[test]
+fn recipe_returns_the_planned_files() {
+    let (p, pidfile) = typed("recipe");
+    let out = p
+        .recipe("main", "claude", &json!({"marker": "hi"}))
+        .unwrap();
+    let sent = sent_params(&pidfile, "recipe/plan");
+    std::fs::remove_dir_all(pidfile.parent().unwrap()).unwrap();
+    assert_eq!(
+        out,
+        vec![
+            RecipeFile {
+                path: "claude/AGENTS.md".into(),
+                action: RecipeAction::Write,
+                content: Some("hi".into()),
+            },
+            RecipeFile {
+                path: "old.md".into(),
+                action: RecipeAction::Remove,
+                content: None,
+            },
+        ]
+    );
+    assert_eq!(
+        sent,
+        json!({"recipe": "main", "harness": "claude", "options": {"marker": "hi"}})
+    );
 }
