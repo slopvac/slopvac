@@ -44,19 +44,26 @@ impl Pattern {
         &self.source
     }
 
-    /// True when the pattern matches anywhere in `text`.
-    #[must_use]
-    pub fn is_match(&self, text: &str) -> bool {
-        self.re.is_match(text.as_bytes()).unwrap_or(false)
+    /// True when the pattern matches anywhere in `text`. A PCRE2 execution error, such as a
+    /// match or JIT stack limit, is an error and never a miss.
+    pub fn is_match(&self, text: &str) -> Result<bool, Error> {
+        self.re
+            .is_match(text.as_bytes())
+            .map_err(|e| self.exec_error(&e))
     }
 
     /// Byte range of the first match.
-    #[must_use]
-    pub fn find(&self, text: &str) -> Option<std::ops::Range<usize>> {
+    pub fn find(&self, text: &str) -> Result<Option<std::ops::Range<usize>>, Error> {
         self.re
             .find(text.as_bytes())
-            .ok()
-            .flatten()
-            .map(|m| m.start()..m.end())
+            .map(|m| m.map(|m| m.start()..m.end()))
+            .map_err(|e| self.exec_error(&e))
+    }
+
+    fn exec_error(&self, e: &pcre2::Error) -> Error {
+        Error::Match {
+            pattern: self.source.clone(),
+            message: e.to_string(),
+        }
     }
 }

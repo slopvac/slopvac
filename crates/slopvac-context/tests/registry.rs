@@ -2,24 +2,30 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, TagRegistry, TaggerSpec,
+    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, TagIndex, TagRegistry, Tagger,
+    TaggerSpec,
 };
 
-fn tagger(yaml: &str) -> Box<dyn slopvac_context::Tagger> {
+fn tagger(yaml: &str) -> Box<dyn Tagger> {
     Box::new(TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap())
+}
+
+fn run(yaml: &str, path: &str, src: &str) -> TagIndex {
+    let mut reg = TagRegistry::new();
+    reg.register(tagger(yaml)).unwrap();
+    reg.tag_document(&PlainDocument::from_markdown(path, src))
+        .unwrap()
 }
 
 const DOC: &str = "# Guide\n\nIntro text here.\n\n## Breaking changes\n\nThe flag is gone. Use the new one.\n\n## Usage\n\nRun it.\n";
 
 #[test]
 fn section_scope_covers_the_heading_section_only() {
-    let mut reg = TagRegistry::new();
-    reg.register(tagger(
+    let idx = run(
         "id: t\nkind: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
-    ))
-    .unwrap();
-    let doc = PlainDocument::from_markdown("a.md", DOC);
-    let idx = reg.tag_document(&doc);
+        "a.md",
+        DOC,
+    );
     let start = DOC.find("Breaking changes").unwrap();
     let end = DOC.find("Use the new one.").unwrap() + "Use the new one.".len();
     assert_eq!(idx.tags().len(), 1);
@@ -28,14 +34,29 @@ fn section_scope_covers_the_heading_section_only() {
 }
 
 #[test]
+fn section_scope_stops_at_the_next_peer_and_keeps_subsections() {
+    let src = "# T\n\n## Notes\n\nA text.\n\n### Deep\n\nD text.\n\n## Other\n\nB text.\n\n## Notes\n\nC text.\n";
+    let idx = run(
+        "id: t\nkind: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n",
+        "a.md",
+        src,
+    );
+    let at = |s: &str| src.find(s).unwrap();
+    assert_eq!(idx.kinds_at(&(at("A text.")..at("A text.") + 7)), vec!["k"]);
+    assert_eq!(idx.kinds_at(&(at("D text.")..at("D text.") + 7)), vec!["k"]);
+    assert!(idx.kinds_at(&(at("B text.")..at("B text.") + 7)).is_empty());
+    assert_eq!(idx.kinds_at(&(at("C text.")..at("C text.") + 7)), vec!["k"]);
+    let first_end = at("## Other") - 2;
+    assert!(idx.tags().iter().any(|t| t.span.end == first_end));
+}
+
+#[test]
 fn sentence_scope_tags_the_matching_sentence() {
-    let mut reg = TagRegistry::new();
-    reg.register(tagger(
+    let idx = run(
         "id: t\nkind: requirement\nconfidence: 0.8\nwhen:\n  sentence: '^use '\n",
-    ))
-    .unwrap();
-    let doc = PlainDocument::from_markdown("a.md", DOC);
-    let idx = reg.tag_document(&doc);
+        "a.md",
+        DOC,
+    );
     let s = DOC.find("Use the new one.").unwrap();
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].span, s..s + "Use the new one.".len());
@@ -43,38 +64,62 @@ fn sentence_scope_tags_the_matching_sentence() {
 }
 
 #[test]
-fn document_scope_from_path_condition() {
-    let mut reg = TagRegistry::new();
-    reg.register(tagger(
-        "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '(^|/)CHANGELOG\\.md$'\n",
-    ))
-    .unwrap();
-    let hit = reg.tag_document(&PlainDocument::from_markdown("docs/CHANGELOG.md", DOC));
-    let miss = reg.tag_document(&PlainDocument::from_markdown("docs/guide.md", DOC));
-    assert_eq!(hit.tags()[0].span, 0..DOC.trim_end().len());
+fn document_scope_covers_the_whole_source_from_a_path_condition() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '(^|/)CHANGELOG\\.md$'\n";
+    let hit = run(y, "docs/CHANGELOG.md", DOC);
+    let miss = run(y, "docs/guide.md", DOC);
+    assert_eq!(hit.tags()[0].span, 0..DOC.len());
     assert!(miss.tags().is_empty());
 }
 
 #[test]
+fn document_scope_with_only_document_conditions_needs_no_prose_block() {
+    let y = "id: t\nkind: generated\nscope: document\nwhen:\n  frontmatter:\n    key: generated\n";
+    for src in [
+        "---\ngenerated: yes\n---\n",
+        "---\ngenerated: yes\n---\n```\ncode\n```\n",
+    ] {
+        let idx = run(y, "a.md", src);
+        assert_eq!(idx.tags().len(), 1, "{src:?}");
+        assert_eq!(idx.tags()[0].span, 0..src.len());
+    }
+}
+
+#[test]
 fn frontmatter_condition_checks_the_value() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  frontmatter:\n    key: type\n    matches: release\n";
     let src = "---\ntype: release-notes\n---\n# T\n\nBody.\n";
-    let mut reg = TagRegistry::new();
-    reg.register(tagger(
-        "id: t\nkind: change-note\nscope: document\nwhen:\n  frontmatter:\n    key: type\n    matches: release\n",
-    ))
-    .unwrap();
-    assert_eq!(
-        reg.tag_document(&PlainDocument::from_markdown("a.md", src))
-            .tags()
-            .len(),
-        1
-    );
-    let other = src.replace("release-notes", "guide");
+    assert_eq!(run(y, "a.md", src).tags().len(), 1);
     assert!(
-        reg.tag_document(&PlainDocument::from_markdown("a.md", &other))
+        run(y, "a.md", &src.replace("release-notes", "guide"))
             .tags()
             .is_empty()
     );
+}
+
+#[test]
+fn conditions_combine_with_and_across_document_block_and_sentence_levels() {
+    let y =
+        "id: t\nkind: k\nwhen:\n  path: 'docs/'\n  heading_path: breaking\n  sentence: 'flag'\n";
+    let sentence = "The flag is gone.";
+    let at = DOC.find(sentence).unwrap();
+    let span = at..at + sentence.len();
+    // All three hold.
+    assert_eq!(run(y, "docs/a.md", DOC).kinds_at(&span), vec!["k"]);
+    // Each alone fails.
+    assert!(run(y, "src/a.md", DOC).tags().is_empty(), "path fails");
+    let other_heading = DOC.replace("Breaking changes", "Usage notes");
+    assert!(
+        run(y, "docs/a.md", &other_heading).tags().is_empty(),
+        "heading fails"
+    );
+    let other_sentence = DOC.replace("The flag is gone.", "The mode is gone.");
+    assert!(
+        run(y, "docs/a.md", &other_sentence).tags().is_empty(),
+        "sentence fails"
+    );
+    // Only the matching sentence of the matching block is tagged.
+    assert_eq!(run(y, "docs/a.md", DOC).tags().len(), 1);
 }
 
 #[test]
@@ -85,6 +130,7 @@ fn admonition_title_condition() {
         span: 100..110,
         text: "Gone now.".into(),
         heading_path: vec!["T".into()],
+        heading_level: None,
         admonition_title: Some("Changed in 2.0".into()),
     });
     let mut reg = TagRegistry::new();
@@ -92,24 +138,33 @@ fn admonition_title_condition() {
         "id: t\nkind: change-note\nscope: paragraph\nwhen:\n  admonition_title: changed in\n",
     ))
     .unwrap();
-    let idx = reg.tag_document(&doc);
+    let idx = reg.tag_document(&doc).unwrap();
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].span, 100..110);
 }
 
 #[test]
 fn kinds_at_needs_the_tag_to_contain_the_span() {
-    let mut reg = TagRegistry::new();
-    reg.register(tagger(
+    let idx = run(
         "id: t\nkind: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
-    ))
-    .unwrap();
-    let idx = reg.tag_document(&PlainDocument::from_markdown("a.md", DOC));
+        "a.md",
+        DOC,
+    );
     let inside = DOC.find("gone").unwrap();
     assert_eq!(idx.kinds_at(&(inside..inside + 4)), vec!["change-note"]);
     let outside = DOC.find("Run it").unwrap();
     assert!(idx.kinds_at(&(outside..outside + 3)).is_empty());
     assert_eq!(idx.kinds_seen(), vec!["change-note"]);
+}
+
+#[test]
+fn headings_with_extra_spaces_and_non_ascii_text_keep_exact_spans() {
+    let src = "#   Überschrift ##\n\nText.\n";
+    let doc = PlainDocument::from_markdown("a.md", src);
+    let heading = &slopvac_context::DocumentView::blocks(&doc)[0];
+    assert_eq!(heading.text, "Überschrift");
+    assert_eq!(&src[heading.span.clone()], "Überschrift");
+    assert_eq!(heading.heading_level, Some(1));
 }
 
 #[test]
@@ -122,25 +177,35 @@ fn duplicate_tagger_ids_are_rejected() {
 
 #[test]
 fn invalid_specs_are_errors() {
-    assert!(TaggerSpec::from_yaml("id: t\nkind: a\nwhen:\n  sentence: x\nbogus: 1\n").is_err());
-    assert!(
-        TaggerSpec::from_yaml("id: t\nkind: a\nwhen: {}\n")
-            .unwrap()
-            .compile()
-            .is_err()
-    );
-    assert!(
-        TaggerSpec::from_yaml("id: t\nkind: a\nconfidence: 2\nwhen:\n  sentence: x\n")
-            .unwrap()
-            .compile()
-            .is_err()
-    );
+    let compile = |y: &str| TaggerSpec::from_yaml(y).and_then(TaggerSpec::compile);
+    let cases = [
+        "id: t\nkind: a\nwhen:\n  sentence: x\nbogus: 1\n",
+        "id: t\nkind: a\nwhen: {}\n",
+        "id: t\nkind: a\nconfidence: 2\nwhen:\n  sentence: x\n",
+        "id: t\nkind: Change Note\nwhen:\n  sentence: x\n",
+        "id: t\nkind: '1a'\nwhen:\n  sentence: x\n",
+        "id: t\nkind: a_b\nwhen:\n  sentence: x\n",
+        "id: t\nkind: ''\nwhen:\n  sentence: x\n",
+    ];
+    for y in cases {
+        assert!(compile(y).is_err(), "{y}");
+    }
     assert!(matches!(
-        TaggerSpec::from_yaml("id: t\nkind: a\nwhen:\n  sentence: '('\n")
-            .unwrap()
-            .compile(),
+        compile("id: t\nkind: a\nwhen:\n  sentence: '('\n"),
         Err(Error::Pattern { .. })
     ));
+}
+
+#[test]
+fn pcre2_execution_errors_surface_instead_of_missing_tags() {
+    let y = "id: t\nkind: k\nwhen:\n  sentence: '^(a+)+$'\n";
+    let src = format!("# T\n\n{}b.\n", "a".repeat(64));
+    let mut reg = TagRegistry::new();
+    reg.register(tagger(y)).unwrap();
+    let err = reg
+        .tag_document(&PlainDocument::from_markdown("a.md", &src))
+        .unwrap_err();
+    assert!(matches!(err, Error::Match { .. }), "{err:?}");
 }
 
 #[test]
