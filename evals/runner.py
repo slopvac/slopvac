@@ -18,10 +18,12 @@ starts an engine.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -36,7 +38,20 @@ REPO_ROOT = lib.EVALS_DIR.parent
 
 # The Python reference is the engine until cutover; pass the Rust binary to
 # --engine afterwards, since the command line is the same.
-PYTHON_REFERENCE = f"uv run --project {shlex.quote(str(REPO_ROOT / 'packages/slopvac-lint'))} --offline slopvac"
+PYTHON_FALLBACK = f"uv run --project {shlex.quote(str(REPO_ROOT / 'packages/slopvac-lint'))} --offline slopvac"
+
+
+def python_reference() -> tuple[str, ...]:
+    """Command for the Python reference.
+
+    Use the interpreter that runs the harness when it can import slopvac, so CI
+    and `uv run` need no second tool. Otherwise ask uv for the package project.
+    """
+    if importlib.util.find_spec("slopvac"):
+        return (sys.executable, "-c", "from slopvac.cli import main; main()")
+    return tuple(shlex.split(PYTHON_FALLBACK))
+
+
 # The reference reads prose and source comments only. Diagram and structured
 # string extractors arrive with the Rust engine.
 PYTHON_UNSUPPORTED = frozenset({"drawio", "json", "ini"})
@@ -77,9 +92,7 @@ class Engine:
     @classmethod
     def parse(cls, spec: str, cwd: Path | None = None) -> Engine:
         if spec == "python":
-            return cls(
-                "python", tuple(shlex.split(PYTHON_REFERENCE)), cwd, PYTHON_UNSUPPORTED
-            )
+            return cls("python", python_reference(), cwd, PYTHON_UNSUPPORTED)
         return cls(Path(spec).name, tuple(shlex.split(spec)), cwd)
 
     def lint(self, paths: Iterable[Path], extra: Iterable[str] = ()) -> dict[str, Any]:
