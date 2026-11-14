@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -110,7 +111,35 @@ def test_extra_file_outside_the_workspace_is_rejected(tmp_path):
         rc_version.release_version_files(tmp_path)
 
 
+def test_updater_objects_in_extra_files_are_not_marker_files(tmp_path):
+    updater = {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.a.b"}
+    config = {"packages": {".": {"extra-files": ["README.md", updater]}}}
+    (tmp_path / "release-please-config.json").write_text(json.dumps(config), encoding="utf-8")
+    names = {p.name for p in rc_version.release_version_files(tmp_path)}
+    assert names == {"pyproject.toml", "README.md"}
+
+
 def test_a_later_alpha_makes_the_pending_version_stale(release_map):
     release_map["2.18.0a1"] = [{"yanked": False}]
     with pytest.raises(ValueError, match="not newer"):
         rc_version.next_rc_version("2.17.0", release_map)
+
+
+def test_rewrite_changes_every_configured_release_file(tmp_path):
+    """A configured file that the rewrite cannot change would abort an RC build."""
+    root = Path(__file__).resolve().parents[1]
+    shutil.copy(root / "release-please-config.json", tmp_path)
+    configured = rc_version.release_version_files(root)
+    assert configured
+    for path in configured:
+        copy = tmp_path / path.relative_to(root)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, copy)
+
+    rc_version.rewrite_version_files(tmp_path, "9.8.7rc1")
+
+    for path in configured:
+        before = path.read_text(encoding="utf-8")
+        after = (tmp_path / path.relative_to(root)).read_text(encoding="utf-8")
+        assert after != before, path
+        assert "9.8.7rc1" in after, path
