@@ -60,7 +60,7 @@ fn h6_required_feature_the_host_lacks_stops_the_load_before_spawn() {
     d.features.required = vec!["telepathy".into()];
     let mut s = spec_with("ok", &json!({}), None, d);
     s.program = PathBuf::from("/nonexistent/never-spawned");
-    let err = Plugin::start(&s, &cfg(), &Allow).unwrap_err();
+    let err = Plugin::start(&s, &cfg(), &Allow).unwrap_err().error;
     assert_eq!(err, PluginError::RequiredFeatureMissing("telepathy".into()));
 }
 
@@ -346,7 +346,7 @@ fn h19_a_network_plugin_does_not_spawn_in_offline_mode() {
     s.program = PathBuf::from("/nonexistent/never-spawned");
     let mut c = cfg();
     c.offline = true;
-    let err = Plugin::start(&s, &c, &Allow).unwrap_err();
+    let err = Plugin::start(&s, &c, &Allow).unwrap_err().error;
     assert_eq!(err, PluginError::Offline("fake".into()));
     assert_eq!(err.to_string(), "offline: fake needs the network");
 }
@@ -359,7 +359,9 @@ fn h20_an_untrusted_or_changed_plugin_does_not_spawn() {
         PluginError::Untrusted("fake".into()),
         PluginError::HashMismatch("fake".into()),
     ] {
-        let err = Plugin::start(&s, &cfg(), &Deny(e.clone())).unwrap_err();
+        let err = Plugin::start(&s, &cfg(), &Deny(e.clone()))
+            .unwrap_err()
+            .error;
         assert_eq!(err, e);
     }
 }
@@ -616,7 +618,9 @@ fn h1_the_body_limit_is_exact_before_and_after_initialize() {
     for (mode, negotiated, passes) in cases {
         let o = json!({"limits": {"maxMessageBytes": negotiated}});
         let r = Plugin::start(&spec_with(mode, &o, None, decl()), &cfg(), &Allow);
-        let r = r.and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
+        let r = r
+            .map_err(|e| e.error)
+            .and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
         if passes {
             assert!(r.is_ok(), "{mode}: {r:?}");
         } else {
@@ -748,6 +752,38 @@ fn a_plugin_that_ended_before_shutdown_has_not_shut_down_cleanly_even_with_statu
     assert!(!out.clean(), "{out:?}");
 }
 
+/// A start that fails after the spawn still reports what its teardown left:
+/// a child outside the group dies on Linux and is reported elsewhere.
+#[test]
+fn a_failed_start_reports_what_its_teardown_left() {
+    let dir = scratch("start-stray");
+    let pidfile = dir.join("pids");
+    // The host refuses a reply with `maxInFlight` 0.
+    let o = json!({"limits": {"maxInFlight": 0}});
+    let err = Plugin::start(
+        &spec_with("stray-init", &o, Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap_err();
+    let stray = pids_n(&pidfile, 1);
+    let gone = if cfg!(target_os = "linux") {
+        wait_gone(&stray)
+    } else {
+        !alive(stray[0])
+    };
+    end(&stray);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(err.error.slopvac_code(), "plugin-output-invalid", "{err:?}");
+    if cfg!(target_os = "linux") {
+        assert!(gone, "the child {stray:?} survived");
+        assert!(err.teardown.is_complete(), "{err:?}");
+    } else {
+        assert!(!gone, "the host signalled the child {stray:?}");
+        assert_eq!(err.teardown.escaped, [stray[0].unsigned_abs()], "{err:?}");
+    }
+}
+
 #[test]
 fn h1_a_frame_sent_with_the_initialize_reply_meets_the_negotiated_limit() {
     // One write holds the reply and an unsolicited notification of `size`
@@ -762,7 +798,9 @@ fn h1_a_frame_sent_with_the_initialize_reply_meets_the_negotiated_limit() {
         let o = json!({"limits": {"maxMessageBytes": negotiated}});
         let mode = format!("init-then:{size}");
         let r = Plugin::start(&spec_with(&mode, &o, None, decl()), &cfg(), &Allow);
-        let r = r.and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
+        let r = r
+            .map_err(|e| e.error)
+            .and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
         if passes {
             assert!(r.is_ok(), "{mode}: {r:?}");
         } else {

@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender, bounded, select};
 use serde_json::{Value, json};
 
-use crate::error::PluginError;
+use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
 use crate::process::{Group, Leader, TableSource, Teardown, sanitize_display};
@@ -792,14 +792,29 @@ impl Plugin {
     ///
     /// # Errors
     /// Any pre-spawn refusal, spawn failure or handshake failure. On failure
-    /// the process group is already dead.
+    /// the process group is already dead, and the error carries what its
+    /// teardown left undone.
     pub fn start(
         spec: &PluginSpec,
         cfg: &HostConfig,
         gate: &dyn SpawnGate,
-    ) -> Result<Self, PluginError> {
-        prespawn(spec, cfg, gate)?;
-        let mut conn = spawn(spec, cfg)?;
+    ) -> Result<Self, StartError> {
+        prespawn(spec, cfg, gate).map_err(|error| StartError {
+            error,
+            teardown: Teardown::default(),
+        })?;
+        let conn = spawn(spec, cfg)?;
+        let group = Arc::clone(&conn.shared.group);
+        // A failed handshake drops the connection, which kills the group and
+        // waits for the reap, so the teardown is final here.
+        Self::handshake(conn, spec, cfg).map_err(|error| StartError {
+            error,
+            teardown: group.teardown(),
+        })
+    }
+
+    /// Run `initialize` and `initialized` over a fresh connection.
+    fn handshake(mut conn: Conn, spec: &PluginSpec, cfg: &HostConfig) -> Result<Self, PluginError> {
         let params = json!({
             "protocolVersion": PROTOCOL_VERSION,
             "minProtocolVersion": MIN_PROTOCOL_VERSION,
@@ -1011,7 +1026,7 @@ fn spawn_watchdog(shared: &Arc<Shared>, stop: Receiver<()>, cap: Duration) {
     });
 }
 
-fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
+fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args)
         .current_dir(&spec.cwd)
@@ -1027,17 +1042,18 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
-    let child = cmd
-        .spawn()
-        .map_err(|e| PluginError::SpawnFailed(format!("{}: {e}", spec.name)))?;
+    let child = cmd.spawn().map_err(|e| StartError {
+        error: PluginError::SpawnFailed(format!("{}: {e}", spec.name)),
+        teardown: Teardown::default(),
+    })?;
     let group = Group::register(child.id(), cfg.process_table.clone());
     let mut leader = Leader::new(child);
     let (Some(stdin), Some(stdout), Some(stderr)) = leader.take_pipes() else {
         group.finish(leader);
-        return Err(PluginError::SpawnFailed(format!(
-            "{}: missing pipes",
-            spec.name
-        )));
+        return Err(StartError {
+            error: PluginError::SpawnFailed(format!("{}: missing pipes", spec.name)),
+            teardown: group.teardown(),
+        });
     };
     let (frames_tx, frames_rx) = bounded::<Vec<u8>>(2 * cfg.max_in_flight + 4);
     let (stderr_done_tx, stderr_done) = bounded::<()>(0);

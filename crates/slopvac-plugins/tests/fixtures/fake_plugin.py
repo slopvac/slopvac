@@ -233,6 +233,10 @@ while True:
             continue
         if mode == "hang" and pidfile:
             write_pids(pidfile, [os.getpid()])
+        if mode == "stray-init":
+            # A child outside the group, started before a reply the host refuses.
+            stray = subprocess.Popen(["sleep", "300"], start_new_session=True).pid
+            write_pids(pidfile, [stray])
         if init_sized:
             send_sized(
                 {"jsonrpc": "2.0", "id": id_, "result": init_result()}, init_sized

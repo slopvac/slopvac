@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use slopvac_plugins::hooks::Document;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::{
-    HookKind, HostConfig, Plugin, PluginDeclaration, PluginError, PluginSpec, SpawnGate, Timeouts,
+    HookKind, HostConfig, Plugin, PluginDeclaration, PluginError, PluginSpec, SpawnGate,
+    StartError, Timeouts,
 };
 
 // STUB(slopvac-8l4.9.12): test-only gates stand in for the trust store.
@@ -169,10 +170,27 @@ pub fn docs(n: usize) -> Vec<Document> {
         .collect()
 }
 
-pub fn code<T: std::fmt::Debug>(r: &Result<T, PluginError>) -> String {
+/// An error with a stable `slopvac_code`.
+pub trait Coded: std::fmt::Debug {
+    fn coded(&self) -> &str;
+}
+
+impl Coded for PluginError {
+    fn coded(&self) -> &str {
+        self.slopvac_code()
+    }
+}
+
+impl Coded for StartError {
+    fn coded(&self) -> &str {
+        self.error.slopvac_code()
+    }
+}
+
+pub fn code<T: std::fmt::Debug, E: Coded>(r: &Result<T, E>) -> String {
     r.as_ref()
         .expect_err("expected an error")
-        .slopvac_code()
+        .coded()
         .to_owned()
 }
 

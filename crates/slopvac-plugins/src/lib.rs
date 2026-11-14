@@ -18,7 +18,7 @@ pub mod protocol;
 pub mod strict;
 
 pub use api::{DocOutcome, plan_batches};
-pub use error::{PluginError, RpcError};
+pub use error::{PluginError, RpcError, StartError};
 pub use host::{HostConfig, Plugin, PluginSpec, RunCaps, Shutdown, SpawnGate, Timeouts};
 pub use process::{Teardown, kill_all_live};
 pub use protocol::{HookKind, PluginDeclaration};

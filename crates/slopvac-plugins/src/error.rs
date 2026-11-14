@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::process::Teardown;
+
 /// A JSON-RPC error object sent by a plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcError {
@@ -111,4 +113,15 @@ impl PluginError {
             Self::Usage(_) => "plugin-usage",
         }
     }
+}
+
+/// Why [`Plugin::start`](crate::Plugin::start) failed, and what the teardown
+/// of the process it started left undone.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[error("{error}")]
+pub struct StartError {
+    /// What went wrong.
+    pub error: PluginError,
+    /// What the teardowns left undone. Complete when no process started.
+    pub teardown: Teardown,
 }
