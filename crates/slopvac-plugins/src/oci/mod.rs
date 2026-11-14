@@ -6,9 +6,12 @@
 //!
 //! - manifests and indexes are capped at 4 MiB, blobs at the descriptor size and
 //!   256 MiB, and every blob is hashed while it streams;
-//! - redirects are followed by hand, at most 5, over HTTPS only (loopback may use
-//!   HTTP), and `Authorization` is dropped when the host changes;
-//! - a token `realm` must be HTTPS on the registry's host or a listed token host;
+//! - redirects are followed by hand, at most 5, over HTTPS only, and
+//!   `Authorization` is dropped when the host changes. Plain HTTP exists only in
+//!   the `#[doc(hidden)]` test constructor `Client::with_loopback_http_for_tests`;
+//! - a token `realm` must be HTTPS on the registry's exact origin (scheme, host and
+//!   port) or on a token service listed for that registry (Docker Hub's
+//!   `auth.docker.io`), and cached tokens are keyed by registry origin and scope;
 //! - TLS uses rustls with the platform verifier and has no switch to turn it off.
 
 mod auth;
@@ -48,7 +51,7 @@ pub enum OciError {
         message: String,
     },
     /// The URL would send data over plain HTTP or to a host the rules forbid.
-    #[error("refused URL {0}: HTTPS is required outside loopback")]
+    #[error("refused URL {0}: HTTPS is required")]
     InsecureUrl(String),
     /// A redirect broke a rule.
     #[error("bad redirect from {url}: {why}")]
@@ -58,8 +61,8 @@ pub enum OciError {
         /// The rule.
         why: String,
     },
-    /// The token realm is not on the registry's host.
-    #[error("token realm {0} is not on the registry host; credentials were not sent")]
+    /// The token realm is not on the registry's origin or a listed token service.
+    #[error("token realm {0} is not on the registry origin; credentials were not sent")]
     RealmRejected(String),
     /// Credentials could not be read.
     #[error("credential error: {0}")]

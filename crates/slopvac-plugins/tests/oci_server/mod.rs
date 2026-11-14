@@ -92,6 +92,90 @@ impl Server {
     }
 }
 
+/// Wrap `inner` in a registry that enforces authentication like GHCR does.
+///
+/// `/token` accepts a request when it carries `credentials` as Basic auth (or,
+/// with `None`, any request) and answers with the token `<name>|<scope>`.
+/// Every other path needs a Bearer token whose scope names the repository and
+/// the action the method needs (`pull`, plus `push` for writes); otherwise the
+/// wrapper answers 401 with a challenge that points at its own `/token`.
+pub fn with_auth(
+    name: &'static str,
+    credentials: Option<(&'static str, &'static str)>,
+    inner: impl Fn(&Request) -> Response + Send + Sync + 'static,
+) -> impl Fn(&Request) -> Response + Send + Sync + 'static {
+    move |req| {
+        let host = req.header("host").unwrap_or_default().to_owned();
+        if let Some(query) = req.path.strip_prefix("/token?") {
+            let scope = query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("scope="))
+                .unwrap_or("")
+                .replace("%3A", ":")
+                .replace("%2F", "/")
+                .replace("%2C", ",");
+            let ok = credentials.is_none_or(|(u, p)| {
+                req.header("authorization")
+                    == Some(&format!(
+                        "Basic {}",
+                        base64_std(format!("{u}:{p}").as_bytes())
+                    ))
+            });
+            if !ok {
+                return Response::new(401);
+            }
+            return Response::new(200)
+                .json(&serde_json::json!({"token": format!("{name}|{scope}"), "expires_in": 300}));
+        }
+        let repo = req
+            .path
+            .strip_prefix("/v2/")
+            .and_then(|p| {
+                ["/blobs/", "/manifests/", "/tags/", "/referrers/"]
+                    .iter()
+                    .find_map(|m| p.split_once(m).map(|(r, _)| r))
+            })
+            .unwrap_or("");
+        let write = matches!(req.method.as_str(), "PUT" | "POST" | "PATCH" | "DELETE");
+        let actions = if write { "pull,push" } else { "pull" };
+        let prefix = format!("Bearer {name}|repository:{repo}:");
+        let granted = req
+            .header("authorization")
+            .and_then(|h| h.strip_prefix(prefix.as_str()))
+            .is_some_and(|granted| {
+                granted
+                    .split(',')
+                    .any(|g| g == if write { "push" } else { "pull" })
+            });
+        if !granted {
+            let challenge = format!(
+                "Bearer realm=\"http://{host}/token\",service=\"reg\",scope=\"repository:{repo}:{actions}\""
+            );
+            return Response::new(401).header("WWW-Authenticate", &challenge);
+        }
+        inner(req)
+    }
+}
+
+pub fn base64_std(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |a, (i, &b)| a | (u32::from(b) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(T[((n >> (18 - 6 * i)) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 fn serve(
     conn: std::net::TcpStream,
     handler: &dyn Fn(&Request) -> Response,

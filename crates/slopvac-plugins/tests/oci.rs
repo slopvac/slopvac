@@ -5,7 +5,7 @@ mod oci_server;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use oci_server::{Request, Response, Server};
+use oci_server::{Request, Response, Server, base64_std, with_auth};
 use serde_json::json;
 use slopvac_plugins::oci::{
     Anonymous, Client, DefaultCredentials, Descriptor, Digest, EnvCredentials, MEDIA_INDEX,
@@ -13,7 +13,7 @@ use slopvac_plugins::oci::{
 };
 
 fn client_with_basic(user: &str, token: &str) -> Client {
-    Client::with_credentials(Box::new(DefaultCredentials {
+    Client::with_loopback_http_for_tests(Box::new(DefaultCredentials {
         env: EnvCredentials {
             user: Some(user.into()),
             token: Some(token.into()),
@@ -66,7 +66,7 @@ fn bearer_flow_fetches_a_token_once_and_reuses_it() {
         }
         manifest_response(&payload)
     });
-    let client = Client::with_credentials(Box::new(Anonymous));
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
     let r = reference(&server, "a/b:1.0");
     let first = client.fetch_manifest(&r).unwrap();
     assert_eq!(first.digest, Digest::of(&body));
@@ -162,7 +162,7 @@ fn tm36_redirects_to_plain_http_and_redirect_loops_are_refused() {
         Response::new(302).header("Location", &req.path)
     });
     let desc = Descriptor::for_bytes("x", b"x");
-    let client = Client::with_credentials(Box::new(Anonymous));
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
     let err = client
         .pull_blob(&reference(&server, "a/b:1"), &desc, &mut Vec::new())
         .unwrap_err();
@@ -192,7 +192,7 @@ fn tm33_a_blob_that_does_not_match_its_descriptor_fails() {
     for (name, body) in cases {
         let server = Server::start(move |_| Response::new(200).body(body.clone()));
         let mut out = Vec::new();
-        let err = Client::with_credentials(Box::new(Anonymous))
+        let err = Client::with_loopback_http_for_tests(Box::new(Anonymous))
             .pull_blob(&reference(&server, "a/b:1"), &desc, &mut out)
             .unwrap_err();
         let ok = matches!(
@@ -213,7 +213,7 @@ fn tm33_a_descriptor_above_256_mib_is_refused_before_any_request() {
     let server = Server::start(|_| Response::new(500));
     let mut desc = Descriptor::for_bytes("x", b"x");
     desc.size = 256 * 1024 * 1024 + 1;
-    let err = Client::with_credentials(Box::new(Anonymous))
+    let err = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .pull_blob(&reference(&server, "a/b:1"), &desc, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(err, OciError::TooLarge { .. }));
@@ -223,7 +223,7 @@ fn tm33_a_descriptor_above_256_mib_is_refused_before_any_request() {
 #[test]
 fn tm34_oversized_manifests_and_unknown_media_types_are_refused() {
     let big = Server::start(|_| manifest_response(&vec![b' '; 5 * 1024 * 1024]));
-    let client = Client::with_credentials(Box::new(Anonymous));
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
     let err = client
         .fetch_manifest(&reference(&big, "a/b:1"))
         .unwrap_err();
@@ -248,7 +248,7 @@ fn a_manifest_fetched_by_digest_must_hash_to_it() {
     let server = Server::start(|_| manifest_response(b"{\"schemaVersion\":2,\"mediaType\":\"x\"}"));
     let other = Digest::of(b"not it");
     let r = Reference::parse(&format!("{}/a/b@{other}", server.registry())).unwrap();
-    let err = Client::with_credentials(Box::new(Anonymous))
+    let err = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .fetch_manifest(&r)
         .unwrap_err();
     assert!(matches!(err, OciError::DigestMismatch { .. }), "{err:?}");
@@ -257,7 +257,7 @@ fn a_manifest_fetched_by_digest_must_hash_to_it() {
 #[test]
 fn private_or_missing_packages_report_denied_not_a_crash() {
     let server = Server::start(|_| Response::new(403));
-    let err = Client::with_credentials(Box::new(Anonymous))
+    let err = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .fetch_manifest(&reference(&server, "a/b:1"))
         .unwrap_err();
     assert!(matches!(err, OciError::Denied(_)), "{err:?}");
@@ -286,7 +286,7 @@ fn referrers_fall_back_to_the_tag_schema_and_filter_by_artifact_type() {
         }
         Response::new(404)
     });
-    let client = Client::with_credentials(Box::new(Anonymous));
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
     let r = reference(&server, "a/b:1");
     let all = client.referrers(&r, &subject, None).unwrap();
     assert_eq!(all.len(), 2);
@@ -301,7 +301,7 @@ fn referrers_fall_back_to_the_tag_schema_and_filter_by_artifact_type() {
 fn referrers_with_neither_api_nor_tag_give_an_empty_list() {
     let server = Server::start(|_| Response::new(404));
     let r = reference(&server, "a/b:1");
-    let found = Client::with_credentials(Box::new(Anonymous))
+    let found = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .referrers(&r, &Digest::of(b"s"), None)
         .unwrap();
     assert_eq!(found, Vec::<Descriptor>::new());
@@ -320,7 +320,7 @@ fn tags_are_listed_across_pages() {
             )
             .json(&json!({"name": "a/b", "tags": ["1.0.0"]}))
     });
-    let tags = Client::with_credentials(Box::new(Anonymous))
+    let tags = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .list_tags(&reference(&server, "a/b:1"))
         .unwrap();
     assert_eq!(tags, ["1.0.0", "1.1.0"]);
@@ -331,7 +331,7 @@ fn push_then_pull_round_trips_blobs_and_a_manifest() {
     type Store = Arc<Mutex<HashMap<String, (String, Vec<u8>)>>>;
     let store: Store = Arc::default();
     let s = Arc::clone(&store);
-    let server = Server::start(move |req| {
+    let server = Server::start(with_auth("reg", Some(("me", "pw")), move |req| {
         let mut s = s.lock().unwrap();
         let (path, query) = req.path.split_once('?').unwrap_or((&req.path, ""));
         match (req.method.as_str(), path) {
@@ -371,8 +371,8 @@ fn push_then_pull_round_trips_blobs_and_a_manifest() {
             },
             _ => Response::new(404),
         }
-    });
-    let client = Client::with_credentials(Box::new(Anonymous));
+    }));
+    let client = client_with_basic("me", "pw");
     let r = reference(&server, "a/b:1.0.0");
     let config = client
         .push_blob(&r, "application/vnd.oci.empty.v1+json", b"{}")
@@ -396,7 +396,7 @@ fn push_then_pull_round_trips_blobs_and_a_manifest() {
         server
             .requests()
             .iter()
-            .filter(|q| q.method == "POST")
+            .filter(|q| q.method == "PUT" && q.path.starts_with("/v2/a/b/blobs/uploads/"))
             .count(),
         2,
         "an existing blob is not uploaded twice"
@@ -411,6 +411,207 @@ fn push_then_pull_round_trips_blobs_and_a_manifest() {
     let mut out = Vec::new();
     client.pull_blob(&r, &manifest.layers[0], &mut out).unwrap();
     assert_eq!(out, b"payload");
+    let scopes: Vec<_> = server
+        .requests()
+        .into_iter()
+        .filter(|q| q.path.starts_with("/token"))
+        .map(|q| q.path)
+        .collect();
+    assert!(
+        scopes
+            .iter()
+            .any(|p| p.contains("scope=repository%3Aa%2Fb%3Apull%2Cpush")),
+        "publish asks for the push scope: {scopes:?}"
+    );
+}
+
+#[test]
+fn publish_without_credentials_is_refused_by_an_authenticating_registry() {
+    let server = Server::start(with_auth("reg", Some(("me", "pw")), |_| Response::new(201)));
+    let r = reference(&server, "a/b:1");
+    for client in [
+        Client::with_loopback_http_for_tests(Box::new(Anonymous)),
+        client_with_basic("me", "wrong"),
+    ] {
+        let err = client.push_blob(&r, "x", b"data").unwrap_err();
+        assert!(matches!(err, OciError::Denied(_)), "{err:?}");
+    }
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|q| q.method != "POST" && q.method != "PUT"),
+        "nothing was uploaded"
+    );
+}
+
+#[test]
+fn the_token_endpoint_receives_the_basic_credentials_and_the_pull_scope() {
+    let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
+    let server = Server::start(with_auth("reg", Some(("me", "s3cret")), move |_| {
+        manifest_response(&body)
+    }));
+    client_with_basic("me", "s3cret")
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap();
+    let token_req = server
+        .requests()
+        .into_iter()
+        .find(|q| q.path.starts_with("/token"))
+        .unwrap();
+    assert_eq!(
+        token_req.header("authorization"),
+        Some(format!("Basic {}", base64_std(b"me:s3cret")).as_str())
+    );
+    assert!(token_req.path.contains("scope=repository%3Aa%2Fb%3Apull"));
+    assert!(!token_req.path.contains("push"));
+}
+
+#[test]
+fn wrong_credentials_at_the_token_endpoint_are_denied() {
+    let server = Server::start(with_auth("reg", Some(("me", "s3cret")), |_| {
+        Response::new(200)
+    }));
+    let err = client_with_basic("me", "nope")
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert!(matches!(err, OciError::Denied(_)), "{err:?}");
+}
+
+#[test]
+fn tm35_a_cached_token_is_never_sent_to_another_registry() {
+    let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
+    let (b1, b2) = (body.clone(), body);
+    let good = Server::start(with_auth("good", None, move |_| manifest_response(&b1)));
+    let other = Server::start(with_auth("other", None, move |_| manifest_response(&b2)));
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
+    client.fetch_manifest(&reference(&good, "a/b:1")).unwrap();
+    client.fetch_manifest(&reference(&other, "a/b:1")).unwrap();
+    let first = other.requests().into_iter().next().unwrap();
+    assert!(
+        first.header("authorization").is_none(),
+        "the first request to the second registry carried {:?}",
+        first.header("authorization")
+    );
+    assert_eq!(
+        other.count("/token"),
+        1,
+        "the second registry gets its own token"
+    );
+}
+
+#[test]
+fn tm35_a_realm_on_another_port_of_the_same_host_is_refused() {
+    let evil = Server::start(|_| Response::new(200).json(&json!({"token": "x"})));
+    let evil_port = evil.addr.port();
+    let server = Server::start(move |_| {
+        Response::new(401).header(
+            "WWW-Authenticate",
+            &format!("Bearer realm=\"http://127.0.0.1:{evil_port}/token\",service=\"reg\""),
+        )
+    });
+    let err = client_with_basic("me", "s3cret")
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert!(matches!(err, OciError::RealmRejected(_)), "{err:?}");
+    assert!(evil.requests().is_empty(), "the other port was contacted");
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|q| q.header("authorization").is_none())
+    );
+}
+
+#[test]
+fn tm36_the_production_client_never_speaks_plain_http() {
+    let server = Server::start(|_| Response::new(200));
+    let err = Client::with_credentials(Box::new(Anonymous))
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert!(matches!(err, OciError::Network { .. }), "{err:?}");
+    assert!(server.requests().is_empty(), "{:?}", server.requests());
+}
+
+#[test]
+fn a_challenge_with_spaces_around_equals_signs_still_yields_a_clean_realm() {
+    let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
+    let server = Server::start(move |req| {
+        if req.path.starts_with("/token") {
+            return Response::new(200).json(&json!({"token": "T"}));
+        }
+        if req.header("authorization") == Some("Bearer T") {
+            return manifest_response(&body);
+        }
+        let challenge = format!(
+            "Bearer realm = \"http://{}/token\" , service = \"reg\"",
+            host(req)
+        );
+        Response::new(401).header("WWW-Authenticate", &challenge)
+    });
+    Client::with_loopback_http_for_tests(Box::new(Anonymous))
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap();
+    assert_eq!(server.count("/token?service=reg"), 1);
+}
+
+#[test]
+fn referrers_api_responses_are_used_and_paginated() {
+    let subject = Digest::of(b"subject");
+    let desc = |tag: &[u8]| {
+        json!({"mediaType": MEDIA_MANIFEST, "digest": Digest::of(tag), "size": 1,
+            "artifactType": "application/vnd.slopvac.signature.v1"})
+    };
+    let page = |m: serde_json::Value| {
+        Response::new(200).header("Content-Type", MEDIA_INDEX).body(
+            serde_json::to_vec(
+                &json!({"schemaVersion": 2, "mediaType": MEDIA_INDEX, "manifests": [m]}),
+            )
+            .unwrap(),
+        )
+    };
+    let (one, two) = (desc(b"one"), desc(b"two"));
+    let server = Server::start(with_auth("reg", None, move |req| {
+        if req.path.contains("page=2") {
+            page(two.clone())
+        } else if req.path.contains("/referrers/") {
+            page(one.clone()).header("Link", "<?page=2>; rel=\"next\"")
+        } else {
+            Response::new(500)
+        }
+    }));
+    let found = Client::with_loopback_http_for_tests(Box::new(Anonymous))
+        .referrers(&reference(&server, "a/b:1"), &subject, None)
+        .unwrap();
+    let digests: Vec<_> = found.iter().map(|d| d.digest.clone()).collect();
+    assert_eq!(digests, [Digest::of(b"one"), Digest::of(b"two")]);
+    assert_eq!(server.count("/v2/a/b/manifests/"), 0, "no tag fallback");
+}
+
+#[test]
+fn query_only_link_and_location_references_keep_the_path() {
+    let server = Server::start(|req| {
+        let (path, query) = req.path.split_once('?').unwrap_or((&req.path, ""));
+        match (req.method.as_str(), path) {
+            ("GET", "/v2/a/b/tags/list") if query.contains("last=") => {
+                Response::new(200).json(&json!({"tags": ["1.1.0"]}))
+            }
+            ("GET", "/v2/a/b/tags/list") => Response::new(200)
+                .header("Link", "<?n=1000&last=1.0.0>; rel=\"next\"")
+                .json(&json!({"tags": ["1.0.0"]})),
+            ("POST", "/v2/a/b/blobs/uploads/") => {
+                Response::new(202).header("Location", "?_state=s1")
+            }
+            ("PUT", "/v2/a/b/blobs/uploads/") if query.starts_with("_state=s1&digest=") => {
+                Response::new(201)
+            }
+            _ => Response::new(404),
+        }
+    });
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
+    let r = reference(&server, "a/b:1");
+    assert_eq!(client.list_tags(&r).unwrap(), ["1.0.0", "1.1.0"]);
+    client.push_blob(&r, "x", b"data").unwrap();
 }
 
 #[test]
@@ -421,7 +622,7 @@ fn push_refuses_an_upload_location_on_another_host() {
         }
         Response::new(202).header("Location", "http://localhost:1/steal")
     });
-    let err = Client::with_credentials(Box::new(Anonymous))
+    let err = Client::with_loopback_http_for_tests(Box::new(Anonymous))
         .push_blob(&reference(&server, "a/b:1"), "x", b"data")
         .unwrap_err();
     assert!(matches!(err, OciError::BadRedirect { .. }), "{err:?}");
@@ -444,7 +645,8 @@ fn a_docker_config_auth_entry_becomes_basic_credentials() {
         docker_config_dir: Some(dir.clone()),
         ..DefaultCredentials::default()
     };
-    let r = Client::with_credentials(Box::new(creds)).fetch_manifest(&reference(&server, "a/b:1"));
+    let r = Client::with_loopback_http_for_tests(Box::new(creds))
+        .fetch_manifest(&reference(&server, "a/b:1"));
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(r.is_ok(), "{r:?}");
     let sent = server
@@ -455,25 +657,6 @@ fn a_docker_config_auth_entry_becomes_basic_credentials() {
         .unwrap()
         .to_owned();
     assert_eq!(sent, format!("Basic {}", base64_std(b"alice:pw1")));
-}
-
-fn base64_std(bytes: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let n = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |a, (i, &b)| a | (u32::from(b) << (16 - 8 * i)));
-        for i in 0..4 {
-            if i <= chunk.len() {
-                out.push(char::from(T[((n >> (18 - 6 * i)) & 63) as usize]));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
 }
 
 #[cfg(unix)]
@@ -552,6 +735,19 @@ mod helpers {
         let err = lookup("hang", "slow", Some("sleep 30")).unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(8));
+    }
+
+    #[test]
+    fn tm38_a_helper_that_exits_but_leaves_a_descendant_holding_stdout_times_out() {
+        let started = Instant::now();
+        let err = lookup(
+            "orphan",
+            "leaky",
+            Some(r#"cat >/dev/null; echo '{"Username":"u","Secret":"s"}'; sleep 6 &"#),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

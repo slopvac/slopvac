@@ -12,7 +12,9 @@ use ureq::Body;
 use ureq::http::Response;
 
 use super::auth::{Challenge, CredentialSource, DefaultCredentials};
-use super::http::{Req, Transport, bare_host, host_of, is_loopback_host, resolve, url_allowed};
+use super::http::{
+    Req, Transport, bare_host, host_of, is_loopback_host, origin_of, resolve, url_allowed,
+};
 use super::reference::{Reference, Target};
 use super::types::{
     Descriptor, Digest, Index, MAX_BLOB_BYTES, MAX_MANIFEST_BYTES, MEDIA_INDEX, MEDIA_MANIFEST,
@@ -26,10 +28,13 @@ const MAX_TOKEN_BYTES: usize = 64 * 1024;
 const MAX_TAG_PAGES: usize = 10;
 const MAX_TAGS: usize = 10_000;
 
-/// Token hosts that serve a registry from another host name.
-const TOKEN_HOSTS: &[(&str, &str)] = &[
-    ("registry-1.docker.io", "auth.docker.io"),
-    ("docker.io", "auth.docker.io"),
+/// Token services that may be named by a registry on another origin, as
+/// `(registry origin, token service origin)`. Every other registry may only
+/// name a realm on its own origin (scheme, host and port). GHCR's token
+/// endpoint, `https://ghcr.io/token`, is on its own origin and needs no entry.
+const TOKEN_SERVICES: &[(&str, &str)] = &[
+    ("https://registry-1.docker.io", "https://auth.docker.io"),
+    ("https://docker.io", "https://auth.docker.io"),
 ];
 
 struct CachedToken {
@@ -79,11 +84,13 @@ impl Fetched {
     }
 }
 
-/// OCI registry client. One per run; it caches bearer tokens by scope.
+/// OCI registry client. One per run; it caches bearer tokens by registry
+/// origin and scope, so a token never goes to another registry.
 pub struct Client {
     transport: Transport,
     creds: Box<dyn CredentialSource>,
     tokens: Mutex<HashMap<String, CachedToken>>,
+    allow_loopback_http: bool,
 }
 
 impl Client {
@@ -96,20 +103,60 @@ impl Client {
     /// Client with a given credential source.
     #[must_use]
     pub fn with_credentials(creds: Box<dyn CredentialSource>) -> Self {
+        Self::build(creds, false)
+    }
+
+    /// Test seam: like [`Client::with_credentials`] but speaks plain HTTP to
+    /// loopback registries, which integration tests need for their fake server.
+    ///
+    /// Production code never calls this: `new` and `with_credentials` refuse
+    /// every `http://` URL, redirects and token realms included, and no
+    /// configuration or reference can switch it on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_loopback_http_for_tests(creds: Box<dyn CredentialSource>) -> Self {
+        Self::build(creds, true)
+    }
+
+    fn build(creds: Box<dyn CredentialSource>, allow_loopback_http: bool) -> Self {
         Self {
-            transport: Transport::new(),
+            transport: Transport::new(allow_loopback_http),
             creds,
             tokens: Mutex::new(HashMap::new()),
+            allow_loopback_http,
         }
     }
 
-    fn base(r: &Reference) -> String {
-        let scheme = if is_loopback_host(bare_host(&r.registry)) {
+    fn base(&self, r: &Reference) -> String {
+        let scheme = if self.allow_loopback_http && is_loopback_host(bare_host(&r.registry)) {
             "http"
         } else {
             "https"
         };
-        format!("{scheme}://{}", r.registry)
+        format!("{scheme}://{}", r.registry.to_ascii_lowercase())
+    }
+
+    /// Cache key: registry origin plus scope.
+    fn token_key(&self, r: &Reference, scope: &str) -> String {
+        format!("{}|{scope}", self.base(r))
+    }
+
+    /// A realm is trusted on the registry's exact origin, or on a listed token
+    /// service for that registry.
+    fn realm_allowed(&self, r: &Reference, realm: &str) -> bool {
+        if !url_allowed(realm, self.allow_loopback_http) {
+            return false;
+        }
+        let Some(realm_origin) = origin_of(realm) else {
+            return false;
+        };
+        let registry_origin = origin_of(&self.base(r));
+        if registry_origin.as_ref() == Some(&realm_origin) {
+            return true;
+        }
+        TOKEN_SERVICES.iter().any(|(reg, tok)| {
+            origin_of(reg) == registry_origin && origin_of(tok).as_ref() == Some(&realm_origin)
+        })
     }
 
     fn cached(&self, scope: &str) -> Option<String> {
@@ -131,18 +178,7 @@ impl Client {
         let realm = ch
             .param("realm")
             .ok_or_else(|| OciError::Invalid("bearer challenge without realm".into()))?;
-        let (scheme, authority) =
-            host_of(realm).ok_or_else(|| OciError::RealmRejected(redact_url(realm)))?;
-        let realm_host = bare_host(&authority).to_owned();
-        let reg_host = r.host().to_ascii_lowercase();
-        let listed = TOKEN_HOSTS
-            .iter()
-            .any(|(reg, tok)| *reg == reg_host && *tok == realm_host);
-        let same = realm_host == reg_host;
-        if !(same || listed)
-            || !url_allowed(realm)
-            || (scheme == "http" && !is_loopback_host(&realm_host))
-        {
+        if !self.realm_allowed(r, realm) {
             return Err(OciError::RealmRejected(redact_url(realm)));
         }
         let mut url = realm.to_owned();
@@ -183,7 +219,7 @@ impl Client {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(
-                scope.to_owned(),
+                self.token_key(r, scope),
                 CachedToken {
                     value: value.clone(),
                     expires: Instant::now() + ttl,
@@ -210,7 +246,9 @@ impl Client {
             authorization,
             body,
         };
-        let first = self.cached(&scope).map(|t| format!("Bearer {t}"));
+        let first = self
+            .cached(&self.token_key(r, &scope))
+            .map(|t| format!("Bearer {t}"));
         let resp = self.transport.send(&make(first))?;
         if resp.status().as_u16() != 401 {
             return Ok(resp);
@@ -252,7 +290,7 @@ impl Client {
     pub fn fetch_manifest(&self, r: &Reference) -> Result<Fetched, OciError> {
         let url = format!(
             "{}/v2/{}/manifests/{}",
-            Self::base(r),
+            self.base(r),
             r.repository,
             r.target
         );
@@ -337,12 +375,7 @@ impl Client {
                 limit: MAX_BLOB_BYTES,
             });
         }
-        let url = format!(
-            "{}/v2/{}/blobs/{}",
-            Self::base(r),
-            r.repository,
-            desc.digest
-        );
+        let url = format!("{}/v2/{}/blobs/{}", self.base(r), r.repository, desc.digest);
         let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
         let status = resp.status().as_u16();
         if status != 200 {
@@ -422,33 +455,45 @@ impl Client {
         subject: &Digest,
         artifact_type: Option<&str>,
     ) -> Result<Vec<Descriptor>, OciError> {
-        let url = format!("{}/v2/{}/referrers/{subject}", Self::base(r), r.repository);
-        let mut resp = self.call(
-            r,
-            "pull",
-            "GET",
-            &url,
-            &[("Accept", MEDIA_INDEX.into())],
-            None,
-        )?;
-        let status = resp.status().as_u16();
-        let index: Option<Index> = if status == 200 {
-            let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "referrers index")?;
-            Some(
-                serde_json::from_slice(&body)
-                    .map_err(|e| OciError::Invalid(format!("referrers index: {e}")))?,
-            )
-        } else if status == 404 {
-            let tag = format!("sha256-{}", subject.hex());
-            match self.fetch_manifest(&r.with_target(Target::Tag(tag))) {
-                Ok(f) => Some(f.index()?),
-                Err(OciError::NotFound(_)) => None,
-                Err(e) => return Err(e),
+        let mut url = format!("{}/v2/{}/referrers/{subject}", self.base(r), r.repository);
+        let mut found: Vec<Descriptor> = Vec::new();
+        for page in 0..MAX_TAG_PAGES {
+            let mut resp = self.call(
+                r,
+                "pull",
+                "GET",
+                &url,
+                &[("Accept", MEDIA_INDEX.into())],
+                None,
+            )?;
+            let status = resp.status().as_u16();
+            if status == 404 && page == 0 {
+                // No referrers API: use the tag schema.
+                let tag = format!("sha256-{}", subject.hex());
+                match self.fetch_manifest(&r.with_target(Target::Tag(tag))) {
+                    Ok(f) => found.extend(f.index()?.manifests),
+                    Err(OciError::NotFound(_)) => {}
+                    Err(e) => return Err(e),
+                }
+                break;
             }
-        } else {
-            return Err(Self::deny_or_status(&url, status));
-        };
-        let mut found = index.map_or_else(Vec::new, |i| i.manifests);
+            if status != 200 {
+                return Err(Self::deny_or_status(&url, status));
+            }
+            let next = next_link(&resp, &url);
+            let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "referrers index")?;
+            let index: Index = serde_json::from_slice(&body)
+                .map_err(|e| OciError::Invalid(format!("referrers index: {e}")))?;
+            found.extend(index.manifests);
+            if found.len() > MAX_TAGS {
+                return Err(OciError::TooLarge {
+                    what: "referrers list".into(),
+                    limit: MAX_TAGS as u64,
+                });
+            }
+            let Some(next) = next else { break };
+            url = next;
+        }
         if let Some(want) = artifact_type {
             found.retain(|d| d.artifact_type.as_deref() == Some(want));
         }
@@ -464,7 +509,7 @@ impl Client {
         struct Tags {
             tags: Option<Vec<String>>,
         }
-        let mut url = format!("{}/v2/{}/tags/list?n=1000", Self::base(r), r.repository);
+        let mut url = format!("{}/v2/{}/tags/list?n=1000", self.base(r), r.repository);
         let mut all: Vec<String> = Vec::new();
         for _ in 0..MAX_TAG_PAGES {
             let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
@@ -472,15 +517,7 @@ impl Client {
             if status != 200 {
                 return Err(Self::deny_or_status(&url, status));
             }
-            let next = resp
-                .headers()
-                .get("link")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|l| {
-                    l.split_once('<')
-                        .and_then(|(_, r)| r.split_once('>'))
-                        .map(|(u, _)| u.to_owned())
-                });
+            let next = next_link(&resp, &url);
             let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "tag list")?;
             let page: Tags = serde_json::from_slice(&body)
                 .map_err(|e| OciError::Invalid(format!("tag list: {e}")))?;
@@ -491,12 +528,7 @@ impl Client {
                     limit: MAX_TAGS as u64,
                 });
             }
-            let Some(next) = next.and_then(|n| resolve(&url, &n)) else {
-                break;
-            };
-            if host_of(&next) != host_of(&url) {
-                break;
-            }
+            let Some(next) = next else { break };
             url = next;
         }
         Ok(all)
@@ -519,7 +551,7 @@ impl Client {
                 limit: MAX_BLOB_BYTES,
             });
         }
-        let base = Self::base(r);
+        let base = self.base(r);
         let head = format!("{base}/v2/{}/blobs/{}", r.repository, desc.digest);
         let exists = self.call(r, "pull,push", "HEAD", &head, &[], None)?;
         if exists.status().as_u16() == 200 {
@@ -588,7 +620,7 @@ impl Client {
         }
         let url = format!(
             "{}/v2/{}/manifests/{}",
-            Self::base(r),
+            self.base(r),
             r.repository,
             r.target
         );
@@ -612,6 +644,16 @@ impl Default for Client {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The `Link` target of a paginated response, resolved against `url`. A link to
+/// another origin is ignored, so a page can never steer the client elsewhere.
+fn next_link(resp: &Response<Body>, url: &str) -> Option<String> {
+    let value = resp.headers().get("link")?.to_str().ok()?;
+    let (_, tail) = value.split_once('<')?;
+    let (target, _) = tail.split_once('>')?;
+    let next = resolve(url, target)?;
+    (origin_of(&next) == origin_of(url)).then_some(next)
 }
 
 fn check_declared_length(resp: &Response<Body>, limit: u64, what: &str) -> Result<(), OciError> {

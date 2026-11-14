@@ -179,13 +179,43 @@ struct HelperReply {
     secret: String,
 }
 
+/// File-name suffixes that make a helper runnable on this platform. Unix needs
+/// none. Windows honours `PATHEXT` but only for `.exe` and `.com`: batch files
+/// would run through `cmd.exe`, whose argument parsing is unsafe to feed.
+fn executable_suffixes() -> Vec<String> {
+    if !cfg!(windows) {
+        return vec![String::new()];
+    }
+    let pathext = std::env::var("PATHEXT").unwrap_or_default();
+    let mut found: Vec<String> = pathext
+        .split(';')
+        .map(str::to_ascii_lowercase)
+        .filter(|e| matches!(e.as_str(), ".exe" | ".com"))
+        .collect();
+    if found.is_empty() {
+        found = vec![".exe".into(), ".com".into()];
+    }
+    found
+}
+
 fn find_in_path(program: &str, search: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    find_with_suffixes(program, search, &executable_suffixes())
+}
+
+fn find_with_suffixes(
+    program: &str,
+    search: Option<&std::ffi::OsStr>,
+    suffixes: &[String],
+) -> Option<PathBuf> {
     let path = search
         .map(ToOwned::to_owned)
         .or_else(|| std::env::var_os("PATH"))?;
-    std::env::split_paths(&path)
-        .map(|d| d.join(program))
-        .find(|p| p.is_file())
+    std::env::split_paths(&path).find_map(|dir| {
+        suffixes
+            .iter()
+            .map(|ext| dir.join(format!("{program}{ext}")))
+            .find(|p| p.is_file())
+    })
 }
 
 fn run_helper(
@@ -209,6 +239,8 @@ fn run_helper(
     let Some(path) = find_in_path(&program, search) else {
         return Err(cred(format!("credential helper `{program}` was not found")));
     };
+    // One deadline covers the helper's exit and the draining of its output.
+    let deadline = Instant::now() + timeout;
     let mut child = Command::new(path)
         .arg("get")
         .stdin(Stdio::piped())
@@ -217,7 +249,7 @@ fn run_helper(
         .spawn()
         .map_err(|e| cred(format!("cannot start `{program}`: {e}")))?;
     if let Some(mut stdin) = child.stdin.take() {
-        // A helper that never reads is caught by the timeout below.
+        // A helper that never reads is caught by the deadline below.
         let reg = registry.to_owned();
         std::thread::spawn(move || {
             let _ = stdin.write_all(reg.as_bytes());
@@ -227,36 +259,58 @@ fn run_helper(
         .stdout
         .take()
         .ok_or_else(|| cred("no helper stdout".into()))?;
-    let reader = std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = (&mut stdout)
             .take(HELPER_MAX_OUTPUT as u64 + 1)
             .read_to_end(&mut buf);
+        let _ = tx.send(buf);
         // Keep draining so a chatty helper does not block, but keep nothing.
         let _ = std::io::copy(&mut stdout, &mut std::io::sink());
-        buf
     });
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(cred(format!("`{program}` timed out")));
-            }
-            Err(e) => return Err(cred(format!("waiting for `{program}`: {e}"))),
-        }
+    // Only the helper itself is killed; a descendant that keeps the pipe open is
+    // abandoned together with its reader thread.
+    let kill = |child: &mut std::process::Child| {
+        let _ = child.kill();
+        let _ = child.wait();
     };
-    let out = reader
-        .join()
-        .map_err(|_| cred("helper reader failed".into()))?;
-    if out.len() > HELPER_MAX_OUTPUT {
-        return Err(cred(format!(
-            "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
-        )));
+    let mut status = None;
+    let mut output = None;
+    while status.is_none() || output.is_none() {
+        if status.is_none() {
+            status = child
+                .try_wait()
+                .map_err(|e| cred(format!("waiting for `{program}`: {e}")))?;
+        }
+        if output.is_none() {
+            match rx.try_recv() {
+                Ok(buf) if buf.len() > HELPER_MAX_OUTPUT => {
+                    kill(&mut child);
+                    return Err(cred(format!(
+                        "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
+                    )));
+                }
+                Ok(buf) => output = Some(buf),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    kill(&mut child);
+                    return Err(cred("helper reader failed".into()));
+                }
+            }
+        }
+        if status.is_some() && output.is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            kill(&mut child);
+            return Err(cred(format!("`{program}` timed out")));
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
+    let (Some(status), Some(out)) = (status, output) else {
+        return Err(cred("helper did not finish".into()));
+    };
     if !status.success() {
         // "credentials not found in native keychain" is a normal miss.
         return Ok(None);
@@ -396,7 +450,8 @@ impl Challenge {
             }
             let eq = rest.find('=')?;
             let name = rest[..eq].trim().to_ascii_lowercase();
-            rest = &rest[eq + 1..];
+            // RFC 9110 allows optional whitespace around `=`.
+            rest = rest[eq + 1..].trim_start_matches([' ', '\t']);
             let value;
             if let Some(q) = rest.strip_prefix('"') {
                 let mut out = String::new();
@@ -455,6 +510,31 @@ mod tests {
         assert_eq!(c.param("charset"), Some("UTF-8"));
         assert!(Challenge::parse("").is_none());
         assert!(Challenge::parse(r#"Bearer realm="unterminated"#).is_none());
+    }
+
+    #[test]
+    fn challenge_parameters_may_have_whitespace_around_the_equals_sign() {
+        let c = Challenge::parse(r#"Bearer realm = "https://r.example/token" , service= "reg""#)
+            .unwrap();
+        assert_eq!(c.param("realm"), Some("https://r.example/token"));
+        assert_eq!(c.param("service"), Some("reg"));
+    }
+
+    #[test]
+    fn helper_lookup_tries_each_executable_suffix() {
+        let dir = std::env::temp_dir().join(format!("slopvac-suffix-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("docker-credential-pass.exe"), b"").unwrap();
+        let search = std::env::join_paths([&dir]).unwrap();
+        let with_exe = [".com".to_owned(), ".exe".to_owned()];
+        let found = find_with_suffixes("docker-credential-pass", Some(&search), &with_exe);
+        let bare = find_with_suffixes("docker-credential-pass", Some(&search), &[String::new()]);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            found.unwrap().file_name().unwrap(),
+            "docker-credential-pass.exe"
+        );
+        assert!(bare.is_none());
     }
 
     #[test]

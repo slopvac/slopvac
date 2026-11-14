@@ -12,6 +12,7 @@ use super::{MAX_REDIRECTS, OciError, redact_url};
 
 pub(crate) struct Transport {
     agent: Agent,
+    allow_loopback_http: bool,
 }
 
 pub(crate) struct Req<'a> {
@@ -46,39 +47,109 @@ pub(crate) fn bare_host(authority: &str) -> &str {
     authority.rsplit_once(':').map_or(authority, |(h, _)| h)
 }
 
-/// Whether `url` may be requested: HTTPS, or HTTP on a loopback host.
-pub(crate) fn url_allowed(url: &str) -> bool {
+/// Scheme, lowercase host and port of a URL, with the default port filled in.
+/// `None` for a URL without a host or with userinfo.
+pub(crate) type Origin = (String, String, u16);
+
+pub(crate) fn origin_of(url: &str) -> Option<Origin> {
+    let uri: Uri = url.parse().ok()?;
+    let scheme = uri.scheme_str()?.to_ascii_lowercase();
+    let auth = uri.authority()?;
+    if auth.as_str().contains('@') {
+        return None;
+    }
+    let port = match (uri.port_u16(), scheme.as_str()) {
+        (Some(p), _) => p,
+        (None, "https") => 443,
+        (None, "http") => 80,
+        _ => return None,
+    };
+    let host = uri.host().filter(|h| !h.is_empty())?.to_ascii_lowercase();
+    Some((scheme, host, port))
+}
+
+/// Whether `url` may be requested: HTTPS, or, when `allow_loopback_http` is set
+/// (test clients only), HTTP on a loopback host.
+pub(crate) fn url_allowed(url: &str, allow_loopback_http: bool) -> bool {
     match host_of(url) {
         Some((s, a)) if s == "https" => !a.is_empty(),
-        Some((s, a)) if s == "http" => is_loopback_host(bare_host(&a)),
+        Some((s, a)) if s == "http" => allow_loopback_http && is_loopback_host(bare_host(&a)),
         _ => false,
     }
 }
 
-/// Resolve a `Location` value against the URL that returned it.
-pub(crate) fn resolve(base: &str, location: &str) -> Option<String> {
-    if location.contains("://") {
-        return Some(location.to_owned());
+/// Remove `.` and `..` segments from an absolute path (RFC 3986 section 5.2.4).
+fn remove_dot_segments(path: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut trailing = false;
+    for seg in path.split('/').skip(1) {
+        trailing = false;
+        match seg {
+            "." => trailing = true,
+            ".." => {
+                out.pop();
+                trailing = true;
+            }
+            s => out.push(s),
+        }
     }
+    let mut r = String::from("/");
+    r.push_str(&out.join("/"));
+    if trailing && !r.ends_with('/') {
+        r.push('/');
+    }
+    r
+}
+
+/// Resolve a URI reference against `base` (RFC 3986 section 5.2) for the forms
+/// registries send: absolute, network-path, absolute-path, query-only and
+/// relative-path.
+pub(crate) fn resolve(base: &str, reference: &str) -> Option<String> {
     let (scheme, rest) = base.split_once("://")?;
-    let (authority, path) = rest.split_once('/').map_or((rest, ""), |(a, p)| (a, p));
-    if let Some(r) = location.strip_prefix("//") {
+    let rest = rest.split('#').next().unwrap_or(rest);
+    let (authority, path_query) = rest
+        .find(['/', '?'])
+        .map_or((rest, ""), |i| (&rest[..i], &rest[i..]));
+    let (base_path, base_query) = match path_query.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (path_query, None),
+    };
+    let base_path = if base_path.is_empty() { "/" } else { base_path };
+
+    let first_seg = reference.split(['/', '?', '#']).next().unwrap_or("");
+    if first_seg.contains(':') {
+        return Some(reference.to_owned());
+    }
+    if let Some(r) = reference.strip_prefix("//") {
         return Some(format!("{scheme}://{r}"));
     }
-    if location.starts_with('/') {
-        return Some(format!("{scheme}://{authority}{location}"));
+    let reference = reference.split('#').next().unwrap_or(reference);
+    if reference.is_empty() {
+        let q = base_query.map_or(String::new(), |q| format!("?{q}"));
+        return Some(format!("{scheme}://{authority}{base_path}{q}"));
     }
-    let path = path.split(['?', '#']).next().unwrap_or(path);
-    let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
-    if dir.is_empty() {
-        Some(format!("{scheme}://{authority}/{location}"))
+    if let Some(q) = reference.strip_prefix('?') {
+        return Some(format!("{scheme}://{authority}{base_path}?{q}"));
+    }
+    let (ref_path, ref_query) = reference
+        .split_once('?')
+        .map_or((reference, String::new()), |(p, q)| (p, format!("?{q}")));
+    let merged = if ref_path.starts_with('/') {
+        ref_path.to_owned()
     } else {
-        Some(format!("{scheme}://{authority}/{dir}/{location}"))
-    }
+        let dir = base_path.rsplit_once('/').map_or("", |(d, _)| d);
+        format!("{dir}/{ref_path}")
+    };
+    Some(format!(
+        "{scheme}://{authority}{}{ref_query}",
+        remove_dot_segments(&merged)
+    ))
 }
 
 impl Transport {
-    pub(crate) fn new() -> Self {
+    /// `allow_loopback_http` is set only by the test-only client constructor;
+    /// production transports refuse every `http://` URL, redirects included.
+    pub(crate) fn new(allow_loopback_http: bool) -> Self {
         let tls = TlsConfig::builder()
             .root_certs(RootCerts::PlatformVerifier)
             .build();
@@ -94,6 +165,7 @@ impl Transport {
             .build();
         Self {
             agent: config.into(),
+            allow_loopback_http,
         }
     }
 
@@ -102,7 +174,7 @@ impl Transport {
         let mut auth = req.authorization.clone();
         let mut hops = 0;
         loop {
-            if !url_allowed(&url) {
+            if !url_allowed(&url, self.allow_loopback_http) {
                 return Err(OciError::InsecureUrl(redact_url(&url)));
             }
             let mut b = Request::builder().method(req.method).uri(&url);
@@ -140,7 +212,7 @@ impl Transport {
                 .and_then(|v| v.to_str().ok())
                 .ok_or_else(|| bad("no Location header"))?;
             let next = resolve(&url, loc).ok_or_else(|| bad("unusable Location"))?;
-            if !url_allowed(&next) {
+            if !url_allowed(&next, self.allow_loopback_http) {
                 return Err(bad("target is not HTTPS"));
             }
             if host_of(&next).map(|h| h.1) != host_of(&url).map(|h| h.1) {
@@ -156,14 +228,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_https_or_loopback_http_is_allowed() {
-        for ok in [
-            "https://ghcr.io/v2/",
+    fn production_allows_only_https_and_tests_add_loopback_http() {
+        for ok in ["https://ghcr.io/v2/", "https://127.0.0.1:5000/v2/"] {
+            assert!(url_allowed(ok, false), "{ok}");
+        }
+        for loopback in [
             "http://127.0.0.1:5000/v2/",
             "http://localhost/v2/",
             "http://[::1]:5000/x",
         ] {
-            assert!(url_allowed(ok), "{ok}");
+            assert!(!url_allowed(loopback, false), "{loopback}");
+            assert!(url_allowed(loopback, true), "{loopback}");
         }
         for bad in [
             "http://ghcr.io/v2/",
@@ -173,28 +248,46 @@ mod tests {
             "/v2/",
             "https://",
         ] {
-            assert!(!url_allowed(bad), "{bad}");
+            assert!(!url_allowed(bad, false), "{bad}");
+            assert!(!url_allowed(bad, true), "{bad}");
         }
     }
 
     #[test]
-    fn location_resolution() {
-        let base = "https://ghcr.io/v2/a/b/blobs/sha256:x";
+    fn origins_compare_scheme_host_and_port() {
+        let o = |u| origin_of(u);
+        assert_eq!(o("https://GHCR.io/token"), o("https://ghcr.io:443/x"));
+        assert_ne!(o("https://ghcr.io/token"), o("https://ghcr.io:8443/token"));
+        assert_ne!(o("https://ghcr.io/token"), o("http://ghcr.io/token"));
+        assert_eq!(o("https://u:p@ghcr.io/token"), None);
+    }
+
+    #[test]
+    fn reference_resolution_follows_rfc_3986() {
+        let base = "https://ghcr.io/v2/a/b/tags/list?n=1000";
+        for (reference, want) in [
+            ("https://cdn.example/x?sig=1", "https://cdn.example/x?sig=1"),
+            ("//cdn.example/p", "https://cdn.example/p"),
+            ("/v2/other?x=1", "https://ghcr.io/v2/other?x=1"),
+            ("?last=1.0.0", "https://ghcr.io/v2/a/b/tags/list?last=1.0.0"),
+            ("next?x=1", "https://ghcr.io/v2/a/b/tags/next?x=1"),
+            ("../c", "https://ghcr.io/v2/a/b/c"),
+            ("./", "https://ghcr.io/v2/a/b/tags/"),
+            ("", "https://ghcr.io/v2/a/b/tags/list?n=1000"),
+            (
+                "?next=http://x/y",
+                "https://ghcr.io/v2/a/b/tags/list?next=http://x/y",
+            ),
+        ] {
+            assert_eq!(
+                resolve(base, reference).as_deref(),
+                Some(want),
+                "{reference}"
+            );
+        }
         assert_eq!(
-            resolve(base, "https://cdn.example/x?sig=1").unwrap(),
-            "https://cdn.example/x?sig=1"
-        );
-        assert_eq!(
-            resolve(base, "/v2/other").unwrap(),
-            "https://ghcr.io/v2/other"
-        );
-        assert_eq!(
-            resolve(base, "//cdn.example/p").unwrap(),
-            "https://cdn.example/p"
-        );
-        assert_eq!(
-            resolve("https://ghcr.io/v2/a/", "next").unwrap(),
-            "https://ghcr.io/v2/a/next"
+            resolve("https://ghcr.io", "next").as_deref(),
+            Some("https://ghcr.io/next")
         );
     }
 }
