@@ -150,7 +150,7 @@ fn plan_dir(
         return Err(Error::Conflict(format!(
             "{}: more than one 2.x config source (slopvac.toml, .slopvac.toml, [tool.slopvac]); \
              2.x read only one of them. Remove the ones that are unused, then rerun",
-            dir.display()
+            rel(root, dir).display()
         )));
     }
     let (source, origin, old) = if main_cfg.is_file() {
@@ -333,9 +333,8 @@ fn ensure_inside(root: &Path, name: &Path) -> Result<(), Error> {
         cur.push(part);
         if fs::symlink_metadata(&cur).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(Error::Unsafe(format!(
-                "{}: {} is a symbolic link",
-                name.display(),
-                cur.display()
+                "{}: a path component is a symbolic link",
+                name.display()
             )));
         }
     }

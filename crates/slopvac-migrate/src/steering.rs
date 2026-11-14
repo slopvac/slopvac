@@ -87,6 +87,12 @@ mod tests {
     }
 
     #[test]
+    fn a_fence_like_line_with_an_info_string_does_not_close_a_fence() {
+        let text = format!("```\n```md\n{BEGIN}\nx\n{END}\n```\n");
+        assert_eq!(rewrite_steering(&text).unwrap(), None);
+    }
+
+    #[test]
     fn unpaired_marker_is_an_error() {
         assert!(rewrite_steering(&format!("{BEGIN}\nx\n")).is_err());
     }

@@ -65,20 +65,28 @@ fn is_closing(line: &str) -> bool {
     t.chars().all(|c| c == '`') || t.chars().all(|c| c == '~')
 }
 
-/// Byte ranges of the code spans in a paragraph. A span opens at a backtick run and
-/// closes at the next run of the same length, possibly on a later line. A run with
-/// no partner is literal text.
+/// Byte ranges of the code spans in a paragraph. A span opens at an unescaped
+/// backtick run and closes at the next run of the same length, possibly on a later
+/// line. Backslashes are literal inside a span, so a closer may follow one. A run
+/// with no partner is literal text.
 fn code_spans(text: &str) -> Vec<(usize, usize)> {
     let bytes = text.as_bytes();
-    let mut runs = Vec::new();
+    // (start, length, escaped): an odd number of backslashes before a run escapes
+    // its first backtick, which is then plain text outside a span.
+    let mut runs: Vec<(usize, usize, bool)> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'`' && !(i > 0 && bytes[i - 1] == b'\\') {
+        if bytes[i] == b'`' {
             let start = i;
             while i < bytes.len() && bytes[i] == b'`' {
                 i += 1;
             }
-            runs.push((start, i - start));
+            let backslashes = bytes[..start]
+                .iter()
+                .rev()
+                .take_while(|b| **b == b'\\')
+                .count();
+            runs.push((start, i - start, backslashes % 2 == 1));
         } else {
             i += 1;
         }
@@ -86,7 +94,15 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut k = 0;
     while k < runs.len() {
-        let (start, len) = runs[k];
+        let (mut start, mut len, escaped) = runs[k];
+        if escaped {
+            start += 1;
+            len -= 1;
+            if len == 0 {
+                k += 1;
+                continue;
+            }
+        }
         if let Some(j) = (k + 1..runs.len()).find(|&j| runs[j].1 == len) {
             spans.push((start, runs[j].0 + len));
             k = j + 1;
@@ -216,6 +232,26 @@ mod tests {
     fn longer_fence_is_not_closed_by_a_shorter_one() {
         let text = "````md\n```\n<!-- slopvac-allow: rule=a.b reason=x -->\n````\n";
         assert_eq!(run(text).0, text);
+    }
+
+    #[test]
+    fn a_backslash_before_the_closing_backtick_does_not_escape_it() {
+        // `a\` is a complete code span, so the directive after it is prose.
+        let (out, _) = run("`a\\` x <!-- slopvac-allow: rule=a.b reason=x --> `\n");
+        assert_eq!(
+            out,
+            "`a\\` x <!-- slopvac-allow: rule=core:a.b reason=x --> `\n"
+        );
+    }
+
+    #[test]
+    fn a_backslash_escapes_an_opening_backtick_outside_a_span() {
+        let text = "\\`not a span <!-- slopvac-allow: rule=a.b reason=x --> still prose`\n";
+        let (out, _) = run(text);
+        assert_eq!(
+            out,
+            "\\`not a span <!-- slopvac-allow: rule=core:a.b reason=x --> still prose`\n"
+        );
     }
 
     #[test]

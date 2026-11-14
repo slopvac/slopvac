@@ -54,20 +54,36 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
-    match run_inner(matches, linter, out) {
+    match execute(matches, linter, out) {
         Ok(()) => 0,
         Err(e) => {
-            let _ = writeln!(err, "error: {e}");
+            let _ = writeln!(err, "error[{}]: {e}", e.code());
             2
         }
     }
 }
 
-fn run_inner(matches: &ArgMatches, linter: &dyn Linter, out: &mut dyn Write) -> Result<(), Error> {
+/// Run `slopvac migrate` and return the failure for the caller to render. Paths in
+/// the error are relative to the project root.
+pub fn execute(
+    matches: &ArgMatches,
+    linter: &dyn Linter,
+    out: &mut dyn Write,
+) -> Result<(), Error> {
     let root = matches
         .get_one::<PathBuf>("path")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
+    execute_in(matches, linter, out, &root).map_err(|e| e.redacted(&root))
+}
+
+fn execute_in(
+    matches: &ArgMatches,
+    linter: &dyn Linter,
+    out: &mut dyn Write,
+    root: &std::path::Path,
+) -> Result<(), Error> {
+    let root = root.to_owned();
     let io = |e: std::io::Error| Error::io(&root, e);
     if matches.get_flag("restore") {
         let n = restore(&root)?;

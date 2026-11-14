@@ -242,7 +242,7 @@ fn cli_exits_2_and_names_each_dropped_setting() {
     let (code, _, err) = run_cli(&[path, "--write"], &NullLinter);
     assert_eq!(code, 2);
     assert!(
-        err.contains("config-legacy-dropped: slopvac.toml:1: `bogus`"),
+        err.contains("error[config-legacy-dropped]: slopvac.toml:1: `bogus`"),
         "{err}"
     );
     assert!(err.contains("slopvac.toml:3: `vale.enabled`"), "{err}");
@@ -373,4 +373,14 @@ fn schema_version_two_config_migrates_through_the_command() {
         fs::read_to_string(dir.path().join("slopvac.toml")).unwrap(),
         "schema_version = 3\nprofile = \"strict\"\n"
     );
+}
+
+#[test]
+fn errors_carry_codes_and_no_absolute_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-project");
+    let (code, _, err) = run_cli(&[missing.to_str().unwrap()], &NullLinter);
+    assert_eq!(code, 2);
+    assert!(err.starts_with("error[migrate-io-failed]: "), "{err}");
+    assert!(!err.contains(dir.path().to_str().unwrap()), "{err}");
 }

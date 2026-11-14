@@ -16,7 +16,7 @@ mod steering;
 
 use std::fmt;
 
-pub use cli::{command, run};
+pub use cli::{command, execute, run};
 pub use config::{Rewrite, STE_STYLE, migrate_config};
 pub use directives::rewrite_directives;
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
@@ -48,7 +48,7 @@ impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "config-legacy-dropped: {}:{}: `{}`: {}",
+            "{}:{}: `{}`: {}",
             self.file, self.line, self.key, self.reason
         )
     }
@@ -58,7 +58,7 @@ impl fmt::Display for Dropped {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Settings with no 3.0 equivalent. Nothing is written.
-    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"))]
+    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n  "))]
     Dropped(Vec<Dropped>),
     /// The file is not valid TOML.
     #[error("{file}: {message}")]
@@ -95,6 +95,46 @@ pub enum Error {
 }
 
 impl Error {
+    /// The stable error code (docs/contract/policies.md, section 3.5).
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Dropped(_) => "config-legacy-dropped",
+            Self::Parse { .. } => "config-invalid-toml",
+            Self::AlreadyMigrated { .. } => "config-already-migrated",
+            Self::Conflict(_) => "migrate-config-conflict",
+            Self::Unsafe(_) => "migrate-unsafe-path",
+            Self::RenameTable(_) => "migrate-rename-table",
+            Self::Io { .. } => "migrate-io-failed",
+        }
+    }
+
+    /// Show a path outside `root` as `<external>/<file name>` and one inside as
+    /// relative to it, so messages never carry absolute paths (policies, 1.7).
+    #[must_use]
+    pub(crate) fn redacted(self, root: &std::path::Path) -> Self {
+        match self {
+            Self::Io { path, source } => {
+                let p = std::path::Path::new(&path);
+                let shown = match p.strip_prefix(root) {
+                    Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
+                    Ok(rel) => rel.display().to_string(),
+                    Err(_) => format!(
+                        "<external>/{}",
+                        p.file_name()
+                            .map(|n| n.to_string_lossy())
+                            .unwrap_or_default()
+                    ),
+                };
+                Self::Io {
+                    path: shown,
+                    source,
+                }
+            }
+            other => other,
+        }
+    }
+
     pub(crate) fn io(path: &std::path::Path, source: std::io::Error) -> Self {
         Self::Io {
             path: path.display().to_string(),
