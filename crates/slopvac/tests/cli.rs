@@ -220,9 +220,12 @@ fn man_out_dir_writes_a_page_per_command() {
 fn checked_in_cli_reference_is_current() {
     let generated = slopvac().arg("cli-reference").output().expect("run").stdout;
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/reference/cli.md");
-    let committed = fs::read(path).expect("docs/reference/cli.md exists");
+    // A Windows checkout may convert the committed file to CRLF.
+    let committed = fs::read_to_string(path)
+        .expect("docs/reference/cli.md exists")
+        .replace("\r\n", "\n");
     assert!(
-        generated == committed,
+        String::from_utf8(generated).expect("utf-8") == committed,
         "docs/reference/cli.md is stale; run `cargo run -p slopvac -- cli-reference > docs/reference/cli.md`"
     );
 }
