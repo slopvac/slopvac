@@ -87,6 +87,14 @@ CASES: list[tuple[list[str], list[str]]] = [
     # Braces are literal in gitwildmatch, not alternation.
     (["a{b,c}.md"], ["a{b,c}.md", "ab.md", "ac.md"]),
     (["\\{x\\}.md", "{y}.md"], ["{x}.md", "{y}.md", "x.md"]),
+    # Character classes: leading `]`, negation with `!` and `^`, escapes, braces.
+    (["[]{a}].md"], ["a.md", "].md", "{.md", "}.md", "b.md"]),
+    (["[!]a].md"], ["b.md", "a.md", "].md"]),
+    (["[^a].md"], ["b.md", "a.md"]),
+    (["a[{].md", "b[}].md"], ["a{.md", "b}.md", "a.md"]),
+    (["[abc"], ["[abc", "a", "b"]),
+    (["a[b"], ["a[b", "ab"]),
+    (["{.md", "}.md"], ["{.md", "}.md", ".md"]),
     # Case sensitivity.
     (["README.md"], ["README.md", "readme.md"]),
 ]

@@ -35,7 +35,9 @@ impl Excludes {
                 // The matcher gets an empty root: `is_excluded` strips the real
                 // root exactly once, so a relative root cannot be stripped twice.
                 let mut builder = GitignoreBuilder::new("");
-                builder.add_line(None, &literal_braces(pattern.as_ref()))?;
+                if let Some(line) = translate(pattern.as_ref()) {
+                    builder.add_line(None, &line)?;
+                }
                 builder.build()
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -47,11 +49,13 @@ impl Excludes {
 
     /// Whether `path` is excluded.
     ///
-    /// A path outside the root matches on its file name alone, so an exclude is
-    /// never silently skipped.
+    /// A path outside the root matches nothing: `docs/contract/config.md` removes
+    /// the 2.x fallback to the bare file name.
     #[must_use]
     pub fn is_excluded(&self, path: &Path) -> bool {
-        let relative = self.relative(path);
+        let Some(relative) = self.relative(path) else {
+            return false;
+        };
         self.matchers
             .iter()
             .rev()
@@ -60,56 +64,74 @@ impl Excludes {
             .is_some_and(|m| m.is_ignore())
     }
 
-    fn relative(&self, path: &Path) -> PathBuf {
+    fn relative(&self, path: &Path) -> Option<PathBuf> {
         if let Ok(rest) = path.strip_prefix(&self.root) {
-            return rest.to_path_buf();
+            return Some(rest.to_path_buf());
         }
         // Different spellings of the same location (relative against absolute,
         // symlinked prefixes): compare resolved paths, as 2.x did.
         if let (Ok(p), Ok(r)) = (path.canonicalize(), self.root.canonicalize())
             && let Ok(rest) = p.strip_prefix(&r)
         {
-            return rest.to_path_buf();
+            return Some(rest.to_path_buf());
         }
-        path.file_name().map(PathBuf::from).unwrap_or_default()
+        None
     }
 }
 
-/// gitwildmatch treats `{` and `}` literally; globset would read them as
-/// alternation. Wrap them in a character class (also after a backslash).
-fn literal_braces(pattern: &str) -> String {
+/// Translate gitwildmatch syntax that globset reads differently.
+///
+/// - `{` and `}` are literal in gitwildmatch; globset reads them as alternation.
+///   Outside a class they become `[{]` and `[}]`.
+/// - A character class is `[`, an optional `!` or `^`, an optional literal `]`,
+///   then members up to the next `]`. It is copied as written.
+/// - A `[` with no closing `]` makes `pathspec` drop the pattern, so it matches
+///   nothing. `None` means that.
+fn translate(pattern: &str) -> Option<String> {
+    let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::with_capacity(pattern.len());
-    let mut chars = pattern.chars();
-    let mut in_class = false;
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => match chars.next() {
-                Some(n @ ('{' | '}')) => {
-                    out.push('[');
-                    out.push(n);
-                    out.push(']');
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => {
+                match chars.get(i + 1) {
+                    Some(&n @ ('{' | '}')) => {
+                        out.push('[');
+                        out.push(n);
+                        out.push(']');
+                    }
+                    Some(&n) => {
+                        out.push('\\');
+                        out.push(n);
+                    }
+                    None => out.push('\\'),
                 }
-                Some(n) => {
-                    out.push('\\');
-                    out.push(n);
+                i += 2;
+            }
+            '[' => {
+                let mut j = i + 1;
+                if matches!(chars.get(j), Some('!' | '^')) {
+                    j += 1;
                 }
-                None => out.push('\\'),
-            },
-            '[' if !in_class => {
-                in_class = true;
-                out.push(c);
+                if chars.get(j) == Some(&']') {
+                    j += 1;
+                }
+                let close = chars[j.min(chars.len())..].iter().position(|&c| c == ']')?;
+                let end = j + close;
+                out.extend(&chars[i..=end]);
+                i = end + 1;
             }
-            ']' if in_class => {
-                in_class = false;
-                out.push(c);
-            }
-            '{' | '}' if !in_class => {
+            c @ ('{' | '}') => {
                 out.push('[');
                 out.push(c);
                 out.push(']');
+                i += 1;
             }
-            _ => out.push(c),
+            c => {
+                out.push(c);
+                i += 1;
+            }
         }
     }
-    out
+    Some(out)
 }

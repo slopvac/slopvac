@@ -15,7 +15,7 @@ fn write(root: &Path, rel: &str, text: &str) -> PathBuf {
 fn run(root: &Path, selection: Selection) -> Vec<PathBuf> {
     let opts = Options {
         selection,
-        use_gitignore: false,
+        ..Options::default()
     };
     let found = discover(&[root.to_str().unwrap()], opts).unwrap();
     found.files.into_iter().map(|f| f.path).collect()
@@ -67,6 +67,7 @@ fn comment_walk_notes_unsupported_files_but_not_prose() {
         Options {
             selection: Selection::CodeComments,
             use_gitignore: false,
+            ..Options::default()
         },
     )
     .unwrap();
@@ -163,6 +164,7 @@ fn explicit_uppercase_source_extension_is_collected_in_comment_mode() {
         Options {
             selection: Selection::CodeComments,
             use_gitignore: false,
+            ..Options::default()
         },
     )
     .unwrap();
@@ -191,6 +193,7 @@ fn explicit_unsupported_file_is_an_error_in_comment_mode() {
         Options {
             selection: Selection::CodeComments,
             use_gitignore: false,
+            ..Options::default()
         },
     )
     .unwrap_err();
@@ -268,6 +271,7 @@ fn gitignore_run(dir: &TempDir, use_gitignore: bool) -> Vec<String> {
         Options {
             selection: Selection::Prose,
             use_gitignore,
+            ..Options::default()
         },
     )
     .unwrap();
@@ -308,6 +312,7 @@ fn an_explicit_file_is_linted_even_when_gitignored() {
         Options {
             selection: Selection::Prose,
             use_gitignore: true,
+            ..Options::default()
         },
     )
     .unwrap();
@@ -377,9 +382,11 @@ fn exclude_patterns_use_gitignore_semantics_relative_to_the_root() {
 }
 
 #[test]
-fn a_path_outside_the_root_is_excluded_by_file_name() {
-    let ex = Excludes::new(Path::new("/project"), &["**/CHANGELOG.md"]).unwrap();
-    assert!(ex.is_excluded(Path::new("/elsewhere/CHANGELOG.md")));
+fn a_path_outside_the_root_matches_no_exclude() {
+    // docs/contract/config.md: the 2.x fallback to the bare file name is removed.
+    let ex = Excludes::new(Path::new("/project"), &["/README.md", "**/CHANGELOG.md"]).unwrap();
+    assert!(!ex.is_excluded(Path::new("/elsewhere/README.md")));
+    assert!(!ex.is_excluded(Path::new("/elsewhere/CHANGELOG.md")));
 }
 
 // --- fix round 1 regressions ---------------------------------------------
@@ -435,8 +442,9 @@ fn a_dot_slash_relative_glob_matches_like_the_bare_form() {
     let opts = Options {
         selection: Selection::CodeComments,
         use_gitignore: false,
+        ..Options::default()
     };
-    let plain = discover(&["src/discover/*.rs"], opts).unwrap();
+    let plain = discover(&["src/discover/*.rs"], opts.clone()).unwrap();
     let prefixed = discover(&["./src/discover/*.rs"], opts).unwrap();
     assert_eq!(plain.files.len(), 4);
     assert_eq!(prefixed, plain);
@@ -465,6 +473,7 @@ fn a_glob_walk_reports_an_unreadable_directory() {
 #[test]
 fn gitignore_in_a_parent_directory_applies_to_a_nested_target() {
     let dir = TempDir::new().unwrap();
+    write(dir.path(), ".git/HEAD", "");
     write(dir.path(), ".gitignore", "docs/skip.md\n");
     write(dir.path(), "docs/keep.md", "");
     write(dir.path(), "docs/skip.md", "");
@@ -474,9 +483,211 @@ fn gitignore_in_a_parent_directory_applies_to_a_nested_target() {
         Options {
             selection: Selection::Prose,
             use_gitignore: true,
+            ..Options::default()
         },
     )
     .unwrap();
     let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
     assert_eq!(got, [nested.join("keep.md")]);
+}
+fn prose_gitignore(target: &Path) -> Vec<PathBuf> {
+    let found = discover(
+        &[target.to_str().unwrap()],
+        Options {
+            use_gitignore: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    found.files.into_iter().map(|f| f.path).collect()
+}
+
+#[test]
+fn gitignore_above_the_repository_root_is_not_applied() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), ".gitignore", "*.md\n");
+    let repo = dir.path().join("repo");
+    write(&repo, ".git/HEAD", "");
+    write(&repo, ".gitignore", "skip.md\n");
+    write(&repo, "docs/keep.md", "");
+    write(&repo, "docs/skip.md", "");
+    assert_eq!(
+        prose_gitignore(&repo.join("docs")),
+        [repo.join("docs/keep.md")]
+    );
+}
+
+#[test]
+fn a_git_file_marks_the_repository_root_like_a_git_directory() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), ".gitignore", "*.md\n");
+    let repo = dir.path().join("repo");
+    write(&repo, ".git", "gitdir: ../elsewhere\n");
+    write(&repo, ".gitignore", "skip.md\n");
+    write(&repo, "keep.md", "");
+    write(&repo, "skip.md", "");
+    assert_eq!(prose_gitignore(&repo), [repo.join("keep.md")]);
+}
+
+#[test]
+fn without_a_repository_only_the_target_and_below_are_read() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), ".gitignore", "outer.md\n");
+    write(dir.path(), "docs/.gitignore", "inner.md\n");
+    write(dir.path(), "docs/outer.md", "");
+    write(dir.path(), "docs/inner.md", "");
+    write(dir.path(), "docs/keep.md", "");
+    let got = prose_gitignore(&dir.path().join("docs"));
+    assert_eq!(
+        got,
+        [
+            dir.path().join("docs/keep.md"),
+            dir.path().join("docs/outer.md")
+        ]
+    );
+}
+
+#[test]
+fn git_info_exclude_applies_inside_a_repository() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), ".git/info/exclude", "private.md\n");
+    write(dir.path(), "private.md", "");
+    write(dir.path(), "public.md", "");
+    assert_eq!(prose_gitignore(dir.path()), [dir.path().join("public.md")]);
+}
+
+// --- excludes inside discover ---------------------------------------------
+
+fn with_excludes(root: &Path, patterns: &[&str]) -> Options {
+    Options {
+        excludes: Some(Excludes::new(root, patterns).unwrap()),
+        ..Options::default()
+    }
+}
+
+#[test]
+fn walked_files_matching_an_exclude_are_dropped() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "keep.md", "");
+    write(dir.path(), "CHANGELOG.md", "");
+    write(dir.path(), "sub/CHANGELOG.md", "");
+    let opts = with_excludes(dir.path(), &["**/CHANGELOG.md"]);
+    let found = discover(&[dir.path().to_str().unwrap()], opts).unwrap();
+    let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+    assert_eq!(got, [dir.path().join("keep.md")]);
+}
+
+#[test]
+fn a_negated_exclude_pattern_reincludes_a_walked_file() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "a.md", "");
+    write(dir.path(), "keep/b.md", "");
+    let opts = with_excludes(dir.path(), &["*.md", "!keep/"]);
+    let found = discover(&[dir.path().to_str().unwrap()], opts).unwrap();
+    let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+    assert_eq!(got, [dir.path().join("keep/b.md")]);
+}
+
+#[test]
+fn an_explicit_file_matching_an_exclude_is_skipped_with_a_reason() {
+    // 2.x applied `exclude` to every collected path, explicit ones included
+    // (pipeline.py `config.is_excluded`); config.md does not change that.
+    let dir = TempDir::new().unwrap();
+    let doc = write(dir.path(), "CHANGELOG.md", "");
+    let opts = with_excludes(dir.path(), &["**/CHANGELOG.md"]);
+    let found = discover(&[doc.to_str().unwrap()], opts).unwrap();
+    assert_eq!(found.files.len(), 0);
+    assert_eq!(found.skipped.len(), 1);
+    assert_eq!(found.skipped[0].path, doc);
+    assert!(found.skipped[0].reason.contains("exclude"));
+}
+
+#[test]
+fn glob_matches_are_filtered_by_excludes() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "a.md", "");
+    write(dir.path(), "b.md", "");
+    let opts = with_excludes(dir.path(), &["b.md"]);
+    let pattern = format!("{}/*.md", dir.path().display());
+    let found = discover(&[pattern.as_str()], opts).unwrap();
+    let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+    assert_eq!(got, [dir.path().join("a.md")]);
+}
+
+#[cfg(unix)]
+#[test]
+fn exclude_roots_are_compared_after_resolving_symlinks() {
+    let dir = TempDir::new().unwrap();
+    let real = dir.path().join("real");
+    write(&real, "docs/a.md", "");
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let ex = Excludes::new(&alias, &["/docs/**"]).unwrap();
+    assert!(ex.is_excluded(&real.join("docs/a.md")));
+    assert!(!ex.is_excluded(&real.join("other/a.md")));
+}
+
+// --- glob traversal bounds ---------------------------------------------------
+
+#[cfg(unix)]
+mod locked {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    /// Run `f` with `dir` unreadable; `None` when permissions are not enforced.
+    fn with_locked<T>(dir: &Path, f: impl FnOnce() -> T) -> Option<T> {
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o000)).unwrap();
+        let enforced = fs::read_dir(dir).is_err();
+        let out = f();
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+        enforced.then_some(out)
+    }
+
+    #[test]
+    fn a_single_level_glob_does_not_descend_into_subdirectories() {
+        let dir = TempDir::new().unwrap();
+        write(dir.path(), "docs/a.md", "");
+        let locked = dir.path().join("docs/locked");
+        fs::create_dir(&locked).unwrap();
+        let pattern = format!("{}/docs/*.md", dir.path().display());
+        let result = with_locked(&locked, || {
+            discover(&[pattern.as_str()], Options::default())
+        });
+        if let Some(result) = result {
+            let got: Vec<_> = result.unwrap().files.into_iter().map(|f| f.path).collect();
+            assert_eq!(got, [dir.path().join("docs/a.md")]);
+        }
+    }
+
+    #[test]
+    fn directories_that_cannot_match_a_prefix_are_not_read() {
+        let dir = TempDir::new().unwrap();
+        write(dir.path(), "a1/x.md", "");
+        let locked = dir.path().join("b1");
+        fs::create_dir(&locked).unwrap();
+        let pattern = format!("{}/a*/x.md", dir.path().display());
+        let result = with_locked(&locked, || {
+            discover(&[pattern.as_str()], Options::default())
+        });
+        if let Some(result) = result {
+            let got: Vec<_> = result.unwrap().files.into_iter().map(|f| f.path).collect();
+            assert_eq!(got, [dir.path().join("a1/x.md")]);
+        }
+    }
+
+    #[test]
+    fn a_recursive_glob_still_reports_an_unreadable_directory() {
+        let dir = TempDir::new().unwrap();
+        write(dir.path(), "docs/a.md", "");
+        let locked = dir.path().join("docs/locked");
+        fs::create_dir(&locked).unwrap();
+        let pattern = format!("{}/docs/**/*.md", dir.path().display());
+        let result = with_locked(&locked, || {
+            discover(&[pattern.as_str()], Options::default())
+        });
+        if let Some(result) = result {
+            assert!(matches!(result, Err(DiscoverError::Walk { .. })));
+        }
+    }
 }

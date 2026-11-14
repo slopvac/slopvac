@@ -17,9 +17,16 @@
 //!   source files met in a comment-mode walk).
 //!
 //! `.gitignore` handling is off unless [`Options::use_gitignore`] is set, and it
-//! applies to directory walks only: a file named explicitly is always linted. The
-//! `.gitignore` files of parent directories apply to a nested target, up to the
-//! filesystem root and whether or not a `.git` directory exists.
+//! applies to directory walks only: a file named explicitly is always linted.
+//! Inside a git repository (the nearest ancestor with a `.git` directory or file)
+//! the `.gitignore` files from the repository root down and `.git/info/exclude`
+//! apply to a nested target; nothing above the root does, and `core.excludesFile`
+//! is not read. Outside a repository only `.gitignore` files in the target and
+//! below apply.
+//!
+//! [`Options::excludes`] applies config `exclude` patterns to every collected
+//! file, explicit ones included; an excluded explicit file lands in
+//! [`Discovery::skipped`].
 
 mod exclude;
 mod kind;
@@ -61,12 +68,16 @@ pub enum Selection {
 }
 
 /// Discovery settings supplied by the caller.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Options {
     /// Which file kinds to select.
     pub selection: Selection,
     /// Honour `.gitignore` files while walking directories.
     pub use_gitignore: bool,
+    /// Config `exclude` patterns. They apply to every collected file, named
+    /// explicitly or found by a walk or glob, as `Config.is_excluded` did in 2.x.
+    /// An excluded explicit file is reported in [`Discovery::skipped`].
+    pub excludes: Option<Excludes>,
 }
 
 /// A file chosen for linting.
@@ -131,6 +142,7 @@ pub enum DiscoverError {
 }
 
 /// Expand `targets` into the files to lint.
+#[allow(clippy::needless_pass_by_value)] // callers build `Options` inline
 pub fn discover<S: AsRef<str>>(
     targets: &[S],
     options: Options,
@@ -141,12 +153,12 @@ pub fn discover<S: AsRef<str>>(
         let target = target.as_ref();
         let path = Path::new(target);
         if path.is_dir() {
-            walk_dir(path, options, &mut out)?;
+            walk_dir(path, &options, &mut out)?;
         } else if path.is_file() {
-            explicit(path, options.selection, &mut out)?;
+            explicit(path, &options, &mut out)?;
         } else {
             for matched in expand_glob(target)? {
-                explicit(&matched, options.selection, &mut out)?;
+                explicit(&matched, &options, &mut out)?;
             }
         }
     }
@@ -172,13 +184,28 @@ fn select(name: &str, selection: Selection) -> Option<FileKind> {
     }
 }
 
-fn explicit(path: &Path, selection: Selection, out: &mut Discovery) -> Result<(), DiscoverError> {
+fn is_excluded(options: &Options, path: &Path) -> bool {
+    options
+        .excludes
+        .as_ref()
+        .is_some_and(|e| e.is_excluded(path))
+}
+
+fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), DiscoverError> {
+    let selection = options.selection;
     let name = file_name(path);
     if selection == Selection::CodeComments && FileKind::comment(&name).is_none() {
         return Err(DiscoverError::UnsupportedSource {
             path: path.to_path_buf(),
             message: unsupported_message(&name),
         });
+    }
+    if is_excluded(options, path) {
+        out.skipped.push(Skipped {
+            path: path.to_path_buf(),
+            reason: "matches an exclude pattern".to_owned(),
+        });
+        return Ok(());
     }
     match select(&name, selection) {
         Some(kind) => out.files.push(DiscoveredFile {
@@ -206,28 +233,25 @@ fn unsupported_message(name: &str) -> String {
     )
 }
 
-fn walk_dir(root: &Path, options: Options, out: &mut Discovery) -> Result<(), DiscoverError> {
+fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), DiscoverError> {
     let mut builder = WalkBuilder::new(root);
     builder
         .standard_filters(false)
         .hidden(false)
-        .follow_links(false)
-        .require_git(false)
-        .parents(options.use_gitignore)
-        .git_ignore(options.use_gitignore)
-        .filter_entry(|entry| {
-            let Some(file_type) = entry.file_type() else {
-                return false;
-            };
-            if entry.depth() == 0 {
-                return true;
-            }
-            if file_type.is_symlink() {
-                return false;
-            }
-            !(file_type.is_dir()
-                && SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref()))
-        });
+        .follow_links(false);
+    configure_gitignore(&mut builder, root, options.use_gitignore);
+    builder.filter_entry(|entry| {
+        let Some(file_type) = entry.file_type() else {
+            return false;
+        };
+        if entry.depth() == 0 {
+            return true;
+        }
+        if file_type.is_symlink() {
+            return false;
+        }
+        !(file_type.is_dir() && SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref()))
+    });
     let mut files: Vec<PathBuf> = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(|source| DiscoverError::Walk {
@@ -249,6 +273,9 @@ fn walk_dir(root: &Path, options: Options, out: &mut Discovery) -> Result<(), Di
         {
             continue;
         }
+        if is_excluded(options, &path) {
+            continue;
+        }
         if let Some(kind) = select(&name, options.selection) {
             out.files.push(DiscoveredFile { path, kind });
         } else if options.selection != Selection::Prose && FileKind::prose(&name).is_none() {
@@ -260,6 +287,31 @@ fn walk_dir(root: &Path, options: Options, out: &mut Discovery) -> Result<(), Di
         }
     }
     Ok(())
+}
+
+/// Nearest ancestor of `target` (or `target` itself) holding a `.git` entry. A
+/// `.git` file counts, as in worktrees and submodules.
+fn repository_root(target: &Path) -> Option<PathBuf> {
+    let absolute = std::fs::canonicalize(target)
+        .or_else(|_| std::path::absolute(target))
+        .ok()?;
+    absolute
+        .ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
+}
+
+/// Inside a repository: `.gitignore` files from the repository root down, plus
+/// `.git/info/exclude`; nothing above the root. `core.excludesFile` is left out
+/// because it depends on the user's machine. Outside a repository: only
+/// `.gitignore` files in the target and below.
+fn configure_gitignore(builder: &mut WalkBuilder, target: &Path, enabled: bool) {
+    let in_repo = enabled && repository_root(target).is_some();
+    builder
+        .git_ignore(enabled)
+        .git_exclude(in_repo)
+        .parents(in_repo)
+        .require_git(in_repo);
 }
 
 /// Sort key giving 2.x `os.walk` order: at each level, files by name, then
@@ -304,6 +356,7 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
         }
         base.push(component);
     }
+    let base_len = base.components().count();
     if base.as_os_str().is_empty() {
         base.push(".");
     }
@@ -311,11 +364,44 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
         return Err(none());
     }
 
+    // Bound the walk by the pattern: no recursion without `**` (or `{}` that could
+    // hide a separator), and directories that cannot match their component are
+    // never read.
+    let rest: Vec<String> = Path::new(pattern)
+        .components()
+        .skip(base_len)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let recursive = pattern.contains('{') || rest.iter().any(|c| c.contains("**"));
+    let prefix: Vec<globset::GlobMatcher> = if recursive {
+        Vec::new()
+    } else {
+        rest.iter()
+            .map(|c| {
+                GlobBuilder::new(c)
+                    .literal_separator(true)
+                    .build()
+                    .map(|g| g.compile_matcher())
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|source| DiscoverError::InvalidGlob {
+                pattern: pattern.to_owned(),
+                source,
+            })?
+    };
     let mut builder = WalkBuilder::new(&base);
     builder
         .standard_filters(false)
         .hidden(false)
-        .follow_links(false);
+        .follow_links(false)
+        .max_depth((!recursive).then_some(rest.len()))
+        .filter_entry(move |entry| {
+            let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+            match entry.depth().checked_sub(1).and_then(|d| prefix.get(d)) {
+                Some(component) if is_dir => component.is_match(entry.file_name()),
+                _ => true,
+            }
+        });
     let mut matches: Vec<PathBuf> = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(|source| DiscoverError::Walk {
