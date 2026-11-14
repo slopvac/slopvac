@@ -47,7 +47,7 @@ def test_committed_files_match_their_hashes():
 
 def test_no_unlisted_files_under_corpus():
     listed = {lib.committed_file(d) for d in COMMITTED}
-    on_disk = set((lib.EVALS_DIR / "corpus").rglob("*.txt"))
+    on_disk = set((lib.EVALS_DIR / "corpus").rglob("*.corpus"))
     assert on_disk == listed
 
 
@@ -88,7 +88,7 @@ def _mutated(**changes):
         ({"genre": "poetry"}, "unknown genre"),
         ({"origin": "oracle"}, "unknown origin"),
         (
-            {"committed": True, "license": "GPL-3.0-only", "path": "corpus/x.txt"},
+            {"committed": True, "license": "GPL-3.0-only", "path": "corpus/x.corpus"},
             "may not be committed",
         ),
     ],

@@ -125,7 +125,7 @@ def make_doc(
         "committed": committed,
     }
     if committed:
-        doc["path"] = f"corpus/{genre}/{ident}.txt"
+        doc["path"] = f"corpus/{genre}/{ident}.corpus"
     return doc
 
 
@@ -492,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Rewrite the committed tree wholesale so dropped documents leave no files.
-    for stale in CORPUS.rglob("*.txt"):
+    for stale in CORPUS.rglob("*.corpus"):
         stale.unlink()
     for doc, text in final:
         write_committed(doc, text)
