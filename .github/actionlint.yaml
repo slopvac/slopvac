@@ -5,3 +5,6 @@ paths:
   .github/workflows/cli-e2e.yml:
     ignore:
       - 'label "ubuntu-26\.04" is unknown'
+  .github/workflows/test.yml:
+    ignore:
+      - 'label "macos-15-intel" is unknown'
