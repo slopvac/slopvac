@@ -48,6 +48,9 @@ flate2 = "1.1"
 roxmltree = "0.21"
 markdown = "1"
 clap = { version = "4.6", features = ["derive"] }
+saphyr = "0.3"
+# The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
+saphyr-parser = "0.3.4"
 slopvac-agents = { path = "crates/slopvac-agents" }
 cap-std = "4"
 minijinja = "3"
