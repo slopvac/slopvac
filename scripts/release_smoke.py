@@ -28,7 +28,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-_TAG = re.compile(r"v(?P<version>\d+\.\d+\.\d+(?P<pre>-rc\.[1-9]\d*)?)")
+# No leading zeros in any numeric field (SemVer); kept in step with release_provenance.py.
+_NUM = r"(?:0|[1-9][0-9]*)"
+_TAG = re.compile(rf"v(?P<version>{_NUM}\.{_NUM}\.{_NUM}(?P<pre>-rc\.[1-9][0-9]*)?)")
 # Same value as GATED_FROM_MAJOR in release_provenance.py (a test keeps them equal).
 DIST_FROM_MAJOR = 3
 _DIGEST = re.compile(r"[0-9a-fA-F]{64}")

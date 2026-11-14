@@ -34,6 +34,10 @@ def test_candidate_tag_maps_to_cargo_and_pypi_versions(tag, cargo, pypi):
         "rc/v3.0.0",
         "rc/v3.0-rc.1",
         "rc/v3.0.0-rc.0",
+        "rc/v03.0.0-rc.1",
+        "rc/v3.00.0-rc.1",
+        "rc/v3.0.00-rc.1",
+        "rc/v3.0.0-rc.01",
         "rc/v3.0.0-rc.1x",
         "rc/v3.0.0-beta.1",
     ],
@@ -131,6 +135,20 @@ def test_a_run_must_be_the_candidate_workflow_push_run_of_that_tag_and_commit(ov
     )
     with pytest.raises(ValueError, match="no successful"):
         prov.check_stable("v3.0.0", "o/r", STABLE_SHA, runner)
+
+
+@pytest.mark.parametrize("tag", ["v03.0.0", "v3.00.0", "v3.0.00"])
+def test_check_stable_rejects_a_leading_zero_in_any_field(tag):
+    with pytest.raises(ValueError, match="not a stable tag"):
+        prov.check_stable(tag, "o/r", "x", make_runner({}, [], {}))
+
+
+@pytest.mark.parametrize("tag", ["v03.0.0", "v3.00.0", "v3.0.00"])
+def test_verify_tag_and_check_draft_reject_a_leading_zero(tag):
+    with pytest.raises(ValueError, match="not a stable tag"):
+        prov.verify_tag(tag, "aaa", remote(""))
+    with pytest.raises(ValueError, match="not a stable tag"):
+        prov.check_draft(tag, "o/r", "", release_view(True, "github-actions[bot]"))
 
 
 def test_a_prerelease_tag_is_not_a_stable_tag():
@@ -235,7 +253,19 @@ def test_tags_route_by_major_version(tag, gated):
 
 
 @pytest.mark.parametrize(
-    "tag", ["v3", "3.0.0", "v3.0.0-rc.1", "rc/v3.0.0-rc.1", "v3.0.0$(id)", ""]
+    "tag",
+    [
+        "v3",
+        "3.0.0",
+        "v3.0.0-rc.1",
+        "rc/v3.0.0-rc.1",
+        "v3.0.0$(id)",
+        "",
+        "v03.0.0",
+        "v3.00.0",
+        "v3.0.00",
+        "v\u0663.0.0",
+    ],
 )
 def test_a_tag_that_is_not_vx_y_z_is_an_error_not_a_skip(tag):
     with pytest.raises(ValueError, match="not a stable tag"):
@@ -248,6 +278,24 @@ def test_the_route_command_prints_the_output_line(capsys):
     assert prov.main(["route-tag", "v3.0.0"]) == 0
     assert capsys.readouterr().out == "gated=true\n"
     assert prov.main(["route-tag", "v3.0"]) == 1
+
+
+@pytest.mark.parametrize(
+    "tag", ["v03.0.0", "v3.00.0", "v3.0.00", "v003.0.0", "v3.0.01"]
+)
+@pytest.mark.parametrize("command", ["route-tag", "check-stable"])
+def test_the_stable_commands_exit_one_on_a_leading_zero(capsys, command, tag):
+    extra = ["--repo", "o/r", "--sha", "x"] if command == "check-stable" else []
+    assert prov.main([command, tag, *extra]) == 1
+    assert "not a stable tag" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "tag", ["rc/v03.0.0-rc.1", "rc/v3.00.0-rc.1", "rc/v3.0.00-rc.1", "rc/v3.0.0-rc.01"]
+)
+def test_the_parse_tag_command_exits_one_on_a_leading_zero(capsys, tag):
+    assert prov.main(["parse-tag", tag]) == 1
+    assert capsys.readouterr().out == ""
 
 
 def release_view(is_draft, login):
