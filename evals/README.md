@@ -72,7 +72,9 @@ just eval-score evals/.cache/results/a.json holdout     # tier 2: offline re-sco
 just eval-ab a.json b.json                              # paired A/B between two runs
 ```
 
-The runner reads committed documents first and the cache second. Run `python -m evals.fetch` and `python -m evals.build_derived --materialise` to fill the cache. Model twins with status `pending` are skipped.
+The runner stages each document in a temporary directory with the right extension (`.md`, `.rst`, `.txt`, or a source suffix linted with `--mode code-comments`) and runs the engine from there. Committed `.corpus` files and the repository's own config therefore never reach the engine. A format the engine cannot read, such as diagrams in the Python reference, goes to `skipped` in the results with a reason. A run that exits 2 but prints a report keeps its findings, and the results count the unchecked rules per document.
+
+The runner reads committed documents first, then derived documents in `cache/docs`, then model twins in `cache/twins`. Run `python -m evals.fetch` and `python -m evals.build_derived --materialise` to fill the cache. Model twins with status `pending` are skipped.
 
 ### Results
 
@@ -82,11 +84,14 @@ A results file holds the engine name, command and version, the manifest hash, an
 
 `score` reports, for each rule and for a split (`all`, `tuning` or `holdout`):
 
-- `recall`: seeded defects where the rule fires within one line of the insertion.
+- `recall`: seeded defects and adjudicated true positives where the rule fires within one line. `seeded_recall` and `adjudicated_recall` show the two parts. An adjudicated positive that the engine no longer reports counts as a miss. Pass `--labels evals/labels/labels.jsonl` to include them.
+- `precision`: adjudicated findings labelled true over all labelled findings, with `--labels`.
 - `control_fpr`: clean-control sentences where the rule fires within one line.
 - `human_per_100_words`: findings on pre-2022 human text, a floor on false positives.
 
 Each rate carries a Wilson interval and a bootstrap interval that resamples whole documents. Findings in one document are correlated, so the document is the unit of resampling.
+
+`score` and `ab` refuse results recorded against a different manifest (exit 2), and `ab` refuses arms that cover different documents.
 
 ### Splits
 

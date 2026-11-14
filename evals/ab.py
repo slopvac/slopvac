@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from . import metrics
+from . import metrics, runner
 from .scoring import _fires, _span
 from .splits import split_of
 
@@ -63,11 +63,18 @@ def ab(
     rules: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     docs = {d["id"]: d for d in manifest["documents"]}
+    for results in (results_a, results_b):
+        runner.check_corpus(results, manifest)
+    only_a = set(results_a["documents"]) - set(results_b["documents"])
+    only_b = set(results_b["documents"]) - set(results_a["documents"])
+    if only_a or only_b:
+        raise runner.EngineError(
+            f"A/B arms cover different documents ({len(only_a)} only in A, {len(only_b)} only in B)"
+        )
     common = sorted(
         i
         for i in docs
         if i in results_a["documents"]
-        and i in results_b["documents"]
         and (split == "all" or split_of(docs[i]) == split)
     )
 
@@ -94,9 +101,11 @@ def ab(
     per_rule: dict[str, Any] = {}
     names = set(rules or ())
     if not rules:
-        for d in docs.values():
+        for i in common:
             for kind in ("defects", "controls"):
-                names.update(e["rule"] for e in d["source"].get(kind, ()))
+                names.update(e["rule"] for e in docs[i]["source"].get(kind, ()))
+            for arm in (results_a, results_b):
+                names.update(f["rule"] for f in arm["documents"][i]["findings"])
     for rule in sorted(names):
         per_rule[rule] = block(rule)
     return {

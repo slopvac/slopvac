@@ -35,10 +35,16 @@ def _emit(data: object, out: str | None) -> None:
 def cmd_run(args: argparse.Namespace) -> int:
     manifest = lib.load_manifest()
     engine = runner.Engine.parse(args.engine, Path(args.cwd) if args.cwd else None)
-    select = runner.default_selector
-    if args.only:
-        wanted = set(args.only)
-        select = lambda d: d["origin"] in wanted
+    base = (
+        runner.available_selector(_cache(args))
+        if args.available
+        else runner.default_selector
+    )
+    wanted = set(args.only or ())
+
+    def select(doc):
+        return base(doc) and (not wanted or doc["origin"] in wanted)
+
     try:
         results = runner.run_engine(engine, manifest, _cache(args), select=select)
     except runner.EngineError as exc:
@@ -51,20 +57,32 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_score(args: argparse.Namespace) -> int:
     manifest = lib.load_manifest()
     results = runner.load_results(Path(args.results))
-    card = scoring.score(manifest, results, split=args.split, resamples=args.resamples)
+    try:
+        runner.check_corpus(results, manifest)
+    except runner.EngineError as exc:
+        print(f"evals score: {exc}", file=sys.stderr)
+        return 2
+    labels = scoring.load_verdicts(Path(args.labels)) if args.labels else None
+    card = scoring.score(
+        manifest, results, split=args.split, labels=labels, resamples=args.resamples
+    )
     _emit(card, args.out)
     return 0
 
 
 def cmd_ab(args: argparse.Namespace) -> int:
     manifest = lib.load_manifest()
-    report = ab_mod.ab(
-        manifest,
-        runner.load_results(Path(args.a)),
-        runner.load_results(Path(args.b)),
-        split=args.split,
-        resamples=args.resamples,
-    )
+    try:
+        report = ab_mod.ab(
+            manifest,
+            runner.load_results(Path(args.a)),
+            runner.load_results(Path(args.b)),
+            split=args.split,
+            resamples=args.resamples,
+        )
+    except runner.EngineError as exc:
+        print(f"evals ab: {exc}", file=sys.stderr)
+        return 2
     report["regressions"] = ab_mod.regressions(report)
     _emit(report, args.out)
     return 1 if report["regressions"] and args.fail_on_regression else 0
@@ -79,12 +97,18 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--cwd", help="working directory for the engine")
     r.add_argument("--cache", help="corpus cache directory")
     r.add_argument("--only", action="append", help="limit to an origin class")
+    r.add_argument(
+        "--available", action="store_true", help="skip documents with no local text"
+    )
     r.add_argument("--out", required=True)
     r.set_defaults(func=cmd_run)
 
     s = sub.add_parser("score", help="score stored results")
     s.add_argument("results")
     s.add_argument("--split", default="all", choices=("all", "tuning", "holdout"))
+    s.add_argument(
+        "--labels", help="adjudicated labels (JSON Lines) for precision and recall"
+    )
     s.add_argument("--resamples", type=int, default=1000)
     s.add_argument("--out")
     s.set_defaults(func=cmd_score)
