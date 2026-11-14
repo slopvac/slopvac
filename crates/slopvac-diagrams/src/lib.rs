@@ -181,25 +181,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_come_from_path_and_fence_language() {
-        for (path, want) in [
-            ("a/flow.MMD", Some(Format::Mermaid)),
-            ("seq.puml", Some(Format::PlantUml)),
-            ("board.excalidraw", Some(Format::Excalidraw)),
-            ("notes.md", None),
-        ] {
-            assert_eq!(Format::from_path(path), want, "{path}");
-        }
-        assert_eq!(Format::from_lang("PlantUML"), Some(Format::PlantUml));
-        assert_eq!(Format::from_lang("rust"), None);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
     fn from_path_matches_extensions_case_insensitively() {
         for (path, want) in [
             ("flow.mmd", Some(Format::Mermaid)),
@@ -209,6 +190,9 @@ mod tests {
             (".mmd", None),
             ("dir.mmd/readme", None),
             ("flow.mmd.bak", None),
+            ("seq.puml", Some(Format::PlantUml)),
+            ("Seq.PlantUML", Some(Format::PlantUml)),
+            ("board.excalidraw", Some(Format::Excalidraw)),
             ("notes.md", None),
             ("", None),
         ] {
@@ -220,6 +204,7 @@ mod tests {
     fn from_lang_is_case_insensitive() {
         assert_eq!(Format::from_lang("Mermaid"), Some(Format::Mermaid));
         assert_eq!(Format::from_lang("rust"), None);
+        assert_eq!(Format::from_lang("PlantUML"), Some(Format::PlantUml));
         assert_eq!(Format::from_lang(""), None);
     }
 

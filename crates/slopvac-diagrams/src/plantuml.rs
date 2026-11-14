@@ -4,7 +4,7 @@
 //! component family. Other `@start` types (mindmap, gantt and so on) return no
 //! fragments. Usecase shorthand such as `(Login)` and `:Actor:` is not read.
 
-use crate::{Extraction, Fragment, Role};
+use crate::{Extraction, Fragment, Role, lines};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -221,15 +221,13 @@ const SKIPPED: &[&str] = &[
 ];
 
 pub(crate) fn extract(src: &str, base: usize) -> Extraction {
-    let mut lines = Vec::new();
-    let mut off = 0;
+    let mut body = Vec::new();
     let mut started = false;
-    for raw in src.split_inclusive('\n') {
-        let text = raw.trim_end_matches(['\n', '\r']);
+    for source_line in lines(src) {
+        let text = source_line.text;
         let lead = text.len() - text.trim_start().len();
         let t = text.trim();
-        let at = base + off + lead;
-        off += raw.len();
+        let at = base + source_line.start + lead;
         if !started && t.starts_with("@start") {
             if !t.to_ascii_lowercase().starts_with("@startuml") {
                 return Extraction::default();
@@ -240,15 +238,15 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         if t.starts_with("@end") {
             break;
         }
-        lines.push((at, t));
+        body.push((at, t));
     }
-    let kind = detect(&lines);
+    let kind = detect(&body);
     let mut out = Out {
         kind,
         frags: Vec::new(),
     };
     let mut block = Block::None;
-    for (at, t) in lines {
+    for (at, t) in body {
         line(&mut out, &mut block, at, t);
     }
     Extraction {
@@ -582,5 +580,22 @@ mod tests {
         let src = "A -> B : hi\n";
         let ex = extract(Format::PlantUml, src, 50);
         assert_eq!(ex.fragments[0].span, 50 + 9..50 + 11);
+    }
+}
+
+#[cfg(test)]
+mod line_terminator_tests {
+    use crate::{Format, Role, extract};
+
+    #[test]
+    fn lone_cr_and_crlf_keep_original_offsets() {
+        let src = "@startuml\rA -> B : one\r\nB -> A : two\n@enduml\r";
+        let ex = extract(Format::PlantUml, src, 0);
+        let got: Vec<_> = ex
+            .fragments
+            .iter()
+            .map(|f| (f.role, &src[f.span.clone()]))
+            .collect();
+        assert_eq!(got, [(Role::Message, "one"), (Role::Message, "two")]);
     }
 }
