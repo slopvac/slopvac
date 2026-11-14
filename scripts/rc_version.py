@@ -124,11 +124,15 @@ def release_version_files(root: Path) -> tuple[Path, ...]:
     package = packages.get(".") if isinstance(packages, dict) else None
     extra_files = package.get("extra-files") if isinstance(package, dict) else None
     if not isinstance(extra_files, list) or not all(
-        isinstance(path, str) for path in extra_files
+        isinstance(path, str | dict) for path in extra_files
     ):
         raise TypeError(
-            "release-please-config.json packages['.'].extra-files must be a string list"
+            "release-please-config.json packages['.'].extra-files must be a list of "
+            "paths and updater objects"
         )
+    # Updater objects (for example the TOML jsonpath entries for Cargo) rewrite
+    # themselves in release-please; only plain paths carry version markers.
+    extra_files = [path for path in extra_files if isinstance(path, str)]
 
     root = root.resolve()
     files: list[Path] = []
