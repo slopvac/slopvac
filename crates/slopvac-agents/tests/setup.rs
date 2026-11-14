@@ -293,7 +293,7 @@ fn list_names_every_harness() {
     assert!(
         r.lines
             .iter()
-            .any(|l| l.starts_with("opencode") && l.contains(".opencode/agents"))
+            .any(|l| l.starts_with("opencode") && l.replace('\\', "/").contains(".opencode/agents"))
     );
 }
 

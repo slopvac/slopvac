@@ -22,6 +22,7 @@ fn opts(root: &Path, harness: &str) -> Options {
     }
 }
 
+#[cfg(unix)]
 fn is_empty(dir: &Path) -> bool {
     fs::read_dir(dir).unwrap().next().is_none()
 }
