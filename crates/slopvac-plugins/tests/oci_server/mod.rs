@@ -1,0 +1,153 @@
+//! A scripted HTTP/1.1 server for the OCI client tests.
+#![allow(dead_code, unreachable_pub, missing_docs)]
+
+use std::fmt::Write as _;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpListener};
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+#[derive(Debug, Clone)]
+pub struct Request {
+    pub method: String,
+    pub path: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl Request {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Response {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl Response {
+    pub fn new(status: u16) -> Self {
+        Self {
+            status,
+            headers: vec![],
+            body: vec![],
+        }
+    }
+    pub fn header(mut self, k: &str, v: &str) -> Self {
+        self.headers.push((k.into(), v.into()));
+        self
+    }
+    pub fn body(mut self, b: impl Into<Vec<u8>>) -> Self {
+        self.body = b.into();
+        self
+    }
+    pub fn json(self, v: &serde_json::Value) -> Self {
+        self.header("Content-Type", "application/json")
+            .body(v.to_string())
+    }
+}
+
+pub struct Server {
+    pub addr: SocketAddr,
+    pub log: Arc<Mutex<Vec<Request>>>,
+}
+
+impl Server {
+    pub fn start(handler: impl Fn(&Request) -> Response + Send + Sync + 'static) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let handler = Arc::new(handler);
+        let log2 = Arc::clone(&log);
+        thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(conn) = conn else { continue };
+                let handler = Arc::clone(&handler);
+                let log = Arc::clone(&log2);
+                thread::spawn(move || serve(conn, &*handler, &log));
+            }
+        });
+        Self { addr, log }
+    }
+
+    pub fn registry(&self) -> String {
+        format!("127.0.0.1:{}", self.addr.port())
+    }
+
+    pub fn requests(&self) -> Vec<Request> {
+        self.log.lock().unwrap().clone()
+    }
+
+    pub fn count(&self, path_prefix: &str) -> usize {
+        self.requests()
+            .iter()
+            .filter(|r| r.path.starts_with(path_prefix))
+            .count()
+    }
+}
+
+fn serve(
+    conn: std::net::TcpStream,
+    handler: &dyn Fn(&Request) -> Response,
+    log: &Mutex<Vec<Request>>,
+) {
+    let mut reader = BufReader::new(conn.try_clone().unwrap());
+    let mut out = conn;
+    {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return;
+        }
+        let mut parts = line.split_whitespace();
+        let (Some(method), Some(path)) = (parts.next(), parts.next()) else {
+            return;
+        };
+        let mut headers = Vec::new();
+        loop {
+            let mut h = String::new();
+            if reader.read_line(&mut h).unwrap_or(0) == 0 {
+                return;
+            }
+            let h = h.trim_end();
+            if h.is_empty() {
+                break;
+            }
+            if let Some((k, v)) = h.split_once(':') {
+                headers.push((k.trim().to_owned(), v.trim().to_owned()));
+            }
+        }
+        let len = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, v)| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        let mut body = vec![0u8; len];
+        if reader.read_exact(&mut body).is_err() {
+            return;
+        }
+        let req = Request {
+            method: method.to_owned(),
+            path: path.to_owned(),
+            headers,
+            body,
+        };
+        log.lock().unwrap().push(req.clone());
+        let resp = handler(&req);
+        let mut head = format!("HTTP/1.1 {} X\r\nConnection: close\r\n", resp.status);
+        for (k, v) in &resp.headers {
+            let _ = write!(head, "{k}: {v}\r\n");
+        }
+        let _ = write!(head, "Content-Length: {}\r\n\r\n", resp.body.len());
+        let _ = out.write_all(head.as_bytes());
+        if req.method != "HEAD" {
+            let _ = out.write_all(&resp.body);
+        }
+        let _ = out.flush();
+    }
+}
