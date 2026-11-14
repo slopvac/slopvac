@@ -2,7 +2,9 @@
 
 Measures per rule and per split:
 
-- recall on seeded defects: the rule must fire at the inserted line,
+- recall on seeded defects and adjudicated true positives: the rule must fire
+  at the inserted or labelled line (`seeded_recall` and `adjudicated_recall`
+  show the two parts),
 - false-positive rate on clean controls: the rule must stay quiet at the
   counterpart line of the same document,
 - human-baseline rate: findings per 100 words on pre-2022 human text,
@@ -14,8 +16,10 @@ document are not independent.
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from . import metrics
@@ -74,12 +78,19 @@ def score(
         return doc_id in found and (split == "all" or split_of(docs[doc_id]) == split)
 
     seeded: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    adjudicated: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    pooled: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    positives: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for (label_doc, label_rule, label_line), verdict in (labels or {}).items():
+        if verdict == "tp":
+            positives[label_doc].append((label_rule, label_line))
     control: dict[str, list[tuple[int, int]]] = defaultdict(list)
     human_hits: dict[str, int] = defaultdict(int)
     human_words = 0
     origin_stats: dict[str, dict[str, float]] = defaultdict(
         lambda: {"documents": 0, "words": 0, "findings": 0}
     )
+    incomplete = 0
     tp: dict[str, int] = defaultdict(int)
     fp: dict[str, int] = defaultdict(int)
 
@@ -91,6 +102,7 @@ def score(
         stats["documents"] += 1
         stats["words"] += res["words"]
         stats["findings"] += len(res["findings"])
+        incomplete += bool(res.get("unchecked"))
         if doc["origin"] == "human":
             human_words += res["words"]
             for f in res["findings"]:
@@ -107,6 +119,19 @@ def score(
                 cell[1] += 1
             for rule, (hit, n) in by_rule.items():
                 bucket[rule].append((hit, n))
+                if kind == "defects":
+                    pooled[rule].append((hit, n))
+        # An adjudicated true positive the engine no longer reports is a miss.
+        by_rule = defaultdict(lambda: [0, 0])
+        for rule, line in positives.get(doc_id, ()):
+            cell = by_rule[rule]
+            cell[0] += _fires(
+                res["findings"], rule, line - LINE_SLACK, line + LINE_SLACK
+            )
+            cell[1] += 1
+        for rule, (hit, n) in by_rule.items():
+            adjudicated[rule].append((hit, n))
+            pooled[rule].append((hit, n))
         if labels:
             for f in res["findings"]:
                 verdict = labels.get((doc_id, f["rule"], f["line"]))
@@ -116,11 +141,15 @@ def score(
                     fp[f["rule"]] += 1
 
     rules: dict[str, Any] = {}
-    names = set(seeded) | set(control) | set(human_hits) | set(tp) | set(fp)
+    names = set(pooled) | set(control) | set(human_hits) | set(tp) | set(fp)
     for rule in sorted(names):
         entry: dict[str, Any] = {}
+        if rule in pooled:
+            entry["recall"] = _summarise(pooled[rule], resamples)
         if rule in seeded:
-            entry["recall"] = _summarise(seeded[rule], resamples)
+            entry["seeded_recall"] = _summarise(seeded[rule], resamples)
+        if rule in adjudicated:
+            entry["adjudicated_recall"] = _summarise(adjudicated[rule], resamples)
         if rule in control:
             entry["control_fpr"] = _summarise(control[rule], resamples)
         entry["human_findings"] = human_hits.get(rule, 0)
@@ -146,6 +175,13 @@ def score(
         "split": split,
         "engine": results.get("engine"),
         "corpus": results.get("corpus"),
+        "incomplete_documents": incomplete,
         "origins": dict(sorted(origin_stats.items())),
         "rules": rules,
     }
+
+
+def load_verdicts(path: Path) -> dict[LabelKey, Label]:
+    """Read a labels JSON Lines file into the map `score` takes."""
+    rows = (json.loads(line) for line in path.read_text("utf-8").splitlines() if line)
+    return {(r["doc"], r["rule"], r["line"]): r["label"] for r in rows}

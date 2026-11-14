@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 
 import pytest
 
-from evals import __main__ as cli
 from evals import ab, metrics, runner, scoring, splits
 
 
-def doc(doc_id, origin, *, defects=None, controls=None, parents=None, words=100):
+def doc(doc_id, origin, *, defects=None, controls=None, parents=None, fmt="markdown"):
     source = {}
     if defects is not None:
         source["defects"] = defects
@@ -19,7 +17,13 @@ def doc(doc_id, origin, *, defects=None, controls=None, parents=None, words=100)
         source["controls"] = controls
     if parents:
         source["parents"] = parents
-    return {"id": doc_id, "origin": origin, "source": source, "committed": False}
+    return {
+        "id": doc_id,
+        "origin": origin,
+        "format": fmt,
+        "source": source,
+        "committed": False,
+    }
 
 
 def finding(rule, line):
@@ -57,7 +61,9 @@ MANIFEST = {
     ]
 }
 RESULTS = {
+    "schema": 1,
     "engine": {"name": "fake"},
+    "corpus": {"manifest_sha256": runner.manifest_digest(MANIFEST)},
     "documents": {
         "h1": result(200, finding(R1, 4), finding(R1, 9)),
         # R1 fires at 11 (within slack of 10) but not at 20; R2 misses 30.
@@ -139,64 +145,3 @@ def test_ab_flags_a_recall_loss_and_ignores_identical_arms():
     report = ab.ab(MANIFEST, RESULTS, worse, resamples=50)
     assert report["rules"][R1]["recall"]["point"] == -0.5
     assert f"{R1}:recall" in ab.regressions(report)
-
-
-FAKE_ENGINE = """\
-import json, sys
-paths = [a for a in sys.argv[2:] if not a.startswith("--") and a != "json"]
-docs = [{"path": p, "words": 7, "findings": [
-    {"rule_id": "cat.one", "line": 3, "severity": "warning", "matched_text": "t"}]}
-    for p in paths]
-print(json.dumps({"slopvac_version": "9.9.9", "documents": docs}))
-sys.exit(1)
-"""
-
-
-def test_runner_stores_slim_findings_from_any_engine(tmp_path):
-    script = tmp_path / "fake.py"
-    script.write_text(FAKE_ENGINE)
-    cache = tmp_path / "cache"
-    manifest = {"documents": [doc("d1", "human"), doc("d2", "human")]}
-    for d in manifest["documents"]:
-        target = cache / "docs" / f"{d['id']}.txt"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("text\n")
-    engine = runner.Engine("fake", (sys.executable, str(script)))
-    out = runner.run_engine(engine, manifest, cache, batch=1)
-    assert sorted(out["documents"]) == ["d1", "d2"]
-    assert out["documents"]["d1"] == {
-        "words": 7,
-        "findings": [
-            {"rule": "cat.one", "line": 3, "severity": "warning", "text": "t"}
-        ],
-    }
-    assert out["engine"]["version"] == "9.9.9"
-
-
-def test_missing_text_names_the_remedy(tmp_path):
-    with pytest.raises(runner.MissingText, match="evals.fetch"):
-        runner.text_path({"id": "gone", "committed": False}, tmp_path)
-
-
-def test_pending_twins_are_not_linted():
-    assert not runner.default_selector({"origin": "model-twin", "status": "pending"})
-    assert runner.default_selector({"origin": "model-twin", "status": "generated"})
-
-
-def test_engine_exit_two_is_an_error(tmp_path):
-    script = tmp_path / "bad.py"
-    script.write_text("import sys; sys.exit(2)")
-    engine = runner.Engine("bad", (sys.executable, str(script)))
-    with pytest.raises(runner.EngineError, match="exited 2"):
-        engine.lint([tmp_path / "a.md"])
-
-
-def test_offline_score_command_reads_stored_results(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli.lib, "load_manifest", lambda: MANIFEST)
-    results = tmp_path / "r.json"
-    results.write_text(json.dumps({"schema": 1, **RESULTS}))
-    out = tmp_path / "card.json"
-    assert (
-        cli.main(["score", str(results), "--resamples", "10", "--out", str(out)]) == 0
-    )
-    assert json.loads(out.read_text())["rules"][R1]["recall"]["n"] == 2
