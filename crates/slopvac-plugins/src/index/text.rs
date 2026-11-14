@@ -3,18 +3,38 @@
 use std::fmt::Write as _;
 
 /// True for characters that can forge or hide terminal output: C0, DEL and C1
-/// controls (so newline and tab too), bidirectional controls, zero-width
-/// characters, line and paragraph separators, and invisible tag characters.
+/// controls (so newline and tab too), line and paragraph separators, and every
+/// default-ignorable or format (Cf) code point of Unicode 15: soft hyphen,
+/// bidirectional controls, zero-width characters, Hangul fillers, variation
+/// selectors, interlinear annotation marks, tag characters and the like.
 fn is_unsafe(c: char) -> bool {
     c.is_control()
         || matches!(
-            c,
-            '\u{61c}'
-                | '\u{200b}'..='\u{200f}'
-                | '\u{2028}'..='\u{202e}'
-                | '\u{2060}'..='\u{2069}'
-                | '\u{feff}'
-                | '\u{e0000}'..='\u{e007f}'
+            u32::from(c),
+            0xad | 0x34f
+                | 0x600..=0x605
+                | 0x61c
+                | 0x6dd
+                | 0x70f
+                | 0x890..=0x891
+                | 0x8e2
+                | 0x115f..=0x1160
+                | 0x17b4..=0x17b5
+                | 0x180b..=0x180f
+                | 0x200b..=0x200f
+                | 0x2028..=0x202e
+                | 0x2060..=0x206f
+                | 0x3164
+                | 0xfe00..=0xfe0f
+                | 0xfeff
+                | 0xffa0
+                | 0xfff0..=0xfffb
+                | 0x110bd
+                | 0x110cd
+                | 0x13430..=0x1343f
+                | 0x1bca0..=0x1bca3
+                | 0x1d173..=0x1d17a
+                | 0xe0000..=0xe0fff
         )
 }
 

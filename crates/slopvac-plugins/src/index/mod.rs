@@ -11,13 +11,14 @@
 
 mod build;
 mod model;
+mod read;
 mod search;
 mod text;
 
 pub use build::{Listing, build_index};
 pub use model::{
-    Index, IndexEntry, IndexError, MAX_DESCRIPTION_CHARS, MAX_ENTRIES, MAX_ID_CHARS,
-    MAX_INDEX_BYTES, MAX_NAME_CHARS, MAX_SOURCE_CHARS, PackKind, PublisherKey,
+    Index, IndexEntry, IndexError, MAX_API, MAX_DESCRIPTION_CHARS, MAX_ENTRIES, MAX_ID_CHARS,
+    MAX_INDEX_BYTES, MAX_NAME_CHARS, MAX_SOURCE_CHARS, MAX_VERSION_NUMBER, PackKind, PublisherKey,
 };
 pub use search::{SearchHit, search};
 pub use text::sanitize_for_terminal;

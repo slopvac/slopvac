@@ -10,14 +10,15 @@ The pack index is a JSON document that lists packs for discovery. `slopvac packs
 
 The root holds `schema_version = 3` and `packs`, an array with one entry per pack. An entry lists `id`, `namespace`, `name`, `description`, `version`, `kind`, `slopvac_api`, `source` and `publisher_key`. The `id`, `kind`, `version` and `slopvac_api` fields have the meaning that they have in the pack manifest. The `slopvac_api` field is the lowest extension API that the host must implement, so a host with a lower API shows the entry and cannot load the pack.
 
-- Unknown keys are errors, and keys with the prefix `x-` are ignored.
+- Unknown keys are errors, and keys with the prefix `x-` are ignored. A repeated key is an error.
+- `slopvac_api` is a whole number from 1 to 4294967295. Major, minor and patch of `version` are at most 999999999. A whole number written with a fraction, such as `2.0`, counts as an integer, as in JSON Schema.
 - Entries are sorted by `namespace` and then `id`. A pair of `namespace` and `id` appears once. The same `id` may appear under two namespaces.
 - A `source` is an `oci://` reference, an `https://` release archive or a `git+https://` URL pinned to a full commit hash. It carries no user-info. A path source and `http://` are invalid. The lock accepts a path source, because a lock belongs to a project. A public listing has no project root.
 - The writer is canonical: fixed key order, two-space indent and a final newline. The same set of entries always gives the same bytes. The document holds no timestamp.
 
 ## 2. Build
 
-A scheduled job scans packs that follow the naming convention, reads each manifest, and builds the document from the manifest fields, the source it found and the signing key. The library function `build_index` does the build and sorts the result. It fails on an invalid entry or a repeated pair. The job and its workflow belong to the code-quality epic and are not part of this contract.
+A scheduled job scans packs that follow the naming convention, reads each manifest, and builds the document from the manifest fields, the source it found and the signing key. The library function `build_index` does the build and sorts the result. It fails on an invalid entry, a repeated pair, or a canonical document over 32 MiB, so every index that it returns is one that a reader accepts. The job and its workflow belong to the code-quality epic and are not part of this contract.
 
 The manifest has no display name. A build without a name uses the pack `id`.
 
@@ -27,14 +28,14 @@ The query is lowercased and split into tokens at every character that is not a l
 
 Each token scores its best field: the whole `id` gives 100, the start of the `id` 60, elsewhere in the `id` 40, the `name` 30 and the `description` 10. The scores add up. A query whose tokens, joined by `-`, spell the `id` adds 50. Results sort by score, highest first, then by `namespace` and `id`.
 
-A result shows the namespace, id, version, kind, API, name, description, source and the publisher key with its fingerprint.
+A result shows the namespace, id, version, kind, API, name, description, source and the publisher key with its fingerprint. Every one of these values is a claim by the index, and the result says so in an `unverified` line that names the pinning command. A namespace that belongs to first-party packs (`core` and `slopvac`) gets a further line, `claims first-party namespace; not verified`. The index never confers a verified first-party identity: the first-party keys are compiled into the binary.
 
 ## 4. Untrusted input
 
 Threat model N11 and TM-41 apply.
 
-- A reader refuses a document over 32 MiB before it parses it. It also refuses more than 100000 entries. Strings have these limits, in characters: id and namespace 64, name 128, description 1024, source 2048.
-- Text from the index is escaped before it reaches a terminal: C0 controls (newline and tab too), DEL, C1 controls, bidirectional controls, zero-width characters, line and paragraph separators and tag characters. Each becomes `\u{hex}`. The same applies to text in an error message.
+- A reader refuses a document over 32 MiB before it parses it. It then streams: it builds no tree of the document, counts entries as it reads, stops at the first bad entry and skips `x-` values without storing them. It refuses more than 100000 entries. Strings have these limits, in characters: id and namespace 64, name 128, description 1024, source 2048.
+- Text from the index is escaped before it reaches a terminal: C0 controls (newline and tab too), DEL, C1 controls, line and paragraph separators, and every default-ignorable or format (Cf) code point of Unicode 15. That covers bidirectional controls, zero-width characters, the soft hyphen, Hangul fillers, variation selectors and tag characters. Each becomes `\u{hex}`. The same applies to text in an error message. An error about a source never repeats the source, because a source may carry credentials.
 - `publisher_key` is display-only (threat model section 5.2). A first install shows the fingerprint, and nothing pins the key until the user runs the pinning command. A pinned key wins over the index. No code path converts an index key into a verification key or a key policy, and no flag or environment variable does.
 
 ## 5. Conformance
@@ -47,5 +48,7 @@ Threat model N11 and TM-41 apply.
 | I4 | A description with escape sequences, newlines and bidi controls | Printed escaped, on one line. |
 | I5 | The same listings in two orders | The same bytes. |
 | I6 | A query matching an exact id, an id prefix and a description | Ranked as in section 3. |
+| I7 | An entry in a reserved namespace | Rendered with the claim warning and the `unverified` line. |
+| I8 | Every string field at its cap and one character past it | Accepted, then refused. |
 
 The schema harness runs I1 and I2 in `tests/contract/test_schemas.py`. The Rust tests in `crates/slopvac-plugins/tests/index.rs` run the rest and repeat I1 and I2 against the reader.

@@ -27,9 +27,9 @@
   "additionalProperties": false,
   "$defs": {
     "Semver": {
-      "description": "Semantic version 2.0.0 without build metadata. Same pattern as the Semver def of pack-manifest.schema.json, repeated here until that schema is on main.",
+      "description": "Semantic version 2.0.0 without build metadata. Major, minor and patch have at most nine digits (at most 999999999), which is the bound the reader enforces. Otherwise the pattern is the Semver def of pack-manifest.schema.json, repeated here until that schema is on main.",
       "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
     },
     "Source": {
       "description": "Where to fetch the pack: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
@@ -97,8 +97,9 @@
           ]
         },
         "slopvac_api": {
-          "description": "Lowest pack and plugin extension API the host must implement. A host with a lower API cannot load the pack.",
-          "$ref": "common.schema.json#/$defs/ApiVersion"
+          "description": "Lowest pack and plugin extension API the host must implement. A host with a lower API cannot load the pack. At most 4294967295, the bound the reader enforces. A whole number written with a fraction, such as 2.0, is an integer here and in the reader.",
+          "$ref": "common.schema.json#/$defs/ApiVersion",
+          "maximum": 4294967295
         },
         "source": {
           "$ref": "#/$defs/Source"

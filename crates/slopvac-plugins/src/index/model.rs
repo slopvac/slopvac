@@ -8,7 +8,6 @@ use std::fmt;
 
 use semver::Version;
 use serde::Serialize;
-use serde_json::{Map, Value};
 
 use super::text::sanitize_for_terminal;
 
@@ -25,6 +24,10 @@ pub const MAX_NAME_CHARS: usize = 128;
 pub const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// Longest source, in characters.
 pub const MAX_SOURCE_CHARS: usize = 2048;
+/// Largest `slopvac_api`.
+pub const MAX_API: u64 = u32::MAX as u64;
+/// Largest major, minor or patch number in a version (nine digits).
+pub const MAX_VERSION_NUMBER: u64 = 999_999_999;
 
 /// A rejected index document or entry. `pointer` is a JSON Pointer into the
 /// document (for example `/packs/0/source`); it is empty for the whole document.
@@ -198,17 +201,28 @@ impl IndexEntry {
                 "a version must not carry build metadata",
             ));
         }
-        if self.slopvac_api == 0 {
-            return Err(IndexError::new(p("slopvac_api"), "slopvac_api starts at 1"));
+        let v = &self.version;
+        if [v.major, v.minor, v.patch]
+            .iter()
+            .any(|&n| n > MAX_VERSION_NUMBER)
+        {
+            return Err(IndexError::new(
+                p("version"),
+                format!("major, minor and patch must be at most {MAX_VERSION_NUMBER}"),
+            ));
+        }
+        if !(1..=MAX_API).contains(&self.slopvac_api) {
+            return Err(IndexError::new(
+                p("slopvac_api"),
+                format!("slopvac_api must be 1 to {MAX_API}"),
+            ));
         }
         check_len(&self.source, 1, MAX_SOURCE_CHARS, &p("source"), "source")?;
+        // The raw value is not echoed: it may carry credentials (CWE-532).
         if !is_source(&self.source) {
             return Err(IndexError::new(
                 p("source"),
-                format!(
-                    "`{}` is not an oci://, https:// or pinned git+https:// source without user-info",
-                    self.source
-                ),
+                "not an oci://, https:// or pinned git+https:// source without user-info",
             ));
         }
         if !is_hex(&self.publisher_key.key_id, 16, true) {
@@ -258,44 +272,11 @@ impl Index {
         &self.packs
     }
 
-    /// Parses an index document. The size limit is checked before any parsing.
-    /// Unknown keys are errors and `x-` keys are ignored.
+    /// Parses an index document. The size limit is checked before any
+    /// parsing, and the reader streams: it never builds a tree of the document.
+    /// Unknown keys and repeated keys are errors, and `x-` keys are ignored.
     pub fn parse(bytes: &[u8]) -> Result<Self, IndexError> {
-        if bytes.len() > MAX_INDEX_BYTES {
-            return Err(IndexError::new(
-                "",
-                format!(
-                    "the index is {} bytes; the limit is {MAX_INDEX_BYTES}",
-                    bytes.len()
-                ),
-            ));
-        }
-        let value: Value = serde_json::from_slice(bytes)
-            .map_err(|e| IndexError::new("", format!("not valid JSON: {e}")))?;
-        let root = object(&value, "")?;
-        only_keys(root, &["schema_version", "packs"], "")?;
-        if root.get("schema_version").and_then(Value::as_u64) != Some(3) {
-            return Err(IndexError::new(
-                "/schema_version",
-                "schema_version must be 3",
-            ));
-        }
-        let list = root
-            .get("packs")
-            .and_then(Value::as_array)
-            .ok_or_else(|| IndexError::new("/packs", "packs must be an array"))?;
-        if list.len() > MAX_ENTRIES {
-            return Err(IndexError::new(
-                "/packs",
-                format!("more than {MAX_ENTRIES} entries"),
-            ));
-        }
-        let packs = list
-            .iter()
-            .enumerate()
-            .map(|(i, v)| parse_entry(v, &format!("/packs/{i}")))
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::new(packs)
+        Self::new(super::read::read(bytes)?)
     }
 
     /// Writes the canonical document: fixed key order, two-space indent, a
@@ -310,89 +291,6 @@ impl Index {
         text.push('\n');
         text
     }
-}
-
-fn object<'a>(value: &'a Value, at: &str) -> Result<&'a Map<String, Value>, IndexError> {
-    value
-        .as_object()
-        .ok_or_else(|| IndexError::new(at, "expected an object"))
-}
-
-fn only_keys(map: &Map<String, Value>, allowed: &[&str], at: &str) -> Result<(), IndexError> {
-    match map
-        .keys()
-        .find(|k| !allowed.contains(&k.as_str()) && !k.starts_with("x-"))
-    {
-        Some(key) => Err(IndexError::new(at, format!("unknown key `{key}`"))),
-        None => Ok(()),
-    }
-}
-
-fn string<'a>(map: &'a Map<String, Value>, key: &str, at: &str) -> Result<&'a str, IndexError> {
-    map.get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| IndexError::new(format!("{at}/{key}"), format!("`{key}` must be a string")))
-}
-
-fn parse_entry(value: &Value, at: &str) -> Result<IndexEntry, IndexError> {
-    let map = object(value, at)?;
-    only_keys(
-        map,
-        &[
-            "id",
-            "namespace",
-            "name",
-            "description",
-            "version",
-            "kind",
-            "slopvac_api",
-            "source",
-            "publisher_key",
-        ],
-        at,
-    )?;
-    let version_text = string(map, "version", at)?;
-    let version = Version::parse(version_text)
-        .map_err(|e| IndexError::new(format!("{at}/version"), format!("`{version_text}`: {e}")))?;
-    let kind = match string(map, "kind", at)? {
-        "data" => PackKind::Data,
-        "plugin" => PackKind::Plugin,
-        other => {
-            return Err(IndexError::new(
-                format!("{at}/kind"),
-                format!("`{other}` is not a pack kind (`data` or `plugin`)"),
-            ));
-        }
-    };
-    let slopvac_api = map
-        .get("slopvac_api")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| {
-            IndexError::new(
-                format!("{at}/slopvac_api"),
-                "slopvac_api must be a positive integer",
-            )
-        })?;
-    let key_at = format!("{at}/publisher_key");
-    let key_map = map
-        .get("publisher_key")
-        .ok_or_else(|| IndexError::new(&key_at, "publisher_key is required"))
-        .and_then(|v| object(v, &key_at))?;
-    only_keys(key_map, &["key_id", "fingerprint"], &key_at)?;
-    Ok(IndexEntry {
-        id: string(map, "id", at)?.to_owned(),
-        namespace: string(map, "namespace", at)?.to_owned(),
-        name: string(map, "name", at)?.to_owned(),
-        description: string(map, "description", at)?.to_owned(),
-        version,
-        kind,
-        slopvac_api,
-        source: string(map, "source", at)?.to_owned(),
-        publisher_key: PublisherKey {
-            key_id: string(key_map, "key_id", &key_at)?.to_owned(),
-            fingerprint: string(key_map, "fingerprint", &key_at)?.to_owned(),
-        },
-    })
 }
 
 #[derive(Serialize)]

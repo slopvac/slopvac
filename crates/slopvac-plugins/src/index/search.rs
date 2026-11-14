@@ -87,9 +87,16 @@ pub fn search<'a>(index: &'a Index, query: &str, limit: usize) -> Vec<SearchHit<
     hits
 }
 
+/// Namespaces that belong to first-party packs. An index entry can claim one,
+/// and nothing in the index proves it: the key behind a first-party pack is
+/// compiled into the binary (threat model section 5.2).
+const RESERVED_NAMESPACES: [&str; 2] = ["core", "slopvac"];
+
 impl SearchHit<'_> {
-    /// Renders the hit for a terminal. Every value from the index is escaped,
-    /// and the key line says that the key is not verified.
+    /// Renders the hit for a terminal. Every value from the index is escaped.
+    /// The namespace, source and key are claims by the index, and the output
+    /// says so; a reserved namespace gets an extra warning and is never shown
+    /// as a verified identity.
     #[must_use]
     pub fn render(&self) -> String {
         let e = self.entry;
@@ -109,9 +116,20 @@ impl SearchHit<'_> {
         let _ = writeln!(out, "  source: {}", s(&e.source));
         let _ = writeln!(
             out,
-            "  publisher key (from the index, not verified): {} (fingerprint {})",
+            "  publisher key: {} (fingerprint {})",
             s(&e.publisher_key.key_id),
             s(&e.publisher_key.fingerprint)
+        );
+        if RESERVED_NAMESPACES.contains(&e.namespace.as_str()) {
+            let _ = writeln!(
+                out,
+                "  warning: claims first-party namespace `{}`; not verified",
+                s(&e.namespace)
+            );
+        }
+        let _ = writeln!(
+            out,
+            "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
         );
         out
     }

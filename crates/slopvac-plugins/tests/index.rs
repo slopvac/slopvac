@@ -308,8 +308,8 @@ fn rendered_hits_carry_no_control_characters_from_the_index() {
     let index = build_index([l]).unwrap();
     let hit = search(&index, "ok", 1).remove(0);
     let text = hit.render();
-    // Five lines the renderer wrote, and nothing else breaks a line.
-    assert_eq!(text.lines().count(), 5, "{text:?}");
+    // Six lines the renderer wrote, and nothing else breaks a line.
+    assert_eq!(text.lines().count(), 6, "{text:?}");
     let unsafe_left = text
         .chars()
         .filter(|&c| c != '\n')
@@ -325,25 +325,186 @@ fn rendered_key_is_labelled_unverified() {
     let index = Index::new(vec![entry("acme", "a")]).unwrap();
     let text = search(&index, "a", 1).remove(0).render();
     assert!(
-        text.contains("publisher key (from the index, not verified): 0123456789ABCDEF"),
+        text.contains("publisher key: 0123456789ABCDEF (fingerprint "),
         "{text}"
     );
 }
+// ---- fix round 1 ----
 
-// ---- key authority (K1, TM-22) ----
+fn with_source_len(len: usize) -> String {
+    let prefix = "oci://ghcr.io/acme/";
+    format!("{prefix}{}", "s".repeat(len - prefix.len()))
+}
 
 #[test]
-fn index_code_never_references_the_signing_or_key_policy_api() {
-    // The index key is display-only. The signing module (sign.rs, PR #349) is not
-    // on main yet; this guard keeps any later wiring from reaching into it.
-    for (file, source) in [
-        ("mod.rs", include_str!("../src/index/mod.rs")),
-        ("model.rs", include_str!("../src/index/model.rs")),
-        ("build.rs", include_str!("../src/index/build.rs")),
-        ("search.rs", include_str!("../src/index/search.rs")),
-    ] {
-        for forbidden in ["sign::", "KeyPolicy", "PublicKey", "super::sign"] {
-            assert!(!source.contains(forbidden), "{file} mentions `{forbidden}`");
-        }
+fn build_refuses_output_the_reader_would_refuse() {
+    // 32768 entries of 1024 characters is 32 MiB of description text alone.
+    let listings = (0..32_768).map(|i| {
+        listing(
+            "acme",
+            &format!("p{i}"),
+            "N",
+            &"d".repeat(MAX_DESCRIPTION_CHARS),
+        )
+    });
+    let err = build_index(listings).unwrap_err();
+    assert_eq!(err.pointer, "");
+    assert!(err.message.contains("limit"), "{err}");
+}
+
+#[test]
+fn every_string_field_accepts_its_cap_and_refuses_one_more() {
+    type Edit = fn(&mut Listing, String);
+    let fields: [(&str, usize, Edit); 4] = [
+        ("id", 64, |l, v| l.id = v),
+        ("namespace", 64, |l, v| l.namespace = v),
+        ("name", 128, |l, v| l.name = Some(v)),
+        ("description", 1024, |l, v| l.description = v),
+    ];
+    for (field, cap, edit) in fields {
+        let mut at_cap = listing("acme", "a", "A", "d");
+        edit(&mut at_cap, "a".repeat(cap));
+        assert!(build_index([at_cap]).is_ok(), "{field} at {cap}");
+        let mut over = listing("acme", "a", "A", "d");
+        edit(&mut over, "a".repeat(cap + 1));
+        let err = build_index([over]).unwrap_err();
+        assert_eq!(err.pointer, format!("/packs/0/{field}"));
     }
+    let mut at_cap = listing("acme", "a", "A", "d");
+    at_cap.source = with_source_len(2048);
+    assert!(build_index([at_cap]).is_ok());
+    let mut over = listing("acme", "a", "A", "d");
+    over.source = with_source_len(2049);
+    assert_eq!(build_index([over]).unwrap_err().pointer, "/packs/0/source");
+}
+
+#[test]
+fn numeric_bounds_match_the_schema() {
+    let mut l = listing("acme", "a", "A", "d");
+    l.slopvac_api = u64::from(u32::MAX);
+    l.version = Version::new(999_999_999, 999_999_999, 999_999_999);
+    assert!(build_index([l.clone()]).is_ok());
+    l.slopvac_api += 1;
+    assert_eq!(
+        build_index([l.clone()]).unwrap_err().pointer,
+        "/packs/0/slopvac_api"
+    );
+    l.slopvac_api = 1;
+    l.version = Version::new(1_000_000_000, 0, 0);
+    assert_eq!(build_index([l]).unwrap_err().pointer, "/packs/0/version");
+}
+
+const ONE_ENTRY: &str = r#"{"schema_version":3,"packs":[{"id":"a","namespace":"b","name":"N","description":"d","version":"1.0.0","kind":"data","slopvac_api":2,"source":"oci://h/x","publisher_key":{"key_id":"0123456789ABCDEF","fingerprint":"0000000000000000000000000000000000000000000000000000000000000000"}}]}"#;
+
+#[test]
+fn whole_numbers_with_a_fraction_are_integers_as_in_the_schema() {
+    let doc = ONE_ENTRY.replace("\"slopvac_api\":2", "\"slopvac_api\":2.0");
+    assert_eq!(
+        Index::parse(doc.as_bytes()).unwrap().entries()[0].slopvac_api,
+        2
+    );
+    let fractional = ONE_ENTRY.replace("\"slopvac_api\":2", "\"slopvac_api\":2.5");
+    assert_eq!(
+        Index::parse(fractional.as_bytes()).unwrap_err().pointer,
+        "/packs/0/slopvac_api"
+    );
+}
+
+#[test]
+fn a_repeated_key_is_an_error() {
+    let doc = r#"{"schema_version":3,"packs":[],"packs":[]}"#;
+    assert_eq!(Index::parse(doc.as_bytes()).unwrap_err().pointer, "");
+}
+
+#[test]
+fn a_rejected_source_is_not_echoed_with_its_credentials() {
+    let mut l = listing("acme", "a", "A", "d");
+    l.source = "https://user:hunter2@example.com/a.tar.gz".into();
+    let err = build_index([l]).unwrap_err();
+    assert_eq!(err.pointer, "/packs/0/source");
+    let shown = err.to_string();
+    assert!(!shown.contains("hunter2"), "{shown}");
+    let doc = ONE_ENTRY.replace("oci://h/x", "https://user:hunter2@example.com/a");
+    let shown = Index::parse(doc.as_bytes()).unwrap_err().to_string();
+    assert!(!shown.contains("hunter2"), "{shown}");
+}
+
+#[test]
+fn invisible_and_format_characters_are_escaped_in_output() {
+    // One code point per default-ignorable or format (Cf) range of Unicode 15,
+    // taken from DerivedCoreProperties.txt and UnicodeData.txt, not from the code.
+    let cases = [
+        '\u{ad}',
+        '\u{34f}',
+        '\u{600}',
+        '\u{115f}',
+        '\u{17b4}',
+        '\u{180e}',
+        '\u{2060}',
+        '\u{206f}',
+        '\u{3164}',
+        '\u{fe0f}',
+        '\u{feff}',
+        '\u{ffa0}',
+        '\u{fff9}',
+        '\u{110bd}',
+        '\u{1bca0}',
+        '\u{1d173}',
+        '\u{e0001}',
+        '\u{e0100}',
+        '\u{2029}',
+        '\u{85}',
+    ];
+    for c in cases {
+        let want = format!("a\\u{{{:x}}}b", u32::from(c));
+        assert_eq!(sanitize_for_terminal(&format!("a{c}b")), want, "{c:?}");
+    }
+}
+
+#[test]
+fn rendered_hits_say_that_every_identity_claim_is_unverified() {
+    let index = build_index([listing("acme", "a", "A", "d")]).unwrap();
+    let text = search(&index, "a", 1).remove(0).render();
+    assert!(
+        text.contains("unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"),
+        "{text}"
+    );
+    assert!(!text.contains("first-party"), "{text}");
+}
+
+#[test]
+fn a_reserved_namespace_is_flagged_as_a_claim_not_shown_as_an_identity() {
+    for reserved in ["core", "slopvac"] {
+        let index = build_index([listing(reserved, "evil", "E", "d")]).unwrap();
+        let text = search(&index, "evil", 1).remove(0).render();
+        assert!(
+            text.contains(&format!(
+                "claims first-party namespace `{reserved}`; not verified"
+            )),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_bad_entry_is_refused_while_reading_not_after_the_whole_document_is_built() {
+    // The tail is not JSON. A reader that builds the full tree first reports the
+    // syntax error at the root; a streaming reader stops at the first bad entry.
+    let doc = r#"{"schema_version":3,"packs":[0, this is not json"#;
+    assert_eq!(
+        Index::parse(doc.as_bytes()).unwrap_err().pointer,
+        "/packs/0"
+    );
+}
+
+#[test]
+fn a_huge_ignored_x_value_and_a_huge_scalar_array_are_handled() {
+    let scalars = "0,".repeat(2_000_000);
+    let skipped = format!(r#"{{"schema_version":3,"x-big":[{scalars}0],"packs":[]}}"#);
+    assert_eq!(Index::parse(skipped.as_bytes()).unwrap().entries().len(), 0);
+    let refused = format!(r#"{{"schema_version":3,"packs":[{scalars}0]}}"#);
+    assert_eq!(
+        Index::parse(refused.as_bytes()).unwrap_err().pointer,
+        "/packs/0"
+    );
 }

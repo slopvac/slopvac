@@ -2,7 +2,7 @@
 
 use semver::Version;
 
-use super::model::{Index, IndexEntry, IndexError, PackKind, PublisherKey};
+use super::model::{Index, IndexEntry, IndexError, MAX_INDEX_BYTES, PackKind, PublisherKey};
 
 /// What the scheduled job learned about one pack: fields of its manifest plus
 /// the source it found the pack at and the key that signs it.
@@ -47,7 +47,17 @@ impl From<Listing> for IndexEntry {
 /// Builds the index from listings in any order. The result is sorted by
 /// namespace and id, so the same set of listings gives the same bytes from
 /// [`Index::to_json`]. Fails on the first invalid listing or repeated
-/// namespace and id pair; the error pointer is the listing's position.
+/// namespace and id pair; the error pointer is the listing's position. Also
+/// fails when the canonical document would exceed [`MAX_INDEX_BYTES`], so every
+/// index that this function returns is one that a reader accepts.
 pub fn build_index(listings: impl IntoIterator<Item = Listing>) -> Result<Index, IndexError> {
-    Index::new(listings.into_iter().map(IndexEntry::from).collect())
+    let index = Index::new(listings.into_iter().map(IndexEntry::from).collect())?;
+    let size = index.to_json().len();
+    if size > MAX_INDEX_BYTES {
+        return Err(IndexError::new(
+            "",
+            format!("the index would be {size} bytes; the limit is {MAX_INDEX_BYTES}"),
+        ));
+    }
+    Ok(index)
 }
