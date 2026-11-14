@@ -303,3 +303,25 @@ def test_contrastive_appositive_severity_by_profile(profile, expected):
         f.severity for f in findings if f.rule_id.endswith(".contrastive-appositive")
     ]
     assert severities == ([] if expected is None else [expected])
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("The retry loop landed in commit 3f9a2c1 after the outage.", True),
+        ("Timeouts apply to every call, see PR 482.", True),
+        ("The importer skips rows, see issue #596.", True),
+        ("Timeouts apply to every call (#2102).", True),
+        ("The cache key changed because of PLAT-1042.", True),
+        ("We refactored the loader to read from the config table.", True),
+        ("The device list shows GPU-0 and GPU-3.", False),
+        ("The weakness is tracked as CWE-77 in the catalog.", False),
+        ("The digest uses SHA-256 and UTF-8 text.", False),
+        ("The loader reads the config table.", False),
+        ("Run `git show 3f9a2c1` to see the commit.", False),
+    ],
+)
+def test_history_internal_reference(text, expected):
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert any(f.rule_id.endswith(".history-internal-reference") for f in findings) == expected
