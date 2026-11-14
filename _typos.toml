@@ -50,6 +50,9 @@ MUC = "MUC"
 # crates/slopvac-terms/data/builtin.toml.
 AKS = "AKS"
 
+# `Caf\u{e9}` escapes in slopvac-pos test strings.
+Caf = "Caf"
+
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).
 extend-ignore-re = ["\\b[0-9a-f]{10,40}\\b"]
