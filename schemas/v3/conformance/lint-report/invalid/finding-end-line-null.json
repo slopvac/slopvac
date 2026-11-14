@@ -1,0 +1,433 @@
+{
+  "schema_version": 3,
+  "slopvac_version": "3.0.0",
+  "x-run-id": "ignored-by-consumers",
+  "summary": {
+    "documents": 3,
+    "words": 742,
+    "findings": 4,
+    "errors": 1,
+    "warnings": 2,
+    "suggestions": 1,
+    "per_100_words": 0.539,
+    "score": 93.0,
+    "passed": false,
+    "categories": [
+      {
+        "category": "ai-residue",
+        "findings": 1,
+        "errors": 1,
+        "warnings": 0,
+        "suggestions": 0,
+        "per_100_words": 0.135,
+        "score": 90.0
+      },
+      {
+        "category": "docs-discipline",
+        "findings": 1,
+        "errors": 0,
+        "warnings": 1,
+        "suggestions": 0,
+        "per_100_words": 0.135,
+        "score": 94.0
+      },
+      {
+        "category": "orwell",
+        "findings": 1,
+        "errors": 0,
+        "warnings": 0,
+        "suggestions": 1,
+        "per_100_words": 0.135,
+        "score": 98.0
+      },
+      {
+        "category": "prose-inflation",
+        "findings": 1,
+        "errors": 0,
+        "warnings": 1,
+        "suggestions": 0,
+        "per_100_words": 0.135,
+        "score": 96.0
+      }
+    ],
+    "ai_register": {
+      "strong": {
+        "findings": 1,
+        "errors": 0,
+        "warnings": 1,
+        "per_100_words": 0.135
+      },
+      "weak": {
+        "findings": 1,
+        "errors": 0,
+        "warnings": 0,
+        "per_100_words": 0.135
+      }
+    },
+    "prose": {
+      "findings": 2,
+      "errors": 1,
+      "warnings": 1,
+      "per_100_words": 0.27
+    }
+  },
+  "documents": [
+    {
+      "path": "docs/guide.md",
+      "profile": "strict",
+      "genre": {
+        "id": "reference",
+        "source": "detected",
+        "reasons": [
+          {
+            "signal": "path-glob",
+            "detail": "docs/**/*.md matches the reference genre"
+          },
+          {
+            "signal": "heading-shape",
+            "detail": "7 of 9 headings are noun phrases"
+          }
+        ]
+      },
+      "contexts_seen": [
+        "prose",
+        "code-block",
+        "front-matter"
+      ],
+      "config_sources": [
+        {
+          "layer": "defaults"
+        },
+        {
+          "layer": "project",
+          "file": ".slopvac.toml",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "layer": "front-matter",
+          "file": "docs/guide.md",
+          "line": 2,
+          "column": 1
+        }
+      ],
+      "words": 412,
+      "sentences": 31,
+      "paragraphs": 14,
+      "findings": [
+        {
+          "rule_id": "core:ai-residue.chat-leakage",
+          "pack": "core",
+          "category": "ai-residue",
+          "severity": "error",
+          "message": "Remove the chat reply that leaked into the document.",
+          "span": {
+            "start": 388,
+            "end": 411
+          },
+          "line": 9,
+          "column": 1,
+          "end_line": 9,
+          "end_column": 24,
+          "contexts": [
+            "prose"
+          ],
+          "ai_signal": "none",
+          "matched_text": "Certainly! Here is the",
+          "provenance": {
+            "pack": "core",
+            "version": "3.0.0",
+            "source": "slopvac"
+          }
+        },
+        {
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "pack": "core",
+          "category": "prose-inflation",
+          "severity": "warning",
+          "message": "Replace 'delve' with a plain verb.",
+          "span": {
+            "start": 141,
+            "end": 146
+          },
+          "line": 4,
+          "column": 12,
+          "end_line": null,
+          "end_column": 17,
+          "contexts": [
+            "prose"
+          ],
+          "ai_signal": "strong",
+          "matched_text": "delve",
+          "fix": {
+            "edits": [
+              {
+                "span": {
+                  "start": 141,
+                  "end": 146
+                },
+                "text": "look"
+              }
+            ]
+          },
+          "provenance": {
+            "pack": "core",
+            "version": "3.0.0"
+          }
+        },
+        {
+          "rule_id": "core:orwell.not-un",
+          "pack": "core",
+          "category": "orwell",
+          "severity": "suggestion",
+          "message": "Say 'unclear' without the 'not un' double negative.",
+          "span": {
+            "start": 502,
+            "end": 516
+          },
+          "line": 12,
+          "column": 40,
+          "end_line": 12,
+          "end_column": 54,
+          "contexts": [
+            "prose",
+            "table-cell"
+          ],
+          "ai_signal": "weak",
+          "matched_text": "not unclear",
+          "provenance": {
+            "pack": "core"
+          }
+        }
+      ],
+      "categories": [
+        {
+          "category": "ai-residue",
+          "findings": 1,
+          "errors": 1,
+          "warnings": 0,
+          "suggestions": 0,
+          "per_100_words": 0.243,
+          "gating_per_100_words": 0.243,
+          "budget": 0,
+          "score": 80.0,
+          "over_budget": true
+        },
+        {
+          "category": "orwell",
+          "findings": 1,
+          "errors": 0,
+          "warnings": 0,
+          "suggestions": 1,
+          "per_100_words": 0.243,
+          "gating_per_100_words": 0.0,
+          "budget": null,
+          "score": 98.0,
+          "over_budget": false
+        },
+        {
+          "category": "prose-inflation",
+          "findings": 1,
+          "errors": 0,
+          "warnings": 1,
+          "suggestions": 0,
+          "per_100_words": 0.243,
+          "gating_per_100_words": 0.243,
+          "budget": 1.0,
+          "score": 96.0,
+          "over_budget": false
+        }
+      ],
+      "total_findings": 3,
+      "errors": 1,
+      "warnings": 1,
+      "suggestions": 1,
+      "per_100_words": 0.728,
+      "score": 88.5,
+      "gate": {
+        "passed": false,
+        "reasons": [
+          "ai-residue: 0.243 errors and warnings per 100 words exceeds the budget of 0"
+        ]
+      },
+      "unchecked": [],
+      "ai_register": {
+        "strong": {
+          "findings": 1,
+          "errors": 0,
+          "warnings": 1,
+          "per_100_words": 0.243
+        },
+        "weak": {
+          "findings": 1,
+          "errors": 0,
+          "warnings": 0,
+          "per_100_words": 0.243
+        }
+      },
+      "prose": {
+        "findings": 1,
+        "errors": 1,
+        "warnings": 0,
+        "per_100_words": 0.243
+      }
+    },
+    {
+      "path": "README.md",
+      "profile": "strict",
+      "genre": {
+        "id": "consumer",
+        "source": "explicit",
+        "reasons": [
+          {
+            "signal": "cli-flag",
+            "detail": "--genre consumer"
+          }
+        ]
+      },
+      "contexts_seen": [
+        "prose",
+        "html-comment"
+      ],
+      "config_sources": [
+        {
+          "layer": "defaults"
+        },
+        {
+          "layer": "cli"
+        }
+      ],
+      "words": 250,
+      "sentences": 18,
+      "paragraphs": 8,
+      "findings": [],
+      "categories": [],
+      "total_findings": 0,
+      "errors": 0,
+      "warnings": 0,
+      "suggestions": 0,
+      "per_100_words": 0.0,
+      "score": 100.0,
+      "gate": {
+        "passed": true,
+        "reasons": []
+      },
+      "unchecked": [],
+      "ai_register": {
+        "strong": {
+          "findings": 0,
+          "errors": 0,
+          "warnings": 0,
+          "per_100_words": 0.0
+        },
+        "weak": {
+          "findings": 0,
+          "errors": 0,
+          "warnings": 0,
+          "per_100_words": 0.0
+        }
+      },
+      "prose": {
+        "findings": 0,
+        "errors": 0,
+        "warnings": 0,
+        "per_100_words": 0.0
+      }
+    },
+    {
+      "path": "src/app.py",
+      "profile": "strict",
+      "genre": {
+        "id": "internal",
+        "source": "default",
+        "reasons": []
+      },
+      "contexts_seen": [
+        "code-comment"
+      ],
+      "config_sources": [
+        {
+          "layer": "defaults"
+        }
+      ],
+      "words": 80,
+      "sentences": 6,
+      "paragraphs": 3,
+      "findings": [
+        {
+          "rule_id": "core:docs-discipline.document-length",
+          "pack": "core",
+          "category": "docs-discipline",
+          "severity": "warning",
+          "message": "The comment block runs 80 words; keep it under 60.",
+          "line": 1,
+          "column": 1,
+          "contexts": [
+            "code-comment"
+          ],
+          "ai_signal": "none",
+          "matched_text": ""
+        }
+      ],
+      "categories": [
+        {
+          "category": "docs-discipline",
+          "findings": 1,
+          "errors": 0,
+          "warnings": 1,
+          "suggestions": 0,
+          "per_100_words": 1.25,
+          "gating_per_100_words": 1.25,
+          "budget": 2.0,
+          "score": 94.0,
+          "over_budget": false
+        }
+      ],
+      "total_findings": 1,
+      "errors": 0,
+      "warnings": 1,
+      "suggestions": 0,
+      "per_100_words": 1.25,
+      "score": 94.0,
+      "gate": {
+        "passed": true,
+        "reasons": []
+      },
+      "unchecked": [
+        {
+          "code": "vale-not-found",
+          "level": "warning",
+          "message": "Vale is not installed, so the Vale-backed rules did not run.",
+          "path": "src/app.py"
+        }
+      ],
+      "ai_register": {
+        "strong": {
+          "findings": 0,
+          "errors": 0,
+          "warnings": 0,
+          "per_100_words": 0.0
+        },
+        "weak": {
+          "findings": 0,
+          "errors": 0,
+          "warnings": 0,
+          "per_100_words": 0.0
+        }
+      },
+      "prose": {
+        "findings": 1,
+        "errors": 0,
+        "warnings": 1,
+        "per_100_words": 1.25
+      }
+    }
+  ],
+  "notices": [
+    {
+      "code": "directory-entries-skipped",
+      "level": "info",
+      "message": "Skipped 4 files under node_modules."
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use schemars::generate::SchemaSettings;
 use schemars::{Schema, schema_for};
 use serde_json::Value;
 use slopvac_model::{
@@ -65,7 +66,14 @@ fn check(schema: &Schema, dir: &Path, only_prefix: Option<&str>) -> usize {
 
 #[test]
 fn generated_lint_report_schema_matches_the_corpus() {
-    let n = check(&schema_for!(Report), &corpus().join("lint-report"), None);
+    // The producer contract: what `Report` serializes, so optional-on-input fields that the
+    // producer always writes (`budget`) stay required and `Option` fields are not nullable
+    // unless the published schema says so.
+    let schema = SchemaSettings::draft2020_12()
+        .for_serialize()
+        .into_generator()
+        .into_root_schema_for::<Report>();
+    let n = check(&schema, &corpus().join("lint-report"), None);
     assert!(n >= 20, "only {n} lint-report instances ran");
 }
 

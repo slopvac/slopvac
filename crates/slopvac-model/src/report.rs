@@ -1,9 +1,39 @@
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::edit::Edit;
 use crate::ids::{ContextTag, PackId, RuleId, SchemaVersion, Severity};
 use crate::span::Span;
+
+/// Optional producer fields are omitted when unset, never written as `null`; drop the
+/// `null` alternative schemars adds for `Option` so the schema says the same.
+fn absent_not_null(schema: &mut Schema) {
+    if let Some(Value::Array(types)) = schema.get_mut("type") {
+        types.retain(|t| t != "null");
+        if types.len() == 1 {
+            let only = types.remove(0);
+            schema.insert("type".into(), only);
+        }
+    }
+    if let Some(Value::Array(any)) = schema.get_mut("anyOf") {
+        any.retain(|alt| alt.get("type") != Some(&Value::String("null".into())));
+        if any.len() == 1 {
+            let only = any.remove(0);
+            schema.remove("anyOf");
+            if let Value::Object(map) = only {
+                for (k, v) in map {
+                    schema.insert(k, v);
+                }
+            }
+        }
+    }
+}
+
+/// `budget` is always written, as a non-negative number or `null`.
+fn nullable_budget(_: &mut schemars::SchemaGenerator) -> Schema {
+    schemars::json_schema!({ "type": ["number", "null"], "minimum": 0 })
+}
 
 /// How strongly a finding indicates machine-written text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -41,6 +71,7 @@ pub struct Notice {
     pub message: String,
     /// File the notice concerns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub path: Option<String>,
 }
 
@@ -52,9 +83,11 @@ pub struct RuleProvenance {
     pub pack: PackId,
     /// Pack version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub version: Option<String>,
     /// Pack source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub source: Option<String>,
 }
 
@@ -66,13 +99,16 @@ pub struct ConfigSource {
     pub layer: String,
     /// File.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub file: Option<String>,
     /// One-based line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     #[schemars(range(min = 1))]
     pub line: Option<usize>,
     /// One-based column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     #[schemars(range(min = 1))]
     pub column: Option<usize>,
 }
@@ -104,6 +140,7 @@ pub struct Finding {
     pub message: String,
     /// Byte range; absent for whole-document findings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub span: Option<Span>,
     /// Start line.
     #[schemars(range(min = 1))]
@@ -113,10 +150,12 @@ pub struct Finding {
     pub column: usize,
     /// End line; present with `span`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     #[schemars(range(min = 1))]
     pub end_line: Option<usize>,
     /// End column; present with `span`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     #[schemars(range(min = 1))]
     pub end_column: Option<usize>,
     /// Text contexts the match sits in.
@@ -128,9 +167,11 @@ pub struct Finding {
     pub matched_text: String,
     /// Suggested fix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub fix: Option<Fix>,
     /// Rule provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(transform = absent_not_null)]
     pub provenance: Option<RuleProvenance>,
 }
 
@@ -272,7 +313,7 @@ pub struct CategoryScore {
     #[schemars(range(min = 0))]
     pub gating_per_100_words: f64,
     /// Gating limit, or null.
-    #[schemars(range(min = 0))]
+    #[schemars(schema_with = "nullable_budget")]
     pub budget: Option<f64>,
     /// Score, 0 to 100.
     #[schemars(range(min = 0, max = 100))]
@@ -288,7 +329,17 @@ pub struct Gate {
     /// Whether the document passed.
     pub passed: bool,
     /// Each failed threshold; empty when passed.
+    #[serde(deserialize_with = "non_empty_reasons")]
+    #[schemars(inner(length(min = 1)))]
     pub reasons: Vec<String>,
+}
+
+fn non_empty_reasons<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let reasons = Vec::<String>::deserialize(d)?;
+    if reasons.iter().any(String::is_empty) {
+        return Err(serde::de::Error::custom("gate reasons must not be empty"));
+    }
+    Ok(reasons)
 }
 
 /// The whole result for one linted file.
