@@ -71,6 +71,20 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
+    main_with_io(args, env, out, &mut std::io::stderr().lock())
+}
+
+/// Like [`main_with`], with both output streams supplied by the caller.
+pub fn main_with_io<I, T>(
+    args: I,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> ExitCode
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
     let tree = cli::command();
     let args = cli::insert_default_command(args.into_iter().map(Into::into).collect(), &tree);
     let early_color = color::resolve(scan_color_flag(&args), env);
@@ -88,12 +102,23 @@ where
             } else {
                 styled.to_string()
             };
-            eprint!("{}", text.replacen("error:", "error[usage]:", 1));
+            let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
             return exit::code(exit::INCOMPLETE);
         }
         Err(err) => {
-            let _ = err.print();
-            return exit::code(exit::PASS);
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            return match write_stdout(out, text.as_bytes()) {
+                Ok(code) => exit::code(code),
+                Err(failure) => {
+                    let _ = writeln!(err_out, "{failure}");
+                    exit::code(exit::INCOMPLETE)
+                }
+            };
         }
     };
     let globals = resolve_globals(&matches, env);
@@ -103,18 +128,22 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, out) {
+    match dispatch(&matches, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
-            eprintln!("{err}");
+            let _ = writeln!(err_out, "{err}");
             exit::code(exit::INCOMPLETE)
         }
     }
 }
 
-fn dispatch(matches: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+fn dispatch(
+    matches: &ArgMatches,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
     match matches.subcommand() {
-        Some(("lint", m)) => lint(m),
+        Some(("lint", m)) => lint(m, err_out),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
@@ -180,7 +209,7 @@ fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     write_stdout(out, &page)
 }
 
-fn lint(m: &ArgMatches) -> Result<u8, CliError> {
+fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     for (name, message) in REMOVED_LINT_OPTIONS {
         if m.contains_id(name) {
             return Err(CliError::new("removed-option", message));
@@ -215,7 +244,7 @@ fn lint(m: &ArgMatches) -> Result<u8, CliError> {
         stdin,
     });
     for err in &outcome.incomplete {
-        eprintln!("{err}");
+        let _ = writeln!(err_out, "{err}");
     }
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
