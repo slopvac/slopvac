@@ -160,7 +160,7 @@ impl<'a> Syncer<'a> {
     }
 
     /// Files that become executable in a pack's tree, by pack id.
-    // STUB(TBD-plugin-executables): the executable set of a plugin pack comes from
+    // STUB(slopvac-8l4.9.28): the executable set of a plugin pack comes from
     // its `[plugin]` command in the pack manifest. No manifest reader exists yet,
     // so the CLI passes the set in; a pack without an entry has no executables.
     #[must_use]
@@ -250,7 +250,7 @@ impl<'a> Syncer<'a> {
             SourceKind::Oci(text) => self.acquire_oci(pack, text),
             SourceKind::Archive(url) => self.acquire_archive(pack, url),
             SourceKind::Path(rel) => self.acquire_path(pack, rel),
-            // STUB(TBD-git-source): a pinned-commit clone needs a git subprocess or a
+            // STUB(slopvac-8l4.9.27): a pinned-commit clone needs a git subprocess or a
             // new dependency (gitoxide); the brief asks for approval first.
             SourceKind::Git { .. } => Err(SyncError::Unsupported {
                 id: pack.id.clone(),
