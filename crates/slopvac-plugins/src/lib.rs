@@ -12,6 +12,7 @@
 //! trust store lands in its own module.
 
 pub mod api;
+pub mod apply;
 pub mod error;
 pub mod frame;
 pub mod hooks;

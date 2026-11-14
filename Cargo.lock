@@ -2126,15 +2126,18 @@ name = "slopvac-plugins"
 version = "0.0.0"
 dependencies = [
  "base64",
+ "cap-std",
  "crossbeam-channel",
  "rustix",
  "semver",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
  "toml",
  "ureq",
+ "winapi-util",
 ]
 
 [[package]]
