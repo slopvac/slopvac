@@ -42,6 +42,9 @@ Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
 
+# Product names in the built-in terms list (crates/slopvac-terms/data/builtin.toml).
+AKS = "AKS"
+
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).
 extend-ignore-re = ["\\b[0-9a-f]{10,40}\\b"]
