@@ -124,6 +124,12 @@ pub const FIXTURES: &[Fixture] = &[
         expected: &[(Block, "a"), (Line, "b"), (Block, "c")],
     },
     Fixture {
+        name: "c line comment continued by a backslash stays whole",
+        language: Language::C,
+        source: "// first \\\n second\nint x;\n",
+        expected: &[(Line, "first \\ second")],
+    },
+    Fixture {
         name: "cpp",
         language: Language::Cpp,
         source: "/// doc\n// plain\nint f();\n",

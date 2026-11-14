@@ -53,6 +53,14 @@ pub enum ExtractError {
         /// The budget, in tree-sitter progress checks (one per 100 parser operations).
         budget: usize,
     },
+    /// The lexer read more bytes than the budget allows, so the file is incomplete.
+    #[error("parsing the {language} source passed its read budget of {budget} bytes")]
+    ReadBudget {
+        /// The language that was parsed.
+        language: &'static str,
+        /// The budget, in bytes handed to the lexer across all reads.
+        budget: usize,
+    },
     /// Walking the syntax tree used more steps than the budget allows.
     #[error("walking the syntax tree passed its budget of {budget} steps")]
     WalkBudget {
@@ -73,6 +81,10 @@ pub struct Limits {
     /// at most `len / 60`, so the default leaves a wide margin and still stops a
     /// quadratic parse, such as a long run of unterminated `/*` in C, early.
     pub max_parse_checks: Option<usize>,
+    /// The most bytes the lexer may be handed in total, counting every re-read. `None`
+    /// allows `64 * len + 64 KiB`. A lexer that scans to the end of the file after each
+    /// of many unmatched `/*` reads far more than that.
+    pub max_read_bytes: Option<usize>,
     /// The most node visits the walk may use. `None` allows `1024 + 8 * len`.
     pub max_walk_steps: Option<usize>,
 }
@@ -82,6 +94,7 @@ impl Default for Limits {
         Self {
             max_bytes: 64 * 1024 * 1024,
             max_parse_checks: None,
+            max_read_bytes: None,
             max_walk_steps: None,
         }
     }
@@ -92,6 +105,8 @@ impl Default for Limits {
 pub struct Stats {
     /// Progress checks tree-sitter made while parsing.
     pub parse_checks: usize,
+    /// Bytes handed to the lexer, counting re-reads.
+    pub read_bytes: usize,
     /// Node visits and child inspections in the walk.
     pub walk_steps: usize,
 }
@@ -104,6 +119,9 @@ pub struct Extraction {
     /// Work used.
     pub stats: Stats,
 }
+
+/// The most bytes one read hands to the lexer.
+const READ_CHUNK: usize = 4096;
 
 /// A step counter with a ceiling.
 pub(crate) struct Meter {
@@ -144,49 +162,7 @@ pub fn extract_with(
             max: limits.max_bytes,
         });
     }
-    let grammar = language.grammar().ok_or(ExtractError::Disabled {
-        language: language.name(),
-        feature: language.feature(),
-    })?;
-    let mut parser = Parser::new();
-    parser
-        .set_language(&grammar)
-        .map_err(|source| ExtractError::Grammar {
-            language: language.name(),
-            source,
-        })?;
-
-    // A lone CR ends a line, but several lexers look for LF only and would read the next
-    // line as part of the comment. Parse a view with the same byte offsets and LF there.
-    let view = line_feed_view(source);
-    let bytes: &[u8] = &view;
-    let budget = limits.max_parse_checks.unwrap_or(256 + source.len() / 4);
-    let mut parse_checks = 0;
-    let mut progress = |_: &tree_sitter::ParseState| {
-        parse_checks += 1;
-        if parse_checks > budget {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    };
-    let tree = parser.parse_with_options(
-        &mut |offset, _| bytes.get(offset..).unwrap_or_default(),
-        None,
-        Some(ParseOptions::new().progress_callback(&mut progress)),
-    );
-    let Some(tree) = tree else {
-        return Err(if parse_checks > budget {
-            ExtractError::ParseBudget {
-                language: language.name(),
-                budget,
-            }
-        } else {
-            ExtractError::Parse {
-                language: language.name(),
-            }
-        });
-    };
+    let (tree, parse_checks, read_bytes) = parse(language, source, limits)?;
 
     let syntax = language.syntax();
     let mut meter = Meter {
@@ -229,9 +205,89 @@ pub fn extract_with(
         fragments: group(source, pieces, !syntax.leaders.is_empty()),
         stats: Stats {
             parse_checks,
+            read_bytes,
             walk_steps: meter.steps,
         },
     })
+}
+
+/// Parse `source` under the parse and read budgets. Returns the tree and the work used.
+fn parse(
+    language: Language,
+    source: &str,
+    limits: &Limits,
+) -> Result<(tree_sitter::Tree, usize, usize), ExtractError> {
+    let grammar = language.grammar().ok_or(ExtractError::Disabled {
+        language: language.name(),
+        feature: language.feature(),
+    })?;
+    let mut parser = Parser::new();
+    parser
+        .set_language(&grammar)
+        .map_err(|source| ExtractError::Grammar {
+            language: language.name(),
+            source,
+        })?;
+
+    // A lone CR ends a line, but several lexers look for LF only and would read the next
+    // line as part of the comment. Parse a view with the same byte offsets and LF there.
+    let view = line_feed_view(source);
+    let bytes: &[u8] = &view;
+    let budget = limits.max_parse_checks.unwrap_or(256 + source.len() / 4);
+    let mut parse_checks = 0;
+    let mut progress = |_: &tree_sitter::ParseState| {
+        parse_checks += 1;
+        if parse_checks > budget {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    };
+    // Hand the lexer small chunks and charge each one. tree-sitter lexes before it checks
+    // progress, so a lexer that rescans the rest of the file would otherwise go uncharged.
+    let read_budget = limits
+        .max_read_bytes
+        .unwrap_or(64 * source.len() + 64 * 1024);
+    let mut read_bytes = 0;
+    let mut read_exceeded = false;
+    let mut read = |offset: usize, _: tree_sitter::Point| -> &[u8] {
+        // End the chunk on a code point boundary: some scanners misread a split character.
+        let mut end = (offset + READ_CHUNK).min(bytes.len());
+        while end > offset && !source.is_char_boundary(end) {
+            end -= 1;
+        }
+        let chunk = bytes.get(offset..end).unwrap_or_default();
+        read_bytes += chunk.len();
+        if read_bytes > read_budget {
+            read_exceeded = true;
+            return &[];
+        }
+        chunk
+    };
+    let tree = parser.parse_with_options(
+        &mut read,
+        None,
+        Some(ParseOptions::new().progress_callback(&mut progress)),
+    );
+    if read_exceeded {
+        return Err(ExtractError::ReadBudget {
+            language: language.name(),
+            budget: read_budget,
+        });
+    }
+    let Some(tree) = tree else {
+        return Err(if parse_checks > budget {
+            ExtractError::ParseBudget {
+                language: language.name(),
+                budget,
+            }
+        } else {
+            ExtractError::Parse {
+                language: language.name(),
+            }
+        });
+    };
+    Ok((tree, parse_checks, read_bytes))
 }
 
 /// `source` with each lone CR replaced by LF. Both are one byte, so offsets hold.
@@ -280,7 +336,10 @@ fn push_comment<'a>(
     let multi_line = source.as_bytes()[range.clone()]
         .iter()
         .any(|&byte| matches!(byte, b'\n' | b'\r'));
-    if !(whole.groupable && multi_line) {
+    if !(whole.groupable
+        && multi_line
+        && strip::every_line_has_marker(source, range.start, range.end, syntax))
+    {
         pieces.push(Piece::new(source, &range, whole));
         return;
     }

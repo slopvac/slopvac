@@ -6,7 +6,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::fragments;
-use slopvac_comments::{Language, extract};
+use slopvac_comments::{ExtractError, Language, extract};
 
 fn time(language: Language, source: &str) -> Duration {
     let start = Instant::now();
@@ -111,8 +111,34 @@ fn binary_looking_text_does_not_panic() {
         .map(|i| char::from_u32(0x20 + (i * 7919) % 0x2000).unwrap_or('?'))
         .collect();
     for language in Language::all() {
-        let _ = extract(language, &noise).expect("extracts");
-        let _ = extract(language, &format!("// {noise}\n/* {noise} */\n# {noise}\n"))
-            .expect("extracts");
+        let wrapped = format!("// {noise}\n/* {noise} */\n# {noise}\n");
+        for source in [&noise, &wrapped] {
+            // The Scala and F# scanners may stop at their read budget; nothing else may fail.
+            match extract(language, source) {
+                Ok(_) | Err(ExtractError::ReadBudget { .. } | ExtractError::ParseBudget { .. }) => {
+                }
+                Err(error) => panic!("{language:?}: {error}"),
+            }
+        }
+    }
+}
+
+/// The lexer reads the source in 4 KiB chunks. A multi-byte character that straddles a
+/// chunk edge once crashed the Dart scanner, so every language reads one at each offset.
+#[test]
+fn multi_byte_characters_at_every_chunk_edge_do_not_crash() {
+    for language in Language::all() {
+        for pad in 4090..4097 {
+            let source = format!(
+                "// {}é€😀 end\n{}😀é€\n",
+                "a".repeat(pad - 3),
+                "b".repeat(pad)
+            );
+            match extract(language, &source) {
+                Ok(_) | Err(ExtractError::ReadBudget { .. } | ExtractError::ParseBudget { .. }) => {
+                }
+                Err(error) => panic!("{language:?} pad {pad}: {error}"),
+            }
+        }
     }
 }

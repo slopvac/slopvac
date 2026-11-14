@@ -252,3 +252,21 @@ pub(crate) fn string_literal(source: &str, start: usize, end: usize) -> Option<D
         lines: interior(source, content_start.min(content_end), content_end, false),
     })
 }
+
+/// Whether every physical line of `start..end` begins with a line marker. A grammar that
+/// merges a run of line comments into one node (Haskell, Dart) gives such a node. A C
+/// comment continued by a backslash does not: its second line has no marker.
+pub(crate) fn every_line_has_marker(
+    source: &str,
+    start: usize,
+    end: usize,
+    syntax: &Syntax,
+) -> bool {
+    let bytes = source.as_bytes();
+    split_lines(bytes, start, end).into_iter().all(|line| {
+        let at = skip_blank(bytes, line.start, line.end);
+        source
+            .get(at..line.end)
+            .is_some_and(|rest| syntax.line.iter().any(|marker| rest.starts_with(marker)))
+    })
+}
