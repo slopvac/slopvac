@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::go_unicode;
+
 /// Why a model file was rejected.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
@@ -322,17 +324,18 @@ fn prefix_chars(word: &str, n: usize) -> &str {
 
 /// Casing and makeup of a word in a few letters: `Xx` capitalized, `XX` all
 /// capitals, `xx` lower case, `xX` mixed, `d` digits, `p` punctuation, `o`
-/// anything else.
+/// anything else. Character classes are Go's (`unicode.IsUpper` and so on),
+/// not Rust's.
 fn shape(word: &str) -> &'static str {
     let (mut upper, mut lower, mut digit, mut punct) = (0_usize, 0_usize, 0_usize, 0_usize);
     for c in word.chars() {
-        if c.is_uppercase() {
+        if go_unicode::is_upper(c) {
             upper += 1;
-        } else if c.is_lowercase() {
+        } else if go_unicode::is_lower(c) {
             lower += 1;
-        } else if is_decimal_digit(c) {
+        } else if go_unicode::is_digit(c) {
             digit += 1;
-        } else if !c.is_alphanumeric() && !c.is_whitespace() && !c.is_control() {
+        } else if go_unicode::is_punct_or_symbol(c) {
             punct += 1;
         }
     }
@@ -350,31 +353,11 @@ fn shape(word: &str) -> &'static str {
         "XX"
     } else if upper == 0 {
         "xx"
-    } else if upper == 1 && word.chars().next().is_some_and(char::is_uppercase) {
+    } else if upper == 1 && word.chars().next().is_some_and(go_unicode::is_upper) {
         "Xx"
     } else {
         "xX"
     }
-}
-
-/// Start of every run of ten decimal digits (Unicode category Nd), from
-/// Unicode 16.0. Go's `unicode.IsDigit` is exactly Nd; Rust's `is_numeric` also
-/// takes superscripts, fractions and roman numerals (Nl, No).
-const DIGIT_RUN_STARTS: [u32; 76] = [
-    0x30, 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66,
-    0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0, 0x1a80, 0x1a90,
-    0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0, 0xa9f0, 0xaa50, 0xabf0, 0xff10,
-    0x104a0, 0x10d30, 0x10d40, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0, 0x11450, 0x114d0,
-    0x11650, 0x116c0, 0x116d0, 0x116da, 0x11730, 0x118e0, 0x11950, 0x11bf0, 0x11c50, 0x11d50,
-    0x11da0, 0x11f50, 0x16130, 0x16a60, 0x16ac0, 0x16b50, 0x16d70, 0x1ccf0, 0x1d7ce, 0x1d7d8,
-    0x1d7e2, 0x1d7ec, 0x1d7f6, 0x1e140, 0x1e2f0, 0x1e4f0, 0x1e5f1, 0x1e950, 0x1fbf0,
-];
-
-/// Whether `c` is a decimal digit, as Go's `unicode.IsDigit` (category Nd).
-fn is_decimal_digit(c: char) -> bool {
-    let c = u32::from(c);
-    let idx = DIGIT_RUN_STARTS.partition_point(|&start| start <= c);
-    idx > 0 && c - DIGIT_RUN_STARTS[idx - 1] < 10
 }
 
 /// Maps a word onto the form the model was trained against.
@@ -394,9 +377,7 @@ fn normalize(word: &str) -> String {
     // Go lower-cases rune by rune with the simple mapping (`unicode.ToLower`):
     // U+0130 becomes `i`, and a capital sigma is never the final sigma. Rust's
     // `str::to_lowercase` would expand the first and contextualise the second.
-    word.chars()
-        .map(|c| c.to_lowercase().next().unwrap_or(c))
-        .collect()
+    word.chars().map(go_unicode::to_lower).collect()
 }
 
 /// Whether `s` is an optional sign followed by at least one ASCII digit (what
@@ -535,16 +516,15 @@ mod tests {
             ("\u{ff11}\u{ff12}", "d"),
             ("\u{b2}", "o"),
             ("\u{bd}", "o"),
+            ("\u{2167}", "o"),
+            ("\u{24b6}", "p"),
+            ("\u{1c5}", "o"),
+            ("\u{1c5}a", "xx"),
+            ("A\u{2167}", "XX"),
+            ("Ab\u{2167}", "Xx"),
+            ("\u{2167}A", "XX"),
         ] {
             assert_eq!(shape(word), want, "{word}");
         }
-    }
-
-    #[test]
-    fn decimal_digit_runs_cover_exactly_ten_code_points() {
-        assert!(is_decimal_digit('0') && is_decimal_digit('9'));
-        assert!(!is_decimal_digit('/') && !is_decimal_digit(':'));
-        assert!(is_decimal_digit('\u{669}') && !is_decimal_digit('\u{66a}'));
-        assert!(is_decimal_digit('\u{1fbf9}') && !is_decimal_digit('\u{1fbfa}'));
     }
 }

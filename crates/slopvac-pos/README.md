@@ -75,9 +75,11 @@ Vale 3.27 or later.
 - The emoticon shortcut (`:)` tagged `SYM`) is not ported.
 - Only the rune-template Penn model that ships here is accepted.
 - `-LRB-` and `-RRB-` are the only bracket literals pinned to their own tag.
-- Word shape uses Rust's upper- and lower-case properties. Go uses the
-  categories Lu and Ll, so a few letter-like symbols (roman numerals, circled
-  letters) shape differently. Decimal digits and lower-casing follow Go.
+
+Character classes (upper, lower, digit, punctuation and symbol) follow Go, not
+Rust: they come from tables generated from Go's `unicode` package, Unicode
+17.0.0, the version in Vale 3.27's Go 1.27.3. `tools/gen_unicode_tables.py`
+writes them, and its `--check` mode detects drift; it needs Go.
 
 ## Licence
 

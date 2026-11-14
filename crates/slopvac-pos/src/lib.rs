@@ -22,8 +22,10 @@
 //! - Only the English rune-template Penn model is supported; other models are
 //!   rejected by [`Tagger::from_model_bytes`].
 
+mod go_unicode;
 mod model;
 mod tokenize;
+mod unicode_tables;
 
 use std::ops::Range;
 use std::sync::OnceLock;

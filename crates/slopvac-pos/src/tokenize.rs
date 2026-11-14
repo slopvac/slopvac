@@ -65,6 +65,8 @@ pub(crate) fn tokenize(text: &str) -> Vec<Token> {
     let mut spans = Vec::new();
     let mut chunk_start: Option<usize> = None;
     for (pos, c) in work.char_indices() {
+        // Rust's White_Space set equals Go's unicode.IsSpace (checked over all
+        // code points against Go 1.27.4), which prose splits on.
         if c.is_whitespace() {
             flush(&work, &mut chunk_start, pos, &mut spans);
         } else if chunk_start.is_none() {
