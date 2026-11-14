@@ -714,6 +714,40 @@ fn standard_output_ending_before_the_exit_does_not_spoil_a_clean_shutdown() {
     assert!(start("eof-before-exit").shutdown().clean());
 }
 
+/// plugin-protocol.md section 3: after `shutdown` and `exit` a plugin exits with status 0.
+#[test]
+fn a_plugin_that_acknowledges_shutdown_and_then_exits_3_has_not_shut_down_cleanly() {
+    let out = start("exit-3").shutdown();
+    assert!(out.acknowledged && out.left, "{out:?}");
+    assert_eq!(out.status.and_then(|s| s.code()), Some(3), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+
+#[test]
+fn a_plugin_that_refuses_shutdown_has_not_shut_down_cleanly_even_if_it_exits_0() {
+    let out = start("refuse-shutdown").shutdown();
+    assert!(!out.acknowledged, "{out:?}");
+    assert!(out.left, "{out:?}");
+    assert_eq!(out.status.and_then(|s| s.code()), Some(0), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+
+#[test]
+fn a_plugin_that_ended_before_shutdown_has_not_shut_down_cleanly_even_with_status_0() {
+    // The leader exits 0 after `initialized`; its child keeps standard output open.
+    let p = start("orphan-init");
+    let end = Instant::now() + NO_HANG;
+    while p.failure().is_none() {
+        assert!(Instant::now() < end, "the exit was never reported");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let out = p.shutdown();
+    assert!(!out.acknowledged, "{out:?}");
+    assert!(out.left, "{out:?}");
+    assert_eq!(out.status.and_then(|s| s.code()), Some(0), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+
 #[test]
 fn h1_a_frame_sent_with_the_initialize_reply_meets_the_negotiated_limit() {
     // One write holds the reply and an unsolicited notification of `size`

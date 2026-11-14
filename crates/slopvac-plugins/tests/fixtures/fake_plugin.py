@@ -270,6 +270,9 @@ while True:
     elif method == "shutdown":
         if mode == "ignore-shutdown":
             time.sleep(300)
+        if mode == "refuse-shutdown":
+            error(id_, -32603, "internal-error")
+            continue
         shut = True
         result(id_, None)
     elif method == "exit":
@@ -283,6 +286,10 @@ while True:
             while inp.read(65536):
                 pass
             time.sleep(0.3)
+        if mode == "exit-3":
+            sys.exit(3)
+        if mode == "refuse-shutdown":
+            sys.exit(0)
         sys.exit(0 if shut else 1)
     elif method == "$/cancelRequest":
         if mode in ("cancel-ok", "ids-cancel") and pending_tag is not None:

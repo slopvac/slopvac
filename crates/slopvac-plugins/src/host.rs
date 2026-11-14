@@ -18,7 +18,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -930,10 +930,13 @@ impl Plugin {
         // A descendant that left the group is lost to the final walk once its
         // parent exits, so it goes now. No snapshot is kept across the waits.
         shared.group.kill_strays();
+        // A plugin that a failure already ended is not asked.
+        let mut acknowledged = false;
         if self.conn.dead().is_none() {
-            let _ = self
+            acknowledged = self
                 .conn
-                .request("shutdown", None, self.timeouts.shutdown, false);
+                .request("shutdown", None, self.timeouts.shutdown, false)
+                .is_ok_and(|v| v.is_null());
             let _ = self.conn.notify("exit", None, self.timeouts.exit);
         }
         // Closing the pipe ends the writer after it flushes `exit`.
@@ -943,7 +946,9 @@ impl Plugin {
         let left = exited && !shared.group.forced();
         shared.group.kill();
         Shutdown {
+            acknowledged,
             left,
+            status: shared.group.exit_status(),
             teardown: shared.group.teardown(),
         }
     }
@@ -959,18 +964,28 @@ impl Plugin {
 /// How [`Plugin::shutdown`] ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shutdown {
+    /// The plugin answered `shutdown` with `null`, and no failure had ended
+    /// it before.
+    pub acknowledged: bool,
     /// The plugin left on its own, without a kill.
     pub left: bool,
+    /// The leader's exit status, or `None` if it was not reaped by the end
+    /// of the shutdown or the wait for it failed.
+    pub status: Option<ExitStatus>,
     /// What the teardowns left undone.
     pub teardown: Teardown,
 }
 
 impl Shutdown {
-    /// The plugin left on its own and the teardowns left nothing running
-    /// that they found.
+    /// The plugin answered `shutdown`, left on its own with status 0
+    /// (plugin-protocol.md section 3), and the teardowns left nothing
+    /// running that they found.
     #[must_use]
     pub fn clean(&self) -> bool {
-        self.left && self.teardown.is_complete()
+        self.acknowledged
+            && self.left
+            && self.status.is_some_and(|s| s.success())
+            && self.teardown.is_complete()
     }
 }
 

@@ -143,8 +143,9 @@ pub struct TableSource {
 
 #[derive(Default)]
 struct State {
-    /// The leader's exit status, once it is reaped. No kill runs after that.
-    status: Option<String>,
+    /// How the reap of the leader went: its exit status, or why the wait
+    /// failed. No kill runs once this is set.
+    reaped: Option<Result<ExitStatus, String>>,
     /// A kill ran before the leader was reaped.
     forced: bool,
     /// The kill teardown ran. It runs once: what it found is killed and
@@ -192,7 +193,7 @@ impl Group {
             Err(TryLockError::Poisoned(p)) => p.into_inner(),
             Err(TryLockError::WouldBlock) => return,
         };
-        if st.status.is_none() {
+        if st.reaped.is_none() {
             stop_group(self.pid);
         }
     }
@@ -203,7 +204,7 @@ impl Group {
     /// Blocks while another teardown or the reap is in flight.
     pub(crate) fn kill(&self) {
         let mut st = lock(&self.state);
-        if st.status.is_none() {
+        if st.reaped.is_none() {
             st.forced = true;
             self.kill_once(&mut st);
         }
@@ -226,7 +227,7 @@ impl Group {
     /// the final kill no longer finds it.
     pub(crate) fn kill_strays(&self) {
         let mut st = lock(&self.state);
-        if st.status.is_none() && !st.killed {
+        if st.reaped.is_none() && !st.killed {
             let left = tear_down(self.pid, self.table.as_ref(), Then::Resume);
             st.left.merge(left);
         }
@@ -242,9 +243,20 @@ impl Group {
         lock(&self.state).left.clone()
     }
 
-    /// The leader's exit status, once it is reaped.
+    /// The leader's exit status as text, once it is reaped.
     pub(crate) fn status(&self) -> Option<String> {
-        lock(&self.state).status.clone()
+        lock(&self.state).reaped.as_ref().map(|r| match r {
+            Ok(s) => s.to_string(),
+            Err(e) => format!("wait failed: {e}"),
+        })
+    }
+
+    /// The leader's exit status, once it is reaped, unless the wait failed.
+    pub(crate) fn exit_status(&self) -> Option<ExitStatus> {
+        lock(&self.state)
+            .reaped
+            .as_ref()
+            .and_then(|r| r.as_ref().ok().copied())
     }
 
     /// End the group after its leader exited: kill everything still in it
@@ -256,7 +268,7 @@ impl Group {
         {
             let mut st = lock(&self.state);
             self.kill_once(&mut st);
-            st.status = Some(leader.reap());
+            st.reaped = Some(leader.reap());
         }
         lock(&LIVE).retain(|g| !std::ptr::eq(Arc::as_ptr(g), self));
         lock(&self.state).done = true;
@@ -338,17 +350,15 @@ impl Leader {
         self.exited = Some(self.child.wait());
     }
 
-    /// Reap the leader and release its ids. Returns the exit status as text.
-    fn reap(mut self) -> String {
+    /// Reap the leader and release its ids. Returns the exit status, or why
+    /// the wait failed.
+    fn reap(mut self) -> Result<ExitStatus, String> {
         let status = match self.exited.take() {
             Some(s) => s,
             None => self.child.wait(),
         };
         drop(self.child);
-        match status {
-            Ok(s) => s.to_string(),
-            Err(e) => format!("wait failed: {e}"),
-        }
+        status.map_err(|e| e.to_string())
     }
 }
 
