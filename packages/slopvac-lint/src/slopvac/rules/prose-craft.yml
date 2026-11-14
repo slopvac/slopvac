@@ -360,6 +360,12 @@ rules:
         ("lists where each buffer will be freed", "the files that will be
         visible to the installer"), and rewriting them in the present tense
         blurs when the step happens.
+        PCRE2 port, 2026-11: the lookbehinds are bounded because PCRE2 rejects
+        unbounded ones. The exception now covers `that` plus 1-3 whitespace
+        characters, and which/where/when/what plus at most two words of up to 40
+        characters each, with 1-3 whitespace characters between them. A longer gap
+        or a longer word no longer suppresses the finding. This narrowing is
+        intended; prose that wide is rare, and a finding there is acceptable.
 
   - id: gerund-heading
     name: Use the imperative in a task heading

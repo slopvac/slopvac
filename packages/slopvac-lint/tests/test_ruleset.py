@@ -265,6 +265,10 @@ def _pcre2_problems(source: str) -> list[str]:
             in_class = char != "]"
         elif char == "[":
             in_class = True
+            # A `]` first in the class, or right after `^`, is a literal member.
+            start = i + (2 if source.startswith("[^", i) else 1)
+            if source.startswith("]", start):
+                i = start
         elif char == "(":
             depth += 1
             if source.startswith(("(?<=", "(?<!"), i):
@@ -290,6 +294,9 @@ def _pcre2_problems(source: str) -> list[str]:
         (r"(?<=a{2,})x", 1),
         (r"(?<=[+*]a)x\s+", 0),
         (r"x+(?<=a)", 0),
+        (r"(?<=[])]a+)x", 1),
+        (r"(?<=[^])]a+)x", 1),
+        (r"(?<=[]]a)x+", 0),
         (r"[\u2014]", 1),
         (r"\\u2014", 0),
         ("\u2014 [\U0001F300-\U0001FAFF]", 0),
@@ -297,6 +304,34 @@ def _pcre2_problems(source: str) -> list[str]:
 )
 def test_pcre2_guard_flags_only_pcre2_incompatible_syntax(source, expected):
     assert len(_pcre2_problems(source)) == expected
+
+
+def _future_tense_fires(text: str, ruleset) -> bool:
+    rule = next(r for r in ruleset.rules if r.qualified_id == "prose-craft.future-tense")
+    return bool(rule_pattern(rule).search(text))
+
+
+@pytest.mark.parametrize(
+    ("text", "fires"),
+    [
+        # The clause exception skips `will be` after `that` + 1-3 whitespace chars.
+        ("The files that   will be visible.", False),
+        ("The files that    will be visible.", True),
+        # After which/where/when/what, the gap before `will` is 1-3 whitespace chars.
+        ("It lists where   each will be freed.", False),
+        ("It lists where    each will be freed.", True),
+        ("It lists where each   will be freed.", False),
+        ("It lists where each    will be freed.", True),
+        # Each intervening word is at most 40 characters.
+        (f"It lists where {'a' * 40} will be freed.", False),
+        (f"It lists where {'a' * 41} will be freed.", True),
+        # At most two intervening words.
+        ("It lists where each buffer will be freed.", False),
+        ("It lists where each old buffer will be freed.", True),
+    ],
+)
+def test_future_tense_clause_exception_is_bounded(ruleset, text, fires):
+    assert _future_tense_fires(text, ruleset) is fires
 
 
 def test_every_lexical_pattern_is_pcre2_compatible(ruleset):
