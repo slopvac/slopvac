@@ -6,6 +6,7 @@
 //! finding carries; a metric finding has a line and no source range, as in 2.x.
 
 use std::cell::OnceCell;
+use std::ops::Range;
 
 use slopvac_model::Span;
 use slopvac_parse::{BlockKind, Document as Parsed};
@@ -24,8 +25,27 @@ use crate::prepare::Prepared;
 pub(crate) struct Unit {
     /// Where it sits in the source.
     pub(crate) span: Span,
-    /// Its projected text.
+    /// The projected text that holds it: its block.
     pub(crate) text: String,
+    /// The part of `text` that the measurement covers, without the quotation marks and the
+    /// closing punctuation that wrap a quoted unit, so that a quotation detector sees a
+    /// range inside the marks.
+    pub(crate) range: Range<usize>,
+}
+
+/// `range` in `text` without the opening quotation marks and the closing marks and
+/// sentence punctuation around it.
+fn interior(text: &str, range: Range<usize>) -> Range<usize> {
+    let inner = &text[range.clone()];
+    let head = inner.len() - inner.trim_start_matches(['"', '“', '‘', '\'']).len();
+    let tail = inner
+        .trim_end_matches(['"', '”', '’', '\'', '.', '!', '?', ',', ';', ':'])
+        .len();
+    if head < tail {
+        range.start + head..range.start + tail
+    } else {
+        range
+    }
 }
 
 /// A measurement over the threshold.
@@ -77,10 +97,11 @@ const fn word_cap(text_type: TextType) -> f64 {
     }
 }
 
-/// A threshold as a whole number, as 2.x shows it.
-#[allow(clippy::cast_possible_truncation)]
-fn whole(threshold: f64) -> i64 {
-    threshold as i64
+/// A threshold as a whole number, as 2.x shows it, plus `offset`. It works on the float, so
+/// a threshold beyond the integer range shows in full.
+fn whole(threshold: f64, offset: usize) -> String {
+    // `+ 0.0` turns -0.0, the truncation of -0.5, into 0.0.
+    format!("{:.0}", threshold.trunc() + float(offset) + 0.0)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -257,7 +278,7 @@ impl<'a> Subject<'a> {
         &self,
         cmp: Comparison,
         limit: impl Fn(&slopvac_text::Sentence) -> f64,
-        offset: i64,
+        offset: usize,
         count: impl Fn(&slopvac_text::Sentence) -> Result<Option<usize>, TextError>,
     ) -> Result<Vec<Hit>, TextError> {
         let mut hits = Vec::new();
@@ -272,11 +293,12 @@ impl<'a> Subject<'a> {
                     hits.push(Hit {
                         unit: Some(Unit {
                             span,
-                            text: sentence.text.clone(),
+                            text: block.projection.text().to_owned(),
+                            range: interior(block.projection.text(), sentence.start..sentence.end),
                         }),
                         at: span.start(),
-                        shown: (i64::try_from(n).unwrap_or(i64::MAX) + offset).to_string(),
-                        limit: (whole(limit) + offset).to_string(),
+                        shown: n.saturating_add(offset).to_string(),
+                        limit: whole(limit, offset),
                     });
                 }
             }
@@ -305,10 +327,11 @@ impl<'a> Subject<'a> {
                     unit: Some(Unit {
                         span,
                         text: block.projection.text().to_owned(),
+                        range: interior(block.projection.text(), 0..block.projection.text().len()),
                     }),
                     at: span.start(),
                     shown: n.to_string(),
-                    limit: whole(limit).to_string(),
+                    limit: whole(limit, 0),
                 });
             }
         }

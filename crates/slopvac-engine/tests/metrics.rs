@@ -315,3 +315,87 @@ fn an_exception_detector_drops_the_metric_finding_it_covers() {
     );
     assert_eq!(hits(&doc), [(3, "Got 5 over 3.".to_owned())]);
 }
+fn paragraph_rule(extra: &Value) -> Value {
+    let mut extra = extra.clone();
+    extra["scope"] = json!("paragraph");
+    metric("paragraph_sentences", 2.0, "gt", &extra)
+}
+
+// The first paragraph sits in a section tagged `change-note`, the second does not.
+const SECTIONS: &str =
+    "# Doc\n\n## Breaking changes\n\nOne. Two. Three.\n\n## Other\n\nOne. Two. Three.\n";
+
+#[test]
+fn a_context_gate_selects_the_paragraphs_a_metric_reads() {
+    let skip = paragraph_rule(&json!({"contexts": {"skip": ["change-note"]}}));
+    assert_eq!(
+        hits(&lint(&skip, SECTIONS)),
+        [(9, "Got 3 over 2.".to_owned())]
+    );
+    let only = paragraph_rule(&json!({"contexts": {"only": ["change-note"]}}));
+    assert_eq!(
+        hits(&lint(&only, SECTIONS)),
+        [(5, "Got 3 over 2.".to_owned())]
+    );
+}
+
+#[test]
+fn an_exception_detector_drops_the_paragraph_finding_it_covers() {
+    let rule = paragraph_rule(
+        &json!({"exceptions": [{"name": "change-note", "detector": "change-note"}]}),
+    );
+    assert_eq!(
+        hits(&lint(&rule, SECTIONS)),
+        [(9, "Got 3 over 2.".to_owned())]
+    );
+}
+
+#[test]
+fn an_unguarded_paragraph_rule_reports_both_paragraphs() {
+    let doc = lint(&paragraph_rule(&json!({})), SECTIONS);
+    assert_eq!(hits(&doc).len(), 2);
+}
+
+#[test]
+fn the_quotation_detector_drops_a_metric_finding_for_a_wholly_quoted_sentence() {
+    let rule = metric(
+        "multiword_noun_words",
+        3.0,
+        "gt",
+        &json!({"scope": "sentence",
+                "exceptions": [{"name": "quotation", "detector": "quotation"}]}),
+    );
+    let stack = "The container orchestration platform migration strategy.";
+    let text = format!("Never write \"{stack}\" here.\n\n\"{stack}\"\n\n{stack}\n");
+    let doc = lint(&rule, &text);
+    // Line 1 is one sentence with a quotation inside it; line 3 is wholly quoted.
+    assert_eq!(hits(&doc).iter().map(|h| h.0).collect::<Vec<_>>(), [1, 5]);
+}
+
+#[test]
+fn a_huge_threshold_is_shown_whole_with_the_clause_offset() {
+    // Zero boundaries is below 1e20. The limit is 1e20 + 1 clauses, which f64 cannot tell
+    // from 1e20, and it must not overflow.
+    let rule = metric(
+        "clause_boundaries",
+        1e20,
+        "lt",
+        &json!({"scope": "sentence"}),
+    );
+    let doc = lint(&rule, "One clause only.\n");
+    assert_eq!(
+        hits(&doc),
+        [(1, "Got 1 over 100000000000000000000.".to_owned())]
+    );
+    let rule = metric(
+        "paragraph_sentences",
+        1e20,
+        "lt",
+        &json!({"scope": "paragraph"}),
+    );
+    let doc = lint(&rule, "One. Two.\n");
+    assert_eq!(
+        hits(&doc),
+        [(1, "Got 2 over 100000000000000000000.".to_owned())]
+    );
+}
