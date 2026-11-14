@@ -29,3 +29,4 @@
 "review-provider-bad.toml" = "/review/provider"
 "exclude-empty-pattern.toml" = "/exclude/0"
 "extends-not-array.toml" = "/extends"
+"minimum-severity-bad.toml" = "/categories/ste-words/minimum_severity"

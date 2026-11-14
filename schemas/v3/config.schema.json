@@ -170,7 +170,7 @@
             ]
           },
           "severity_shift": {
-            "description": "Steps to move every rule severity along suggestion, warning, error. Positive is stricter. `off` never moves, and results clamp at the ends.",
+            "description": "Steps to move the inherited severity of each rule along suggestion, warning, error. Inherited means the level from rule definitions, styles and the genre chain. Positive is stricter. A level that a rules or categories entry sets is final and does not move. `off` never moves, and results clamp at the ends.",
             "type": "integer",
             "minimum": -2,
             "maximum": 2
@@ -201,8 +201,8 @@
             "$ref": "#/$defs/RuleLevel"
           },
           "minimum_severity": {
-            "description": "Lowest level that inherited rules in this category may report at.",
-            "$ref": "common.schema.json#/$defs/Severity"
+            "description": "Lowest level that inherited rules in this category may report at. `off` means no floor, and it cancels a floor set in a lower layer.",
+            "$ref": "#/$defs/RuleLevel"
           },
           "max_per_100_words": {
             "description": "Density budget; above it the category fails even with no error finding.",

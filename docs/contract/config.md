@@ -32,8 +32,8 @@ The order comes from the plan, section "Layer order". Environment switches (`SLO
 
 **3.0 requirement.** A higher layer patches a lower one field by field.
 
-- A scalar replaces the lower value.
-- A map merges by key. This covers `rules`, `categories`, `thresholds`, `terms` and `locale`. A higher layer that names one key leaves the others alone.
+- A scalar replaces the lower value. This covers `profile` fields and `locale`.
+- A map merges by key. This covers `rules`, `categories`, `thresholds` and `terms`. A higher layer that names one key leaves the others alone.
 - A list replaces the lower list. This covers `exclude`, `styles`, `terms.allow`, `terms.files`, `terms.blocklists` and `files`. A project that wants the default `exclude` plus one pattern restates the defaults. This matches 2.x, where a user `exclude` replaced the default list (`Config.exclude`) and an override `locale.allow` replaced the project's.
 - An explicit threshold survives a profile change. The resolver picks the final profile across all layers. Then it applies each `thresholds` entry on top, layer by layer (`resolve_for`, which also does this in 2.x).
 - `severity_shift` moves the levels that come from rule definitions, styles and the genre chain. A level that a `rules` or `categories` entry sets is final, and the shift leaves it alone. `off` stays `off`, and the result clamps at `suggestion` and `error`. The numbers for each built-in profile are in the profile mapping (`slopvac-8l4.2.10`).
@@ -140,7 +140,7 @@ Rule and category names change with the pack model. `migrate` maps a 2.x name su
 | Negated globs in `exclude` | preserve | `!pattern` | Copies them. Order matters and is kept. |
 | `categories.<name>` as a bare level | preserve | `categories.<name>` | Renames the category. |
 | `categories.<name>.severity` | preserve | `categories.<name>.severity`, or a bare level when it is the only field | Renames the category. |
-| `categories.<name>.minimum_severity` | preserve | same key | Renames the category. |
+| `categories.<name>.minimum_severity` | preserve | same key, `off` included | Renames the category. In 2.x, `off` sets no floor (`engine.py`, the rank test skips it), and 3.0 gives it the same meaning. |
 | `categories.<name>.max_per_100_words` | preserve | same key | Renames the category. |
 | `categories.<name>.weight` | preserve | same key | Renames the category. |
 | `rules.<id>` as a bare level | preserve | `rules.<qualified id>` | Renames the rule. |
