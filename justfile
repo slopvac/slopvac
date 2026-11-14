@@ -77,6 +77,6 @@ perf-check $BASE="" $SCENARIO="": perf-wait-idle
 contract:
     uv run --extra dev pytest tests/contract
 
-# Build rustdoc for every workspace crate with warnings denied, as CI does.
+# Build rustdoc for every workspace crate with warnings denied.
 doc-rust:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
