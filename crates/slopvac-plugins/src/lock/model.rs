@@ -8,6 +8,9 @@ use semver::Version;
 pub const MAX_LOCK_BYTES: usize = 1024 * 1024;
 /// Most packs in one lock file.
 pub const MAX_PACKS: usize = 1000;
+/// Largest `slopvac_api` value. TOML integers are signed 64-bit, so the file
+/// cannot hold more.
+pub const MAX_API_VERSION: u64 = 9_223_372_036_854_775_807;
 /// Most `requires` entries in one pack.
 pub const MAX_REQUIRES: usize = 256;
 /// Longest string value, in bytes.
@@ -28,11 +31,19 @@ fn is_unsafe(c: char) -> bool {
         )
 }
 
+/// Longest message, in characters. A longer one is cut and ends in `...`, so a
+/// hostile value cannot flood the output.
+const MAX_MESSAGE_CHARS: usize = 512;
+
 /// Replaces unsafe characters (and newlines) with `\u{..}` so that text from a
-/// lock file cannot forge or hide output when it is printed.
+/// lock file cannot forge or hide output when it is printed, and cuts long text.
 pub(super) fn sanitize(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
+    let mut out = String::with_capacity(text.len().min(MAX_MESSAGE_CHARS * 2));
+    for (i, c) in text.chars().enumerate() {
+        if i == MAX_MESSAGE_CHARS {
+            out.push_str("...");
+            break;
+        }
         if is_unsafe(c) {
             let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
         } else {
@@ -110,6 +121,9 @@ impl FromStr for PackId {
     type Err = ValueError;
 
     fn from_str(s: &str) -> Result<Self, ValueError> {
+        if s.len() > MAX_STRING_BYTES {
+            return bad(format!("a pack id is longer than {MAX_STRING_BYTES} bytes"));
+        }
         let mut chars = s.chars();
         let ok = chars.next().is_some_and(|c| c.is_ascii_lowercase())
             && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
@@ -301,6 +315,12 @@ impl FromStr for Source {
 }
 
 fn parse_kind(s: &str) -> Result<SourceKind, ValueError> {
+    if s.len() > MAX_STRING_BYTES {
+        return bad(format!("a source is longer than {MAX_STRING_BYTES} bytes"));
+    }
+    if s.chars().any(is_unsafe) {
+        return bad("a source must not contain control, bidirectional or zero-width characters");
+    }
     let no_space = |rest: &str| !rest.is_empty() && !rest.chars().any(char::is_whitespace);
     let no_credentials = || bad("a source URL must not carry user-info (credentials)");
     if let Some(rest) = s.strip_prefix("oci://") {
@@ -423,8 +443,17 @@ impl Lockfile {
                     format!("`{}` has build metadata", pack.version),
                 ));
             }
-            if pack.slopvac_api < 1 {
-                return Err(LockError::new(at("slopvac_api"), "must be at least 1"));
+            if pack.version.to_string().len() > MAX_STRING_BYTES {
+                return Err(LockError::new(
+                    at("version"),
+                    format!("longer than {MAX_STRING_BYTES} bytes"),
+                ));
+            }
+            if !(1..=MAX_API_VERSION).contains(&pack.slopvac_api) {
+                return Err(LockError::new(
+                    at("slopvac_api"),
+                    format!("must be between 1 and {MAX_API_VERSION}"),
+                ));
             }
             if pack.requires.len() > MAX_REQUIRES {
                 return Err(LockError::new(
@@ -444,7 +473,15 @@ impl Lockfile {
         for pack in &mut packs {
             pack.requires.sort();
         }
-        Ok(Self { packs })
+        let lock = Self { packs };
+        // Escaping can make the canonical text longer than the entries suggest.
+        if lock.to_toml().len() > MAX_LOCK_BYTES {
+            return Err(LockError::new(
+                "",
+                format!("the canonical text is larger than {MAX_LOCK_BYTES} bytes"),
+            ));
+        }
+        Ok(lock)
     }
 
     /// The entries, sorted by id.

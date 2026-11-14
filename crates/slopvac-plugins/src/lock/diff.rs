@@ -3,7 +3,7 @@ use std::fmt;
 
 use semver::Version;
 
-use super::model::{Digest, Lockfile, PackId, Source, sanitize};
+use super::model::{Digest, Lockfile, PackId, Source};
 
 /// One pack as the sync code resolved it, before comparing to the lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,12 +80,7 @@ impl fmt::Display for LockDiff {
                 write!(f, " version {} -> {}", d.locked, d.resolved)?;
             }
             if let Some(d) = &change.source {
-                write!(
-                    f,
-                    " source {} -> {}",
-                    sanitize(&d.locked.to_string()),
-                    sanitize(&d.resolved.to_string())
-                )?;
+                write!(f, " source {} -> {}", d.locked, d.resolved)?;
             }
             if let Some(d) = &change.digest {
                 write!(f, " digest {} -> {}", d.locked, d.resolved)?;

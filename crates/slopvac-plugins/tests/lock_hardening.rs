@@ -1,8 +1,9 @@
 //! Limits, escaping, credentials and construction invariants of the lock model.
 
 use slopvac_plugins::lock::{
-    LockedPack, Lockfile, MAX_LOCK_BYTES, MAX_PACKS, MAX_REQUIRES, MAX_STRING_BYTES, PackId,
-    PackKind, ResolvedPack, Source, Version, diff, parse_version_req,
+    LockedPack, Lockfile, MAX_API_VERSION, MAX_LOCK_BYTES, MAX_PACKS, MAX_REQUIRES,
+    MAX_STRING_BYTES, NotBefore, PackId, PackKind, ResolvedPack, Source, Version, diff,
+    parse_version_req,
 };
 
 const D1: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -105,29 +106,96 @@ fn string_length_cap_covers_requires_items() {
 
 // ---- escaping -------------------------------------------------------------
 
+/// The characters a message must never carry raw, listed apart from the
+/// implementation: C0, DEL, C1, bidirectional controls, zero-width characters,
+/// the BOM and the line and paragraph separators.
+fn is_hostile(c: char) -> bool {
+    matches!(c,
+        '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{61c}' | '\u{200b}'..='\u{200f}'
+        | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
 fn assert_plain(message: &str) {
     assert!(
-        !message
-            .chars()
-            .any(|c| c.is_control() || ('\u{202a}'..='\u{202e}').contains(&c)),
-        "raw control characters in {message:?}"
+        !message.chars().any(is_hostile),
+        "raw hostile character in {message:?}"
+    );
+}
+
+/// (the character as a TOML escape, the escape a message must show)
+const HOSTILE: [(&str, &str); 12] = [
+    ("\\u001b", "\\u{1b}"),
+    ("\\u007f", "\\u{7f}"),
+    ("\\u0085", "\\u{85}"),
+    ("\\u009b", "\\u{9b}"),
+    ("\\u061c", "\\u{61c}"),
+    ("\\u200b", "\\u{200b}"),
+    ("\\u200f", "\\u{200f}"),
+    ("\\u2028", "\\u{2028}"),
+    ("\\u202e", "\\u{202e}"),
+    ("\\u2060", "\\u{2060}"),
+    ("\\u2066", "\\u{2066}"),
+    ("\\ufeff", "\\u{feff}"),
+];
+
+#[test]
+fn every_hostile_class_is_escaped_in_an_invalid_id_error() {
+    for (toml_escape, shown) in HOSTILE {
+        let text =
+            lock_text("packs/x", "").replace("id = \"p\"", &format!("id = \"a{toml_escape}b\""));
+        let err = Lockfile::parse(&text).unwrap_err();
+        assert_plain(&err.message);
+        assert!(
+            err.message.contains(&format!("a{shown}b")),
+            "{shown}: {err}"
+        );
+    }
+}
+
+#[test]
+fn every_hostile_class_is_escaped_in_an_unknown_key_error() {
+    for (toml_escape, shown) in HOSTILE {
+        let text = format!("schema_version = 3\npacks = []\n\"k{toml_escape}\" = 1\n");
+        let err = Lockfile::parse(&text).unwrap_err();
+        assert_plain(&err.message);
+        assert!(err.message.contains(&format!("k{shown}")), "{shown}: {err}");
+    }
+}
+
+#[test]
+fn every_hostile_class_is_escaped_in_an_invalid_not_before_error() {
+    for (toml_escape, shown) in HOSTILE {
+        let sig = format!(
+            "[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00{toml_escape}Z\"\n"
+        );
+        let err = Lockfile::parse(&lock_text("packs/x", &sig)).unwrap_err();
+        assert_eq!(err.pointer, "/packs/0/signature/not_before");
+        assert_plain(&err.message);
+        assert!(
+            err.message.contains(&format!("00{shown}Z")),
+            "{shown}: {err}"
+        );
+    }
+}
+
+#[test]
+fn not_before_value_error_is_escaped_when_parsed_directly() {
+    let err = "2026\u{202e}-11-01T00:00:00Z"
+        .parse::<NotBefore>()
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "`2026\\u{202e}-11-01T00:00:00Z` is not a UTC time (`YYYY-MM-DDTHH:MM:SSZ`, calendar-valid)"
     );
 }
 
 #[test]
-fn unknown_key_with_escape_sequence_is_escaped_in_the_error() {
-    let text = "schema_version = 3\npacks = []\n\"a\\u001b[31mred\" = 1\n";
-    let err = Lockfile::parse(text).unwrap_err();
-    assert_plain(&err.message);
-    assert!(err.message.contains("a\\u{1b}[31mred"), "{err}");
-}
-
-#[test]
-fn invalid_value_with_bidi_override_is_escaped_in_the_error() {
-    let text = lock_text("packs/x", "").replace("id = \"p\"", "id = \"a\\u202Eb\"");
+fn a_long_rejected_value_is_cut_in_the_error() {
+    let text = lock_text("packs/x", "").replace(D1, &"f".repeat(100_000));
     let err = Lockfile::parse(&text).unwrap_err();
-    assert_plain(&err.message);
-    assert!(err.message.contains("a\\u{202e}b"), "{err}");
+    assert_eq!(err.pointer, "/packs/0/digest");
+    assert!(err.message.len() < 700, "{} bytes", err.message.len());
+    assert!(err.message.ends_with("..."));
 }
 
 #[test]
@@ -138,20 +206,107 @@ fn newline_in_a_rejected_value_cannot_forge_a_second_line() {
 }
 
 #[test]
-fn drift_message_escapes_control_characters_in_sources() {
-    let text = lock_text("X", "").replace("'X'", "\"packs/a\\u001b[2Jb\"");
-    let lock = Lockfile::parse(&text).unwrap();
-    let resolved = ResolvedPack {
-        id: "p".parse().unwrap(),
-        version: Version::new(1, 0, 0),
-        source: "packs/c\u{202e}d".parse().unwrap(),
-        digest: D1.parse().unwrap(),
-    };
-    let message = diff(&lock, &[resolved]).to_string();
-    assert_plain(message.trim_end());
+fn sources_of_every_kind_reject_hostile_characters() {
+    for c in [
+        "\u{1b}", "\u{7f}", "\u{85}", "\u{202e}", "\u{200b}", "\u{feff}", "\u{2066}",
+    ] {
+        for source in [
+            format!("oci://ghcr.io/a{c}b:1"),
+            format!("https://example.org/a{c}b"),
+            format!("git+https://example.org/a{c}b@{COMMIT}"),
+            format!("packs/a{c}b"),
+        ] {
+            assert!(source.parse::<Source>().is_err(), "accepted {source:?}");
+        }
+    }
+}
+
+#[test]
+fn a_source_displays_as_the_text_it_was_parsed_from() {
+    let git = format!("git+https://example.org/a@{COMMIT}");
+    for text in [
+        "oci://ghcr.io/a/b:1",
+        "https://example.org/a.tgz",
+        git.as_str(),
+        "packs/local",
+    ] {
+        assert_eq!(text.parse::<Source>().unwrap().to_string(), text);
+    }
+}
+
+// ---- the constructor enforces the reader's limits ------------------------------
+
+#[test]
+fn pack_id_and_source_parsers_apply_the_string_cap() {
+    assert!("a".repeat(MAX_STRING_BYTES).parse::<PackId>().is_ok());
+    assert!("a".repeat(MAX_STRING_BYTES + 1).parse::<PackId>().is_err());
+    assert!("a".repeat(MAX_STRING_BYTES).parse::<Source>().is_ok());
+    assert!("a".repeat(MAX_STRING_BYTES + 1).parse::<Source>().is_err());
+}
+
+#[test]
+fn new_rejects_a_version_over_the_string_cap() {
+    let mut pack = locked("p");
+    pack.version = Version::parse(&format!("1.0.0-{}", "a".repeat(MAX_STRING_BYTES))).unwrap();
     assert_eq!(
-        message,
-        "changed: p source packs/a\\u{1b}[2Jb -> packs/c\\u{202e}d\n"
+        Lockfile::new(vec![pack]).unwrap_err().pointer,
+        "/packs/0/version"
+    );
+}
+
+#[test]
+fn a_file_with_a_version_over_the_string_cap_is_refused() {
+    let long = format!("1.0.0-{}", "a".repeat(MAX_STRING_BYTES));
+    let text = lock_text("packs/x", "").replace("\"1.0.0\"", &format!("\"{long}\""));
+    assert_eq!(
+        Lockfile::parse(&text).unwrap_err().pointer,
+        "/packs/0/version"
+    );
+}
+
+/// 4,094 quotes make a valid source that is escaped to twice its size on write.
+fn quoted_source() -> Source {
+    format!("p/{}", "\"".repeat(MAX_STRING_BYTES - 2))
+        .parse()
+        .unwrap()
+}
+
+fn packs_with_quoted_sources(n: usize) -> Vec<LockedPack> {
+    (0..n)
+        .map(|i| {
+            let mut pack = locked(&format!("p{i}"));
+            pack.source = quoted_source();
+            pack
+        })
+        .collect()
+}
+
+#[test]
+fn new_rejects_entries_whose_canonical_text_passes_the_byte_cap() {
+    // 150 x 8 KiB of escaped quotes is about 1.2 MB on output.
+    let err = Lockfile::new(packs_with_quoted_sources(150)).unwrap_err();
+    assert_eq!(err.pointer, "");
+    assert!(err.message.contains("canonical"), "{err}");
+}
+
+#[test]
+fn a_lock_under_the_canonical_cap_is_accepted_and_re_reads() {
+    let lock = Lockfile::new(packs_with_quoted_sources(100)).unwrap();
+    assert!(lock.to_toml().len() <= MAX_LOCK_BYTES);
+    assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
+}
+
+#[test]
+fn api_version_stops_at_the_largest_toml_integer() {
+    assert_eq!(MAX_API_VERSION, u64::try_from(i64::MAX).unwrap());
+    let mut pack = locked("p");
+    pack.slopvac_api = MAX_API_VERSION;
+    let lock = Lockfile::new(vec![pack.clone()]).unwrap();
+    assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
+    pack.slopvac_api = MAX_API_VERSION + 1;
+    assert_eq!(
+        Lockfile::new(vec![pack]).unwrap_err().pointer,
+        "/packs/0/slopvac_api"
     );
 }
 

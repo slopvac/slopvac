@@ -2,8 +2,8 @@ use semver::Version;
 use toml::{Table, Value};
 
 use super::model::{
-    Digest, KeyId, LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, MAX_STRING_BYTES, NotBefore,
-    PackId, PackKind, Signature, Source, ValueError,
+    Digest, KeyId, LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, NotBefore, PackId, PackKind,
+    Signature, Source, ValueError,
 };
 
 fn err(pointer: &str, message: impl AsRef<str>) -> LockError {
@@ -38,12 +38,9 @@ impl<'a> Obj<'a> {
     }
 
     fn string(&self, key: &str) -> Result<&'a str, LockError> {
-        let text = self
-            .required(key)?
+        self.required(key)?
             .as_str()
-            .ok_or_else(|| err(&self.at(key), "must be a string"))?;
-        check_length(text, &self.at(key))?;
-        Ok(text)
+            .ok_or_else(|| err(&self.at(key), "must be a string"))
     }
 
     fn parsed<T: std::str::FromStr<Err = ValueError>>(&self, key: &str) -> Result<T, LockError> {
@@ -51,16 +48,6 @@ impl<'a> Obj<'a> {
             .parse()
             .map_err(|e: ValueError| err(&self.at(key), e.to_string()))
     }
-}
-
-fn check_length(text: &str, pointer: &str) -> Result<(), LockError> {
-    if text.len() > MAX_STRING_BYTES {
-        return Err(err(
-            pointer,
-            format!("longer than {MAX_STRING_BYTES} bytes"),
-        ));
-    }
-    Ok(())
 }
 
 pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
@@ -171,9 +158,9 @@ fn requires(obj: &Obj<'_>) -> Result<Vec<PackId>, LockError> {
         .enumerate()
         .map(|(i, item)| {
             let at = format!("{pointer}/{i}");
-            let text = item.as_str().ok_or_else(|| err(&at, "must be a string"))?;
-            check_length(text, &at)?;
-            text.parse()
+            item.as_str()
+                .ok_or_else(|| err(&at, "must be a string"))?
+                .parse()
                 .map_err(|e: ValueError| err(&at, e.to_string()))
         })
         .collect()
