@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 base64.workspace = true
 crossbeam-channel.workspace = true
+minisign-verify.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -25,6 +26,7 @@ ureq.workspace = true
 rustix = { workspace = true, features = ["event"] }
 
 [dev-dependencies]
+minisign.workspace = true
 toml.workspace = true
 
 [lints]

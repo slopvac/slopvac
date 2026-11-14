@@ -13,6 +13,8 @@ workspace = true
 
 [dependencies]
 frontmatter-spans = { workspace = true }
+globset.workspace = true
+ignore.workspace = true
 rayon = { workspace = true }
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
@@ -23,5 +25,7 @@ slopvac-text = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+proptest.workspace = true
 serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile.workspace = true

@@ -20,9 +20,11 @@
 //! capitalization) are skipped, and each document says so in an `info` notice.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
+//! [`discover`] finds the files to lint.
 
 mod diagrams;
 mod directives;
+pub mod discover;
 mod exceptions;
 mod lint;
 mod matching;
