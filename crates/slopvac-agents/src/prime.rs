@@ -14,6 +14,7 @@ use minijinja::{Environment, UndefinedBehavior, Value, context};
 
 use crate::error::AgentsError;
 use crate::harness;
+use crate::models::{self, Evals};
 use crate::review::{Approval, ReviewType};
 use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
 
@@ -193,6 +194,7 @@ fn render_template(
         exit_incomplete => EXIT_INCOMPLETE,
         schema_version => SCHEMA_VERSION,
         harnesses => harness::names(),
+        model_guidance => models::prime_guidance(&Evals::embedded()?, settings.review_type),
         migrate_guide => settings.migrate_guide.clone().unwrap_or_default(),
         review_type => settings.review_type.map_or("auto", ReviewType::name),
         review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },

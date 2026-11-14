@@ -12,7 +12,7 @@ python3 scripts/release_gate.py --evidence PATH   # other evidence file
 | --- | --- |
 | 0 | Every item passed. |
 | 1 | At least one item failed. |
-| 2 | A tool such as `bd` or `cargo` is missing, or the tracker output is empty or malformed, so an item could not run. This is never a pass. |
+| 2 | A tool such as `bd`, `cargo`, or `cargo-nextest` is missing, or the tracker output is empty or malformed, so an item could not run. This is never a pass. |
 
 ## Items
 

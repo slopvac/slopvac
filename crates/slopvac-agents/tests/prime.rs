@@ -90,7 +90,8 @@ fn base_topic_fits_its_word_budget_at_every_level() {
 fn every_topic_fits_its_budget() {
     for topic in prime::topic_names() {
         let n = words(&render(Some(topic), Level::Default));
-        assert!(n <= 330, "{topic} is {n} words");
+        let budget = if topic == "review" { 360 } else { 330 };
+        assert!(n <= budget, "{topic} is {n} words");
     }
 }
 

@@ -32,6 +32,20 @@ class ActionError(RuntimeError):
     """Raised for an action failure that should produce exit code 2."""
 
 
+def _escape_log(text: str) -> str:
+    """Encode text so GitHub cannot read it as a workflow command.
+
+    Uses the runner's encoding (`%` -> `%25`, CR -> `%0D`, LF -> `%0A`) and
+    extends it to the other C0 controls and DEL.
+    """
+    return "".join(
+        f"%{ord(char):02X}"
+        if char == "%" or ord(char) < 0x20 or ord(char) == 0x7F
+        else char
+        for char in text
+    )
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
@@ -139,7 +153,9 @@ def resolve_targets() -> int:
 
     _write_paths(paths_file, paths)
     _write_output({"list": paths_file})
-    print(*paths, sep="\n")
+    # Prefix each line: a name that begins with "::" must not start a command.
+    for path in paths:
+        print(f"- {_escape_log(path)}")
     return 0
 
 
@@ -221,6 +237,44 @@ def _render(command: list[str], output_format: str, destination: Path) -> int:
             print(result.stderr, end="")
         raise ActionError(f"{output_format} report failed")
     return result.returncode
+
+
+_LEVELS = {"error": "error", "warning": "warning"}
+
+
+def _escape_data(text: str) -> str:
+    """Encode workflow-command message data per the runner's rules."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    """Encode a workflow-command property value (data rules plus `:` and `,`)."""
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def _annotations(data: dict[str, Any]) -> list[str]:
+    """Build one workflow command per finding from the JSON report.
+
+    The report, not the linter's `github` output, is the source: file names and
+    messages are untrusted and must be encoded before they reach stdout.
+    """
+    lines = []
+    for document in data["documents"]:
+        for finding in document.get("findings", []):
+            level = _LEVELS.get(finding["severity"], "notice")
+            lines.append(
+                f"::{level} file={_escape_property(str(finding['path']))},"
+                f"line={int(finding['line'])},col={int(finding.get('column', 1))},"
+                f"title={_escape_property(str(finding['rule_id']))}"
+                f"::{_escape_data(str(finding['message']))}"
+            )
+    summary = data["summary"]
+    lines.append(
+        f"::notice title=slopvac::score {summary['score']}/100, "
+        f"{summary['findings']} finding(s), "
+        f"{summary['per_100_words']:.2f} per 100 words"
+    )
+    return lines
 
 
 def _summary_markdown(data: dict[str, Any]) -> str:
@@ -316,12 +370,8 @@ def lint() -> int:
         raise ActionError("could not write GitHub step summary") from exc
 
     if _env("ANNOTATE") == "true":
-        github_path = _temporary_path(suffix=".github")
-        try:
-            _render(command, "github", github_path)
-            print(github_path.read_text(encoding="utf-8"), end="")
-        finally:
-            github_path.unlink(missing_ok=True)
+        for line in _annotations(data):
+            print(line)
 
     if _env("SARIF") == "true":
         sarif_path = Path(_env("SARIF_FILE", "slopvac.sarif"))
