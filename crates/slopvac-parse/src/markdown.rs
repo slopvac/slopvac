@@ -6,8 +6,8 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use slopvac_model::{SourceIndex, Span};
 
 use crate::align::{ProseBuilder, align};
-use crate::code::{code_block, trim_terminator};
-use crate::mask::{Masked, scan};
+use crate::code::{code_kind, trim_terminator};
+use crate::mask::{CodeRegion, Masked, scan};
 use crate::{Block, BlockKind, Document, ParseError, TokenKind};
 
 const BOM: &str = "\u{feff}";
@@ -33,6 +33,25 @@ pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Docum
     Document { blocks, code_spans }
 }
 
+const OPTIONS: Options = Options::ENABLE_TABLES
+    .union(Options::ENABLE_STRIKETHROUGH)
+    .union(Options::ENABLE_TASKLISTS)
+    .union(Options::ENABLE_HEADING_ATTRIBUTES);
+
+/// Code blocks of `text`, from the parser's own events.
+fn code_regions(text: &str) -> Vec<CodeRegion> {
+    Parser::new_ext(text, OPTIONS)
+        .into_offset_iter()
+        .filter_map(|(event, range)| match event {
+            Event::Start(Tag::CodeBlock(kind)) => Some(CodeRegion {
+                range,
+                fenced: matches!(kind, CodeBlockKind::Fenced(_)),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Parse the `body` range of Markdown `source`.
 ///
 /// `body` is where the caller found the content to read, after any front matter. Every
@@ -42,13 +61,11 @@ pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Docum
 /// Returns [`ParseError::Body`] when `body` is not a valid span of `source`.
 pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> {
     let body = resolve_body(source, body)?;
-    let masked = scan(&source[body.start()..body.end()], body.start(), true);
+    let text = &source[body.start()..body.end()];
+    // The first pass reads the unmasked body to find out what is code.
+    let masked = scan(text, body.start(), &code_regions(text), true);
     let mut collector = Collector::new(source, &masked);
-    let options = Options::ENABLE_TABLES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_HEADING_ATTRIBUTES;
-    for (event, range) in Parser::new_ext(&masked.text, options).into_offset_iter() {
+    for (event, range) in Parser::new_ext(&masked.text, OPTIONS).into_offset_iter() {
         collector.event(&event, range);
     }
     collector.flush();
@@ -71,13 +88,22 @@ struct Open {
     prose: ProseBuilder,
 }
 
+/// A code block under construction.
+struct OpenCode {
+    /// The info string; `None` for an indented block.
+    info: Option<String>,
+    range: Range<usize>,
+    /// Hull of the block's text events: the body without fences and container prefixes.
+    hull: Option<Range<usize>>,
+}
+
 struct Collector<'a> {
     source: &'a str,
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
     open: Option<Open>,
-    code: Option<(bool, Range<usize>)>,
+    code: Option<OpenCode>,
     image_depth: usize,
     /// Where the previous event ended, in masked bytes.
     prev_end: usize,
@@ -104,6 +130,15 @@ impl<'a> Collector<'a> {
     /// A source span with its terminator trimmed.
     fn span(&self, range: &Range<usize>) -> Span {
         trim_terminator(self.source, self.masked.span(range.start, range.end))
+    }
+
+    /// An empty body: the start of the line after the opener.
+    fn empty_body(&self, range: &Range<usize>) -> Span {
+        let text = &self.masked.text;
+        let at = text[range.start..range.end]
+            .find('\n')
+            .map_or(range.end, |i| range.start + i + 1);
+        self.masked.span(at, at)
     }
 
     fn start_block(&mut self, kind: BlockKind, range: Range<usize>) {
@@ -159,8 +194,15 @@ impl<'a> Collector<'a> {
         match event {
             Event::Start(tag) => self.start(tag, range),
             Event::End(tag) => self.end(*tag, &range),
+            Event::Text(_) if self.code.is_some() => {
+                if let Some(code) = self.code.as_mut() {
+                    code.hull = Some(code.hull.as_ref().map_or(range.clone(), |h| {
+                        h.start.min(range.start)..h.end.max(range.end)
+                    }));
+                }
+            }
             Event::Text(text) => {
-                if self.code.is_none() && self.image_depth == 0 {
+                if self.image_depth == 0 {
                     // The backslash of an escape sits outside the text's range.
                     let start = if range.start > prev_end
                         && self.masked.text.as_bytes()[range.start - 1] == b'\\'
@@ -240,7 +282,14 @@ impl<'a> Collector<'a> {
             }
             Tag::CodeBlock(kind) => {
                 self.flush();
-                self.code = Some((matches!(kind, CodeBlockKind::Fenced(_)), range));
+                self.code = Some(OpenCode {
+                    info: match kind {
+                        CodeBlockKind::Fenced(info) => Some(info.to_string()),
+                        CodeBlockKind::Indented => None,
+                    },
+                    range,
+                    hull: None,
+                });
             }
             Tag::Image { .. } => {
                 self.inline_range(&range);
@@ -260,10 +309,14 @@ impl<'a> Collector<'a> {
                 self.column += 1;
             }
             TagEnd::CodeBlock => {
-                if let Some((fenced, range)) = self.code.take() {
-                    let span = self.span(&range);
+                if let Some(code) = self.code.take() {
+                    let span = self.span(&code.range);
+                    let body = match code.hull {
+                        Some(hull) => self.masked.span(hull.start, hull.end),
+                        None => self.empty_body(&code.range),
+                    };
                     self.blocks.push(Block {
-                        kind: code_block(self.source, span, fenced),
+                        kind: code_kind(code.info.as_deref(), body),
                         span,
                         projection: None,
                     });

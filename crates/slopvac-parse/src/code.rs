@@ -1,4 +1,4 @@
-//! Code block bodies and span trimming, shared by both parsers.
+//! Code block kinds and span trimming, shared by both parsers.
 
 use slopvac_model::Span;
 
@@ -12,50 +12,88 @@ pub(crate) fn trim_terminator(source: &str, span: Span) -> Span {
     Span::new(span.start(), span.start() + kept).expect("kept <= len")
 }
 
-/// The block kind for a code block that covers `span` (terminator trimmed).
-pub(crate) fn code_block(source: &str, span: Span, fenced: bool) -> BlockKind {
-    if !fenced {
-        return BlockKind::CodeBlock {
-            lang: None,
-            info: None,
-            body: span,
-            fenced,
-        };
-    }
-    let text = &source[span.start()..span.end()];
-    let opener = text.find(['\n', '\r']).map_or(text, |i| &text[..i]);
-    let opener = strip_container(opener);
-    let ch = opener.bytes().next().unwrap_or(b'`');
-    let count = opener.bytes().take_while(|&b| b == ch).count();
-    let info = opener[count..].trim();
-    let body = fenced_body(text, span.start(), ch, count);
+/// The block kind of a code block. `info` is `None` for an indented block.
+pub(crate) fn code_kind(info: Option<&str>, body: Span) -> BlockKind {
+    let trimmed = info.map(str::trim).filter(|i| !i.is_empty());
     BlockKind::CodeBlock {
-        lang: info.split_whitespace().next().map(str::to_owned),
-        info: (!info.is_empty()).then(|| info.to_owned()),
+        lang: trimmed.and_then(|i| i.split_whitespace().next().map(str::to_owned)),
+        info: trimmed.map(str::to_owned),
         body,
-        fenced,
+        fenced: info.is_some(),
     }
 }
 
-/// Body of a fenced block: the lines between the opener and the closer.
-fn fenced_body(text: &str, base: usize, ch: u8, count: usize) -> Span {
-    let Some(first) = text.find(['\n', '\r']) else {
-        return Span::empty(base + text.len());
-    };
-    let first_end = if text[first..].starts_with("\r\n") {
-        first + 2
+/// Body of an mdast code node, as byte offsets in `text`.
+///
+/// markdown-rs gives the node's range and its decoded `value`, not the range of each
+/// line. The body runs from the first line after the opener to the closing fence, or to
+/// the end of the node when it is unclosed. The first line loses its container prefix,
+/// which is what is left of the line once the decoded first line of `value` is removed.
+/// Whether the closing fence is there follows from how many lines `value` has.
+pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (usize, usize) {
+    let mut lines: Vec<(usize, usize)> = Vec::new(); // (start, content end)
+    let mut pos = start;
+    let bytes = text.as_bytes();
+    while pos < end {
+        let line_start = pos;
+        while pos < end && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
+            pos += 1;
+        }
+        lines.push((line_start, pos));
+        if bytes.get(pos) == Some(&b'\r') && bytes.get(pos + 1) == Some(&b'\n') {
+            pos += 2;
+        } else {
+            pos += 1;
+        }
+    }
+    let count = lines.len();
+    if count < 2 {
+        let at = terminator_end(text, end);
+        return (at, at);
+    }
+    let body_lines = if value.is_empty() {
+        0..=1
     } else {
-        first + 1
+        let n = value.matches('\n').count() + 1;
+        n..=n
     };
-    let last_start = text.rfind(['\n', '\r']).map_or(0, |i| i + 1);
-    let last = strip_container(&text[last_start..]).trim_end();
-    let run = last.bytes().take_while(|&b| b == ch).count();
-    let closed = last_start >= first_end && run >= count && last[run..].trim().is_empty();
-    let end = if closed { last_start } else { text.len() };
-    Span::new(base + first_end, base + end.max(first_end)).expect("end is clamped to start")
+    let closed_fits = body_lines.contains(&(count - 2));
+    let open_fits = body_lines.contains(&(count - 1));
+    let (last_start, last_end) = lines[count - 1];
+    let looks_closing = {
+        let t = text[last_start..last_end].trim_start_matches([' ', '\t', '>']);
+        t.starts_with(['`', '~']) && t.chars().all(|c| c == t.as_bytes()[0] as char || c == ' ')
+    };
+    let closed = match (closed_fits, open_fits) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => looks_closing,
+    };
+    let body_end = if closed {
+        last_start
+    } else {
+        terminator_end(text, end)
+    };
+    let (first_start, first_end) = lines[1];
+    let first_value = value.split('\n').next().unwrap_or("");
+    let line = &text[first_start..first_end];
+    let prefix = if !first_value.is_empty() && line.ends_with(first_value) {
+        line.len() - first_value.len()
+    } else {
+        0
+    };
+    let body_start = (first_start + prefix).min(body_end);
+    (body_start, body_end)
 }
 
-/// A line without the block quote markers and indentation that precede its content.
-fn strip_container(line: &str) -> &str {
-    line.trim_start_matches([' ', '\t', '>'])
+/// `at` moved past the line terminator that starts there, if any.
+fn terminator_end(text: &str, at: usize) -> usize {
+    let rest = &text[at..];
+    if rest.starts_with("\r\n") {
+        at + 2
+    } else if rest.starts_with(['\n', '\r']) {
+        at + 1
+    } else {
+        at
+    }
 }

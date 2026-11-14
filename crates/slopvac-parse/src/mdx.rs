@@ -5,24 +5,14 @@ use markdown::{Constructs, MdxSignal, ParseOptions, to_mdast};
 use slopvac_model::Span;
 
 use crate::align::{ProseBuilder, align};
-use crate::code::{code_block, trim_terminator};
+use crate::code::{code_kind, mdast_body, trim_terminator};
 use crate::jsexpr::ExpressionChecker;
 use crate::markdown::{MASK, finish, resolve_body};
-use crate::mask::{Masked, scan};
+use crate::mask::{CodeRegion, Masked, scan};
 use crate::{Block, BlockKind, Document, ParseError, TokenKind};
 
-/// Parse the `body` range of MDX `source`.
-///
-/// `body` is where the caller found the content to read, after any front matter. Every
-/// position in the result is a byte offset into `source`. ESM blocks and expressions that
-/// are not string literals are not prose.
-///
-/// # Errors
-/// Returns [`ParseError::Body`] when `body` is not a valid span of `source`, and
-/// [`ParseError::Mdx`] when the body is not valid MDX.
-pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
-    let body = resolve_body(source, body)?;
-    let masked = scan(&source[body.start()..body.end()], body.start(), false);
+/// Read `text` with the MDX options. Each call gets its own expression checker.
+fn parse(text: &str) -> Result<Node, ParseError> {
     let checker = ExpressionChecker::default();
     let options = ParseOptions {
         constructs: Constructs {
@@ -35,7 +25,45 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
         mdx_esm_parse: Some(Box::new(|_| MdxSignal::Ok)),
         ..ParseOptions::mdx()
     };
-    let tree = to_mdast(&masked.text, &options).map_err(|m| ParseError::Mdx(m.to_string()))?;
+    to_mdast(text, &options).map_err(|m| ParseError::Mdx(m.to_string()))
+}
+
+/// Fenced code blocks of a tree, from the parser's own nodes.
+fn code_regions(tree: &Node) -> Vec<CodeRegion> {
+    fn walk(node: &Node, out: &mut Vec<CodeRegion>) {
+        if matches!(node, Node::Code(_))
+            && let Some((start, end)) = range(node)
+        {
+            out.push(CodeRegion {
+                range: start..end,
+                fenced: true,
+            });
+        }
+        for child in node.children().into_iter().flatten() {
+            walk(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(tree, &mut out);
+    out
+}
+
+/// Parse the `body` range of MDX `source`.
+///
+/// `body` is where the caller found the content to read, after any front matter. Every
+/// position in the result is a byte offset into `source`. ESM blocks and expressions that
+/// are not string literals are not prose.
+///
+/// # Errors
+/// Returns [`ParseError::Body`] when `body` is not a valid span of `source`, and
+/// [`ParseError::Mdx`] when the body is not valid MDX.
+pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
+    let body = resolve_body(source, body)?;
+    let text = &source[body.start()..body.end()];
+    // The first pass reads the unmasked body to find out what is code.
+    let regions = code_regions(&parse(text)?);
+    let masked = scan(text, body.start(), &regions, false);
+    let tree = parse(&masked.text)?;
     let mut walker = Walker {
         source,
         masked: &masked,
@@ -102,11 +130,17 @@ impl Walker<'_> {
                     }
                 }
             }
-            Node::Code(_) => {
+            Node::Code(code) => {
                 if let Some(r) = range(node) {
                     let span = self.span(r);
+                    let (start, end) = mdast_body(&self.masked.text, r.0, r.1, &code.value);
+                    let info = match (&code.lang, &code.meta) {
+                        (Some(lang), Some(meta)) => format!("{lang} {meta}"),
+                        (Some(lang), None) => lang.clone(),
+                        _ => String::new(),
+                    };
                     self.blocks.push(Block {
-                        kind: code_block(self.source, span, true),
+                        kind: code_kind(Some(&info), self.masked.span(start, end)),
                         span,
                         projection: None,
                     });

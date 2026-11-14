@@ -1,6 +1,8 @@
 #![allow(missing_docs)]
 //! Regressions found in review. Each test goes through the public parse functions.
 
+use markdown::{ParseOptions, mdast::Node, to_mdast};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use slopvac_model::Span;
 use slopvac_parse::{BlockKind, Document, TokenKind, parse_markdown, parse_mdx};
 
@@ -122,9 +124,9 @@ fn long_runs_of_ampersands_parse_in_linear_time() {
 #[test]
 fn a_code_body_in_a_block_quote_excludes_the_closing_fence() {
     let cases = [
-        ("> ```js\n> x\n> ```\n", "> x\n"),
-        ("> > ```\n> > a\n> > b\n> > ```\n", "> > a\n> > b\n"),
-        ("- item\n\n  > ```\n  > x\n  > ```\n", "  > x\n"),
+        ("> ```js\n> x\n> ```\n", "x\n"),
+        ("> > ```\n> > a\n> > b\n> > ```\n", "a\n> > b\n"),
+        ("- item\n\n  > ```\n  > x\n  > ```\n", "x\n"),
     ];
     for (source, want) in cases {
         for doc in [md(source), mdx(source)] {
@@ -141,7 +143,7 @@ fn a_fence_in_an_admonition_body_has_an_exact_code_body() {
     let doc = md(source);
     let bodies = code_bodies(&doc);
     assert_eq!(bodies.len(), 1);
-    assert_eq!(slice(source, bodies[0]), "    x = 1\n");
+    assert_eq!(slice(source, bodies[0]), "x = 1\n");
 }
 
 #[test]
@@ -214,4 +216,228 @@ fn deeply_nested_bang_blocks_parse_in_linear_time() {
     let start = std::time::Instant::now();
     let _ = md(&source);
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+}
+
+// ---- review round 2: JavaScript scanning ----
+
+#[test]
+fn regex_literals_in_mdx_expressions_may_hold_quotes_and_braces() {
+    let cases = [
+        "a {/'/.test(x)} b\n",
+        "a {x.replace(/}/g, 'k')} b\n",
+        "a {/[/']/.test(s)} b\n",
+        "a {/\\/'/.test(s)} b\n",
+        "a {cond && /'/.test(s)} b\n",
+        "a {(x) ? /'/ : 'y'} b\n",
+    ];
+    for source in cases {
+        assert!(parse_mdx(source, whole(source)).is_ok(), "{source:?}");
+    }
+}
+
+#[test]
+fn division_in_mdx_expressions_is_not_a_regex() {
+    // Read as a regex, the first slash would swallow the closing brace.
+    let cases = [
+        "a {n / 2} b\n",
+        "a {(n) / 2} b\n",
+        "a {list[0] / 2} b\n",
+        "a {n / 2 + m / 3} b\n",
+        "a {x++ / 2} b\n",
+    ];
+    for source in cases {
+        assert!(parse_mdx(source, whole(source)).is_ok(), "{source:?}");
+    }
+}
+
+#[test]
+fn every_js_line_terminator_ends_a_line_comment() {
+    for terminator in ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"] {
+        let source = format!("a {{// it's{terminator}}} b\n");
+        assert!(parse_mdx(&source, whole(&source)).is_ok(), "{source:?}");
+    }
+}
+
+// ---- review round 2: code regions come from the parser ----
+
+fn pulldown_options() -> Options {
+    Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_HEADING_ATTRIBUTES
+}
+
+/// Code blocks of the unmasked source as pulldown-cmark reads them: the block range
+/// without its final terminator and the hull of its text events.
+type Open = (std::ops::Range<usize>, Option<(usize, usize)>);
+
+fn pulldown_code(source: &str) -> Vec<(Span, Option<Span>)> {
+    let mut out = Vec::new();
+    let mut open: Option<Open> = None;
+    for (event, range) in Parser::new_ext(source, pulldown_options()).into_offset_iter() {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => open = Some((range, None)),
+            Event::Text(_) => {
+                if let Some((_, hull)) = open.as_mut() {
+                    let (s, e) = hull.unwrap_or((range.start, range.end));
+                    *hull = Some((s.min(range.start), e.max(range.end)));
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                if let Some((range, hull)) = open.take() {
+                    let kept = source[range.clone()].trim_end_matches(['\n', '\r']).len();
+                    out.push((
+                        Span::new(range.start, range.start + kept).unwrap(),
+                        hull.map(|(s, e)| Span::new(s, e).unwrap()),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn mdast_code(source: &str) -> Vec<Span> {
+    fn walk(node: &Node, source: &str, out: &mut Vec<Span>) {
+        if let Node::Code(_) = node {
+            let p = node.position().unwrap();
+            let kept = source[p.start.offset..p.end.offset]
+                .trim_end_matches(['\n', '\r'])
+                .len();
+            out.push(Span::new(p.start.offset, p.start.offset + kept).unwrap());
+        }
+        for child in node.children().into_iter().flatten() {
+            walk(child, source, out);
+        }
+    }
+    let options = ParseOptions {
+        constructs: markdown::Constructs {
+            gfm_table: true,
+            gfm_strikethrough: true,
+            gfm_task_list_item: true,
+            ..markdown::Constructs::mdx()
+        },
+        ..ParseOptions::mdx()
+    };
+    let mut out = Vec::new();
+    walk(&to_mdast(source, &options).unwrap(), source, &mut out);
+    out
+}
+
+fn own_code(doc: &Document) -> Vec<(Span, Span)> {
+    doc.blocks
+        .iter()
+        .filter_map(|b| match &b.kind {
+            BlockKind::CodeBlock { body, .. } => Some((b.span, *body)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Inputs where fences, containers and admonition markers meet.
+const TRICKY: &[&str] = &[
+    "```\ncode\n```\n",
+    "   ```\ncode\n    ```\n::: note\ntext\n:::\n   ```\n",
+    "- a\n\n  ```\n  ::: note\n  x\n  :::\n  ```\n\n::: tip\nreal\n:::\n",
+    "> ```\n> ::: note\n> ```\n\n::: tip\nreal\n:::\n",
+    "> ```\n> a\n> ```\n> ```\n",
+    "```\na\n> ```\n",
+    "    ```\n    code\n\nPara.\n\n::: note\nx\n:::\n",
+    "~~~\n```\n::: note\n~~~\n::: tip\nz\n:::\n",
+    "1. a\n   - b\n\n     ```\n     ::: note\n     :::\n     ```\n",
+    "```\n:::\n```\n:::\n",
+    "para\n```\ncode\n```\npara\n",
+    "- ```\n  code\n  ```\n",
+    "````\n```\n````\n",
+    "```\n",
+    "```py\n\n```\n",
+    "> [!NOTE]\n> ```\n> x\n> ```\n",
+    "```md\n> [!NOTE]\n> x\n```\n",
+    "```\r\n::: note\r\n```\r\n::: tip\r\nx\r\n:::\r\n",
+];
+
+#[test]
+fn markdown_code_regions_equal_the_parsers_own() {
+    for source in TRICKY {
+        let doc = md(source);
+        let want = pulldown_code(source);
+        let got = own_code(&doc);
+        assert_eq!(
+            got.iter().map(|(b, _)| *b).collect::<Vec<_>>(),
+            want.iter().map(|(b, _)| *b).collect::<Vec<_>>(),
+            "{source:?}"
+        );
+        for ((_, body), (block, hull)) in got.iter().zip(&want) {
+            // The body is the parser's text, or an empty range inside the block.
+            match hull {
+                Some(hull) => assert_eq!(body, hull, "{source:?}"),
+                None => assert!(
+                    body.is_empty() && body.start() <= block.end() + 1,
+                    "{source:?}"
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn mdx_code_regions_equal_the_parsers_own() {
+    for source in TRICKY {
+        let want = mdast_code(source);
+        let got: Vec<_> = own_code(&mdx(source)).iter().map(|(b, _)| *b).collect();
+        assert_eq!(got, want, "{source:?}");
+    }
+}
+
+#[test]
+fn markers_in_parser_confirmed_code_are_never_admonitions() {
+    // (source, admonitions that are really there)
+    let cases = [
+        ("   ```\ncode\n    ```\n::: note\ntext\n:::\n   ```\n", 0),
+        (
+            "- a\n\n  ```\n  ::: note\n  x\n  :::\n  ```\n\n::: tip\nreal\n:::\n",
+            1,
+        ),
+        ("> ```\n> ::: note\n> ```\n\n::: tip\nreal\n:::\n", 1),
+        ("    ```\n    code\n\nPara.\n\n::: note\nx\n:::\n", 1),
+        ("~~~\n```\n::: note\n~~~\n::: tip\nz\n:::\n", 1),
+        (
+            "1. a\n   - b\n\n     ```\n     ::: note\n     :::\n     ```\n",
+            0,
+        ),
+        ("```\n:::\n```\n:::\n", 0),
+    ];
+    for (source, want) in cases {
+        assert_eq!(admonitions(&md(source)), want, "{source:?}");
+    }
+}
+
+#[test]
+fn an_unclosed_fence_keeps_a_last_line_that_looks_like_a_quoted_fence() {
+    let source = "```\na\n> ```\n";
+    let doc = md(source);
+    let bodies = code_bodies(&doc);
+    assert_eq!(slice(source, bodies[0]), "a\n> ```\n");
+    let doc = mdx(source);
+    assert_eq!(slice(source, code_bodies(&doc)[0]), "a\n> ```\n");
+}
+
+#[test]
+fn indented_code_with_fence_text_does_not_hide_a_later_admonition() {
+    let source = "    ```\n    code\n\nPara.\n\n::: note\nx\n:::\n";
+    let doc = md(source);
+    assert_eq!(admonitions(&doc), 1);
+    assert_eq!(code_bodies(&doc).len(), 1);
+}
+
+#[test]
+fn both_parsers_expose_the_same_code_body_where_they_agree_on_the_block() {
+    let agreeing = [0, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16];
+    for index in agreeing {
+        let source = TRICKY[index];
+        let in_md: Vec<_> = own_code(&md(source)).iter().map(|(_, b)| *b).collect();
+        let in_mdx: Vec<_> = own_code(&mdx(source)).iter().map(|(_, b)| *b).collect();
+        assert_eq!(in_md, in_mdx, "{source:?}");
+    }
 }

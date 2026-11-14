@@ -5,6 +5,8 @@
 //! lose their indentation. Both parsers then see plain Markdown, and [`Masked`] maps their
 //! offsets back to the original source.
 
+use std::ops::Range;
+
 use slopvac_model::Span;
 
 use crate::{Admonition, AdmonitionSyntax, Block, BlockKind};
@@ -65,44 +67,52 @@ struct Pending {
     end: usize,
 }
 
-enum Marker {
-    Colon {
-        count: usize,
-        block: usize,
-    },
-    Fence {
-        ch: u8,
-        count: usize,
-        lead: usize,
-        block: usize,
-    },
-}
-
 struct IndentFrame {
     body_cols: usize,
     block: usize,
 }
 
+/// A code block the parser found in the unmasked body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodeRegion {
+    /// Byte range of the whole block, in body offsets.
+    pub(crate) range: Range<usize>,
+    /// Whether the block is fenced.
+    pub(crate) fenced: bool,
+}
+
+/// A fenced directive that is open.
+struct Directive {
+    end: usize,
+    ch: u8,
+    count: usize,
+    block: usize,
+}
+
 /// Scan `text`, which starts at source offset `base`.
 ///
-/// With `indented_code`, as in Markdown, a line indented four columns is code and a fence
-/// closer may be indented three columns past its opener. MDX has no indented code, and
-/// markdown-rs lets a closer use any indent there.
+/// `code` holds the code blocks the parser found in `text` before any masking. Lines inside
+/// them are code and carry no markers, except that a fenced block whose info string is an
+/// admonition directive becomes an admonition. No fence rules are repeated here.
+///
+/// With `indented_code`, as in Markdown, a marker indented four columns is not a marker.
 #[allow(clippy::too_many_lines)]
-pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
+pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: bool) -> Masked {
     let mut out = String::with_capacity(text.len());
     let mut removals: Vec<(usize, usize)> = Vec::new();
     let mut removed = 0;
     let mut pending: Vec<Pending> = Vec::new();
-    let mut markers: Vec<Marker> = Vec::new();
+    let mut colons: Vec<(usize, usize)> = Vec::new();
+    let mut directive: Option<Directive> = None;
     let mut indents: Vec<IndentFrame> = Vec::new();
-    let mut fence: Option<(u8, usize, usize)> = None;
     let mut alert: Option<usize> = None;
     let mut last_nonblank_end = base;
     let mut prev_quoted = false;
+    let mut next_region = 0;
 
     for (line_start, line, terminator) in lines(text) {
         let abs = base + line_start;
+        let line_full_end = line_start + line.len() + terminator.len();
         let blank = line.trim().is_empty();
         if !blank {
             let cols = leading_cols(line);
@@ -131,37 +141,70 @@ pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
                 alert = None;
             }
         }
+        while code
+            .get(next_region)
+            .is_some_and(|r| r.range.end <= line_start)
+        {
+            next_region += 1;
+        }
+        // Inside an admonition body the unmasked parse is not reliable: the body is
+        // indented, so the parser reads a fence there as indented code.
+        let region = code
+            .get(next_region)
+            .filter(|r| indents.is_empty() && r.range.start < line_full_end);
 
         let mut mask_from: Option<usize> = None;
         let lead = leading_cols(content);
         let t = content.trim_start();
         let t_abs = content_abs + (content.len() - t.len());
-        if let Some((ch, count, opened)) = fence {
-            if (!indented_code || lead <= opened + 3) && is_fence_closer(t, ch, count) {
-                fence = None;
+        if let Some(region) = region {
+            let first_line = region.range.start >= line_start;
+            let last_line = region.range.end <= line_full_end;
+            if first_line
+                && region.fenced
+                && lead < 4
+                && line_start + strip + (content.len() - t.len()) == region.range.start
+                && let Some((ch, count, info)) = fence_opener(t)
+                && let Some((name, title)) = info
+                    .trim()
+                    .strip_prefix('{')
+                    .and_then(|rest| rest.split_once('}'))
+                    .filter(|(name, _)| DIRECTIVES.contains(&name.trim()))
+            {
+                let block = pending.len();
+                let title = title.trim();
+                pending.push(Pending {
+                    admonition: Admonition {
+                        kind: name.trim().to_owned(),
+                        title_span: title_span(title, t, t_abs),
+                        title: nonempty(title),
+                        syntax: AdmonitionSyntax::Directive,
+                    },
+                    start: t_abs,
+                    end: line_end,
+                });
+                directive = Some(Directive {
+                    end: region.range.end,
+                    ch,
+                    count,
+                    block,
+                });
+                mask_from = Some(0);
+            } else if !first_line
+                && last_line
+                && lead < 4
+                && let Some(open) = directive.as_ref()
+                && open.end == region.range.end
+                && is_fence_closer(t, open.ch, open.count)
+            {
+                pending[open.block].end = line_end;
+                directive = None;
+                mask_from = Some(0);
             }
         } else if indented_code && lead >= 4 {
-            // Indented code, or a fence nested deep in a list. Track fences so that
-            // marker-like lines inside them stay code.
-            if let Some((ch, count, info)) = fence_opener(t)
-                && (ch == b'~' || !info.contains('`'))
-            {
-                fence = Some((ch, count, lead));
-            }
-        } else if let Some(Marker::Fence {
-            ch,
-            count,
-            lead: opened,
-            block,
-        }) = markers.last()
-            && (!indented_code || lead <= opened + 3)
-            && is_fence_closer(t, *ch, *count)
-        {
-            pending[*block].end = line_end;
-            markers.pop();
-            mask_from = Some(0);
+            // Not a marker; the parser did not call it code either.
         } else if t.starts_with(":::") {
-            mask_from = colon_line(t, t_abs, line_end, &mut pending, &mut markers);
+            mask_from = colon_line(t, t_abs, line_end, &mut pending, &mut colons);
         } else if let Some(rest) = t.strip_prefix("!!!").or_else(|| t.strip_prefix("???"))
             && let Some(parsed) = parse_title_line(rest, true)
         {
@@ -176,35 +219,6 @@ pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
                 block,
             });
             mask_from = Some(0);
-        } else if let Some((ch, count, info)) = fence_opener(t) {
-            let directive = info
-                .trim()
-                .strip_prefix('{')
-                .and_then(|rest| rest.split_once('}'))
-                .filter(|(name, _)| DIRECTIVES.contains(&name.trim()));
-            if let Some((name, title)) = directive {
-                let block = pending.len();
-                let title = title.trim();
-                pending.push(Pending {
-                    admonition: Admonition {
-                        kind: name.trim().to_owned(),
-                        title_span: title_span(title, t, t_abs),
-                        title: nonempty(title),
-                        syntax: AdmonitionSyntax::Directive,
-                    },
-                    start: t_abs,
-                    end: line_end,
-                });
-                markers.push(Marker::Fence {
-                    ch,
-                    count,
-                    lead,
-                    block,
-                });
-                mask_from = Some(0);
-            } else if ch == b'~' || !info.contains('`') {
-                fence = Some((ch, count, lead));
-            }
         } else if let Some(body) = quote
             && !prev_quoted
             && let Some((kind, title)) = parse_alert(body)
@@ -223,7 +237,7 @@ pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
             });
             mask_from = Some(offset_in(content, body) + bracket);
         }
-        prev_quoted = quote.is_some() && fence.is_none();
+        prev_quoted = quote.is_some() && region.is_none();
 
         if strip > 0 {
             removed += strip;
@@ -241,9 +255,11 @@ pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
     for frame in &indents {
         pending[frame.block].end = last_nonblank_end;
     }
-    for marker in &markers {
-        let (Marker::Colon { block, .. } | Marker::Fence { block, .. }) = marker;
+    for (_, block) in &colons {
         pending[*block].end = last_nonblank_end;
+    }
+    if let Some(open) = &directive {
+        pending[open.block].end = last_nonblank_end;
     }
     let admonitions = pending
         .into_iter()
@@ -430,16 +446,16 @@ fn colon_line(
     t_abs: usize,
     line_end: usize,
     pending: &mut Vec<Pending>,
-    markers: &mut Vec<Marker>,
+    colons: &mut Vec<(usize, usize)>,
 ) -> Option<usize> {
     let count = t.bytes().take_while(|&b| b == b':').count();
     let rest = &t[count..];
     if rest.trim().is_empty() {
-        if let Some(Marker::Colon { count: open, block }) = markers.last()
-            && count >= *open
+        if let Some(&(open, block)) = colons.last()
+            && count >= open
         {
-            pending[*block].end = line_end;
-            markers.pop();
+            pending[block].end = line_end;
+            colons.pop();
             return Some(0);
         }
         return None;
@@ -451,7 +467,7 @@ fn colon_line(
         start: t_abs,
         end: line_end,
     });
-    markers.push(Marker::Colon { count, block });
+    colons.push((count, block));
     Some(0)
 }
 

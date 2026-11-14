@@ -37,5 +37,5 @@ two agree on every word and on the source text of every word. The golden suite
 
 The scan runs per line before parsing. Markers must start a line, with up to three spaces
 of indent after any `!!!` body indent. Markers inside block quotes or list items are not
-recognized. A code body inside a block quote keeps the `>` prefixes of its lines, because a body is one contiguous byte range; the closing fence is not part of it. A GFM alert continues over following `>` lines only. A `:::` line that has a
+recognized. Code regions come from the parsers, not from the scan: a first pass reads the unmasked body, and markers inside the code it finds are left alone. A code body runs from the first character after the container prefix of its first line to the closing fence. Later lines keep their prefixes, because a body is one contiguous byte range. Fences inside a `!!!` body are not seen by the first pass, so marker-like lines in them can be masked. A masked marker line followed by a four-space indented line makes that line indented code, as it would after a blank line. The content of a fenced directive is not scanned for markers. A GFM alert continues over following `>` lines only. A `:::` line that has a
 word after the colons is an opener, so a prose line such as `::: and so on` is read as one.

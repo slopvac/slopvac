@@ -186,9 +186,9 @@ fn code_body_range_edge_cases() {
         ("```\n```\n", ""),
         ("```py\n\n```\n", "\n"),
         ("~~~~\na\n~~~\nb\n~~~~\n", "a\n~~~\nb\n"),
-        ("```\nunclosed\n", "unclosed"),
+        ("```\nunclosed\n", "unclosed\n"),
         ("```\r\na\r\nb\r\n```\r\n", "a\r\nb\r\n"),
-        ("- item\n\n  ```js\n  x\n  ```\n", "  x\n"),
+        ("- item\n\n  ```js\n  x\n  ```\n", "x\n"),
     ];
     for (source, want) in cases {
         let doc = md(source);
