@@ -23,8 +23,8 @@ AI-generated documentation, PR descriptions, Markdown, and comments in supported
 Coding agents use the CLI to inspect findings and apply fixes. The same checks run in pre-commit,
 CI, and editors.
 
-slopvac is one native binary. The core needs no Python and no Vale. A plugin can need its own
-runtime.
+slopvac is one native binary. The core needs no Vale. Markdown, MDX, and HTML need no Python. RST
+may need a Python runtime for its bundled docutils adapter. A plugin can need its own runtime.
 
 ## Install
 
@@ -72,8 +72,8 @@ Output formats:
 - `markdown`
 - `html`
 
-The language server reports the same findings to editors. Each output format links each finding to
-the page for its rule.
+The language server reports the same findings to editors. SARIF and rdjsonl output link each rule
+to its documentation page. The [documentation site](docs/site.md) lists the page layout.
 
 ## What it checks
 
