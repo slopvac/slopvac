@@ -39,8 +39,10 @@ pub enum Value {
     Int(i64),
     /// A floating-point number.
     Float(f64),
-    /// A string, or a TOML date-time kept as text.
+    /// A string.
     Str(String),
+    /// A TOML date-time, kept as text. It is never a string.
+    Datetime(String),
     /// A sequence.
     Array(Vec<Node>),
     /// A mapping, in source order.
@@ -72,6 +74,7 @@ impl Node {
             Value::Int(_) => "an integer",
             Value::Float(_) => "a float",
             Value::Str(_) => "a string",
+            Value::Datetime(_) => "a date-time",
             Value::Array(_) => "an array",
             Value::Table(_) => "a table",
         }
@@ -86,7 +89,8 @@ impl Node {
         }
     }
 
-    /// The value as JSON, without spans.
+    /// The value as JSON, without spans. A non-finite float becomes `null`; validation rejects
+    /// those before any caller sees the JSON.
     #[must_use]
     pub fn to_json(&self) -> Json {
         match &self.value {
@@ -94,7 +98,7 @@ impl Node {
             Value::Bool(b) => Json::Bool(*b),
             Value::Int(i) => Json::Number((*i).into()),
             Value::Float(f) => Number::from_f64(*f).map_or(Json::Null, Json::Number),
-            Value::Str(s) => Json::String(s.clone()),
+            Value::Str(s) | Value::Datetime(s) => Json::String(s.clone()),
             Value::Array(items) => Json::Array(items.iter().map(Node::to_json).collect()),
             Value::Table(entries) => {
                 let mut map = Map::with_capacity(entries.len());
@@ -220,7 +224,7 @@ fn toml_value(v: &toml_edit::Value) -> Node {
         toml_edit::Value::Integer(i) => Value::Int(*i.value()),
         toml_edit::Value::Float(f) => Value::Float(*f.value()),
         toml_edit::Value::Boolean(b) => Value::Bool(*b.value()),
-        toml_edit::Value::Datetime(d) => Value::Str(d.value().to_string()),
+        toml_edit::Value::Datetime(d) => Value::Datetime(d.value().to_string()),
         toml_edit::Value::Array(a) => Value::Array(a.iter().map(toml_value).collect()),
         toml_edit::Value::InlineTable(t) => toml_inline_table(t, &span),
     };
