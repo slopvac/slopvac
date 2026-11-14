@@ -17,7 +17,9 @@
 //!   source files met in a comment-mode walk).
 //!
 //! `.gitignore` handling is off unless [`Options::use_gitignore`] is set, and it
-//! applies to directory walks only: a file named explicitly is always linted.
+//! applies to directory walks only: a file named explicitly is always linted. The
+//! `.gitignore` files of parent directories apply to a nested target, up to the
+//! filesystem root and whether or not a `.git` directory exists.
 
 mod exclude;
 mod kind;
@@ -211,6 +213,7 @@ fn walk_dir(root: &Path, options: Options, out: &mut Discovery) -> Result<(), Di
         .hidden(false)
         .follow_links(false)
         .require_git(false)
+        .parents(options.use_gitignore)
         .git_ignore(options.use_gitignore)
         .filter_entry(|entry| {
             let Some(file_type) = entry.file_type() else {
@@ -275,6 +278,14 @@ fn walk_order(path: &Path) -> Vec<(bool, std::ffi::OsString)> {
 /// absolute. Only files match; results are sorted.
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
     let none = || DiscoverError::NoSuchTarget(pattern.to_owned());
+    // `./docs/*.md` and `docs/*.md` are the same pattern; candidates below are
+    // normalised the same way.
+    let normalised: PathBuf = Path::new(pattern)
+        .components()
+        .filter(|c| *c != Component::CurDir)
+        .collect();
+    let pattern = normalised.to_string_lossy().into_owned();
+    let pattern = pattern.as_str();
     let glob = GlobBuilder::new(pattern)
         .literal_separator(true)
         .build()
@@ -306,7 +317,11 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
         .hidden(false)
         .follow_links(false);
     let mut matches: Vec<PathBuf> = Vec::new();
-    for entry in builder.build().flatten() {
+    for entry in builder.build() {
+        let entry = entry.map_err(|source| DiscoverError::Walk {
+            path: base.clone(),
+            source,
+        })?;
         let path = entry.path();
         let candidate: PathBuf = path
             .components()

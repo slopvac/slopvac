@@ -381,3 +381,102 @@ fn a_path_outside_the_root_is_excluded_by_file_name() {
     let ex = Excludes::new(Path::new("/project"), &["**/CHANGELOG.md"]).unwrap();
     assert!(ex.is_excluded(Path::new("/elsewhere/CHANGELOG.md")));
 }
+
+// --- fix round 1 regressions ---------------------------------------------
+
+/// Rows are generated from the 2.x `pathspec` reference by
+/// `scripts/discover_exclude_parity.py`.
+#[test]
+fn exclude_matches_the_pathspec_reference() {
+    let table = include_str!("../../tests/fixtures/exclude_parity.tsv");
+    let root = Path::new("/project");
+    let mut failures = Vec::new();
+    for line in table.lines() {
+        let mut cols = line.split('\t');
+        let patterns: Vec<&str> = cols.next().unwrap().split('\u{1f}').collect();
+        let path = cols.next().unwrap();
+        let expected = cols.next().unwrap() == "1";
+        let got = Excludes::new(root, &patterns)
+            .unwrap()
+            .is_excluded(&root.join(path));
+        if got != expected {
+            failures.push(format!(
+                "{patterns:?} {path}: pathspec={expected} rust={got}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_relative_root_is_stripped_once() {
+    let ex = Excludes::new(Path::new("docs"), &["/docs/**"]).unwrap();
+    assert!(ex.is_excluded(Path::new("docs/docs/readme.md")));
+    assert!(!ex.is_excluded(Path::new("docs/readme.md")));
+}
+
+#[test]
+fn a_rejected_exclude_pattern_is_an_error() {
+    let err = Excludes::new(Path::new("/project"), &["[z-a]"]).unwrap_err();
+    assert!(err.to_string().starts_with("invalid exclude pattern"));
+}
+
+#[test]
+fn a_malformed_glob_target_is_an_error() {
+    let dir = TempDir::new().unwrap();
+    let pattern = format!("{}/[unclosed", dir.path().display());
+    let err = discover(&[pattern.as_str()], Options::default()).unwrap_err();
+    assert!(matches!(err, DiscoverError::InvalidGlob { .. }));
+}
+
+#[test]
+fn a_dot_slash_relative_glob_matches_like_the_bare_form() {
+    // `cargo test` runs in the package directory.
+    let opts = Options {
+        selection: Selection::CodeComments,
+        use_gitignore: false,
+    };
+    let plain = discover(&["src/discover/*.rs"], opts).unwrap();
+    let prefixed = discover(&["./src/discover/*.rs"], opts).unwrap();
+    assert_eq!(plain.files.len(), 4);
+    assert_eq!(prefixed, plain);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_glob_walk_reports_an_unreadable_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "ok.md", "");
+    let locked = dir.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable = fs::read_dir(&locked).is_err();
+    let pattern = format!("{}/**/*.md", dir.path().display());
+    let result = discover(&[pattern.as_str()], Options::default());
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    if !unreadable {
+        return; // running as root: permissions are not enforced
+    }
+    assert!(matches!(result, Err(DiscoverError::Walk { .. })));
+}
+
+#[test]
+fn gitignore_in_a_parent_directory_applies_to_a_nested_target() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), ".gitignore", "docs/skip.md\n");
+    write(dir.path(), "docs/keep.md", "");
+    write(dir.path(), "docs/skip.md", "");
+    let nested = dir.path().join("docs");
+    let found = discover(
+        &[nested.to_str().unwrap()],
+        Options {
+            selection: Selection::Prose,
+            use_gitignore: true,
+        },
+    )
+    .unwrap();
+    let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+    assert_eq!(got, [nested.join("keep.md")]);
+}
