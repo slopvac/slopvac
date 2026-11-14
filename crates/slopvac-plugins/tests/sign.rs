@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use oci_server::{Response, Server};
 use serde_json::json;
-use slopvac_plugins::oci::{Anonymous, Client, Descriptor, MEDIA_MANIFEST, Manifest, Reference};
+use slopvac_plugins::oci::{
+    Anonymous, Client, Descriptor, MEDIA_MANIFEST, Manifest, OciError, Reference,
+};
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT,
     PublicKey, SignError, Statement, canonical_json, fetch_and_verify, signature_layers, verify,
@@ -675,20 +677,40 @@ fn a_key_pinned_for_one_namespace_cannot_sign_another() {
 }
 
 /// A correctly signed statement whose fields `edit` changed after the manifest was bound.
+///
+/// The statement binds the unsigned manifest; the signature layers are appended afterwards,
+/// exactly as in [`sign_manifest`].
 fn signed_statement(key: &Key, edit: impl FnOnce(&mut Statement)) -> Signed {
-    let mut s = good(key);
+    let mut manifest = base_manifest(&[(LAYER, b"rules"), (LAYER, b"terms")]);
     let mut st = Statement::for_manifest(
         NS,
         ID,
         "1.2.0",
         &key.public().key_id(),
         "2026-11-01T00:00:00Z",
-        &s.manifest,
+        &manifest,
     );
     edit(&mut st);
-    s.statement = st.canonical_bytes();
-    s.minisig = key.sign(&s.statement);
-    s
+    let statement = st.canonical_bytes();
+    let minisig = key.sign(&statement);
+    manifest
+        .layers
+        .push(Descriptor::for_bytes(MEDIA_STATEMENT, &statement));
+    manifest
+        .layers
+        .push(Descriptor::for_bytes(MEDIA_MINISIG, minisig.as_bytes()));
+    Signed {
+        manifest,
+        statement,
+        minisig,
+    }
+}
+
+#[test]
+fn an_unedited_signed_statement_verifies() {
+    let key = Key::new();
+    let s = signed_statement(&key, |_| {});
+    assert_eq!(run(&s, &policy(&[&key]), &expect()), Ok(()));
 }
 
 #[test]
@@ -729,4 +751,57 @@ fn a_correctly_signed_statement_with_an_unsupported_schema_version_is_refused() 
         matches!(&err, SignError::Mismatch(m) if m.contains("schema_version")),
         "{err:?}"
     );
+}
+
+/// Fetch a manifest whose minisig descriptor claims `size` bytes; returns the result and the
+/// number of requests the registry saw for that blob.
+fn fetch_with_minisig_size(size: usize) -> (Result<(), SignError>, usize) {
+    let key = Key::new();
+    let mut s = good(&key);
+    let padding = vec![b' '; size];
+    s.manifest.layers[3] = Descriptor::for_bytes(MEDIA_MINISIG, &padding);
+    let minisig_digest = s.manifest.layers[3].digest.to_string();
+    let statement = s.statement.clone();
+    let statement_digest = s.manifest.layers[2].digest.to_string();
+    let server = Server::start(move |req| {
+        let digest = req.path.rsplit('/').next().unwrap_or_default();
+        if digest == statement_digest {
+            Response::new(200).body(statement.clone())
+        } else if digest == minisig_digest {
+            Response::new(200).body(padding.clone())
+        } else {
+            Response::new(404)
+        }
+    });
+    let r = Reference::parse(&format!("{}/acme/style:1.2.0", server.registry())).unwrap();
+    let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));
+    let result = fetch_and_verify(&client, &r, &s.manifest, &policy(&[&key]), &expect());
+    let hits = server.count(&format!(
+        "/v2/acme/style/blobs/{}",
+        s.manifest.layers[3].digest
+    ));
+    (result.map(|_| ()), hits)
+}
+
+#[test]
+fn an_oversized_minisig_descriptor_is_refused_before_any_request() {
+    let (result, hits) = fetch_with_minisig_size(4097);
+    assert!(
+        matches!(
+            result,
+            Err(SignError::Fetch(OciError::TooLarge { limit: 4096, .. }))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(hits, 0);
+}
+
+#[test]
+fn a_minisig_descriptor_at_the_limit_is_fetched() {
+    let (result, hits) = fetch_with_minisig_size(4096);
+    assert!(
+        !matches!(result, Err(SignError::Fetch(OciError::TooLarge { .. }))),
+        "{result:?}"
+    );
+    assert_eq!(hits, 1);
 }
