@@ -209,9 +209,11 @@ impl IdAllocator {
 }
 
 type Reply = Result<Value, PluginError>;
+/// A reply and the moment the reader delivered it.
+type Stamped = (Instant, Reply);
 
 struct Pending {
-    reply: Sender<Reply>,
+    reply: Sender<Stamped>,
     cancel: Sender<()>,
 }
 
@@ -245,7 +247,7 @@ impl Shared {
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            let _ = p.reply.try_send(Err(first.clone()));
+            let _ = p.reply.try_send((Instant::now(), Err(first.clone())));
         }
         first
     }
@@ -268,9 +270,10 @@ impl Shared {
     fn release_pending(&self) {
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            let _ = p
-                .reply
-                .try_send(Err(PluginError::Usage("the plugin has shut down".into())));
+            let _ = p.reply.try_send((
+                Instant::now(),
+                Err(PluginError::Usage("the plugin has shut down".into())),
+            ));
         }
     }
 
@@ -356,7 +359,7 @@ impl Shared {
         };
         match lock(&self.pending).remove(&id) {
             Some(p) => {
-                let _ = p.reply.try_send(reply);
+                let _ = p.reply.try_send((Instant::now(), reply));
                 Ok(true)
             }
             None => unmatched(unsolicited),
@@ -444,26 +447,39 @@ struct Conn {
 /// What ended a caller's wait for a reply.
 #[derive(Debug)]
 enum Wake {
-    /// The reply, or `None` when the request was dropped without one.
+    /// The reply arrived in time, or `None` when the request was dropped without one.
     Reply(Option<Reply>),
+    /// The reply arrived, but after the deadline.
+    Late(Reply),
     /// `cancel_pending` asked the request to stop.
     Cancel,
-    /// The deadline passed.
+    /// The deadline passed with no reply.
     Deadline,
 }
 
 /// Wait for a reply, an explicit cancel or the deadline.
 ///
-/// Delivering a reply drops the request's cancel sender. A closed cancel
-/// channel is therefore no cancel: the reply is already in `reply_rx`.
-fn wait_for(reply_rx: &Receiver<Reply>, cancel_rx: &Receiver<()>, deadline: Instant) -> Wake {
+/// The reader stamps each reply when it delivers it, and that stamp alone
+/// decides whether the reply was in time (plugin-protocol.md section 6.3). A
+/// caller that wakes late can find the reply, the closed cancel channel and
+/// the deadline ready at once, and `select!` picks among them at random, so
+/// every branch classifies the reply the same way. Delivering a reply drops
+/// the request's cancel sender. A closed cancel channel is therefore no
+/// cancel: the reply is already in `reply_rx`.
+fn wait_for(reply_rx: &Receiver<Stamped>, cancel_rx: &Receiver<()>, deadline: Instant) -> Wake {
+    let classify = |got: Option<Stamped>, timed_out: bool| match got {
+        Some((at, r)) if at <= deadline => Wake::Reply(Some(r)),
+        Some((_, r)) => Wake::Late(r),
+        None if timed_out => Wake::Deadline,
+        None => Wake::Reply(None),
+    };
     select! {
-        recv(reply_rx) -> r => Wake::Reply(r.ok()),
+        recv(reply_rx) -> r => classify(r.ok(), false),
         recv(cancel_rx) -> c => match c {
             Ok(()) => Wake::Cancel,
-            Err(_) => Wake::Reply(reply_rx.try_recv().ok()),
+            Err(_) => classify(reply_rx.try_recv().ok(), false),
         },
-        recv(crossbeam_channel::at(deadline)) -> _ => Wake::Deadline,
+        recv(crossbeam_channel::at(deadline)) -> _ => classify(reply_rx.try_recv().ok(), true),
     }
 }
 
@@ -534,7 +550,7 @@ impl Conn {
             Err(e) => return Err(self.shared.fail(e)),
         };
         let deadline = Instant::now() + timeout;
-        let (reply_tx, reply_rx) = bounded::<Reply>(1);
+        let (reply_tx, reply_rx) = bounded::<Stamped>(1);
         let (cancel_tx, cancel_rx) = bounded::<()>(1);
         {
             let mut pending = lock(&self.shared.pending);
@@ -561,6 +577,8 @@ impl Conn {
             Wake::Reply(r) => {
                 r.unwrap_or_else(|| Err(self.dead().unwrap_or(PluginError::Cancelled)))
             }
+            // The plugin answered, so there is nothing to cancel; the deadline still stands.
+            Wake::Late(answer) => Err(self.settle(answer, true, method)),
             Wake::Cancel => self.cancel_and_wait(id, &reply_rx, false, method),
             Wake::Deadline if escalate => self.cancel_and_wait(id, &reply_rx, true, method),
             Wake::Deadline => {
@@ -574,7 +592,7 @@ impl Conn {
     fn cancel_and_wait(
         &self,
         id: u64,
-        rx: &Receiver<Reply>,
+        rx: &Receiver<Stamped>,
         deadline_passed: bool,
         method: &str,
     ) -> Reply {
@@ -583,15 +601,20 @@ impl Conn {
             Some(json!({"id": id})),
             self.cancel_grace,
         );
-        let Ok(answer) = rx.recv_timeout(self.cancel_grace) else {
+        let Ok((_, answer)) = rx.recv_timeout(self.cancel_grace) else {
             lock(&self.shared.pending).remove(&id);
             let err = self.timeout(&format!("`{method}` ignored its cancel"));
             return Err(self.shared.fail(err));
         };
+        Err(self.settle(answer, deadline_passed, method))
+    }
+
+    /// The error for an answer the host discards (plugin-protocol.md section 6.2).
+    fn settle(&self, answer: Reply, deadline_passed: bool, method: &str) -> PluginError {
         match answer {
-            Err(e) if !matches!(e, PluginError::Rpc(_)) => Err(e),
-            _ if deadline_passed => Err(self.timeout(&format!("`{method}` passed its deadline"))),
-            _ => Err(PluginError::Cancelled),
+            Err(e) if !matches!(e, PluginError::Rpc(_)) => e,
+            _ if deadline_passed => self.timeout(&format!("`{method}` passed its deadline")),
+            _ => PluginError::Cancelled,
         }
     }
 
@@ -1041,15 +1064,58 @@ mod tests {
         // channels are ready. `select!` picks at random: 64 rounds would all
         // miss a wrong pick with odds of 2^-64.
         for round in 0..64 {
-            let (reply_tx, reply_rx) = bounded::<Reply>(1);
+            let (reply_tx, reply_rx) = bounded::<Stamped>(1);
             let (cancel_tx, cancel_rx) = bounded::<()>(1);
-            reply_tx.send(Ok(json!(round))).unwrap();
+            reply_tx.send((Instant::now(), Ok(json!(round)))).unwrap();
             drop(cancel_tx);
             let far = Instant::now() + Duration::from_secs(60);
             match wait_for(&reply_rx, &cancel_rx, far) {
                 Wake::Reply(Some(Ok(v))) => assert_eq!(v, json!(round)),
                 other => panic!("round {round}: {other:?}"),
             }
+        }
+    }
+
+    /// A caller that wakes after its deadline finds the reply, the closed
+    /// cancel channel and the deadline all ready. The reply's arrival time
+    /// alone decides the outcome, whichever channel `select!` picks.
+    fn wake_late_with_reply_at(arrived: Instant, deadline: Instant) -> Vec<Wake> {
+        (0..64)
+            .map(|round| {
+                let (reply_tx, reply_rx) = bounded::<Stamped>(1);
+                let (cancel_tx, cancel_rx) = bounded::<()>(1);
+                reply_tx.send((arrived, Ok(json!(round)))).unwrap();
+                drop(cancel_tx);
+                wait_for(&reply_rx, &cancel_rx, deadline)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_reply_that_arrived_after_the_deadline_is_late_whatever_select_picks() {
+        let deadline = Instant::now();
+        let arrived = deadline + Duration::from_millis(1);
+        for (round, wake) in wake_late_with_reply_at(arrived, deadline)
+            .iter()
+            .enumerate()
+        {
+            assert!(matches!(wake, Wake::Late(Ok(_))), "round {round}: {wake:?}");
+        }
+    }
+
+    #[test]
+    fn a_reply_that_arrived_before_the_deadline_counts_when_the_caller_wakes_late() {
+        let arrived = Instant::now();
+        let deadline = arrived + Duration::from_millis(1);
+        std::thread::sleep(Duration::from_millis(5));
+        for (round, wake) in wake_late_with_reply_at(arrived, deadline)
+            .iter()
+            .enumerate()
+        {
+            assert!(
+                matches!(wake, Wake::Reply(Some(Ok(_)))),
+                "round {round}: {wake:?}"
+            );
         }
     }
 }
