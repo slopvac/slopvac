@@ -1767,6 +1767,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-terms"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "slopvac-text"
 version = "0.0.0"
 

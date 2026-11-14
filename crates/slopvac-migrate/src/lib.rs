@@ -9,6 +9,7 @@
 mod cli;
 mod config;
 mod directives;
+mod guide;
 mod plan;
 mod renames;
 mod report;
@@ -19,6 +20,7 @@ use std::fmt;
 pub use cli::{command, execute, run};
 pub use config::{Rewrite, STE_STYLE, migrate_config};
 pub use directives::rewrite_directives;
+pub use guide::{doc as guide_doc, prime_migrate};
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
 pub use renames::RenameTable;
 pub use report::{Finding, Linter, NullLinter, Phase, RuleDelta, compare};
