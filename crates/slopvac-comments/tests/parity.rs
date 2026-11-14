@@ -1,3 +1,4 @@
+#![cfg(feature = "all-languages")]
 //! Parity with the 2.x reference.
 //!
 //! 2.x read code comments two ways. Vale read them by line and block delimiters (no

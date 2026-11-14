@@ -1,3 +1,4 @@
+#![cfg(feature = "all-languages")]
 //! Every character of a fragment maps back to its own bytes in the source.
 
 mod common;
@@ -67,9 +68,11 @@ fn check_fragment(source: &str, fragment: &Fragment, language: Language) {
 }
 
 #[test]
-fn every_fixture_character_maps_to_its_source_bytes() {
+fn every_fixture_character_maps_to_its_source_bytes_in_every_variant() {
     for fixture in FIXTURES {
-        check(fixture.language, fixture.source);
+        for (_, source) in common::variants(fixture.source) {
+            check(fixture.language, &source);
+        }
     }
 }
 

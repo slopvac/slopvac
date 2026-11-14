@@ -32,7 +32,7 @@ mod language;
 mod span;
 mod strip;
 
-pub use extract::{ExtractError, extract};
+pub use extract::{ExtractError, Extraction, Limits, Stats, extract, extract_with};
 pub use language::Language;
 pub use span::{Projection, Span, SpanError, Token, TokenKind};
 

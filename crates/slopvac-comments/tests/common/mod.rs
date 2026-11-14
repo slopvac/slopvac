@@ -25,6 +25,22 @@ pub fn fragments(language: Language, source: &str) -> Vec<Fragment> {
     extract(language, source).expect("grammar loads and parses")
 }
 
+/// A source in LF, CRLF and lone-CR line endings, each with and without a leading BOM.
+/// The expected text of a fixture does not change across them.
+pub fn variants(source: &str) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    for (plain, with_bom, eol) in [
+        ("lf", "lf+bom", "\n"),
+        ("crlf", "crlf+bom", "\r\n"),
+        ("cr", "cr+bom", "\r"),
+    ] {
+        let converted = source.replace('\n', eol);
+        out.push((with_bom, format!("\u{feff}{converted}")));
+        out.push((plain, converted));
+    }
+    out
+}
+
 pub const FIXTURES: &[Fixture] = &[
     Fixture {
         name: "python comments group and trailing comments stand alone",

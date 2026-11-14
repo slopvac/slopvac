@@ -171,39 +171,116 @@ impl Language {
         }
     }
 
-    pub(crate) fn grammar(self) -> Grammar {
+    /// The cargo feature that builds this language's grammar, such as `lang-python`.
+    #[must_use]
+    pub const fn feature(self) -> &'static str {
         match self {
-            Self::Python => tree_sitter_python::LANGUAGE.into(),
-            Self::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
-            Self::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            Self::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-            Self::Rust => tree_sitter_rust::LANGUAGE.into(),
-            Self::Go => tree_sitter_go::LANGUAGE.into(),
-            Self::Java => tree_sitter_java::LANGUAGE.into(),
-            Self::C => tree_sitter_c::LANGUAGE.into(),
-            Self::Cpp => tree_sitter_cpp::LANGUAGE.into(),
-            Self::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
-            Self::Ruby => tree_sitter_ruby::LANGUAGE.into(),
-            Self::Php => tree_sitter_php::LANGUAGE_PHP.into(),
-            Self::Swift => tree_sitter_swift::LANGUAGE.into(),
-            Self::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
-            Self::Scala => tree_sitter_scala::LANGUAGE.into(),
-            Self::Shell => tree_sitter_bash::LANGUAGE.into(),
-            Self::Lua => tree_sitter_lua::LANGUAGE.into(),
-            Self::Perl => tree_sitter_perl::LANGUAGE.into(),
-            Self::R => tree_sitter_r::LANGUAGE.into(),
-            Self::Elixir => tree_sitter_elixir::LANGUAGE.into(),
-            Self::Haskell => tree_sitter_haskell::LANGUAGE.into(),
-            Self::FSharp => tree_sitter_fsharp::LANGUAGE_FSHARP.into(),
-            Self::Julia => tree_sitter_julia::LANGUAGE.into(),
-            Self::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
-            Self::Proto => tree_sitter_proto::LANGUAGE.into(),
-            Self::Css => tree_sitter_css::LANGUAGE.into(),
-            Self::Scss => tree_sitter_scss::language(),
-            Self::Less => tree_sitter_less::language(),
-            Self::Clojure => tree_sitter_clojure_orchard::LANGUAGE.into(),
-            Self::Dart => tree_sitter_dart::LANGUAGE.into(),
-            Self::Toml => tree_sitter_toml_ng::LANGUAGE.into(),
+            Self::Python => "lang-python",
+            Self::JavaScript => "lang-javascript",
+            Self::TypeScript | Self::Tsx => "lang-typescript",
+            Self::Rust => "lang-rust",
+            Self::Go => "lang-go",
+            Self::Java => "lang-java",
+            Self::C => "lang-c",
+            Self::Cpp => "lang-cpp",
+            Self::CSharp => "lang-csharp",
+            Self::Ruby => "lang-ruby",
+            Self::Php => "lang-php",
+            Self::Swift => "lang-swift",
+            Self::Kotlin => "lang-kotlin",
+            Self::Scala => "lang-scala",
+            Self::Shell => "lang-shell",
+            Self::Lua => "lang-lua",
+            Self::Perl => "lang-perl",
+            Self::R => "lang-r",
+            Self::Elixir => "lang-elixir",
+            Self::Haskell => "lang-haskell",
+            Self::FSharp => "lang-fsharp",
+            Self::Julia => "lang-julia",
+            Self::PowerShell => "lang-powershell",
+            Self::Proto => "lang-proto",
+            Self::Css => "lang-css",
+            Self::Scss => "lang-scss",
+            Self::Less => "lang-less",
+            Self::Clojure => "lang-clojure",
+            Self::Dart => "lang-dart",
+            Self::Toml => "lang-toml",
+        }
+    }
+
+    /// Whether this build includes the grammar. Build with `--no-default-features` and
+    /// pick `lang-*` features to trim the binary.
+    #[must_use]
+    pub fn is_enabled(self) -> bool {
+        self.grammar().is_some()
+    }
+
+    #[allow(unreachable_patterns)] // Every arm is live only with `all-languages`.
+    pub(crate) fn grammar(self) -> Option<Grammar> {
+        match self {
+            #[cfg(feature = "lang-python")]
+            Self::Python => Some(tree_sitter_python::LANGUAGE.into()),
+            #[cfg(feature = "lang-javascript")]
+            Self::JavaScript => Some(tree_sitter_javascript::LANGUAGE.into()),
+            #[cfg(feature = "lang-typescript")]
+            Self::TypeScript => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            #[cfg(feature = "lang-typescript")]
+            Self::Tsx => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+            #[cfg(feature = "lang-rust")]
+            Self::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
+            #[cfg(feature = "lang-go")]
+            Self::Go => Some(tree_sitter_go::LANGUAGE.into()),
+            #[cfg(feature = "lang-java")]
+            Self::Java => Some(tree_sitter_java::LANGUAGE.into()),
+            #[cfg(feature = "lang-c")]
+            Self::C => Some(tree_sitter_c::LANGUAGE.into()),
+            #[cfg(feature = "lang-cpp")]
+            Self::Cpp => Some(tree_sitter_cpp::LANGUAGE.into()),
+            #[cfg(feature = "lang-csharp")]
+            Self::CSharp => Some(tree_sitter_c_sharp::LANGUAGE.into()),
+            #[cfg(feature = "lang-ruby")]
+            Self::Ruby => Some(tree_sitter_ruby::LANGUAGE.into()),
+            #[cfg(feature = "lang-php")]
+            Self::Php => Some(tree_sitter_php::LANGUAGE_PHP.into()),
+            #[cfg(feature = "lang-swift")]
+            Self::Swift => Some(tree_sitter_swift::LANGUAGE.into()),
+            #[cfg(feature = "lang-kotlin")]
+            Self::Kotlin => Some(tree_sitter_kotlin_ng::LANGUAGE.into()),
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
+            #[cfg(feature = "lang-shell")]
+            Self::Shell => Some(tree_sitter_bash::LANGUAGE.into()),
+            #[cfg(feature = "lang-lua")]
+            Self::Lua => Some(tree_sitter_lua::LANGUAGE.into()),
+            #[cfg(feature = "lang-perl")]
+            Self::Perl => Some(tree_sitter_perl::LANGUAGE.into()),
+            #[cfg(feature = "lang-r")]
+            Self::R => Some(tree_sitter_r::LANGUAGE.into()),
+            #[cfg(feature = "lang-elixir")]
+            Self::Elixir => Some(tree_sitter_elixir::LANGUAGE.into()),
+            #[cfg(feature = "lang-haskell")]
+            Self::Haskell => Some(tree_sitter_haskell::LANGUAGE.into()),
+            #[cfg(feature = "lang-fsharp")]
+            Self::FSharp => Some(tree_sitter_fsharp::LANGUAGE_FSHARP.into()),
+            #[cfg(feature = "lang-julia")]
+            Self::Julia => Some(tree_sitter_julia::LANGUAGE.into()),
+            #[cfg(feature = "lang-powershell")]
+            Self::PowerShell => Some(tree_sitter_powershell::LANGUAGE.into()),
+            #[cfg(feature = "lang-proto")]
+            Self::Proto => Some(tree_sitter_proto::LANGUAGE.into()),
+            #[cfg(feature = "lang-css")]
+            Self::Css => Some(tree_sitter_css::LANGUAGE.into()),
+            #[cfg(feature = "lang-scss")]
+            Self::Scss => Some(tree_sitter_scss::language()),
+            #[cfg(feature = "lang-less")]
+            Self::Less => Some(tree_sitter_less::language()),
+            #[cfg(feature = "lang-clojure")]
+            Self::Clojure => Some(tree_sitter_clojure_orchard::LANGUAGE.into()),
+            #[cfg(feature = "lang-dart")]
+            Self::Dart => Some(tree_sitter_dart::LANGUAGE.into()),
+            #[cfg(feature = "lang-toml")]
+            Self::Toml => Some(tree_sitter_toml_ng::LANGUAGE.into()),
+            _ => None,
         }
     }
 
@@ -278,7 +355,8 @@ const STAR_BLOCK: Block = Block::Fixed {
 };
 
 const C_LIKE: Syntax = Syntax {
-    line: &["//"],
+    // `#!` is the shebang that JavaScript, Rust and Kotlin grammars give a node of its own.
+    line: &["//", "#!"],
     line_suffix: &['!'],
     line_doc: &["///", "//!"],
     leaders: &[],
@@ -315,7 +393,7 @@ const HASH: Syntax = Syntax {
 
 const R: Syntax = Syntax {
     line: &["#"],
-    line_suffix: &['\''],
+    line_suffix: &['\'', '!'],
     line_doc: &["#'"],
     leaders: &[],
     blocks: &[],
@@ -323,7 +401,7 @@ const R: Syntax = Syntax {
 
 const JULIA: Syntax = Syntax {
     line: &["#"],
-    line_suffix: &[],
+    line_suffix: &['!'],
     line_doc: &[],
     leaders: &[],
     blocks: &[Block::Fixed {
@@ -335,7 +413,7 @@ const JULIA: Syntax = Syntax {
 
 const POWERSHELL: Syntax = Syntax {
     line: &["#"],
-    line_suffix: &[],
+    line_suffix: &['!'],
     line_doc: &[],
     leaders: &[],
     blocks: &[Block::Fixed {

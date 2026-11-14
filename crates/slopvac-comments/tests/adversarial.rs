@@ -1,3 +1,4 @@
+#![cfg(feature = "all-languages")]
 //! Hostile input: no panics, bounded work.
 
 mod common;
