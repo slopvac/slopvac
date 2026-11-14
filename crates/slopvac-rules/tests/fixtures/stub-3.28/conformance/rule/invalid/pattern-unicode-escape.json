@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "pattern",
+    "pattern": "a\\u2014b"
+  },
+  "citation": {
+    "source": "s"
+  }
+}

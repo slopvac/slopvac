@@ -1,0 +1,1149 @@
+{
+  "schema_version": 3,
+  "id": "ai-tells-structure",
+  "title": "AI tells -- rhetorical structure",
+  "description": "Structure tells endure across model generations because preference training produces them: raters reward length, markdown, bulleted symmetry, and confident even-handedness, so every generation reconverges on the same shapes even as the vocabulary changes. Weight these above any word list.",
+  "weight": 1.5,
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "contrastive-inversion-frames",
+      "name": "Cut the strawman half of a contrastive frame",
+      "message": "contrastive inversion: {match} -- state what the thing is; cut the strawman",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:it's|it is|this isn't|this is not|that's not|it's not|it isn't)\\s+(?:not|less about)\\b[^.!?]{1,80}\\b(?:it's|it is|and more about|but rather)\\b|(?:^|[.!?][ \\t]+)(?:the|a|an|this|that|these|those|our|your|my|his|her|its|their)\\s+[\\w-]+(?:\\s+[\\w-]+){0,3}\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must|[a-z][\\w-]*(?:s|ed))\\b(?:\\s+[\\w-]+){0,6}\\s*[,;]\\s+(?:(?:it|this|that|they|these|those)\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must)\\s+not|not)\\s+[^.!?\\n]{1,50}",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "It's not a linter, it's a review partner.",
+          "good": "The linter reports 61 rules and scores the document."
+        },
+        {
+          "bad": "It's less about speed and more about determinism.",
+          "good": "The gate produces the same findings on every run."
+        },
+        {
+          "bad": "The Harness Measures, It Does Not Judge",
+          "good": "The Harness Measures."
+        },
+        {
+          "bad": "The parser reads JSON; it does not read YAML.",
+          "good": "The parser reads JSON."
+        },
+        {
+          "bad": "The client supports HTTP; it does not support FTP.",
+          "good": "The client supports HTTP."
+        }
+      ],
+      "fix": "Delete the negated half and state what the thing is.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Contrastive inversion\")",
+        "url": "https://gc.ai/blog/ai-writing-pattern-to-know-contrastive-negation",
+        "note": "The mechanizable core of the single most-cited current tell. Judgement remainder in ai-tells-structure.contrastive-inversion-remainder, which covers the forms that carry no fixed frame. Upstream Vale ai-tells.ContrastiveNegation and ai-tells.ContrastiveFormulas cover overlapping ground and stay enabled, so expect duplicate findings until one side is disabled."
+      }
+    },
+    {
+      "id": "contrastive-inversion-remainder",
+      "name": "Judge whether a contrast names a real alternative",
+      "message": "contrastive inversion: state what the thing is; cut the strawman",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this contrast either negate an alternative nobody proposed or add no information? Factual corrections and instructions that name a real alternative are not defects; preserve them. Flag only when removing the contrast preserves the same actionable meaning."
+      },
+      "examples": [
+        {
+          "bad": "Where other gates check words, this one reads the shape of the argument.",
+          "good": "The gate scores paragraph symmetry and passive density."
+        },
+        {
+          "bad": "It's less about speed and more about determinism.",
+          "good": "The gate is deterministic."
+        },
+        {
+          "bad": "The parser reads JSON, not YAML.",
+          "note": "preserve: factual correction naming the actual boundary"
+        },
+        {
+          "bad": "Choose SHA-256, not MD5.",
+          "note": "preserve: instruction naming a real alternative"
+        }
+      ],
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Contrastive inversion\", \"Strawman antithesis\")",
+        "url": "https://gc.ai/blog/ai-writing-pattern-to-know-contrastive-negation",
+        "note": "Judgement remainder of ai-tells-structure.contrastive-inversion-frames. The remainder needs a reader who knows whether the alternative exists, which no pattern can supply. Also absorbs the catalog's \"Strawman antithesis\" row, whose \"While other gates struggle, X ...\" shape is the same defect."
+      }
+    },
+    {
+      "id": "definitional-negation-pair",
+      "name": "Cut a cross-sentence definitional contrast",
+      "message": "definitional contrast across sentences: {match} -- state what the thing is once; cut the invented alternative",
+      "severity": "warning",
+      "scope": "paragraph",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:it|this|that|they|these|those|(?:the|this|that|these|those|our|your|its|a|an)\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s+(?:is|are|was|were|'s|'re)\\s+(?:not\\s+)?(?:a|an|the|about|just|simply|merely|only|whether|another|some|meant|intended|designed|there|here|because|how|what|where|when|why|to)\\b[^.!?;\\n]{1,90}[.;:—–]\\s+(?:it|this|that|they|these|those|the\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s*(?:(?:is|are|was|were|does|do|did)\\s+not|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|'s\\s+not|'re\\s+not)\\s+(?:(?:about|just|simply|merely|only|whether|because|how|what|where|when|why)\\b|(?:a|an|the|another|some|your)\\s+(?:[\\w-]+\\s+){0,2}?(?:requirement|silver\\s+bullet|magic\\s+bullet|panacea|magic|afterthought|luxury|nice-to-have|checkbox|check-box|formality|ritual|ceremony|badge|trophy|vanity\\s+metric|buzzword|slogan|gimmick|trick|hack|workaround|band-?aid|crutch|stopgap|toy|demo|fad|trend|hype|marketing\\s+\\w+|sales\\s+pitch|dogma|religion|cult|philosophy|mindset|journey|destination|sprint|marathon|race|competition|contest|popularity\\s+contest|excuse|accident|coincidence|mistake|failure|matter\\s+of|question\\s+of|sign\\s+of|one-off|big[- ]bang\\s+\\w+|rewrite|black\\s+box|free\\s+lunch|holy\\s+grail|end\\s+in\\s+itself|means\\s+to\\s+an\\s+end|replacement\\s+for|substitute\\s+for|goal|target|feature|bug|phase|dashboard|guarantee|theory|opinion|exercise|shortcut|place\\s+for|time\\s+for|way\\s+to)\\b|meant\\b|intended\\b|designed\\b|there\\b|here\\b|to\\b)[^.!?\\n]{0,90}|\\b(?:it|this|that|they|these|those|(?:the|this|that|these|those|our|your|its|a|an)\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s*(?:(?:is|are|was|were|does|do|did)\\s+not|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|'s\\s+not|'re\\s+not)\\s+(?:(?:about|just|simply|merely|only|whether|because|how|what|where|when|why)\\b|(?:a|an|the|another|some|your)\\s+(?:[\\w-]+\\s+){0,2}?(?:requirement|silver\\s+bullet|magic\\s+bullet|panacea|magic|afterthought|luxury|nice-to-have|checkbox|check-box|formality|ritual|ceremony|badge|trophy|vanity\\s+metric|buzzword|slogan|gimmick|trick|hack|workaround|band-?aid|crutch|stopgap|toy|demo|fad|trend|hype|marketing\\s+\\w+|sales\\s+pitch|dogma|religion|cult|philosophy|mindset|journey|destination|sprint|marathon|race|competition|contest|popularity\\s+contest|excuse|accident|coincidence|mistake|failure|matter\\s+of|question\\s+of|sign\\s+of|one-off|big[- ]bang\\s+\\w+|rewrite|black\\s+box|free\\s+lunch|holy\\s+grail|end\\s+in\\s+itself|means\\s+to\\s+an\\s+end|replacement\\s+for|substitute\\s+for|goal|target|feature|bug|phase|dashboard|guarantee|theory|opinion|exercise|shortcut|place\\s+for|time\\s+for|way\\s+to)\\b|meant\\b|intended\\b|designed\\b|there\\b|here\\b|to\\b)[^.!?;\\n]{0,90}[.;:—–]\\s+(?:it|this|that|they|these|those|the\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s*(?:is|are|was|were|'s|'re)\\s+(?:a|an|the|about|just|simply|merely|only|whether|another|some|meant|intended|designed|there|here|because|how|what|where|when|why|to)\\b[^.!?\\n]{0,90}|\\b(?:it|this|that|they|these|those|(?:the|this|that|these|those|our|your|its|a|an)\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s*(?:(?:is|are|was|were|does|do|did)\\s+not|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|'s\\s+not|'re\\s+not)\\s+\\w+[^.!?;\\n]{0,60}[.;:—–]\\s+(?:it|this|that|they|these|those|the\\s+[\\w-]+(?:\\s+[\\w-]+)?|[A-Z][\\w-]*)\\s*(?:is|are|was|were|'s|'re)\\s+\\w+(?:\\s+\\w+)?,\\s+not\\b|\\bnot\\s+because\\b[^.!?\\n]{1,80}\\bbut\\s+because\\b",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "factual-correction"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "Testing is not a phase. It is a habit.",
+          "good": "Run the tests on every push."
+        },
+        {
+          "bad": "The monorepo is a coordination boundary. It is not a requirement to combine services into one deployment.",
+          "good": "The monorepo holds the four services; each still deploys on its own."
+        },
+        {
+          "bad": "This isn't about speed. It's about correctness.",
+          "good": "The gate rejects malformed input before it reaches the parser."
+        },
+        {
+          "bad": "The question is not whether the cache is sophisticated. It is whether freshness justifies the cost.",
+          "good": "Freshness decides the design; the cache is invalidated on every catalog event."
+        },
+        {
+          "bad": "The plugin is not loaded at all; it is replaced, not merged.",
+          "good": "The project plugin replaces the user plugin of the same name."
+        },
+        {
+          "bad": "Not because it is fast, but because it is deterministic.",
+          "good": "It is deterministic, so repeated runs produce the same result."
+        },
+        {
+          "bad": "Documentation is not an afterthought. It is a feature.",
+          "good": "The docs build runs in the same pipeline as the code."
+        },
+        {
+          "good": "The limit is 100 requests per minute. It is not configurable.",
+          "bad": "The limit is a ceiling. It is not a target to aim for."
+        },
+        {
+          "good": "The lock is a lease. It is not a mutex.",
+          "bad": "Security is not a checkbox. It is a process."
+        }
+      ],
+      "fix": "Keep the sentence that says what the thing is; delete the one that says what it is not, unless the negated half states an independent fact a reader would otherwise assume.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Contrastive inversion\", \"Strawman antithesis\")",
+        "url": "https://gc.ai/blog/ai-writing-pattern-to-know-contrastive-negation",
+        "note": "The two-sentence form of the contrastive inversion: \"X is A. X is not B.\" and its mirror, with the subject repeated or pronominalised. The single-sentence frame (ai-tells-structure.contrastive-inversion-frames) stops at a sentence boundary, so this rule runs at paragraph scope, where the native engine matches against the whole block (list items and quotes included; Vale's paragraph scope skips both, so the rule stays native). The negated half must open with a rhetorical marker (\"about\", \"just\", \"whether\", \"because\", ...) or with an article followed by one of the rhetorical nouns the tell reaches for (\"a requirement\", \"an afterthought\", \"a checkbox\", \"a silver bullet\", ...): \"It is not configurable\" states a property and does not fire, and neither does a definitional distinction over concrete nouns (\"The lock is a lease. It is not a mutex.\"), which the first version of this rule caught 15 times in 15 constructed legitimate sentences. Measured in the 2026-09-12 audit and its follow-up: 0 hits in 21k parsed words of pre-2022 human prose and 30k of gated prose; every one of the 5 model-corpus hits kept; 1 of 15 legitimate distinctions fires (an acknowledgement that \"is not a guarantee\"), down from 15; 8 of 12 constructed tells fire, the 4 missed being the same-shape concrete-noun forms that the reviewer's judgement remainder covers. Warning, never error, with a `factual-correction` exception for the sentence a writer keeps."
+      }
+    },
+    {
+      "id": "staccato-negative-parallel-frames",
+      "name": "Replace a staccato negative run with one sentence",
+      "message": "staccato negative parallel: {match} -- one plain sentence naming the thing",
+      "severity": "warning",
+      "scope": "paragraph",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?:\\b[Nn]o(?:t)?\\s+[^.!?\\n]{1,30}\\.\\s+){2,}",
+        "ignore_case": false
+      },
+      "examples": [
+        {
+          "bad": "Not a bug. Not a feature. A design flaw.",
+          "good": "The loader drops the last row, which is a design flaw."
+        }
+      ],
+      "fix": "Write one declarative sentence naming what the thing is.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Staccato negative parallel\")",
+        "url": "https://tropes.fyi/",
+        "note": "Mechanizable core. Upstream ai-tells.ParallelStaccato covers this and is DEMOTED to warning in .vale.ini because its own rule comments concede the pattern is over-broad; this port inherits that level. Judgement remainder in ai-tells-structure.staccato-negative-parallel-remainder."
+      }
+    },
+    {
+      "id": "staccato-negative-parallel-remainder",
+      "name": "Judge whether a fragment run carries content",
+      "message": "fragment cadence: rejoin the fragments and let the fact carry the weight",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Do the consecutive fragments in this passage each add a fact, or does the run exist to build rhythm toward the last one?"
+      },
+      "examples": [
+        {
+          "bad": "Fast. Deterministic. Auditable.",
+          "good": "The gate is deterministic and writes an audit line per finding."
+        }
+      ],
+      "fix": "Rejoin the fragments into one or two sentences.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Staccato negative parallel\", \"One-sentence emphasis paragraph\")",
+        "url": "https://tropes.fyi/",
+        "note": "Judgement remainder of ai-tells-structure.staccato-negative-parallel-frames. Also covers register.md's \"Punchy-fragment cadence\" bullet at the paragraph level."
+      }
+    },
+    {
+      "id": "tricolon-abuse-core",
+      "name": "Cut a three-item list to the items that carry load",
+      "message": "tricolon: {match} -- cut to the one or two that carry load; break the symmetry",
+      "severity": "warning",
+      "scope": "sentence",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b((?:fast|faster|quick|quicker|reliable|dependable|secure|safe|safer|robust|resilient|stable|scalable|seamless|smooth|streamlined|efficient|effective|clear|clearer|concise|simple|simpler|easy|easier|easy-to-use|intuitive|user-friendly|flexible|versatile|extensible|powerful|modern|elegant|polished|clean|cleaner|lightweight|performant|maintainable|readable|accessible|engaging|comprehensive|innovative|cutting-edge|consistent|transparent|predictable|responsive|affordable|cheap|cheaper|sustainable|inclusive|actionable|meaningful|impactful|insightful|practical|thoughtful|vibrant|dynamic|holistic|agile|battle-tested|production-ready|future-proof|best-in-class|world-class)),\\s+((?:fast|faster|quick|quicker|reliable|dependable|secure|safe|safer|robust|resilient|stable|scalable|seamless|smooth|streamlined|efficient|effective|clear|clearer|concise|simple|simpler|easy|easier|easy-to-use|intuitive|user-friendly|flexible|versatile|extensible|powerful|modern|elegant|polished|clean|cleaner|lightweight|performant|maintainable|readable|accessible|engaging|comprehensive|innovative|cutting-edge|consistent|transparent|predictable|responsive|affordable|cheap|cheaper|sustainable|inclusive|actionable|meaningful|impactful|insightful|practical|thoughtful|vibrant|dynamic|holistic|agile|battle-tested|production-ready|future-proof|best-in-class|world-class)),\\s+and\\s+(\\w+(?:-\\w+)*(?:\\s+\\w+(?:-\\w+)*)*)\\b(?=[\\s.,;:]|$)",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "fast, reliable, and secure",
+          "good": "The gate reports every finding with a line number."
+        },
+        {
+          "bad": "The system is fast, reliable, and battle-tested.",
+          "good": "The gate reports every finding with a line number.",
+          "note": "The last item may be hyphenated or multiword so a rhetorical \"battle-tested\" or \"easy to follow\" still fires."
+        },
+        {
+          "bad": "The guide is clear, concise, and easy to follow.",
+          "good": "The release covers planning, implementation, and testing.",
+          "note": "A three-item enumeration of nouns or verbs (\"create, update, and delete\"; \"dates, times, and timezones\") names distinct things and does not fire. Only a triad that opens with two evaluative adjectives does."
+        }
+      ],
+      "fix": "Keep the one or two items that carry load and break the symmetry.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Rule of three / tricolon abuse\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core, advisory for the same measured reason ai-tells.VerbTricolon was demoted: 149 hits on the source corpus (see the immutable historical record at https://github.com/srobroek/slopvac/blob/18c37dcaf2d11ef43ab9cf4610cae0664e2644af/packages/slopvac-lint/docs/exclusions.md). Human labelling, 2026-10: the any-three-words pattern fired mostly on ordinary enumerations of nouns, verbs, places, and title-case section names, which reviewers rejected; it now fires only when the first two items are evaluative adjectives (\"fast, reliable, and secure\"), the promotional triad that carried the true positives. Judgement remainder in ai-tells-structure.tricolon-abuse-remainder covers the bullet-symmetry and back-to-back-tricolon forms no single-sentence pattern reaches. Upstream ai-tells.VerbTricolon and VerbTricolonDensity stay enabled."
+      }
+    },
+    {
+      "id": "tricolon-abuse-remainder",
+      "name": "Judge whether parallel bullets carry distinct substance",
+      "message": "parallel symmetry: keep only the items with distinct substance",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Do the parallel items -- three identical-shape bullets, or two tricolons in consecutive sentences -- each state a fact the others do not?"
+      },
+      "examples": [
+        {
+          "bad": "- **Speed:** it is fast.\n- **Safety:** it is safe.\n- **Scale:** it scales.",
+          "good": "The gate reads 488 files in 0.4 s and refuses an unresolvable style."
+        }
+      ],
+      "fix": "Merge into prose, or keep only the items with distinct substance.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Rule of three / tricolon abuse\", \"Bold-lead-in bullet symmetry\")",
+        "url": "https://rlhfbook.com/c/18-style",
+        "note": "Judgement remainder of ai-tells-structure.tricolon-abuse-core. Absorbs the catalog's \"Bold-lead-in bullet symmetry\" row: `**Speed:** one sentence` x 6 with near-zero content. The bullet SHAPE is mechanizable and lives in ai-tells-formatting.inline-header-list; the \"near-zero content\" test is this rule."
+      }
+    },
+    {
+      "id": "false-suspense-frames",
+      "name": "Delete the drumroll",
+      "message": "false suspense: {match} -- delete the drumroll; state the point",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "here's the thing",
+          "here is the thing",
+          "here's the kicker",
+          "here's what most people miss",
+          "here's what nobody tells you",
+          "here's the catch",
+          "here's where it gets interesting",
+          "but here's the problem",
+          "and here's why"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Here's the thing: the loader reads the lockfile.",
+          "good": "The loader reads the lockfile."
+        }
+      ],
+      "fix": "Delete the phrase and state the point.",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"False-suspense transition\")",
+        "url": "https://tropes.fyi/",
+        "note": "Mechanizable core, as a literal token list. Judgement remainder in ai-tells-structure.false-suspense-remainder, because the shape outlives any fixed phrase -- the index records that the cliche palette rotates each model generation (Washington Post analysis of 328,744 ChatGPT messages). Overlaps upstream ai-tells.NarrativePivots and ai-tells.OpeningCliches, which stay enabled."
+      }
+    },
+    {
+      "id": "false-suspense-remainder",
+      "name": "Judge whether a transition withholds the point",
+      "message": "false suspense: delete the drumroll; state the point",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this transition announce that something important follows without stating any part of it?"
+      },
+      "examples": [
+        {
+          "bad": "What follows is the part that changes how you read the rest of this page.",
+          "good": "The gate exits 1 when the score falls below 80."
+        }
+      ],
+      "fix": "Delete the transition and open on the point.",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"False-suspense transition\")",
+        "url": "https://tropes.fyi/",
+        "note": "Judgement remainder of ai-tells-structure.false-suspense-frames. The token list decays per model generation; this question does not."
+      }
+    },
+    {
+      "id": "fragment-question-pivot",
+      "name": "Replace a question-answer fragment pair with a declarative",
+      "message": "fragment-question pivot: {match} -- one declarative sentence",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b[A-Z][a-z]*(?:\\s+\\w+){0,3}\\?\\s+[A-Z]\\w*(?:\\s+\\w+){0,2}\\.",
+        "ignore_case": false
+      },
+      "examples": [
+        {
+          "bad": "The result? Devastating.",
+          "good": "The migration dropped two rows."
+        }
+      ],
+      "fix": "Write one declarative sentence.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Fragment-question pivot\")",
+        "url": "https://tropes.fyi/",
+        "note": "Fully mechanizable as a shape, so no judgement partner. Warning rather than error because a short question followed by a short answer is also a legitimate FAQ form -- calibrate before enforcing outside strict."
+      }
+    },
+    {
+      "id": "rhetorical-question-transition",
+      "name": "Answer directly instead of asking",
+      "message": "rhetorical question: {match} -- answer directly; delete the question",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?m)^\\s*(?:#{1,6}\\s*)?(?:So|But|Now|And)?\\s*(?:why|what|how|who)\\b[^.!?\\n]{0,60}\\?\\s*$",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "So why does this matter?",
+          "good": "A false status claim ships a document that lies."
+        }
+      ],
+      "fix": "Delete the question and state the answer.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Rhetorical-question transition\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Anchored to a question that occupies a whole line or heading, which is the transition position; a question inside a paragraph is often a real one. Overlaps upstream ai-tells.RhetoricalSelfAnswer and ai-tells.RhetoricalDevices, which stay enabled. Fully mechanizable at this anchor, so no judgement partner."
+      }
+    },
+    {
+      "id": "meta-narration-frames",
+      "name": "Delete the navigation announcement",
+      "message": "meta-narration: {match} -- delete it; navigation is the TOC's job",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "let's dive in",
+          "let's dive into",
+          "let's unpack",
+          "let's explore",
+          "let's take a look at",
+          "let's break this down",
+          "we'll explore",
+          "we'll walk through",
+          "in this guide",
+          "buckle up"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "In this guide, we'll explore the loader.",
+          "good": "The loader resolves every path in the manifest."
+        }
+      ],
+      "fix": "Delete the sentence; the table of contents carries navigation.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Meta-narration\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core. The document-opening frame is already mechanised as prose-inflation.document-preamble at a MEASURED 250x slop ratio; this token list reaches the mid-document and imperative forms that rule's anchors miss. Judgement remainder in ai-tells-structure.meta-narration-remainder. Overlaps upstream ai-tells.Metacommentary, ai-tells.UnpackExplore, and ai-tells.StructureAnnouncements, all of which stay enabled."
+      }
+    },
+    {
+      "id": "meta-narration-remainder",
+      "name": "Judge whether a sentence spends itself on navigation",
+      "message": "meta-narration: delete it; navigation is the TOC's job",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "If this sentence were removed, would the reader lose a current fact, required constraint, reproducible action, or explicit change/decision purpose? Flag it when it only announces the document's route, sequence, or implementation journey. Keep navigation that names a prerequisite, safety boundary, release delta, historical record, decision, plan, or specification purpose."
+      },
+      "examples": [
+        {
+          "bad": "Before getting to the flags, some background on why the loader exists.",
+          "good": "The loader reads the lockfile, then falls back to the manifest."
+        },
+        {
+          "bad": "This section walks through how we arrived at the cache layout.",
+          "good": "The cache key is the manifest path and content hash."
+        },
+        {
+          "good": "This release note explains why the loader now rejects duplicate keys.",
+          "bad": "We will explore the implementation journey in a later section."
+        }
+      ],
+      "fix": "Delete the navigation sentence; retain the fact, constraint, or purpose it was masking.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Meta-narration\")",
+        "note": "Judgement remainder of ai-tells-structure.meta-narration-frames and of prose-inflation.document-preamble."
+      }
+    },
+    {
+      "id": "heading-echo",
+      "name": "Start with the first new fact after a heading",
+      "message": "heading echo: start with the first new fact",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Given the heading alone, does the first sentence repeat its proposition with no new operation, constraint, path, metric, or scope? Same topic is not enough to flag."
+      },
+      "examples": [
+        {
+          "bad": "## Install the plugin\n\nThis section covers installing the plugin.",
+          "good": "## Install the plugin\n\nRun apm install slopvac."
+        },
+        {
+          "bad": "## Authentication\n\nAuthentication covers access control.",
+          "good": "## Authentication\n\nEvery request sends a bearer token."
+        },
+        {
+          "bad": "Deployment\n\nDeployment is the act of releasing software.",
+          "good": "Deployment\n\nThe pipeline signs the image before publishing it."
+        }
+      ],
+      "fix": "Delete the restatement and open on the first new fact.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Heading echo\")",
+        "note": "Judgement, not pattern: deciding it requires comparing the sentence's content against the heading's, and paraphrase defeats any string test. prose-craft.self-reference catches the subset that names the section explicitly (\"This section explains\"), and prose-inflation.document-preamble catches the document-level form."
+      }
+    },
+    {
+      "id": "summary-closer-frames",
+      "name": "End on the last fact",
+      "message": "summary closer: {match} -- end on the last fact",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "in conclusion",
+          "to wrap up",
+          "to wrap things up",
+          "to sum up",
+          "in summary",
+          "to summarize",
+          "to summarise",
+          "wrapping up",
+          "the bottom line is",
+          "all in all",
+          "at the end of the day",
+          "and that's it",
+          "that covers the essentials",
+          "happy coding",
+          "happy hacking",
+          "happy migrating",
+          "more to come"
+        ],
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "In conclusion, the gate reads one config file.",
+          "good": "The gate reads one config file."
+        },
+        {
+          "bad": "Happy migrating!",
+          "good": "Restart the worker after the config is written."
+        }
+      ],
+      "fix": "Delete the closer; the last fact ends the section.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Summary closer\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core. Judgement remainder in ai-tells-structure.summary-closer-remainder covers the re-listing form, which carries no marker phrase. \"at the end of the day\" also appears in prose-inflation.business-jargon; that duplicate is acceptable because the two rules name different fixes. The sign-off tokens (\"happy coding\", \"and that's it\", \"more to come\") were added in the 2026-09-12 audit: each had 0 occurrences in 27k words of pre-2022 human prose and appeared as closers in model-generated guides."
+      }
+    },
+    {
+      "id": "summary-closer-remainder",
+      "name": "Judge whether a closing section adds a fact",
+      "message": "summary closer: end on the last fact",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does the final section state anything the sections above did not, or does it re-list them?"
+      },
+      "examples": [
+        {
+          "bad": "The gate has three parts, described above: the loader, the checkers, and the scorer.",
+          "good": "",
+          "note": "The document ends on the scorer section."
+        }
+      ],
+      "fix": "Delete the section.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Summary closer\", \"Outline conclusion\")",
+        "note": "Judgement remainder of ai-tells-structure.summary-closer-frames. Also absorbs the catalog's \"Outline conclusion\" row (\"Challenges and Future Outlook\", \"Despite these challenges ... remains\"), whose heading forms are covered upstream by ai-tells.DespiteChallenges and ai-tells.WrapUpHeadings."
+      }
+    },
+    {
+      "id": "listicle-in-a-trench-coat",
+      "name": "Make it a real list or real prose",
+      "message": "listicle in prose: either a real list, or prose with connective logic",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Do consecutive paragraphs enumerate positions in a sequence (\"The first X is ... The second X is ...\") without any of them depending on the one before?"
+      },
+      "examples": [
+        {
+          "bad": "The first wall is latency. The second wall is memory. The third wall is cost.",
+          "good": "Three limits apply:\n\n- latency\n- memory\n- cost"
+        }
+      ],
+      "fix": "Convert to a list, or rewrite as prose where each paragraph follows from the last.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Listicle in a trench coat\")",
+        "note": "No pattern reaches it: the defect is that prose form carries list content, which needs the reader to test whether each paragraph depends on the last. Upstream ai-tells.SequencingMarkers and ai-tells.ListIntroductions catch the marker phrases, not the shape."
+      }
+    },
+    {
+      "id": "anaphora-abuse",
+      "name": "Say it once and merge the objects",
+      "message": "anaphora: say it once; merge the objects",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Do three or more consecutive sentences open on the same subject-verb pair, with only the object changing?"
+      },
+      "examples": [
+        {
+          "bad": "They assume a lockfile. They assume a network. They assume a token.",
+          "good": "They assume a lockfile, a network, and a token."
+        }
+      ],
+      "fix": "Write the subject-verb once and list the objects.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Anaphora abuse\")",
+        "note": "Upstream ai-tells.StackedAnaphora attempts the mechanical form and stays enabled; this judgement rule carries the case where the repeated opener is paraphrased rather than identical, which no regex reaches."
+      }
+    },
+    {
+      "id": "analogy-stack-authority",
+      "name": "Keep one apt comparison, or none",
+      "message": "analogy stack: one apt comparison, or none",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this passage borrow authority by naming well-known companies or products that have no causal connection to the claim?"
+      },
+      "examples": [
+        {
+          "bad": "Apple didn't build Uber. Facebook didn't build Spotify.",
+          "good": "The plugin runs in the host process, so it cannot outlive the session."
+        }
+      ],
+      "fix": "Keep the one comparison that shares a mechanism with the subject, or cut all of them.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Analogy-stack authority\")",
+        "url": "https://www.oliviacal.com/post/ai-writing-tells",
+        "note": "Deciding it needs domain knowledge about whether the comparison shares a mechanism, which is exactly what a pattern cannot hold."
+      }
+    },
+    {
+      "id": "invented-concept-label",
+      "name": "Coin nothing",
+      "message": "invented concept label: use the plain description; coin nothing",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this document name a concept in title-case or quoted form (\"the supervision paradox\", \"workload creep\") without defining it and without citing a source that uses the term?"
+      },
+      "examples": [
+        {
+          "bad": "This is the supervision paradox.",
+          "good": "A reviewer who approves faster than they read approves more defects."
+        }
+      ],
+      "fix": "Replace the coinage with the plain description.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Invented concept label\")",
+        "note": "Distinguishing a coinage from established domain vocabulary requires knowing the field, so it cannot be a token list -- the list would have to enumerate every legitimate term instead."
+      }
+    },
+    {
+      "id": "cataphoric-lead-in-core",
+      "name": "Cut the count forecast",
+      "message": "cataphoric lead-in: {match} -- let the list carry its own length; cut the forecast",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:there are |falls? into |breaks? down into |comes? down to |divides? into |consists? of |has )?(?:two|three|four|five|six|seven)\\s+(?:pillars|categories|kinds|types|reasons|things|ways|factors|areas|themes|buckets|dimensions|principles|steps)\\b",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Three pillars support this: speed, safety, and cost.",
+          "good": "The gate is fast, refuses an unresolvable style, and runs in CI."
+        }
+      ],
+      "fix": "Delete the count and let the list carry its own length.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Cataphoric numbered lead-in\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core. Judgement remainder in ai-tells-structure.cataphoric-lead-in-remainder covers the paraphrased forecast. Upstream ai-tells.CataphoricForecasting covers this and stays enabled. NOTE the conflict: a numbered forecast is CORRECT in a spec or a procedure where the reader needs to know how many steps remain, which is why relaxed excludes it."
+      }
+    },
+    {
+      "id": "cataphoric-lead-in-remainder",
+      "name": "Judge whether a forecast tells the reader anything",
+      "message": "cataphoric lead-in: cut the forecast",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does announcing the count change what the reader does, or does the list immediately below already show its own length?"
+      },
+      "examples": [
+        {
+          "bad": "A handful of considerations apply here.",
+          "good": "Two limits apply:"
+        }
+      ],
+      "fix": "Delete the forecast unless the reader must budget effort before reading.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Cataphoric numbered lead-in\")",
+        "note": "Judgement remainder of ai-tells-structure.cataphoric-lead-in-core."
+      }
+    },
+    {
+      "id": "hollow-acknowledgment",
+      "name": "Solve it, or cut the paragraph that raises it",
+      "message": "hollow acknowledgment: solve it, or cut the paragraph that raises it",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this passage name a risk, limitation, or problem and then give the reader no action, no measurement, and no pointer to where it is handled?"
+      },
+      "examples": [
+        {
+          "bad": "Rate limits are a real concern here.",
+          "good": "The client retries twice, then returns 429 to the caller."
+        }
+      ],
+      "fix": "State the action, or delete the paragraph.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Hollow acknowledgment\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "prose-inflation.apologizing mechanises the subset that DEFERS explicitly (\"further research is needed\"); this rule covers all diagnosis with no treatment, which carries no marker phrase. Upstream ai-tells.HollowAcknowledgment attempts the phrase forms and stays enabled."
+      }
+    },
+    {
+      "id": "absolute-assertion-core",
+      "name": "State the claim with its actual scope",
+      "message": "absolute assertion: {match} -- state the claim with its actual scope",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?i:\\b(?:the only way to|the single most important|make no mistake|there is no substitute for|the one thing you need|without exception the|always the right|never the right)\\b)|\\bEvery\\s+(?:[A-Z][a-z]*\\s+){1,5}(?:Is|Are|Was|Were|Does|Do|Did|Has|Have|Had|Can|Will|Must|Should|Requires?|Accepts?|Maps?|Traces?|Needs?|Uses?|Produces?|Supports?|Contains?|Returns?|Runs?|Fails?)\\s+(?:[A-Z][a-z]*\\s+){0,8}[A-Z][a-z]*(?=[.!?,;:]|$)",
+        "ignore_case": false
+      },
+      "examples": [
+        {
+          "bad": "The only way to fix this is to re-run the sync.",
+          "good": "One way to fix this is to re-run the sync when the cache is stale."
+        },
+        {
+          "bad": "Every Project Needs A Lockfile.",
+          "good": "A project with more than one direct dependency needs a lockfile."
+        }
+      ],
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Absolute assertion\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core. The catalog calls this the MIRROR of hedge stacking: over-commitment reads as generated too, which is why prose-inflation.hedge-stack and this rule are complements, not duplicates. Judgement remainder in ai-tells-structure.absolute-assertion-remainder. Upstream ai-tells.AbsoluteAssertions and ai-tells.FalseExclusivity stay enabled."
+      }
+    },
+    {
+      "id": "absolute-assertion-remainder",
+      "name": "Judge whether an absolute claim survives one counterexample",
+      "message": "absolute assertion: state the claim with its actual scope",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Should the reviewer preserve quotations, attributed claims, and factual descriptions tied to a named person, work, edition, document, product, or other explicit finite set, local all/only/never with its stated antecedent (except an action a component never takes, which prose-discipline.negative-guarantee-remainder judges), and bounded comparative recommendations, while flagging unsupported authorial guarantees or categorical evaluations (including \"will tell you\", \"wherever ... has a problem\", or \"you are wrong\") and sweeping always/never/every/no X has ever claims unless attributed or supported by quantified or passage evidence?"
+      },
+      "examples": [
+        {
+          "bad": "Every Project Needs A Lockfile.",
+          "good": "A project with more than one direct dependency needs a lockfile."
+        },
+        {
+          "bad": "Every request to this endpoint requires authentication.",
+          "note": "preserve: bounded endpoint domain"
+        },
+        {
+          "bad": "MUST reject every invalid request.",
+          "note": "preserve: explicit specification invariant"
+        },
+        {
+          "bad": "Every system always behaves correctly.",
+          "note": "flag: unsupported universal; require an observed counterexample"
+        }
+      ],
+      "fix": "Narrow the claim to the scope the evidence supports.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Absolute assertion\")",
+        "note": "Judgement remainder of ai-tells-structure.absolute-assertion-core. Preserve quotations, attributed claims, and factual descriptions tied to a named person, work, edition, document, product, or other explicit finite set; local all/only/never inherits its stated antecedent; and preserve bounded comparative recommendations. Flag unsupported authorial guarantees or categorical evaluations (including \"will tell you\", \"wherever ... has a problem\", or \"you are wrong\") and sweeping always/never/every/no X has ever claims unless attributed or supported by quantified or passage evidence. The local-never preservation excludes a component described by an action it never takes: \"The release agent never merges a pull request\" has a stated antecedent, so the preservation passed that form, and prose-discipline.negative-guarantee-remainder now judges it."
+      }
+    },
+    {
+      "id": "negative-inventory-core",
+      "name": "Cut low-value negative inventory",
+      "message": "negative inventory: {match} -- state the supported behavior or constraint",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?:\\b(?:does|did)\\s+not\\s+pin\\b|(?<!^)(?<!\\n)(?<!^[-*+>]\\s)(?<![.!?:;,]\\s)(?<![.!?:;,])(?<!please\\s)(?<!then\\s)(?<!and\\s)(?<!also\\s)(?<!always\\s)(?<!but\\s)\\bdo\\s+not\\s+pin\\b|(?<!shall\\s)(?<!must\\s)(?<!should\\s)(?<!shall\\sbe\\s)(?<!must\\sbe\\s)(?<!should\\sbe\\s)(?<!never\\s)\\bnot\\s+pinned\\b|\\boutside\\s+(?:the\\s+)?(?:scope|tooling|coverage|repository|contract|matrix|current\\s+run)\\b|\\bexcluded\\s+from\\s+this\\s+(?:review|scope|run|release)\\b|(?:(?<=^)|(?<=^[-*+>]\\s)|(?<=^\\*\\*)|(?<=^[-*+]\\s\\*\\*)|(?<=\\|)|(?<=\\|\\s)|(?<=\\|\\s\\*\\*)|(?<=\\|\\*\\*))(?:excluded|not\\s+included|out\\s+of\\s+scope)\\b(?=\\s*(?:[:|*—-]|$)|(?:\\s+[\\w-]+){1,6}\\s*:)|(?<!shall\\s)(?<!must\\s)(?<!should\\s)(?<!shall\\sbe\\s)(?<!must\\sbe\\s)(?<!should\\sbe\\s)(?<!never\\s)\\bnot\\s+included\\b|\\brecorded\\s+elsewhere\\b)(?![^\\n.!?]*(?:\\b(?:must|shall|should)\\b|\\b(?:is|are|be)\\s+required\\b|[:;,]\\s*(?:(?:please|then|and|also|always|but)\\s+)*(?:do\\s+not|don't|never)\\b))",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "Tooling not pinned: versions may drift.",
+          "good": "The lockfile pins the formatter version used by CI."
+        },
+        {
+          "bad": "Excluded from this review: browser checks and visual polish.",
+          "good": "Browser checks are not run; use the smoke command before release."
+        },
+        {
+          "bad": "| Coverage | Status |\n|---|---|\n| Outside tooling scope | Not included |",
+          "good": "The parser test suite covers TOML comments; browser behavior is not run here."
+        },
+        {
+          "bad": "Config is recorded elsewhere.",
+          "good": "The deployment manifest records the region and is the source of truth."
+        },
+        {
+          "bad": "- Excluded: browser checks and visual polish.",
+          "good": "Trust cannot restore a capability excluded from the child's set."
+        },
+        {
+          "bad": "Visual polish is excluded from this release.",
+          "good": "Dependencies must not be pinned to a branch."
+        },
+        {
+          "bad": "Out of scope: visual polish.",
+          "good": "Do not pin the formatter to a floating tag."
+        },
+        {
+          "bad": "Excluded from verification: accessibility checks.",
+          "good": "Excluded: clients MUST NOT access telemetry."
+        }
+      ],
+      "fix": "State the actionable behavior, enforced constraint, or reproducible result; delete the inventory otherwise.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Negative/exclusion inventory\")",
+        "note": "Mechanizable vocabulary for inventories that announce what is absent without giving the reader a decision, constraint, result, or reproduction path. Judgement remainder in ai-tells-structure.negative-inventory-remainder. Requirement exception: a match is dropped when its sentence tail (to the next `.`, `!`, `?` or line break) holds must/shall/should, \"is required\" or a clause-initial do not/don't/never; a pin phrase is also dropped after a modal or a leading imperative. Requirement text earlier in a different sentence is a known 2.x gap, handled by the 3.0 requirement context."
+      }
+    },
+    {
+      "id": "negative-inventory-remainder",
+      "name": "Judge whether a negative constraint is actionable",
+      "message": "negative inventory: state the supported behavior or constraint",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "If this negative statement were removed, would the reader lose a reproducible result, safety or compliance constraint, debugging boundary, audit fact, or a current action? Flag it when it merely inventories what was not pinned, run, included, or recorded, including cache-style operational archaeology. Keep an explicit boundary when it changes the current contract or records a change, release, historical result, plan, or specification scope."
+      },
+      "examples": [
+        {
+          "bad": "The tooling is not pinned, and visual checks are outside scope.",
+          "good": "CI rejects an unpinned formatter; visual checks are not run by this command."
+        },
+        {
+          "bad": "Several checks were excluded and recorded elsewhere.",
+          "good": "The audit log records the excluded checks and their reasons."
+        },
+        {
+          "bad": "The cache was warm, then cold, then warmed again during the investigation.",
+          "good": "The cache is invalidated when the manifest changes."
+        },
+        {
+          "good": "This release does not include browser checks; run `make browser-smoke` before release.",
+          "bad": "Not included: other things."
+        }
+      ],
+      "fix": "Keep the actionable boundary or result and delete inventory narration.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Negative/exclusion inventory\")",
+        "note": "Judgement remainder of ai-tells-structure.negative-inventory-core. The negative form is legitimate when it changes reader action or records an enforced safety, compliance, debugging, reproducibility, or audit boundary."
+      }
+    },
+    {
+      "id": "negative-guarantee-core",
+      "name": "State what a component does, not what it never does",
+      "message": "negative guarantee: {match} -- state what the component does, or name the hook, test, gate, or permission that stops it",
+      "severity": "warning",
+      "scope": "paragraph",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?:^|(?<=[.!?;:]\\s)|(?<=[.!?]\\s\\s)|(?<=—)|(?<=—\\s)|\\b(?=(?:It|They|The|This|These|Those|That|Each|Every|Its|Their)\\s))(?!(?:If|When|Whenever|Because|Although|Though|While|Unless|Since|As|There|Here|Please|Just|And|But|Or|So|Then|Note|Never|Once|After|Before|Until|Where|Why|How|What|Do|Don't|Instead|Otherwise|Thus|Hence|However|Also|Only|Even|Ensure|Make|Verify|Check|Confirm|Assert|Test|Remember|Keep|Use|Set|Configure|Run|Let|Require|Expect)\\b)(?!(?i:(?:must|should|shall|will|would|can|could|may|might|does|do|did|is|are|was|were|has|have|had|be|not|never|and|or|but|if|when|then|so)|you|we|i)\\b)[\\w`'\\x00](?:[\\w`'.-]*[\\w`'\\x00])?(?:\\s+(?!(?i:(?:must|should|shall|will|would|can|could|may|might|does|do|did|is|are|was|were|has|have|had|be|not|never|and|or|but|if|when|then|so)|(?:that|which|who|whom|whose|whether|where|what|how|why|because|than|unless|until|while|once))\\b)[\\w`'\\x00](?:[\\w`'.-]*[\\w`'\\x00])?){0,6}?\\s+(?:(?:itself|themselves|also|still|simply|currently|deliberately|by\\s+design|by\\s+default)\\s+)?(?:never\\s+(?!(?:be|been|before|again|once|ever|mind|[a-z]+(?<!e)ed|was|were|had|did|got|went|saw|made|ran|wrote|came|became|found|left|took|knew|thought|told|said|gave|lost|broke|held|kept|sent|built|caught|fell|grew|drew|threw|spoke|stood|bought|brought|fought|taught|meant|began|chose|drove|understood|ate|drank|slept|swam|sang|sank|sat|rose|rode|flew|forgot|forgave|hid|shook|stole|tore|wore|woke|won|withdrew|withstood|arose|awoke|blew|dealt|dug|fed|felt|fled|froze|heard|laid|led|lent|lit|met|paid|sold|sought|spent|struck|swept|wept|changes?|var(?:y|ies)|exceeds?|happens?|occurs?|exists?|matters?|equals?|says?|states?|mentions?|contains?|overlaps?|appears?|go(?:es)?)\\b)[a-z][\\w-]*|(?:runs|writes|makes|sends|creates|opens|performs|calls|touches|stores|modifies|deletes|issues|emits|spawns|starts|executes|pushes|fetches|contacts|commits|merges|closes|resolves|blocks|edits|uploads|downloads|installs|collects|logs|tracks|caches|retries|mutates|leaks|exposes|grants|deploys|publishes|overwrites|removes|claims|asks)\\s+no\\s+[a-z][\\w-]*|(?:does|do)\\s+not\\s+ever\\s+[a-z][\\w-]*)",
+        "ignore_case": false
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "normative-keyword"
+        },
+        {
+          "name": "enforced-invariant"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The deploy helper itself never creates a branch, a tag, a release or a webhook.",
+          "good": "The deploy helper writes one file, `.deploy/state.json`; branch protection rejects its token on `main`."
+        },
+        {
+          "bad": "| `hooks/` | Advisory reminders on each edit. They never stop a command. |",
+          "good": "| `hooks/` | Advisory reminders on each edit; each hook exits 0, so the command runs. |"
+        },
+        {
+          "bad": "The release agent never merges a pull request. It runs no deploy step before the release gate resolves.",
+          "good": "A maintainer merges the release pull request. CI starts the deploy job after the release gate resolves."
+        },
+        {
+          "bad": "The importer appends rows; it never deletes one.",
+          "good": "The importer appends rows. The database role it connects as has no DELETE grant."
+        },
+        {
+          "bad": "The client never retries a request that returned 409.",
+          "good": "The client MUST NOT retry a request that returned 409."
+        },
+        {
+          "bad": "The agent never edits the lockfile.",
+          "good": "Never edit the lockfile by hand."
+        },
+        {
+          "bad": "Outside a run the plugin spawns no process.",
+          "good": "Outside a run the plugin only registers its slash commands."
+        }
+      ],
+      "fix": "State what the component does. Where the limit matters, name what enforces it (a hook, test, gate, lock, or permission); otherwise delete the sentence. In agent guidance, write the limit as a directive. Review modal and passive guarantees with prose-discipline.negative-guarantee-remainder.",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog - structure.md (\"Absolute assertion\")",
+        "note": "Matches descriptive \"X never acts\", listed side-effect verbs with \"no\", and \"does/do not ever\". Subjects have at most seven words and start at a sentence or clause boundary, or a capitalised pronoun or determiner. Paragraph scope includes list items, quotes, and table cells. Modal guarantees and passive constructions belong to prose-discipline.negative-guarantee-remainder. That question preserves explained guarantees and language, protocol, or data invariants. The core skips normative modals, imperatives, selected state verbs, and selected past-tense forms. Its active forms can still match a backed invariant; use the enforced-invariant exception when the passage names its enforcement. The rule reports a warning at normal and strict, and a suggestion at relaxed."
+      }
+    },
+    {
+      "id": "think-of-it-as-core",
+      "name": "Explain the mechanism instead of the metaphor",
+      "message": "teacher voice: {match} -- explain the actual mechanism once; cut the teacher voice",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:think of (?:it|this|them) (?:as|like)|imagine (?:it|this|a)|picture (?:it|this|a)|it's (?:kind of |sort of )?like a?)\\b",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Think of it like a highway system for data.",
+          "good": "The bus fans one message out to every registered handler."
+        }
+      ],
+      "fix": "State the mechanism once and delete the analogy.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Think-of-it-as reflex\")",
+        "url": "https://medium.com/@tdoherty_96508/a-field-guide-to-terrible-ai-writing-6a83ddb6a141",
+        "note": "Mechanizable core. Judgement remainder in ai-tells-structure.think-of-it-as-remainder, because an analogy can be introduced with no frame at all."
+      }
+    },
+    {
+      "id": "think-of-it-as-remainder",
+      "name": "Judge whether an analogy replaces the mechanism",
+      "message": "teacher voice: explain the actual mechanism once",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Is the mechanism stated anywhere in this passage, or does the analogy stand in place of it?"
+      },
+      "examples": [
+        {
+          "bad": "The scheduler is the traffic warden of the cluster.",
+          "good": "The scheduler assigns each pod to the node with the most free memory."
+        }
+      ],
+      "fix": "State the mechanism; keep the analogy only if it shortens the explanation.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Think-of-it-as reflex\")",
+        "note": "Judgement remainder of ai-tells-structure.think-of-it-as-core."
+      }
+    },
+    {
+      "id": "false-range",
+      "name": "List the actual items or name the real dimension",
+      "message": "false range: list the actual items, or name the real dimension",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Do the two endpoints of this \"from X to Y\" construction sit on a real scale, or are they two unordered members of a set?"
+      },
+      "examples": [
+        {
+          "bad": "from beef to chicken",
+          "good": "beef, chicken, and pork"
+        },
+        {
+          "bad": "from startups to enterprises",
+          "good": "teams of 3 to 3,000 engineers"
+        }
+      ],
+      "fix": "List the items, or name the dimension that actually varies.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"False range\")",
+        "note": "A pattern for \"from X to Y\" would fire on every legitimate range, so this is judgement-only: the test is whether the endpoints are ordered, which needs the reader to know the domain."
+      }
+    },
+    {
+      "id": "vague-attribution-core",
+      "name": "Name the source or own the claim",
+      "message": "vague attribution: {match} -- name the source or own the claim",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(?:experts?|researchers?|analysts?|observers?|critics?|studies|surveys?|reports?|sources?|some|many|most)\\s+(?:agree|say|note|suggest|argue|believe|report|found|indicate|point out|warn)\\b|\\b(?:industry|market|recent)\\s+(?:reports?|studies|research|analysis|data)\\s+(?:shows?|suggests?|indicates?|finds?)\\b|\\bit is (?:widely|generally|commonly) (?:known|believed|accepted|understood|reported)\\b",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "Experts agree that lockfiles reduce drift.",
+          "good": "The npm RFC 0012 measured a 40% drop in resolution variance with a lockfile."
+        }
+      ],
+      "fix": "Name the source with a citation, or state the claim in your own voice.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Vague attribution\")",
+        "url": "https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing",
+        "note": "Mechanizable core, enforced at every tier: an unsourced appeal to authority is a factual defect in any register, and .vale.ini already keeps upstream ai-tells.VagueAttributions at error even for source comments. Judgement remainder in ai-tells-structure.vague-attribution-remainder. This is the one structure rule the source config already trusted enough to gate code comments on."
+      }
+    },
+    {
+      "id": "vague-attribution-remainder",
+      "name": "Judge whether a cited source is checkable",
+      "message": "vague attribution: name the source or own the claim",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Could a reader locate the source behind this claim from what the sentence gives them?"
+      },
+      "examples": [
+        {
+          "bad": "The literature is clear on this.",
+          "good": "RFC 7231 section 6.5.1 defines the status code."
+        }
+      ],
+      "fix": "Add the citation, or restate the claim as your own.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Vague attribution\")",
+        "note": "Judgement remainder of ai-tells-structure.vague-attribution-core. Also the checkability half of content-shape's fabricated-citation entry -- see ai-tells-content-shape.fabricated-citations-remainder."
+      }
+    },
+    {
+      "id": "audience-straddle-core",
+      "name": "Write for the one audience the doc has",
+      "message": "audience straddle: {match} -- write for the one audience the doc has",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\bwhether you(?:'re| are)\\s+a\\b[^.!?]{1,60}\\bor\\b[^.!?]{1,40}|\\b(?:beginners? and (?:experts?|professionals?|veterans?)|novices? and (?:experts?|professionals?))\\b|\\bseasoned (?:pro|professional|veteran|developer)s?\\b",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Whether you're a beginner or a seasoned pro, this guide has something for you.",
+          "good": "This guide assumes you have run `apm install` once."
+        }
+      ],
+      "fix": "Pick the audience the document has and write for it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Audience straddle\")",
+        "note": "Mechanizable core. Judgement remainder in ai-tells-structure.audience-straddle-remainder covers the case where the straddle is implicit -- a page that defines `git commit` and then discusses rebase strategy."
+      }
+    },
+    {
+      "id": "audience-straddle-remainder",
+      "name": "Judge whether the document holds one audience",
+      "message": "audience straddle: write for the one audience the doc has",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does the document make one reader switch between a primer and expert operational detail without a single task that requires both? Flag the straddle when removing either half leaves the current task and contract intact. Keep definitions needed for the stated task, and keep audience changes that are explicit in a change communication, decision, plan, or specification."
+      },
+      "examples": [
+        {
+          "bad": "A commit is a snapshot. Later: rebase onto the upstream to linearise the DAG.",
+          "good": "Rebase onto the upstream to linearise the history."
+        },
+        {
+          "bad": "This guide defines HTTP, then assumes you can diagnose a TLS handshake.",
+          "good": "Diagnose the TLS handshake with `openssl s_client`."
+        },
+        {
+          "good": "This release note gives the migration steps and then records the old behavior.",
+          "bad": "Whether you are a beginner or an expert, every part of this guide is for you."
+        }
+      ],
+      "fix": "Pick the audience for the task and cut material that cannot help complete it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Audience straddle\")",
+        "note": "Judgement remainder of ai-tells-structure.audience-straddle-core."
+      }
+    }
+  ]
+}

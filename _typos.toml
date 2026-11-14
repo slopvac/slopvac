@@ -10,6 +10,11 @@ extend-exclude = [
   "packages/slopvac-lint/tests/fixtures/text_type/runbook-labels-v1.jsonl",
   # Generated Unicode tables (tools/generate_unicode.py); code-point names are not words.
   "crates/slopvac-text/src/unicode_data.rs",
+  # Generated corpus (tests/fixtures/generate.py); it holds upper-, swapped- and
+  # Kelvin-cased copies of rule examples on purpose.
+  "crates/slopvac-rules/tests/fixtures/pattern-parity.json",
+  # Generated patterns (tests/fixtures/generate_word_class.py) join random fragments.
+  "crates/slopvac-text/tests/fixtures/word_class_differential.json",
 ]
 
 [default.extend-words]

@@ -1,0 +1,261 @@
+{
+  "schema_version": 3,
+  "id": "orwell",
+  "title": "Orwell's rules, modernized",
+  "description": "Objective restatements of the six rules from \"Politics and the English Language\" (1946), plus extensions the essay warrants.",
+  "weight": 1.5,
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms",
+    "informal"
+  ],
+  "rules": [
+    {
+      "id": "stale-figure",
+      "name": "Cut the stale figure",
+      "message": "\"{match}\" is a worn figure. State the fact it stands in for.",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "tip of the iceberg",
+          "double-edged sword",
+          "low-hanging fruit",
+          "move the needle",
+          "game changer",
+          "paradigm shift",
+          "perfect storm",
+          "silver bullet",
+          "holy grail",
+          "secret sauce",
+          "deep dive",
+          "at the end of the day",
+          "a testament to",
+          "unlock the power of",
+          "harness the power of",
+          "navigate the complexities of",
+          "in the realm of",
+          "hit the ground running",
+          "peel back the layers",
+          "the elephant in the room"
+        ]
+      },
+      "exceptions": [
+        {
+          "name": "dead-metaphor"
+        },
+        {
+          "name": "domain-term"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "named-entity"
+        },
+        {
+          "name": "fresh-figure"
+        }
+      ],
+      "allowlist": [
+        "iron resolution"
+      ],
+      "examples": [
+        {
+          "bad": "This release unlock the power of your data.",
+          "good": "The release adds nested-input parsing."
+        },
+        {
+          "bad": "Error handling is the elephant in the room.",
+          "good": "Errors from the retry path are unhandled."
+        }
+      ],
+      "fix": "Delete the figure and state the underlying fact.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "stale-figure",
+        "note": "Orwell permits a fully dead metaphor (\"can generally be used without loss of vividness\") and wants a fresh one; only the middle band is a violation, which is why the allowlist exists."
+      }
+    },
+    {
+      "id": "not-un",
+      "name": "Drop the not-un formation",
+      "message": "Replace \"{match}\" with the positive adjective.",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\bnot\\s+un\\w+"
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "grammatical-requirement"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The result is not unexpected.",
+          "good": "The result is expected."
+        }
+      ],
+      "fix": "State the positive.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "cut-what-cuts",
+        "note": "Orwell names this formation directly and supplies a mnemonic for it."
+      }
+    },
+    {
+      "id": "compound-preposition",
+      "name": "Use the single preposition",
+      "message": "Use \"{replacement}\" rather than \"{match}\".",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "substitution",
+        "substitutions": {
+          "due to the fact that": "because",
+          "in spite of the fact that": "although",
+          "despite the fact that": "although",
+          "in the event that": "if",
+          "for the purpose of": "to",
+          "in order to": "to",
+          "prior to": "before",
+          "subsequent to": "after",
+          "at this point in time": "now",
+          "with respect to": "about",
+          "in view of": "because of",
+          "by dint of": "by"
+        }
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "normative-keyword"
+        },
+        {
+          "name": "legal-force"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The cache is cleared prior to each run.",
+          "good": "The cache is cleared before each run."
+        }
+      ],
+      "fix": "Substitute the single word.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "cut-what-cuts",
+        "note": "From the operators-or-verbal-false-limbs paragraph, which names compound prepositions as padding that eliminates simple connectives."
+      }
+    },
+    {
+      "id": "unsupported-evaluative",
+      "name": "Back the adjective or cut it",
+      "message": "\"{match}\" evaluates without evidence. Add the number, or cut the word.",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "robust",
+          "powerful",
+          "comprehensive",
+          "seamless",
+          "blazingly fast",
+          "lightning-fast",
+          "battle-tested",
+          "enterprise-grade",
+          "world-class",
+          "industry-leading",
+          "cutting-edge",
+          "state-of-the-art"
+        ]
+      },
+      "exceptions": [
+        {
+          "name": "quantified"
+        },
+        {
+          "name": "defined-term-of-art"
+        },
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "identifier"
+        }
+      ],
+      "allowlist": [
+        "robust preprocessor",
+        "robust and reliable",
+        "more robust",
+        "comprehensive test suite",
+        "comprehensive feature set",
+        "powerful enough"
+      ],
+      "examples": [
+        {
+          "bad": "A robust parser with comprehensive coverage.",
+          "good": "The parser survives 10^6 malformed inputs; coverage is 94%."
+        },
+        {
+          "bad": "A seamless, powerful upgrade path.",
+          "good": "The upgrade runs the converter once and keeps the old file as a backup."
+        }
+      ],
+      "fix": "Delete the adjective and state the fact that motivated it.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "empty-evaluative-word",
+        "note": "EXTENSION. Warranted by the meaningless-words section: these words do not point to a discoverable object, and their negation reads as a difference of opinion rather than a disagreement about fact. The allowlist holds the phrases the 2026-09-12 audit found in pre-2022 human prose where the noun supplies the evidence (\"comprehensive test suite\", \"a more robust preprocessor\"): all five human hits were of that shape, against eight bare-adjective hits in model prose. prose-inflation.slop-lexicon shares `robust`, `powerful`, and `comprehensive`; that duplicate is deliberate, because the fixes differ (Orwell asks for the fact, the lexicon rule for deletion)."
+      }
+    },
+    {
+      "id": "concrete-floor",
+      "name": "Name a checkable particular",
+      "message": "This paragraph makes a factual claim with no checkable particular.",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this paragraph name at least one number, identifier, path, command, or dated event? If the writer possesses a more specific term than the one used, did they use it?"
+      },
+      "examples": [
+        {
+          "bad": "The system handles a variety of edge cases to ensure reliable operation.",
+          "good": "The parser rejects unterminated strings and nested depth over 64."
+        }
+      ],
+      "fix": "Replace the category with the instance from the source material.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Orwell 1946",
+        "orwell_ref": "concrete-floor",
+        "note": "EXTENSION, and the load-bearing one. All six of Orwell's rules PASS his own worst-case specimen (\"success or failure in competitive activities exhibits no tendency to be commensurate with innate capacity\"), which is the gap this rule closes."
+      }
+    }
+  ]
+}
