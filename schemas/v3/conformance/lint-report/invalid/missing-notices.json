@@ -366,8 +366,7 @@
             "code-comment"
           ],
           "ai_signal": "none",
-          "matched_text": "",
-          "end_line": 1
+          "matched_text": ""
         }
       ],
       "categories": [
@@ -422,13 +421,6 @@
         "warnings": 1,
         "per_100_words": 1.25
       }
-    }
-  ],
-  "notices": [
-    {
-      "code": "directory-entries-skipped",
-      "level": "info",
-      "message": "Skipped 4 files under node_modules."
     }
   ]
 }

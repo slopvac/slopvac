@@ -11,7 +11,10 @@ went, and the rules a consumer relies on. Field descriptions live in the schema.
 - Consumers must branch on `notices[].code` and `unchecked[].code`, never on the message
   text. A code keeps its meaning for the whole 3.x line. Codes are kebab-case.
 - `slopvac_version` names the tool build. It does not signal a schema change.
-- Consumers ignore keys that start with `x-`. Any other unknown key makes a report invalid.
+- The schema is strict, because it is the producer contract. Slopvac writes only reports
+  that validate, and its own tests check that. A consumer must ignore unknown fields, as
+  [the field policy](policies.md) requires, so a later 3.x release can add keys. Keys that
+  start with `x-` are reserved for extensions and have no meaning.
 - Minor releases add keys and codes only. A removal or a type change waits for 4.0.
 - `line`, `column`, `end_line` and `end_column` are the display position. `span` is the
   byte range, from [`Span`](../../schemas/v3/common.schema.json#/$defs/Span). A finding
@@ -110,6 +113,16 @@ models in `slopvac.report` and `slopvac.model`.
 | `AiRegisterSummary.errors` | preserve | Unchanged. |
 | `AiRegisterSummary.warnings` | preserve | Unchanged. |
 | `AiRegisterSummary.per_100_words` | preserve | Unchanged. |
+
+## Consumers to migrate
+
+These 2.x readers and writers use the old keys. The 3.0 output beads own the move:
+slopvac-8l4.12.2 for the formats and slopvac-8l4.13.6 for the action.
+
+- `action_entry.py` reads the JSON report. Owner: slopvac-8l4.13.6.
+- The SARIF builder in `report.py`. Owner: slopvac-8l4.12.2.
+- `html.py`. Owner: slopvac-8l4.12.2.
+- The annotation output in `pipeline.py`. Owner: slopvac-8l4.12.2.
 
 ## Conformance
 

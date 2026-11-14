@@ -12,6 +12,7 @@
         "end": {"type": "integer", "minimum": 0}
       },
       "required": ["start", "end"],
+      "patternProperties": {"^x-": {}},
       "additionalProperties": false
     },
     "LineCol": {
@@ -32,6 +33,7 @@
         "text": {"type": "string"}
       },
       "required": ["span", "text"],
+      "patternProperties": {"^x-": {}},
       "additionalProperties": false
     },
     "PackId": {
@@ -57,6 +59,7 @@
         "source": {"type": "string"}
       },
       "required": ["pack"],
+      "patternProperties": {"^x-": {}},
       "additionalProperties": false
     },
     "ConfigSource": {
@@ -69,6 +72,7 @@
         "column": {"type": "integer", "minimum": 1}
       },
       "required": ["layer"],
+      "patternProperties": {"^x-": {}},
       "additionalProperties": false
     },
     "ContextTag": {
