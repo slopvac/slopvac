@@ -133,6 +133,70 @@ fn extension_keys_are_noted_not_silently_deleted() {
     );
 }
 
+fn extension_notes(text: &str) -> (String, Vec<String>) {
+    let rw = migrate_config(
+        text,
+        "slopvac.toml",
+        &RenameTable::bundled(),
+        Options::default(),
+    )
+    .unwrap();
+    let notes = rw
+        .notes
+        .into_iter()
+        .filter(|n| n.contains("extension key"))
+        .collect();
+    (rw.text, notes)
+}
+
+#[test]
+fn vocabulary_extension_key_is_noted_and_the_path_survives() {
+    let (text, notes) = extension_notes("[vocabulary]\npath = \"w.toml\"\nx-owner = \"docs\"\n");
+    assert_eq!(notes, ["dropped extension key vocabulary.x-owner"]);
+    assert_eq!(strings(&doc(&text)["terms"]["blocklists"]), ["w.toml"]);
+    assert!(!text.contains("x-owner"), "{text}");
+}
+
+#[test]
+fn override_vocabulary_extension_key_is_noted_with_the_override_path() {
+    let (text, notes) = extension_notes(
+        "[[overrides]]\nfiles = [\"a\"]\n[overrides.vocabulary]\npath = \"w.toml\"\nx-owner = \"docs\"\n",
+    );
+    assert_eq!(
+        notes,
+        ["dropped extension key overrides[0].vocabulary.x-owner"]
+    );
+    let after = doc(&text);
+    let ov = after["overrides"].as_array_of_tables().unwrap();
+    assert_eq!(
+        strings(&ov.get(0).unwrap()["terms"]["blocklists"]),
+        ["w.toml"]
+    );
+}
+
+#[test]
+fn inline_override_vocabulary_extension_key_is_noted_with_the_override_path() {
+    let (text, notes) = extension_notes(
+        "overrides = [{ files = [\"a\"], vocabulary = { path = \"w.toml\", x-owner = \"docs\" } }]\n",
+    );
+    assert_eq!(
+        notes,
+        ["dropped extension key overrides[0].vocabulary.x-owner"]
+    );
+    let after = doc(&text);
+    let first = after["overrides"].as_array().unwrap().get(0).unwrap();
+    let terms = Item::Value(first.as_inline_table().unwrap()["terms"].clone());
+    assert_eq!(strings(&terms["blocklists"]), ["w.toml"]);
+}
+
+#[test]
+fn locale_extension_key_note_is_qualified_in_an_override() {
+    let (_, notes) = extension_notes(
+        "[[overrides]]\nfiles = [\"a\"]\n[overrides.locale]\ndefault = \"en-GB\"\nx-team = \"docs\"\n",
+    );
+    assert_eq!(notes, ["dropped extension key overrides[0].locale.x-team"]);
+}
+
 #[test]
 fn inline_array_overrides_migrate_like_array_tables() {
     let out = migrate(
