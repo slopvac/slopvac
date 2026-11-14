@@ -61,9 +61,11 @@ jobs:
       - if: ${{ !cancelled() }}
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           mkdir -p findings
           printf '%s\n' "$PR_NUMBER" > findings/pr-number
+          printf '%s\n' "$HEAD_SHA" > findings/head-sha
       - if: ${{ !cancelled() && hashFiles('findings/findings.rdjsonl') != '' }}
         uses: actions/upload-artifact@v7
         with:
@@ -71,7 +73,15 @@ jobs:
           path: findings
 ```
 
-The second workflow runs on `workflow_run` of the first. Treat the artifact as untrusted input: accept only the expected file names and a pull request number made of digits, confirm that the pull request is open and that its head commit is the one the run tested, and only then pipe `findings.rdjsonl` to `reviewdog -f=rdjsonl -reporter=github-pr-review`. This repository's `.github/workflows/reviewdog.yml` is a worked example of those checks.
+The second workflow runs on `workflow_run` of the first. Treat the artifact as untrusted input. This repository's `.github/workflows/reviewdog.yml` (job `comment-v3`) is a worked example, and `scripts/fork_review.py` holds the checks:
+
+- Find the pull request from the `workflow_run` event and the API, never from the artifact. Require one open pull request whose head repository and commit are the ones the event names.
+- Require the artifact's `pr-number` and `head-sha` to equal those values. A mismatch rejects the artifact.
+- Accept exactly three files: `findings.rdjsonl`, `pr-number` and `head-sha`. Reject any other name, a path with `..` or a separator, a symlink, a duplicate, and a size over the caps: 1 MB for the archive, 2 MB for the report and 64 bytes for each other file.
+- Parse every line of the report as a reviewdog Diagnostic. Reject unknown fields, an absolute or `..` file path, and more than 2,000 diagnostics.
+- Check out nothing from the pull request, and run nothing from the artifact. Pipe the validated report to `reviewdog -f=rdjsonl -reporter=github-pr-review`.
+
+The action itself refuses `rdjsonl-file`, `sarif-file` and the Code Climate path when they resolve outside `$GITHUB_WORKSPACE` or go through a symlink.
 
 ## Inputs and outputs
 

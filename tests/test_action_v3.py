@@ -77,6 +77,7 @@ def run(tmp_path, binary):
         "BINARY": str(binary),
         "PATH_LIST": str(paths),
         "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_WORKSPACE": str(tmp_path),
         "GITHUB_OUTPUT": str(github_output),
         "FAKE_LOG": str(tmp_path / "log"),
         "SARIF_FILE": str(tmp_path / "x.sarif"),
@@ -149,6 +150,57 @@ def test_rdjsonl_survives_a_findings_failure_at_the_requested_path(run, tmp_path
     code, _, _ = run(RDJSONL_FILE=str(target), FAKE_EXIT_JSON="1")
     assert code == 1
     assert target.is_file()
+
+
+@pytest.mark.parametrize("variable", ["RDJSONL_FILE", "SARIF_FILE", "CODECLIMATE_FILE"])
+@pytest.mark.parametrize("escape", ["../outside.out", "/etc/slopvac.out"])
+def test_report_destinations_outside_the_workspace_are_refused(
+    tmp_path, binary, variable, escape
+):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    paths = tmp_path / "paths"
+    paths.write_bytes(b"a.md\0")
+    env = {
+        "BINARY": str(binary),
+        "PATH_LIST": str(paths),
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_WORKSPACE": str(workspace),
+        "FAKE_LOG": str(tmp_path / "log"),
+        variable: escape,
+    }
+    with pytest.raises(action.ActionError, match="outside the workspace"):
+        action.lint(env)
+    assert not (tmp_path / "log").exists()
+    assert not (tmp_path / "outside.out").exists()
+
+
+@pytest.mark.parametrize("where", ["file", "directory"])
+def test_report_destinations_through_a_symlink_are_refused(tmp_path, where):
+    workspace = tmp_path / "ws"
+    (workspace / "real").mkdir(parents=True)
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    (workspace / "link-file").symlink_to(victim)
+    (workspace / "link-dir").symlink_to(workspace / "real")
+    raw = "link-file" if where == "file" else "link-dir/slopvac.rdjsonl"
+    with pytest.raises(action.ActionError, match="symlink"):
+        action.workspace_path(raw, {"GITHUB_WORKSPACE": str(workspace)})
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_a_symlinked_workspace_is_refused(tmp_path):
+    (tmp_path / "real").mkdir()
+    (tmp_path / "ws").symlink_to(tmp_path / "real")
+    with pytest.raises(action.ActionError, match="symlink"):
+        action.workspace_path("a.rdjsonl", {"GITHUB_WORKSPACE": str(tmp_path / "ws")})
+
+
+def test_a_relative_destination_is_taken_from_the_workspace(tmp_path):
+    resolved = action.workspace_path(
+        "findings/../out/slopvac.rdjsonl", {"GITHUB_WORKSPACE": str(tmp_path)}
+    )
+    assert resolved == tmp_path.resolve() / "out" / "slopvac.rdjsonl"
 
 
 def test_the_lint_step_receives_the_rdjsonl_input():
