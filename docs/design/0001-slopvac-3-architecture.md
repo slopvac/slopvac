@@ -278,7 +278,7 @@ Bad or risky:
 - The binary redistributes a CC BY-SA 4.0 model. Releases must carry the attribution and a share-alike notice for the model file, and the code must stay separable from it. Plan the `NOTICE` file for this.
 - The plugin host and OCI client carry security risk. The threat model and independent review gate them.
 - No spike numbers back decisions 7, 10 to 13, 15, 16, 19, and 22 to 24. Decisions 8 and 9 have spikes for the transport and the registry, but none for the protocol or the trust model. These decisions rest on convention and the plan.
-- Users on 2.x must migrate. `slopvac migrate` and a one-minor compatibility mode cover this.
+- Users on 2.x must migrate. `slopvac migrate` covers this. 3.0 has no compatibility mode, and it rejects a 2.x config with exit 2.
 
 ## Evidence
 
