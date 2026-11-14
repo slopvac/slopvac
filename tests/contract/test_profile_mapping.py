@@ -494,10 +494,19 @@ def test_a_profile_override_clears_a_budget_with_none(ruleset):
 
 @pytest.mark.parametrize(
     "files",
-    [["docs/*.md"], ["docs/**", "!docs/api/**"]],
-    ids=["wildcard", "negated"],
+    [
+        ["docs/*.md"],
+        ["docs/*/**"],
+        ["a.md"],
+        ["docs/**", "!docs/api/**"],
+        ["docs/[ab]/**"],
+        ["**/api/**"],
+        ["/docs/**"],
+        ["docs/../x/**"],
+    ],
+    ids=["wildcard", "wildcard-before-tree", "basename", "negated", "class", "any-depth", "leading-slash", "dot-dot"],
 )
-def test_expansion_stops_on_globs_it_cannot_relate(ruleset, files):
+def test_expansion_stops_on_globs_outside_the_grammar(ruleset, files):
     from preserve_expansion import AmbiguousOverlap
 
     config2 = {
@@ -509,3 +518,44 @@ def test_expansion_stops_on_globs_it_cannot_relate(ruleset, files):
     }
     with pytest.raises(AmbiguousOverlap):
         expand(config2, ruleset)
+
+
+def test_many_disjoint_blocks_expand_to_one_region_each_plus_the_root():
+    from preserve_expansion import build_regions
+
+    blocks = [[f"dir{i}/**"] for i in range(40)]
+    regions = build_regions(blocks)
+    assert len(regions) == 41
+
+
+REGION_PATHS = [
+    "docs/a.md",
+    "docs/api/a.md",
+    "docs/api/v1/a.md",
+    "docs/guide/a.md",
+    "docs/guide/api/a.md",
+    "docsx/a.md",
+    "a.md",
+    "src/a.md",
+    "src/docs/a.md",
+]
+
+
+@pytest.mark.parametrize(
+    "blocks",
+    [
+        [["docs/**"], ["docs/api/**"]],
+        [["docs/api/**"], ["docs/**"]],
+        [["docs/**"], ["docs/api/**"], ["docs/api/v1/**"], ["docs/guide/**"]],
+        [["docs/**"], ["docs/a.md"], ["docs/**"], ["src/**"]],
+    ],
+    ids=["nested", "reversed", "forest", "equal-and-file"],
+)
+def test_each_path_falls_in_exactly_one_region_that_names_its_blocks(blocks):
+    from preserve_expansion import build_regions, matches_files
+
+    regions = build_regions(blocks)
+    for path in REGION_PATHS:
+        matching = frozenset(i for i, files in enumerate(blocks) if matches_files(files, path))
+        hit = [scope for scope, files in regions if matches_files(files, path)]
+        assert hit == [matching], path

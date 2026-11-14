@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -82,44 +83,97 @@ def category_dial(layers: list[dict], category: str, key: str):
     return None if value == "none" else value
 
 
-def matches(glob: str, path: str) -> bool:
-    return path.startswith(glob.removesuffix("**")) if glob.endswith("**") else path == glob
-
-
 def matches_files(files: list[str], path: str) -> bool:
-    """Gitignore-style list: the last pattern that matches decides, ``!`` negates."""
-    hit = False
-    for pattern in files:
-        negate = pattern.startswith("!")
-        if matches(pattern.removeprefix("!"), path):
-            hit = not negate
-    return hit
+    """The gitignore matcher that 2.x used for ``[[overrides]] files``."""
+    from slopvac.config import _path_spec
+
+    return _path_spec(files).match_file(path)
 
 
 class AmbiguousOverlap(Exception):
-    """Two override blocks overlap in a way the expansion cannot state."""
+    """An override glob outside the supported grammar, so overlaps cannot be stated."""
 
 
-def _prefix(files: list[str]) -> str:
-    if len(files) != 1 or files[0].startswith("!"):
-        raise AmbiguousOverlap(f"cannot relate {files}")
+# The expansion below is a reference for crates/slopvac-migrate (E1 to E6). The glob
+# handling is pure functions over a containment forest: parse_glob, relate,
+# build_regions. Port those three first.
+
+_SEGMENT = re.compile(r"^[^*?\[\]\\!#/]+$")
+
+
+def parse_glob(files: list[str]) -> tuple[tuple[str, ...], bool]:
+    """Grammar: anchored literal path segments with an optional trailing ``/**``.
+
+    Returns (segments, is_tree). ``docs/**`` is the tree of ``docs``. ``docs/a.md``
+    is one file. Everything else is rejected: a single pattern is required, it must
+    contain a slash (a pattern without one matches in every directory), and no
+    segment may hold a wildcard, a negation, a comment mark, ``.`` or ``..``.
+    """
+    if len(files) != 1:
+        raise AmbiguousOverlap(f"a block with {len(files)} patterns: {files}")
     glob = files[0]
-    if glob.endswith("**"):
-        return glob.removesuffix("**")
-    if any(c in glob for c in "*?["):
-        raise AmbiguousOverlap(f"cannot relate {files}")
-    return glob
+    tree = glob.endswith("/**")
+    body = glob.removesuffix("/**")
+    segments = tuple(body.split("/"))
+    if "/" not in glob or any(
+        not _SEGMENT.match(seg) or seg in (".", "..") for seg in segments
+    ):
+        raise AmbiguousOverlap(f"unsupported pattern {glob!r}")
+    return segments, tree
 
 
-def _relation(a: list[str], b: list[str]) -> str:
-    pa, pb = _prefix(a), _prefix(b)
-    if pa == pb:
+def relate(a: tuple[tuple[str, ...], bool], b: tuple[tuple[str, ...], bool]) -> str:
+    """equal, contains (a holds b), contained (a lies in b) or disjoint."""
+    if a == b:
         return "equal"
-    if pb.startswith(pa) and pa.endswith("/") or pa == "":
+    (sa, ta), (sb, tb) = a, b
+    if ta and len(sb) > len(sa) and sb[: len(sa)] == sa:
         return "contains"
-    if pa.startswith(pb) and pb.endswith("/") or pb == "":
+    if tb and len(sa) > len(sb) and sa[: len(sb)] == sb:
         return "contained"
     return "disjoint"
+
+
+def build_regions(blocks: list[list[str]]) -> list[tuple[frozenset[int], list[str]]]:
+    """The regions of files that the blocks cut out, as (blocks matching, files list).
+
+    Equal globs form one node. A node's parent is the smallest node that holds it,
+    so the nodes form a forest. A region is a node minus its children, plus the
+    root region of the files that no block matches: nodes + 1 regions.
+    """
+    parsed = [parse_glob(files) for files in blocks]
+    nodes: dict[tuple[tuple[str, ...], bool], list[int]] = {}
+    for index, key in enumerate(parsed):
+        nodes.setdefault(key, []).append(index)
+    parent: dict[tuple, tuple | None] = {}
+    for key in nodes:
+        holders = [o for o in nodes if o != key and relate(o, key) == "contains"]
+        parent[key] = max(holders, key=lambda o: len(o[0])) if holders else None
+    children: dict[tuple | None, list[tuple]] = {}
+    for key, up in parent.items():
+        children.setdefault(up, []).append(key)
+
+    def chain(key: tuple) -> frozenset[int]:
+        members: set[int] = set()
+        while key is not None:
+            members.update(nodes[key])
+            key = parent[key]
+        return frozenset(members)
+
+    def glob_of(key: tuple) -> str:
+        return blocks[nodes[key][0]][0]
+
+    regions: list[tuple[frozenset[int], list[str]]] = [
+        (frozenset(), ["**", *(f"!{glob_of(k)}" for k in children.get(None, []))])
+    ]
+    for key in nodes:
+        regions.append(
+            (
+                chain(key),
+                [glob_of(key), *(f"!{glob_of(k)}" for k in children.get(key, []))],
+            )
+        )
+    return regions
 
 
 def expand(config2: dict, ruleset) -> dict:
@@ -180,27 +234,9 @@ def expand(config2: dict, ruleset) -> dict:
                     out[qid] = defaults[profile][qid]
         return out
 
-    # The sets of blocks that one file can match.
-    relations = {
-        (i, j): _relation(overrides[i]["files"], overrides[j]["files"])
-        for i in range(n)
-        for j in range(n)
-        if i != j
-    }
-
-    def consistent(members: frozenset[int]) -> bool:
-        for (i, j), rel in relations.items():
-            if rel == "disjoint" and i in members and j in members:
-                return False
-            if rel in ("equal", "contained") and i in members and j not in members:
-                return False
-        return True
-
-    scopes = [
-        frozenset(i for i in range(n) if mask >> i & 1)
-        for mask in range(1 << n)
-        if consistent(frozenset(i for i in range(n) if mask >> i & 1))
-    ]
+    regions = build_regions([b["files"] for b in overrides])
+    scopes = [scope for scope, _ in regions]
+    region_files = dict(regions)
 
     top_real = {k: dials(v) for k, v in config2.get("categories", {}).items()}
     block_real = [
@@ -238,7 +274,9 @@ def expand(config2: dict, ruleset) -> dict:
 
     top_cat = authored(config2.get("categories", {}), top)
     top_rules = {
-        k: v for k, v in rule_levels(config2.get("rules", {})).items() if keep(k, scopes)
+        k: v
+        for k, v in rule_levels(config2.get("rules", {})).items()
+        if keep(k, scopes)
     }
     out: dict = {"profile": top, "styles": [mapping.style_name(top)]}
     out["categories"] = copy.deepcopy(top_cat)
@@ -294,22 +332,8 @@ def expand(config2: dict, ruleset) -> dict:
             )
         blocks.append(new)
 
-    def region(scope: frozenset[int]) -> list[str]:
-        if not scope:
-            return ["**", *(f"!{b['files'][0]}" for b in overrides)]
-        inner = max(scope, key=lambda i: len(_prefix(overrides[i]["files"])))
-        inside = overrides[inner]["files"][0]
-        return [
-            inside,
-            *(
-                f"!{overrides[j]['files'][0]}"
-                for j in range(n)
-                if j not in scope and relations[(j, inner)] in ("contained", "equal")
-            ),
-        ]
-
     guard_blocks = [
-        {"files": region(scope), "categories": {}, "rules": rules}
+        {"files": region_files[scope], "categories": {}, "rules": rules}
         for scope, rules in sorted(guards.items(), key=lambda kv: sorted(kv[0]))
     ]
     out["overrides"] = [*switch, *blocks, *guard_blocks]

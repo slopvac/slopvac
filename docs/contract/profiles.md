@@ -66,7 +66,11 @@ The mapping relies on this precedence for the level of one checked rule. It is a
 - **E5.** 2.x credited the whole category as authored when a layer wrote any field of it. An advisory rule then took the category level. When an authored category has no `severity`, write the severity of the profile in force.
 - **E6.** `none` is the 3.0 spelling that clears a budget. A higher layer cannot unset a field by omission, and 2.x had no such spelling. The style and config schemas accept it, and the resolver treats it as "no budget".
 
-Known limits. When the globs of two override blocks overlap in a way the expansion cannot state, `migrate --preserve-behavior` stops with an error that names the blocks. Examples are a pattern with a wildcard other than a trailing `**`, a block with more than one pattern, and a negated pattern. A block without `profile` that authors a category takes its rule defaults from the top-level profile. When the block matches a file that a profile override also matches, three defaults can differ from 2.x: `orwell.compound-preposition`, `ai-tells-structure.definitional-negation-pair` and `ai-tells-structure.negative-guarantee-core`.
+Override glob grammar. `migrate --preserve-behavior` accepts one pattern per block, in one of two forms: an anchored literal path such as `docs/a.md`, or a tree such as `docs/**`. A segment holds no wildcard, `!`, `#`, `.` or `..`, and the pattern contains a slash. The tree forms a containment forest: a region is a node minus its children, plus the root region of files that no block matches. A project with n blocks has n + 1 regions at most. Any other pattern, a block with two or more patterns, or a negated pattern stops the migration with an error that names the block.
+
+Known limit. A block without `profile` that authors a category takes its rule defaults from the top-level profile. When the block matches a file that a profile override also matches, three defaults can differ from 2.x: `orwell.compound-preposition`, `ai-tells-structure.definitional-negation-pair` and `ai-tells-structure.negative-guarantee-core`.
+
+The reference for E1 to E6 is `tests/contract/preserve_expansion.py`. Its glob handling is three pure functions (`parse_glob`, `relate`, `build_regions`) over that forest. `slopvac-migrate` (`slopvac-8l4.16.1`) ports them first.
 
 ## 5. Tests
 
@@ -80,4 +84,4 @@ Known limits. When the globs of two override blocks overlap in a way the expansi
 | M6 | Select the review checklist for each genre and profile. | It equals the 2.x selection. |
 | M7 | Expand each scenario config and resolve it for each sample file. | Levels, budgets and weights equal the 2.x engine. The scenarios cover a profile override, two profile overrides, and authored category, floor, rule and `off` settings. |
 
-The reference resolver and expansion are in `tests/contract/preserve_expansion.py`. The real resolver and `migrate` replace them and keep the same scenarios.
+The reference resolver and expansion are in `tests/contract/preserve_expansion.py`. The real resolver and `migrate` replace them and keep the same scenarios. M7 also covers the glob grammar, the region count for many blocks, and the generated guard lists against the gitignore matcher that 2.x used.
