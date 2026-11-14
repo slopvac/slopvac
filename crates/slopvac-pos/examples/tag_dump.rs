@@ -32,7 +32,7 @@ fn main() -> ExitCode {
                         Some(a.parse().ok()?..b.parse().ok()?)
                     })
                     .collect(),
-                Err(_) => vec![0..text.len()],
+                Err(_) => std::iter::once(0..text.len()).collect(),
             };
         for token in tagger.tag_blocks(&text, &blocks) {
             let line = line_starts.partition_point(|&s| s <= token.span.start);
