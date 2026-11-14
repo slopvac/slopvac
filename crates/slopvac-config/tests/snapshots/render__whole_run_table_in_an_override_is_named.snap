@@ -1,0 +1,11 @@
+---
+source: crates/slopvac-config/tests/render.rs
+expression: "rendered(\"schema_version = 3\\n\\n[[overrides]]\\nfiles = [\\\"docs/**\\\"]\\n\\n[overrides.guidance]\\nlevel = \\\"full\\\"\\n\")"
+---
+error[config-unknown-key]: `guidance` applies to the whole run and cannot be set in an override
+ --> slopvac.toml:6:12
+  |
+6 | [overrides.guidance]
+  |            ^^^^^^^^ not a known key
+  |
+help: set `guidance` in the project config

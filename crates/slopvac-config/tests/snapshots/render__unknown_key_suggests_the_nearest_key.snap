@@ -1,0 +1,11 @@
+---
+source: crates/slopvac-config/tests/render.rs
+expression: "rendered(\"schema_version = 3\\n\\n[thresholds]\\nmax_eror = 0\\n\")"
+---
+error[config-unknown-key]: unknown key `max_eror`
+ --> slopvac.toml:4:1
+  |
+4 | max_eror = 0
+  | ^^^^^^^^ not a known key
+  |
+help: did you mean `max_errors`?
