@@ -62,6 +62,33 @@ const EXCLUDED: &[&str] = &[
 /// Names that are also ordinary words or personal names. The list may carry
 /// them only as case-sensitive terms, so everyday prose never matches.
 const ORDINARY: &[&str] = &[
+    "mongoose",
+    "flutter",
+    "ionic",
+    "hibernate",
+    "anaconda",
+    "grub",
+    "chromium",
+    "kinesis",
+    "terraform",
+    "spinnaker",
+    "rancher",
+    "cilium",
+    "tableau",
+    "looker",
+    "cosign",
+    "redshift",
+    "anthropic",
+    "radius",
+    "raid",
+    "urn",
+    "crud",
+    "redux",
+    "markdown",
+    "red hat",
+    "new relic",
+    "active directory",
+    "beautiful soup",
     "python",
     "java",
     "perl",
@@ -202,6 +229,12 @@ fn ordinary_prose_produces_no_findings() {
         took a chrome kettle, and a maven's advice. In the confluence of rivers the \
         fedora wore a jenkins hat; the oracle spoke of postman visits. I like \
         java and the sass of cats, an android, a docker at the port, and kafka's \
-        novels. Redis and cassandra stories, a consul or a packer, vagrant swagger.";
+        novels. Redis and cassandra stories, a consul or a packer, vagrant swagger. \
+        The mongoose fled; a flutter of wings, an ionic bond, to hibernate in an \
+        anaconda's coil. Grub and chromium, a kinesis lesson, terraform the moon. \
+        A spinnaker sail, rancher hands, a cilium cell, tableau vivant, a looker, \
+        cosign the loan, redshift in light, anthropic principle, the radius of a \
+        circle, a raid, an urn, crud on the boots, redux of the film, a markdown \
+        sale, the red hat, new relic found, active directory of tasks, beautiful soup.";
     assert_eq!(TermSet::builtin().check_casing(prose, &[]), []);
 }
