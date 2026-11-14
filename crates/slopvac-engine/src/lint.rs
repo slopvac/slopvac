@@ -18,7 +18,7 @@ use slopvac_model::{
     Severity, SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
-use slopvac_rules::{BlockKind as ExcludeKind, LoadedRule, Match, MatchKind, RuleSet, Scope};
+use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
 use slopvac_text::{TextError, TextType};
 
 use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
@@ -410,8 +410,7 @@ impl Engine {
         findings: Vec<Finding>,
     ) -> Document {
         let words = prepared.words();
-        let mut unchecked = self.notices.clone();
-        unchecked.extend(self.skip_notices());
+        let unchecked = self.notices.clone();
         let scoring = score_document(
             &findings,
             words,
@@ -444,39 +443,6 @@ impl Engine {
             prose: scoring.prose,
         }
     }
-
-    /// A notice for each running rule that excludes a block kind the parser cannot locate.
-    fn skip_notices(&self) -> Vec<Notice> {
-        let mut kinds: Vec<&'static str> = Vec::new();
-        for active in &self.active {
-            let rule =
-                self.sets[active.set].categories()[active.category].rules()[active.rule].rule();
-            for kind in rule.exclude_blocks.iter().flatten() {
-                let name = match kind {
-                    ExcludeKind::ListItem => "list-item",
-                    ExcludeKind::Quote => "quote",
-                    _ => continue,
-                };
-                if !kinds.contains(&name) {
-                    kinds.push(name);
-                }
-            }
-        }
-        kinds
-            .into_iter()
-            .filter_map(|name| {
-                notice(
-                    "exclude-block-not-located",
-                    NoticeLevel::Info,
-                    format!(
-                        "rules that exclude `{name}` blocks still read them: the parser does not \
-                         locate {name} blocks"
-                    ),
-                )
-                .ok()
-            })
-            .collect()
-    }
 }
 
 fn category_of(id: &RuleId) -> CategoryId {
@@ -506,6 +472,20 @@ struct Run<'a> {
     directives: &'a Directives,
     front_matter: Option<Span>,
     index: SourceIndex<'a>,
+}
+
+/// A paragraph next to a fenced diagram, and where a checker sees it.
+struct NearbyProse<'a> {
+    /// Where the paragraph's text starts in the coordinates the checker gets.
+    base: usize,
+    block: &'a slopvac_parse::Block,
+    projection: &'a slopvac_parse::Projection,
+}
+
+impl NearbyProse<'_> {
+    fn text(&self) -> &str {
+        self.projection.text()
+    }
 }
 
 /// A finding before it gets its position.
@@ -561,6 +541,10 @@ impl Run<'_> {
 
     fn lexical(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
+        if matches!(self.input.kind, Kind::Diagram(_)) {
+            // A diagram file is not prose. Only diagram rules read it.
+            return Ok(Vec::new());
+        }
         let inline_code = skip::build(self.parsed, &[], None, true);
         let mut out = Vec::new();
         for active in &engine.active {
@@ -717,7 +701,7 @@ impl Run<'_> {
         if engine.checkers.is_empty() {
             return Ok(Vec::new());
         }
-        let mut diagrams: Vec<(Extraction, Vec<slopvac_diagrams::ProseBlock<'_>>)> = Vec::new();
+        let mut diagrams: Vec<(Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
         match self.input.kind {
             Kind::Diagram(format) => {
                 diagrams.push((extract(format, self.input.source, 0), Vec::new()));
@@ -745,15 +729,22 @@ impl Run<'_> {
             }
         }
         let mut out = Vec::new();
-        for (extraction, prose) in &diagrams {
+        for (extraction, nearby) in &diagrams {
+            let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
+                .iter()
+                .map(|n| slopvac_diagrams::ProseBlock {
+                    span: n.base..n.base + n.text().len(),
+                    text: n.text(),
+                })
+                .collect();
             let input = DiagramInput {
                 source: self.input.source,
                 extraction,
-                prose,
+                prose: &prose,
             };
             for checker in &engine.checkers {
                 for hit in checker.check(&input) {
-                    if let Some(finding) = self.diagram_finding(&hit)? {
+                    if let Some(finding) = self.diagram_finding(&hit, nearby)? {
                         out.push(finding);
                     }
                 }
@@ -763,7 +754,11 @@ impl Run<'_> {
     }
 
     /// The paragraphs next to a fenced block: the last one before it and the first after.
-    fn nearby_prose(&self, fence: Span) -> Vec<slopvac_diagrams::ProseBlock<'_>> {
+    ///
+    /// Their text is projected prose, so a checker's offsets into it are not source bytes.
+    /// Each paragraph gets a base past the end of the source and the paragraphs follow each
+    /// other, one byte apart. [`Self::source_span`] maps a hit back through the projection.
+    fn nearby_prose(&self, fence: Span) -> Vec<NearbyProse<'_>> {
         let paragraph = |b: &&slopvac_parse::Block| {
             matches!(b.kind, BlockKind::Paragraph) && b.projection.is_some()
         };
@@ -775,24 +770,63 @@ impl Run<'_> {
             .iter()
             .filter(paragraph)
             .find(|b| b.span.start() >= fence.end());
-        [before, after]
-            .into_iter()
-            .flatten()
-            .filter_map(|b| {
-                Some(slopvac_diagrams::ProseBlock {
-                    span: b.span.start()..b.span.end(),
-                    text: b.projection.as_ref()?.text(),
-                })
-            })
-            .collect()
+        let mut base = self.input.source.len() + 1;
+        let mut out = Vec::new();
+        for block in [before, after].into_iter().flatten() {
+            let Some(projection) = &block.projection else {
+                continue;
+            };
+            out.push(NearbyProse {
+                base,
+                block,
+                projection,
+            });
+            base += projection.text().len() + 1;
+        }
+        out
     }
 
-    fn diagram_finding(&self, hit: &DiagramHit) -> Result<Option<Finding>, EngineError> {
+    /// The source span of a checker's hit: a source range as it is, or a range in the
+    /// projected prose mapped back to source bytes.
+    fn source_span(
+        &self,
+        hit: &Range<usize>,
+        nearby: &[NearbyProse<'_>],
+    ) -> Result<Span, EngineError> {
+        let internal = EngineError::Internal;
+        let span = if hit.start <= self.input.source.len() {
+            Span::new(hit.start, hit.end).map_err(|e| internal(e.to_string()))?
+        } else {
+            let prose = nearby
+                .iter()
+                .find(|n| n.base <= hit.start && hit.end <= n.base + n.text().len())
+                .ok_or_else(|| {
+                    internal(format!("a diagram hit at {hit:?} is outside the prose"))
+                })?;
+            let (from, to) = (hit.start - prose.base, hit.end - prose.base);
+            if from == 0 && to == prose.text().len() {
+                prose.block.span
+            } else if prose.text().is_char_boundary(from) && prose.text().is_char_boundary(to) {
+                prose.projection.span_for_bytes(from, to)
+            } else {
+                return Err(internal(format!(
+                    "a diagram hit at {hit:?} splits a character"
+                )));
+            }
+        };
+        self.index.check_span(span)?;
+        Ok(span)
+    }
+
+    fn diagram_finding(
+        &self,
+        hit: &DiagramHit,
+        nearby: &[NearbyProse<'_>],
+    ) -> Result<Option<Finding>, EngineError> {
         let Some(active) = self.engine.diagram_rules.get(&hit.rule) else {
             return Ok(None);
         };
-        let span = Span::new(hit.span.start, hit.span.end)
-            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        let span = self.source_span(&hit.span, nearby)?;
         if self.suppressed(hit.rule.as_str(), &[], span) {
             return Ok(None);
         }

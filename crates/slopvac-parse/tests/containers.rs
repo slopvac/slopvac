@@ -90,18 +90,17 @@ fn a_loose_list_item_paragraph_is_inside_its_item() {
 #[test]
 fn block_quotes_and_nesting_in_lists_are_recorded_outer_to_inner() {
     let source = "> quoted\n\n- item\n\n  > inside\n";
-    let want = vec![
-        ("quoted".to_owned(), vec![Container::BlockQuote]),
-        ("item".to_owned(), vec![ITEM]),
-        ("inside".to_owned(), vec![ITEM, Container::BlockQuote]),
+    let want = [
+        vec![Container::BlockQuote],
+        vec![ITEM],
+        vec![ITEM, Container::BlockQuote],
     ];
     for parse in [md as Parser, mdx as Parser] {
-        let got = ancestry(source, &parse(source));
-        // The quote prefix belongs to the block span for the nested paragraph.
-        assert_eq!(
-            got.iter().map(|g| g.1.clone()).collect::<Vec<_>>(),
-            want.iter().map(|w| w.1.clone()).collect::<Vec<_>>()
-        );
+        let got: Vec<_> = ancestry(source, &parse(source))
+            .into_iter()
+            .map(|(_, containers)| containers)
+            .collect();
+        assert_eq!(got, want);
     }
 }
 

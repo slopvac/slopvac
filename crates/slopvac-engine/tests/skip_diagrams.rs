@@ -51,10 +51,12 @@ fn skip_ranges_merge_overlaps_and_answer_overlap_queries() {
 }
 
 #[test]
-fn skip_ranges_name_the_kinds_the_parser_cannot_locate() {
-    let skip = skip_ranges(&parsed(), &[BlockKind::ListItem, BlockKind::Quote], None);
-    assert_eq!(skip.unsupported(), [BlockKind::ListItem, BlockKind::Quote]);
-    assert_eq!(skip.to_ranges(), [13..19]);
+fn skip_ranges_hold_list_items_and_quotes() {
+    let source = "- item\n\n> quote\n\nplain `c` text\n";
+    let doc = parse_markdown(source, Span::new(0, source.len()).unwrap()).unwrap();
+    let skip = skip_ranges(&doc, &[BlockKind::ListItem, BlockKind::Quote], None);
+    // "item" is bytes 2 to 6, "quote" is 10 to 15 and the code span `c` is 23 to 26.
+    assert_eq!(skip.to_ranges(), [2..6, 10..15, 23..26]);
 }
 
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
@@ -174,4 +176,64 @@ fn a_custom_checker_reports_under_its_own_pack() {
         .collect();
     assert_eq!(texts, ["This label has far too many words in it", "End"]);
     assert!(doc.findings.iter().all(|f| f.pack.as_str() == "acme"));
+}
+
+const DIAGRAM: &str = "```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
+
+fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", source))
+        .unwrap();
+    doc.findings
+        .iter()
+        .filter(|f| f.rule_id == id("core:diagram.meta-reference"))
+        .map(|f| {
+            let span = f.extent.unwrap().span;
+            (f.matched_text.clone(), span.start(), span.end())
+        })
+        .collect()
+}
+
+#[test]
+fn a_meta_reference_after_accented_bold_text_is_placed_in_the_source() {
+    // "**É** " is 7 bytes, so the phrase covers bytes 7 to 24.
+    let source = format!("**É** the diagram below shows it.\n\n{DIAGRAM}");
+    assert_eq!(
+        reference_texts(&source),
+        [("the diagram below".to_owned(), 7, 24)]
+    );
+}
+
+#[test]
+fn a_meta_reference_after_plain_markup_is_placed_in_the_source() {
+    let source = format!("See **bold** and the diagram below.\n\n{DIAGRAM}");
+    assert_eq!(
+        reference_texts(&source),
+        [("the diagram below".to_owned(), 17, 34)]
+    );
+}
+
+#[test]
+fn a_meta_reference_in_wrapped_prose_is_placed_in_the_source() {
+    // The soft wrap is one byte in the source and one space in the prose.
+    let source = format!("First line\nthe diagram below shows it.\n\n{DIAGRAM}");
+    assert_eq!(
+        reference_texts(&source),
+        [("the diagram below".to_owned(), 11, 28)]
+    );
+}
+
+#[test]
+fn a_raw_rule_does_not_read_a_diagram_file() {
+    let raw = common::rule(
+        "raw",
+        &serde_json::json!({"kind": "tokens", "tokens": ["Start"]}),
+        &serde_json::json!({"scope": "raw"}),
+    );
+    let e = Engine::new(vec![ruleset(vec![category("cat", &[raw])])], settings()).unwrap();
+    let source = "flowchart TD\n  A[Start] --> B[End]\n";
+    let doc = e
+        .lint(&Input::diagram("flow.mmd", source, Format::Mermaid))
+        .unwrap();
+    assert!(doc.findings.is_empty());
 }

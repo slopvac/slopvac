@@ -11,7 +11,7 @@ use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, SentenceView, TagIndex,
     TagRegistry,
 };
-use slopvac_parse::{BlockKind, Document, Projection};
+use slopvac_parse::{BlockKind, Container, Document, Projection};
 
 struct Entry<'a> {
     kind: ViewKind,
@@ -56,7 +56,7 @@ impl<'a> View<'a> {
                 admonitions.push((block.span.end(), a.title.as_deref()));
                 continue;
             }
-            let (kind, text, projection) = match (&block.kind, &block.projection) {
+            let (mut kind, text, projection) = match (&block.kind, &block.projection) {
                 (BlockKind::CodeBlock { body, .. }, _) => {
                     (ViewKind::CodeBlock, &source[body.start()..body.end()], None)
                 }
@@ -65,6 +65,14 @@ impl<'a> View<'a> {
                 (BlockKind::TableCell { .. }, Some(p)) => (ViewKind::TableRow, p.text(), Some(p)),
                 _ => continue,
             };
+            // The innermost list or quote decides what a paragraph is to a tagger.
+            if kind == ViewKind::Paragraph {
+                match block.containers.last() {
+                    Some(Container::ListItem { .. }) => kind = ViewKind::ListItem,
+                    Some(Container::BlockQuote) => kind = ViewKind::Quote,
+                    _ => {}
+                }
+            }
             let mut level = None;
             if let BlockKind::Heading { level: l } = &block.kind {
                 while headings.last().is_some_and(|(top, _)| top >= l) {

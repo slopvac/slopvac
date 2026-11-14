@@ -61,19 +61,25 @@ pub(crate) fn allowlisted(rule: &LoadedRule, text: &str, range: &std::ops::Range
     {
         return true;
     }
-    let lowered = text.to_lowercase();
-    // Lower-casing can change the byte length (U+0130), which would shift every offset.
-    if lowered.len() != text.len() {
-        return false;
+    // Lower-case one character at a time and keep, for each byte of the result, the byte of
+    // `text` it came from. A character whose lower case has another length (U+0130) then
+    // shifts nothing else.
+    let mut lowered = String::with_capacity(text.len());
+    let mut origin: Vec<usize> = Vec::with_capacity(text.len() + 1);
+    for (at, c) in text.char_indices() {
+        let before = lowered.len();
+        lowered.extend(c.to_lowercase());
+        origin.resize(origin.len() + lowered.len() - before, at);
     }
+    origin.push(text.len());
     allowlist
         .iter()
         .map(|a| a.as_str().to_lowercase())
         .filter(|a| a.contains(' '))
         .any(|phrase| {
-            lowered
-                .match_indices(&phrase)
-                .any(|(at, found)| at <= range.start && at + found.len() >= range.end)
+            lowered.match_indices(&phrase).any(|(at, found)| {
+                origin[at] <= range.start && origin[at + found.len()] >= range.end
+            })
         })
 }
 

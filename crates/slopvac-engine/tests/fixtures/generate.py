@@ -190,6 +190,7 @@ def expect(rules, config, name: str, text: str) -> dict:
                 "rule": f"core:{f.rule_id}",
                 "line": f.line,
                 "column": f.column,
+                "end_column": end_column(f),
                 "severity": f.severity.value,
                 # The 3.0 form of a directive carries the pack, so the text a finding quotes does.
                 "matched": f.matched_text.replace("rule=", "rule=core:")
@@ -199,6 +200,13 @@ def expect(rules, config, name: str, text: str) -> dict:
             for f in findings
         ],
     }
+
+
+def end_column(finding) -> int:
+    """The end column in the 3.0 text: a directive quotes its rule id with the pack."""
+    if finding.rule_id == "meta.invalid-suppression":
+        return finding.end_column + len("core:")
+    return finding.end_column
 
 
 def corpus(rules, scope) -> list[tuple[str, str]]:

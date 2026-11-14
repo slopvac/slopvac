@@ -49,6 +49,8 @@ impl Unit<'_> {
 /// A block with prose.
 pub(crate) struct ProseBlock<'a> {
     pub(crate) kind: &'a BlockKind,
+    /// Whether a list item or a block quote holds the block.
+    pub(crate) contained: bool,
     pub(crate) projection: &'a Projection,
     pub(crate) sentences: Vec<Sentence>,
 }
@@ -77,6 +79,7 @@ impl<'a> Prepared<'a> {
             }
             blocks.push(ProseBlock {
                 kind: &block.kind,
+                contained: !block.containers.is_empty(),
                 projection,
                 sentences: split_sentences(projection.text())?,
             });
@@ -104,7 +107,7 @@ impl<'a> Prepared<'a> {
     pub(crate) fn paragraph_count(&self) -> usize {
         self.blocks
             .iter()
-            .filter(|b| matches!(b.kind, BlockKind::Paragraph))
+            .filter(|b| matches!(b.kind, BlockKind::Paragraph) && !b.contained)
             .count()
     }
 

@@ -299,3 +299,107 @@ fn crlf_line_endings_keep_byte_exact_columns() {
     let span = doc.findings[0].extent.unwrap().span;
     assert_eq!((span.start(), span.end()), (12, 20));
 }
+
+/// The exclusive end of a finding as `(line, column)`, and its byte span.
+fn extent(doc: &slopvac_model::Document) -> ((usize, usize), (usize, usize)) {
+    let e = doc.findings[0].extent.unwrap();
+    (
+        (e.end.line(), e.end.column()),
+        (e.span.start(), e.span.end()),
+    )
+}
+
+#[test]
+fn a_match_across_blocks_reports_its_exclusive_end_line_and_column() {
+    let e = engine(&[rule(
+        "across",
+        &json!({"kind": "pattern", "pattern": r"first one\. Second"}),
+        &json!({"scope": "document"}),
+    )]);
+    // The match ends after "Second" on line 3, so the end column is 7 (code points).
+    assert_eq!(
+        extent(&lint(&e, "The first one.\n\nSecond block.\n")),
+        ((3, 7), (4, 22))
+    );
+    // CRLF: two bytes per break, and the end is still line 3, column 7.
+    assert_eq!(
+        extent(&lint(&e, "The first one.\r\n\r\nSecond block.\r\n")),
+        ((3, 7), (4, 24))
+    );
+}
+
+#[test]
+fn an_end_column_counts_code_points_not_bytes() {
+    let e = engine(&[rule(
+        "across",
+        &json!({"kind": "pattern", "pattern": r"first one\. S.cond"}),
+        &json!({"scope": "document"}),
+    )]);
+    // "Ünï " is 6 bytes for 4 characters, and the "é" of line 3 takes two bytes.
+    let doc = lint(&e, "Ünï first one.\n\nSécond block.\n");
+    assert_eq!(
+        extent(&doc),
+        ((3, 7), (6, 6 + "first one.\n\nSécond".len()))
+    );
+}
+
+#[test]
+fn a_rule_that_excludes_list_items_is_silent_in_them() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"exclude_blocks": ["list-item"]}),
+    )]);
+    let doc = lint(
+        &e,
+        "- Use leverage.\n  1. Nested leverage.\n\nOutside leverage.\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 4, 9)]);
+}
+
+#[test]
+fn a_rule_that_excludes_quotes_is_silent_in_them() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"exclude_blocks": ["quote"]}),
+    )]);
+    let doc = lint(&e, "> Quoted leverage.\n\nOutside leverage.\n");
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 3, 9)]);
+}
+
+#[test]
+fn the_quote_context_covers_quoted_blocks() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"contexts": {"skip": ["quote"]}}),
+    )]);
+    let doc = lint(&e, "> Quoted leverage.\n\nOutside leverage.\n");
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 3, 9)]);
+}
+
+#[test]
+fn list_and_quote_text_is_not_counted_as_paragraphs() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "One two.\n\n- item one\n\n> quote text\n\nLast.\n");
+    assert_eq!(doc.paragraphs, 2);
+    assert_eq!(doc.sentences, 4);
+}
+
+#[test]
+fn an_allowlisted_phrase_still_holds_when_other_text_changes_length_in_lower_case() {
+    // U+0130 lower-cases to three bytes, so byte offsets shift. The phrase must still hold.
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"allowlist": ["financial leverage ratio"]}),
+    )]);
+    let doc = lint(
+        &e,
+        "\u{130}stanbul: the financial leverage ratio and a leverage point.\n",
+    );
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].matched_text, "leverage");
+    assert!(doc.findings[0].start.column() > 40);
+}

@@ -3,7 +3,7 @@
 //! STUB(slopvac-8l4.3.29): `fixtures/engine-parity.json` holds what the 2.x native engine
 //! reported for a frozen corpus (`fixtures/generate.py`). The golden suite replaces it.
 //! `fixtures/divergences.json` lists the documents that differ on purpose. Each entry gives
-//! the reason and the facts that are not compared for it (`position`, `words`, `sentences`,
+//! the reason and the facts that are not compared for it (`position`, `end`, `words`, `sentences`, `paragraphs`,
 //! `score`, `gate`). Everything else is still compared. A listed fact must still differ, so
 //! the list cannot go stale.
 
@@ -84,7 +84,7 @@ fn engine(fixture: &Value) -> Engine {
     Engine::new(vec![set], settings).unwrap()
 }
 
-type Row = (String, usize, usize, String, String);
+type Row = (String, usize, usize, usize, String, String);
 
 #[derive(serde::Deserialize)]
 struct Divergence {
@@ -93,20 +93,18 @@ struct Divergence {
     ignore: Vec<String>,
 }
 
-/// Findings as `(rule, line, column, severity, matched)`, with the position zeroed when
-/// the document's positions are not compared.
-fn keyed(rows: Vec<Row>, positions: bool) -> Vec<Row> {
+/// Findings reduced to what one comparison reads: `0` keeps everything, `1` drops the end
+/// column, `2` drops the position too.
+fn keyed(rows: Vec<Row>, level: u8) -> Vec<Row> {
     let mut rows: Vec<Row> = rows
         .into_iter()
-        .map(|(r, l, c, s, m)| {
-            if positions {
-                (r, l, c, s, m)
-            } else {
-                (r, 0, 0, s, m)
-            }
+        .map(|(r, l, c, e, s, m)| match level {
+            0 => (r, l, c, e, s, m),
+            1 => (r, l, c, 0, s, m),
+            _ => (r, 0, 0, 0, s, m),
         })
         .collect();
-    if !positions {
+    if level == 2 {
         rows.sort();
     }
     rows
@@ -122,6 +120,7 @@ fn rows_expected(expected: &Value) -> Vec<Row> {
                 f["rule"].as_str().unwrap().to_owned(),
                 usize::try_from(f["line"].as_u64().unwrap()).unwrap(),
                 usize::try_from(f["column"].as_u64().unwrap()).unwrap(),
+                usize::try_from(f["end_column"].as_u64().unwrap()).unwrap(),
                 f["severity"].as_str().unwrap().to_owned(),
                 f["matched"].as_str().unwrap().to_owned(),
             )
@@ -129,14 +128,26 @@ fn rows_expected(expected: &Value) -> Vec<Row> {
         .collect()
 }
 
-fn rows_actual(doc: &Document) -> Vec<Row> {
+/// Findings as the reference reports them. 2.x ends a finding that spans lines at the end of
+/// its first line, so Rust's exact end is converted to that for the comparison.
+fn rows_actual(doc: &Document, text: &str) -> Vec<Row> {
     doc.findings
         .iter()
         .map(|f| {
+            let end = f.extent.unwrap().end;
+            let end_column = if end.line() == f.start.line() {
+                end.column()
+            } else {
+                text.lines()
+                    .nth(f.start.line() - 1)
+                    .map_or(0, |l| l.chars().count())
+                    + 1
+            };
             (
                 f.rule_id.to_string(),
                 f.start.line(),
                 f.start.column(),
+                end_column,
                 format!("{:?}", f.severity).to_lowercase(),
                 f.matched_text.clone(),
             )
@@ -145,14 +156,16 @@ fn rows_actual(doc: &Document) -> Vec<Row> {
 }
 
 /// The facts on which Rust and the reference differ for one document, by name.
-fn differences(doc: &Document, expected: &Value) -> BTreeMap<&'static str, String> {
+fn differences(doc: &Document, text: &str, expected: &Value) -> BTreeMap<&'static str, String> {
     let mut out = BTreeMap::new();
-    let (want, got) = (rows_expected(expected), rows_actual(doc));
-    for (name, positions) in [("position", true), ("findings", false)] {
-        let (w, g) = (
-            keyed(want.clone(), positions),
-            keyed(got.clone(), positions),
-        );
+    let (want, got) = (rows_expected(expected), rows_actual(doc, text));
+    // `end` is only reported when the start agrees, so it names the end column alone.
+    let start_agrees = keyed(want.clone(), 1) == keyed(got.clone(), 1);
+    for (name, level) in [("end", 0), ("position", 1), ("findings", 2)] {
+        if name == "end" && !start_agrees {
+            continue;
+        }
+        let (w, g) = (keyed(want.clone(), level), keyed(got.clone(), level));
         if w != g {
             let missing: Vec<_> = w.iter().filter(|r| !g.contains(r)).collect();
             let extra: Vec<_> = g.iter().filter(|r| !w.contains(r)).collect();
@@ -163,6 +176,7 @@ fn differences(doc: &Document, expected: &Value) -> BTreeMap<&'static str, Strin
     for (name, actual) in [
         ("words", doc.words),
         ("sentences", doc.sentences),
+        ("paragraphs", doc.paragraphs),
         ("errors", doc.errors),
         ("warnings", doc.warnings),
         ("suggestions", doc.suggestions),
@@ -204,7 +218,7 @@ fn rust_matches_the_2x_engine_on_the_interim_fixture() {
         let name = entry["name"].as_str().unwrap();
         let text = entry["text"].as_str().unwrap();
         let doc = engine.lint(&Input::markdown(name, text)).unwrap();
-        let diff = differences(&doc, &entry["expected"]);
+        let diff = differences(&doc, text, &entry["expected"]);
         let allowed: &[String] = divergences.get(name).map_or(&[], |d| &d.ignore);
         // `position` is the exact comparison. `findings` ignores positions, so ignoring
         // `position` still compares which rules matched which text.

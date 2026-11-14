@@ -8,7 +8,7 @@
 use std::ops::Range;
 
 use slopvac_model::Span;
-use slopvac_parse::{BlockKind, Document};
+use slopvac_parse::{BlockKind, Container, Document};
 use slopvac_rules::BlockKind as ExcludeKind;
 
 /// Sorted, merged source ranges.
@@ -20,7 +20,6 @@ pub struct SkipRanges {
     blocks: Vec<Span>,
     /// The code spans alone.
     code: Vec<Span>,
-    unsupported: Vec<ExcludeKind>,
 }
 
 impl SkipRanges {
@@ -52,13 +51,6 @@ impl SkipRanges {
                 .iter()
                 .any(|c| c.start() <= span.start() && span.end() <= c.end())
     }
-
-    /// Excluded kinds that the parsed document cannot locate, so no range was built for
-    /// them. A caller reports these as an incomplete check.
-    #[must_use]
-    pub fn unsupported(&self) -> &[ExcludeKind] {
-        &self.unsupported
-    }
 }
 
 fn touches(ranges: &[Span], span: Span) -> bool {
@@ -71,8 +63,9 @@ fn touches(ranges: &[Span], span: Span) -> bool {
 /// blocks and every inline code span.
 ///
 /// `front_matter` is the span of the front matter, when the file has one. The parser reads
-/// only the body, so it cannot tell. A `list-item` or `quote` exclusion is not located: the
-/// parser keeps neither as a block. [`SkipRanges::unsupported`] lists them.
+/// only the body, so it cannot tell. A `list-item` or `quote` exclusion covers every block
+/// that the parser reports inside such a container. A parser that leaves
+/// [`Block::containers`](slopvac_parse::Block::containers) empty hides nothing for those two.
 #[must_use]
 pub fn skip_ranges(
     doc: &Document,
@@ -91,7 +84,6 @@ pub(crate) fn build(
     inline_code: bool,
 ) -> SkipRanges {
     let mut blocks_found: Vec<Span> = Vec::new();
-    let mut unsupported = Vec::new();
     let code = if inline_code {
         merge(doc.code_spans.clone())
     } else {
@@ -110,7 +102,12 @@ pub(crate) fn build(
             }
             ExcludeKind::CodeSpan => blocks_found.extend(doc.code_spans.iter().copied()),
             ExcludeKind::FrontMatter => blocks_found.extend(front_matter),
-            ExcludeKind::ListItem | ExcludeKind::Quote => unsupported.push(*kind),
+            ExcludeKind::ListItem => blocks_found.extend(in_container(doc, |c| {
+                matches!(c, Container::ListItem { .. })
+            })),
+            ExcludeKind::Quote => {
+                blocks_found.extend(in_container(doc, |c| matches!(c, Container::BlockQuote)));
+            }
         }
     }
     let blocks_merged = merge(blocks_found);
@@ -118,8 +115,16 @@ pub(crate) fn build(
         ranges: merge(blocks_merged.iter().chain(&code).copied().collect()),
         blocks: blocks_merged,
         code,
-        unsupported,
     }
+}
+
+/// Blocks held by a container that `wanted` accepts.
+fn in_container(doc: &Document, wanted: impl Fn(&Container) -> bool) -> Vec<Span> {
+    doc.blocks
+        .iter()
+        .filter(|b| b.containers.iter().any(&wanted))
+        .map(|b| b.span)
+        .collect()
 }
 
 fn blocks(doc: &Document, wanted: impl Fn(&BlockKind) -> bool) -> Vec<Span> {
