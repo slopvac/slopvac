@@ -147,12 +147,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-15, target: aarch64-apple-darwin }
-          - { os: macos-15-intel, target: x86_64-apple-darwin }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
-          - { os: windows-2025, target: x86_64-pc-windows-msvc }
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -266,13 +272,17 @@ jobs:
             artifacts/*.zip
             artifacts/*.whl
 
+      # Draft first, then publish: with immutable releases on, a published release
+      # accepts no new assets.
       - name: Create the prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           PYPI_VERSION: ${{ needs.validate.outputs.pypi-version }}
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+          set -euo pipefail
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease \
             --title "slopvac $PYPI_VERSION (release candidate)" \
             --notes "Release candidate. Install with \`uvx slopvac==$PYPI_VERSION\`. Not a stable release." \
             artifacts/*
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease

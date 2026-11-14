@@ -44,7 +44,7 @@ A maintainer must do these once. No workflow does them.
 - Create the tag ruleset described next.
 - Enable GitHub immutable releases in the repository settings. Once a release is published, its tag and assets then cannot change. The flow above fits this: assets attach before the release is published.
 
-A pushed version tag starts the workflow, so only maintainers tag. The workflow starts only on plain `v<major>.<minor>.<patch>` tags, so it never publishes a prerelease. The release-candidate change adds the candidate workflow and its `rc/vX.Y.Z-rc.N` tags; this workflow does not handle them.
+A pushed version tag starts the workflow, so only maintainers tag. The workflow starts only on plain `v<major>.<minor>.<patch>` tags, so it never publishes a prerelease. [Release candidates](candidates.md) run from a separate workflow on `rc/vX.Y.Z-rc.N` tags; this workflow does not handle them.
 
 ### Protect version tags
 
@@ -70,7 +70,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 - Only tags that match `v<digits>.<digits>.<digits>` start the workflow.
 - The first step of the plan job rejects any tag that is not exactly `vX.Y.Z`, before dist runs.
 - The tag reaches every shell step through an environment variable, never through `${{ }}` inside the script.
-- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the optional `RULESET_READ_TOKEN` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only once the release-candidate change adds the candidate workflow, because the gate looks for a passed candidate run.
+- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the optional `RULESET_READ_TOKEN` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only when a passed [candidate](candidates.md) run exists.
 - The gate binds to the commit. `release_provenance.py check-stable` takes the commit the workflow runs on (`$GITHUB_SHA`) and fails when the tag points anywhere else. It reads the candidate runs page by page, up to 1000 runs, and fails closed beyond that.
 - The host job re-resolves the tag on the remote (`release_provenance.py verify-tag`, peeled for annotated tags) before dist runs and again right before it publishes the release. It fails unless the tag still equals `$GITHUB_SHA`. The tag and commit reach the script through environment variables only.
 - The Windows build step runs under bash, so the `$TAG_FLAG` environment variable expands. Under PowerShell it expanded to nothing.

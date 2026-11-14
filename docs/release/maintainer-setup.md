@@ -1,14 +1,6 @@
-# Maintainer setup
+# Maintainer setup for candidates
 
-These steps change repository, PyPI and GitHub settings, so a maintainer does them by hand. No workflow or script in this repository does them. For the release workflows themselves, see [distribution](distribution.md) and [release candidates](candidates.md).
-
-## Homebrew tap
-
-1. Create the public repository `srobroek/homebrew-tap` with a `Formula/` directory (an empty repository with a README is enough).
-2. Create a fine-grained personal access token with access to that repository only and **Contents: Read and write**. Give it an expiry and put the renewal date in your calendar.
-3. In `srobroek/slopvac`, add the token as the Actions secret `HOMEBREW_TAP_TOKEN` (Settings, Secrets and variables, Actions).
-
-The cargo-dist `publish-homebrew-formula` job pushes `Formula/slopvac.rb` with that token on each stable release. Candidates skip it. Users then run `brew install srobroek/tap/slopvac`.
+The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and token, the release-please App, `RULESET_READ_TOKEN`, the `v*` tag ruleset and immutable releases. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
 
 ## PyPI Trusted Publishing for candidates
 
@@ -21,7 +13,7 @@ PyPI matches the publishing workflow by file name and environment. Candidates up
 | Workflow name | `candidate.yml` |
 | Environment name | `pypi` |
 
-Stable releases keep the registration of `publish-lint.yml` that already exists. Until the flow is moved, that workflow also publishes the 2.x line. If a later change publishes stable wheels from another workflow, register that file the same way.
+Stable releases keep the registration of `publish-lint.yml` that already exists. If a later change publishes stable wheels from another workflow, register that file the same way.
 
 ## The `pypi` environment
 
@@ -33,7 +25,9 @@ In Settings, Environments, `pypi`:
 
 ## Protect candidate tags
 
-The stable gate trusts the candidate tag. Extend the ruleset that [distribution](distribution.md) describes for `v*` tags to `rc/v*`, so nobody can move or delete a tag after its run passed.
+Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as the `v*` ruleset in [distribution](distribution.md#protect-version-tags): active, with the update, deletion and non-fast-forward rules, and a bypass list that is empty or admin-only.
+
+No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `candidate.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
 
 ## Check the setup
 

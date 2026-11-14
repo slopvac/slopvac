@@ -17,7 +17,7 @@ The `Release candidate` workflow (`.github/workflows/candidate.yml`) then runs t
 2. `evals` sets the Cargo version for that CI checkout only, so no commit carries it. It then runs the offline accuracy gate (`accuracy::` tests) and the migration end-to-end tests (`migration_e2e::`). Both use `--no-tests=fail`, so a suite that does not exist blocks the candidate.
 3. `wheels` calls `wheels.yml` for the maturin wheels, and `archives` builds the cargo-dist archives and checksums for the six release targets. The SBOM is a global cargo-dist artifact, so candidates leave it out.
 4. `publish` waits for approval in the `pypi` environment, then uploads `X.Y.ZrcN` to PyPI by Trusted Publishing. It runs only after `evals`, `wheels` and `archives` pass.
-5. `prerelease` creates a GitHub prerelease named after the tag, with the archives, checksums and wheels, and attests their build provenance. Candidates get no Homebrew formula and no installers.
+5. `prerelease` attests the build provenance of the archives and wheels. It then creates an unpublished GitHub prerelease named after the tag, attaches the archives, checksums and wheels, and publishes it. With immutable releases on, a published release takes no new assets, so the assets go on first. Candidates get no Homebrew formula and no installers.
 
 The Cargo workspace version, the wheel version and the PyPI version come from the one tag. cargo-dist reads `X.Y.Z-rc.N` as a prerelease, so `dist plan` marks the announcement as a prerelease.
 
@@ -41,7 +41,9 @@ To publish from a dispatch, turn `dry-run` off and start the run on the candidat
 
 ## Promote to stable
 
-A stable `vX.Y.Z` tag starts the cargo-dist release workflow. Its provenance gate (`release-provenance.yml`, backed by `scripts/release_provenance.py`) requires all of these:
+Release-please makes the unpublished release for the stable `vX.Y.Z` tag, as [distribution](distribution.md) describes. A candidate prerelease uses a different tag and never touches that release.
+
+The stable tag starts the cargo-dist release workflow. Its provenance gate (`release-provenance.yml`, backed by `scripts/release_provenance.py`) requires all of these:
 
 - An `rc/vX.Y.Z-rc.N` tag exists for the same version.
 - That candidate's tree equals the stable tag's tree. A squash merge of the tested release PR keeps the tree.
@@ -53,4 +55,4 @@ Otherwise the stable release stops before it builds. The release workflow does n
 
 ## Maintainer setup
 
-The PyPI Trusted Publisher for `candidate.yml`, the `pypi` environment, the Homebrew tap and its token are set up by hand. See [maintainer setup](maintainer-setup.md).
+The candidate-only prerequisites are the PyPI Trusted Publisher for `candidate.yml`, the `pypi` environment rules and an `rc/v*` tag ruleset. See [maintainer setup](maintainer-setup.md).
