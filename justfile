@@ -84,3 +84,7 @@ docs:
 # Local check: build/site-src matches a fresh build, links resolve, schema ids match. Changes nothing.
 docs-check:
     uv run python scripts/docs/build_site.py --check
+
+# Build rustdoc for every workspace crate with warnings denied.
+doc-rust:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
