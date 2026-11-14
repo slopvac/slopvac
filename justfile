@@ -81,6 +81,6 @@ contract:
 docs:
     uv run python scripts/docs/build_site.py
 
-# Fail when build/site-src is stale, or on broken links or bad schema ids. Changes nothing.
+# Local check: build/site-src matches a fresh build, links resolve, schema ids match. Changes nothing.
 docs-check:
     uv run python scripts/docs/build_site.py --check

@@ -26,6 +26,8 @@ Everything below the API major lives under `/v3/`, so a future major version get
 
 ## Build
 
-Run `just docs` to write the Markdown source tree to `build/site-src`. Run `just docs-check` after it. The check builds the tree in memory, compares paths and contents with `build/site-src`, and reports each missing, changed, or obsolete file. It changes nothing. Both commands fail on a broken link or a schema with the wrong `$id`.
+Run `just docs` to write the Markdown source tree to `build/site-src`. Nothing generated is committed. CI generates the pages, lints that Markdown with slopvac, builds the site from it, and publishes that same artifact.
+
+Run `just docs-check` locally after `just docs` to check that `build/site-src` matches a fresh build. It builds the tree in memory, compares paths and contents, and reports each missing, changed, or obsolete file. It changes nothing. It is a local consistency check, not protection against drift in committed output, because no generated output is committed. Both commands fail on a broken link or a schema with the wrong `$id`.
 
 The styles, genres, and pack pages are placeholders until the style, genre, and pack code exists. The rules page generator reads the Python rule data until the Rust rule loader replaces it.
