@@ -6,8 +6,11 @@
 //! protocol (`span`, `context`, `text`) so the same extractors can sit behind
 //! `extractor/extract` later.
 
+mod excalidraw;
 mod fences;
+mod json;
 mod mermaid;
+mod plantuml;
 
 pub use fences::{DiagramBlock, find_markdown_blocks};
 
@@ -89,6 +92,10 @@ pub struct Extraction {
 pub enum Format {
     /// Mermaid text.
     Mermaid,
+    /// `PlantUML` text.
+    PlantUml,
+    /// An Excalidraw JSON scene.
+    Excalidraw,
 }
 
 impl Format {
@@ -97,6 +104,7 @@ impl Format {
     pub fn from_lang(lang: &str) -> Option<Format> {
         match lang.to_ascii_lowercase().as_str() {
             "mermaid" => Some(Format::Mermaid),
+            "plantuml" | "puml" => Some(Format::PlantUml),
             _ => None,
         }
     }
@@ -107,6 +115,8 @@ impl Format {
         let ext = std::path::Path::new(path).extension()?.to_str()?;
         match ext.to_ascii_lowercase().as_str() {
             "mmd" | "mermaid" => Some(Format::Mermaid),
+            "puml" | "plantuml" | "pu" | "wsd" | "iuml" => Some(Format::PlantUml),
+            "excalidraw" => Some(Format::Excalidraw),
             _ => None,
         }
     }
@@ -161,6 +171,8 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
 pub fn extract(format: Format, source: &str, base: usize) -> Extraction {
     match format {
         Format::Mermaid => mermaid::extract(source, base),
+        Format::PlantUml => plantuml::extract(source, base),
+        Format::Excalidraw => excalidraw::extract(source, base),
     }
 }
 
@@ -178,6 +190,9 @@ mod tests {
             (".mmd", None),
             ("dir.mmd/readme", None),
             ("flow.mmd.bak", None),
+            ("seq.puml", Some(Format::PlantUml)),
+            ("Seq.PlantUML", Some(Format::PlantUml)),
+            ("board.excalidraw", Some(Format::Excalidraw)),
             ("notes.md", None),
             ("", None),
         ] {
@@ -189,6 +204,7 @@ mod tests {
     fn from_lang_is_case_insensitive() {
         assert_eq!(Format::from_lang("Mermaid"), Some(Format::Mermaid));
         assert_eq!(Format::from_lang("rust"), None);
+        assert_eq!(Format::from_lang("PlantUML"), Some(Format::PlantUml));
         assert_eq!(Format::from_lang(""), None);
     }
 
