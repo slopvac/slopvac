@@ -145,10 +145,11 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
     while j < value.len() {
         let vc = value[j..].chars().next()?;
         let sc = src[i..].chars().next()?;
-        if vc == '\n' && matches!(sc, ' ' | '\t' | '\n' | '\r') {
-            // A soft wrap. Trailing blanks, the terminator and the next line's quote
-            // marker and indentation are gaps.
+        if matches!(vc, '\n' | '\r') {
+            // A soft wrap, with any of the three line endings. Trailing blanks, the
+            // terminator and the next line's quote marker and indentation are gaps.
             flush(&mut tokens, &mut run, i, j);
+            j += if value[j..].starts_with("\r\n") { 2 } else { 1 };
             while src[i..].starts_with([' ', '\t']) {
                 i += 1;
             }
@@ -168,7 +169,6 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
                 start: 0,
                 end: 0,
             });
-            j += 1;
             continue;
         }
         if sc == '&'

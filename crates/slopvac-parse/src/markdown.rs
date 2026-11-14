@@ -194,11 +194,32 @@ impl<'a> Collector<'a> {
         match event {
             Event::Start(tag) => self.start(tag, range),
             Event::End(tag) => self.end(*tag, &range),
-            Event::Text(_) if self.code.is_some() => {
+            Event::Text(text) if self.code.is_some() => {
                 if let Some(code) = self.code.as_mut() {
-                    code.hull = Some(code.hull.as_ref().map_or(range.clone(), |h| {
-                        h.start.min(range.start)..h.end.max(range.end)
-                    }));
+                    code.hull = Some(code.hull.as_ref().map_or_else(
+                        || {
+                            // A blank first line comes with its container prefix, and
+                            // a CRLF line may start between its CR and LF. The body
+                            // starts at the line terminator.
+                            let bytes = self.masked.text.as_bytes();
+                            let blank = matches!(&**text, "\n" | "\r\n" | "\r");
+                            let width = if bytes[..range.end].ends_with(b"\r\n") {
+                                2
+                            } else {
+                                1
+                            };
+                            let mut start = if blank && range.len() > width {
+                                range.end - width
+                            } else {
+                                range.start
+                            };
+                            if start > 0 && bytes[start - 1] == b'\r' && bytes[start] == b'\n' {
+                                start -= 1;
+                            }
+                            start..range.end
+                        },
+                        |h| h.start.min(range.start)..h.end.max(range.end),
+                    ));
                 }
             }
             Event::Text(text) => {

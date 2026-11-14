@@ -299,7 +299,8 @@ fn pulldown_options() -> Options {
 }
 
 /// Code blocks of the unmasked source as pulldown-cmark reads them: the block range
-/// without its final terminator and the hull of its text events.
+/// without its final terminator and the hull of its text events. A blank first line
+/// comes with its container prefix, so the hull starts at that line's terminator.
 type Open = (std::ops::Range<usize>, Option<(usize, usize)>);
 
 fn pulldown_code(source: &str) -> Vec<(Span, Option<Span>)> {
@@ -310,8 +311,27 @@ fn pulldown_code(source: &str) -> Vec<(Span, Option<Span>)> {
             Event::Start(Tag::CodeBlock(_)) => open = Some((range, None)),
             Event::Text(_) => {
                 if let Some((_, hull)) = open.as_mut() {
-                    let (s, e) = hull.unwrap_or((range.start, range.end));
-                    *hull = Some((s.min(range.start), e.max(range.end)));
+                    *hull = Some(match *hull {
+                        None => {
+                            let bytes = source.as_bytes();
+                            let blank = matches!(&event, Event::Text(t) if matches!(&**t, "\n" | "\r\n" | "\r"));
+                            let width = if bytes[..range.end].ends_with(b"\r\n") {
+                                2
+                            } else {
+                                1
+                            };
+                            let mut start = if blank && range.len() > width {
+                                range.end - width
+                            } else {
+                                range.start
+                            };
+                            if start > 0 && bytes[start - 1] == b'\r' && bytes[start] == b'\n' {
+                                start -= 1;
+                            }
+                            (start, range.end)
+                        }
+                        Some((s, e)) => (s.min(range.start), e.max(range.end)),
+                    });
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -521,4 +541,71 @@ fn an_mdx_directive_with_an_indented_closer_does_not_swallow_prose() {
     assert_eq!(admonitions(&doc), 1);
     assert_eq!(prose(&doc), ["body", "Following prose."]);
     assert_eq!(code_bodies(&doc), []);
+}
+
+// ---- review round 4 ----
+
+#[test]
+fn mdx_soft_wraps_are_wrap_tokens_with_every_line_ending() {
+    for eol in ["\n", "\r\n", "\r"] {
+        let source = format!("foo{eol}bar baz{eol}*qux*");
+        let doc = mdx(&source);
+        let proj = doc.blocks[0].projection.as_ref().unwrap();
+        assert_eq!(proj.text(), "foo bar baz qux", "{eol:?}");
+        let tokens: Vec<_> = proj
+            .tokens()
+            .iter()
+            .map(|t| (t.kind, t.src.start(), t.src.end()))
+            .collect();
+        let n = eol.len();
+        assert_eq!(
+            tokens,
+            [
+                (TokenKind::Identity, 0, 3),
+                (TokenKind::Wrap, 3, 3),
+                (TokenKind::Identity, 3 + n, 10 + n),
+                (TokenKind::Wrap, 10 + n, 10 + n),
+                (TokenKind::Identity, 11 + 2 * n, 14 + 2 * n),
+            ],
+            "{eol:?}"
+        );
+    }
+}
+
+#[test]
+fn a_blank_first_body_line_loses_its_container_prefix() {
+    let cases = [
+        ("> ```\n>\n> a\n> ```\n", "\n> a\n"),
+        ("> ```\n> \n> a\n> ```\n", "\n> a\n"),
+        ("- item\n\n  ```\n\n  a\n  ```\n", "\n  a\n"),
+    ];
+    for eol in ["\n", "\r\n"] {
+        for (template, want) in cases {
+            let source = template.replace('\n', eol);
+            let want = want.replace('\n', eol);
+            for doc in [md(&source), mdx(&source)] {
+                let bodies = code_bodies(&doc);
+                assert_eq!(bodies.len(), 1, "{source:?}");
+                assert_eq!(slice(&source, bodies[0]), want, "{source:?}");
+            }
+        }
+    }
+    // A lone CR: markdown-rs only, because pulldown-cmark does not read it inside quotes.
+    let source = "> ```\r>\r> a\r> ```\r";
+    assert_eq!(slice(source, code_bodies(&mdx(source))[0]), "\r> a\r");
+}
+
+#[test]
+fn a_large_data_expression_does_not_disturb_earlier_expressions() {
+    // The string holds a brace. Plain counting would end its expression inside it.
+    let data = "{a:1},".repeat(1500);
+    let source = format!("{{\"a }} b\"}} and then {{[{data}]}}\n");
+    let doc = mdx(&source);
+    let text = prose(&doc);
+    assert_eq!(text.len(), 1);
+    assert!(
+        text[0].starts_with("a } b and then"),
+        "{:?}",
+        &text[0][..20.min(text[0].len())]
+    );
 }

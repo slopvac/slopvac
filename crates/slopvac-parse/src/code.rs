@@ -77,8 +77,17 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
     let (first_start, first_end) = lines[1];
     let first_value = value.split(['\r', '\n']).next().unwrap_or("");
     let line = &text[first_start..first_end];
+    // The opener sits after a container prefix when its line starts earlier.
+    let opener_line = text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    let in_container = opener_line < start;
     let prefix = if !first_value.is_empty() && line.ends_with(first_value) {
         line.len() - first_value.len()
+    } else if first_value.is_empty()
+        && in_container
+        && line.chars().all(|c| matches!(c, ' ' | '\t' | '>'))
+    {
+        // A blank first line: all that is on it is the prefix.
+        line.len()
     } else {
         0
     };

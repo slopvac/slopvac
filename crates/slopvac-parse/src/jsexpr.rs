@@ -14,13 +14,19 @@
 //! expression so far. The checker remembers how far it scanned, so a long expression costs
 //! one pass and not one pass per brace.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use markdown::{MdxExpressionKind, MdxSignal};
 
-/// How many closing braces an unfinished expression may hold. markdown-rs rebuilds the
-/// expression text on every call, so an unbounded count is quadratic.
+/// How many closing braces an unfinished expression may hold before the checker stops
+/// reading it and counts plain braces for the rest of it.
 const MAX_RETRIES: usize = 1000;
+
+/// Bytes the checker may ask markdown-rs to rebuild across unfinished expressions.
+/// markdown-rs copies the whole expression text on every call, so a huge expression with
+/// many closing braces is quadratic. Past this budget the read fails and `parse_mdx` reads
+/// the document again with plain counting.
+const MAX_WORK: usize = 64 << 20;
 
 /// Words after which a `/` starts a regular expression and not a division.
 const KEYWORDS: &[&str] = &[
@@ -232,6 +238,7 @@ impl Scan {
 #[derive(Debug, Default)]
 pub(crate) struct ExpressionChecker {
     scan: RefCell<Scan>,
+    work: Cell<usize>,
 }
 
 impl ExpressionChecker {
@@ -242,10 +249,16 @@ impl ExpressionChecker {
         }
         let done = scan.seen.len();
         scan.feed(&code[done..]);
+        if scan.retries >= MAX_RETRIES {
+            scan.doubtful = true;
+        }
         if scan.complete() {
             *scan = Scan::default();
-            MdxSignal::Ok
-        } else if scan.retries >= MAX_RETRIES {
+            return MdxSignal::Ok;
+        }
+        let spent = self.work.get() + code.len();
+        self.work.set(spent);
+        if spent > MAX_WORK {
             *scan = Scan::default();
             MdxSignal::Error(
                 "Too many closing braces inside an unfinished expression".into(),
