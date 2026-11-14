@@ -1,0 +1,871 @@
+//! The engine: rules in, a scored document out.
+//!
+//! One [`Engine`] holds the loaded rules, the resolved [`Settings`], the exception
+//! detectors, the context taggers and any diagram checkers. [`Engine::lint`] runs them over
+//! one [`Input`] and returns the `slopvac-model` [`Document`] that the report contract
+//! describes. [`Engine::lint_all`] runs many inputs in parallel and keeps their order.
+
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
+
+use rayon::prelude::*;
+use slopvac_context::{TagIndex, TagRegistry};
+use slopvac_diagrams::{Extraction, Format as DiagramFormat, extract};
+use slopvac_model::{
+    AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
+    KebabName, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance,
+    Severity, SourceIndex, Span,
+};
+use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
+use slopvac_rules::{BlockKind as ExcludeKind, LoadedRule, Match, MatchKind, RuleSet, Scope};
+use slopvac_text::{TextError, TextType};
+
+use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
+use crate::directives::{Directives, Lines, Target, scan};
+use crate::exceptions::{Detectors, MatchSite};
+use crate::matching::{
+    LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
+};
+use crate::prepare::{Prepared, Unit};
+use crate::score::{CategoryInfo, score_document};
+use crate::settings::{Level, Settings};
+use crate::skip::{self, SkipRanges};
+use crate::tagging;
+
+/// The id of the finding for a directive that does not hold.
+const INVALID_SUPPRESSION: &str = "meta.invalid-suppression";
+/// The pack that owns the findings of the engine itself.
+const ENGINE_PACK: &str = "core";
+
+/// What kind of file an [`Input`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Kind {
+    /// Markdown.
+    Markdown,
+    /// MDX.
+    Mdx,
+    /// A diagram file. Only diagram rules read it.
+    Diagram(DiagramFormat),
+}
+
+/// One file to lint.
+#[derive(Debug, Clone)]
+pub struct Input<'a> {
+    /// The path, as shown in the report.
+    pub path: &'a str,
+    /// The file text.
+    pub source: &'a str,
+    /// The kind of file.
+    pub kind: Kind,
+    /// The part of `source` to read, after any front matter. `None` reads all of it.
+    pub body: Option<Span>,
+    /// How a leading byte order mark counts in columns.
+    pub bom: BomMode,
+}
+
+impl<'a> Input<'a> {
+    /// A Markdown file read from disk.
+    #[must_use]
+    pub const fn markdown(path: &'a str, source: &'a str) -> Self {
+        Self {
+            path,
+            source,
+            kind: Kind::Markdown,
+            body: None,
+            bom: BomMode::Disk,
+        }
+    }
+
+    /// An MDX file read from disk.
+    #[must_use]
+    pub const fn mdx(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Mdx,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// A diagram file read from disk.
+    #[must_use]
+    pub const fn diagram(path: &'a str, source: &'a str, format: DiagramFormat) -> Self {
+        Self {
+            kind: Kind::Diagram(format),
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// Read only `body`.
+    #[must_use]
+    pub const fn with_body(mut self, body: Span) -> Self {
+        self.body = Some(body);
+        self
+    }
+
+    /// The front matter span: everything before the body.
+    fn front_matter(&self) -> Option<Span> {
+        self.body
+            .filter(|b| b.start() > 0)
+            .map(|b| Span::empty(0).pipe(|z| Span::new(z.start(), b.start()).expect("0 <= start")))
+    }
+}
+
+trait Pipe: Sized {
+    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
+        f(self)
+    }
+}
+impl Pipe for Span {}
+
+/// Why a document could not be linted.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum EngineError {
+    /// The document did not parse.
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    /// A pattern failed while matching, for example on a match limit.
+    #[error(transparent)]
+    Text(#[from] TextError),
+    /// A context tagger failed.
+    #[error("context tagger failed: {0}")]
+    Context(String),
+    /// A computed position was not valid for the file.
+    #[error(transparent)]
+    Position(#[from] PositionError),
+    /// A value the engine built broke a model invariant. This is a bug.
+    #[error("internal error: {0}")]
+    Internal(String),
+}
+
+/// A rule that runs.
+struct Active {
+    set: usize,
+    category: usize,
+    rule: usize,
+    severity: Severity,
+    replacements: LazyReplacements,
+}
+
+/// A diagram rule that runs.
+struct ActiveDiagram {
+    severity: Severity,
+    checker: usize,
+}
+
+/// Where a rule id points.
+enum Catalog {
+    Loaded(usize),
+    Diagram(Vec<String>),
+}
+
+/// The engine.
+pub struct Engine {
+    sets: Vec<RuleSet>,
+    settings: Settings,
+    detectors: Detectors,
+    tagger: TagRegistry,
+    checkers: Vec<Box<dyn DiagramChecker>>,
+    /// Lexical rules that run.
+    active: Vec<Active>,
+    /// Diagram rules that run, by id.
+    diagram_rules: HashMap<RuleId, ActiveDiagram>,
+    /// Every known rule id.
+    catalog: HashMap<String, Catalog>,
+    /// Ids of rules that run, including the ones that produce no finding here.
+    running: HashSet<String>,
+    /// Notices every document carries.
+    notices: Vec<Notice>,
+    categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
+}
+
+fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
+    settings
+        .rule_levels
+        .get(id)
+        .copied()
+        .or_else(|| settings.categories.get(category).and_then(|d| d.level))
+        .unwrap_or(Level::On(shipped))
+}
+
+fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, EngineError> {
+    Ok(Notice {
+        code: KebabName::new(code).map_err(|e| EngineError::Internal(e.to_string()))?,
+        level,
+        message: NonEmptyString::new(message).map_err(|e| EngineError::Internal(e.to_string()))?,
+        path: None,
+    })
+}
+
+impl Engine {
+    /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
+    /// no diagram checker.
+    ///
+    /// Rules of kinds the engine does not run yet (metrics, structure checks, vocabulary
+    /// and capitalization) are skipped, and each document says so in an `info` notice.
+    pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
+        let tagger =
+            slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
+        let mut engine = Self {
+            sets,
+            settings,
+            detectors: Detectors::builtin(),
+            tagger,
+            checkers: Vec::new(),
+            active: Vec::new(),
+            diagram_rules: HashMap::new(),
+            catalog: HashMap::new(),
+            running: HashSet::new(),
+            notices: Vec::new(),
+            categories: std::collections::BTreeMap::new(),
+        };
+        engine.resolve()?;
+        Ok(engine)
+    }
+
+    /// Replace the exception detectors.
+    #[must_use]
+    pub fn with_detectors(mut self, detectors: Detectors) -> Self {
+        self.detectors = detectors;
+        self
+    }
+
+    /// Replace the context taggers.
+    #[must_use]
+    pub fn with_taggers(mut self, tagger: TagRegistry) -> Self {
+        self.tagger = tagger;
+        self
+    }
+
+    /// Add a checker for diagram rules.
+    #[must_use]
+    pub fn with_diagram_checker(mut self, checker: Box<dyn DiagramChecker>) -> Self {
+        let index = self.checkers.len();
+        for DiagramRule { id, severity } in checker.rules() {
+            let category = category_of(&id);
+            let key = id.as_str().to_owned();
+            self.catalog
+                .insert(key.clone(), Catalog::Diagram(Vec::new()));
+            if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
+                self.running.insert(key);
+                self.diagram_rules.insert(
+                    id,
+                    ActiveDiagram {
+                        severity,
+                        checker: index,
+                    },
+                );
+            }
+        }
+        self.checkers.push(checker);
+        self
+    }
+
+    /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
+    fn resolve(&mut self) -> Result<(), EngineError> {
+        let mut unrun: std::collections::BTreeMap<&'static str, usize> =
+            std::collections::BTreeMap::new();
+        for (s, set) in self.sets.iter().enumerate() {
+            for (c, category) in set.categories().iter().enumerate() {
+                let meta = self.settings.categories.get(category.id());
+                let info = CategoryInfo {
+                    weight: match meta.and_then(|d| d.level) {
+                        Some(Level::Off) => 0.0,
+                        _ => meta
+                            .and_then(|d| d.weight)
+                            .unwrap_or(category.weight().get()),
+                    },
+                    budget: meta.and_then(|d| d.max_per_100_words).or_else(|| {
+                        category
+                            .max_per_100_words()
+                            .and_then(|m| {
+                                m.iter()
+                                    .find(|(p, _)| p.as_str() == self.settings.profile.as_str())
+                            })
+                            .map(|(_, d)| d.get())
+                    }),
+                };
+                self.categories.insert(category.id().clone(), info);
+                for (r, loaded) in category.rules().iter().enumerate() {
+                    self.catalog.insert(
+                        loaded.id().as_str().to_owned(),
+                        Catalog::Loaded(self.active.len() + usize::MAX / 2),
+                    );
+                    let rule = loaded.rule();
+                    let Level::On(severity) = level_of(
+                        &self.settings,
+                        loaded.id(),
+                        loaded.category(),
+                        rule.severity,
+                    ) else {
+                        continue;
+                    };
+                    if let Some(applies) = &rule.applies_to {
+                        let mode = self.settings.mode.apply_mode();
+                        if applies.modes.as_ref().is_some_and(|m| !m.contains(&mode))
+                            || applies
+                                .genres
+                                .as_ref()
+                                .is_some_and(|g| !g.contains(&self.settings.genre.id))
+                        {
+                            continue;
+                        }
+                    }
+                    self.running.insert(loaded.id().as_str().to_owned());
+                    match loaded.kind() {
+                        MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => {
+                            self.active.push(Active {
+                                set: s,
+                                category: c,
+                                rule: r,
+                                severity,
+                                replacements: LazyReplacements::default(),
+                            });
+                        }
+                        MatchKind::Judgement => {}
+                        MatchKind::Metric => *unrun.entry("metric").or_default() += 1,
+                        MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
+                        MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
+                        MatchKind::Capitalization => {
+                            *unrun.entry("capitalization").or_default() += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // The catalog maps an id to its place in `active` or to its set. Rebuild it with the
+        // real coordinates now that every rule is known.
+        self.catalog.clear();
+        for (s, set) in self.sets.iter().enumerate() {
+            for rule in set.rules() {
+                self.catalog
+                    .insert(rule.id().as_str().to_owned(), Catalog::Loaded(s));
+            }
+        }
+        for (kind, count) in unrun {
+            self.notices.push(notice(
+                "rule-kind-not-implemented",
+                NoticeLevel::Info,
+                format!(
+                    "{count} active {kind} rule(s) did not run: the engine does not run {kind} \
+                     rules yet"
+                ),
+            )?);
+        }
+        Ok(())
+    }
+
+    /// The loaded rule for a qualified id.
+    fn loaded(&self, id: &str) -> Option<&LoadedRule> {
+        let Catalog::Loaded(set) = self.catalog.get(id)? else {
+            return None;
+        };
+        let rule_id = RuleId::new(id).ok()?;
+        self.sets[*set].get(&rule_id)
+    }
+
+    /// Lint many inputs in parallel. Results keep the order of `inputs`.
+    #[must_use]
+    pub fn lint_all(&self, inputs: &[Input<'_>]) -> Vec<Result<Document, EngineError>> {
+        inputs.par_iter().map(|input| self.lint(input)).collect()
+    }
+
+    /// Lint one input.
+    pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
+        let body = input
+            .body
+            .unwrap_or_else(|| Span::new(0, input.source.len()).expect("0 <= len"));
+        let parsed = match input.kind {
+            Kind::Markdown => parse_markdown(input.source, body)?,
+            Kind::Mdx => parse_mdx(input.source, body)?,
+            Kind::Diagram(_) => Parsed::default(),
+        };
+        let prepared = Prepared::new(input.source, &parsed)?;
+        let tags = match input.kind {
+            Kind::Diagram(_) => TagIndex::default(),
+            _ => tagging::tag(&self.tagger, input.path, input.source, &parsed)
+                .map_err(|e| EngineError::Context(e.to_string()))?,
+        };
+        let lines = Lines::new(input.source);
+        let directives = match input.kind {
+            Kind::Diagram(_) => Directives::default(),
+            _ => scan(&parsed, &lines, input.front_matter(), |id| {
+                match self.catalog.get(id) {
+                    None => Target::Unknown,
+                    Some(_) if !self.running.contains(id) => Target::Inactive,
+                    Some(Catalog::Loaded(_)) => Target::Active(
+                        self.loaded(id)
+                            .map(|r| {
+                                r.rule()
+                                    .exceptions()
+                                    .iter()
+                                    .map(|e| e.name.as_str())
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    ),
+                    Some(Catalog::Diagram(_)) => Target::Active(Vec::new()),
+                }
+            }),
+        };
+        let run = Run {
+            engine: self,
+            input,
+            parsed: &parsed,
+            prepared: &prepared,
+            tags: &tags,
+            lines: &lines,
+            directives: &directives,
+            index: SourceIndex::new(input.source, input.bom),
+        };
+        let mut findings = run.lexical()?;
+        findings.extend(run.diagrams()?);
+        findings.extend(run.invalid_directives()?);
+        findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
+        Ok(self.document(input, &prepared, &tags, findings))
+    }
+
+    fn document(
+        &self,
+        input: &Input<'_>,
+        prepared: &Prepared<'_>,
+        tags: &TagIndex,
+        findings: Vec<Finding>,
+    ) -> Document {
+        let words = prepared.words();
+        let mut unchecked = self.notices.clone();
+        unchecked.extend(self.skip_notices());
+        let scoring = score_document(
+            &findings,
+            words,
+            &self.categories,
+            &self.settings.thresholds,
+            &unchecked,
+        );
+        Document {
+            path: NonEmptyString::new(input.path).unwrap_or_else(|_| {
+                NonEmptyString::new("<stdin>").expect("a literal is not empty")
+            }),
+            profile: self.settings.profile.clone(),
+            genre: self.settings.genre.clone(),
+            contexts_seen: contexts(tags.kinds_seen()),
+            config_sources: self.settings.config_sources.clone(),
+            words,
+            sentences: prepared.sentence_count(),
+            paragraphs: prepared.paragraph_count(),
+            findings,
+            categories: scoring.categories,
+            total_findings: scoring.total_findings,
+            errors: scoring.errors,
+            warnings: scoring.warnings,
+            suggestions: scoring.suggestions,
+            per_100_words: scoring.per_100_words,
+            score: scoring.score,
+            gate: scoring.gate,
+            unchecked,
+            ai_register: scoring.ai_register,
+            prose: scoring.prose,
+        }
+    }
+
+    /// A notice for each running rule that excludes a block kind the parser cannot locate.
+    fn skip_notices(&self) -> Vec<Notice> {
+        let mut kinds: Vec<&'static str> = Vec::new();
+        for active in &self.active {
+            let rule =
+                self.sets[active.set].categories()[active.category].rules()[active.rule].rule();
+            for kind in rule.exclude_blocks.iter().flatten() {
+                let name = match kind {
+                    ExcludeKind::ListItem => "list-item",
+                    ExcludeKind::Quote => "quote",
+                    _ => continue,
+                };
+                if !kinds.contains(&name) {
+                    kinds.push(name);
+                }
+            }
+        }
+        kinds
+            .into_iter()
+            .filter_map(|name| {
+                notice(
+                    "exclude-block-not-located",
+                    NoticeLevel::Info,
+                    format!(
+                        "rules that exclude `{name}` blocks still read them: the parser does not \
+                         locate {name} blocks"
+                    ),
+                )
+                .ok()
+            })
+            .collect()
+    }
+}
+
+fn category_of(id: &RuleId) -> CategoryId {
+    let local = id.local();
+    CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
+        .unwrap_or_else(|_| CategoryId::new("meta").expect("meta is a category id"))
+}
+
+fn contexts(kinds: Vec<&str>) -> Contexts {
+    Contexts::new(
+        kinds
+            .into_iter()
+            .filter_map(|k| ContextTag::new(k).ok())
+            .collect(),
+    )
+    .unwrap_or_default()
+}
+
+/// The state of one document run.
+struct Run<'a> {
+    engine: &'a Engine,
+    input: &'a Input<'a>,
+    parsed: &'a Parsed,
+    prepared: &'a Prepared<'a>,
+    tags: &'a TagIndex,
+    lines: &'a Lines<'a>,
+    directives: &'a Directives,
+    index: SourceIndex<'a>,
+}
+
+/// A finding before it gets its position.
+struct Candidate<'r> {
+    rule_id: &'r RuleId,
+    pack: &'r PackId,
+    category: CategoryId,
+    severity: Severity,
+    message: String,
+    span: Span,
+    matched_text: String,
+    ai_signal: AiSignal,
+    fix: Option<Fix>,
+    extra_context: Option<&'static str>,
+}
+
+impl Run<'_> {
+    fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
+        let start = self.index.line_col(c.span.start())?;
+        let end = self.index.line_col(c.span.end())?;
+        let mut kinds = self.tags.kinds_at(&(c.span.start()..c.span.end()));
+        if let Some(extra) = c.extra_context
+            && !kinds.contains(&extra)
+        {
+            kinds.push(extra);
+        }
+        Ok(Finding {
+            rule_id: c.rule_id.clone(),
+            pack: c.pack.clone(),
+            category: c.category,
+            severity: c.severity,
+            message: NonEmptyString::new(c.message)
+                .map_err(|e| EngineError::Internal(e.to_string()))?,
+            start,
+            extent: Some(Extent { span: c.span, end }),
+            contexts: contexts(kinds),
+            ai_signal: c.ai_signal,
+            matched_text: c.matched_text,
+            fix: c.fix,
+            provenance: Some(RuleProvenance {
+                pack: c.pack.clone(),
+                version: None,
+                source: None,
+            }),
+        })
+    }
+
+    /// Whether a directive covers a finding of `id` that starts at `span`.
+    fn suppressed(&self, id: &str, exceptions: &[&str], span: Span) -> bool {
+        self.directives
+            .suppressed(id, exceptions, self.lines.line_of(span.start()))
+    }
+
+    fn lexical(&self) -> Result<Vec<Finding>, EngineError> {
+        let engine = self.engine;
+        let inline_code = skip::build(self.parsed, &[], None, true);
+        let mut out = Vec::new();
+        for active in &engine.active {
+            let set = &engine.sets[active.set];
+            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let rule = loaded.rule();
+            let exclusions;
+            let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
+                (Some(kinds), scope) => {
+                    exclusions = skip::build(
+                        self.parsed,
+                        kinds,
+                        self.input.front_matter(),
+                        scope != Scope::Raw,
+                    );
+                    &exclusions
+                }
+                (None, Scope::Raw) => {
+                    exclusions = SkipRanges::default();
+                    &exclusions
+                }
+                (None, _) => &inline_code,
+            };
+            let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
+            let detectors: Vec<&str> = rule
+                .exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(|d| d.as_str()))
+                .collect();
+            for unit in self.prepared.units(rule.scope)? {
+                for range in loaded.find_all(unit.text)? {
+                    if let Some(c) =
+                        self.candidate(active, set, loaded, &unit, &range, skip, &detectors)?
+                    {
+                        if self.suppressed(loaded.id().as_str(), &exceptions, c.span) {
+                            continue;
+                        }
+                        out.push(self.finding(c)?);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The finding for one match, or `None` when a filter drops it.
+    #[allow(clippy::too_many_arguments)]
+    fn candidate<'s>(
+        &self,
+        active: &Active,
+        set: &'s RuleSet,
+        loaded: &'s LoadedRule,
+        unit: &Unit<'_>,
+        range: &Range<usize>,
+        skip: &SkipRanges,
+        detectors: &[&str],
+    ) -> Result<Option<Candidate<'s>>, EngineError> {
+        let rule = loaded.rule();
+        if rule.text_type != TextType::Any {
+            let at = unit.base() + range.start;
+            let typed = unit
+                .sentences
+                .and_then(|s| s.iter().find(|s| s.start <= at && at < s.end));
+            if typed.is_none_or(|s| s.text_type != rule.text_type) {
+                return Ok(None);
+            }
+        }
+        if allowlisted(loaded, unit.text, range) {
+            return Ok(None);
+        }
+        let matched = &unit.text[range.clone()];
+        let match_all_caps = loaded.matcher().is_some_and(|m| m.match_all_caps());
+        if !match_all_caps && is_all_caps(matched) {
+            return Ok(None);
+        }
+        let span = unit.span(range);
+        if skip.overlaps(span) {
+            return Ok(None);
+        }
+        let gate = rule.contexts.as_ref();
+        let kinds = if gate.is_some() || !detectors.is_empty() {
+            self.tags.kinds_at(&(span.start()..span.end()))
+        } else {
+            Vec::new()
+        };
+        if let Some(gate) = gate {
+            let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
+                tags.as_ref()
+                    .map(|t| t.iter().any(|t| kinds.contains(&t.as_str())))
+            };
+            if has(&gate.skip) == Some(true) || has(&gate.only) == Some(false) {
+                return Ok(None);
+            }
+        }
+        if !detectors.is_empty() {
+            let site = MatchSite {
+                text: unit.text,
+                range,
+                span,
+                document: self.parsed,
+                tags: &kinds,
+            };
+            if detectors
+                .iter()
+                .any(|d| self.engine.detectors.detects(d, &site))
+            {
+                return Ok(None);
+            }
+        }
+        // A match that spans masked text (inline code) reports the source text.
+        let source_text = &self.input.source[span.start()..span.end()];
+        let shown = if matched.contains('\0') {
+            source_text
+        } else {
+            matched
+        };
+        let candidate = match &rule.match_ {
+            Match::Substitution(_) => active
+                .replacements
+                .get(loaded)
+                .find(shown)
+                .map(str::to_owned),
+            _ => None,
+        };
+        let fix = match candidate.as_deref() {
+            Some(text) if is_single_replacement(text) && source_text == shown => Some(
+                Fix::new(vec![Edit {
+                    span,
+                    text: text.to_owned(),
+                }])
+                .map_err(|e| EngineError::Internal(e.to_string()))?,
+            ),
+            _ => None,
+        };
+        Ok(Some(Candidate {
+            rule_id: loaded.id(),
+            pack: set.pack(),
+            category: loaded.category().clone(),
+            severity: active.severity,
+            message: format_message(
+                rule.message.as_str(),
+                shown,
+                candidate.as_deref().unwrap_or(""),
+            ),
+            span,
+            matched_text: shown.to_owned(),
+            ai_signal: rule.ai_signal,
+            fix,
+            extra_context: None,
+        }))
+    }
+
+    /// Findings of diagram rules, over diagram files and fenced diagram blocks.
+    fn diagrams(&self) -> Result<Vec<Finding>, EngineError> {
+        let engine = self.engine;
+        if engine.checkers.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut diagrams: Vec<(Extraction, Vec<slopvac_diagrams::ProseBlock<'_>>)> = Vec::new();
+        match self.input.kind {
+            Kind::Diagram(format) => {
+                diagrams.push((extract(format, self.input.source, 0), Vec::new()));
+            }
+            _ => {
+                for block in &self.parsed.blocks {
+                    let BlockKind::CodeBlock {
+                        lang: Some(lang),
+                        body,
+                        fenced: true,
+                        ..
+                    } = &block.kind
+                    else {
+                        continue;
+                    };
+                    let Some(format) = DiagramFormat::from_lang(lang) else {
+                        continue;
+                    };
+                    let text = &self.input.source[body.start()..body.end()];
+                    diagrams.push((
+                        extract(format, text, body.start()),
+                        self.nearby_prose(block.span),
+                    ));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (extraction, prose) in &diagrams {
+            let input = DiagramInput {
+                source: self.input.source,
+                extraction,
+                prose,
+            };
+            for checker in &engine.checkers {
+                for hit in checker.check(&input) {
+                    if let Some(finding) = self.diagram_finding(&hit)? {
+                        out.push(finding);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The paragraphs next to a fenced block: the last one before it and the first after.
+    fn nearby_prose(&self, fence: Span) -> Vec<slopvac_diagrams::ProseBlock<'_>> {
+        let paragraph = |b: &&slopvac_parse::Block| {
+            matches!(b.kind, BlockKind::Paragraph) && b.projection.is_some()
+        };
+        let blocks = &self.parsed.blocks;
+        let before = blocks
+            .iter()
+            .filter(paragraph)
+            .filter(|b| b.span.end() <= fence.start())
+            .next_back();
+        let after = blocks
+            .iter()
+            .filter(paragraph)
+            .find(|b| b.span.start() >= fence.end());
+        [before, after]
+            .into_iter()
+            .flatten()
+            .filter_map(|b| {
+                Some(slopvac_diagrams::ProseBlock {
+                    span: b.span.start()..b.span.end(),
+                    text: b.projection.as_ref()?.text(),
+                })
+            })
+            .collect()
+    }
+
+    fn diagram_finding(&self, hit: &DiagramHit) -> Result<Option<Finding>, EngineError> {
+        let Some(active) = self.engine.diagram_rules.get(&hit.rule) else {
+            return Ok(None);
+        };
+        let span = Span::new(hit.span.start, hit.span.end)
+            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        if self.suppressed(hit.rule.as_str(), &[], span) {
+            return Ok(None);
+        }
+        let pack =
+            PackId::new(hit.rule.pack()).map_err(|e| EngineError::Internal(e.to_string()))?;
+        let rule_id = hit.rule.clone();
+        let matched = self.input.source[span.start()..span.end()].to_owned();
+        let _ = active.checker;
+        self.finding(Candidate {
+            rule_id: &rule_id,
+            pack: &pack,
+            category: category_of(&rule_id),
+            severity: active.severity,
+            message: hit.message.clone(),
+            span,
+            matched_text: matched,
+            ai_signal: AiSignal::None,
+            fix: None,
+            extra_context: Some(slopvac_diagrams::CONTEXT),
+        })
+        .map(Some)
+    }
+
+    /// One `meta.invalid-suppression` error for each directive that does not hold.
+    fn invalid_directives(&self) -> Result<Vec<Finding>, EngineError> {
+        let pack = PackId::new(ENGINE_PACK).map_err(|e| EngineError::Internal(e.to_string()))?;
+        let rule_id = RuleId::new(format!("{ENGINE_PACK}:{INVALID_SUPPRESSION}"))
+            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        self.directives
+            .invalid
+            .iter()
+            .map(|invalid| {
+                self.finding(Candidate {
+                    rule_id: &rule_id,
+                    pack: &pack,
+                    category: CategoryId::new("meta")
+                        .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    severity: Severity::Error,
+                    message: invalid.message.clone(),
+                    span: invalid.span,
+                    matched_text: self.input.source[invalid.span.start()..invalid.span.end()]
+                        .to_owned(),
+                    ai_signal: AiSignal::None,
+                    fix: None,
+                    extra_context: None,
+                })
+            })
+            .collect()
+    }
+}

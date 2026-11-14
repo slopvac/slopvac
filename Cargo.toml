@@ -66,6 +66,7 @@ ureq = { version = "3.5", default-features = false, features = [
   "platform-verifier",
 ] }
 semver = "1"
+rayon = "1.11"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -10,3 +10,16 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+rayon = { workspace = true }
+slopvac-context = { workspace = true }
+slopvac-diagrams = { workspace = true }
+slopvac-model = { workspace = true }
+slopvac-parse = { workspace = true }
+slopvac-rules = { workspace = true }
+slopvac-text = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
