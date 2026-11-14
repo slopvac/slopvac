@@ -1503,6 +1503,10 @@ name = "slopvac-config"
 version = "0.0.0"
 
 [[package]]
+name = "slopvac-diagrams"
+version = "0.0.0"
+
+[[package]]
 name = "slopvac-engine"
 version = "0.0.0"
 
