@@ -68,7 +68,7 @@ impl<'a> FrontMatter<'a> {
         Self::parse_block_with(doc, block, limits).map(Some)
     }
 
-    /// Parse a block that [`detect`] found in `doc`, with the default [`Limits`].
+    /// Parse a block that [`fn@detect`] found in `doc`, with the default [`Limits`].
     ///
     /// `block` must come from `detect(doc)` for this same `doc`; otherwise the spans are
     /// meaningless.
