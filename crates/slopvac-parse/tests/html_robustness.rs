@@ -12,7 +12,7 @@ use slopvac_parse::{Document, ParseError, TokenKind, WORK_BASE, WORK_PER_BYTE, p
 const UNLIMITED: usize = 1_000_000;
 
 /// Parse `source` and check every position claim the contract makes.
-fn checked(source: &str, body: Span) -> Document {
+fn checked(source: &str, body: Span) -> (Document, slopvac_parse::Stats) {
     let (doc, stats) = parse_html_budget(source, body, UNLIMITED, UNLIMITED).unwrap();
     assert_eq!(stats.marker_tags_fed, 0, "{source:?}");
     for block in &doc.blocks {
@@ -48,24 +48,15 @@ fn checked(source: &str, body: Span) -> Document {
     for span in &doc.code_spans {
         assert!(source.is_char_boundary(span.start()) && source.is_char_boundary(span.end()));
     }
-    doc
+    (doc, stats)
 }
 
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
-/// Run `f` and fail when it takes longer than `limit`. A quadratic scan over these inputs
-/// takes minutes, so the limit only has to be generous, not tight.
-fn within(limit: Duration, name: &str, f: impl FnOnce()) {
-    let start = Instant::now();
-    f();
-    let took = start.elapsed();
-    assert!(took < limit, "{name} took {took:?}");
-}
-
 #[test]
-fn huge_input_shapes_finish_quickly_and_stay_valid() {
+fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
     let n = 200_000;
     let cases: Vec<(&str, String)> = vec![
         ("unclosed inline tags", "<b>x".repeat(n)),
@@ -129,16 +120,18 @@ fn huge_input_shapes_finish_quickly_and_stay_valid() {
         ),
     ];
     for (name, source) in cases {
-        within(Duration::from_secs(20), name, || {
-            checked(&source, whole(&source));
-        });
+        let (_, stats) = checked(&source, whole(&source));
+        // Work, not time: a quadratic scan over these inputs costs orders of magnitude more
+        // than this, and the count does not depend on how loaded the machine is.
+        let work = stats.work;
+        assert!(work <= 256 * source.len() + 4_096, "{name}: {work} units");
     }
 }
 
 #[test]
 fn mixed_newlines_keep_every_offset_valid() {
     let source = "<p>a\r\nb\rc\nd &amp;\r\n&lt;\r\n</p>\r\n<p>é\r</p>";
-    let doc = checked(source, whole(source));
+    let (doc, _) = checked(source, whole(source));
     assert_eq!(doc.blocks.len(), 2);
 }
 
