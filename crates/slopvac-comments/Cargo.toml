@@ -1,0 +1,46 @@
+[package]
+name = "slopvac-comments"
+description = "Comment and docstring extraction from source code with tree-sitter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tree-sitter.workspace = true
+tree-sitter-bash.workspace = true
+tree-sitter-c.workspace = true
+tree-sitter-c-sharp.workspace = true
+tree-sitter-clojure-orchard.workspace = true
+tree-sitter-cpp.workspace = true
+tree-sitter-css.workspace = true
+tree-sitter-dart.workspace = true
+tree-sitter-elixir.workspace = true
+tree-sitter-fsharp.workspace = true
+tree-sitter-go.workspace = true
+tree-sitter-haskell.workspace = true
+tree-sitter-java.workspace = true
+tree-sitter-javascript.workspace = true
+tree-sitter-julia.workspace = true
+tree-sitter-kotlin-ng.workspace = true
+tree-sitter-less.workspace = true
+tree-sitter-lua.workspace = true
+tree-sitter-perl.workspace = true
+tree-sitter-php.workspace = true
+tree-sitter-powershell.workspace = true
+tree-sitter-proto.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-r.workspace = true
+tree-sitter-ruby.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-scala.workspace = true
+tree-sitter-scss.workspace = true
+tree-sitter-swift.workspace = true
+tree-sitter-toml-ng.workspace = true
+tree-sitter-typescript.workspace = true
+
+[lints]
+workspace = true
