@@ -227,6 +227,15 @@ name = "slopvac-plugins"
 version = "0.0.0"
 
 [[package]]
+name = "slopvac-pos"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "slopvac-report"
 version = "0.0.0"
 

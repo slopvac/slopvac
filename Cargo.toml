@@ -26,6 +26,7 @@ slopvac-report = { path = "crates/slopvac-report" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-styles = { path = "crates/slopvac-styles" }
+slopvac-pos = { path = "crates/slopvac-pos" }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 thiserror = "2"
