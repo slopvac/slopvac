@@ -1,0 +1,212 @@
+name: slopvac
+description: Lint prose and source comments with slopvac 3.0, report findings through reviewdog, code scanning and Code Climate, and gate the job on the linter's exit code.
+author: Sjors Robroek
+
+branding:
+  icon: filter
+  color: purple
+
+inputs:
+  paths:
+    description: Files or directories to lint, space separated. Ignored when changed-files-only is true.
+    required: false
+    default: "."
+  changed-files-only:
+    description: >-
+      Lint only the prose files this pull request touches. Needs the pull
+      request base commit in the checkout (fetch-depth: 0).
+    required: false
+    default: "false"
+  config:
+    description: Config file path. Empty uses the nearest slopvac.toml.
+    required: false
+    default: ""
+  min-score:
+    description: Fail below this 0-100 score. Empty keeps the configured threshold.
+    required: false
+    default: ""
+  max-per-100-words:
+    description: Fail above this severity-weighted density. Empty keeps the configured threshold.
+    required: false
+    default: ""
+  fail-on-findings:
+    description: Set false to report findings without failing the job. An incomplete check (exit 2) always fails.
+    required: false
+    default: "true"
+  reporter:
+    description: >-
+      auto, review, annotations or none. auto posts a reviewdog pull request
+      review with suggestions when the token can write (same-repository pull
+      request, not Dependabot) and falls back to annotations otherwise. Pushes
+      report through a check run.
+    required: false
+    default: auto
+  github-token:
+    description: Token reviewdog uses to post. Needs pull-requests write for review mode, checks write for check runs.
+    required: false
+    default: ${{ github.token }}
+  sarif:
+    description: Write SARIF and upload it to code scanning. The job needs security-events write.
+    required: false
+    default: "true"
+  sarif-file:
+    description: Where to write SARIF.
+    required: false
+    default: slopvac.sarif
+  sarif-category:
+    description: Code scanning category for the upload.
+    required: false
+    default: slopvac
+  codeclimate:
+    description: Write a Code Climate report and upload it as a workflow artifact.
+    required: false
+    default: "true"
+  offline:
+    description: Run the lint steps with no network access. Installing slopvac still uses the network.
+    required: false
+    default: "true"
+  version:
+    description: slopvac version to install, for example "3.0.0". Empty installs the latest stable release. Pin it for reproducible CI.
+    required: false
+    default: ""
+  binary:
+    description: Use this slopvac binary instead of installing one from PyPI. For testing an unreleased build.
+    required: false
+    default: ""
+
+outputs:
+  score:
+    description: Overall 0-100 score.
+    value: ${{ steps.lint.outputs.score }}
+  findings:
+    description: Total finding count.
+    value: ${{ steps.lint.outputs.findings }}
+  errors:
+    description: Error-severity finding count.
+    value: ${{ steps.lint.outputs.errors }}
+  warnings:
+    description: Warning-severity finding count.
+    value: ${{ steps.lint.outputs.warnings }}
+  suggestions:
+    description: Suggestion-severity finding count.
+    value: ${{ steps.lint.outputs.suggestions }}
+  passed:
+    description: '"true" when every threshold was met.'
+    value: ${{ steps.lint.outputs.passed }}
+  json:
+    description: Path to the JSON report.
+    value: ${{ steps.lint.outputs.json-file }}
+  rdjsonl:
+    description: Path to the reviewdog rdjsonl report.
+    value: ${{ steps.lint.outputs.rdjsonl-file }}
+  sarif:
+    description: Path to the SARIF report, empty when SARIF is off.
+    value: ${{ steps.lint.outputs.sarif-file }}
+  codeclimate:
+    description: Path to the Code Climate report, empty when it is off.
+    value: ${{ steps.lint.outputs.codeclimate-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      if: inputs.binary == ''
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+    - name: Install slopvac
+      if: inputs.binary == ''
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        UV_TOOL_BIN_DIR: ${{ runner.temp }}/slopvac-bin
+      run: |
+        set -euo pipefail
+        if [[ -n "$VERSION" ]]; then
+          uv tool install --quiet "slopvac==$VERSION"
+        else
+          uv tool install --quiet slopvac
+        fi
+
+    - name: Resolve target paths
+      id: targets
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CHANGED_ONLY: ${{ inputs.changed-files-only }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: python3 "$ACTION_PATH/../scripts/action_entry.py" resolve-targets
+
+    # The binary is the gate. The outcome is checked in the last step, so the
+    # reports below still upload when the lint fails.
+    - name: Lint
+      id: lint
+      continue-on-error: true
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PATH_LIST: ${{ steps.targets.outputs.list }}
+        BINARY: ${{ inputs.binary || format('{0}/slopvac-bin/slopvac', runner.temp) }}
+        CONFIG: ${{ inputs.config }}
+        MIN_SCORE: ${{ inputs.min-score }}
+        MAX_PER_100: ${{ inputs.max-per-100-words }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        OFFLINE: ${{ inputs.offline }}
+        SARIF: ${{ inputs.sarif }}
+        SARIF_FILE: ${{ inputs.sarif-file }}
+        CODECLIMATE: ${{ inputs.codeclimate }}
+      run: python3 "$ACTION_PATH/../scripts/action_v3.py" lint
+
+    - name: Choose the reviewdog reporter
+      id: reporter
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        REPORTER: ${{ inputs.reporter }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        BASE_REPO: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
+      run: python3 "$ACTION_PATH/../scripts/action_v3.py" reporter
+
+    - name: Install reviewdog
+      if: steps.reporter.outputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.5.0
+      with:
+        reviewdog_version: v0.21.3
+
+    - name: Report with reviewdog
+      if: steps.reporter.outputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        REVIEWDOG_GITHUB_API_TOKEN: ${{ inputs.github-token }}
+        REPORTER: ${{ steps.reporter.outputs.reporter }}
+        RDJSONL: ${{ steps.lint.outputs.rdjsonl-file }}
+      run: |
+        set -euo pipefail
+        reviewdog -f=rdjsonl -name=slopvac -reporter="$REPORTER" \
+          -filter-mode=added -fail-level=none < "$RDJSONL"
+
+    - name: Upload SARIF to code scanning
+      if: always() && inputs.sarif == 'true' && steps.lint.outputs.sarif-file != ''
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+      with:
+        sarif_file: ${{ steps.lint.outputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Upload the Code Climate report
+      if: always() && inputs.codeclimate == 'true' && steps.lint.outputs.codeclimate-file != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: slopvac-codeclimate
+        path: ${{ steps.lint.outputs.codeclimate-file }}
+
+    - name: Fail the job when slopvac failed
+      if: always() && steps.lint.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::error title=slopvac::the lint step failed; see its log for findings and exit code"
+        exit 1
