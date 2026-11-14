@@ -198,6 +198,13 @@ pub fn wait_gone_within(pids: &[i32], limit: Duration) -> bool {
     false
 }
 
+/// Kill processes the host leaves running on purpose, so no test leaks them.
+pub fn end(pids: &[i32]) {
+    for p in pids {
+        let _ = Command::new("kill").args(["-9", &p.to_string()]).status();
+    }
+}
+
 pub fn pids_from(file: &Path) -> Vec<i32> {
     pids_n(file, 2)
 }

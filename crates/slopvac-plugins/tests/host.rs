@@ -250,6 +250,25 @@ fn tm4_a_child_of_a_child_that_left_the_group_dies_with_the_plugin() {
 }
 
 #[test]
+fn tm4_a_hung_leader_that_moved_to_another_process_group_is_killed() {
+    let dir = scratch("tm4-moved");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("move-group", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    // The leader moved into the group its child pids[1] heads, then stopped reading.
+    let pids = pids_from(&pidfile);
+    drop(p);
+    let gone = wait_gone(&pids[..1]);
+    end(&pids[1..]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "the leader {} survived", pids[0]);
+}
+
+#[test]
 fn dropping_a_plugin_kills_its_process_group() {
     let dir = scratch("drop");
     let pidfile = dir.join("pids");

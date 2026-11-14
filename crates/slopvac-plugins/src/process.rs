@@ -281,29 +281,36 @@ impl Leader {
 
 #[cfg(unix)]
 fn stop_group(leader: u32) {
-    if let Some(pgid) = unix::pid(leader) {
-        // An error means the group is already gone.
-        let _ = rustix::process::kill_process_group(pgid, rustix::process::Signal::STOP);
+    use rustix::process::{Signal, kill_process, kill_process_group};
+    if let Some(pid) = unix::pid(leader) {
+        // An error means the group is already gone, or the leader left it.
+        let _ = kill_process_group(pid, Signal::STOP);
+        let _ = kill_process(pid, Signal::STOP);
     }
 }
 
 /// Tear down the group led by `leader`, which the caller keeps unreaped.
+///
+/// The leader is signalled by its own id as well as through its group, since
+/// it may have moved to another group of its session. No other group is
+/// ever signalled.
 #[cfg(unix)]
 fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) {
-    use rustix::process::{Signal, kill_process_group};
+    use rustix::process::{Signal, kill_process, kill_process_group};
 
-    /// Signals the group last, even if the walk unwinds.
+    /// Signals the group and the leader last, even if the walk unwinds.
     struct Last(rustix::process::Pid, Signal);
     impl Drop for Last {
         fn drop(&mut self) {
             let _ = kill_process_group(self.0, self.1);
+            let _ = kill_process(self.0, self.1);
         }
     }
 
     let Some(pgid) = unix::pid(leader) else {
         return;
     };
-    let _ = kill_process_group(pgid, Signal::STOP);
+    stop_group(leader);
     let _last = Last(
         pgid,
         match then {
@@ -477,8 +484,9 @@ mod unix {
             let Some(table) = snapshot(source, deadline) else {
                 break;
             };
-            // A table without the leader heading its group is not this system's.
-            if table.get(&leader).is_none_or(|e| e.pgid != leader) {
+            // A table without the leader is not this system's. The leader may
+            // have left its group, and the walk starts from it either way.
+            if !table.contains_key(&leader) {
                 break;
             }
             // A stray whose parent or start time changed is not the process
@@ -492,7 +500,9 @@ mod unix {
                 }
                 same
             });
-            let ours = |e: &Entry| e.pgid == leader || frozen.iter().any(|s| s.pid == e.pid);
+            let ours = |e: &Entry| {
+                e.pid == leader || e.pgid == leader || frozen.iter().any(|s| s.pid == e.pid)
+            };
             let held: HashSet<u32> = table
                 .values()
                 .filter(|e| ours(e) && e.stopped())
@@ -506,6 +516,7 @@ mod unix {
                 .values()
                 .filter(|e| {
                     e.pgid != leader
+                        && e.pid != leader
                         && held.contains(&e.ppid)
                         && e.pid > 1
                         && e.pid != me
