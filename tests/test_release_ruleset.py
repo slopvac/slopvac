@@ -202,9 +202,9 @@ ORG_ADMIN = actor("OrganizationAdmin", None)
 @pytest.mark.parametrize(
     "bypass",
     [
-        [],
         [ADMIN],
         [ORG_ADMIN],
+        [actor("OrganizationAdmin", 1)],
         [ADMIN, ORG_ADMIN],
         [actor("RepositoryRole", 5, "exempt")],
     ],
@@ -224,6 +224,8 @@ def test_no_bypass_or_admin_only_bypass_passes(bypass):
         [actor("DeployKey", None)],
         [ADMIN, actor("Team", 77)],
         [actor("Team", 5)],  # id 5 is the admin role only for RepositoryRole
+        [actor("Integration", 5)],
+        [actor("DeployKey", 5)],
     ],
 )
 def test_any_non_admin_bypass_is_insufficient(bypass):

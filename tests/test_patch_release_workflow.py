@@ -389,3 +389,35 @@ def test_the_pypi_gate_passes_only_the_ruleset_token():
     assert provenance["secrets"] == {
         "RULESET_READ_TOKEN": "${{ secrets.RULESET_READ_TOKEN }}"
     }
+
+
+# --- the reusable provenance workflow ------------------------------------------
+
+PROVENANCE = ROOT / ".github" / "workflows" / "release-provenance.yml"
+
+
+@pytest.fixture(scope="module")
+def provenance() -> dict:
+    return yaml.safe_load(PROVENANCE.read_text(encoding="utf-8"))
+
+
+def test_the_ruleset_token_is_an_optional_workflow_call_secret(provenance):
+    # PyYAML reads the bare `on` key as boolean True.
+    secret = provenance[True]["workflow_call"]["secrets"]["RULESET_READ_TOKEN"]
+    assert secret["required"] is False
+
+
+def test_only_the_ruleset_check_step_reads_the_ruleset_token(provenance):
+    steps = provenance["jobs"]["provenance"]["steps"]
+    holders = [s for s in steps if "RULESET_READ_TOKEN" in str(s)]
+    assert [s["name"] for s in holders] == ["Require an immutable tag ruleset"]
+    assert holders[0]["env"]["GH_TOKEN"] == (
+        "${{ secrets.RULESET_READ_TOKEN || github.token }}"
+    )
+    assert "scripts/release_ruleset.py" in holders[0]["run"]
+
+
+def test_the_candidate_check_keeps_the_workflow_token(provenance):
+    steps = provenance["jobs"]["provenance"]["steps"]
+    candidate = next(s for s in steps if s.get("name") == "Check the candidate")
+    assert candidate["env"]["GH_TOKEN"] == "${{ github.token }}"
