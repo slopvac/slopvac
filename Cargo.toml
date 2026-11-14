@@ -13,6 +13,7 @@ edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/srobroek/slopvac"
+homepage = "https://github.com/srobroek/slopvac"
 publish = false
 
 [workspace.dependencies]
@@ -86,3 +87,7 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Profile for cargo-dist release builds.
+[profile.dist]
+inherits = "release"
