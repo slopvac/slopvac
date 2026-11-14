@@ -118,4 +118,10 @@ pub enum ParseError {
     /// MDX syntax error.
     #[error("MDX syntax error: {0}")]
     Mdx(String),
+    /// The document needs more work than the parse budget allows. The check is incomplete.
+    #[error("the document needs more work than the parse budget allows")]
+    Budget,
+    /// The document is longer than the parser accepts. The check is incomplete.
+    #[error("the document is longer than the parser accepts")]
+    TooLarge,
 }
