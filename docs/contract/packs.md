@@ -70,7 +70,7 @@ A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optiona
 - A `git+https` source ends in `@` and a full 40-digit commit hash. A branch or tag name is invalid.
 - An `https://` release archive is a valid source. `http://` is invalid.
 - A path source is relative to the project root.
-- `signature` appears only when the host verified a minisign signature. It holds `key_id` and `not_before`, the `notBefore` time of the signed statement. `plugins update` refuses an older `not_before` than the lockfile holds unless the user passes the downgrade flag (threat-model.md, section 5.3).
+- `signature` appears only when the host verified a minisign signature. It holds `key_id` and `not_before`, the `notBefore` time of the signed statement as a UTC time with a `Z` suffix. The schema rejects impossible months, days and clock values. The host rejects 29 February of a non-leap year when it parses the time. `plugins update` refuses an older `not_before` than the lockfile holds unless the user passes the downgrade flag (threat-model.md, section 5.3).
 - The lockfile records no trust. `slopvac plugins trust` keeps trust apart, per content hash.
 - A run recomputes the digest of each loaded pack. A mismatch is an error with exit 2.
 

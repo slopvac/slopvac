@@ -16,3 +16,4 @@
 "version-prerelease-leading-zero.toml" = "/version"
 "provides-drive-letter.toml" = "/provides/styles/0"
 "provides-backslash.toml" = "/provides/styles/0"
+"blocklists-traversal.toml" = "/provides/blocklists/0"

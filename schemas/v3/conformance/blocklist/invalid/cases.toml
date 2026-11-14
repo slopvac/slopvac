@@ -5,3 +5,5 @@
 "blank-reason.toml" = "/entries/0/reason"
 "no-version.toml" = ""
 "wrong-table.toml" = ""
+"whitespace-word.toml" = "/entries/0/word"
+"no-pos.toml" = "/entries/0"
