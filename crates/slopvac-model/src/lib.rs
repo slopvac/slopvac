@@ -13,9 +13,9 @@ mod span;
 pub use edit::{Edit, EditError, apply_edits};
 pub use ids::{ApiVersion, ContextTag, IdError, PackId, RuleId, SchemaVersion, Severity};
 pub use report::{
-    AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigSource,
-    Document, Finding, Fix, Gate, GenreReason, GenreResult, GenreSource, Notice, NoticeLevel,
-    Report, RuleProvenance, RunSummary,
+    AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigLayer,
+    ConfigSource, Document, Finding, Fix, Gate, GenreReason, GenreResult, GenreSource, Notice,
+    NoticeLevel, Report, RuleProvenance, RunSummary,
 };
 pub use source::{BomMode, ColumnUnit, PositionEncoding, SourceIndex};
 pub use span::{LineCol, LineColError, PositionError, Span, SpanError};

@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
-use slopvac_model::{Gate, Report};
+use slopvac_model::{ConfigSource, Gate, Report};
 
 fn report(name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -33,4 +33,32 @@ fn a_gate_keeps_a_non_empty_reason() {
     let gate = json!({"passed": false, "reasons": ["too dense"]});
     let parsed: Gate = serde_json::from_value(gate).unwrap();
     assert_eq!(parsed.reasons, vec!["too dense".to_owned()]);
+}
+
+#[test]
+fn a_config_source_rejects_an_unknown_layer() {
+    let source = json!({"layer": "defaults"});
+    assert!(serde_json::from_value::<ConfigSource>(source).is_err());
+}
+
+#[test]
+fn a_config_source_accepts_each_published_layer() {
+    for layer in [
+        "core",
+        "style",
+        "genre",
+        "extends",
+        "project",
+        "override",
+        "front-matter",
+        "directive",
+        "cli",
+        "env",
+    ] {
+        let parsed: ConfigSource = serde_json::from_value(json!({"layer": layer})).unwrap();
+        assert_eq!(
+            serde_json::to_value(&parsed).unwrap(),
+            json!({"layer": layer})
+        );
+    }
 }

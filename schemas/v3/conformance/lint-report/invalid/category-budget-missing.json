@@ -96,7 +96,7 @@
       ],
       "config_sources": [
         {
-          "layer": "defaults"
+          "layer": "core"
         },
         {
           "layer": "project",
@@ -290,7 +290,7 @@
       ],
       "config_sources": [
         {
-          "layer": "defaults"
+          "layer": "core"
         },
         {
           "layer": "cli"
@@ -346,7 +346,7 @@
       ],
       "config_sources": [
         {
-          "layer": "defaults"
+          "layer": "core"
         }
       ],
       "words": 80,

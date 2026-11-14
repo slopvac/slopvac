@@ -91,12 +91,38 @@ pub struct RuleProvenance {
     pub source: Option<String>,
 }
 
+/// A config layer, lowest priority first; `env` marks the sticky environment switches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfigLayer {
+    /// Built-in defaults.
+    Core,
+    /// Style pack.
+    Style,
+    /// Genre settings.
+    Genre,
+    /// Extended config.
+    Extends,
+    /// Project config file.
+    Project,
+    /// Override block.
+    Override,
+    /// Document front matter.
+    FrontMatter,
+    /// Inline directive.
+    Directive,
+    /// Command line.
+    Cli,
+    /// Environment switches.
+    Env,
+}
+
 /// Config layer and location a setting came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct ConfigSource {
     /// Layer name.
-    pub layer: String,
+    pub layer: ConfigLayer,
     /// File.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(transform = absent_not_null)]
