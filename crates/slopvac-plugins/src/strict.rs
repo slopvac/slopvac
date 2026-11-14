@@ -26,7 +26,52 @@ pub fn parse(bytes: &[u8]) -> Result<Value, String> {
         .deserialize(&mut de)
         .map_err(|e| e.to_string())?;
     de.end().map_err(|e| e.to_string())?;
+    check_integer_literals(bytes)?;
     Ok(value)
+}
+
+/// Reject integer literals outside ±(2^53-1) by their text.
+///
+/// `serde_json` turns an integer past the 64-bit range into a rounded `f64`,
+/// so the visitor cannot tell it from a float. The scan runs on text that
+/// already parsed, so every token is well formed.
+fn check_integer_literals(bytes: &[u8]) -> Result<(), String> {
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            b'-' | b'0'..=b'9' => {
+                let start = i;
+                while i < bytes.len()
+                    && matches!(bytes[i], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                {
+                    i += 1;
+                }
+                let token = &bytes[start..i];
+                if token.iter().any(|b| matches!(b, b'.' | b'e' | b'E')) {
+                    continue;
+                }
+                let digits = token.strip_prefix(b"-").unwrap_or(token);
+                let safe = digits.len() <= 16
+                    && std::str::from_utf8(digits)
+                        .ok()
+                        .and_then(|d| d.parse::<u64>().ok())
+                        .is_some_and(|v| v <= MAX_SAFE_INTEGER);
+                if !safe {
+                    let text = String::from_utf8_lossy(token);
+                    return Err(format!("integer {text} outside ±(2^53-1)"));
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    Ok(())
 }
 
 struct Strict {
@@ -160,6 +205,32 @@ mod tests {
         assert!(parse(b"-9007199254740991").is_ok());
         assert!(parse(b"9007199254740992").is_err());
         assert!(parse(b"-9007199254740992").is_err());
+    }
+
+    #[test]
+    fn integer_literals_past_the_64_bit_range_are_rejected_not_rounded() {
+        // Past u64 and i64, serde_json hands these over as a rounded f64.
+        for text in [
+            "18446744073709551616",
+            "-9223372036854775809",
+            "100000000000000000000000",
+            r#"{"score":[1,-100000000000000000000000]}"#,
+        ] {
+            let err = parse(text.as_bytes()).unwrap_err();
+            assert!(err.contains("outside"), "{text}: {err}");
+        }
+    }
+
+    #[test]
+    fn large_floats_and_digits_inside_strings_are_not_integer_literals() {
+        for text in [
+            "100000000000000000000000.0",
+            "1e300",
+            r#""100000000000000000000000""#,
+            r#"{"a\"100000000000000000000000":1}"#,
+        ] {
+            assert!(parse(text.as_bytes()).is_ok(), "{text}");
+        }
     }
 
     #[test]
