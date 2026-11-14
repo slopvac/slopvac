@@ -28,43 +28,45 @@ pub struct ChecklistEntry {
     pub hints: Vec<String>,
 }
 
-/// The gate a rule runs under: its own gate plus the gate of its core rule. A remainder is
-/// exempt wherever its core rule is exempt, and runs only where both allow it.
+/// The gates a rule runs under: its own gate, then the gate of its core rule. A gate is an
+/// `only` OR-list plus a `skip` list, so the two cannot merge into one gate without
+/// changing meaning. A remainder runs where every gate allows it, which makes it exempt
+/// wherever its core rule is exempt.
 #[must_use]
-pub fn effective_gate(rule: &ChecklistRule, rules: &[ChecklistRule]) -> ContextGate {
-    let mut gate = rule.gate.clone();
+pub fn effective_gates(rule: &ChecklistRule, rules: &[ChecklistRule]) -> Vec<ContextGate> {
+    let mut gates = vec![rule.gate.clone()];
     if let Some(core) = rule
         .core
         .as_ref()
         .and_then(|id| rules.iter().find(|r| &r.id == id))
     {
-        for s in &core.gate.skip {
-            if !gate.skip.contains(s) {
-                gate.skip.push(s.clone());
-            }
-        }
-        if gate.only.is_empty() {
-            gate.only.clone_from(&core.gate.only);
-        } else if !core.gate.only.is_empty() {
-            gate.only.retain(|o| core.gate.only.contains(o));
-        }
+        gates.push(core.gate.clone());
     }
-    gate
+    gates
+}
+
+/// Whether a rule may report on text that carries `kinds`: every effective gate allows it.
+#[must_use]
+pub fn rule_allows(rule: &ChecklistRule, rules: &[ChecklistRule], kinds: &[&str]) -> bool {
+    effective_gates(rule, rules).iter().all(|g| g.allows(kinds))
 }
 
 /// Build the checklist for one document.
 ///
 /// `seen` lists the context kinds that occur in the document. `covering` lists kinds that
-/// cover all of its prose, such as `change-note` on a changelog. A rule drops out when its
+/// cover all of its prose, such as `change-note` on a changelog. A rule drops out when some
 /// effective gate needs a kind that does not occur, or skips a kind that covers everything.
 #[must_use]
 pub fn checklist(rules: &[ChecklistRule], seen: &[&str], covering: &[&str]) -> Vec<ChecklistEntry> {
     let mut out = Vec::new();
     for rule in rules {
-        let gate = effective_gate(rule, rules);
-        let needs_missing =
-            !gate.only.is_empty() && !gate.only.iter().any(|o| seen.contains(&o.as_str()));
-        let skipped_everywhere = gate.skip.iter().any(|s| covering.contains(&s.as_str()));
+        let gates = effective_gates(rule, rules);
+        let needs_missing = gates
+            .iter()
+            .any(|g| !g.only.is_empty() && !g.only.iter().any(|o| seen.contains(&o.as_str())));
+        let skipped_everywhere = gates
+            .iter()
+            .any(|g| g.skip.iter().any(|s| covering.contains(&s.as_str())));
         if needs_missing || skipped_everywhere {
             continue;
         }

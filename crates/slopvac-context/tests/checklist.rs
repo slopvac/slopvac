@@ -1,7 +1,9 @@
 //! Checklist filtering: remainders follow their core rule, unused contexts drop rules.
 #![allow(clippy::assert_is_empty)]
 
-use slopvac_context::{ChecklistRule, ContextGate, checklist, context_hint, effective_gate};
+use slopvac_context::{
+    ChecklistRule, ContextGate, checklist, context_hint, effective_gates, rule_allows,
+};
 
 fn gate(only: &[&str], skip: &[&str]) -> ContextGate {
     ContextGate {
@@ -55,18 +57,35 @@ fn ids(entries: &[slopvac_context::ChecklistEntry]) -> Vec<&str> {
 #[test]
 fn remainder_inherits_the_core_rules_exemption() {
     let all = rules();
-    let eff = effective_gate(&all[1], &all);
-    assert_eq!(eff, gate(&[], &["change-note"]));
-    assert_eq!(effective_gate(&all[0], &all), all[0].gate);
+    assert_eq!(
+        effective_gates(&all[1], &all),
+        vec![ContextGate::default(), gate(&[], &["change-note"])]
+    );
+    assert_eq!(effective_gates(&all[0], &all), vec![all[0].gate.clone()]);
+    assert!(rule_allows(&all[1], &all, &["requirement"]));
+    assert!(!rule_allows(&all[1], &all, &["change-note"]));
 }
 
 #[test]
-fn remainder_only_gate_is_the_intersection_with_the_core() {
+fn remainder_and_core_only_lists_are_evaluated_separately_and_anded() {
     let all = vec![
         rule("core", gate(&["a", "b"], &[]), None, &[]),
         rule("rem", gate(&["b", "c"], &[]), Some("core"), &[]),
     ];
-    assert_eq!(effective_gate(&all[1], &all).only, vec!["b"]);
+    let cases: [(&[&str], bool); 6] = [
+        (&["a"], false),
+        (&["b"], true),
+        (&["c"], false),
+        (&["a", "c"], true),
+        (&["d"], false),
+        (&[], false),
+    ];
+    for (kinds, want) in cases {
+        assert_eq!(rule_allows(&all[1], &all, kinds), want, "allows {kinds:?}");
+        let kept = checklist(&all, kinds, &[]);
+        let has_rem = kept.iter().any(|e| e.id == "rem");
+        assert_eq!(has_rem, want, "checklist {kinds:?}");
+    }
 }
 
 #[test]
