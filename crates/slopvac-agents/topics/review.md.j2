@@ -20,7 +20,7 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 2. List the changes: `slopvac claims <file> --original <before>`.
 {% if review_type == "mechanical" %}
 3. Confirm that no claim lists a changed literal or negation and that `dropped` has no `fact_candidate`.
-4. If either appears, the change is an `update`. Rerun with `--type update`.
+4. If either appears, the change is an `update`. `--type mechanical` refuses it.
 {% elif review_type == "update" %}
 3. Check each changed and added claim against code or a source. Skip unchanged claims.
 4. For each `fact_candidate` in `dropped`, restore the fact or justify the removal.
@@ -47,7 +47,7 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 - The reviewer model must differ from the author's. `slopvac review --reviewer-model <model>` rejects the author's model.
 - A model provider is a plugin. It runs only after `slopvac plugins trust` and a `[review] provider` entry.
 - `slopvac review --dry-run` prints the exact text a provider would get and calls nothing. Offline mode blocks every provider.
-- Providers receive changed claims for `mechanical`, changed passages for `update` and the whole document for `rewrite`.
+- `mechanical` calls no provider. `update` sends changed passages with their originals, added sentences and dropped sentences. `rewrite` sends the original and the revised document.
 {% if level != "minimal" %}
 
 ## Verdict
