@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/rule.schema.json",
+  "title": "slopvac v3 rule",
+  "description": "One check. The root validates a standalone rule file and requires schema_version. A category file embeds the same shape through $defs/Rule, where schema_version is absent. Semantics are specified in docs/contract/rules.md. Owner: slopvac-8l4.2.3.",
+  "$ref": "#/$defs/Rule",
+  "required": ["schema_version"],
+  "$defs": {
+    "LocalRuleId": {
+      "description": "Rule id inside its category. The qualified RuleId is <pack>:<category>.<id>, built from the pack manifest, the category id and this id.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "Pcre2Pattern": {
+      "description": "A PCRE2 pattern (10.43 or later). The pattern may not contain a \\uXXXX escape: write \\x{XXXX}. A lookbehind must have a finite maximum length of at most 255 characters, so + , * and {n,} are not allowed inside one. The schema rejects the \\u escape; the loader compiles the rest.",
+      "type": "string",
+      "minLength": 1,
+      "not": {"pattern": "(?<!\\\\)(?:\\\\\\\\)*\\\\u"}
+    },
+    "Scope": {
+      "description": "Which text units a lexical rule sees. prose is every prose block without code, URLs and front matter. body-sentence is sentence minus heading and table blocks. raw is the unparsed source and is for formatting rules only.",
+      "enum": ["prose", "heading", "sentence", "body-sentence", "paragraph", "document", "raw"],
+      "default": "prose"
+    },
+    "TextType": {
+      "description": "Restrict the rule to sentences of one STE text type. any means the rule does not care.",
+      "enum": ["any", "procedural", "descriptive", "safety"],
+      "default": "any"
+    },
+    "BlockKind": {
+      "description": "A block or span kind the rule must not look inside.",
+      "enum": ["heading", "list-item", "code", "code-span", "table", "quote", "front-matter"]
+    },
+    "ApplyMode": {
+      "description": "Lint input surface.",
+      "enum": ["prose", "code-comments"]
+    },
+    "Genre": {
+      "description": "Genre id. Genre data files are defined by slopvac-8l4.2.4.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "TokensMatch": {
+      "description": "Literal phrases, matched at word boundaries.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "tokens"},
+        "tokens": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "ignore_case": {"type": "boolean", "default": true},
+        "match_all_caps": {
+          "description": "Report a match written entirely in capitals. Off by default because an all-caps token is usually a keyword, an identifier or an initialism. Applies to tokens, pattern and substitution.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": ["kind", "tokens"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "PatternMatch": {
+      "description": "A PCRE2 regular expression.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "pattern"},
+        "pattern": {"$ref": "#/$defs/Pcre2Pattern"},
+        "placeholders": {
+          "description": "Maps a literal placeholder string in the pattern to a configuration source. The only source is allowed-words: the loader replaces the placeholder with an alternation of the escaped ASCII alphabetic words from the locale allow list, sorted case-insensitively. With no words it becomes (?!), which never matches.",
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
+          "additionalProperties": {"enum": ["allowed-words"]},
+          "minProperties": 1
+        },
+        "ignore_case": {"type": "boolean", "default": true},
+        "match_all_caps": {"type": "boolean", "default": false}
+      },
+      "required": ["kind", "pattern"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "SubstitutionMatch": {
+      "description": "A map from a PCRE2 pattern to its replacement. The message names the replacement.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "substitution"},
+        "substitutions": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/Pcre2Pattern"},
+          "additionalProperties": {"type": "string"},
+          "minProperties": 1
+        },
+        "ignore_case": {"type": "boolean", "default": true},
+        "match_all_caps": {"type": "boolean", "default": false}
+      },
+      "required": ["kind", "substitutions"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "MetricMatch": {
+      "description": "A counted measurement compared with a threshold. The finding fires when measured <comparison> threshold holds.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "metric"},
+        "metric": {
+          "description": "Metric name. The names the 2.x engine measures are listed in docs/contract/rules.md.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "threshold": {"type": "number"},
+        "comparison": {"enum": ["gt", "gte", "lt", "lte"], "default": "gt"}
+      },
+      "required": ["kind", "metric", "threshold"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "StructureMatch": {
+      "description": "A block-level shape check implemented by the engine and selected by name.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "structure"},
+        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      },
+      "required": ["kind", "check"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "CapitalizationMatch": {
+      "description": "Report text that is not written in the named capitalization style. New in 3.0: 2.x expresses this as a pattern.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "capitalization"},
+        "style": {"enum": ["sentence", "title", "lower", "upper"]},
+        "allowed_words": {
+          "description": "Words exempt from the style, such as product names.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      },
+      "required": ["kind", "style"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "VocabularyMatch": {
+      "description": "A part-of-speech keyed controlled-vocabulary lookup selected by name (STE rule 1.2).",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "vocabulary"},
+        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      },
+      "required": ["kind", "check"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "JudgementMatch": {
+      "description": "A check no linter can run. Carried so writing and review guidance read one source. Never produces a finding.",
+      "type": "object",
+      "properties": {
+        "kind": {"const": "judgement"},
+        "question": {
+          "description": "The question the reviewer must answer. It must be decidable, not a matter of taste.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["kind", "question"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Match": {
+      "description": "The typed detection payload. match.kind selects the one allowed shape.",
+      "oneOf": [
+        {"$ref": "#/$defs/TokensMatch"},
+        {"$ref": "#/$defs/PatternMatch"},
+        {"$ref": "#/$defs/SubstitutionMatch"},
+        {"$ref": "#/$defs/MetricMatch"},
+        {"$ref": "#/$defs/StructureMatch"},
+        {"$ref": "#/$defs/CapitalizationMatch"},
+        {"$ref": "#/$defs/VocabularyMatch"},
+        {"$ref": "#/$defs/JudgementMatch"}
+      ]
+    },
+    "Contexts": {
+      "description": "Context tags that gate the rule. With only, the rule runs on text that carries at least one listed tag. With skip, it is silent on text that carries any listed tag.",
+      "type": "object",
+      "properties": {
+        "only": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true},
+        "skip": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true}
+      },
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "AppliesTo": {
+      "description": "Narrows where the rule is active. An absent key means no restriction.",
+      "type": "object",
+      "properties": {
+        "modes": {"type": "array", "items": {"$ref": "#/$defs/ApplyMode"}, "minItems": 1, "uniqueItems": true},
+        "genres": {"type": "array", "items": {"$ref": "#/$defs/Genre"}, "minItems": 1, "uniqueItems": true}
+      },
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Exception": {
+      "description": "A named, closed reason a finding may be suppressed. A suppression annotation must cite one by name. With detector, the engine drops the finding itself when the named detector, or the context tag of that name, holds at the match.",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "detector": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "description": {"type": "string"}
+      },
+      "required": ["name"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Case": {
+      "description": "A test case in the style of vale test. The input is linted with only this rule enabled. want counts findings, contains and absent compare against the matched text and message of those findings.",
+      "type": "object",
+      "properties": {
+        "input": {"type": "string"},
+        "want": {
+          "description": "Expected finding count, or an inclusive range.",
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {
+              "type": "object",
+              "properties": {
+                "min": {"type": "integer", "minimum": 0},
+                "max": {"type": "integer", "minimum": 0}
+              },
+              "minProperties": 1,
+              "additionalProperties": false
+            }
+          ]
+        },
+        "contains": {
+          "description": "Each string appears in the matched text or message of some finding.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        },
+        "absent": {
+          "description": "No finding has a matched text or message that contains any of these strings.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        },
+        "note": {"type": "string"}
+      },
+      "required": ["input"],
+      "anyOf": [
+        {"required": ["want"]},
+        {"required": ["contains"]},
+        {"required": ["absent"]}
+      ],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Example": {
+      "description": "A before and after pair shown in rule documentation. For a mechanical rule the test runner also asserts that bad produces a finding and good produces none.",
+      "type": "object",
+      "properties": {
+        "bad": {"type": "string"},
+        "good": {"type": "string"},
+        "note": {"type": "string"}
+      },
+      "required": ["bad"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Citation": {
+      "description": "Where the rule's idea comes from, so a reader can argue with it. Not the runtime RuleProvenance, which names the pack that supplied a rule.",
+      "type": "object",
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "ste_ref": {
+          "description": "Issue-qualified STE rule number such as 9:1.2 or 9:GR-2. A citation only.",
+          "type": "string",
+          "pattern": "^\\d+:\\d+\\.\\d+$|^\\d+:GR-\\d+$"
+        },
+        "orwell_ref": {"type": "string"},
+        "url": {"type": "string"},
+        "note": {"type": "string"}
+      },
+      "required": ["source"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    },
+    "Rule": {
+      "type": "object",
+      "properties": {
+        "schema_version": {"$ref": "common.schema.json#/$defs/SchemaVersion"},
+        "id": {"$ref": "#/$defs/LocalRuleId"},
+        "name": {"description": "Short imperative label.", "type": "string", "minLength": 1},
+        "message": {
+          "description": "Shown on a finding. Names the fix, not the violation. {match} and {replacement} interpolate.",
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "description": "The shipped level. A category cap or a profile shift can lower it, never a rule. Disabling a rule is configuration, so there is no off level.",
+          "$ref": "common.schema.json#/$defs/Severity",
+          "default": "warning"
+        },
+        "scope": {"$ref": "#/$defs/Scope"},
+        "text_type": {"$ref": "#/$defs/TextType"},
+        "match": {"$ref": "#/$defs/Match"},
+        "exclude_blocks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/BlockKind"},
+          "uniqueItems": true
+        },
+        "contexts": {"$ref": "#/$defs/Contexts"},
+        "applies_to": {"$ref": "#/$defs/AppliesTo"},
+        "exceptions": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/Exception"},
+          "uniqueItems": true
+        },
+        "allowlist": {
+          "description": "Literal strings that never fire, even when the match holds.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "examples": {"type": "array", "items": {"$ref": "#/$defs/Example"}},
+        "cases": {"type": "array", "items": {"$ref": "#/$defs/Case"}},
+        "fix": {"description": "The rewrite operation, as guidance.", "type": "string"},
+        "ai_signal": {"enum": ["strong", "weak", "none"], "default": "none"},
+        "ai_signal_source": {"enum": ["measured", "catalog", "unmeasured"], "default": "unmeasured"},
+        "citation": {"$ref": "#/$defs/Citation"}
+      },
+      "required": ["id", "name", "message", "match", "citation"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
+            "required": ["match"]
+          },
+          "then": {
+            "properties": {
+              "severity": {"const": "suggestion"},
+              "exceptions": {"maxItems": 0},
+              "cases": {"maxItems": 0}
+            }
+          }
+        }
+      ],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": true}
+    }
+  }
+}

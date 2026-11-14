@@ -11,4 +11,8 @@
 "ApiVersion--zero.json" = ""
 "ApiVersion--string.json" = ""
 "Severity--off.json" = ""
+<<<<<<< HEAD
 "ConfigSource--unknown-layer.yaml" = "/layer"
+=======
+"RuleId--uppercase-pack.json" = ""
+>>>>>>> c9adc96f3b (feat(contract): define the v3 rule and category schemas)

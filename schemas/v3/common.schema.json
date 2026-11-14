@@ -37,21 +37,21 @@
       "additionalProperties": false
     },
     "PackId": {
-      "description": "Pack identifier. Semantics owned by slopvac-8l4.2.3.",
+      "description": "Pack identifier: the namespace of a rule. Built-in rules live in the reserved pack core. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
     },
     "RuleId": {
-      "description": "Qualified rule identifier <pack>:<id>. Semantics owned by slopvac-8l4.2.3.",
+      "description": "Qualified rule identifier <pack>:<category>.<rule>, for example core:prose-craft.acronym-periods. Short names resolve in configuration only where they are unambiguous; every output carries the qualified form. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"
+      "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
     },
     "Severity": {
       "description": "Finding severity. Excludes off: 2.x config accepts off to disable a rule, so off belongs to config (owned by slopvac-8l4.2.5), not to findings. Semantics owned by slopvac-8l4.2.3.",
       "enum": ["error", "warning", "suggestion"]
     },
     "RuleProvenance": {
-      "description": "Where a rule came from. Semantics owned by slopvac-8l4.2.3.",
+      "description": "The pack that supplied a rule at run time: pack id, pack version and the pack-relative path of the defining file. A rule's citation of its own sources is the rule field citation, not this. Semantics owned by slopvac-8l4.2.3.",
       "type": "object",
       "properties": {
         "pack": {"$ref": "#/$defs/PackId"},
