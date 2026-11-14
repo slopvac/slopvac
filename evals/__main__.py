@@ -100,13 +100,26 @@ def cmd_models(args: argparse.Namespace) -> int:
             )
             return 2
         engine = runner.Engine.parse(args.engine)
-        results = models.execute(
-            tasks, roster, args.repeats, models.make_linter(engine)
-        )
-        models.dump(
-            results,
-            Path(args.out) if args.out else models.default_output(results["date"]),
-        )
+        out = Path(args.out) if args.out else models.default_output(models.today())
+        journal = models.Journal(out.with_suffix(".journal.jsonl"))
+        budget = models.Budget(args.max_invocations, spent=journal.attempts)
+        try:
+            results = models.execute(
+                tasks,
+                roster,
+                args.repeats,
+                models.make_linter(engine),
+                workers=args.workers,
+                budget=budget,
+                journal=journal,
+            )
+        except models.BudgetExceeded as exc:
+            print(
+                f"evals models run: {exc}; {journal.path} keeps the finished calls",
+                file=sys.stderr,
+            )
+            return 2
+        models.dump(results, out)
         return 0
     except (models.ModelEvalError, runner.EngineError) as exc:
         print(f"evals models: {exc}", file=sys.stderr)
@@ -320,6 +333,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--engine", default="python")
     run_parser.add_argument("--confirm-calls", type=int, required=True)
     run_parser.add_argument("--workers", type=int, default=4)
+    run_parser.add_argument(
+        "--max-invocations",
+        type=int,
+        required=True,
+        help="ceiling on model-command spawns, retries included, across resumes",
+    )
     run_parser.add_argument("--out")
     sm = msub.add_parser("summarize", help="summarise a results file")
     sm.add_argument("results")

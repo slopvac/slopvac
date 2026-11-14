@@ -31,16 +31,18 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import random
 import re
 import shlex
 import subprocess
 import tempfile
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import corpuslib as lib
 from . import facts, metrics, runner
@@ -332,14 +334,16 @@ def _hits(quote: str, sentence: str) -> bool:
 
 
 def _mentions(fact: str, text: str) -> bool:
-    """True when `fact` appears as a whole token, so "3" does not match "13" or "3.5"."""
-    pattern = rf"(?<![\w.]){re.escape(fact.lower())}(?!\w)(?!\.\d)"
-    return re.search(pattern, text.lower()) is not None
+    """True when `fact` appears as a complete token.
 
-
-def _mentions(fact: str, text: str) -> bool:
-    """True when `fact` appears as a whole token, so "3" does not match "13" or "3.5"."""
-    pattern = rf"(?<![\w.]){re.escape(fact.lower())}(?!\w)(?!\.\d)"
+    A number must not sit inside a longer number ("3" in "13", "3.5" or "3,500").
+    An identifier or flag must not continue ("--offline" in "--offline-mode").
+    """
+    body = re.escape(fact.lower())
+    if re.fullmatch(r"\d+(?:[.,]\d+)*%?", fact):
+        pattern = rf"(?<![\w])(?<!\d[.,]){body}(?!\w)(?![.,]\d)"
+    else:
+        pattern = rf"(?<![\w-]){body}(?![\w-])(?!\.\w)"
     return re.search(pattern, text.lower()) is not None
 
 
@@ -459,19 +463,121 @@ def plan(
     }
 
 
-def command_ask(command: str, attempts: int = 3) -> Callable[[str], str]:
+class BudgetExceeded(ModelEvalError):
+    """The run would exceed its invocation ceiling. Nothing more is spawned."""
+
+
+class CallFailed(ModelEvalError):
+    """A model command failed on every attempt."""
+
+    def __init__(self, message: str, attempts: int) -> None:
+        super().__init__(message)
+        self.attempts = attempts
+
+
+class Reply(NamedTuple):
+    text: str
+    attempts: int
+
+
+class Budget:
+    """A shared ceiling on model-command invocations, retries included.
+
+    `reserve` runs before every spawn. Once the ceiling is reached it raises, so
+    no process starts past it, however many threads ask at once.
+    """
+
+    def __init__(self, ceiling: int, spent: int = 0) -> None:
+        self.ceiling = ceiling
+        self.spent = spent
+        self._lock = threading.Lock()
+
+    def reserve(self) -> None:
+        with self._lock:
+            if self.spent >= self.ceiling:
+                raise BudgetExceeded(
+                    f"invocation ceiling of {self.ceiling} reached; nothing more was started"
+                )
+            self.spent += 1
+
+
+def job_id(kind: str, model: str, prompt: str, repeat: int) -> str:
+    """A stable id: the same model, prompt and repeat always map to the same job."""
+    digest = hashlib.sha256(prompt.encode()).hexdigest()
+    return hashlib.sha256(f"{kind}|{model}|{digest}|{repeat}".encode()).hexdigest()[:16]
+
+
+class Journal:
+    """Append-only record of finished jobs, so a stopped run resumes without repeats.
+
+    Each line holds a job id, the answer, any error and the attempts it used. The
+    last line for a job wins. A job that failed is asked again on resume, and its
+    earlier attempts still count against the budget.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lock = threading.Lock()
+        self._entries: dict[str, dict[str, Any]] = {}
+        self._attempts = 0
+        if path.is_file():
+            for line in path.read_text("utf-8").splitlines():
+                if line:
+                    entry = json.loads(line)
+                    self._entries[entry["job"]] = entry
+                    self._attempts += entry["attempts"]
+
+    @property
+    def attempts(self) -> int:
+        return self._attempts
+
+    def done(self, job: str) -> dict[str, Any] | None:
+        entry = self._entries.get(job)
+        return entry if entry and not entry.get("error") else None
+
+    def record(self, job: str, answer: str, error: str | None, attempts: int) -> None:
+        entry = {"job": job, "answer": answer, "error": error, "attempts": attempts}
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, sort_keys=True) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            self._entries[job] = entry
+
+
+def command_ask(
+    command: str,
+    attempts: int = 3,
+    *,
+    budget: Budget | None = None,
+    timeout: int = 900,
+) -> Callable[[str], Reply]:
     argv = shlex.split(command)
 
-    def ask(prompt: str) -> str:
+    def ask(prompt: str) -> Reply:
         last = ""
+        used = 0
         for _ in range(attempts):
-            proc = subprocess.run(
-                argv, input=prompt, capture_output=True, text=True, check=False
-            )
+            if budget:
+                budget.reserve()
+            used += 1
+            try:
+                proc = subprocess.run(
+                    argv,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                last = f"model command timed out after {timeout}s"
+                continue
             if proc.returncode == 0 and proc.stdout.strip():
-                return proc.stdout
+                return Reply(proc.stdout, used)
             last = f"model command exited {proc.returncode}: {proc.stderr[:300]}"
-        raise ModelEvalError(last)
+        raise CallFailed(last, used)
 
     return ask
 
@@ -492,12 +598,28 @@ def _row(
     }
 
 
-def _safe(ask: Callable[[str], str], prompt: str) -> tuple[str, str | None]:
-    """Ask once; a failed call becomes an empty answer plus the error text."""
+def _safe(
+    ask: Callable[[str], Any], job: str, prompt: str, journal: Journal | None
+) -> tuple[str, str | None]:
+    """Ask once, journal the outcome, and turn a failed call into an empty answer."""
+    if journal and (entry := journal.done(job)):
+        return entry["answer"], None
+    answer, error, attempts = "", None, 1
     try:
-        return ask(prompt), None
+        reply = ask(prompt)
+        if isinstance(reply, Reply):
+            answer, attempts = reply.text, reply.attempts
+        else:
+            answer = reply
+    except BudgetExceeded:
+        raise
+    except CallFailed as exc:
+        error, attempts = str(exc)[:300], exc.attempts
     except ModelEvalError as exc:
-        return "", str(exc)[:300]
+        error = str(exc)[:300]
+    if journal:
+        journal.record(job, answer, error, attempts)
+    return answer, error
 
 
 def execute(
@@ -506,29 +628,41 @@ def execute(
     repeats: int,
     lint: Linter,
     *,
-    ask_for: Callable[[Mapping[str, Any]], Callable[[str], str]] = lambda m: (
-        command_ask(m["command"])
-    ),
+    ask_for: Callable[[Mapping[str, Any]], Callable[[str], Any]] | None = None,
     date: str | None = None,
     workers: int = 1,
+    budget: Budget | None = None,
+    journal: Journal | None = None,
 ) -> dict[str, Any]:
     """Run every task against every model; reviewers see other models' rewrites.
 
-    Calls run on `workers` threads. A call that fails is recorded as an empty
-    answer with its error, so it counts as a failure and the run goes on.
+    Calls run on `workers` threads. A failed call is recorded as an empty answer
+    with its error, so it counts as a failure and the run goes on. A `journal`
+    stores every finished call, and a `budget` stops the run before it spawns a
+    process past the ceiling; `BudgetExceeded` then propagates and the journal
+    keeps all finished work.
     """
     expected = plan(tasks, models, repeats)
-    asks = {m["name"]: ask_for(m) for m in models}
+    make_ask = ask_for or (lambda m: command_ask(m["command"], budget=budget))
+    asks = {m["name"]: make_ask(m) for m in models}
     first = [
         (model, task, repeat)
         for model in models
         for task in tasks
         for repeat in range(repeats)
     ]
-    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
-        answers = list(
-            pool.map(lambda job: _safe(asks[job[0]["name"]], job[1]["prompt"]), first)
+
+    def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None]:
+        model, task, repeat = job
+        return _safe(
+            asks[model["name"]],
+            job_id("task", model["name"], task["prompt"], repeat),
+            task["prompt"],
+            journal,
         )
+
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        answers = list(pool.map(run_first, first))
     runs: list[dict[str, Any]] = []
     rewrite_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any], int, str]] = []
     for (model, task, repeat), (answer, error) in zip(first, answers, strict=True):
@@ -548,10 +682,18 @@ def execute(
         for reviewer in models:
             if reviewer["name"] != author["name"]:
                 second.append((review_task, author, reviewer, repeat))
-    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
-        replies = list(
-            pool.map(lambda job: _safe(asks[job[2]["name"]], job[0]["prompt"]), second)
+
+    def run_second(job: tuple[Any, Any, Any, int]) -> tuple[str, str | None]:
+        review_task, _, reviewer, repeat = job
+        return _safe(
+            asks[reviewer["name"]],
+            job_id("review", reviewer["name"], review_task["prompt"], repeat),
+            review_task["prompt"],
+            journal,
         )
+
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        replies = list(pool.map(run_second, second))
     for (review_task, author, reviewer, repeat), (reply, error) in zip(
         second, replies, strict=True
     ):
@@ -573,6 +715,7 @@ def execute(
         "repeats": repeats,
         "planned_calls": expected["total_calls"],
         "failed_calls": sum(1 for r in runs if r.get("error")),
+        "invocations": budget.spent if budget else None,
         "models": [
             {"name": m["name"], "family": m["family"], "tier": m["tier"]}
             for m in models
@@ -641,6 +784,10 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
         "rows": rows,
         "ranking": ranking,
     }
+
+
+def today() -> str:
+    return dt.date.today().isoformat()
 
 
 def default_output(date: str) -> Path:

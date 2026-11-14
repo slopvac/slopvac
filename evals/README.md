@@ -144,11 +144,13 @@ These evals compare models on the three review types: `mechanical`, `update` and
 
 ```sh
 python -m evals models plan --models models.json            # count the calls and input size
-python -m evals models run --models models.json --confirm-calls <N>
+python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>
 python -m evals models summarize evals/results/models/<date>.json
 ```
 
 `models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. Provider logins stay with opencode. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. Ask the lead before you run a paid provider.
+
+`--max-invocations` is a hard ceiling on spawned model commands, retries included. The harness reserves each spawn before it starts one and stops at the ceiling. Each finished call goes to a journal next to the output (`<out>.journal.jsonl`) as it completes. Rerun the same command to resume: the journal supplies finished jobs by a stable id, failed jobs are asked again, and attempts already spent count against the ceiling. `--workers` sets the thread count.
 
 Tasks come from the corpus:
 

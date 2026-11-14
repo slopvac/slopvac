@@ -343,7 +343,7 @@ def test_run_command_needs_the_exact_call_count(tmp_path, monkeypatch):
         "--per-type",
         "1",
     ]
-    assert cli.main([*base, "--confirm-calls", "999"]) == 2
+    assert cli.main([*base, "--confirm-calls", "999", "--max-invocations", "5"]) == 2
 
 
 def test_models_file_needs_every_field(tmp_path):
@@ -433,7 +433,7 @@ def test_a_flaky_command_is_retried_and_a_dead_one_fails_after_three_attempts(tm
         "print('ok')\n"
     )
     ask = models.command_ask(f"{sys.executable} {script}")
-    assert ask("x").strip() == "ok" and counter.read_text() == "3"
+    assert ask("x").text.strip() == "ok" and counter.read_text() == "3"
     dead = models.command_ask(f"{sys.executable} -c 'import sys; sys.exit(1)'")
     with pytest.raises(models.ModelEvalError, match="exited 1"):
         dead("x")
