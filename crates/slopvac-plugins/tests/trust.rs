@@ -928,6 +928,7 @@ mod unix_only {
 
     use super::*;
     use crate::common::{cfg, docs, python};
+    use slopvac_plugins::extract::tree_hash;
     use slopvac_plugins::{Plugin, StartError};
 
     /// A spec that starts the fake plugin through the interpreter, which sits
@@ -1057,8 +1058,17 @@ mod unix_only {
         let file = vp.root.join("extra");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
         fs::write(&file, "y").unwrap();
+        let now = tree_hash(&vp.root).unwrap();
+        assert_ne!(now, vp.tree);
         let err = Plugin::start(&spec, &cfg(), &g).unwrap_err().error;
         assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
+        let text = err.to_string();
+        assert!(text.contains("slopvac plugins trust"), "{text}");
+        assert!(text.contains(now.as_str()), "names the new hash: {text}");
+        assert!(
+            text.contains(vp.tree.as_str()),
+            "names the trusted hash: {text}"
+        );
     }
 
     #[test]
@@ -1086,13 +1096,26 @@ mod unix_only {
         assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
     }
 
-    /// Whether `py` runs the SDK, which needs Python 3.11 or later.
-    fn runs_the_sdk(py: &Path) -> bool {
-        std::process::Command::new(py)
+    /// The `(major, minor)` version of `py`. A probe that fails panics: only a
+    /// version the probe reads may skip the SDK test.
+    fn python_version(py: &Path) -> (u32, u32) {
+        let out = std::process::Command::new(py)
             .env_clear()
-            .args(["-c", "import sys; sys.exit(sys.version_info < (3, 11))"])
-            .status()
-            .is_ok_and(|s| s.success())
+            .args(["-c", "import sys; print(*sys.version_info[:2])"])
+            .output()
+            .unwrap_or_else(|e| panic!("running {}: {e}", py.display()));
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{} -c failed: {}",
+            py.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let mut parts = text.split_whitespace().map(str::parse::<u32>);
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some(Ok(major)), Some(Ok(minor)), None) => (major, minor),
+            _ => panic!("{} printed an unreadable version: {text:?}", py.display()),
+        }
     }
 
     /// The fence-tagger example from the Python SDK, with the SDK vendored
@@ -1137,8 +1160,14 @@ mod unix_only {
     #[test]
     fn the_python_sdk_example_tags_through_the_host_behind_the_trust_gate() {
         let py = python();
-        if !runs_the_sdk(&py) {
-            eprintln!("skipped: {} is older than Python 3.11", py.display());
+        let version = python_version(&py);
+        if version < (3, 11) {
+            eprintln!(
+                "skipped: {} is Python {}.{}; the SDK needs 3.11 or later",
+                py.display(),
+                version.0,
+                version.1
+            );
             return;
         }
         let s = Scratch::new("u-sdk");

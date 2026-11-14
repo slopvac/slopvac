@@ -38,7 +38,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use crate::error::PluginError;
-use crate::extract::{ExtractError, TreeHash, verify_tree};
+use crate::extract::{ExtractError, TreeHash, tree_hash, verify_tree};
 use crate::host::{PluginSpec, SpawnGate};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
@@ -823,12 +823,24 @@ impl SpawnGate for TrustGate {
             .ok_or_else(|| PluginError::Untrusted(name.clone()))?;
         if spec.cwd != vp.root {
             return Err(PluginError::HashMismatch(format!(
-                "{name}: it does not run from its verified tree"
+                "{name} (it does not run from its verified tree)"
             )));
         }
         // Spawning recomputes the tree hash: a cached tree is untrusted input (E8, P10).
-        if verify_tree(&vp.root, &vp.tree).is_err() {
-            return Err(PluginError::HashMismatch(name.clone()));
+        // Same comparison as `verify_tree`, kept inline so the error can name the new hash.
+        match tree_hash(&vp.root) {
+            Ok(actual) if actual == vp.tree => {}
+            Ok(actual) => {
+                return Err(PluginError::HashMismatch(format!(
+                    "{name} (tree now {actual}, verified {})",
+                    vp.tree
+                )));
+            }
+            Err(e) => {
+                return Err(PluginError::HashMismatch(format!(
+                    "{name} (tree refused: {e})"
+                )));
+            }
         }
         let (hash, state) = match self.state(vp, spec) {
             Ok(x) => x,
