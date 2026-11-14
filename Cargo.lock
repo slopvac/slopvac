@@ -1014,6 +1014,8 @@ dependencies = [
  "clap",
  "minijinja",
  "pulldown-cmark",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]
