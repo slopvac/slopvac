@@ -8,6 +8,7 @@ mod pattern;
 mod pyrules;
 mod sentences;
 mod tokens;
+mod unicode_data;
 
 pub use classify::{TextType, classify_text_type};
 pub use pattern::TextError;

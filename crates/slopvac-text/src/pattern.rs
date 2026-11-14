@@ -11,10 +11,10 @@ impl From<pcre2::Error> for TextError {
     }
 }
 
-/// The Python `regex` module's `\w`: letters, marks, numbers and underscore. PCRE2's
-/// UCP `\w` leaves out spacing and enclosing marks, so the built-in patterns spell the
-/// class out.
-const WORD: &str = r"\p{L}\p{M}\p{N}_";
+/// The Python `regex` module's `\w`, which follows UTS #18: Alphabetic, marks (M), decimal
+/// digits (Nd), connector punctuation (Pc) and `Join_Control`. PCRE2's UCP `\w` is L, N,
+/// Mn and Pc, so the built-in patterns spell the class out.
+const WORD: &str = r"\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\x{200C}\x{200D}";
 
 /// Rewrite `\w` and `\b` into explicit classes (see [`WORD`]).
 fn compat(pattern: &str) -> String {

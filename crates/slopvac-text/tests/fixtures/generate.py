@@ -91,6 +91,13 @@ CURATED = [
     "Do the following:\r\n- Open the file.\r\n- Close the file.",
     "First line wraps\r\nonto the second line. Then ends.",
     "A\x1cB. Next sentence.",
+    "Check it. \u00b2 more prose follows.",
+    "Check it. \u00bc more prose follows.",
+    "One. \u1369 item.",
+    "One. \U00011136 item.",
+    "Deploy \ufb06arts here.",
+    "Wait \u203f10 degrees Celsius.",
+    "Wait\u200d10 degrees Celsius.",
 ]
 
 

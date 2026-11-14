@@ -1250,6 +1250,125 @@
   ]
  },
  {
+  "text": "Check it. ² more prose follows.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Check it.",
+    "start": 0,
+    "end": 9,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "² more prose follows.",
+    "start": 10,
+    "end": 32,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Check it. ¼ more prose follows.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Check it. ¼ more prose follows.",
+    "start": 0,
+    "end": 32,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "One. ፩ item.",
+  "words": 2,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "One.",
+    "start": 0,
+    "end": 4,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "፩ item.",
+    "start": 5,
+    "end": 14,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "One. 𑄶 item.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "One.",
+    "start": 0,
+    "end": 4,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "𑄶 item.",
+    "start": 5,
+    "end": 15,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Deploy ﬆarts here.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Deploy ﬆarts here.",
+    "start": 0,
+    "end": 20,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Wait ‿10 degrees Celsius.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Wait ‿10 degrees Celsius.",
+    "start": 0,
+    "end": 27,
+    "word_count": 4,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Wait‍10 degrees Celsius.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Wait‍10 degrees Celsius.",
+    "start": 0,
+    "end": 26,
+    "word_count": 4,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
   "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
   "words": 7,
   "text_type": "descriptive",
