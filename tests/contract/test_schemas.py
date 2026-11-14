@@ -147,6 +147,8 @@ def test_cases_toml_keys_match_instance_files(manifest: Path) -> None:
 def test_every_conformance_dir_has_a_schema_and_manifest() -> None:
     artifacts = {_artifact(s) for s in SCHEMA_FILES}
     for folder in CONFORMANCE.iterdir():
+        if not (folder / "valid").exists() and not (folder / "invalid").exists():
+            continue  # a vector suite such as positions/, checked by its own test
         assert folder.name in artifacts, f"{folder.name}: no schema"
         if any((folder / "invalid").glob("*")):
             assert (folder / "invalid" / "cases.toml").is_file()
