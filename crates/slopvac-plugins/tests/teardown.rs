@@ -11,12 +11,12 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use common::*;
 use serde_json::json;
-use slopvac_plugins::process::TableSource;
+use slopvac_plugins::process::{HookSignal, SignalHook, TableSource};
 use slopvac_plugins::{HostConfig, Plugin, kill_all_live};
 
 /// One test at a time, so one test's `kill_all_live` cannot end another's plugin.
@@ -68,6 +68,7 @@ fn seam_capped(
             ],
             deadline,
             max_held,
+            signals: None,
         }),
         ..cfg()
     };
@@ -311,4 +312,68 @@ fn a_walk_that_reaches_its_cap_is_incomplete_and_kills_what_it_holds() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(left.incomplete, "{left:?}");
     assert!(held_gone, "the held descendant {} survived", pids[0]);
+}
+/// A pid no table row or live process of this test names.
+const FAKE: u32 = 999_999;
+
+/// `EPERM` and `ESRCH` as the raw values both Linux and macOS use.
+const EPERM: i32 = 1;
+const ESRCH: i32 = 3;
+
+/// Run a kill with a hook in place of the pidfd of one forged descendant
+/// outside the leader's group. The hook fails `fail` with `errno` and
+/// succeeds on the other signal. Returns the teardown report and the signals
+/// the hook saw.
+fn forged_descendant(
+    name: &str,
+    fail: HookSignal,
+    errno: i32,
+) -> (slopvac_plugins::process::Teardown, Vec<(u32, HookSignal)>) {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Both rows are stopped, so the walk settles after one round.
+    let table = format!(
+        r#"leader=$(cat "$1/pids")
+t='Sat Nov 14 23:00:07 2026'
+echo "$leader $2 $leader T $t"
+echo "{FAKE} $leader {FAKE} T $t"
+"#
+    );
+    let (dir, mut cfg) = seam(name, &table, WALK);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&seen);
+    cfg.process_table.as_mut().unwrap().signals = Some(SignalHook(Arc::new(move |pid, sig| {
+        log.lock().unwrap().push((pid, sig));
+        if sig == fail { Err(errno) } else { Ok(()) }
+    })));
+    let p = start_mode("hang", &dir, &cfg);
+    let leader = pids_n(&dir.join("pids"), 1);
+    let left = kill_all_live();
+    let gone = wait_gone(&leader);
+    drop(p);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "the leader {leader:?} survived");
+    let calls = seen.lock().unwrap().clone();
+    (left, calls)
+}
+
+#[test]
+fn a_descendant_that_cannot_be_stopped_is_reported_escaped_unless_it_is_gone() {
+    // (errno of the failed stop, escaped)
+    for (errno, escaped) in [(EPERM, vec![FAKE]), (ESRCH, vec![])] {
+        let (left, calls) = forged_descendant("stop-fails", HookSignal::Stop, errno);
+        assert_eq!(left.escaped, escaped, "errno {errno}: {left:?}");
+        assert_eq!(calls, [(FAKE, HookSignal::Stop)], "errno {errno}");
+    }
+}
+
+#[test]
+fn a_descendant_that_cannot_be_killed_is_reported_escaped_unless_it_is_gone() {
+    for (errno, escaped) in [(EPERM, vec![FAKE]), (ESRCH, vec![])] {
+        let (left, calls) = forged_descendant("kill-fails", HookSignal::Kill, errno);
+        assert_eq!(left.escaped, escaped, "errno {errno}: {left:?}");
+        let want = [(FAKE, HookSignal::Stop), (FAKE, HookSignal::Kill)];
+        assert_eq!(calls, want, "errno {errno}");
+    }
 }

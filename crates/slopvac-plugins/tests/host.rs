@@ -489,6 +489,18 @@ fn tm2_a_flood_of_unsolicited_messages_kills_the_plugin() {
     assert_eq!(code(&r), "plugin-protocol-violation");
 }
 
+/// Threat model 5.5: the cap counts every byte read from standard output.
+/// 40 frames carry about 1.8 KB of bodies and about 290 KB of headers, so
+/// only the headers can pass a 64 KB cap.
+#[test]
+fn tm5_5_header_bytes_count_toward_the_standard_output_cap() {
+    let mut c = cfg();
+    c.caps.stdout_bytes = 64 << 10;
+    let p = Plugin::start(&spec("header-padding"), &c, &Allow).unwrap();
+    let r = p.tag("main", &docs(1));
+    assert_eq!(code(&r), "plugin-protocol-violation");
+}
+
 #[test]
 fn tm8_the_plugin_environment_holds_only_the_allowlist() {
     let p = start("env");

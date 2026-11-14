@@ -256,6 +256,16 @@ while True:
         if mode == "flood":
             for _ in range(1500):
                 send({"jsonrpc": "2.0", "method": "noise", "params": {}})
+        if mode == "header-padding":
+            # Valid frames whose bodies are tiny and whose headers are not.
+            body = json.dumps(
+                {"jsonrpc": "2.0", "method": "noise", "params": {}}
+            ).encode()
+            pad = b"".join(b"X-Pad-%d: %s\r\n" % (i, b"a" * 1000) for i in range(7))
+            head = b"Content-Length: %d\r\n" % len(body) + pad + b"\r\n"
+            for _ in range(40):
+                out.write(head + body)
+            out.flush()
         if mode == "children" or mode == "ignore-shutdown":
             spawn_children()
         if mode == "nested":

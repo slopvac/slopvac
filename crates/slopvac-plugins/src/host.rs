@@ -16,7 +16,7 @@
 //! up to five seconds after the kill.
 
 use std::collections::{HashMap, VecDeque};
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -372,15 +372,33 @@ impl Shared {
     }
 }
 
+/// Counts every byte read from the stream.
+struct Counted<R> {
+    inner: R,
+    read: u64,
+}
+
+impl<R: Read> Read for Counted<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.read = self.read.saturating_add(n as u64);
+        Ok(n)
+    }
+}
+
 /// Read and route frames until the stream ends or breaks.
 ///
 /// The first reply is the `initialize` reply. After it the reader stops until
 /// `limits_ready` fires, so the next frame meets the negotiated body limit
 /// rather than the pre-initialize one (plugin-protocol.md section 2.2). A
 /// closed `limits_ready` means the handshake failed and the reader stops.
+///
+/// The volume cap counts every byte the frames consumed, headers and bodies.
 fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) {
-    let mut r = BufReader::new(stdout);
-    let mut total: u64 = 0;
+    let mut r = BufReader::new(Counted {
+        inner: stdout,
+        read: 0,
+    });
     let mut unsolicited = 0u32;
     let mut negotiated = false;
     loop {
@@ -388,7 +406,8 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
             Ok(None) | Err(FrameError::Io(_)) => return shared.on_stream_end(),
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
-                total = total.saturating_add(body.len() as u64);
+                // Bytes buffered for the next frame are not consumed yet.
+                let total = r.get_ref().read - r.buffer().len() as u64;
                 if total > shared.caps.stdout_bytes {
                     return shared.violation("standard output volume cap reached");
                 }

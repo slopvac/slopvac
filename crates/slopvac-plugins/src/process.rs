@@ -147,6 +147,32 @@ pub struct TableSource {
     /// Most descendants outside the group that one walk holds. Production
     /// holds up to 1,024.
     pub max_held: usize,
+    /// Stands in for the pidfd of every descendant outside the group: each
+    /// one is held and signalled through this hook, and none is opened, so
+    /// the walk's handling of failed signals runs on any Unix. `None` in
+    /// production.
+    pub signals: Option<SignalHook>,
+}
+
+/// Which signal a [`SignalHook`] is asked to send.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookSignal {
+    /// `SIGSTOP`.
+    Stop,
+    /// `SIGKILL`.
+    Kill,
+}
+
+/// Sends a signal to a process id and returns the raw `errno` on failure.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct SignalHook(pub Arc<dyn Fn(u32, HookSignal) -> Result<(), i32> + Send + Sync>);
+
+impl std::fmt::Debug for SignalHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SignalHook")
+    }
 }
 
 #[derive(Default)]
@@ -531,7 +557,7 @@ mod unix {
 
     use rustix::process::{Pid, Signal};
 
-    use super::{TableSource, Teardown};
+    use super::{HookSignal, SignalHook, TableSource, Teardown};
 
     /// The only program production runs to read the process table.
     const PS: &str = "/bin/ps";
@@ -567,33 +593,31 @@ mod unix {
         }
     }
 
-    /// What binds a held descendant to its id: a pidfd.
-    #[cfg(target_os = "linux")]
-    type Handle = rustix::fd::OwnedFd;
-    /// Nothing binds a process to its id without pidfds, so no [`Stray`] exists.
-    #[cfg(not(target_os = "linux"))]
-    type Handle = std::convert::Infallible;
+    /// What binds a held descendant to its id: a pidfd, or the test hook.
+    enum Link {
+        /// A Linux pidfd.
+        #[cfg(target_os = "linux")]
+        Fd(rustix::fd::OwnedFd),
+        /// The test seam's stand-in.
+        Hook(SignalHook),
+    }
 
     /// A descendant outside the group that this teardown holds and stopped.
     pub(super) struct Stray {
         pid: u32,
         ppid: u32,
         start: String,
-        fd: Handle,
+        link: Link,
     }
 
     /// What the walk does with a descendant outside the group.
     pub(super) enum Reach {
         /// Bound to its id: stopped now, killed with the group.
-        #[cfg_attr(
-            not(target_os = "linux"),
-            expect(dead_code, reason = "nothing is held without pidfds")
-        )]
         Held(Stray),
         /// Gone: its id names no process, or its pidfd shows an exit.
         #[cfg_attr(
             not(target_os = "linux"),
-            expect(dead_code, reason = "nothing is held without pidfds")
+            expect(dead_code, reason = "nothing is skipped without pidfds")
         )]
         Skip,
         /// Running, but nothing binds it to its id: reported, never signalled.
@@ -605,9 +629,26 @@ mod unix {
         ///
         /// The pidfd names whatever held the id when it was opened. A stopped
         /// parent cannot fork, so if that process still has the parent from
-        /// the snapshot, it is the process from the snapshot.
+        /// the snapshot, it is the process from the snapshot. With a `hook`
+        /// the process is held without a pidfd.
+        pub(super) fn reach(e: &Entry, hook: Option<&SignalHook>) -> Reach {
+            if let Some(h) = hook {
+                return Reach::Held(Self::new(e, Link::Hook(h.clone())));
+            }
+            Self::open(e)
+        }
+
+        fn new(e: &Entry, link: Link) -> Self {
+            Self {
+                pid: e.pid,
+                ppid: e.ppid,
+                start: e.start.clone(),
+                link,
+            }
+        }
+
         #[cfg(target_os = "linux")]
-        pub(super) fn reach(e: &Entry) -> Reach {
+        fn open(e: &Entry) -> Reach {
             use rustix::process::{PidfdFlags, pidfd_open};
             let Some(p) = pid(e.pid) else {
                 return Reach::Escaped;
@@ -618,12 +659,7 @@ mod unix {
                 Err(_) => return Reach::Escaped,
             };
             match revalidated(e.ppid, proc_ppid(e.pid).ok(), || exited(&fd)) {
-                Verdict::Bound => Reach::Held(Self {
-                    pid: e.pid,
-                    ppid: e.ppid,
-                    start: e.start.clone(),
-                    fd,
-                }),
+                Verdict::Bound => Reach::Held(Self::new(e, Link::Fd(fd))),
                 Verdict::Gone => Reach::Skip,
                 Verdict::Escaped => Reach::Escaped,
             }
@@ -633,7 +669,7 @@ mod unix {
         /// a stopped parent that ignores `SIGCHLD` still has its exited
         /// children reaped, and their ids reused.
         #[cfg(not(target_os = "linux"))]
-        pub(super) fn reach(_e: &Entry) -> Reach {
+        fn open(_e: &Entry) -> Reach {
             Reach::Escaped
         }
 
@@ -642,16 +678,19 @@ mod unix {
             e.pid == self.pid && e.ppid == self.ppid && e.start == self.start
         }
 
-        /// Send `sig` through the pidfd.
+        /// Send `sig` through the pidfd, or the hook.
         pub(super) fn signal(&self, sig: Signal) -> rustix::io::Result<()> {
-            #[cfg(target_os = "linux")]
-            {
-                rustix::process::pidfd_send_signal(&self.fd, sig)
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                let _ = sig;
-                match self.fd {}
+            match &self.link {
+                #[cfg(target_os = "linux")]
+                Link::Fd(fd) => rustix::process::pidfd_send_signal(fd, sig),
+                Link::Hook(h) => {
+                    let which = if sig == Signal::KILL {
+                        HookSignal::Kill
+                    } else {
+                        HookSignal::Stop
+                    };
+                    (h.0)(self.pid, which).map_err(rustix::io::Errno::from_raw_os_error)
+                }
             }
         }
     }
@@ -794,7 +833,7 @@ mod unix {
             found.sort_by_key(|e| e.pid);
             let mut grew = false;
             for e in found {
-                match Stray::reach(e) {
+                match Stray::reach(e, source.and_then(|s| s.signals.as_ref())) {
                     Reach::Held(s) if held.len() < cap => match s.signal(Signal::STOP) {
                         Ok(()) => {
                             held.push(s);
