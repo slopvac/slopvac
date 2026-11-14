@@ -1,6 +1,8 @@
 //! Behavior of style resolution through the public API.
 
-use slopvac_styles::{Level, MapSource, StyleError, resolve};
+use slopvac_styles::{
+    CategoryDials, CategoryPatch, Level, MapSource, SettingValue, StyleError, resolve,
+};
 
 fn names(n: &[&str]) -> Vec<String> {
     n.iter().map(|s| (*s).to_owned()).collect()
@@ -74,17 +76,71 @@ fn category_dials_merge_per_field() {
         "schema_version = 3\n[categories.ste-nouns]\nweight = 0.5\n",
     );
     let r = resolve(&names(&["one", "two"]), &src, false).unwrap();
+    // `two` sets only the weight, so severity from `one` survives and the
+    // weight is replaced; ste-words is untouched by `two`.
+    assert_eq!(
+        r.patch.categories["ste-nouns"],
+        CategoryPatch::Dials(CategoryDials {
+            severity: Some(Level::Warning),
+            max_per_100_words: None,
+            weight: Some(0.5),
+        })
+    );
+    assert_eq!(
+        r.patch.categories["ste-words"],
+        CategoryPatch::Dials(CategoryDials {
+            severity: Some(Level::Error),
+            max_per_100_words: None,
+            weight: None,
+        })
+    );
     let h = &r.history;
     assert_eq!(h["categories.ste-nouns.weight"].len(), 2);
     assert_eq!(h["categories.ste-nouns.severity"].len(), 1);
-    assert_eq!(h["categories.ste-nouns.weight"][1].value, "0.5");
+}
+
+#[test]
+fn explicit_listing_beats_ancestor_position() {
+    let src = MapSource::new().with("parent", BASE).with(
+        "child",
+        "schema_version = 3\nextends = [\"parent\"]\n[rules]\n\"core:a\" = \"suggestion\"\n",
+    );
+    let r = resolve(&names(&["child", "parent"]), &src, false).unwrap();
+    assert_eq!(r.order, ["child", "parent"]);
+    assert_eq!(r.patch.rules["core:a"], Level::Warning);
+}
+
+#[test]
+fn blocklists_replace_rather_than_append() {
+    let a = "schema_version = 3\n[terms]\nblocklists = [\"one.toml\", \"two.toml\"]\n";
+    let b = "schema_version = 3\n[terms]\nblocklists = [\"three.toml\"]\n";
+    let src = MapSource::new().with("a", a).with("b", b);
+    let r = resolve(&names(&["a", "b"]), &src, false).unwrap();
+    assert_eq!(r.patch.terms.blocklists, Some(names(&["three.toml"])));
+    let r = resolve(&names(&["b", "a"]), &src, false).unwrap();
+    assert_eq!(
+        r.patch.terms.blocklists,
+        Some(names(&["one.toml", "two.toml"]))
+    );
+}
+
+#[test]
+fn list_conflicts_compare_items_not_joined_text() {
+    let a = "schema_version = 3\nconflicts = [\"b\"]\n[terms]\nallow = [\"a,b\"]\n";
+    let b = "schema_version = 3\n[terms]\nallow = [\"a\", \"b\"]\n";
+    let src = MapSource::new().with("a", a).with("b", b);
+    let r = resolve(&names(&["a", "b"]), &src, false).unwrap();
+    assert_eq!(r.conflicts[0].keys, ["terms.allow"]);
 }
 
 #[test]
 fn bare_category_level_is_severity() {
     let src = MapSource::new().with("one", BASE);
     let r = resolve(&names(&["one"]), &src, false).unwrap();
-    assert_eq!(r.history["categories.ste-words.severity"][0].value, "error");
+    assert_eq!(
+        r.history["categories.ste-words.severity"][0].value,
+        SettingValue::Level(Level::Error)
+    );
 }
 
 #[test]
@@ -96,9 +152,9 @@ fn history_records_each_style_in_order() {
     let h = &r.history["rules.core:a"];
     assert_eq!(
         h.iter()
-            .map(|s| (s.style.as_str(), s.value.as_str()))
+            .map(|s| (s.style.as_str(), s.value.to_string()))
             .collect::<Vec<_>>(),
-        [("one", "warning"), ("two", "off")]
+        [("one", "warning".to_owned()), ("two", "off".to_owned())]
     );
 }
 

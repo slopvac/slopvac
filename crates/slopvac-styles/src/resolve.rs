@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
+use crate::patch::SettingValue;
 use crate::{CategoryDials, CategoryPatch, SettingsPatch, Style, StyleError, StyleSource};
 
 /// One value a style set for a key.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Setting {
     /// Style that set it.
     pub style: String,
-    /// Rendered value.
-    pub value: String,
+    /// The value.
+    pub value: SettingValue,
 }
 
 /// A declared conflict between two active styles.
@@ -64,6 +65,14 @@ pub fn resolve(
     let mut loaded: Vec<(String, Style)> = Vec::new();
     for name in names {
         expand(name, source, &mut Vec::new(), &mut loaded)?;
+        // A style listed explicitly takes the position of its listing even if
+        // an earlier style already pulled it in as an ancestor.
+        if let Some(pos) = loaded.iter().position(|(n, _)| n == name)
+            && pos + 1 != loaded.len()
+        {
+            let entry = loaded.remove(pos);
+            loaded.push(entry);
+        }
     }
 
     let mut res = Resolution::default();

@@ -13,7 +13,7 @@ mod shape;
 mod source;
 
 pub use error::StyleError;
-pub use patch::{CategoryDials, CategoryPatch, Level, SettingsPatch, TermsPatch};
+pub use patch::{CategoryDials, CategoryPatch, Level, SettingValue, SettingsPatch, TermsPatch};
 pub use resolve::{Conflict, Resolution, Setting, resolve};
 pub use shape::Style;
 pub use source::{DirSource, MapSource, StyleSource};

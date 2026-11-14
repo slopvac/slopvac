@@ -80,37 +80,58 @@ impl CategoryPatch {
     }
 }
 
+/// One setting value, typed so lists keep their item boundaries.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SettingValue {
+    /// A rule or category level.
+    Level(Level),
+    /// A number such as a weight.
+    Number(f64),
+    /// A list such as `terms.allow`.
+    List(Vec<String>),
+}
+
+impl std::fmt::Display for SettingValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Level(l) => write!(f, "{}", format!("{l:?}").to_lowercase()),
+            Self::Number(n) => write!(f, "{n}"),
+            Self::List(v) => write!(f, "{v:?}"),
+        }
+    }
+}
+
 impl SettingsPatch {
     /// Flatten the patch to `(key, value)` pairs, one per setting.
     ///
     /// Keys are `rules.<key>`, `categories.<key>.<field>`, `terms.allow` and
-    /// `terms.blocklists`. Values are rendered for display and comparison.
+    /// `terms.blocklists`.
     #[must_use]
-    pub fn entries(&self) -> Vec<(String, String)> {
+    pub fn entries(&self) -> Vec<(String, SettingValue)> {
         let mut out = Vec::new();
         for (k, v) in &self.rules {
-            out.push((format!("rules.{k}"), format!("{v:?}").to_lowercase()));
+            out.push((format!("rules.{k}"), SettingValue::Level(*v)));
         }
         for (k, c) in &self.categories {
             let d = c.dials();
             if let Some(v) = d.severity {
-                out.push((
-                    format!("categories.{k}.severity"),
-                    format!("{v:?}").to_lowercase(),
-                ));
+                out.push((format!("categories.{k}.severity"), SettingValue::Level(v)));
             }
             if let Some(v) = d.max_per_100_words {
-                out.push((format!("categories.{k}.max_per_100_words"), v.to_string()));
+                out.push((
+                    format!("categories.{k}.max_per_100_words"),
+                    SettingValue::Number(v),
+                ));
             }
             if let Some(v) = d.weight {
-                out.push((format!("categories.{k}.weight"), v.to_string()));
+                out.push((format!("categories.{k}.weight"), SettingValue::Number(v)));
             }
         }
         if let Some(v) = &self.terms.allow {
-            out.push(("terms.allow".to_owned(), v.join(",")));
+            out.push(("terms.allow".to_owned(), SettingValue::List(v.clone())));
         }
         if let Some(v) = &self.terms.blocklists {
-            out.push(("terms.blocklists".to_owned(), v.join(",")));
+            out.push(("terms.blocklists".to_owned(), SettingValue::List(v.clone())));
         }
         out
     }
