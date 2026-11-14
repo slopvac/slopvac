@@ -144,6 +144,21 @@ fn io_err(what: impl Into<String>) -> impl FnOnce(io::Error) -> ExtractError {
 pub struct TreeHash(String);
 
 impl TreeHash {
+    /// Parse a `sha256:<64 lowercase hex>` string, for example from a lockfile.
+    ///
+    /// # Errors
+    /// [`ExtractError::Refused`] when the string has another form.
+    pub fn parse(s: &str) -> Result<Self, ExtractError> {
+        let ok = s.strip_prefix("sha256:").is_some_and(|h| {
+            h.len() == 64 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if ok {
+            Ok(Self(s.to_owned()))
+        } else {
+            Err(refused(format!("`{s}` is not a sha256 tree hash")))
+        }
+    }
+
     /// The `sha256:...` string.
     #[must_use]
     pub fn as_str(&self) -> &str {
