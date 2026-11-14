@@ -217,9 +217,8 @@ repos:
       - id: slopvac
 ```
 
-Use the `slopvac-strict` hook for the strict profile. Install Vale on the machine
-running pre-commit. The `slopvac-no-vale` hook leaves selected Vale-backed checks
-unchecked and returns exit 2.
+The hook runs the `slopvac` binary on your `PATH`. Use `slopvac-strict` for the
+strict profile. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).
 
 ### GitHub Actions
 
