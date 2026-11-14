@@ -255,10 +255,6 @@ impl Engine {
                 };
                 self.categories.insert(category.id().clone(), info);
                 for (r, loaded) in category.rules().iter().enumerate() {
-                    self.catalog.insert(
-                        loaded.id().as_str().to_owned(),
-                        Catalog::Loaded(self.active.len() + usize::MAX / 2),
-                    );
                     let rule = loaded.rule();
                     let Level::On(severity) = level_of(
                         &self.settings,
