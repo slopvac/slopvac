@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
-use cap_std::fs::{Dir, OpenOptions};
+use cap_std::fs::{Dir, OpenOptions, Permissions};
 
 use crate::hooks::resolve_in_root;
 
@@ -173,26 +173,44 @@ fn link_count(f: &cap_std::fs::File, _: &cap_std::fs::Metadata) -> std::io::Resu
 ///
 /// Refuses a symlink, a non-regular file and a file with several hard links.
 pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Current, ApplyError> {
-    read_current_at(parent, name, shown, &mut |_| {})
+    read_current_at(parent, name, shown, &mut |_| {}).map(|(current, _)| current)
 }
 
+/// Make the open return at once for a pipe or device that was swapped in.
+#[cfg(unix)]
+fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
+    use cap_std::fs::OpenOptionsExt;
+    let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
+        .map_err(|_| ApplyError::Io("O_NONBLOCK does not fit".into()))?;
+    opts.custom_flags(flag);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+fn nonblocking(_: &mut OpenOptions) -> Result<(), ApplyError> {
+    Ok(())
+}
+
+/// Read the target and, from the same open handle, its permissions.
 fn read_current_at(
     parent: &Dir,
     name: &OsStr,
     shown: &str,
     hook: &mut dyn FnMut(Stage),
-) -> Result<Current, ApplyError> {
+) -> Result<(Current, Option<Permissions>), ApplyError> {
     // A cheap look first, so that a pipe or device is never opened for reading.
     match parent.symlink_metadata(name) {
         Ok(m) if m.file_type().is_symlink() => return Err(ApplyError::Symlink(shown.into())),
         Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(shown.into())),
         Ok(_) => {}
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Current::Absent),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok((Current::Absent, None)),
         Err(e) => return Err(ApplyError::io(shown, &e)),
     }
     hook(Stage::BeforeOpen);
     let mut opts = OpenOptions::new();
     opts.read(true).follow(FollowSymlinks::No);
+    nonblocking(&mut opts)?;
     let mut file = match parent.open_with(name, &opts) {
         Ok(f) => f,
         Err(e) => {
@@ -222,7 +240,7 @@ fn read_current_at(
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
         .map_err(|e| ApplyError::io(shown, &e))?;
-    Ok(Current::File(bytes))
+    Ok((Current::File(bytes), Some(meta.permissions())))
 }
 
 /// What the target must hold for a write or delete to go ahead.
@@ -286,7 +304,7 @@ pub(crate) fn replace(
     new: &[u8],
     hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
-    let first = read_current_at(parent, name, shown, hook)?;
+    let (first, perms) = read_current_at(parent, name, shown, hook)?;
     let changed = || ApplyError::SourceChanged(shown.into());
     if !expect.holds(&first) {
         return Err(changed());
@@ -295,12 +313,14 @@ pub(crate) fn replace(
         return Ok(WriteOutcome::Unchanged);
     }
     let (tmp, file) = create_temp(parent, shown)?;
-    let mut finish = |mut file: cap_std::fs::File| -> Result<WriteOutcome, ApplyError> {
+    let finish = |mut file: cap_std::fs::File| -> Result<WriteOutcome, ApplyError> {
         let io = |e: std::io::Error| ApplyError::io(shown, &e);
         file.write_all(new).map_err(io)?;
         hook(Stage::TempWritten);
-        if let Ok(meta) = parent.metadata(name) {
-            file.set_permissions(meta.permissions()).map_err(io)?;
+        // The mode comes from the handle that was validated, never from a
+        // second lookup of the name.
+        if let Some(perms) = perms {
+            file.set_permissions(perms).map_err(io)?;
         }
         file.sync_all().map_err(io)?;
         // Windows cannot rename a file while a handle to it is open.
@@ -335,7 +355,7 @@ pub(crate) fn remove(
     hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
     let changed = || ApplyError::SourceChanged(shown.into());
-    let first = read_current_at(parent, name, shown, hook)?;
+    let (first, _) = read_current_at(parent, name, shown, hook)?;
     if !expect.holds(&first) {
         return Err(changed());
     }
@@ -524,7 +544,8 @@ mod tests {
                 std::fs::remove_file(&target).unwrap();
                 std::os::unix::fs::symlink("other", &target).unwrap();
             }
-        });
+        })
+        .map(|(c, _)| c);
         assert_eq!(got, Err(ApplyError::Symlink("a.md".into())));
     }
 
@@ -564,6 +585,67 @@ mod tests {
             seen,
             [(Stage::TempWritten, 0o600), (Stage::BeforeCommit, 0o644)]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_mode_comes_from_the_validated_handle_not_from_a_second_lookup_of_the_name() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("secret.md");
+        std::fs::write(&target, "same").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let parent = dir(tmp.path());
+        // After the temporary file is filled, the name is replaced by a
+        // world-readable file with the same bytes, which passes the second check.
+        let got = replace(
+            &parent,
+            OsStr::new("secret.md"),
+            "secret.md",
+            &Expect::Bytes(b"same"),
+            b"edited",
+            &mut |s| {
+                if s == Stage::TempWritten {
+                    std::fs::remove_file(&target).unwrap();
+                    std::fs::write(&target, "same").unwrap();
+                    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))
+                        .unwrap();
+                }
+            },
+        );
+        assert_eq!(got, Ok(WriteOutcome::Replaced));
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "edited");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_swapped_in_before_the_open_is_refused_and_never_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.md"), "original").unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let path = tmp.path().to_owned();
+        std::thread::spawn(move || {
+            let parent = dir(&path);
+            let target = path.join("a.md");
+            let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", &mut |s| {
+                if s == Stage::BeforeOpen {
+                    std::fs::remove_file(&target).unwrap();
+                    let made = std::process::Command::new("mkfifo")
+                        .arg(&target)
+                        .status()
+                        .unwrap();
+                    assert!(made.success());
+                }
+            })
+            .map(|(c, _)| c);
+            let _ = tx.send(got);
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the open blocked on a FIFO");
+        assert_eq!(got, Err(ApplyError::NotRegularFile("a.md".into())));
     }
 
     #[test]

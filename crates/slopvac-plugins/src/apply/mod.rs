@@ -35,11 +35,12 @@
 //! - A plan is checked as a whole but applied file by file. It is not a
 //!   transaction: after a failure the earlier files stay written and the report
 //!   says which.
-//! - Windows: `cap-std` rebuilds absolute paths for rename, delete and
-//!   create-directory, which a junction swapped in meanwhile can redirect. Recipe
-//!   plans therefore refuse every mutating entry there
-//!   ([`ApplyError::UnsupportedOnWindows`]). [`apply_edits`] still runs on
-//!   Windows and has the same exposure for its rename. Names shaped like 8.3
+//! - Windows: nothing is written yet. `cap-std` rebuilds absolute paths for
+//!   rename, delete and create-directory, which a junction swapped in meanwhile
+//!   can redirect, and the replacement would not carry the original DACL. Recipe
+//!   plans refuse every mutating entry and [`apply_edits`] refuses the call, both
+//!   with [`ApplyError::UnsupportedOnWindows`]. [`edited_bytes`] and plan checks
+//!   still work, so a dry run reports what would change. Names shaped like 8.3
 //!   short names (`GITHUB~1`) are refused on Windows, because the deny list
 //!   cannot expand them.
 
@@ -52,6 +53,8 @@ use std::fmt;
 
 use thiserror::Error;
 
+#[doc(hidden)]
+pub use edits::apply_edits_seam;
 pub use edits::{EditReport, apply_edits, edited_bytes};
 pub use plan::{EntryStatus, PlanEntry, PlanOptions, PlanReport, apply_plan};
 #[doc(hidden)]
@@ -104,9 +107,9 @@ pub enum ApplyError {
     /// A merge into an existing file needs a block-marker contract.
     #[error("merge into existing `{0}` is not supported yet")]
     MergeUnsupported(String),
-    /// Recipe writes are not available on Windows yet.
+    /// Writing is not available on Windows yet.
     #[error(
-        "`{0}`: recipe writes are not supported on Windows yet; the file-system layer \
+        "`{0}`: writes are not supported on Windows yet; the file-system layer \
          resolves rename, delete and create-directory through absolute paths that a \
          junction swap can redirect"
     )]

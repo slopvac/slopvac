@@ -27,6 +27,10 @@ ureq.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true, features = ["event"] }
 
+# O_NONBLOCK for opens in `apply`, so a swapped-in FIFO cannot block them.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 # Windows has no stable safe call for a file's hard-link count.
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"

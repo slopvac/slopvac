@@ -7,9 +7,11 @@ use std::path::Path;
 
 use serde_json::Value;
 use slopvac_plugins::apply::{
-    ApplyError, EntryStatus, HarnessWarning, PlanOptions, SeamStage, WriteOutcome, apply_edits,
+    ApplyError, EntryStatus, HarnessWarning, PlanOptions, apply_edits, apply_edits_seam,
     apply_plan, apply_plan_seam, edited_bytes,
 };
+#[cfg(unix)]
+use slopvac_plugins::apply::{SeamStage, WriteOutcome};
 use slopvac_plugins::hooks::{FixEdit, MAX_INSERTED_BYTES, RecipeAction, RecipeFile, Span};
 use tempfile::TempDir;
 
@@ -75,6 +77,16 @@ fn names(dir: &Path) -> Vec<String> {
         .collect();
     v.sort();
     v
+}
+
+/// The status of an entry that passed every check: planned, or refused on
+/// Windows, where nothing is ever applied.
+fn ok_status(path: &str) -> EntryStatus {
+    if cfg!(windows) {
+        EntryStatus::Refused(ApplyError::UnsupportedOnWindows(path.into()))
+    } else {
+        EntryStatus::Planned
+    }
 }
 
 fn only_status(report: &slopvac_plugins::apply::PlanReport, i: usize) -> &EntryStatus {
@@ -158,6 +170,8 @@ fn edits_reject_more_than_the_edit_count_limit() {
 
 // ---- apply_edits ----
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn apply_edits_rewrites_the_file_and_leaves_no_temporary_file() {
     let s = sandbox();
@@ -195,6 +209,8 @@ fn apply_edits_writes_nothing_when_the_edit_set_is_invalid() {
     assert_eq!(names(&s.root), ["a.md"]);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_edits_are_refused_when_the_file_changed_since_it_was_read() {
     let s = sandbox();
@@ -208,6 +224,8 @@ fn tm15_edits_are_refused_when_the_file_changed_since_it_was_read() {
     assert_eq!(names(&s.root), ["a.md"]);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_edits_are_refused_when_the_file_was_deleted() {
     let s = sandbox();
@@ -216,6 +234,8 @@ fn tm15_edits_are_refused_when_the_file_was_deleted() {
     assert_eq!(names(&s.root), Vec::<String>::new());
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_a_hardlinked_target_is_refused_and_both_names_keep_their_bytes() {
     let s = sandbox();
@@ -228,6 +248,8 @@ fn tm15_a_hardlinked_target_is_refused_and_both_names_keep_their_bytes() {
     assert_eq!(names(&s.root), ["a.md", "b.md"]);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_a_directory_target_is_refused() {
     let s = sandbox();
@@ -293,6 +315,8 @@ fn tm15_a_parent_symlink_that_stays_inside_the_root_is_allowed() {
 
 // ---- recipe plans ----
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn a_plan_creates_replaces_and_removes_files_under_the_root() {
     let s = sandbox();
@@ -326,6 +350,8 @@ fn a_plan_creates_replaces_and_removes_files_under_the_root() {
     assert_eq!(names(&s.root), ["docs", "old.md", "old.md.bak"]);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn a_plan_entry_with_identical_content_is_unchanged() {
     let s = sandbox();
@@ -342,6 +368,8 @@ fn a_plan_entry_with_identical_content_is_unchanged() {
     assert!(!report.wrote);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn a_dry_run_checks_everything_and_writes_nothing() {
     let s = sandbox();
@@ -357,6 +385,8 @@ fn a_dry_run_checks_everything_and_writes_nothing() {
     assert_eq!(names(&s.root), Vec::<String>::new());
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn merge_creates_a_missing_file_and_refuses_an_existing_one_until_markers_are_defined() {
     let s = sandbox();
@@ -446,7 +476,7 @@ fn h22_an_absolute_path_and_a_dot_dot_path_are_refused_and_nothing_is_written() 
         write_file("a/../../outside/up2.md", "x"),
     ];
     let report = apply_plan(&s.root, &plan, &PlanOptions::default());
-    assert_eq!(*only_status(&report, 0), EntryStatus::Planned);
+    assert_eq!(*only_status(&report, 0), ok_status("fine.md"));
     for i in 1..4 {
         assert!(
             matches!(
@@ -561,7 +591,14 @@ fn tm16_an_approval_covers_only_the_path_it_names() {
         Vec::<String>::new(),
         "plan is all or nothing"
     );
+}
 
+// Writes: Windows refuses these.
+#[cfg(unix)]
+#[test]
+fn tm16_approving_every_denied_path_lets_the_plan_apply() {
+    let s = sandbox();
+    let plan = [write_file(".env", "A=1"), write_file(".gitmodules", "m")];
     let report = apply_plan(&s.root, &plan, &approve(&[".env", ".gitmodules"]));
     assert!(!report.has_problems(), "{report:?}");
     assert!(report.entries.iter().all(|e| e.approved));
@@ -642,6 +679,8 @@ fn tm17_a_plan_marks_hook_and_mcp_entries_and_a_dry_run_writes_nothing() {
     assert_eq!(names(&s.root), Vec::<String>::new());
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm17_a_marked_plan_still_applies_when_the_caller_allows_writes() {
     let s = sandbox();
@@ -694,7 +733,7 @@ fn tm18_paths_that_differ_only_in_case_collide_inside_a_plan() {
     let s = sandbox();
     let plan = [write_file("Docs/A.md", "1"), write_file("docs/a.MD", "2")];
     let report = apply_plan(&s.root, &plan, &PlanOptions::default());
-    assert_eq!(*only_status(&report, 0), EntryStatus::Planned);
+    assert_eq!(*only_status(&report, 0), ok_status("Docs/A.md"));
     assert_eq!(
         *only_status(&report, 1),
         EntryStatus::Refused(ApplyError::DuplicatePath("docs/a.MD".into()))
@@ -724,6 +763,7 @@ fn tm18_a_path_that_differs_only_in_case_from_an_existing_file_is_refused() {
 
 // ---- review round 1 ----
 
+#[cfg(unix)]
 fn seam(
     s: &Sandbox,
     plan: &[RecipeFile],
@@ -801,6 +841,8 @@ fn tm16_a_missing_parent_replaced_by_a_symlink_after_the_check_fails_and_writes_
     );
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_a_hardlink_made_after_the_check_stops_a_plan_write() {
     let s = sandbox();
@@ -820,6 +862,8 @@ fn tm15_a_hardlink_made_after_the_check_stops_a_plan_write() {
     assert_eq!(names(&s.root), ["alias.md", "b.md"]);
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn a_failure_part_way_reports_done_failed_and_not_attempted_exactly() {
     let s = sandbox();
@@ -853,6 +897,8 @@ fn a_failure_part_way_reports_done_failed_and_not_attempted_exactly() {
     assert!(!s.root.join("c.md").exists());
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_a_remove_of_an_absent_file_does_not_delete_one_created_after_the_check() {
     let s = sandbox();
@@ -872,6 +918,8 @@ fn tm15_a_remove_of_an_absent_file_does_not_delete_one_created_after_the_check()
     );
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn tm15_a_remove_does_not_delete_a_file_that_changed_after_the_check() {
     let s = sandbox();
@@ -889,6 +937,8 @@ fn tm15_a_remove_does_not_delete_a_file_that_changed_after_the_check() {
     assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "new work");
 }
 
+// Writes: Windows refuses these (see the native Windows tests below).
+#[cfg(unix)]
 #[test]
 fn removing_a_file_in_a_missing_directory_is_absent_and_later_entries_still_apply() {
     let s = sandbox();
@@ -1004,4 +1054,58 @@ fn tm17_the_resolved_destination_is_marked_as_well_as_the_written_path() {
         report.entries[0].resolved.as_deref(),
         Some(".claude/settings.json")
     );
+}
+
+// ---- review round 2 ----
+
+#[test]
+fn h22_edits_are_validated_first_and_then_refused_on_windows() {
+    let s = sandbox();
+    fs::write(s.root.join("a.md"), "ab").unwrap();
+    let valid = apply_edits_seam(&s.root, "a.md", b"ab", &[edit(0, 1, "X")], true);
+    assert_eq!(valid, Err(ApplyError::UnsupportedOnWindows("a.md".into())));
+    let invalid = apply_edits_seam(&s.root, "a.md", b"ab", &[edit(0, 9, "X")], true);
+    assert!(matches!(invalid, Err(ApplyError::InvalidEdits(_))));
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "ab");
+    assert_eq!(names(&s.root), ["a.md"]);
+}
+
+#[test]
+fn the_preview_of_edits_still_works_where_writing_is_refused() {
+    assert_eq!(edited_bytes(b"ab", &[edit(0, 1, "X")]).unwrap(), b"Xb");
+}
+
+#[cfg(windows)]
+#[test]
+fn native_windows_apply_edits_refuses_and_leaves_the_file_alone() {
+    let s = sandbox();
+    fs::write(s.root.join("a.md"), "ab").unwrap();
+    let got = apply_edits(&s.root, "a.md", b"ab", &[edit(0, 1, "X")]);
+    assert_eq!(got, Err(ApplyError::UnsupportedOnWindows("a.md".into())));
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "ab");
+    assert_eq!(names(&s.root), ["a.md"]);
+}
+
+#[cfg(windows)]
+#[test]
+fn native_windows_plan_refuses_every_mutating_entry_in_a_dry_run_and_a_real_run() {
+    let s = sandbox();
+    fs::write(s.root.join("old.md"), "old").unwrap();
+    let plan = [
+        write_file("new.md", "x"),
+        file("old.md", RecipeAction::Remove, None),
+    ];
+    for options in [PlanOptions::default(), dry()] {
+        let report = apply_plan(&s.root, &plan, &options);
+        assert_eq!(
+            *only_status(&report, 0),
+            EntryStatus::Refused(ApplyError::UnsupportedOnWindows("new.md".into()))
+        );
+        assert_eq!(
+            *only_status(&report, 1),
+            EntryStatus::Refused(ApplyError::UnsupportedOnWindows("old.md".into()))
+        );
+        assert!(!report.wrote);
+    }
+    assert_eq!(names(&s.root), ["old.md"]);
 }

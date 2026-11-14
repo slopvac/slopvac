@@ -92,6 +92,10 @@ pub fn edited_bytes(source: &[u8], edits: &[FixEdit]) -> Result<Vec<u8>, ApplyEr
 /// documentation for the checks). The edits are validated before the file system
 /// is touched.
 ///
+/// On Windows nothing is written: the call returns
+/// [`ApplyError::UnsupportedOnWindows`] after the edits validate. Use
+/// [`edited_bytes`] to preview the result there.
+///
 /// # Errors
 /// [`ApplyError`] naming why the edits or the target were refused. The file is
 /// whole and unchanged on every error.
@@ -101,8 +105,34 @@ pub fn apply_edits(
     source: &[u8],
     edits: &[FixEdit],
 ) -> Result<EditReport, ApplyError> {
+    apply_edits_on(root, path, source, edits, cfg!(windows))
+}
+
+/// Test seam for [`apply_edits`]: pretend to run on `windows` (or not). Not
+/// part of the supported API.
+#[doc(hidden)]
+pub fn apply_edits_seam(
+    root: &Path,
+    path: &str,
+    source: &[u8],
+    edits: &[FixEdit],
+    windows: bool,
+) -> Result<EditReport, ApplyError> {
+    apply_edits_on(root, path, source, edits, windows)
+}
+
+fn apply_edits_on(
+    root: &Path,
+    path: &str,
+    source: &[u8],
+    edits: &[FixEdit],
+    windows: bool,
+) -> Result<EditReport, ApplyError> {
     let new = edited_bytes(source, edits)?;
-    let at = locate(root, path, cfg!(windows))?;
+    if windows {
+        return Err(ApplyError::UnsupportedOnWindows(path.to_owned()));
+    }
+    let at = locate(root, path, windows)?;
     let parent = at.open_parent()?;
     let outcome = replace(
         &parent,
