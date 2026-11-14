@@ -26,9 +26,6 @@ DEFAULT_RULES_DIR = (
     Path(__file__).resolve().parents[2] / "packages/slopvac-lint/src/slopvac/rules"
 )
 SCHEMA_VERSION = 3
-# Upper bound given to an unbounded quantifier inside a lookbehind. PCRE2 caps the
-# total lookbehind length at 255 characters; every shipped lookbehind stays below.
-LOOKBEHIND_REPEAT = 32
 ALLOWED_WORDS_PLACEHOLDER = "ALLOWED_WORDS"
 # Exceptions the 2.x engine resolves mechanically (engine.py, `"quotation" in
 # rule.exceptions`). Every other exception is an annotation-only reason.
@@ -36,13 +33,24 @@ MECHANICAL_DETECTORS = frozenset({"quotation"})
 LEXICAL_KINDS = frozenset({"tokens", "pattern", "substitution"})
 CHECK_KINDS = frozenset({"structure", "vocabulary"})
 
-_UNICODE_ESCAPE = re.compile(r"(?<!\\)((?:\\\\)*)\\u([0-9a-fA-F]{4})")
+# The only 2.x rule that carries an ALLOWED_WORDS placeholder; the 2.x loader
+# (rules._inject_heading_allow) substitutes it for this rule id alone.
+PLACEHOLDER_RULE_ID = "title-case-heading"
+CATEGORY_ID = re.compile(r"^[a-z][a-z0-9-]*$")
+
+_UNICODE_ESCAPE = re.compile(
+    r"(?<!\\)((?:\\\\)*)\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8}))"
+)
 _OPEN_ENDED_REPEAT = re.compile(r"\{(\d+),\}")
 
 
-def rewrite_unicode_escapes(pattern: str) -> str:
-    """PCRE2 has no ``\\uXXXX``; write ``\\x{XXXX}``."""
-    return _UNICODE_ESCAPE.sub(lambda m: f"{m.group(1)}\\x{{{m.group(2)}}}", pattern)
+class ConversionError(ValueError):
+    """A 2.x rule that cannot become a valid v3 rule without a human edit."""
+
+
+def unicode_escapes(pattern: str) -> list[str]:
+    """Return each ``\\uXXXX`` or ``\\UXXXXXXXX`` escape in ``pattern``."""
+    return [m.group(0)[len(m.group(1)) :] for m in _UNICODE_ESCAPE.finditer(pattern)]
 
 
 def _class_end(pattern: str, start: int) -> int:
@@ -65,64 +73,72 @@ def _class_end(pattern: str, start: int) -> int:
     return len(pattern)
 
 
-def bound_lookbehinds(pattern: str) -> tuple[str, bool]:
-    """Give every unbounded quantifier inside a lookbehind a finite maximum.
+def unbounded_lookbehinds(pattern: str) -> list[str]:
+    """Return each lookbehind in ``pattern`` that holds ``+``, ``*`` or ``{n,}``.
 
-    Returns the new pattern and whether anything changed. ``+`` becomes
-    ``{1,N}``, ``*`` becomes ``{0,N}`` and ``{n,}`` becomes ``{n,n+N}``, where N is
-    LOOKBEHIND_REPEAT. A quantifier inside a character class is a literal and stays.
+    A quantifier inside a character class is a literal and does not count.
     """
-    out: list[str] = []
-    stack: list[bool] = []
-    changed = False
+    found: list[str] = []
+    stack: list[tuple[int, bool]] = []  # (start, is_lookbehind)
+    flagged: set[int] = set()
     i = 0
     while i < len(pattern):
         ch = pattern[i]
         if ch == "\\":
-            out.append(pattern[i : i + 2])
             i += 2
         elif ch == "[":
-            end = _class_end(pattern, i)
-            out.append(pattern[i:end])
-            i = end
+            i = _class_end(pattern, i)
         elif ch == "(":
-            stack.append(pattern.startswith(("(?<=", "(?<!"), i))
-            out.append(ch)
+            stack.append((i, pattern.startswith(("(?<=", "(?<!"), i)))
             i += 1
         elif ch == ")":
             if stack:
-                stack.pop()
-            out.append(ch)
+                start, lookbehind = stack.pop()
+                if lookbehind and start in flagged:
+                    found.append(pattern[start : i + 1])
             i += 1
-        elif any(stack) and ch in "+*":
-            low = 1 if ch == "+" else 0
-            out.append(f"{{{low},{LOOKBEHIND_REPEAT}}}")
-            changed = True
-            i += 1
-        elif any(stack) and (m := _OPEN_ENDED_REPEAT.match(pattern, i)):
-            low = int(m.group(1))
-            out.append(f"{{{low},{low + LOOKBEHIND_REPEAT}}}")
-            changed = True
-            i = m.end()
         else:
-            out.append(ch)
-            i += 1
-    return "".join(out), changed
+            m = _OPEN_ENDED_REPEAT.match(pattern, i)
+            if ch in "+*" or m:
+                flagged.update(start for start, lb in stack if lb)
+            i = m.end() if m else i + 1
+    return found
 
 
 def to_pcre2(pattern: str) -> str:
-    """Rewrite a 2.x (Python ``regex``) pattern into the PCRE2 subset v3 allows."""
-    return bound_lookbehinds(rewrite_unicode_escapes(pattern))[0]
+    """Check that a 2.x pattern is already in the PCRE2 subset v3 allows.
+
+    The converter does not rewrite. It raises ConversionError for a ``\\u`` or
+    ``\\U`` escape (write the literal character, or ``\\x{...}`` in v3-only
+    rules) and for an unbounded lookbehind. The fix is a data edit to the rule.
+    """
+    if escapes := unicode_escapes(pattern):
+        raise ConversionError(
+            f"Unicode escape {escapes[0]!r}; write the literal character"
+        )
+    if bad := unbounded_lookbehinds(pattern):
+        raise ConversionError(f"unbounded lookbehind {bad[0]!r}")
+    return pattern
 
 
 def _convert_match(rule: dict) -> dict:
+    try:
+        return _convert_match_unchecked(rule)
+    except ConversionError as exc:
+        raise ConversionError(f"{rule['id']}: {exc}") from exc
+
+
+def _convert_match_unchecked(rule: dict) -> dict:
     kind = rule["kind"]
     match: dict = {"kind": kind}
     if kind == "tokens":
         match["tokens"] = list(rule["tokens"])
     elif kind == "pattern":
         match["pattern"] = to_pcre2(rule["pattern"])
-        if ALLOWED_WORDS_PLACEHOLDER in rule["pattern"]:
+        if (
+            rule["id"] == PLACEHOLDER_RULE_ID
+            and ALLOWED_WORDS_PLACEHOLDER in rule["pattern"]
+        ):
             match["placeholders"] = {ALLOWED_WORDS_PLACEHOLDER: "allowed-words"}
     elif kind == "substitution":
         match["substitutions"] = {
@@ -181,12 +197,14 @@ def convert_rule(rule: dict) -> dict:
     for key in ("ai_signal", "ai_signal_source"):
         if key in rule:
             out[key] = rule[key]
-    out["citation"] = dict(rule["provenance"])
+    out["citation"] = {k: v for k, v in rule["provenance"].items() if v is not None}
     return out
 
 
 def convert_category(category: dict) -> dict:
     """One 2.x category mapping to a v3 category instance."""
+    if not CATEGORY_ID.fullmatch(str(category.get("id", ""))):
+        raise ConversionError(f"invalid category id {category.get('id')!r}")
     out: dict = {
         "schema_version": SCHEMA_VERSION,
         "id": category["id"],
@@ -234,7 +252,11 @@ def main(argv: list[str] | None = None) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     tiers: dict[str, dict[str, str]] = {}
     for category in categories:
-        converted = convert_category(category)
+        try:
+            converted = convert_category(category)  # validates the id used below
+        except ConversionError as exc:
+            print(f"error: {category.get('id')}: {exc}", file=sys.stderr)
+            return 1
         path = args.out_dir / f"{converted['id']}.json"
         path.write_text(
             json.dumps(converted, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

@@ -19,3 +19,4 @@
 "placeholder-unknown-source.json" = "/match"
 "missing-citation.json" = ""
 "unknown-key.json" = ""
+"pattern-long-unicode-escape.json" = "/match"

@@ -12,10 +12,10 @@
       "pattern": "^[a-z][a-z0-9-]*$"
     },
     "Pcre2Pattern": {
-      "description": "A PCRE2 pattern (10.43 or later). The pattern may not contain a \\uXXXX escape: write \\x{XXXX}. A lookbehind must have a finite maximum length of at most 255 characters, so + , * and {n,} are not allowed inside one. The schema rejects the \\u escape; the loader compiles the rest.",
+      "description": "A PCRE2 pattern (10.43 or later). The pattern may not contain a \\uXXXX or \\UXXXXXXXX escape: write the literal character, or \\x{X...} in rule data written for v3. A lookbehind must have a finite maximum length of at most 255 characters, so + , * and {n,} are not allowed inside one. The schema rejects the \\u and \\U escapes; the loader compiles the rest.",
       "type": "string",
       "minLength": 1,
-      "not": {"pattern": "(?<!\\\\)(?:\\\\\\\\)*\\\\u"}
+      "not": {"pattern": "(?<!\\\\)(?:\\\\\\\\)*\\\\[uU]"}
     },
     "Scope": {
       "description": "Which text units a lexical rule sees. prose is every prose block without code, URLs and front matter. body-sentence is sentence minus heading and table blocks. raw is the unparsed source and is for formatting rules only.",

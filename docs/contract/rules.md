@@ -79,7 +79,8 @@ The engine runs them with JIT where the platform has it, under a match limit.
 The schema ([`Pcre2Pattern`](../../schemas/v3/rule.schema.json#/$defs/Pcre2Pattern)) enforces what a schema can.
 The loader compiles every pattern and rejects the rest.
 
-- No `\uXXXX` escape. Write `\x{XXXX}`. The schema rejects `\u`.
+- No `\uXXXX` or `\UXXXXXXXX` escape. Rule data uses the literal character or the PCRE2 form `\x{XXXX}`, never `\u`. The schema rejects `\u` and `\U`.
+  The converter does not rewrite 2.x data, because Python `regex` rejects `\x{...}`.
 - A lookbehind needs a finite maximum length of at most 255 characters.
   Use `{n,m}` instead of `+`, `*` or `{n,}` inside a lookbehind.
   Top-level alternatives may differ in length.
@@ -181,12 +182,14 @@ The mapping:
 - A null `good` in an example is dropped.
 - A judgement rule gets severity `suggestion`, as the 2.x loader forced.
 - A missing `severity` becomes `warning`, and a missing `scope` becomes `prose`.
-- `\uXXXX` becomes `\x{XXXX}`.
-- An unbounded quantifier inside a lookbehind gets an upper bound of 32 repeats.
-  Two lookbehinds in `prose-craft.future-tense` needed it.
-  The bound narrows what the lookbehind accepts:
-  a run of more than 32 whitespace characters before the anchor stops matching.
-- A pattern that contains `ALLOWED_WORDS` gets `match.placeholders`.
+- The converter fails, naming the rule id, on a `\u` or `\U` escape and on an unbounded
+  lookbehind. It does not rewrite either. PR #276 replaces the escapes with literal characters
+  and bounds the lookbehinds in the 2.x data. Until it merges, `prose-craft.future-tense`,
+  `ai-tells-formatting.emoji-list-markers` and `ai-tells-structure.negative-guarantee-core`
+  fail to convert, and the conversion test marks them as expected failures.
+- The `title-case-heading` pattern gets `match.placeholders` for `ALLOWED_WORDS`. No other rule is checked, because 2.x substitutes the placeholder for that rule alone.
+- A null member of `provenance` is dropped from `citation`.
+- A category id outside `[a-z][a-z0-9-]*` is rejected before any output path is built.
 
 ### Tier removal
 

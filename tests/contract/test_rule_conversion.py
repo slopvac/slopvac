@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,12 +13,26 @@ from referencing import Registry, Resource
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas" / "v3"
+# These rules hold \\u or \\U escapes or unbounded lookbehinds until PR #276
+# replaces them with literal characters and bounded lookbehinds. Strict xfail: the
+# marks must go in the PR that lands after #276 merges.
+PENDING_276_RULES = {
+    "prose-craft.future-tense",
+    "ai-tells-formatting.emoji-list-markers",
+    "ai-tells-structure.negative-guarantee-core",
+}
+PENDING_276 = pytest.mark.xfail(
+    strict=True,
+    raises=Exception,
+    reason="PR #276 (fix/pcre2-compatible-patterns) removes Unicode escapes and unbounded lookbehinds",
+)
 
 
 def _load_converter():
     path = ROOT / "scripts" / "contract" / "convert_rules_v2_to_v3.py"
     spec = importlib.util.spec_from_file_location("convert_rules_v2_to_v3", path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # the converter defines an exception class
     spec.loader.exec_module(module)
     return module
 
@@ -25,7 +40,7 @@ def _load_converter():
 convert = _load_converter()
 
 
-def _validator() -> Draft202012Validator:
+def _validator(fragment: str = "") -> Draft202012Validator:
     schemas = [
         json.loads(p.read_text(encoding="utf-8"))
         for p in sorted(SCHEMA_DIR.glob("*.schema.json"))
@@ -33,82 +48,156 @@ def _validator() -> Draft202012Validator:
     registry = Registry().with_resources(
         [(s["$id"], Resource.from_contents(s)) for s in schemas]
     )
-    category = next(s for s in schemas if s["$id"].endswith("/category.schema.json"))
-    return Draft202012Validator(category, registry=registry)
+    root = next(s for s in schemas if s["$id"].endswith("/category.schema.json"))
+    if fragment:
+        rule = next(s for s in schemas if s["$id"].endswith("/rule.schema.json"))
+        root = {"$ref": f"{rule['$id']}#/$defs/{fragment}"}
+    return Draft202012Validator(root, registry=registry)
 
 
 SOURCES = convert.load_categories(convert.DEFAULT_RULES_DIR)
-CONVERTED = [convert.convert_category(c) for c in SOURCES]
+PAIRS = [(c, r) for c in SOURCES for r in c["rules"]]
+
+
+def _case(category: dict, rule: dict):
+    qualified = f"{category['id']}.{rule['id']}"
+    marks = [PENDING_276] if qualified in PENDING_276_RULES else []
+    return pytest.param(category, rule, id=qualified, marks=marks)
+
+
+RULE_PARAMS = [_case(c, r) for c, r in PAIRS]
+
+
+def _errors(validator: Draft202012Validator, instance: object) -> list[str]:
+    return [
+        f"{'/'.join(map(str, e.absolute_path))}: {e.message[:120]}"
+        for e in validator.iter_errors(instance)
+    ]
+
+
+def _patterns(rule: dict) -> list[str]:
+    match = rule["match"]
+    return [p for p in [match.get("pattern"), *match.get("substitutions", {})] if p]
 
 
 def test_ruleset_has_categories() -> None:
     assert len(SOURCES) >= 20
 
 
-@pytest.mark.parametrize("category", CONVERTED, ids=lambda c: c["id"])
-def test_converted_category_validates(category: dict) -> None:
-    errors = [
-        f"{'/'.join(map(str, e.absolute_path))}: {e.message[:120]}"
-        for e in _validator().iter_errors(category)
+@pytest.mark.parametrize(("category", "rule"), RULE_PARAMS)
+def test_converted_rule_validates(category: dict, rule: dict) -> None:
+    converted = convert.convert_rule(rule)
+    assert _errors(_validator("Rule"), converted) == []
+
+
+@pytest.mark.parametrize("category", SOURCES, ids=lambda c: c["id"])
+def test_converted_category_envelope_validates(category: dict) -> None:
+    converted = convert.convert_category({**category, "rules": []})
+    assert _errors(_validator(), converted) == []
+
+
+def test_every_rule_but_the_pending_ones_converts_without_tiers() -> None:
+    converted = [
+        convert.convert_rule(rule)
+        for category, rule in PAIRS
+        if f"{category['id']}.{rule['id']}" not in PENDING_276_RULES
     ]
-    assert errors == []
+    assert len(converted) == len(PAIRS) - len(PENDING_276_RULES)
+    assert all("tiers" not in r for r in converted)
 
 
-def test_every_rule_is_converted_once_and_tiers_are_gone() -> None:
-    source_ids = [f"{c['id']}.{r['id']}" for c in SOURCES for r in c["rules"]]
-    converted_ids = [f"{c['id']}.{r['id']}" for c in CONVERTED for r in c["rules"]]
-    assert converted_ids == source_ids
-    assert all("tiers" not in r for c in CONVERTED for r in c["rules"])
-
-
-def test_converted_patterns_are_pcre2_clean() -> None:
-    for category in CONVERTED:
-        for rule in category["rules"]:
-            match = rule["match"]
-            patterns = [match.get("pattern", ""), *match.get("substitutions", {})]
-            for pattern in patterns:
-                assert convert.rewrite_unicode_escapes(pattern) == pattern
-                assert convert.bound_lookbehinds(pattern) == (pattern, False)
-
-
-@pytest.mark.parametrize(
-    ("source", "want"),
-    [
-        (r"(?<=\u2014\s)x", r"(?<=\x{2014}\s)x"),
-        (r"[\u00e9\u00e8]", r"[\x{00e9}\x{00e8}]"),
-        (r"\\u2014", r"\\u2014"),  # an escaped backslash then a literal u
-    ],
-)
-def test_unicode_escapes_become_pcre2_hex(source: str, want: str) -> None:
-    assert convert.rewrite_unicode_escapes(source) == want
-
-
-@pytest.mark.parametrize(
-    ("source", "want"),
-    [
-        (r"(?<=\bthat\s+)will", r"(?<=\bthat\s{1,32})will"),
-        (r"(?<!\w*)x", r"(?<!\w{0,32})x"),
-        (r"(?<=a{2,})x", r"(?<=a{2,34})x"),
-        (
-            r"(?<![\w*+])x",
-            r"(?<![\w*+])x",
-        ),  # quantifier characters in a class are literals
-        (r"\w+(?<=a)b*", r"\w+(?<=a)b*"),  # only lookbehinds change
-        (r"(?<=a\+)x", r"(?<=a\+)x"),
-    ],
-)
-def test_lookbehind_quantifiers_are_bounded(source: str, want: str) -> None:
-    assert convert.bound_lookbehinds(source)[0] == want
-
-
-def test_allowed_words_placeholder_is_declared() -> None:
-    rule = next(
-        r for c in CONVERTED for r in c["rules"] if r["id"] == "title-case-heading"
+@pytest.mark.parametrize(("category", "rule"), RULE_PARAMS)
+def test_converted_patterns_compile_with_pcre2(category: dict, rule: dict) -> None:
+    pcre2 = pytest.importorskip(
+        "pcre2", reason="python bindings for PCRE2 are not installed"
     )
-    assert rule["match"]["placeholders"] == {"ALLOWED_WORDS": "allowed-words"}
+    converted = convert.convert_rule(rule)
+    for pattern in _patterns(converted):
+        pcre2.compile(pattern)
 
 
-def test_judgement_is_forced_to_suggestion_and_quotation_gets_a_detector() -> None:
+@pytest.mark.parametrize(
+    ("source", "found"),
+    [
+        (r"(?<=\u2014\s)x", [r"\u2014"]),
+        (r"[\U0001F300-\U0001FAFF]", [r"\U0001F300", r"\U0001FAFF"]),
+        (r"\\u2014", []),  # an escaped backslash then a literal u
+        (r"\x{2014}", []),  # PCRE2-native, allowed
+        (r"caf\u00e9", [r"\u00e9"]),
+    ],
+)
+def test_unicode_escapes_are_found(source: str, found: list[str]) -> None:
+    assert convert.unicode_escapes(source) == found
+
+
+@pytest.mark.parametrize("escape", [r"\u2014", r"\U0001F680"])
+def test_unicode_escape_fails_with_the_rule_id(escape: str) -> None:
+    rule = {
+        "id": "esc-rule",
+        "name": "n",
+        "kind": "pattern",
+        "message": "m",
+        "pattern": f"a{escape}b",
+        "provenance": {"source": "s"},
+    }
+    with pytest.raises(convert.ConversionError, match="esc-rule"):
+        convert.convert_rule(rule)
+
+
+@pytest.mark.parametrize(
+    ("source", "found"),
+    [
+        (r"(?<=\bthat\s+)will", [r"(?<=\bthat\s+)"]),
+        (r"(?<!\w*)x", [r"(?<!\w*)"]),
+        (r"(?<=a{2,})x", [r"(?<=a{2,})"]),
+        (
+            r"(?<=\b(?:which|where)(?:\s+\w+){0,2}\s+)x",
+            [r"(?<=\b(?:which|where)(?:\s+\w+){0,2}\s+)"],
+        ),
+        (r"(?<![\w*+])x", []),  # quantifier characters in a class are literals
+        (r"(?<=a\+)x", []),
+        (r"(?<=a{1,8})x", []),
+        (r"\w+(?<=a)b*", []),  # only a quantifier inside a lookbehind counts
+    ],
+)
+def test_unbounded_lookbehinds_are_found(source: str, found: list[str]) -> None:
+    assert convert.unbounded_lookbehinds(source) == found
+
+
+def test_unbounded_lookbehind_fails_with_the_rule_id() -> None:
+    rule = {
+        "id": "bad-one",
+        "name": "n",
+        "kind": "pattern",
+        "message": "m",
+        "pattern": r"(?<=a+)b",
+        "provenance": {"source": "s"},
+    }
+    with pytest.raises(convert.ConversionError, match="bad-one"):
+        convert.convert_rule(rule)
+
+
+def test_allowed_words_placeholder_is_declared_for_title_case_only() -> None:
+    base = {
+        "name": "n",
+        "kind": "pattern",
+        "message": "m",
+        "pattern": "(?!ALLOWED_WORDS)x",
+        "provenance": {"source": "s"},
+    }
+    title = convert.convert_rule({**base, "id": "title-case-heading"})
+    other = convert.convert_rule({**base, "id": "something-else"})
+    assert title["match"]["placeholders"] == {"ALLOWED_WORDS": "allowed-words"}
+    assert "placeholders" not in other["match"]
+
+
+def test_shipped_title_case_heading_declares_the_placeholder() -> None:
+    rule = next(r for _, r in PAIRS if r["id"] == "title-case-heading")
+    converted = convert.convert_rule(rule)
+    assert converted["match"]["placeholders"] == {"ALLOWED_WORDS": "allowed-words"}
+
+
+def test_judgement_is_forced_to_suggestion() -> None:
     rule = convert.convert_rule(
         {
             "id": "r",
@@ -123,11 +212,113 @@ def test_judgement_is_forced_to_suggestion_and_quotation_gets_a_detector() -> No
     )
     assert rule["severity"] == "suggestion"
     assert rule["match"] == {"kind": "judgement", "question": "Is it so?"}
-    assert convert._convert_exception("quotation") == {
-        "name": "quotation",
-        "detector": "quotation",
+
+
+def test_rule_conversion_carries_allowlist_comparison_exceptions_and_drops_nulls() -> (
+    None
+):
+    source = {
+        "id": "long-metric",
+        "name": "Shorten it",
+        "kind": "metric",
+        "severity": "error",
+        "message": "too long",
+        "scope": "sentence",
+        "text_type": "procedural",
+        "metric": "sentence_words",
+        "threshold": 20,
+        "comparison": "gte",
+        "exceptions": ["quotation", "api-name"],
+        "allowlist": ["Foo Bar", "baz"],
+        "examples": [{"bad": "x", "good": None, "note": "n"}],
+        "fix": "Split it.",
+        "ai_signal": "weak",
+        "ai_signal_source": "catalog",
+        "tiers": {"strict": "enforced", "normal": "advisory", "relaxed": "excluded"},
+        "provenance": {"source": "ASD", "ste_ref": "9:1.2", "url": None, "note": None},
     }
-    assert convert._convert_exception("api-name") == {"name": "api-name"}
+    want = {
+        "id": "long-metric",
+        "name": "Shorten it",
+        "message": "too long",
+        "severity": "error",
+        "scope": "sentence",
+        "text_type": "procedural",
+        "match": {
+            "kind": "metric",
+            "metric": "sentence_words",
+            "threshold": 20,
+            "comparison": "gte",
+        },
+        "exceptions": [
+            {"name": "quotation", "detector": "quotation"},
+            {"name": "api-name"},
+        ],
+        "allowlist": ["Foo Bar", "baz"],
+        "examples": [{"bad": "x", "note": "n"}],
+        "fix": "Split it.",
+        "ai_signal": "weak",
+        "ai_signal_source": "catalog",
+        "citation": {"source": "ASD", "ste_ref": "9:1.2"},
+    }
+    assert convert.convert_rule(source) == want
+
+
+def test_lexical_options_move_into_match() -> None:
+    rule = convert.convert_rule(
+        {
+            "id": "t",
+            "name": "n",
+            "kind": "tokens",
+            "message": "m",
+            "tokens": ["a", "b"],
+            "ignore_case": False,
+            "match_all_caps": True,
+            "provenance": {"source": "s"},
+        }
+    )
+    assert rule["match"] == {
+        "kind": "tokens",
+        "tokens": ["a", "b"],
+        "ignore_case": False,
+        "match_all_caps": True,
+    }
+
+
+def test_category_conversion_keeps_budgets_weight_and_genres() -> None:
+    source = {
+        "id": "cat-one",
+        "title": "T",
+        "description": "D",
+        "weight": 0.8,
+        "max_per_100_words": {"strict": 0.4, "normal": 0.8},
+        "recommended_for": ["reference", "internal"],
+        "rules": [],
+    }
+    assert convert.convert_category(source) == {
+        "schema_version": 3,
+        "id": "cat-one",
+        "title": "T",
+        "description": "D",
+        "weight": 0.8,
+        "max_per_100_words": {"strict": 0.4, "normal": 0.8},
+        "recommended_for": ["reference", "internal"],
+        "rules": [],
+    }
+
+
+@pytest.mark.parametrize("bad", ["../evil", "a/b", "Upper", "", "..", "x\\y"])
+def test_category_id_is_validated_before_any_path_is_built(
+    bad: str, tmp_path: Path
+) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "x.yml").write_text(
+        f"id: '{bad}'\ntitle: t\ndescription: d\nrules: []\n", encoding="utf-8"
+    )
+    out = tmp_path / "out"
+    assert convert.main([str(out), "--rules-dir", str(rules_dir)]) == 1
+    assert [p for p in tmp_path.rglob("*.json")] == []
 
 
 def test_tiers_are_extracted_for_the_profile_mapping() -> None:
