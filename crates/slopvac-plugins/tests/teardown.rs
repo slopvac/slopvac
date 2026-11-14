@@ -45,6 +45,16 @@ fi
 /// A scratch directory and a config whose table helper runs `script`, with
 /// `deadline` for each teardown's walk.
 fn seam(name: &str, script: &str, deadline: Duration) -> (PathBuf, HostConfig) {
+    seam_capped(name, script, deadline, 1024)
+}
+
+/// [`seam`] with a cap of `max_held` held descendants per walk.
+fn seam_capped(
+    name: &str,
+    script: &str,
+    deadline: Duration,
+    max_held: usize,
+) -> (PathBuf, HostConfig) {
     let dir = scratch(name);
     let file = dir.join("table.sh");
     std::fs::write(&file, script).unwrap();
@@ -57,6 +67,7 @@ fn seam(name: &str, script: &str, deadline: Duration) -> (PathBuf, HostConfig) {
                 std::process::id().to_string().into(),
             ],
             deadline,
+            max_held,
         }),
         ..cfg()
     };
@@ -280,4 +291,24 @@ echo "{v} $leader {v} S $t"
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(gone, "the leader {leader:?} survived");
     assert!(untouched, "the unrelated process was signalled");
+}
+
+/// Reaching the cap on held descendants ends the walk as incomplete, and the
+/// descendant it already holds still dies.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_walk_that_reaches_its_cap_is_incomplete_and_kills_what_it_holds() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (dir, cfg) = seam_capped("cap", PS, WALK, 1);
+    let _p = start_mode("nested", &dir, &cfg);
+    // pids[0] left the group with `setsid`; its child pids[1] is past the cap.
+    let pids = pids_from(&dir.join("pids"));
+    let left = kill_all_live();
+    let held_gone = wait_gone(&pids[..1]);
+    end(&pids[1..]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(left.incomplete, "{left:?}");
+    assert!(held_gone, "the held descendant {} survived", pids[0]);
 }

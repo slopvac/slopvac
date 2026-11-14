@@ -136,6 +136,9 @@ pub struct TableSource {
     pub args: Vec<OsString>,
     /// How long one teardown may spend on the walk.
     pub deadline: Duration,
+    /// Most descendants outside the group that one walk holds. Production
+    /// holds up to 1,024.
+    pub max_held: usize,
 }
 
 #[derive(Default)]
@@ -461,7 +464,8 @@ mod unix {
     const PS_ARGS: [&str; 3] = ["-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="];
     /// Largest process table the host reads.
     pub(super) const TABLE_MAX_BYTES: usize = 4 << 20;
-    /// Most descendants outside the group that one walk holds.
+    /// Most descendants outside the group that one walk holds, unless the
+    /// seam sets another cap.
     const MAX_HELD: usize = 1024;
 
     pub(super) fn pid(raw: u32) -> Option<Pid> {
@@ -611,12 +615,13 @@ mod unix {
     /// Find the descendants of the stopped `leader` and its group that left
     /// the group: hold and stop each one that can be bound to its id, report
     /// the rest. Runs until a round finds nothing new, the table cannot be
-    /// read, `deadline` passes or [`MAX_HELD`] is reached; all but the first
+    /// read, `deadline` passes or the cap on held descendants is reached; all but the first
     /// leave the walk incomplete.
     pub(super) fn walk(leader: u32, source: Option<&TableSource>, deadline: Instant) -> Walk {
         let me = std::process::id();
         let mut held: Vec<Stray> = Vec::new();
         let mut left = Teardown::default();
+        let cap = source.map_or(MAX_HELD, |s| s.max_held);
         'rounds: loop {
             if Instant::now() >= deadline {
                 left.incomplete = true;
@@ -656,7 +661,7 @@ mod unix {
             let mut grew = false;
             for e in found {
                 match Stray::reach(e) {
-                    Reach::Held(s) if held.len() < MAX_HELD => {
+                    Reach::Held(s) if held.len() < cap => {
                         s.signal(Signal::STOP);
                         held.push(s);
                         grew = true;
