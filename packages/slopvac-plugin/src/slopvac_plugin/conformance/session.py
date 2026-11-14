@@ -129,6 +129,9 @@ class Session:
         self._max_messages = max_queued_messages
         self._max_queued_bytes = max_queued_bytes
         self._ids = 0
+        # Set by the handshake: the batch size and body size a request may use.
+        self.max_documents = 1
+        self.max_body_bytes = framing.PRE_INITIALIZE_LIMIT
         self._events: queue.Queue[tuple[str, Any, int]] = queue.Queue()
         self._lock = threading.Lock()
         self._output = 0

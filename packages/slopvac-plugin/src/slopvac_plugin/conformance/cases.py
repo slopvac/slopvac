@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import itertools
+import json
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,6 +148,11 @@ def handshake(s: Session, **options: Any) -> dict[str, Any]:
     )
     problems = s.schemas.errors("InitializeResult", result)
     require(not problems, f"initialize result breaks InitializeResult: {problems}")
+    limits = result["limits"]
+    s.max_documents = limits["maxBatchDocuments"]
+    s.max_body_bytes = min(
+        limits["maxMessageBytes"], options.get("max_message_bytes", MAX_MESSAGE_BYTES)
+    )
     s.notify("initialized", {})
     return result
 
@@ -240,11 +246,58 @@ def check_result(env: Env, kind: str, params: dict[str, Any], result: Any) -> No
             check_edits(doc, edits)
 
 
+ENVELOPE_BYTES = 256  # room for the JSON-RPC wrapper around the params
+
+
+def _size(params: dict[str, Any]) -> int:
+    text = json.dumps(params, separators=(",", ":"), ensure_ascii=False)
+    return len(text.encode("utf-8", "surrogatepass")) + ENVELOPE_BYTES
+
+
+def fits(s: Session, params: dict[str, Any]) -> bool:
+    """Whether one request stays inside the limits the plugin negotiated."""
+    documents = params.get("documents", [])
+    return len(documents) <= s.max_documents and _size(params) <= s.max_body_bytes
+
+
+def batches(s: Session, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Split a document request into requests that fit the negotiated limits.
+
+    The host respects maxBatchDocuments and maxMessageBytes (sections 2.2 and 5.3), so
+    the suite does too. A document that cannot fit alone goes out alone.
+    """
+    documents = params.get("documents")
+    if not documents:
+        return [params]
+    out: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    for document in documents:
+        trial = {**params, "documents": [*current, document]}
+        if current and not fits(s, trial):
+            out.append({**params, "documents": current})
+            current = []
+        current.append(document)
+    out.append({**params, "documents": current})
+    return out
+
+
+def send_hook(s: Session, kind: str, params: dict[str, Any]) -> Any:
+    """Send a hook request in as many batches as the limits need; join the results."""
+    joined: dict[str, Any] | None = None
+    for part in batches(s, params):
+        result = result_of(s.request(METHODS[kind], part))
+        if joined is None:
+            joined = result
+        elif isinstance(result, dict) and isinstance(result.get("results"), list):
+            joined = {**joined, "results": [*joined["results"], *result["results"]]}
+    return joined
+
+
 def call_hook(
     env: Env, s: Session, kind: str, hook_id: str, **extra: Any
 ) -> tuple[dict, Any]:
     params = {**env.params(kind, hook_id), **extra}
-    return params, result_of(s.request(METHODS[kind], params))
+    return params, send_hook(s, kind, params)
 
 
 def sentinel(s: Session) -> None:
@@ -330,7 +383,7 @@ def p5(env: Env) -> None:
             for doc in params.get("documents", []):
                 doc["x-doc"] = True
                 doc["futureDocField"] = None
-            check_result(env, kind, params, result_of(s.request(METHODS[kind], params)))
+            check_result(env, kind, params, send_hook(s, kind, params))
 
 
 @case(
@@ -364,10 +417,21 @@ def p7(env: Env) -> None:
         detail = "give inputs.<kind>.invalid_document" if kinds else "no document hook"
         raise CaseSkip(f"needs an invalid sample document: {detail}")
     with env.ready() as (s, _):
+        mixed: list[tuple[str, dict[str, Any]]] = []
         for kind, hook_id in todo:
             params = env.params(kind, hook_id)
             bad = env.inputs[kind]["invalid_document"]
             params["documents"] = [params["documents"][0], bad]
+            if fits(s, params):
+                mixed.append((kind, params))
+        if not mixed:
+            raise CaseSkip(
+                "the negotiated limits (maxBatchDocuments "
+                f"{s.max_documents}, maxMessageBytes {s.max_body_bytes}) "
+                "cannot hold a valid and an invalid document in one request"
+            )
+        for kind, params in mixed:
+            bad = env.inputs[kind]["invalid_document"]
             result = result_of(s.request(METHODS[kind], params))
             check_result(env, kind, params, result)
             by_id = {e["document"]: e for e in result["results"]}
@@ -400,7 +464,8 @@ def p9(env: Env) -> None:
     with env.ready() as (s, _):
         if hooks:
             kind, hook_id = hooks[0]
-            request_id = s.start_request(METHODS[kind], env.params(kind, hook_id))
+            first = batches(s, env.params(kind, hook_id))[0]
+            request_id = s.start_request(METHODS[kind], first)
             # One deadline from before the cancel write covers write and response.
             response = s.cancel_and_wait(request_id, env.cancel_grace)
             if "error" in response:

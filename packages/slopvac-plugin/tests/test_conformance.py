@@ -72,6 +72,15 @@ def test_plugin_with_every_hook_kind_passes_all_19_cases(tmp_path, quiet_cwd):
     assert statuses(report) == dict.fromkeys(ALL_IDS, "pass"), report.to_text()
 
 
+def test_plugin_with_a_one_document_batch_limit_passes_the_suite(quiet_cwd):
+    report = run_conformance(
+        script("one_document_plugin.py"), inputs=ALL_HOOKS_INPUTS, pass_env=SDK_ENV
+    )
+    assert report.failed == [], report.to_text()
+    # P7 needs a two-document batch, which this plugin refuses by contract.
+    assert statuses(report)["P7"] == "skip"
+
+
 def test_plugin_written_without_the_sdk_passes(quiet_cwd):
     report = run_conformance(script("raw_plugin.py"))
     assert report.failed == [], report.to_text()
