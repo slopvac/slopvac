@@ -38,6 +38,15 @@ pub struct TermSet {
 }
 
 impl TermSet {
+    /// The terms that ship with slopvac. They are versioned with the binary.
+    ///
+    /// # Panics
+    /// Never in a release: a unit test parses the bundled file.
+    #[must_use]
+    pub fn builtin() -> Self {
+        Self::from_file(&TermsFile::builtin())
+    }
+
     /// Compile terms. Later duplicates of a canonical spelling are ignored.
     #[must_use]
     pub fn new(entries: impl IntoIterator<Item = TermEntry>) -> Self {
