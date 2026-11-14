@@ -28,6 +28,15 @@ fn ste_preset_sets_the_normal_profile_levels() {
 }
 
 #[test]
+fn ste_preset_keeps_rules_that_two_x_ships_off_or_advisory() {
+    let r = resolve(&["ste".to_owned()], &BuiltinSource, true).unwrap();
+    let rules = &r.patch.rules;
+    assert_eq!(rules.len(), 18);
+    assert_eq!(rules["ste-practices.latin-abbreviation"], Level::Off);
+    assert_eq!(rules["ste-verbs.passive-voice"], Level::Suggestion);
+}
+
+#[test]
 fn every_bundled_preset_loads() {
     for name in BuiltinSource::names() {
         resolve(&[name.to_owned()], &BuiltinSource, true).unwrap();

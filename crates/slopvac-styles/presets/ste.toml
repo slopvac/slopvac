@@ -12,3 +12,26 @@ ste-safety = { severity = "error", max_per_100_words = 0.0, weight = 1.2 }
 ste-punctuation = { severity = "suggestion", max_per_100_words = 1.5, weight = 0.5 }
 ste-practices = { severity = "suggestion", max_per_100_words = 1.5, weight = 0.5 }
 ste-vocabulary = "off"
+
+# Rules whose 2.x normal-profile state differs from their category. Derived from
+# the Python engine (tests/test_style_presets.py checks it): advisory-tier rules
+# report as suggestions, and rules that 2.x ships off stay off.
+[rules]
+"ste-nouns.multiword-noun-too-long" = "suggestion"
+"ste-practices.gendered-or-exclusionary-language" = "off"
+"ste-practices.latin-abbreviation" = "off"
+"ste-practices.unclear-demonstrative-this" = "off"
+"ste-practices.unclear-pronoun" = "off"
+"ste-procedural.condition-after-command" = "suggestion"
+"ste-sentences.missing-article-or-determiner" = "suggestion"
+"ste-sentences.omitted-subject" = "suggestion"
+"ste-sentences.vertical-list-item-punctuation" = "suggestion"
+"ste-verbs.auxiliary-stacking" = "suggestion"
+"ste-verbs.complex-tense" = "suggestion"
+"ste-verbs.nominalized-action" = "suggestion"
+"ste-verbs.passive-voice" = "suggestion"
+"ste-verbs.verb-form-not-listed" = "suggestion"
+"ste-words.obligation-word-substitution" = "suggestion"
+"ste-words.verb-or-adjective-form-not-permitted" = "suggestion"
+"ste-words.word-outside-controlled-vocabulary" = "suggestion"
+"ste-words.word-used-in-wrong-part-of-speech" = "suggestion"
