@@ -12,7 +12,10 @@
 "ApiVersion--string.json" = ""
 "Severity--off.json" = ""
 <<<<<<< HEAD
+<<<<<<< HEAD
 "ConfigSource--unknown-layer.yaml" = "/layer"
 =======
+=======
+>>>>>>> ed617d9 (fix(contract): keep RuleId open to bare plugin ids)
 "RuleId--uppercase-pack.json" = ""
 >>>>>>> c9adc96f3b (feat(contract): define the v3 rule and category schemas)

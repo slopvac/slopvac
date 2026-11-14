@@ -13,7 +13,8 @@ A rule can also stand alone in its own file, which then carries `schema_version`
 
 A rule has a local `id` ([`LocalRuleId`](../../schemas/v3/rule.schema.json#/$defs/LocalRuleId)).
 Its qualified form is [`RuleId`](../../schemas/v3/common.schema.json#/$defs/RuleId):
-`<pack>:<category>.<rule>`, for example `core:prose-craft.acronym-periods`.
+`<pack>:<category>.<rule>` for a rule from a category file, for example `core:prose-craft.acronym-periods`.
+The schema accepts any `<pack>:<id>`, because a plugin can report a rule with a bare id such as `core:passive-voice`.
 The pack id comes from the pack manifest.
 Built-in rules live in the reserved pack `core`.
 The pack and category come from the manifest and the file, so a rule file does not restate them.
