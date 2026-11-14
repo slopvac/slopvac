@@ -141,9 +141,7 @@ def export_credentials(
         raise ModelCallError(f"could not resolve credentials for profile {profile!r}")
     expiry = None
     if data.get("Expiration"):
-        expiry = dt.datetime.fromisoformat(
-            str(data["Expiration"]).replace("Z", "+00:00")
-        )
+        expiry = dt.datetime.fromisoformat(str(data["Expiration"]))
     return (
         {
             env_name: data[key]
