@@ -1,7 +1,13 @@
 [profile.default]
 fail-fast = true
 
+# Timing-sensitive budget tests (module prefix `perf_budget::`) are noisy on the
+# shared matrix runners. They run only under the `perf` profile, serially.
+[test-groups]
+perf-serial = { max-threads = 1 }
+
 [profile.ci]
+default-filter = "not test(/^perf_budget::/)"
 fail-fast = false
 retries = 0
 failure-output = "immediate-final"
@@ -11,3 +17,14 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 
 [profile.ci.junit]
 path = "junit.xml"
+
+[profile.perf]
+fail-fast = false
+retries = 0
+failure-output = "immediate-final"
+slow-timeout = { period = "120s", terminate-after = 5 }
+default-filter = "test(/^perf_budget::/)"
+
+[[profile.perf.overrides]]
+filter = "test(/^perf_budget::/)"
+test-group = "perf-serial"
