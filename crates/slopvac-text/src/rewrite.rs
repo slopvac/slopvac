@@ -23,6 +23,9 @@ pub(crate) enum ClassItem<'a> {
     NonWord,
     /// A `-` that follows a class escape: a literal, never a range.
     Hyphen,
+    /// A numeric escape or a bare `[`, normalised so it stays one member when its
+    /// neighbours move: `\0`, `\101`, `\x4` and `\x{41}` all become `\x{..}`.
+    Codepoint(u32),
 }
 
 /// A piece of a pattern.
@@ -169,9 +172,14 @@ impl<'a> Tokenizer<'a> {
         if rest.starts_with("(?#") {
             self.skip_past(")");
         } else if let Some(verb) = rest.strip_prefix("(*") {
-            // `(*pla:` opens a group; any other `(*NAME)` is a verb.
-            let close = verb.find(')').unwrap_or(verb.len());
-            if verb[..close].contains(':') {
+            // `(*pla:` and the other lower-case names open a group. Every other
+            // `(*NAME)` or `(*NAME:argument)` is a verb whose argument, which may hold `#`,
+            // `[` or `\`, runs to the first `)`.
+            let name = verb.split([':', ')']).next().unwrap_or("");
+            let opens_group = verb[name.len()..].starts_with(':')
+                && !name.is_empty()
+                && name.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+            if opens_group {
                 self.extended.push(self.extended());
                 self.skip_past(":");
             } else {
@@ -230,31 +238,65 @@ impl<'a> Tokenizer<'a> {
                     self.bump();
                     let Some(n) = self.peek() else { return };
                     self.bump();
-                    let escape = match n {
+                    let item = match n {
                         'w' => Some(ClassItem::Word),
                         'W' => Some(ClassItem::NonWord),
+                        '0'..='7' => Some(ClassItem::Codepoint(self.digits(
+                            n.to_digit(8).unwrap_or(0),
+                            1,
+                            8,
+                            3,
+                        ))),
+                        '8' | '9' => Some(ClassItem::Codepoint(u32::from(n))),
+                        'x' if self.peek() != Some('{') => {
+                            Some(ClassItem::Codepoint(self.digits(0, 0, 16, 2)))
+                        }
                         _ => {
                             self.escape_tail(n);
                             None
                         }
                     };
-                    if let Some(item) = escape {
+                    if let Some(item) = item {
                         push_raw(&mut items, self.src, item_start, here);
                         items.push(item);
-                        if self.peek() == Some('-') {
+                        if matches!(item, ClassItem::Word | ClassItem::NonWord)
+                            && self.peek() == Some('-')
+                        {
                             self.bump();
                             items.push(ClassItem::Hyphen);
                         }
                         item_start = self.pos;
                     }
                 }
-                '[' if self.posix_class_len().is_some() => {
-                    self.pos += self.posix_class_len().unwrap_or(1);
+                '[' => {
+                    if let Some(len) = self.posix_class_len() {
+                        self.pos += len;
+                    } else {
+                        // A lone `[` becomes a code point, so a neighbour that is removed
+                        // cannot leave it next to `:` and form a POSIX class.
+                        push_raw(&mut items, self.src, item_start, here);
+                        items.push(ClassItem::Codepoint(u32::from('[')));
+                        self.bump();
+                        item_start = self.pos;
+                    }
                 }
                 _ => self.bump(),
             }
             first = false;
         }
+    }
+
+    /// Read digits in `radix` after `taken` of at most `max` have made `value`.
+    fn digits(&mut self, mut value: u32, mut taken: usize, radix: u32, max: usize) -> u32 {
+        while taken < max {
+            let Some(d) = self.peek().and_then(|c| c.to_digit(radix)) else {
+                break;
+            };
+            value = value * radix + d;
+            self.bump();
+            taken += 1;
+        }
+        value
     }
 
     /// The length of a `[:name:]` or `[:^name:]` at the cursor.
@@ -322,6 +364,9 @@ fn render_class(out: &mut String, negated: bool, items: &[ClassItem<'_>]) {
             ClassItem::Word => rest.push_str(WORD),
             ClassItem::NonWord => non_word = true,
             ClassItem::Hyphen => rest.push_str(r"\-"),
+            ClassItem::Codepoint(c) => {
+                let _ = write!(rest, "\\x{{{c:X}}}");
+            }
         }
     }
     if rest.starts_with('^') {

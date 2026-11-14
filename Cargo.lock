@@ -2148,6 +2148,7 @@ name = "slopvac-text"
 version = "0.0.0"
 dependencies = [
  "pcre2",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",

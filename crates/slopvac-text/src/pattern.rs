@@ -121,6 +121,10 @@ mod tests {
         assert_eq!(find_all(&re, "\u{903}x").unwrap(), []);
     }
 
+    fn no_spans() -> Vec<std::ops::Range<usize>> {
+        Vec::new()
+    }
+
     fn spans(pattern: &str, text: &str) -> Vec<std::ops::Range<usize>> {
         Pattern::new(pattern, false)
             .unwrap()
@@ -240,5 +244,57 @@ mod tests {
     #[test]
     fn a_posix_class_inside_a_class_is_kept() {
         assert_eq!(spans(r"[[:digit:]\w]+", "1a\u{903}-"), [0..5]);
+    }
+
+    #[test]
+    fn a_marker_verb_argument_is_opaque_in_extended_mode() {
+        // The `#` belongs to the marker name, not to a comment, so `\w` still rewrites.
+        assert_eq!(spans(r"(?x)(*MARK:#tag)\w+", "a\u{903}-"), [0..4]);
+        assert_eq!(spans(r"(?x)(*MARK:[a)\w+", "a\u{903}-"), [0..4]);
+    }
+
+    #[test]
+    fn a_verb_without_an_argument_is_opaque() {
+        assert_eq!(spans(r"(*UCP)\w+", "a\u{903}-"), [0..4]);
+        assert_eq!(spans(r"a(*COMMIT)\w+", "a\u{903}-"), [0..4]);
+    }
+
+    #[test]
+    fn an_alphabetic_assertion_still_opens_a_group() {
+        assert_eq!(spans("(*pla:(?x) a # c\n)a\\w", "a\u{903}b"), [0..4]);
+        assert_eq!(spans(r"(*positive_lookahead:\w)\w", "a"), [0..1]);
+        assert_eq!(spans(r"(*atomic:\w+)-", "a\u{903}-"), [0..5]);
+    }
+
+    #[test]
+    fn named_groups_and_assertions_open_groups() {
+        for open in [
+            "(?<n>", "(?P<n>", "(?'n'", "(?|", "(?>", "(?=", "(?!", "(?<=", "(?<!",
+        ] {
+            let pattern = format!("(?x: {open}a # c\n){close}\\w", close = ")");
+            assert!(Pattern::new(&pattern, false).is_ok(), "{pattern}");
+        }
+    }
+
+    #[test]
+    fn removing_a_non_word_escape_does_not_merge_octal_members() {
+        // `\0` then `0` are two members; joined they would read as the octal `\00`.
+        assert_eq!(spans(r"[\0\W0]+", "0-a"), [0..2]);
+        assert_eq!(spans(r"[^\0\W0]+", "0-a"), [2..3]);
+        assert_eq!(spans(r"[\1\W1]+", "1\u{1}-a"), [0..3]);
+    }
+
+    #[test]
+    fn numeric_escapes_in_a_class_keep_their_meaning_next_to_a_non_word_escape() {
+        assert_eq!(spans(r"[\101\W]+", "A-b"), [0..2]);
+        assert_eq!(spans(r"[\x41\W1]+", "A1-b"), [0..3]);
+        assert_eq!(spans(r"[\x4\W1]+", "\u{4}1-b"), [0..3]);
+        assert_eq!(spans(r"[\x\W1]+", "\u{0}1-b"), [0..3]);
+    }
+
+    #[test]
+    fn an_opening_bracket_does_not_join_a_posix_class_across_a_removed_escape() {
+        assert_eq!(spans(r"[[\W:alpha:]+", "[:a]"), [0..4]);
+        assert_eq!(spans(r"[[\W:alpha:]+", "z"), no_spans());
     }
 }

@@ -12,6 +12,9 @@ groups, alternation, quantifiers, `(?#...)` comments and `(?x)` mode with `#` co
 texts come from an alphabet of Unicode edge cases: spacing marks, joiners, superscripts,
 non-Latin digits and letters, emoji, and `#`, `[`, `]` and newlines.
 
+Verbs such as `(*MARK:#tag)` have no Python spelling, so they are not in the grammar;
+`slopvac-text`'s unit tests cover them.
+
 A pattern is kept only if Python compiles it and none of its matches is empty. Empty
 matches are skipped because the stub `find_iter` (STUB(slopvac-8l4.3.25)) drops an empty
 match next to a match, as the `pcre2` crate does.
@@ -47,6 +50,10 @@ ALPHABET = [
     ".",
     "1",
     "7",
+    "0",
+    "A",
+    "\x00",
+    "\x01",
     "\u00e9",  # e acute
     "\u0903",  # spacing mark (Mc)
     "\u0301",  # combining acute (Mn)
@@ -81,7 +88,28 @@ LITERALS = [
     " ",
 ]
 CLASS_ESCAPES = [r"\w", r"\W", r"\d", r"\s"]
-CLASS_ATOMS = ["a", "b", "x", "_", "1", "\u0903", "\u200d", ",", "a-z", "0-9", " "]
+# Numeric escapes sit next to `\W` and a literal digit on purpose: removing the `\W` must not
+# merge `\0` and `0` into the octal `\00`.
+CLASS_ATOMS = [
+    "a",
+    "b",
+    "x",
+    "_",
+    "1",
+    "0",
+    "A",
+    "\u0903",
+    "\u200d",
+    ",",
+    "a-z",
+    "0-9",
+    " ",
+    r"\0",
+    r"\1",
+    r"\01",
+    r"\101",
+    r"\x41",
+]
 COMMENTS = ["# [ \\w", "# ] \\b", "# plain"]
 
 
