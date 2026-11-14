@@ -121,20 +121,19 @@ jobs:
           uv run --project packages/slopvac-lint --extra dev python -m pytest -q \
             packages/slopvac-lint/tests/test_steering.py -k "$INVARIANTS"
 
-  # Rust workspace checks. nextest does not run doctests, and the skeleton has
-  # none yet; the baseline Rust CI bead adds `cargo test --doc` and rustdoc.
-  rust:
-    name: Rust (${{ matrix.os }})
+  # Rust workspace checks. Static checks run once on Linux; tests run on every
+  # supported target because platform behaviour (paths, line endings, PCRE2
+  # builds) differs. nextest does not run doctests, so they get their own step.
+  rust-static:
+    name: Rust static checks
     needs: changes
     if: >-
       needs.changes.outputs.force_all == 'true' ||
       needs.changes.outputs.rust == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTDOCFLAGS: -D warnings
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -148,19 +147,115 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
-        with:
-          tool: nextest@0.9.152
-
       - name: Check formatting
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Rustdoc
+        run: cargo doc --workspace --no-deps --document-private-items --locked
+
+  rust:
+    name: Rust (${{ matrix.name }})
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.rust == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, os: ubuntu-latest }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: linux-x64-musl, os: ubuntu-latest, target: x86_64-unknown-linux-musl, musl: true }
+          - { name: linux-arm64-musl, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, musl: true }
+          - { name: macos-arm64, os: macos-latest }
+          - { name: macos-x64, os: macos-15-intel }
+          - { name: windows-x64, os: windows-latest }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Add the musl target
+        if: matrix.musl
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools
+          rustup target add "$TARGET"
+          echo "CARGO_BUILD_TARGET=$TARGET" >> "$GITHUB_ENV"
+        env:
+          TARGET: ${{ matrix.target }}
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: nextest@0.9.152
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
+
+      - name: Doctests
+        run: cargo test --workspace --doc --locked
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.name }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  # The declared rust-version is a promise; build with exactly that toolchain.
+  rust-msrv:
+    name: Rust MSRV
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the declared MSRV
+        id: msrv
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          test -n "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install the MSRV toolchain
+        run: rustup toolchain install "$MSRV" --profile minimal
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: msrv
+
+      - name: Check
+        run: cargo "+$MSRV" check --workspace --all-targets --locked
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
 
   # Full repository test discovery on the newest supported Python. The root
   # pytest configuration includes both package tests and any repository-level
@@ -373,7 +468,9 @@ jobs:
       - changes
       - quick-lint
       - test
+      - rust-static
       - rust
+      - rust-msrv
       - lint-package
       - cli-e2e
       - action-contract
@@ -424,7 +521,9 @@ jobs:
           expected = {
               "quick-lint": True,
               "test": force_all or code,
+              "rust-static": force_all or rust,
               "rust": force_all or rust,
+              "rust-msrv": force_all or rust,
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,
