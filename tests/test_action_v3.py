@@ -1,0 +1,466 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import signal
+import stat
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "action_v3.py"
+FAKE_SLOPVAC = ROOT / ".github" / "action-fixtures" / "fake-slopvac.py"
+ACTION = ROOT / "action-v3" / "action.yml"
+SCHEMAS = ROOT / "schemas" / "v3"
+SPEC = importlib.util.spec_from_file_location("action_v3", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+action = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = action
+SPEC.loader.exec_module(action)
+
+PR = {
+    "EVENT_NAME": "pull_request",
+    "HEAD_REPO": "o/r",
+    "BASE_REPO": "o/r",
+    "ACTOR": "dev",
+}
+FORK = {**PR, "HEAD_REPO": "fork/r"}
+PUSH = {"EVENT_NAME": "push"}
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        (PR, ("github-pr-review", True)),
+        (FORK, ("github-pr-annotations", False)),
+        ({**PR, "ACTOR": "dependabot[bot]"}, ("github-pr-annotations", False)),
+        ({**PR, "HEAD_REPO": ""}, ("github-pr-annotations", False)),
+        ({**PR, "REPORTER": "annotations"}, ("github-pr-annotations", False)),
+        ({**FORK, "REPORTER": "review"}, ("github-pr-annotations", False)),
+        ({**PR, "REPORTER": "none"}, ("none", False)),
+        (PUSH, ("github-check", False)),
+    ],
+)
+def test_reporter_choice(env, expected):
+    assert action.choose_reporter(env) == expected
+
+
+def test_unknown_reporter_is_an_error():
+    with pytest.raises(action.ActionError, match="reporter must be"):
+        action.choose_reporter({**PR, "REPORTER": "slack"})
+
+
+FORMATS = ["json", "rdjsonl", "sarif", "codeclimate"]
+
+
+@pytest.fixture
+def binary(tmp_path):
+    """The stand-in binary, with every format exiting 0 unless a test says otherwise."""
+    target = tmp_path / "slopvac"
+    target.write_text(FAKE_SLOPVAC.read_text(encoding="utf-8"), encoding="utf-8")
+    target.chmod(target.stat().st_mode | stat.S_IXUSR)
+    return target
+
+
+@pytest.fixture
+def run(tmp_path, binary):
+    paths = tmp_path / "paths"
+    paths.write_bytes(b"docs/a.md\0docs/b c.md\0--odd.md\0")
+    github_output = tmp_path / "out"
+    base = {
+        "BINARY": str(binary),
+        "PATH_LIST": str(paths),
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_OUTPUT": str(github_output),
+        "FAKE_LOG": str(tmp_path / "log"),
+        "SARIF_FILE": str(tmp_path / "x.sarif"),
+        "CODECLIMATE_FILE": str(tmp_path / "x.json"),
+        **{f"FAKE_EXIT_{fmt.upper()}": "0" for fmt in FORMATS},
+    }
+
+    def go(**extra):
+        (tmp_path / "log").unlink(missing_ok=True)
+        github_output.unlink(missing_ok=True)
+        code = action.lint({**base, **extra})
+        log = [
+            json.loads(line)
+            for line in (tmp_path / "log").read_text(encoding="utf-8").splitlines()
+        ]
+        outputs = dict(
+            line.split("=", 1)
+            for line in github_output.read_text(encoding="utf-8").splitlines()
+        )
+        return code, log, outputs
+
+    return go
+
+
+def _format(argv):
+    return argv[argv.index("--format") + 1]
+
+
+def test_each_report_is_rendered_and_arguments_stay_whole(run, tmp_path):
+    code, log, outputs = run(FAKE_EXIT_JSON="1")
+    assert [_format(argv) for argv in log] == FORMATS
+    for argv in log:
+        assert argv[: argv.index("--format")] == ["--offline", "lint"]
+        assert argv[argv.index("--") :] == [
+            "--",
+            "docs/a.md",
+            "docs/b c.md",
+            "--odd.md",
+        ]
+    assert (code, outputs["findings"], outputs["passed"], outputs["score"]) == (
+        1,
+        "1",
+        "false",
+        "96.0",
+    )
+    assert outputs["sarif-file"] == str(tmp_path / "x.sarif")
+
+
+@pytest.mark.parametrize(
+    "env", [{}, {"OFFLINE": "false"}], ids=["default", "env-override"]
+)
+def test_every_lint_invocation_is_offline(run, env):
+    _, log, _ = run(**env)
+    assert len(log) == len(FORMATS)
+    assert all(argv[0] == "--offline" for argv in log)
+
+
+def test_rdjsonl_is_written_to_a_nested_workspace_path(run, tmp_path):
+    target = tmp_path / "reports" / "sub" / "slopvac.rdjsonl"
+    code, _, outputs = run(RDJSONL_FILE=str(target))
+    assert code == 0
+    assert outputs["rdjsonl-file"] == str(target)
+    assert json.loads(target.read_text(encoding="utf-8"))["source"] == {
+        "name": "slopvac"
+    }
+
+
+def test_rdjsonl_survives_a_findings_failure_at_the_requested_path(run, tmp_path):
+    target = tmp_path / "findings" / "findings.rdjsonl"
+    code, _, _ = run(RDJSONL_FILE=str(target), FAKE_EXIT_JSON="1")
+    assert code == 1
+    assert target.is_file()
+
+
+def test_the_lint_step_receives_the_rdjsonl_input():
+    action_yml = yaml.safe_load(ACTION.read_text(encoding="utf-8"))
+    assert action_yml["inputs"]["rdjsonl-file"]["default"]
+    assert _step("Lint")["env"]["RDJSONL_FILE"] == "${{ inputs.rdjsonl-file }}"
+
+
+def _fork_template_steps():
+    doc = (ROOT / "docs" / "ci" / "github-action.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```yaml\n(.*?)```", doc, re.DOTALL)
+    template = next(b for b in blocks if "slopvac-findings" in b)
+    workflow = yaml.safe_load(template.replace("# .github", "#"))
+    return workflow["jobs"]["lint"]["steps"]
+
+
+def test_fork_template_uploads_the_report_path_it_asks_the_action_to_write():
+    steps = _fork_template_steps()
+    written = next(s for s in steps if s.get("id") == "slopvac")["with"]["rdjsonl-file"]
+    upload = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
+    assert upload["if"] == f"${{{{ !cancelled() && hashFiles('{written}') != '' }}}}"
+    assert Path(written).parent.as_posix() == upload["with"]["path"]
+
+
+def test_reports_can_be_switched_off(run):
+    _, log, _ = run(SARIF="false", CODECLIMATE="false")
+    assert [_format(argv) for argv in log] == ["json", "rdjsonl"]
+
+
+def test_threshold_flags_reach_every_run(run):
+    _, log, _ = run(MIN_SCORE="80", MAX_PER_100="2.5", CONFIG="ci/slopvac.toml")
+    expected = ["--config", "ci/slopvac.toml", "--min-score", "80"]
+    expected += ["--max-per-100-words", "2.5"]
+    for argv in log:
+        start = argv.index("--config")
+        assert argv[start : start + 6] == expected
+
+
+@pytest.mark.parametrize(
+    ("env", "code"),
+    [
+        ({"FAKE_EXIT_JSON": "1"}, 1),
+        ({"FAKE_EXIT_JSON": "1", "FAIL_ON_FINDINGS": "false"}, 0),
+        ({"FAKE_EXIT_RDJSONL": "1"}, 0),
+        ({}, 0),
+    ],
+)
+def test_findings_exit_is_the_only_softened_verdict(run, env, code):
+    assert run(**env)[0] == code
+
+
+CRASHES = [
+    pytest.param({"EXIT": "2"}, id="exit-2"),
+    pytest.param({"EXIT": "3"}, id="exit-3"),
+    pytest.param({"EXIT": "70"}, id="exit-70"),
+    pytest.param({"SIGNAL": str(int(signal.SIGKILL))}, id="killed-by-signal"),
+]
+
+
+@pytest.mark.parametrize("fail_on_findings", ["true", "false"])
+@pytest.mark.parametrize("crash", CRASHES)
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_an_unexpected_end_fails_from_every_invocation(
+    run, fmt, crash, fail_on_findings
+):
+    env = {f"FAKE_{kind}_{fmt.upper()}": value for kind, value in crash.items()}
+    code, log, _ = run(FAIL_ON_FINDINGS=fail_on_findings, **env)
+    assert code == 2
+    assert [_format(argv) for argv in log] == FORMATS  # the other reports still ran
+
+
+def test_no_targets_passes_without_running_the_binary(tmp_path):
+    paths = tmp_path / "paths"
+    paths.write_bytes(b"")
+    out = tmp_path / "out"
+    code = action.lint(
+        {"PATH_LIST": str(paths), "GITHUB_OUTPUT": str(out), "BINARY": "/nonexistent"}
+    )
+    assert (code, out.read_text(encoding="utf-8")) == (0, "passed=true\n")
+
+
+# ---- plugins sync ------------------------------------------------------------
+
+
+@pytest.fixture
+def sync(tmp_path, binary):
+    lock = tmp_path / ".slopvac" / "packs.lock"
+
+    def go(*, locked: bool, **extra):
+        if locked:
+            lock.parent.mkdir(exist_ok=True)
+            lock.write_text("schema_version = 1\n", encoding="utf-8")
+        log = tmp_path / "log"
+        log.unlink(missing_ok=True)
+        env = {"BINARY": str(binary), "FAKE_LOG": str(log), "LOCKFILE": str(lock)}
+        code = action.sync({**env, **extra})
+        calls = (
+            [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
+            if log.exists()
+            else []
+        )
+        return code, calls
+
+    return go
+
+
+def test_a_lockfile_syncs_packs(sync, binary):
+    assert sync(locked=True) == (0, [["plugins", "sync"]])
+
+
+def test_no_lockfile_means_no_sync(sync):
+    assert sync(locked=False) == (0, [])
+
+
+@pytest.mark.parametrize("status", ["1", "2", "70"])
+def test_a_failed_sync_fails_the_action(sync, status):
+    assert sync(locked=True, FAKE_EXIT_SYNC=status)[0] == 2
+
+
+def _steps():
+    return yaml.safe_load(ACTION.read_text(encoding="utf-8"))["runs"]["steps"]
+
+
+def test_sync_is_a_named_step_before_the_lint_step():
+    names = [step["name"] for step in _steps()]
+    assert names.index("Sync packs") < names.index("Lint")
+    sync_step = _steps()[names.index("Sync packs")]
+    assert sync_step["run"].endswith('action_v3.py" sync')
+    assert "continue-on-error" not in sync_step
+
+
+# ---- reviewdog ---------------------------------------------------------------
+
+RD_FAKE = """#!/usr/bin/env python3
+import json, os, sys
+reporter = [a for a in sys.argv if a.startswith("-reporter=")][0].split("=", 1)[1]
+with open(os.environ["RD_LOG"], "a") as log:
+    log.write(json.dumps({"argv": sys.argv[1:], "stdin": sys.stdin.read()}) + "\\n")
+sys.exit(1 if reporter in os.environ.get("RD_FAIL", "").split(",") else 0)
+"""
+
+
+@pytest.fixture
+def report(tmp_path):
+    reviewdog = tmp_path / "reviewdog"
+    reviewdog.write_text(RD_FAKE, encoding="utf-8")
+    reviewdog.chmod(reviewdog.stat().st_mode | stat.S_IXUSR)
+    rdjsonl = tmp_path / "slopvac.rdjsonl"
+    rdjsonl.write_text('{"message": "m"}\n', encoding="utf-8")
+    log = tmp_path / "rd.log"
+
+    def go(env, **extra):
+        log.unlink(missing_ok=True)
+        base = {
+            "REVIEWDOG": str(reviewdog),
+            "RDJSONL": str(rdjsonl),
+            "RD_LOG": str(log),
+        }
+        code = action.report({**env, **base, **extra})
+        calls = (
+            [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
+            if log.exists()
+            else []
+        )
+        return (
+            code,
+            [
+                next(a for a in c["argv"] if a.startswith("-reporter="))[10:]
+                for c in calls
+            ],
+            calls,
+        )
+
+    return go
+
+
+@pytest.mark.parametrize(
+    ("env", "fail", "attempts"),
+    [
+        pytest.param(PR, "", ["github-pr-review"], id="writable-same-repo"),
+        pytest.param(
+            PR,
+            "github-pr-review",
+            ["github-pr-review", "github-pr-annotations"],
+            id="read-only-same-repo",
+        ),
+        pytest.param(FORK, "", ["github-pr-annotations"], id="fork"),
+        pytest.param(
+            FORK, "github-pr-annotations", ["github-pr-annotations"], id="fork-failing"
+        ),
+        pytest.param(PUSH, "", ["github-check"], id="push"),
+        pytest.param(
+            PR,
+            "github-pr-review,github-pr-annotations",
+            ["github-pr-review", "github-pr-annotations"],
+            id="both-fail",
+        ),
+        pytest.param({**PR, "REPORTER": "none"}, "", [], id="none"),
+    ],
+)
+def test_reporter_attempts_never_gate(report, env, fail, attempts):
+    code, seen, _ = report(env, RD_FAIL=fail)
+    assert (code, seen) == (0, attempts)
+
+
+def test_reviewdog_reads_the_rdjsonl_report(report):
+    _, _, calls = report(PR)
+    assert calls[0]["argv"][0] == "-f=rdjsonl"
+    assert calls[0]["stdin"] == '{"message": "m"}\n'
+
+
+def test_a_missing_reviewdog_only_warns(report, capsys):
+    code, _, _ = report(PR, REVIEWDOG="/nonexistent/reviewdog")
+    assert code == 0
+    assert "::warning" in capsys.readouterr().out
+
+
+def test_the_fallback_is_logged(report, capsys):
+    report(PR, RD_FAIL="github-pr-review")
+    assert "falling back to github-pr-annotations" in capsys.readouterr().out
+
+
+def test_a_missing_report_file_only_warns(report):
+    code, seen, _ = report(PR, RDJSONL="/nonexistent.rdjsonl")
+    assert (code, seen) == (0, [])
+
+
+def test_reviewdog_install_failure_does_not_fail_the_action():
+    install = next(s for s in _steps() if s["name"] == "Install reviewdog")
+    assert install["continue-on-error"] is True
+
+
+# ---- reports are contract-valid and reach their consumers --------------------
+
+
+@pytest.fixture
+def reports(tmp_path, run):
+    _, _, outputs = run(FAKE_EXIT_JSON="1")
+    return {
+        fmt: Path(outputs[f"{fmt}-file"]).read_text(encoding="utf-8") for fmt in FORMATS
+    }
+
+
+def test_the_json_report_matches_the_lint_report_schema(reports):
+    schemas = [json.loads(p.read_text("utf-8")) for p in SCHEMAS.glob("*.schema.json")]
+    registry = Registry().with_resources(
+        [(s["$id"], Resource.from_contents(s)) for s in schemas]
+    )
+    schema = json.loads((SCHEMAS / "lint-report.schema.json").read_text("utf-8"))
+    errors = list(
+        Draft202012Validator(schema, registry=registry).iter_errors(
+            json.loads(reports["json"])
+        )
+    )
+    assert errors == []
+
+
+def test_the_rdjsonl_report_is_one_diagnostic_per_line(reports):
+    lines = reports["rdjsonl"].splitlines()
+    assert len(lines) == 1
+    diagnostic = json.loads(lines[0])
+    assert diagnostic["location"]["path"] == "docs/a.md"
+    assert diagnostic["location"]["range"]["start"] == {"line": 4, "column": 12}
+    assert diagnostic["message"] and diagnostic["severity"] == "WARNING"
+
+
+def test_the_sarif_report_has_one_result(reports):
+    sarif = json.loads(reports["sarif"])
+    assert sarif["version"] == "2.1.0"
+    (run_,) = sarif["runs"]
+    assert run_["tool"]["driver"]["name"] == "slopvac"
+    (result,) = run_["results"]
+    region = result["locations"][0]["physicalLocation"]["region"]
+    assert (result["ruleId"], region["startLine"]) == (
+        "core:prose-inflation.slop-lexicon",
+        4,
+    )
+
+
+def test_the_codeclimate_report_is_an_issue_array(reports):
+    (issue,) = json.loads(reports["codeclimate"])
+    assert issue["type"] == "issue"
+    assert issue["location"] == {"path": "docs/a.md", "lines": {"begin": 4, "end": 4}}
+    assert re.fullmatch(r"[0-9a-f]{32}", issue["fingerprint"])
+
+
+def _step(name):
+    return next(s for s in _steps() if s["name"] == name)
+
+
+def test_sarif_upload_reads_the_lint_output_with_the_category():
+    upload = _step("Upload SARIF to code scanning")
+    assert upload["with"] == {
+        "sarif_file": "${{ steps.lint.outputs.sarif-file }}",
+        "category": "${{ inputs.sarif-category }}",
+    }
+
+
+def test_codeclimate_artifact_reads_the_lint_output():
+    upload = _step("Upload the Code Climate report")
+    assert upload["with"]["path"] == "${{ steps.lint.outputs.codeclimate-file }}"
+
+
+def test_reviewdog_reads_the_lint_rdjsonl_output():
+    assert (
+        _step("Report with reviewdog")["env"]["RDJSONL"]
+        == "${{ steps.lint.outputs.rdjsonl-file }}"
+    )
+
+
+def test_expressions_reach_scripts_only_through_env_and_actions_are_pinned():
+    for step in _steps():
+        assert "${{" not in step.get("run", ""), step["name"]
+        if "uses" in step and not step["uses"].startswith("./"):
+            assert re.search(r"@[0-9a-f]{40}$", step["uses"]), step["uses"]
