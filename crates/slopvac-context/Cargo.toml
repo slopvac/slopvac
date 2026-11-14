@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+clap = { workspace = true }
+globset = { workspace = true }
 pcre2 = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
