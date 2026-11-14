@@ -1,0 +1,1113 @@
+//! Safe extraction of `.tar.gz` artifacts into a content-addressed store
+//! (threat model section 6.5, E1 to E9).
+//!
+//! The extractor never calls `Archive::unpack`. It walks entries itself and
+//! accepts only regular files and directories. It ignores modes and owners,
+//! refuses any path that is not a plain relative name, stops at hard limits
+//! while streaming, writes into a private staging directory with exclusive
+//! creation, hashes the tree, and renames it atomically into the store.
+
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufRead, Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
+
+use flate2::read::MultiGzDecoder;
+use sha2::{Digest as _, Sha256};
+use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
+
+use crate::hooks::check_relative_path;
+
+/// Limits from the threat model, section 5.5.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// Compressed layer size.
+    pub compressed_bytes: u64,
+    /// Expanded size of one artifact.
+    pub expanded_bytes: u64,
+    /// Largest expanded-to-compressed ratio, checked once 1 MiB has expanded.
+    pub max_ratio: u64,
+    /// Entries in one archive.
+    pub entries: usize,
+    /// Files, directories (implicit parents included) and the executable list in
+    /// one tree. Values above the verification ceiling of 20 000 are clamped to
+    /// it, so every extracted tree also verifies.
+    pub nodes: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            compressed_bytes: 64 << 20,
+            expanded_bytes: 256 << 20,
+            max_ratio: 100,
+            entries: 10_000,
+            nodes: MAX_TREE_NODES,
+        }
+    }
+}
+
+/// Name of the sidecar that records which files are executable. It sits at the
+/// tree root and is hashed like any other file, so the executable set is part of
+/// the tree hash on every platform instead of depending on file system modes.
+const EXEC_SIDECAR: &str = ".slopvac-exec";
+/// Largest GNU long name or PAX header block the extractor reads into memory.
+const MAX_META_BYTES: u64 = 64 * 1024;
+/// Ceiling on nodes (files, directories and the sidecar) in a stored tree.
+/// Extraction and verification charge the same [`NodeBudget`], and extraction
+/// clamps its limit to this ceiling, so a tree that extracts also verifies.
+const MAX_TREE_NODES: usize = 20_000;
+/// Deepest directory nesting verification accepts (path segments).
+const MAX_TREE_DEPTH: usize = 32;
+/// Most bytes tree verification hashes.
+const MAX_TREE_BYTES: u64 = 256 << 20;
+/// Longest sidecar line: a path of at most 1024 bytes plus its newline.
+const MAX_SIDECAR_LINE: u64 = 1025;
+
+/// Counts the nodes a tree occupies on disk: every file, every directory that
+/// holds something (including implicit parents of nested files) and the sidecar.
+struct NodeBudget {
+    used: usize,
+    limit: usize,
+}
+
+impl NodeBudget {
+    fn new(limit: usize) -> Self {
+        Self {
+            used: 0,
+            limit: limit.min(MAX_TREE_NODES),
+        }
+    }
+
+    fn charge(&mut self, n: usize) -> Result<(), ExtractError> {
+        self.used = self.used.saturating_add(n);
+        if self.used > self.limit {
+            return Err(refused(format!(
+                "tree has more than {} files and directories",
+                self.limit
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// The ancestors of `rel` (`a`, `a/b`, ...) that are not in `dirs` yet.
+fn new_parents(dirs: &HashSet<String>, rel: &str) -> Vec<String> {
+    rel.match_indices('/')
+        .map(|(i, _)| &rel[..i])
+        .filter(|d| !dirs.contains(*d))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Why an artifact was refused. Any error leaves the store unchanged.
+#[derive(Debug, Error)]
+pub enum ExtractError {
+    /// The archive breaks a rule.
+    #[error("archive refused: {0}")]
+    Refused(String),
+    /// The archive is not valid gzip or tar.
+    #[error("archive is malformed: {0}")]
+    Malformed(String),
+    /// A cached tree differs from its recorded hash.
+    #[error("cached tree {path} does not match its hash")]
+    Tampered {
+        /// The tree.
+        path: PathBuf,
+    },
+    /// A file system operation failed.
+    #[error("{what}: {source}")]
+    Io {
+        /// The operation.
+        what: String,
+        /// The cause.
+        #[source]
+        source: io::Error,
+    },
+}
+
+fn refused(msg: impl Into<String>) -> ExtractError {
+    ExtractError::Refused(msg.into())
+}
+
+fn io_err(what: impl Into<String>) -> impl FnOnce(io::Error) -> ExtractError {
+    let what = what.into();
+    move |source| ExtractError::Io { what, source }
+}
+
+/// `sha256:<hex>` over the file records of a tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TreeHash(String);
+
+impl TreeHash {
+    /// The `sha256:...` string.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Only the hex part.
+    #[must_use]
+    pub fn hex(&self) -> &str {
+        &self.0[7..]
+    }
+}
+
+impl std::fmt::Display for TreeHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push(char::from(b"0123456789abcdef"[usize::from(b >> 4)]));
+        s.push(char::from(b"0123456789abcdef"[usize::from(b & 15)]));
+    }
+    s
+}
+
+/// One extracted file: relative path, executable flag, content digest and size.
+struct FileRecord {
+    path: String,
+    executable: bool,
+    sha: [u8; 32],
+    len: u64,
+}
+
+fn tree_hash_of(mut files: Vec<FileRecord>) -> TreeHash {
+    files.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    let mut h = Sha256::new();
+    for f in files {
+        h.update(b"F\0");
+        h.update(f.path.as_bytes());
+        h.update(b"\0");
+        h.update([u8::from(f.executable)]);
+        h.update(f.len.to_be_bytes());
+        h.update(f.sha);
+    }
+    TreeHash(format!("sha256:{}", hex(&h.finalize())))
+}
+
+/// The result of a successful extraction.
+#[derive(Debug, Clone)]
+pub struct Extracted {
+    /// Final directory inside the store.
+    pub root: PathBuf,
+    /// Hash of the tree.
+    pub hash: TreeHash,
+    /// Files written.
+    pub files: usize,
+    /// Expanded bytes.
+    pub bytes: u64,
+    /// Where a cached tree that failed verification and was too large to delete
+    /// was moved. It still occupies storage until the operator removes it.
+    pub quarantined: Option<PathBuf>,
+}
+
+/// What [`evict`] did with a tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Evicted {
+    /// The tree is gone.
+    Removed,
+    /// The tree was past the walk bounds and was renamed, whole, to this path.
+    /// It keeps using storage until the operator deletes it.
+    Quarantined(PathBuf),
+}
+
+/// What [`clean_staging`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StagingReport {
+    /// Stale staging directories deleted.
+    pub removed: usize,
+    /// Stale staging directories renamed aside instead of deleted, with their
+    /// new paths, for callers to report as retained storage.
+    pub quarantined: Vec<PathBuf>,
+}
+
+struct Counting<R> {
+    inner: R,
+    seen: Arc<AtomicU64>,
+    limit: u64,
+}
+
+impl<R: Read> Read for Counting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        let total = self.seen.fetch_add(n as u64, Ordering::SeqCst) + n as u64;
+        if total > self.limit {
+            return Err(io::Error::other(format!(
+                "compressed size exceeds {} bytes",
+                self.limit
+            )));
+        }
+        Ok(n)
+    }
+}
+
+/// Guards the expanded size and ratio while the tar reader pulls bytes.
+struct Guarded<R> {
+    inner: R,
+    expanded: u64,
+    compressed: Arc<AtomicU64>,
+    limits: Limits,
+}
+
+impl<R: Read> Read for Guarded<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.expanded += n as u64;
+        if self.expanded > self.limits.expanded_bytes {
+            return Err(io::Error::other(format!(
+                "expanded size exceeds {} bytes",
+                self.limits.expanded_bytes
+            )));
+        }
+        let comp = self.compressed.load(Ordering::SeqCst).max(1);
+        if self.expanded > (1 << 20) && self.expanded / comp > self.limits.max_ratio {
+            return Err(io::Error::other(format!(
+                "compression ratio exceeds {} to 1",
+                self.limits.max_ratio
+            )));
+        }
+        Ok(n)
+    }
+}
+
+fn normalise_entry_path(raw: &[u8]) -> Result<String, ExtractError> {
+    let s = std::str::from_utf8(raw).map_err(|_| refused("entry path is not UTF-8"))?;
+    let s = s.strip_prefix("./").unwrap_or(s);
+    let s = s.strip_suffix('/').unwrap_or(s);
+    check_name(s).map_err(|e| refused(format!("entry path `{}`: {e}", s.escape_debug())))?;
+    Ok(s.to_owned())
+}
+
+/// `dir` without a trailing separator or `.` component. Either spelling would
+/// make `lstat` follow a root symlink; `components()` drops both. Every public
+/// function that inspects a caller-supplied root uses this once, then works on
+/// the result only.
+fn normalised(dir: &Path) -> PathBuf {
+    dir.components().collect()
+}
+
+/// The one name rule for extraction and verification. A colon would open an NTFS
+/// alternate data stream that directory listing hides.
+fn check_name(s: &str) -> Result<(), String> {
+    check_relative_path(s)?;
+    if s.contains(':') {
+        return Err("colon in path".into());
+    }
+    Ok(())
+}
+
+/// Claim `path` in the namespace. A directory may repeat with the same spelling;
+/// anything else that folds to the same key is a collision.
+fn claim(
+    names: &mut HashMap<String, (String, bool)>,
+    path: &str,
+    is_dir: bool,
+) -> Result<(), ExtractError> {
+    let keys = collision_keys(path);
+    for key in &keys {
+        match names.get(key) {
+            None => {}
+            Some((orig, true)) if is_dir && orig == path => {}
+            Some((orig, _)) => return Err(refused(format!("`{path}` collides with `{orig}`"))),
+        }
+    }
+    for key in keys {
+        names
+            .entry(key)
+            .or_insert_with(|| (path.to_owned(), is_dir));
+    }
+    Ok(())
+}
+
+/// Every parent is a directory; a path may be claimed once, by one spelling.
+fn claim_with_parents(
+    names: &mut HashMap<String, (String, bool)>,
+    rel: &str,
+    is_dir: bool,
+) -> Result<(), ExtractError> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let mut parent = String::new();
+    for seg in &parts[..parts.len() - 1] {
+        if !parent.is_empty() {
+            parent.push('/');
+        }
+        parent.push_str(seg);
+        claim(names, &parent, true)?;
+    }
+    claim(names, rel, is_dir)
+}
+
+/// Keys under which two names count as the same file. Names collide when any
+/// key matches; the prefixes keep the two key spaces apart.
+///
+/// The canonical key is the caseless match of Unicode 3.13 (D145):
+/// `NFD(toCasefold(NFD(x)))`. The case fold is the full, table-backed
+/// `CaseFolding.txt` fold from the `caseless` crate, so `ς` and `Σ` meet at `σ`
+/// and both `ß` and `ẞ` become `ss`, with none of the context rules of
+/// `str::to_lowercase`.
+///
+/// That fold is not a superset of file system equivalence. NTFS compares names
+/// by an uppercase table, which merges `I` with the dotless `ı` (U+0131) where
+/// default folding keeps them apart. The second key models it: NFC, then simple
+/// per-character uppercasing, keeping a character whose uppercase is more than
+/// one character. The keys can merge more names than a given file system does,
+/// which only refuses more archives; pack paths are not limited to ASCII, so
+/// refusing non-ASCII names was not an option.
+fn collision_keys(path: &str) -> [String; 2] {
+    let decomposed: String = path.nfd().collect();
+    let canonical: String = caseless::default_case_fold_str(&decomposed).nfd().collect();
+    let upper: String = path
+        .nfc()
+        .map(|c| {
+            let mut up = c.to_uppercase();
+            match (up.next(), up.next()) {
+                (Some(u), None) => u,
+                _ => c,
+            }
+        })
+        .collect();
+    [format!("c:{canonical}"), format!("n:{upper}")]
+}
+
+#[cfg(unix)]
+fn create_file(path: &Path, executable: bool) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(if executable { 0o755 } else { 0o644 })
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn create_file(path: &Path, _executable: bool) -> io::Result<File> {
+    OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
+#[cfg(not(unix))]
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    let mut perms = fs::metadata(path)?.permissions();
+    perms.set_readonly(mode & 0o222 == 0);
+    fs::set_permissions(path, perms)
+}
+
+/// Create the store and restrict it to the owner. The caller chose this path, so
+/// a link at the store root itself is followed.
+///
+/// On Unix this sets mode 0700. On Windows it only clears the read-only
+/// attribute: no ACL is written, because that needs either `unsafe` Win32 calls
+/// or a new dependency. The directory therefore keeps the ACL it inherits from
+/// its parent, and the store must live under a per-user location such as
+/// `%LOCALAPPDATA%`. This is a documented residual risk (CWE-732).
+fn ensure_private_dir(path: &Path) -> Result<(), ExtractError> {
+    fs::create_dir_all(path).map_err(io_err(format!("creating {}", path.display())))?;
+    set_mode(path, 0o700).map_err(io_err(format!("securing {}", path.display())))
+}
+
+/// Create or reuse a directory the store owns (`.staging`) and restrict it to the
+/// owner. A link, a non-directory, or on Unix a directory owned by someone else
+/// is refused before any permission change, so a planted link cannot redirect
+/// the chmod (CWE-59).
+fn ensure_private_child(path: &Path) -> Result<(), ExtractError> {
+    match fs::create_dir(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(io_err(format!("creating {}", path.display()))(e)),
+    }
+    let meta = inspect_private_child(path)?
+        .ok_or_else(|| refused(format!("{} vanished while securing it", path.display())))?;
+    secure_checked(path, &meta)
+}
+
+#[cfg(unix)]
+fn check_owner(path: &Path, meta: &fs::Metadata) -> Result<(), ExtractError> {
+    use std::os::unix::fs::MetadataExt;
+    if meta.uid() != rustix::process::getuid().as_raw() {
+        return Err(refused(format!(
+            "{} is owned by another user",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+fn check_owner(_: &Path, _: &fs::Metadata) -> Result<(), ExtractError> {
+    Ok(())
+}
+
+/// Inspect a directory the store owns without following links or changing it:
+/// `None` when absent, a refusal for a link, a non-directory, or (Unix) a
+/// directory owned by someone else.
+fn inspect_private_child(path: &Path) -> Result<Option<fs::Metadata>, ExtractError> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_err(format!("inspecting {}", path.display()))(e)),
+    };
+    if !meta.is_dir() {
+        return Err(refused(format!(
+            "{} is a link or not a directory",
+            path.display()
+        )));
+    }
+    check_owner(path, &meta)?;
+    Ok(Some(meta))
+}
+
+#[cfg(unix)]
+fn secure_checked(path: &Path, meta: &fs::Metadata) -> Result<(), ExtractError> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    check_owner(path, meta)?;
+    // chmod through a handle, and make sure the handle is the directory that was
+    // inspected, so a swap between the check and the open changes nothing.
+    let dir = File::open(path).map_err(io_err(format!("opening {}", path.display())))?;
+    let opened = dir
+        .metadata()
+        .map_err(io_err(format!("inspecting {}", path.display())))?;
+    if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
+        return Err(refused(format!("{} changed while opening", path.display())));
+    }
+    dir.set_permissions(fs::Permissions::from_mode(0o700))
+        .map_err(io_err(format!("securing {}", path.display())))
+}
+
+#[cfg(not(unix))]
+fn secure_checked(path: &Path, _: &fs::Metadata) -> Result<(), ExtractError> {
+    set_mode(path, 0o700).map_err(io_err(format!("securing {}", path.display())))
+}
+
+/// Extract a `.tar.gz` stream into `store` and return the final tree.
+///
+/// `executable` lists the relative paths that become mode 0755. Everything else
+/// is 0644. Archive modes and owners are ignored. On success the tree is
+/// read-only and sits at `store/tree-<hex>`. On any error nothing is left in
+/// the store except possibly an unreferenced staging directory, which
+/// [`clean_staging`] removes.
+///
+/// # Errors
+/// [`ExtractError::Refused`] for a rule violation, [`ExtractError::Malformed`]
+/// for bad gzip or tar, [`ExtractError::Io`] for file system failures.
+pub fn extract_targz<S: std::hash::BuildHasher>(
+    archive: impl Read,
+    store: &Path,
+    executable: &HashSet<String, S>,
+    limits: Limits,
+) -> Result<Extracted, ExtractError> {
+    ensure_private_dir(store)?;
+    let staging_parent = store.join(".staging");
+    ensure_private_child(&staging_parent)?;
+    let staging = tempfile::Builder::new()
+        .prefix("x-")
+        .tempdir_in(&staging_parent)
+        .map_err(io_err("creating the staging directory"))?;
+    let root = staging.path().join("tree");
+    fs::create_dir(&root).map_err(io_err("creating the tree directory"))?;
+
+    let result = unpack(archive, &root, store, executable, limits);
+    // Discarded copies (a duplicate of a stored tree, or a failed install) can be
+    // sealed, which TempDir cannot delete. Unseal and remove them here.
+    let leftover = if root.exists() {
+        evict(&root).map(drop)
+    } else {
+        Ok(())
+    };
+    let closed = staging
+        .close()
+        .map_err(io_err("removing the staging directory"));
+    let out = result?;
+    leftover?;
+    closed?;
+    Ok(out)
+}
+
+fn unpack<S: std::hash::BuildHasher>(
+    archive: impl Read,
+    root: &Path,
+    store: &Path,
+    executable: &HashSet<String, S>,
+    limits: Limits,
+) -> Result<Extracted, ExtractError> {
+    let seen = Arc::new(AtomicU64::new(0));
+    let counted = Counting {
+        inner: archive,
+        seen: Arc::clone(&seen),
+        limit: limits.compressed_bytes,
+    };
+    // Every gzip member passes through the same guards.
+    let guarded = Guarded {
+        inner: MultiGzDecoder::new(counted),
+        expanded: 0,
+        compressed: Arc::clone(&seen),
+        limits,
+    };
+    let mut tar = tar::Archive::new(guarded);
+    let malformed = |e: io::Error| ExtractError::Malformed(e.to_string());
+
+    let mut files: Vec<FileRecord> = Vec::new();
+    let mut exec_paths: Vec<String> = Vec::new();
+    let mut names: HashMap<String, (String, bool)> = HashMap::new();
+    claim(&mut names, EXEC_SIDECAR, false)?;
+    let mut count = 0usize;
+    let mut budget = NodeBudget::new(limits.nodes);
+    let mut dirs: HashSet<String> = HashSet::new();
+    let mut bytes = 0u64;
+    let mut pending_name: Option<Vec<u8>> = None;
+
+    // Raw entries: the tar crate's own preprocessing allocates sparse
+    // descriptors before any type check, so long names and PAX records are
+    // handled here with a size bound.
+    for entry in tar.entries().map_err(malformed)?.raw(true) {
+        let mut entry = entry.map_err(malformed)?;
+        count += 1;
+        if count > limits.entries {
+            return Err(refused(format!("more than {} entries", limits.entries)));
+        }
+        let kind = entry.header().entry_type();
+        if kind.is_gnu_sparse() {
+            return Err(refused("sparse entries are not accepted"));
+        }
+        if kind.is_gnu_longname() {
+            let mut name = read_meta(&mut entry)?;
+            if let Some(nul) = name.iter().position(|&b| b == 0) {
+                name.truncate(nul);
+            }
+            set_pending(&mut pending_name, name)?;
+            continue;
+        }
+        if kind.is_pax_local_extensions() {
+            for path in pax_paths(&read_meta(&mut entry)?)? {
+                set_pending(&mut pending_name, path)?;
+            }
+            continue;
+        }
+        let is_dir = kind.is_dir();
+        if !(kind.is_file() || is_dir) {
+            return Err(refused(format!(
+                "entry type {kind:?} is not a regular file or directory"
+            )));
+        }
+        let raw_name = pending_name
+            .take()
+            .unwrap_or_else(|| entry.path_bytes().into_owned());
+        let rel = normalise_entry_path(&raw_name)?;
+        claim_with_parents(&mut names, &rel, is_dir)?;
+        if is_dir {
+            continue;
+        }
+        let parents = new_parents(&dirs, &rel);
+        budget.charge(parents.len() + 1)?;
+        dirs.extend(parents);
+        let exec = executable.contains(&rel);
+        let rec = write_entry(&mut entry, root, rel, exec)?;
+        bytes += rec.len;
+        if exec {
+            exec_paths.push(rec.path.clone());
+        }
+        files.push(rec);
+    }
+    if pending_name.is_some() {
+        return Err(ExtractError::Malformed(
+            "a long name describes no entry".into(),
+        ));
+    }
+    // Drain what follows the tar end marker so trailing data counts against the limits.
+    let mut rest = tar.into_inner();
+    io::copy(&mut rest, &mut io::sink()).map_err(malformed)?;
+
+    let file_count = files.len();
+    if !exec_paths.is_empty() {
+        budget.charge(1)?;
+    }
+    if let Some(rec) = write_sidecar(root, &mut exec_paths)? {
+        files.push(rec);
+    }
+
+    let hash = tree_hash_of(files);
+    let exec_set: HashSet<&str> = exec_paths.iter().map(String::as_str).collect();
+    let (final_dir, quarantined) = install(root, store, &hash, &exec_set)?;
+    Ok(Extracted {
+        quarantined,
+        root: final_dir,
+        hash,
+        files: file_count,
+        bytes,
+    })
+}
+
+/// Write the executable list into the staged tree and return its record.
+fn write_sidecar(
+    root: &Path,
+    exec_paths: &mut [String],
+) -> Result<Option<FileRecord>, ExtractError> {
+    if exec_paths.is_empty() {
+        return Ok(None);
+    }
+    exec_paths.sort();
+    let sidecar = sidecar_bytes(exec_paths);
+    let mut out = create_file(&root.join(EXEC_SIDECAR), false)
+        .map_err(io_err("creating the executable list"))?;
+    out.write_all(&sidecar)
+        .map_err(io_err("writing the executable list"))?;
+    Ok(Some(FileRecord {
+        path: EXEC_SIDECAR.to_owned(),
+        executable: false,
+        sha: Sha256::digest(&sidecar).into(),
+        len: sidecar.len() as u64,
+    }))
+}
+
+/// The `path` records of a PAX block. Records that change sizes or sparse
+/// layout are refused, since the extractor reads entries raw.
+fn pax_paths(block: &[u8]) -> Result<Vec<Vec<u8>>, ExtractError> {
+    let mut paths = Vec::new();
+    for ext in tar::PaxExtensions::new(block) {
+        let ext = ext.map_err(|e| ExtractError::Malformed(e.to_string()))?;
+        let key = ext.key().map_err(|_| refused("PAX key is not UTF-8"))?;
+        if key == "path" {
+            paths.push(ext.value_bytes().to_vec());
+        } else if key == "size" || key.starts_with("GNU.sparse") {
+            return Err(refused(format!("PAX record `{key}` is not accepted")));
+        }
+    }
+    Ok(paths)
+}
+
+/// Write one regular file into the staged tree and record its digest.
+fn write_entry(
+    entry: &mut tar::Entry<'_, impl Read>,
+    root: &Path,
+    rel: String,
+    exec: bool,
+) -> Result<FileRecord, ExtractError> {
+    let target = root.join(&rel);
+    if let Some(dir) = target.parent() {
+        fs::create_dir_all(dir).map_err(io_err("creating a directory"))?;
+    }
+    let mut out = create_file(&target, exec).map_err(io_err(format!("creating `{rel}`")))?;
+    let declared = entry
+        .header()
+        .size()
+        .map_err(|e| ExtractError::Malformed(e.to_string()))?;
+    let (sha, len) = hash_stream(entry, Some(&mut out), &rel, None)?;
+    if len != declared {
+        return Err(ExtractError::Malformed(format!(
+            "`{rel}` is shorter than its header says"
+        )));
+    }
+    Ok(FileRecord {
+        path: rel,
+        executable: exec,
+        sha,
+        len,
+    })
+}
+
+fn sidecar_bytes(sorted: &[String]) -> Vec<u8> {
+    let mut out = String::new();
+    for p in sorted {
+        out.push_str(p);
+        out.push('\n');
+    }
+    out.into_bytes()
+}
+
+fn set_pending(slot: &mut Option<Vec<u8>>, name: Vec<u8>) -> Result<(), ExtractError> {
+    if slot.replace(name).is_some() {
+        return Err(refused("two names describe the same entry"));
+    }
+    Ok(())
+}
+
+/// Read a long-name or PAX block, refusing one over [`MAX_META_BYTES`].
+fn read_meta(entry: &mut impl Read) -> Result<Vec<u8>, ExtractError> {
+    let mut buf = Vec::new();
+    entry
+        .take(MAX_META_BYTES + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| ExtractError::Malformed(e.to_string()))?;
+    if buf.len() as u64 > MAX_META_BYTES {
+        return Err(refused(format!(
+            "extension header larger than {MAX_META_BYTES} bytes"
+        )));
+    }
+    Ok(buf)
+}
+
+/// Seal the staged tree and move it to its content-addressed place. Returns the
+/// final directory and, if a corrupt cached tree had to be set aside, where.
+fn install(
+    root: &Path,
+    store: &Path,
+    hash: &TreeHash,
+    exec: &HashSet<&str>,
+) -> Result<(PathBuf, Option<PathBuf>), ExtractError> {
+    seal(root, root, exec)?;
+    let final_dir = store.join(format!("tree-{}", hash.hex()));
+    let mut quarantined = None;
+    match fs::rename(root, &final_dir) {
+        Ok(()) => {}
+        Err(_) if final_dir.exists() => {
+            // Another process stored the same tree first. Keep it only if it verifies.
+            if verify_tree(&final_dir, hash).is_err() {
+                if let Evicted::Quarantined(aside) = evict(&final_dir)? {
+                    quarantined = Some(aside);
+                }
+                fs::rename(root, &final_dir).map_err(io_err("storing the tree"))?;
+            }
+        }
+        Err(e) => {
+            return Err(ExtractError::Io {
+                what: "storing the tree".into(),
+                source: e,
+            });
+        }
+    }
+    // Renaming a directory needs write access to it, so the root is sealed last.
+    set_mode(&final_dir, 0o555).map_err(io_err("sealing the tree"))?;
+    Ok((final_dir, quarantined))
+}
+
+/// Read `src` to the end, hash it and optionally copy it to `sink`.
+fn hash_stream(
+    src: &mut dyn Read,
+    mut sink: Option<&mut File>,
+    what: &str,
+    cap: Option<u64>,
+) -> Result<([u8; 32], u64), ExtractError> {
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut len = 0u64;
+    loop {
+        let n = src
+            .read(&mut buf)
+            .map_err(|e| ExtractError::Malformed(format!("`{what}`: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        if let Some(out) = sink.as_deref_mut() {
+            out.write_all(&buf[..n])
+                .map_err(io_err(format!("writing `{what}`")))?;
+        }
+        len += n as u64;
+        if cap.is_some_and(|c| len > c) {
+            return Err(refused(format!("`{what}` is larger than allowed")));
+        }
+    }
+    Ok((hasher.finalize().into(), len))
+}
+
+/// Make files read-only and directories non-writable, bottom-up. The base
+/// directory itself is left for the caller, which seals it last.
+fn seal(base: &Path, dir: &Path, exec: &HashSet<&str>) -> Result<(), ExtractError> {
+    for entry in fs::read_dir(dir).map_err(io_err("reading a directory"))? {
+        let entry = entry.map_err(io_err("reading a directory"))?;
+        let path = entry.path();
+        let ty = entry.file_type().map_err(io_err("inspecting an entry"))?;
+        if ty.is_dir() {
+            seal(base, &path, exec)?;
+            set_mode(&path, 0o555).map_err(io_err("sealing a directory"))?;
+        } else {
+            let rel = path
+                .strip_prefix(base)
+                .ok()
+                .and_then(Path::to_str)
+                .map(|r| r.replace('\\', "/"))
+                .unwrap_or_default();
+            let mode = if exec.contains(rel.as_str()) {
+                0o555
+            } else {
+                0o444
+            };
+            set_mode(&path, mode).map_err(io_err("sealing a file"))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o100 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_: &Path) -> bool {
+    false
+}
+
+/// Recompute the hash of a stored tree.
+///
+/// Refuses anything but regular files and directories, a root that is a link,
+/// names the extractor would refuse, and trees past the entry, depth or size
+/// bounds. The walk is iterative. The executable set comes from the sidecar
+/// file, so the result is the same on every platform; on Unix the file modes
+/// must also match it.
+///
+/// # Errors
+/// [`ExtractError::Refused`] for a link, special file, bad name or bound
+/// breach, [`ExtractError::Io`] for read failures.
+pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
+    let dir = normalised(dir);
+    let dir = dir.as_path();
+    let root_meta = fs::symlink_metadata(dir).map_err(io_err("inspecting the tree root"))?;
+    if !root_meta.is_dir() {
+        return Err(refused("the tree root is a link or not a directory"));
+    }
+    let mut files = Vec::new();
+    let mut names: HashMap<String, (String, bool)> = HashMap::new();
+    let mut stack = vec![(dir.to_owned(), String::new())];
+    let mut nodes = NodeBudget::new(MAX_TREE_NODES);
+    let mut budget = MAX_TREE_BYTES;
+    let mut sidecar: Option<PathBuf> = None;
+    let mut on_disk_exec: HashSet<String> = HashSet::new();
+    while let Some((path, prefix)) = stack.pop() {
+        for entry in fs::read_dir(&path).map_err(io_err("reading a directory"))? {
+            let entry = entry.map_err(io_err("reading a directory"))?;
+            nodes.charge(1)?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| refused("a file name is not UTF-8"))?;
+            let rel = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            check_name(&rel).map_err(|e| refused(format!("`{}`: {e}", rel.escape_debug())))?;
+            let child = entry.path();
+            let meta = fs::symlink_metadata(&child).map_err(io_err("inspecting an entry"))?;
+            if meta.is_dir() {
+                claim(&mut names, &rel, true)?;
+                stack.push((child, rel));
+            } else if meta.is_file() {
+                claim(&mut names, &rel, false)?;
+                if meta.len() > budget {
+                    return Err(refused(format!("`{rel}` exceeds the tree size bound")));
+                }
+                if is_executable(&child) {
+                    on_disk_exec.insert(rel.clone());
+                }
+                let mut f = File::open(&child).map_err(io_err(format!("reading `{rel}`")))?;
+                let (sha, len) = hash_stream(&mut f, None, &rel, Some(budget))?;
+                budget -= len;
+                if rel == EXEC_SIDECAR {
+                    sidecar = Some(child.clone());
+                }
+                files.push(FileRecord {
+                    path: rel,
+                    executable: false,
+                    sha,
+                    len,
+                });
+            } else {
+                return Err(refused(format!("`{rel}` is a link or special file")));
+            }
+        }
+    }
+    files.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    if let Some(path) = sidecar {
+        mark_executables(&path, &mut files)?;
+    }
+    if cfg!(unix) {
+        for f in &files {
+            let on_disk = on_disk_exec.contains(f.path.as_str());
+            if on_disk && !f.executable {
+                return Err(refused("a file has the executable bit but is not listed"));
+            }
+            if !on_disk && f.executable {
+                return Err(refused("a listed file lost its executable bit"));
+            }
+        }
+    }
+    Ok(tree_hash_of(files))
+}
+
+/// Stream the sidecar and flag the files it lists.
+///
+/// The format is canonical: one path per line, each ending in a newline, in
+/// strictly ascending byte order, each naming a file in the tree other than the
+/// sidecar. Each line is read under a length cap and checked as it is parsed, so
+/// the work and memory are bounded by the (already bounded) set of files.
+/// `files` must be sorted by path.
+fn mark_executables(path: &Path, files: &mut [FileRecord]) -> Result<(), ExtractError> {
+    let f = File::open(path).map_err(io_err("reading the executable list"))?;
+    let mut reader = io::BufReader::new(f);
+    let mut previous: Vec<u8> = Vec::new();
+    let mut line: Vec<u8> = Vec::new();
+    loop {
+        line.clear();
+        let n = (&mut reader)
+            .take(MAX_SIDECAR_LINE)
+            .read_until(b'\n', &mut line)
+            .map_err(io_err("reading the executable list"))?;
+        if n == 0 {
+            return Ok(());
+        }
+        if line.pop() != Some(b'\n') {
+            return Err(refused("the executable list has a bad line"));
+        }
+        if !previous.is_empty() && line <= previous {
+            return Err(refused("the executable list is not sorted and unique"));
+        }
+        let idx = files
+            .binary_search_by(|r| r.path.as_bytes().cmp(line.as_slice()))
+            .map_err(|_| refused("the executable list names a missing file"))?;
+        if files[idx].path == EXEC_SIDECAR {
+            return Err(refused("the executable list names itself"));
+        }
+        files[idx].executable = true;
+        std::mem::swap(&mut previous, &mut line);
+    }
+}
+
+/// Check that a stored tree still has `expected` as its hash.
+///
+/// # Errors
+/// [`ExtractError::Tampered`] on any difference. Callers evict the entry and fail the run (exit 2).
+pub fn verify_tree(dir: &Path, expected: &TreeHash) -> Result<(), ExtractError> {
+    match tree_hash(dir) {
+        Ok(actual) if actual == *expected => Ok(()),
+        Ok(_) | Err(ExtractError::Refused(_)) => Err(ExtractError::Tampered {
+            path: dir.to_owned(),
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+/// Prefix of the directories [`evict`] renames oversized trees to.
+const QUARANTINE_PREFIX: &str = ".quarantine-";
+
+/// Remove a stored tree, restoring write permission first.
+///
+/// The walk is iterative and bounded by the same node and depth limits as
+/// verification. A tree past those limits is hostile: it is renamed, whole and
+/// unread, to `.quarantine-<name>-<unique>` next to itself and left for the
+/// operator, and the call succeeds because `dir` no longer exists; the result
+/// is [`Evicted::Quarantined`] with the new path so the caller can report the
+/// retained storage. Nothing below such a tree is touched past the bound. A link
+/// at `dir` is removed itself, never followed.
+///
+/// # Errors
+/// [`ExtractError::Io`] when removal or quarantine fails.
+pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
+    let dir = normalised(dir);
+    let dir = dir.as_path();
+    if !fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir()) {
+        return remove_tree(dir).map(|()| Evicted::Removed);
+    }
+    // (directory, depth); the root is depth 0, as in verification.
+    let mut stack = vec![(dir.to_owned(), 0usize)];
+    let mut nodes = NodeBudget::new(MAX_TREE_NODES);
+    while let Some((path, depth)) = stack.pop() {
+        let _ = set_mode(&path, 0o700);
+        let Ok(rd) = fs::read_dir(&path) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let Ok(ty) = e.file_type() else { continue };
+            if nodes.charge(1).is_err() || (ty.is_dir() && depth >= MAX_TREE_DEPTH) {
+                return quarantine(dir).map(Evicted::Quarantined);
+            }
+            if ty.is_dir() {
+                stack.push((e.path(), depth + 1));
+            } else if cfg!(windows) && ty.is_file() {
+                // Windows refuses to delete read-only files.
+                let _ = set_mode(&e.path(), 0o600);
+            }
+        }
+    }
+    remove_tree(dir).map(|()| Evicted::Removed)
+}
+
+fn remove_tree(dir: &Path) -> Result<(), ExtractError> {
+    match fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(ExtractError::Io {
+            what: format!("removing {}", dir.display()),
+            source: e,
+        }),
+    }
+}
+
+/// Rename `dir` to a unique sibling without reading it.
+fn quarantine(dir: &Path) -> Result<PathBuf, ExtractError> {
+    static SERIAL: AtomicU64 = AtomicU64::new(0);
+    let name = dir
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let aside = dir.with_file_name(format!(
+        "{QUARANTINE_PREFIX}{name}-{}-{}-{nanos}",
+        std::process::id(),
+        SERIAL.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::rename(dir, &aside).map_err(io_err(format!(
+        "quarantining {} (too many entries to remove)",
+        dir.display()
+    )))?;
+    Ok(aside)
+}
+
+/// Remove staging directories older than `max_age`, for example left by a killed run.
+///
+/// The `.staging` directory is inspected without following links first: a link,
+/// a non-directory, or a directory owned by someone else is refused and nothing
+/// is listed, changed or removed. An absent directory is an empty report.
+/// Existing `.quarantine-*` entries are kept. A stale entry too large to walk is
+/// renamed aside and listed in [`StagingReport::quarantined`].
+///
+/// # Errors
+/// [`ExtractError::Refused`] for an unsafe `.staging` directory. Entries that
+/// cannot be removed are skipped.
+pub fn clean_staging(store: &Path, max_age: Duration) -> Result<StagingReport, ExtractError> {
+    let parent = store.join(".staging");
+    let mut report = StagingReport::default();
+    if inspect_private_child(&parent)?.is_none() {
+        return Ok(report);
+    }
+    let Ok(rd) = fs::read_dir(&parent) else {
+        return Ok(report);
+    };
+    for e in rd.flatten() {
+        if e.file_name()
+            .to_string_lossy()
+            .starts_with(QUARANTINE_PREFIX)
+        {
+            continue;
+        }
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| SystemTime::now().duration_since(t).unwrap_or_default() >= max_age);
+        if !old {
+            continue;
+        }
+        match evict(&e.path()) {
+            Ok(Evicted::Removed) => report.removed += 1,
+            Ok(Evicted::Quarantined(aside)) => report.quarantined.push(aside),
+            Err(_) => {}
+        }
+    }
+    Ok(report)
+}

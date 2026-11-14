@@ -10,14 +10,19 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+caseless.workspace = true
 crossbeam-channel.workspace = true
+flate2.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+unicode-normalization.workspace = true
 ureq.workspace = true
 
 # Polling a pidfd shows whether its process exited.
