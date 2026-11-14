@@ -297,4 +297,19 @@ mod tests {
         assert_eq!(spans(r"[[\W:alpha:]+", "[:a]"), [0..4]);
         assert_eq!(spans(r"[[\W:alpha:]+", "z"), no_spans());
     }
+
+    /// PCRE2 10.43 added variable-length lookbehind. The rule data relies on it
+    /// (`prose-craft.future-tense`), so a build that links an older system library fails
+    /// here. `.cargo/config.toml` sets `PCRE2_SYS_STATIC=1` and the workspace pins
+    /// `pcre2-sys` so the vendored PCRE2 is linked (slopvac-8l4.3.20).
+    #[test]
+    fn the_linked_pcre2_supports_a_bounded_variable_length_lookbehind() {
+        let pattern = Pattern::new(r"(?<=a{1,3}|bc)x", false).unwrap_or_else(|e| {
+            panic!(
+                "PCRE2 is older than 10.43 ({e}); build with PCRE2_SYS_STATIC=1, see \
+                 .cargo/config.toml and slopvac-8l4.3.20"
+            )
+        });
+        assert_eq!(pattern.find_all("aax bcx dx").unwrap(), [2..3, 6..7]);
+    }
 }

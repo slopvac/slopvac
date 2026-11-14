@@ -13,6 +13,8 @@ workspace = true
 
 [dependencies]
 pcre2 = { workspace = true }
+# Direct dependency only to pin the vendored PCRE2 (see the workspace Cargo.toml).
+pcre2-sys = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 
