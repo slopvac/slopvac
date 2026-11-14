@@ -3,6 +3,10 @@
 
 Exit 0 when every item passes, 1 when any item fails, 2 when a tool is missing
 and so an item could not run. An exit of 2 never counts as a pass.
+
+Automated items run the configured commands and query the bead tracker. Manual
+approvals (security review, signed artifacts, Action and hook contracts, the
+policies document) pass only when `release-evidence.toml` records them.
 """
 
 from __future__ import annotations
@@ -16,10 +20,13 @@ import sys
 import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 PASS, FAIL, INCOMPLETE = "pass", "fail", "incomplete"
 _CONFIG = Path(__file__).with_name("release-gate.toml")
+_EVIDENCE = Path(__file__).with_name("release-evidence.toml")
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -34,16 +41,45 @@ class Result:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Suites the 3.0.0 release cannot ship without. A config that omits one is an
-# error, so deleting an entry from release-gate.toml cannot turn the gate green.
-MANDATORY_SUITES = (
-    "golden",
-    "accuracy",
-    "compat-preserve",
-    "conformance",
-    "migration-e2e",
-    "perf-budgets",
+_NEXTEST = ("cargo", "nextest", "run", "--workspace", "--no-tests=fail", "-E")
+
+# Suites the 3.0.0 release cannot ship without, each pinned to an argv prefix
+# plus one filter argument that must contain the marker. A config that omits a
+# suite, swaps the runner, drops a flag or adds an unlisted command is an error,
+# so editing release-gate.toml cannot turn the gate green.
+SUITE_PINS: dict[str, tuple[tuple[str, ...], str]] = {
+    "golden": (_NEXTEST, "golden::"),
+    "accuracy": (_NEXTEST, "accuracy::"),
+    "compat-preserve": (_NEXTEST, "compat::preserve"),
+    "conformance": (_NEXTEST, "conformance::"),
+    "migration-e2e": (_NEXTEST, "migration_e2e::"),
+    "perf-budgets": (_NEXTEST, "perf_budget::"),
+}
+MANDATORY_SUITES = tuple(SUITE_PINS)
+
+# Installed artifacts must be signed and verified on each of these targets.
+TARGET_TRIPLES = (
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
 )
+
+# Approvals a person gives. Each needs a passing record in the evidence file.
+MANDATORY_EVIDENCE: dict[str, str] = {
+    "security-review": "Security review sign-off (plugin host, trust store, OCI client, extraction)",
+    **{
+        f"signed-artifacts-{triple}": f"Signed installed artifacts on {triple}"
+        for triple in TARGET_TRIPLES
+    },
+    "action-contract": "GitHub Action contract",
+    "hook-contract": "Published pre-commit hook contract",
+    "policies-doc": "Policies document (docs/contract/policies.md) approved",
+    "accessibility-manual-pass": "Manual keyboard and screen-reader pass (policies section 2.3)",
+}
+_EVIDENCE_KEYS = {"id", "status", "evidence", "approver", "date"}
+_ISSUE_KEYS = {"id": str, "status": str, "labels": list}
 
 
 def run_process(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -54,10 +90,29 @@ def run_process(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _tracker_json(runner: Runner, *args: str) -> list[dict]:
+    """Return the tracker's issues.
+
+    Raises ValueError or TypeError unless stdout is a JSON array of objects that carry the
+    keys the checks rely on, so empty or malformed output is never "no issues".
+    """
     done = runner(["bd", *args, "--json", "--limit", "0"])
+    label = f"bd {' '.join(args)}"
     if done.returncode != 0:
-        raise RuntimeError(done.stderr.strip() or f"bd {' '.join(args)} failed")
-    return json.loads(done.stdout or "[]")
+        raise RuntimeError(done.stderr.strip() or f"{label} failed")
+    try:
+        issues = json.loads(done.stdout)
+    except json.JSONDecodeError as err:
+        raise ValueError(f"{label}: output is not JSON ({err.msg})") from err
+    if not isinstance(issues, list):
+        raise TypeError(f"{label}: expected a JSON array")
+    for index, issue in enumerate(issues):
+        if not isinstance(issue, dict):
+            raise TypeError(f"{label}: record {index} is not an object")
+        for key, kind in _ISSUE_KEYS.items():
+            value = issue.get(key)
+            if not isinstance(value, kind) or (kind is str and not value):
+                raise ValueError(f"{label}: record {index} lacks a valid `{key}`")
+    return issues
 
 
 def _ids(issues: Sequence[dict]) -> list[str]:
@@ -114,21 +169,41 @@ def check_soft_blocked(runner: Runner) -> Result:
     return Result("soft-blocked", title, PASS, "none")
 
 
+def _pin_problem(suite: str, argv: object) -> str | None:
+    """Why `argv` is not the pinned runner for `suite`, or None."""
+    prefix, marker = SUITE_PINS[suite]
+    if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+        return "run must be a list of strings"
+    if tuple(argv[: len(prefix)]) != prefix or len(argv) != len(prefix) + 1:
+        return f"run must be `{' '.join(prefix)} <filter>`"
+    if marker not in argv[-1]:
+        return f"filter must select `{marker}`"
+    return None
+
+
 def check_suites_configured(config: dict) -> Result:
-    """Fail unless every mandatory suite is configured and cannot pass with zero tests."""
+    """Fail unless every mandatory suite is configured with its pinned runner."""
     title = "Every mandatory suite is configured"
-    entries = {entry.get("id"): entry for entry in config.get("command", [])}
+    entries: dict[object, dict] = {}
+    problems: list[str] = []
+    for entry in config.get("command", []):
+        if not isinstance(entry, dict):
+            problems.append("a command entry is not a table")
+        elif entry.get("id") in entries:
+            problems.append(f"duplicate: {entry.get('id')}")
+        else:
+            entries[entry.get("id")] = entry
     missing = [suite for suite in MANDATORY_SUITES if suite not in entries]
-    vacuous = [
-        suite
-        for suite in MANDATORY_SUITES
-        if suite in entries
-        and entries[suite]["run"][:2] == ["cargo", "nextest"]
-        and "--no-tests=fail" not in entries[suite]["run"]
-    ]
-    problems = [f"missing: {', '.join(missing)}"] if missing else []
-    if vacuous:
-        problems.append(f"can pass with zero tests: {', '.join(vacuous)}")
+    if missing:
+        problems.append(f"missing: {', '.join(missing)}")
+    extra = [str(i) for i in entries if i not in SUITE_PINS]
+    if extra:
+        problems.append(f"not a mandatory suite: {', '.join(extra)}")
+    for suite in MANDATORY_SUITES:
+        if suite in entries:
+            bad = _pin_problem(suite, entries[suite].get("run"))
+            if bad:
+                problems.append(f"{suite}: {bad}")
     if problems:
         return Result("suites-configured", title, FAIL, "; ".join(problems))
     return Result("suites-configured", title, PASS, ", ".join(MANDATORY_SUITES))
@@ -148,16 +223,90 @@ def check_command(runner: Runner, entry: dict) -> Result:
     return Result(entry["id"], entry["title"], FAIL, f"{command}: {' / '.join(tail)}")
 
 
+def _evidence_problem(item: dict) -> str | None:
+    """Why a recorded item does not count as approved, or None."""
+    if item.get("status") != "pass":
+        return f"status is {item.get('status')!r}, not 'pass'"
+    links = item.get("evidence")
+    if not isinstance(links, list) or not links:
+        return "no evidence links"
+    for link in links:
+        parsed = urlparse(link) if isinstance(link, str) else None
+        if parsed is None or parsed.scheme != "https" or not parsed.netloc:
+            return f"evidence link is not https: {link!r}"
+    approver = item.get("approver")
+    if not isinstance(approver, str) or not approver.strip():
+        return "no approver"
+    if not isinstance(item.get("date"), date):
+        return "date is not a TOML date (YYYY-MM-DD)"
+    return None
+
+
+def check_evidence(path: Path) -> list[Result]:
+    """One result per mandatory approval, read from the evidence file.
+
+    A missing or malformed file fails every item. Unknown keys, unknown or
+    duplicate items add an `evidence-file` failure.
+    """
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as err:
+        reason = f"evidence file {path.name} unusable: {err}"
+        return [
+            Result(f"evidence:{key}", title, FAIL, reason)
+            for key, title in MANDATORY_EVIDENCE.items()
+        ]
+    problems: list[str] = []
+    unknown_top = sorted(set(data) - {"item"})
+    if unknown_top:
+        problems.append(f"unknown top-level keys: {', '.join(unknown_top)}")
+    items = data.get("item", [])
+    if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+        items = []
+        problems.append("`item` must be an array of tables")
+    records: dict[object, dict] = {}
+    for item in items:
+        name = item.get("id")
+        unknown = sorted(set(item) - _EVIDENCE_KEYS)
+        if unknown:
+            problems.append(f"item {name!r}: unknown keys {', '.join(unknown)}")
+        if name in records:
+            problems.append(f"duplicate item {name!r}")
+            continue
+        if name not in MANDATORY_EVIDENCE:
+            problems.append(f"unknown item {name!r}")
+        records[name] = item
+    results = []
+    for key, title in MANDATORY_EVIDENCE.items():
+        if key not in records:
+            results.append(Result(f"evidence:{key}", title, FAIL, "no record"))
+            continue
+        item = records[key]
+        bad = _evidence_problem(item)
+        if bad:
+            results.append(Result(f"evidence:{key}", title, FAIL, bad))
+        else:
+            detail = f"{item['approver']} {item['date']}: {', '.join(item['evidence'])}"
+            results.append(Result(f"evidence:{key}", title, PASS, detail))
+    if problems:
+        results.append(
+            Result("evidence-file", "Evidence file is valid", FAIL, "; ".join(problems))
+        )
+    return results
+
+
 def _guard(result_id: str, title: str, fn: Callable[[], Result]) -> Result:
     try:
         return fn()
     except FileNotFoundError as err:
         return Result(result_id, title, INCOMPLETE, f"{err.filename} is not installed")
-    except (RuntimeError, ValueError) as err:
+    except (RuntimeError, TypeError, ValueError) as err:
         return Result(result_id, title, INCOMPLETE, str(err))
 
 
-def run_gate(config: dict, runner: Runner = run_process) -> list[Result]:
+def run_gate(
+    config: dict, runner: Runner = run_process, evidence: Path = _EVIDENCE
+) -> list[Result]:
     beads = config.get("beads", {})
     label = beads.get("release_label", "release:3.0.0")
     allowed = set(beads.get("allowed_open", []))
@@ -175,8 +324,15 @@ def run_gate(config: dict, runner: Runner = run_process) -> list[Result]:
         ),
         check_suites_configured(config),
     ]
-    results += [check_command(runner, entry) for entry in config.get("command", [])]
-    return results
+    # Only pinned commands run; check_suites_configured reports the rest.
+    results += [
+        check_command(runner, entry)
+        for entry in config.get("command", [])
+        if isinstance(entry, dict)
+        and entry.get("id") in SUITE_PINS
+        and _pin_problem(entry["id"], entry.get("run")) is None
+    ]
+    return results + check_evidence(evidence)
 
 
 def exit_code(results: Sequence[Result]) -> int:
@@ -197,12 +353,13 @@ def render_markdown(results: Sequence[Result]) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=_CONFIG)
+    parser.add_argument("--evidence", type=Path, default=_EVIDENCE)
     parser.add_argument(
         "--json", action="store_true", help="print JSON instead of a table"
     )
     args = parser.parse_args(argv)
     config = tomllib.loads(args.config.read_text(encoding="utf-8"))
-    results = run_gate(config)
+    results = run_gate(config, evidence=args.evidence)
     if args.json:
         print(json.dumps([asdict(r) for r in results], indent=2))
     else:
