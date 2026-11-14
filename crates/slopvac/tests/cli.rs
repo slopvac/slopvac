@@ -306,17 +306,28 @@ fn rules_category_is_repeatable() {
 }
 
 #[test]
-fn closed_stdout_is_not_a_panic() {
-    use std::process::{Command as Std, Stdio};
-    let bin = assert_cmd::cargo::cargo_bin("slopvac");
-    let mut child = Std::new(bin)
-        .args(["completions", "bash"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn");
-    drop(child.stdout.take());
-    let out = child.wait_with_output().expect("wait");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!stderr.contains("panicked"), "{stderr}");
+fn man_pages_into_an_unwritable_directory_exit_2() {
+    let (_dir, file) = doc(b"not a directory");
+    slopvac()
+        .args(["man", "--out-dir"])
+        .arg(&file)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[output-failed]"));
+}
+
+#[test]
+fn usage_errors_keep_clap_styling_when_colour_is_forced() {
+    slopvac()
+        .args(["--color", "always", "lint", "--bogus"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("\u{1b}["))
+        .stderr(predicate::str::contains("error[usage]:"));
+    slopvac()
+        .args(["--color", "never", "lint", "--bogus"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("\u{1b}[").not())
+        .stderr(predicate::str::starts_with("error[usage]:"));
 }

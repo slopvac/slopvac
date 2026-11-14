@@ -1,7 +1,6 @@
 //! Parse, resolve global settings and dispatch.
 
 use std::ffi::OsString;
-use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -57,8 +56,17 @@ fn scan_color_flag(args: &[OsString]) -> Option<ColorChoice> {
     choice
 }
 
-/// Run the CLI with the given arguments and environment.
+/// Run the CLI with the given arguments and environment, writing to the real stdout.
 pub fn main_with<I, T>(args: I, env: &dyn Env) -> ExitCode
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    main_with_stdout(args, env, &mut std::io::stdout().lock())
+}
+
+/// Like [`main_with`], with the standard output stream supplied by the caller.
+pub fn main_with_stdout<I, T>(args: I, env: &dyn Env, out: &mut dyn std::io::Write) -> ExitCode
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
@@ -74,9 +82,13 @@ where
     let matches = match tree.try_get_matches_from(args) {
         Ok(m) => m,
         Err(err) if err.use_stderr() => {
-            let text = err.to_string();
-            let body = text.strip_prefix("error: ").unwrap_or(&text);
-            eprint!("error[usage]: {body}");
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            eprint!("{}", text.replacen("error:", "error[usage]:", 1));
             return exit::code(exit::INCOMPLETE);
         }
         Err(err) => {
@@ -91,7 +103,7 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches) {
+    match dispatch(&matches, out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             eprintln!("{err}");
@@ -100,19 +112,20 @@ where
     }
 }
 
-fn dispatch(matches: &ArgMatches) -> Result<u8, CliError> {
+fn dispatch(matches: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("lint", m)) => lint(m),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
                 .expect("required");
-            write_stdout(&generate::completions(shell))
+            write_stdout(out, &generate::completions(shell))
         }
-        Some(("man", m)) => man(m),
-        Some(("cli-reference", _)) => {
-            write_stdout(generate::markdown_reference(&cli::command()).as_bytes())
-        }
+        Some(("man", m)) => man(m, out),
+        Some(("cli-reference", _)) => write_stdout(
+            out,
+            generate::markdown_reference(&cli::command()).as_bytes(),
+        ),
         Some((name, _)) => {
             let owner = cli::PLACEHOLDERS
                 .iter()
@@ -135,13 +148,12 @@ fn dispatch(matches: &ArgMatches) -> Result<u8, CliError> {
         }
         None => {
             let mut cmd = cli::command();
-            write_stdout(cmd.render_help().to_string().as_bytes())
+            write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
 }
 
-fn write_stdout(bytes: &[u8]) -> Result<u8, CliError> {
-    let mut out = std::io::stdout().lock();
+fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
     out.write_all(bytes)
         .and_then(|()| out.flush())
         .map_err(|err| {
@@ -153,7 +165,7 @@ fn write_stdout(bytes: &[u8]) -> Result<u8, CliError> {
     Ok(exit::PASS)
 }
 
-fn man(m: &ArgMatches) -> Result<u8, CliError> {
+fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let failed = |err: std::io::Error| {
         CliError::new(
             "output-failed",
@@ -165,7 +177,7 @@ fn man(m: &ArgMatches) -> Result<u8, CliError> {
         return Ok(exit::PASS);
     }
     let page = generate::man_page(&cli::command()).map_err(failed)?;
-    write_stdout(&page)
+    write_stdout(out, &page)
 }
 
 fn lint(m: &ArgMatches) -> Result<u8, CliError> {
