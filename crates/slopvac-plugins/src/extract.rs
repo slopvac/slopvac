@@ -1021,10 +1021,12 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
         let Ok(rd) = fs::read_dir(&path) else {
             continue;
         };
+        let mut oversized = false;
         for e in rd.flatten() {
             let Ok(ty) = e.file_type() else { continue };
             if nodes.charge(1).is_err() || (ty.is_dir() && depth >= MAX_TREE_DEPTH) {
-                return quarantine(dir).map(Evicted::Quarantined);
+                oversized = true;
+                break;
             }
             if ty.is_dir() {
                 stack.push((e.path(), depth + 1));
@@ -1032,6 +1034,11 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
                 // Windows refuses to delete read-only files.
                 let _ = set_mode(&e.path(), 0o600);
             }
+        }
+        if oversized {
+            // `rd` ended with the loop above: Windows refuses to rename a
+            // directory while a handle is open on it or below it.
+            return quarantine(dir).map(Evicted::Quarantined);
         }
     }
     remove_tree(dir).map(|()| Evicted::Removed)
