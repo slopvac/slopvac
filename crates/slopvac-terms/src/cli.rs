@@ -3,7 +3,6 @@
 //! `command()` returns the clap tree and `run()` executes a parsed match. The
 //! CLI crate mounts them; nothing here owns `main`.
 
-use std::fmt::Write as _;
 use std::io::Write;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -170,6 +169,176 @@ pub fn markdown_code_ranges(text: &str) -> Vec<Range<usize>> {
     out
 }
 
+fn rows(project: &[TermEntry], builtin: bool) -> Vec<(TermEntry, &'static str)> {
+    let mut rows: Vec<(TermEntry, &'static str)> =
+        project.iter().cloned().map(|t| (t, "project")).collect();
+    if builtin {
+        rows.extend(
+            TermsFile::builtin()
+                .terms
+                .into_iter()
+                .map(|t| (t, "builtin")),
+        );
+    }
+    rows
+}
+
+fn print_row(out: &mut dyn Write, t: &TermEntry, src: &str) -> Result<(), TermsError> {
+    writeln!(
+        out,
+        "{}\t{}\t{}",
+        t.term,
+        t.kind.as_deref().unwrap_or("-"),
+        src
+    )
+    .map_err(|e| io_err(&e))
+}
+
+fn cmd_list(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+    let kind = m.get_one::<String>("kind");
+    for (t, src) in rows(&load_project(paths)?, m.get_flag("builtin")) {
+        if kind.is_none_or(|k| t.kind.as_deref() == Some(k.as_str())) {
+            print_row(out, &t, src)?;
+        }
+    }
+    Ok(0)
+}
+
+fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+    let q = m
+        .get_one::<String>("query")
+        .expect("required")
+        .to_lowercase();
+    let mut hits = 0;
+    for (t, src) in rows(&load_project(paths)?, true) {
+        let hit = std::iter::once(&t.term)
+            .chain(&t.variants)
+            .any(|s| s.to_lowercase().contains(&q));
+        if hit {
+            hits += 1;
+            print_row(out, &t, src)?;
+        }
+    }
+    Ok(i32::from(hits == 0))
+}
+
+fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+    let term = m.get_one::<String>("term").expect("required").clone();
+    let ignore_case = if m.get_flag("ignore-case") {
+        true
+    } else if m.get_flag("case-sensitive") {
+        false
+    } else {
+        infer_ignore_case(&term)
+    };
+    let entry = TermEntry {
+        term: term.clone(),
+        variants: m
+            .get_many::<String>("variant")
+            .map(|v| v.cloned().collect())
+            .unwrap_or_default(),
+        kind: m.get_one::<String>("kind").cloned(),
+        ignore_case,
+        case_sensitive: false,
+    };
+    let file = &paths[0];
+    let mut doc = TermsDoc::open(file)?;
+    doc.add(&entry)?;
+    doc.save(file)?;
+    let how = if ignore_case {
+        "ignoring case"
+    } else {
+        "case-sensitive"
+    };
+    writeln!(out, "added {term} ({how})").map_err(|e| io_err(&e))?;
+    Ok(0)
+}
+
+fn cmd_remove(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+    let term = m.get_one::<String>("term").expect("required");
+    let file = &paths[0];
+    let mut doc = TermsDoc::open(file)?;
+    if doc.remove(term) {
+        doc.save(file)?;
+        writeln!(out, "removed {term}").map_err(|e| io_err(&e))?;
+        Ok(0)
+    } else {
+        writeln!(out, "no term {term} in {}", file.display()).map_err(|e| io_err(&e))?;
+        Ok(1)
+    }
+}
+
+fn cmd_check(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
+    let mut entries = TermsFile::builtin().terms;
+    let project = load_project(paths)?;
+    entries.retain(|b| !project.iter().any(|p| p.term == b.term));
+    entries.extend(project);
+    let set = TermSet::new(entries);
+    let mut found = 0;
+    for p in m.get_many::<String>("paths").expect("required") {
+        let text = std::fs::read_to_string(cwd.join(p)).map_err(|e| TermsError::Io {
+            path: p.clone(),
+            message: e.to_string(),
+        })?;
+        for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
+            let (line, col) = line_col(&text, f.span.start);
+            writeln!(out, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
+                .map_err(|e| io_err(&e))?;
+            found += 1;
+        }
+    }
+    Ok(i32::from(found > 0))
+}
+
+fn cmd_import(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
+    let from = m.get_one::<String>("from").expect("required");
+    let source = Source::parse(from).expect("clap value_parser restricts values");
+    let file = m.get_one::<String>("file").expect("required");
+    let text = std::fs::read_to_string(cwd.join(file)).map_err(|e| TermsError::Io {
+        path: file.clone(),
+        message: e.to_string(),
+    })?;
+    let imported = import::parse(file, source, &text)?;
+    let target = &paths[0];
+    let mut doc = TermsDoc::open(target)?;
+    let (mut added, mut existing) = (0, 0);
+    for w in &imported.words {
+        if doc.contains(w) {
+            existing += 1;
+            continue;
+        }
+        doc.add(&TermEntry {
+            term: w.clone(),
+            variants: vec![],
+            kind: None,
+            ignore_case: infer_ignore_case(w),
+            case_sensitive: false,
+        })?;
+        added += 1;
+    }
+    doc.save(target)?;
+    writeln!(
+        out,
+        "imported {added} terms ({existing} already present, {} patterns skipped)",
+        imported.skipped.len()
+    )
+    .map_err(|e| io_err(&e))?;
+    for s in &imported.skipped {
+        writeln!(out, "skipped pattern: {s}").map_err(|e| io_err(&e))?;
+    }
+    Ok(0)
+}
+
 /// Run a parsed `terms` command. Returns the process exit code.
 ///
 /// # Errors
@@ -180,175 +349,12 @@ pub fn run(matches: &ArgMatches, cwd: &Path, out: &mut dyn Write) -> Result<i32,
     };
     let paths = term_files(m, cwd);
     match name {
-        "list" => {
-            let kind = m.get_one::<String>("kind");
-            let mut rows: Vec<(TermEntry, &str)> = load_project(&paths)?
-                .into_iter()
-                .map(|t| (t, "project"))
-                .collect();
-            if m.get_flag("builtin") {
-                rows.extend(
-                    TermsFile::builtin()
-                        .terms
-                        .into_iter()
-                        .map(|t| (t, "builtin")),
-                );
-            }
-            for (t, src) in rows {
-                if kind.is_none_or(|k| t.kind.as_deref() == Some(k.as_str())) {
-                    writeln!(
-                        out,
-                        "{}\t{}\t{}",
-                        t.term,
-                        t.kind.as_deref().unwrap_or("-"),
-                        src
-                    )
-                    .map_err(|e| io_err(&e))?;
-                }
-            }
-            Ok(0)
-        }
-        "search" => {
-            let q = m
-                .get_one::<String>("query")
-                .expect("required")
-                .to_lowercase();
-            let mut rows: Vec<(TermEntry, &str)> = load_project(&paths)?
-                .into_iter()
-                .map(|t| (t, "project"))
-                .collect();
-            rows.extend(
-                TermsFile::builtin()
-                    .terms
-                    .into_iter()
-                    .map(|t| (t, "builtin")),
-            );
-            let mut hits = 0;
-            for (t, src) in rows {
-                let hit = std::iter::once(&t.term)
-                    .chain(&t.variants)
-                    .any(|s| s.to_lowercase().contains(&q));
-                if hit {
-                    hits += 1;
-                    writeln!(
-                        out,
-                        "{}\t{}\t{}",
-                        t.term,
-                        t.kind.as_deref().unwrap_or("-"),
-                        src
-                    )
-                    .map_err(|e| io_err(&e))?;
-                }
-            }
-            Ok(i32::from(hits == 0))
-        }
-        "add" => {
-            let term = m.get_one::<String>("term").expect("required").clone();
-            let ignore_case = if m.get_flag("ignore-case") {
-                true
-            } else if m.get_flag("case-sensitive") {
-                false
-            } else {
-                infer_ignore_case(&term)
-            };
-            let entry = TermEntry {
-                term: term.clone(),
-                variants: m
-                    .get_many::<String>("variant")
-                    .map(|v| v.cloned().collect())
-                    .unwrap_or_default(),
-                kind: m.get_one::<String>("kind").cloned(),
-                ignore_case,
-                case_sensitive: false,
-            };
-            let file = &paths[0];
-            let mut doc = TermsDoc::open(file)?;
-            doc.add(&entry)?;
-            doc.save(file)?;
-            let how = if ignore_case {
-                "ignoring case"
-            } else {
-                "case-sensitive"
-            };
-            writeln!(out, "added {term} ({how})").map_err(|e| io_err(&e))?;
-            Ok(0)
-        }
-        "remove" => {
-            let term = m.get_one::<String>("term").expect("required");
-            let file = &paths[0];
-            let mut doc = TermsDoc::open(file)?;
-            if doc.remove(term) {
-                doc.save(file)?;
-                writeln!(out, "removed {term}").map_err(|e| io_err(&e))?;
-                Ok(0)
-            } else {
-                writeln!(out, "no term {term} in {}", file.display()).map_err(|e| io_err(&e))?;
-                Ok(1)
-            }
-        }
-        "check" => {
-            let mut entries = TermsFile::builtin().terms;
-            let project = load_project(&paths)?;
-            entries.retain(|b| !project.iter().any(|p| p.term == b.term));
-            entries.extend(project);
-            let set = TermSet::new(entries);
-            let mut found = 0;
-            for p in m.get_many::<String>("paths").expect("required") {
-                let path = cwd.join(p);
-                let text = std::fs::read_to_string(&path).map_err(|e| TermsError::Io {
-                    path: p.clone(),
-                    message: e.to_string(),
-                })?;
-                for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
-                    let (line, col) = line_col(&text, f.span.start);
-                    let mut msg = String::new();
-                    write!(msg, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
-                        .expect("write to String");
-                    writeln!(out, "{msg}").map_err(|e| io_err(&e))?;
-                    found += 1;
-                }
-            }
-            Ok(i32::from(found > 0))
-        }
-        "import" => {
-            let from = m.get_one::<String>("from").expect("required");
-            let source = Source::parse(from).expect("clap value_parser restricts values");
-            let file = m.get_one::<String>("file").expect("required");
-            let text = std::fs::read_to_string(cwd.join(file)).map_err(|e| TermsError::Io {
-                path: file.clone(),
-                message: e.to_string(),
-            })?;
-            let imported = import::parse(file, source, &text)?;
-            let target = &paths[0];
-            let mut doc = TermsDoc::open(target)?;
-            let (mut added, mut existing) = (0, 0);
-            for w in &imported.words {
-                let entry = TermEntry {
-                    term: w.clone(),
-                    variants: vec![],
-                    kind: None,
-                    ignore_case: infer_ignore_case(w),
-                    case_sensitive: false,
-                };
-                if doc.contains(w) {
-                    existing += 1;
-                } else {
-                    doc.add(&entry)?;
-                    added += 1;
-                }
-            }
-            doc.save(target)?;
-            writeln!(
-                out,
-                "imported {added} terms ({existing} already present, {} patterns skipped)",
-                imported.skipped.len()
-            )
-            .map_err(|e| io_err(&e))?;
-            for s in &imported.skipped {
-                writeln!(out, "skipped pattern: {s}").map_err(|e| io_err(&e))?;
-            }
-            Ok(0)
-        }
+        "list" => cmd_list(m, &paths, out),
+        "search" => cmd_search(m, &paths, out),
+        "add" => cmd_add(m, &paths, out),
+        "remove" => cmd_remove(m, &paths, out),
+        "check" => cmd_check(m, cwd, &paths, out),
+        "import" => cmd_import(m, cwd, &paths, out),
         _ => Ok(2),
     }
 }

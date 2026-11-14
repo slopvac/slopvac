@@ -10,13 +10,13 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-fn terms(dir: &Path, args: &[&str]) -> (i32, String) {
+fn terms(dir: &Path, cli_args: &[&str]) -> (i32, String) {
     let mut argv = vec!["terms"];
-    argv.extend_from_slice(args);
+    argv.extend_from_slice(cli_args);
     let m = command().try_get_matches_from(argv).unwrap();
-    let mut out = Vec::new();
-    let code = run(&m, dir, &mut out).unwrap();
-    (code, String::from_utf8(out).unwrap())
+    let mut buf = Vec::new();
+    let code = run(&m, dir, &mut buf).unwrap();
+    (code, String::from_utf8(buf).unwrap())
 }
 
 fn file(dir: &Path) -> String {
