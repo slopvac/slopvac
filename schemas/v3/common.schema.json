@@ -60,11 +60,17 @@
       "additionalProperties": false
     },
     "ConfigSource": {
-      "description": "Config layer and location a setting came from. Semantics owned by slopvac-8l4.2.5.",
+      "description": "Config layer and location a setting came from. Layer order and file semantics are in docs/contract/config.md. Semantics owned by slopvac-8l4.2.5.",
       "type": "object",
       "properties": {
-        "layer": {"type": "string"},
-        "file": {"type": "string"},
+        "layer": {
+          "description": "Layer name, lowest priority first: core, style, genre, extends, project, override, front-matter, directive, cli. env marks the sticky environment switches.",
+          "enum": ["core", "style", "genre", "extends", "project", "override", "front-matter", "directive", "cli", "env"]
+        },
+        "file": {
+          "description": "Path relative to the project root, or pack:<id>/<path> for a pack file. Absent where no file holds the value: core, cli and env.",
+          "type": "string"
+        },
         "line": {"type": "integer", "minimum": 1},
         "column": {"type": "integer", "minimum": 1}
       },

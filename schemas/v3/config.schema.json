@@ -1,0 +1,503 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json",
+  "title": "slopvac v3 configuration (slopvac.toml)",
+  "description": "Project config. Unknown keys are errors; keys that start with `x-` are ignored. Semantics: docs/contract/config.md. Owner: slopvac-8l4.2.5.",
+  "allOf": [
+    {
+      "$ref": "#/$defs/Settings"
+    }
+  ],
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "mode": {
+      "description": "Input surface.",
+      "enum": [
+        "prose",
+        "code-comments"
+      ],
+      "default": "prose"
+    },
+    "extends": {
+      "description": "Config files merged below this one, lowest first. A path relative to this file or `<pack>:<name>` for a pack config.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "styles": {
+      "description": "Ordered style presets. The last listed wins.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Ref"
+      }
+    },
+    "exclude": {
+      "description": "Files never linted.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Glob"
+      }
+    },
+    "packs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Source"
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Source"
+      }
+    },
+    "genres": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GenreBlock"
+      }
+    },
+    "frontmatter": {
+      "$ref": "#/$defs/FrontmatterPolicy"
+    },
+    "guidance": {
+      "$ref": "#/$defs/Guidance"
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Override"
+      }
+    },
+    "network": {
+      "$ref": "#/$defs/Network"
+    },
+    "review": {
+      "$ref": "#/$defs/Review"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "Glob": {
+      "description": "A gitignore-style pattern, matched against the path relative to the directory of the nearest config, the one that applies to the file, even when an extended file holds the pattern. A leading `!` negates. The last matching pattern wins.",
+      "type": "string",
+      "minLength": 1
+    },
+    "Ref": {
+      "description": "A style or genre name. A bare name resolves against the active packs and must be unambiguous; `<pack>:<name>` is exact.",
+      "type": "string",
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
+    },
+    "RuleLevel": {
+      "description": "The level a rule or category reports at. `off` disables it.",
+      "enum": [
+        "error",
+        "warning",
+        "suggestion",
+        "off"
+      ]
+    },
+    "RuleKey": {
+      "description": "A rule or category name: qualified `<pack>:<id>` or a bare name that is unambiguous across the active packs. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
+      "type": "string",
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "Locale": {
+      "description": "Spelling target. `und` disables the spelling check.",
+      "enum": [
+        "en-US",
+        "en-GB",
+        "und"
+      ]
+    },
+    "Thresholds": {
+      "description": "Document-level gates, evaluated after every finding is collected.",
+      "type": "object",
+      "properties": {
+        "max_total_per_100_words": {
+          "description": "Severity-weighted error and warning density per 100 words; errors count 1.0 and warnings 0.5.",
+          "type": "number",
+          "minimum": 0
+        },
+        "max_errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_warnings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_score": {
+          "description": "Floor on the 0-100 quality score.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "max_unicode_dashes": {
+          "description": "Ceiling on Unicode em and en dashes in the source.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Profile": {
+      "description": "A built-in strictness tier, as a name or as a table that adds a severity shift. A profile sets gate thresholds and shifts severities, and nothing else.",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "enum": [
+              "strict",
+              "normal",
+              "relaxed"
+            ]
+          },
+          "severity_shift": {
+            "description": "Steps to move every rule severity along suggestion, warning, error. Positive is stricter. `off` never moves, and results clamp at the ends.",
+            "type": "integer",
+            "minimum": -2,
+            "maximum": 2
+          }
+        },
+        "patternProperties": {
+          "^x-": {}
+        },
+        "additionalProperties": false
+      },
+      "else": {
+        "enum": [
+          "strict",
+          "normal",
+          "relaxed"
+        ]
+      }
+    },
+    "CategorySettings": {
+      "description": "Per-category dials. A bare level stands for `{ severity = <level> }`.",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "$ref": "#/$defs/RuleLevel"
+          },
+          "minimum_severity": {
+            "description": "Lowest level that inherited rules in this category may report at.",
+            "$ref": "common.schema.json#/$defs/Severity"
+          },
+          "max_per_100_words": {
+            "description": "Density budget; above it the category fails even with no error finding.",
+            "type": "number",
+            "minimum": 0
+          },
+          "weight": {
+            "description": "Multiplier on this category's share of the score. 0 makes it informational.",
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "patternProperties": {
+          "^x-": {}
+        },
+        "additionalProperties": false
+      },
+      "else": {
+        "$ref": "#/$defs/RuleLevel"
+      }
+    },
+    "Terms": {
+      "description": "Project vocabulary.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Words this project spells or uses its own way. The spelling check and identifier checks skip them.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "files": {
+          "description": "Terms files, relative to the config file.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "blocklists": {
+          "description": "Word blocklist files, relative to the config file. Each entry names a word, a part of speech and a reason.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Settings": {
+      "description": "Settings that a layer below the project config, an override, a genre block and front matter can all set. Each layer patches the one below field by field. Maps merge by key. Lists and scalars replace.",
+      "type": "object",
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/Thresholds"
+        },
+        "categories": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/RuleKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/CategorySettings"
+          }
+        },
+        "rules": {
+          "description": "Rule levels by rule name.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/RuleKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleLevel"
+          }
+        },
+        "terms": {
+          "$ref": "#/$defs/Terms"
+        }
+      }
+    },
+    "Source": {
+      "description": "A pack or plugin the project depends on. The lockfile pins the digest.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "source": {
+          "description": "An `oci://` reference, a `git+https://` URL with a commit, or a path relative to the config file.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "source"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Override": {
+      "description": "A glob-scoped patch. Every matching block applies in file order and the last writer of a field wins.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Settings"
+        }
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Glob"
+          }
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "unevaluatedProperties": false
+    },
+    "GenreBlock": {
+      "description": "Assigns a genre to the files it matches and patches their settings. Genre definitions live in genre files.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Settings"
+        }
+      ],
+      "properties": {
+        "genre": {
+          "$ref": "#/$defs/Ref"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Glob"
+          }
+        }
+      },
+      "required": [
+        "genre",
+        "files"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "unevaluatedProperties": false
+    },
+    "Guidance": {
+      "description": "Agent steering. Project-wide: overrides, genre blocks and front matter cannot set it.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "description": "Detail of the rendered `prime` topics.",
+          "enum": [
+            "brief",
+            "standard",
+            "full"
+          ],
+          "default": "standard"
+        },
+        "write": {
+          "enum": [
+            "auto",
+            "off"
+          ],
+          "default": "auto"
+        },
+        "review": {
+          "enum": [
+            "auto",
+            "ask",
+            "off"
+          ],
+          "default": "auto"
+        },
+        "review_depth": {
+          "enum": [
+            "self",
+            "subagent",
+            "adversary"
+          ],
+          "default": "subagent"
+        },
+        "report": {
+          "enum": [
+            "ask",
+            "off"
+          ],
+          "default": "ask"
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "FrontmatterPolicy": {
+      "description": "Which fields of a document's `slopvac:` block take effect. A block field outside the allowed set is an error at its line and column.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When false, `slopvac:` is plain data and is not read.",
+          "type": "boolean",
+          "default": true
+        },
+        "allow": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [
+            "genre",
+            "locale",
+            "terms"
+          ],
+          "items": {
+            "enum": [
+              "genre",
+              "profile",
+              "locale",
+              "thresholds",
+              "categories",
+              "rules",
+              "terms"
+            ]
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Network": {
+      "description": "Network policy. `offline = true` is sticky: no other source can unset it, so `false` only restates the default. See docs/contract/policies.md.",
+      "type": "object",
+      "properties": {
+        "offline": {
+          "type": "boolean",
+          "default": false
+        },
+        "update_check": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Review": {
+      "description": "Agent review. The provider is a trusted plugin; it stays idle during lint.",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "description": "Plugin id of the model provider.",
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "model": {
+          "description": "Model name the reviewer must report.",
+          "type": "string",
+          "minLength": 1
+        },
+        "author_model": {
+          "description": "Model name of the author. The review refuses a reviewer with the same name.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,5 @@
+schema_version = 3
+
+[network]
+offline = false
+update_check = true

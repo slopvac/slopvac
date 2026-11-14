@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/frontmatter.schema.json",
+  "title": "slopvac v3 front matter",
+  "description": "A document's front matter mapping, after YAML, TOML or JSON parsing. Only the `slopvac` key belongs to slopvac; every other key is the document's own and is not validated. Unknown keys inside `slopvac` are errors, and keys that start with `x-` are ignored. The project's `[frontmatter] allow` list narrows which fields take effect. Semantics: docs/contract/config.md. Owner: slopvac-8l4.2.5.",
+  "type": "object",
+  "properties": {
+    "slopvac": {
+      "$ref": "#/$defs/Block"
+    }
+  },
+  "$defs": {
+    "Block": {
+      "description": "Per-document settings. The layer sits above matching overrides and below inline directives.",
+      "type": "object",
+      "properties": {
+        "v": {
+          "description": "Version of this block's shape. Same number as the config schema_version.",
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/common.schema.json#/$defs/SchemaVersion"
+        },
+        "genre": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Ref"
+        },
+        "profile": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Settings/properties/profile"
+        },
+        "locale": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Settings/properties/locale"
+        },
+        "thresholds": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Settings/properties/thresholds"
+        },
+        "categories": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Settings/properties/categories"
+        },
+        "rules": {
+          "$ref": "https://srobroek.github.io/slopvac/schemas/v3/config.schema.json#/$defs/Settings/properties/rules"
+        },
+        "terms": {
+          "description": "Words this document uses its own way.",
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "patternProperties": {
+            "^x-": {}
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "v"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}
