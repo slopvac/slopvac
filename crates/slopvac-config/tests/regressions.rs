@@ -29,7 +29,7 @@ fn a_repeated_allow_entry_is_rejected_at_the_repeat() {
 #[test]
 fn distinct_allow_entries_are_accepted() {
     let text = "schema_version = 3\n\n[frontmatter]\nallow = [\"genre\", \"locale\"]\n";
-    assert!(config(text).is_empty());
+    assert_eq!(config(text), []);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn malformed_yaml_is_an_error_that_points_into_the_text() {
         line >= 3,
         "error at line {line}, expected at or after the broken flow sequence"
     );
-    assert!(!err.message.is_empty());
+    assert_ne!(err.message, "");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn a_front_matter_root_that_is_not_a_mapping_is_rejected() {
 
 #[test]
 fn a_mapping_without_a_slopvac_key_has_nothing_to_check() {
-    assert!(front_matter("title: x\n").is_empty());
+    assert_eq!(front_matter("title: x\n"), []);
 }
 
 #[test]
