@@ -99,7 +99,7 @@ pub struct IndexEntry {
     /// Display name.
     pub name: String,
     /// One-line summary. Untrusted text: print it through
-    /// [`sanitize_for_terminal`](super::sanitize_for_terminal).
+    /// [`sanitize_for_terminal`].
     pub description: String,
     /// Latest listed version, without build metadata.
     pub version: Version,
