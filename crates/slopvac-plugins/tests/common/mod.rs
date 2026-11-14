@@ -149,11 +149,15 @@ pub fn wait_gone(pids: &[i32]) -> bool {
 }
 
 pub fn pids_from(file: &Path) -> Vec<i32> {
+    pids_n(file, 2)
+}
+
+pub fn pids_n(file: &Path, n: usize) -> Vec<i32> {
     let end = Instant::now() + Duration::from_secs(3);
     while Instant::now() < end {
         if let Ok(s) = std::fs::read_to_string(file) {
             let v: Vec<i32> = s.lines().filter_map(|l| l.parse().ok()).collect();
-            if v.len() == 2 {
+            if v.len() == n {
                 return v;
             }
         }

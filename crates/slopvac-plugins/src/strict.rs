@@ -163,6 +163,21 @@ mod tests {
     }
 
     #[test]
+    fn a_top_level_array_parses_and_is_left_to_the_envelope_check() {
+        assert!(parse(b"[]").unwrap().is_array());
+    }
+
+    #[test]
+    fn fractional_and_exponent_forms_are_not_integers() {
+        for text in ["1.0", "1e2", "-1.0", "1E2"] {
+            let v = parse(text.as_bytes()).unwrap();
+            assert_eq!(v.as_u64(), None, "{text}");
+            assert_eq!(v.as_i64(), None, "{text}");
+            assert!(serde_json::from_value::<u64>(v).is_err(), "{text}");
+        }
+    }
+
+    #[test]
     fn rejects_trailing_data_and_bad_json() {
         assert!(parse(b"{} x").is_err());
         assert!(parse(b"{").is_err());

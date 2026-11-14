@@ -86,6 +86,20 @@ fn parse_length(value: &[u8]) -> Result<usize, FrameError> {
 /// # Errors
 /// [`FrameError::Framing`] for any rule violation, [`FrameError::Io`] for a stream failure.
 pub fn read_frame<R: BufRead>(r: &mut R, max_body: usize) -> Result<Option<Vec<u8>>, FrameError> {
+    read_frame_with(r, &|| max_body)
+}
+
+/// Like [`read_frame`], but asks for the limit once the header block is in.
+///
+/// A limit that changes while the reader waits for the next frame (the
+/// `initialize` negotiation) applies to the frame that arrives afterwards.
+///
+/// # Errors
+/// As [`read_frame`].
+pub fn read_frame_with<R: BufRead>(
+    r: &mut R,
+    max_body: &dyn Fn() -> usize,
+) -> Result<Option<Vec<u8>>, FrameError> {
     let mut length: Option<usize> = None;
     let mut lines = 0;
     let mut first = true;
@@ -119,6 +133,7 @@ pub fn read_frame<R: BufRead>(r: &mut R, max_body: usize) -> Result<Option<Vec<u
         }
     }
     let len = length.ok_or_else(|| framing("missing Content-Length"))?;
+    let max_body = max_body();
     if len > max_body {
         return Err(framing(format!(
             "body of {len} bytes exceeds the limit of {max_body}"

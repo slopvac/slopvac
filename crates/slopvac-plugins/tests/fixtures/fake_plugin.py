@@ -41,6 +41,18 @@ def send(obj):
     out.flush()
 
 
+def send_sized(obj, size):
+    """Send obj with an envelope `pad` field so the body is exactly `size` bytes."""
+    obj = dict(obj, pad="")
+    base = len(json.dumps(obj).encode())
+    assert size >= base, (size, base)
+    obj["pad"] = "p" * (size - base)
+    body = json.dumps(obj).encode()
+    assert len(body) == size
+    out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    out.flush()
+
+
 def result(id_, value):
     send({"jsonrpc": "2.0", "id": id_, "result": value})
 
@@ -94,6 +106,10 @@ def tags_for(params):
             evidence = json.dumps(dict(os.environ))
         if mode == "paths":
             evidence = json.dumps(doc.get("path"))
+        if mode == "count":
+            evidence = str(tag_requests)
+        if mode in ("ids", "ids-cancel"):
+            evidence = str(current_id)
         results.append(
             {
                 "document": doc["id"],
@@ -110,6 +126,14 @@ def tags_for(params):
     return {"results": results}
 
 
+def spawn_orphan():
+    """A child in the same group that keeps the stdio pipes open, then the parent leaves."""
+    child = subprocess.Popen(["sleep", "300"]).pid
+    if pidfile:
+        with open(pidfile, "w") as f:
+            f.write("%d\n%d" % (child, os.getpid()))
+
+
 def spawn_children():
     pids = [subprocess.Popen(["sleep", "300"]).pid]
     pids.append(subprocess.Popen(["sleep", "300"], start_new_session=True).pid)
@@ -124,20 +148,36 @@ if mode == "stray-stdout":
 
 shut = False
 pending_tag = None
+tag_requests = 0
+current_id = None
+sized = int(mode.split(":")[1]) if mode.startswith("body:") else None
+init_sized = int(mode.split(":")[1]) if mode.startswith("init-body:") else None
 while True:
     msg = read_msg()
     if msg is None:
         sys.exit(0)
     method = msg.get("method")
     id_ = msg.get("id")
+    current_id = id_
+    if method == "tagger/tag":
+        tag_requests += 1
     if method == "initialize":
         if mode == "silent-init":
             time.sleep(300)
         if mode == "version-unsupported":
             error(id_, -32001, "protocol-version-unsupported")
             continue
+        if mode == "hang" and pidfile:
+            with open(pidfile, "w") as f:
+                f.write(str(os.getpid()))
+        if init_sized:
+            send_sized({"jsonrpc": "2.0", "id": id_, "result": init_result()}, init_sized)
+            continue
         result(id_, init_result())
     elif method == "initialized":
+        if mode == "orphan-init":
+            spawn_orphan()
+            sys.exit(0)
         if mode == "flood":
             for _ in range(1500):
                 send({"jsonrpc": "2.0", "method": "noise", "params": {}})
@@ -156,7 +196,7 @@ while True:
     elif method == "exit":
         sys.exit(0 if shut else 1)
     elif method == "$/cancelRequest":
-        if mode == "cancel-ok" and pending_tag is not None:
+        if mode in ("cancel-ok", "ids-cancel") and pending_tag is not None:
             error(pending_tag, -32005, "request-cancelled")
             pending_tag = None
         elif mode == "cancel-late-answer" and pending_tag is not None:
@@ -166,6 +206,25 @@ while True:
         if mode in ("hang", "cancel-ok", "cancel-late-answer"):
             pending_tag = id_
             pending_params = msg["params"]
+        elif mode == "orphan-tag":
+            spawn_orphan()
+            sys.exit(3)
+        elif mode == "stderr-tail":
+            for i in range(20000):
+                sys.stderr.write("line-%05d\n" % i)
+            sys.stderr.flush()
+            sys.exit(3)
+        elif sized:
+            send_sized(
+                {"jsonrpc": "2.0", "id": id_, "result": tags_for(msg["params"])}, sized
+            )
+        elif mode == "duplicate-response":
+            result(id_, tags_for(msg["params"]))
+            result(id_, tags_for(msg["params"]))
+        elif mode == "top-array":
+            send([])
+        elif mode == "ids-cancel" and tag_requests == 1:
+            pending_tag = id_
         elif mode == "exit-mid":
             sys.stderr.write("boom \x1b[31mred\x1b[0m\n")
             sys.stderr.flush()

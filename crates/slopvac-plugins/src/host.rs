@@ -1,9 +1,14 @@
 //! The plugin host: spawn, handshake, requests with deadlines, shutdown.
 //!
-//! No async runtime. Each plugin has four threads: a reader that parses
+//! No async runtime. Each plugin has five threads: a reader that parses
 //! frames and routes responses by request id, a writer fed by a bounded
-//! channel, a stderr drain and a waiter that reaps the child. Callers block in
-//! `crossbeam_channel::select!` against a wall-clock deadline.
+//! channel, a stderr drain, a waiter that reaps the child and a lifetime
+//! watchdog. Callers block in `crossbeam_channel::select!` against a
+//! wall-clock deadline.
+//!
+//! The process group stays registered for `kill_all_live` until `kill` has
+//! run. The waiter drives teardown when the child exits, even if a descendant
+//! keeps standard output open and the reader never sees end of stream.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufReader, Read, Write};
@@ -18,7 +23,7 @@ use crossbeam_channel::{Receiver, Sender, bounded, select};
 use serde_json::{Value, json};
 
 use crate::error::PluginError;
-use crate::frame::{FrameError, encode_frame, read_frame};
+use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
 use crate::process::{descendants, kill_tree, register, sanitize_display, unregister};
 use crate::protocol::{
@@ -230,6 +235,8 @@ impl Shared {
         if !self.killed.swap(true, Ordering::SeqCst) {
             let known = lock(&self.strays).clone();
             kill_tree(self.pid, &known);
+            // Only now may `kill_all_live` forget the group.
+            unregister(self.pid);
         }
     }
 
@@ -269,14 +276,20 @@ impl Shared {
         }
     }
 
-    /// The process or its stdout ended.
-    fn on_exit(&self) {
-        if self.shutting_down.load(Ordering::SeqCst) {
-            self.fail(PluginError::Usage("the plugin has shut down".into()));
-            return;
+    /// During shutdown the stream or process ending is expected: fail what is
+    /// still waiting, but leave success and the kill to `Plugin::shutdown`.
+    fn release_pending(&self) {
+        let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
+        for p in drained {
+            let _ = p
+                .reply
+                .try_send(Err(PluginError::Usage("the plugin has shut down".into())));
         }
+    }
+
+    /// Kill the group, collect the exit status and stderr tail, fail every pending request.
+    fn tear_down_after_exit(&self) {
         self.kill();
-        let _ = self.exited.recv_timeout(self.exit_timeout);
         let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
         let status = lock(&self.exit_status)
             .clone()
@@ -286,6 +299,27 @@ impl Shared {
             status,
             stderr: self.stderr_tail(),
         });
+    }
+
+    /// Standard output ended or broke.
+    fn on_stream_end(&self) {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            self.release_pending();
+            return;
+        }
+        // Let the process status arrive first, so the error carries it.
+        self.kill();
+        let _ = self.exited.recv_timeout(self.exit_timeout);
+        self.tear_down_after_exit();
+    }
+
+    /// The waiter reaped the child. Independent of pipe end of stream.
+    fn on_process_exit(&self) {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            self.release_pending();
+            return;
+        }
+        self.tear_down_after_exit();
     }
 
     fn violation(&self, msg: impl Into<String>) {
@@ -347,9 +381,9 @@ fn reader_loop(shared: &Shared, stdout: impl Read) {
     let mut total: u64 = 0;
     let mut unsolicited = 0u32;
     loop {
-        let limit = shared.max_body.load(Ordering::SeqCst);
-        match read_frame(&mut r, limit) {
-            Ok(None) | Err(FrameError::Io(_)) => return shared.on_exit(),
+        // The limit is read per frame, once its header is in, so the negotiated one applies.
+        match read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst)) {
+            Ok(None) | Err(FrameError::Io(_)) => return shared.on_stream_end(),
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
                 total = total.saturating_add(body.len() as u64);
@@ -399,8 +433,9 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
 struct Conn {
     shared: Arc<Shared>,
     ids: IdAllocator,
-    started: Instant,
     cancel_grace: Duration,
+    /// Dropping this stops the lifetime watchdog.
+    _watchdog_stop: Sender<()>,
 }
 
 impl Conn {
@@ -469,7 +504,7 @@ impl Conn {
             Ok(id) => id,
             Err(e) => return Err(self.shared.fail(e)),
         };
-        let deadline = (Instant::now() + timeout).min(self.started + self.shared.caps.wall_clock);
+        let deadline = Instant::now() + timeout;
         let (reply_tx, reply_rx) = bounded::<Reply>(1);
         let (cancel_tx, cancel_rx) = bounded::<()>(1);
         {
@@ -852,6 +887,20 @@ impl Drop for Slot<'_> {
     }
 }
 
+/// The lifetime cap (threat model 5.5) holds whatever the plugin does, with or
+/// without a request in flight. Dropping the `stop` sender ends the thread.
+fn spawn_watchdog(shared: &Arc<Shared>, stop: Receiver<()>, cap: Duration) {
+    let shared = Arc::clone(shared);
+    thread::spawn(move || {
+        if stop.recv_timeout(cap) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
+            shared.fail(PluginError::Timeout {
+                plugin: shared.name.clone(),
+                what: format!("the wall-clock cap of {cap:?} expired"),
+            });
+        }
+    });
+}
+
 fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args)
@@ -886,6 +935,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     let (frames_tx, frames_rx) = bounded::<Vec<u8>>(2 * cfg.max_in_flight + 4);
     let (stderr_done_tx, stderr_done) = bounded::<()>(0);
     let (exited_tx, exited) = bounded::<()>(0);
+    let (watchdog_stop, watchdog_rx) = bounded::<()>(0);
     let shared = Arc::new(Shared {
         name: spec.name.clone(),
         pid,
@@ -911,10 +961,11 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
                 Ok(s) => s.to_string(),
                 Err(e) => format!("wait failed: {e}"),
             });
-            unregister(shared.pid);
             drop(exited_tx);
+            shared.on_process_exit();
         });
     }
+    spawn_watchdog(&shared, watchdog_rx, cfg.caps.wall_clock);
     thread::spawn(move || {
         let mut stdin = stdin;
         for frame in frames_rx {
@@ -938,8 +989,8 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     Ok(Conn {
         shared,
         ids: IdAllocator::with_max(MAX_REQUEST_ID),
-        started: Instant::now(),
         cancel_grace: cfg.timeouts.cancel_grace,
+        _watchdog_stop: watchdog_stop,
     })
 }
 

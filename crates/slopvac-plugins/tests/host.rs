@@ -403,3 +403,193 @@ fn tm8_the_plugin_environment_holds_only_the_allowlist() {
     assert_eq!(keys, ["ALLOWED_VAR", "LANG", "PATH"]);
     assert_eq!(env["PATH"], "/usr/bin:/bin");
 }
+
+#[test]
+fn h15_an_exit_is_reported_at_once_when_a_child_keeps_standard_output_open() {
+    let dir = scratch("h15-orphan");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("orphan-tag", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    let started = Instant::now();
+    let err = p.tag("main", &docs(1)).unwrap_err();
+    let elapsed = started.elapsed();
+    let pids = pids_from(&pidfile);
+    let gone = wait_gone(&pids);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(err.slopvac_code(), "plugin-exited", "{err}");
+    assert!(err.to_string().contains('3'), "{err}");
+    // The hook timer is 800 ms: the answer came from the exit, not the timer.
+    assert!(elapsed < Duration::from_millis(700), "{elapsed:?}");
+    assert!(gone, "processes {pids:?} survived");
+}
+
+#[test]
+fn tm5_the_lifetime_cap_kills_an_idle_plugin_and_its_children() {
+    let dir = scratch("tm5");
+    let pidfile = dir.join("pids");
+    let mut c = cfg();
+    c.caps.wall_clock = Duration::from_millis(600);
+    let p = Plugin::start(
+        &spec_with("children", &json!({}), Some(&pidfile), decl()),
+        &c,
+        &Allow,
+    )
+    .unwrap();
+    let pids = pids_from(&pidfile);
+    assert!(p.failure().is_none(), "alive before the cap");
+    let gone = wait_gone(&pids);
+    let code = p.failure().map(|e| e.slopvac_code().to_owned());
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "children {pids:?} survived the cap");
+    assert_eq!(code.as_deref(), Some("plugin-timeout"));
+    assert!(p.tag("main", &docs(1)).is_err());
+}
+
+#[test]
+fn tm5_the_lifetime_cap_fails_a_request_that_is_waiting() {
+    let mut c = cfg();
+    c.caps.wall_clock = Duration::from_millis(300);
+    c.timeouts.hook = Duration::from_secs(20);
+    let p = Plugin::start(&spec("hang"), &c, &Allow).unwrap();
+    let started = Instant::now();
+    assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn h13_the_hung_process_is_dead_after_the_kill() {
+    let dir = scratch("h13");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("hang", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    let pids = pids_n(&pidfile, 1);
+    assert!(alive(pids[0]));
+    assert_eq!(code(&p.tag("main", &docs(1))), "plugin-timeout");
+    let gone = wait_gone(&pids);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "hung plugin {pids:?} survived");
+}
+
+#[test]
+fn h16_only_the_tail_of_a_long_stderr_reaches_the_error() {
+    let p = start("stderr-tail");
+    let text = p.tag("main", &docs(1)).unwrap_err().to_string();
+    assert!(text.contains("line-19999"), "the newest line is kept");
+    assert!(!text.contains("line-00000"), "the oldest line is dropped");
+    // 4 KiB shown at 11 bytes a line, plus the header text.
+    assert!(text.len() < 4096 + 200, "{} bytes", text.len());
+}
+
+#[test]
+fn h1_the_body_limit_is_exact_before_and_after_initialize() {
+    // (mode, negotiated maxMessageBytes, passes)
+    let cases: [(&str, u64, bool); 6] = [
+        ("init-body:1048576", 1 << 20, true),
+        ("init-body:1048577", 1 << 20, false),
+        ("body:65536", 65_536, true),
+        ("body:65537", 65_536, false),
+        // Larger than the pre-initialize 1 MiB, inside the negotiated 4 MiB.
+        ("body:2097152", 4 << 20, true),
+        ("body:4194305", 4 << 20, false),
+    ];
+    for (mode, negotiated, passes) in cases {
+        let o = json!({"limits": {"maxMessageBytes": negotiated}});
+        let r = Plugin::start(&spec_with(mode, &o, None, decl()), &cfg(), &Allow);
+        let r = r.and_then(|p| p.tag("main", &docs(1)).map(|_| ()));
+        if passes {
+            assert!(r.is_ok(), "{mode}: {r:?}");
+        } else {
+            assert_eq!(code(&r), "plugin-protocol-violation", "{mode}");
+        }
+    }
+}
+
+#[test]
+fn h23_documents_over_the_message_limit_go_out_as_two_requests() {
+    let o = json!({"limits": {"maxMessageBytes": 65_536}});
+    let p = Plugin::start(&spec_with("count", &o, None, decl()), &cfg(), &Allow).unwrap();
+    let mut two = docs(2);
+    for d in &mut two {
+        d.text = "y".repeat(40_000);
+    }
+    let out = p.tag("main", &two).unwrap();
+    let evidence = |i: usize| out[i].outcome.as_ref().unwrap()[0].evidence.clone();
+    // The plugin counts the tagger requests it received.
+    assert_eq!((evidence(0).as_str(), evidence(1).as_str()), ("1", "2"));
+}
+
+#[test]
+fn h24_a_second_response_to_a_finished_id_is_ignored() {
+    let p = start("duplicate-response");
+    assert!(p.tag("main", &docs(1)).is_ok());
+    assert!(p.tag("main", &docs(1)).is_ok(), "the plugin lives on");
+    assert!(p.failure().is_none());
+}
+
+#[test]
+fn h25_a_top_level_array_is_a_protocol_violation() {
+    let p = start("top-array");
+    assert_eq!(code(&p.tag("main", &docs(1))), "plugin-protocol-violation");
+}
+
+#[test]
+fn h35_integer_fields_given_as_floats_or_past_2_pow_53_are_rejected() {
+    let typed = [
+        json!({"limits": {"maxInFlight": 1.0}}),
+        json!({"limits": {"maxBatchDocuments": 64.0}}),
+        json!({"limits": {"maxMessageBytes": 1_048_576.0}}),
+    ];
+    for o in typed {
+        let r = Plugin::start(&spec_with("ok", &o, None, decl()), &cfg(), &Allow);
+        assert_eq!(code(&r), "plugin-output-invalid", "{o}");
+    }
+    let o = json!({"limits": {"maxMessageBytes": 9_007_199_254_740_992u64}});
+    let r = Plugin::start(&spec_with("ok", &o, None, decl()), &cfg(), &Allow);
+    assert_eq!(code(&r), "plugin-protocol-violation");
+}
+
+#[test]
+fn h34_request_ids_keep_counting_after_completion() {
+    let p = start("ids");
+    let id = |p: &Plugin| {
+        p.tag("main", &docs(1)).unwrap()[0]
+            .outcome
+            .as_ref()
+            .unwrap()[0]
+            .evidence
+            .clone()
+    };
+    // `initialize` took id 1.
+    assert_eq!([id(&p), id(&p), id(&p)], ["2", "3", "4"]);
+}
+
+#[test]
+fn h34_a_cancelled_request_id_is_not_reused() {
+    let p = start("ids-cancel");
+    let first = std::thread::scope(|s| {
+        let h = s.spawn(|| p.tag("main", &docs(1)));
+        std::thread::sleep(Duration::from_millis(200));
+        p.cancel_pending();
+        h.join().unwrap()
+    });
+    assert_eq!(code(&first), "request-cancelled");
+    // `initialize` was 1 and the cancelled request 2.
+    let next = p.tag("main", &docs(1)).unwrap();
+    assert_eq!(next[0].outcome.as_ref().unwrap()[0].evidence, "3");
+}
+
+#[test]
+fn a_compliant_shutdown_is_clean_every_time() {
+    // Standard output closing next to the exit must not read as a failure.
+    for i in 0..25 {
+        assert!(start("ok").shutdown(), "run {i}");
+    }
+}

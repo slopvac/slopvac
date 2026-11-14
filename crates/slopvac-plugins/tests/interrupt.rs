@@ -25,3 +25,21 @@ fn h18_an_interrupt_kills_every_live_plugin() {
     assert!(gone, "children {pids:?} survived");
     assert!(r.is_err());
 }
+
+#[test]
+fn h18_an_interrupt_still_reaches_a_child_after_its_parent_exited_first() {
+    let dir = scratch("h18-orphan");
+    let pidfile = dir.join("pids");
+    let _p = Plugin::start(
+        &spec_with("orphan-init", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    // The child keeps the plugin's pipes open, so the reader never sees end of stream.
+    let pids = pids_from(&pidfile);
+    kill_all_live();
+    let gone = wait_gone(&pids);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "processes {pids:?} survived");
+}
