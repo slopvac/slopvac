@@ -7,9 +7,10 @@
 //! wall-clock deadline.
 //!
 //! Teardown has one owner, the plugin's `process::Group`. The waiter sees the
-//! leader exit without reaping it, kills the group, reaps the leader and only
-//! then unregisters the group from `kill_all_live`. Every other kill goes
-//! through the same group lock and does nothing once the leader is reaped. The
+//! leader exit without reaping it, tears the group down (stop, walk, kill; see
+//! `process`), reaps the leader and only then unregisters the group from
+//! `kill_all_live`. Every other kill goes through the same group lock and
+//! does nothing once the leader is reaped. The
 //! waiter drives teardown even if a descendant keeps standard output open and
 //! the reader never sees end of stream. Dropping a plugin waits for the reap,
 //! up to five seconds after the kill.
@@ -29,7 +30,7 @@ use serde_json::{Value, json};
 use crate::error::PluginError;
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
-use crate::process::{Group, Leader, sanitize_display};
+use crate::process::{Group, Leader, TableSource, sanitize_display};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
     PROTOCOL_VERSION, PluginDeclaration,
@@ -125,6 +126,10 @@ pub struct HostConfig {
     pub timeouts: Timeouts,
     /// Run caps.
     pub caps: RunCaps,
+    /// Test seam: where a teardown reads the process table. `None`, the
+    /// default, means `/bin/ps`; production code never sets it.
+    #[doc(hidden)]
+    pub process_table: Option<TableSource>,
 }
 
 impl Default for HostConfig {
@@ -140,6 +145,7 @@ impl Default for HostConfig {
             max_in_flight: 16,
             timeouts: Timeouts::default(),
             caps: RunCaps::default(),
+            process_table: None,
         }
     }
 }
@@ -242,7 +248,6 @@ impl Shared {
             let mut dead = lock(&self.dead);
             dead.get_or_insert_with(|| err).clone()
         };
-        self.group.remember_descendants();
         self.group.kill();
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
@@ -916,12 +921,17 @@ impl Plugin {
 
     /// Run the shutdown sequence: `shutdown`, `exit`, then a kill after the exit timer.
     ///
+    /// Descendants that left the plugin's process group are killed first,
+    /// while the walk can still find them through their parents.
+    ///
     /// Returns whether the plugin left on its own.
     #[must_use]
     pub fn shutdown(self) -> bool {
         let shared = Arc::clone(&self.conn.shared);
         shared.shutting_down.store(true, Ordering::SeqCst);
-        shared.group.remember_descendants();
+        // A descendant that left the group is lost to the final walk once its
+        // parent exits, so it goes now. No snapshot is kept across the waits.
+        shared.group.kill_strays();
         if self.conn.dead().is_none() {
             let _ = self
                 .conn
@@ -979,7 +989,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, PluginError> {
     let child = cmd
         .spawn()
         .map_err(|e| PluginError::SpawnFailed(format!("{}: {e}", spec.name)))?;
-    let group = Group::register(child.id());
+    let group = Group::register(child.id(), cfg.process_table.clone());
     let mut leader = Leader::new(child);
     let (Some(stdin), Some(stdout), Some(stderr)) = leader.take_pipes() else {
         group.finish(leader);

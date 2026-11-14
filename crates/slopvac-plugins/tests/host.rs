@@ -232,6 +232,24 @@ fn tm4_children_in_and_out_of_the_process_group_die_with_the_plugin() {
 }
 
 #[test]
+fn tm4_a_child_of_a_child_that_left_the_group_dies_with_the_plugin() {
+    let dir = scratch("tm4-nested");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("nested", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    // pids[0] called `setsid`; pids[1] is its own child.
+    let pids = pids_from(&pidfile);
+    drop(p);
+    let gone = wait_gone(&pids);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "descendants {pids:?} survived");
+}
+
+#[test]
 fn dropping_a_plugin_kills_its_process_group() {
     let dir = scratch("drop");
     let pidfile = dir.join("pids");

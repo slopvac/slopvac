@@ -158,6 +158,22 @@ def spawn_children():
             f.write("\n".join(map(str, pids)))
 
 
+def spawn_nested():
+    """A child that leaves the group with `setsid` and starts a child of its own."""
+    inner = pidfile + ".inner"
+    sh = subprocess.Popen(
+        ["sh", "-c", 'sleep 300 & echo $! > "$0"; wait', inner],
+        start_new_session=True,
+    ).pid
+    end = time.time() + 10
+    while not os.path.exists(inner) and time.time() < end:
+        time.sleep(0.01)
+    with open(inner) as f:
+        grandchild = f.read().strip()
+    with open(pidfile, "w") as f:
+        f.write("%d\n%s" % (sh, grandchild))
+
+
 if mode == "stray-stdout":
     out.write(b"hello\r\n")
     out.flush()
@@ -210,6 +226,8 @@ while True:
                 send({"jsonrpc": "2.0", "method": "noise", "params": {}})
         if mode == "children" or mode == "ignore-shutdown":
             spawn_children()
+        if mode == "nested":
+            spawn_nested()
         if mode == "no-read":
             time.sleep(300)
         if mode == "stderr-flood":
