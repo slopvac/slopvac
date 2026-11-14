@@ -67,3 +67,18 @@ impl Pattern {
         }
     }
 }
+
+/// A path as patterns see it: forward slashes, no drive prefix, no leading slash. Windows
+/// paths then match the same patterns as Unix paths, and an absolute path never reaches a
+/// matcher that expects a path relative to a root.
+#[must_use]
+pub fn normalize_path(path: &str) -> String {
+    let forward = path.replace('\\', "/");
+    let bytes = forward.as_bytes();
+    let no_drive = if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        &forward[2..]
+    } else {
+        forward.as_str()
+    };
+    no_drive.trim_start_matches('/').to_string()
+}

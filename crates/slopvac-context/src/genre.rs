@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
-use crate::{BlockKind, DocumentView, Error, FrontmatterCondition, Pattern};
+use crate::{BlockKind, DocumentView, Error, FrontmatterCondition, Pattern, normalize_path};
 
 const SEVERITIES: [&str; 4] = ["off", "suggestion", "warning", "error"];
 
@@ -274,7 +274,8 @@ impl GenreRegistry {
         if let Some(id) = doc.front_matter("genre") {
             return explicit(id, "front-matter", format!("`genre: {id}`"));
         }
-        let rel = opts.relative_path.unwrap_or_else(|| doc.path());
+        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
+        let rel = rel.as_str();
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
             if files_match(&a.files, rel)? {
@@ -340,7 +341,7 @@ impl GenreRegistry {
                         found
                     }
                     SignalKind::Path(p) => p
-                        .is_match(doc.path())?
+                        .is_match(&normalize_path(doc.path()))?
                         .then(|| ("path", format!("path `{}`", doc.path()))),
                     SignalKind::Frontmatter(k, p) => match doc.front_matter(k) {
                         Some(v) if p.as_ref().map_or(Ok(true), |p| p.is_match(v))? => {
@@ -377,7 +378,10 @@ pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
             .map_err(|e| Error::Parse(format!("glob `{p}`: {e}")))?;
     }
     let set = b.build().map_err(|e| Error::Parse(e.to_string()))?;
-    Ok(set.matched_path_or_any_parents(rel, false).is_ignore())
+    let rel = normalize_path(rel);
+    Ok(set
+        .matched_path_or_any_parents(rel.as_str(), false)
+        .is_ignore())
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {

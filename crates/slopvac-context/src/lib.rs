@@ -17,7 +17,7 @@ pub use genre::{
     DetectSignal, GenreAssignment, GenreRegistry, GenreResult, GenreSource, GenreSpec, Reason,
     ResolveOptions, files_match, parse_genres,
 };
-pub use pattern::Pattern;
+pub use pattern::{Pattern, normalize_path};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,

@@ -137,3 +137,33 @@ fn run_assignments_match_absolute_paths_without_panicking() {
     let out = run_args(&[f.to_str().unwrap(), "--assign", "**/abs.md=informal"]).unwrap();
     assert!(out.contains(": informal (explicit)"), "{out}");
 }
+
+#[test]
+fn windows_and_absolute_paths_match_like_relative_unix_paths() {
+    let cases = [
+        (&["docs/**"][..], r"docs\a.md", true),
+        (&["**/a.md"][..], r"C:\proj\docs\a.md", true),
+        (&["docs/**"][..], r"C:\proj\docs\a.md", false),
+        (&["**/docs/**"][..], "/proj/docs/a.md", true),
+        (
+            &["docs/**", "!docs/internal/**"][..],
+            r"docs\internal\x.md",
+            false,
+        ),
+    ];
+    for (p, path, want) in cases {
+        assert_eq!(
+            files_match(&pats(p), path).unwrap(),
+            want,
+            "{p:?} on {path}"
+        );
+    }
+}
+
+#[test]
+fn path_signals_see_windows_separators() {
+    let reg = builtin_genres().unwrap();
+    let doc = PlainDocument::from_markdown(r"C:\proj\docs\CHANGELOG.md", "# Log\n\nText.\n");
+    let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+    assert_eq!(r.id, "change-comms");
+}
