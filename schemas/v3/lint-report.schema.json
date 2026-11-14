@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/lint-report.schema.json",
+  "title": "slopvac v3 lint report",
+  "description": "The `slopvac lint --format json` payload. Spec: docs/contract/lint-report.md. Owned by slopvac-8l4.2.2. Keys starting with `x-` are ignored by consumers.",
+  "type": "object",
+  "properties": {
+    "schema_version": {"$ref": "common.schema.json#/$defs/SchemaVersion"},
+    "slopvac_version": {"description": "Version of the tool that wrote the report. Not a schema version.", "type": "string", "minLength": 1},
+    "summary": {"$ref": "#/$defs/RunSummary"},
+    "documents": {"type": "array", "items": {"$ref": "#/$defs/Document"}},
+    "notices": {
+      "description": "Run-level facts a reader needs, such as skipped files or checks that did not run. Always present; empty when there is nothing to say.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Notice"}
+    }
+  },
+  "required": ["schema_version", "slopvac_version", "summary", "documents", "notices"],
+  "patternProperties": {"^x-": true},
+  "additionalProperties": false,
+  "$defs": {
+    "Count": {"type": "integer", "minimum": 0},
+    "Density": {"description": "Findings per 100 words.", "type": "number", "minimum": 0},
+    "Score": {"description": "Quality score from 0 (worst) to 100.", "type": "number", "minimum": 0, "maximum": 100},
+    "CategoryId": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "AiSignal": {"description": "How strongly a finding indicates machine-written text.", "enum": ["strong", "weak", "none"]},
+    "Notice": {
+      "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
+      "type": "object",
+      "properties": {
+        "code": {"description": "Stable kebab-case identifier. A code is never reused for a different meaning.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
+        "level": {"enum": ["info", "warning"]},
+        "message": {"type": "string", "minLength": 1},
+        "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"}
+      },
+      "required": ["code", "level", "message"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "AiRegisterSummary": {
+      "description": "Counts for one reporting axis, independent of scoring.",
+      "type": "object",
+      "properties": {
+        "findings": {"$ref": "#/$defs/Count"},
+        "errors": {"$ref": "#/$defs/Count"},
+        "warnings": {"$ref": "#/$defs/Count"},
+        "per_100_words": {"$ref": "#/$defs/Density"}
+      },
+      "required": ["findings", "errors", "warnings", "per_100_words"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "AiRegister": {
+      "type": "object",
+      "properties": {
+        "strong": {"$ref": "#/$defs/AiRegisterSummary"},
+        "weak": {"$ref": "#/$defs/AiRegisterSummary"}
+      },
+      "required": ["strong", "weak"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "CategorySummary": {
+      "description": "One category rolled up across every linted document.",
+      "type": "object",
+      "properties": {
+        "category": {"$ref": "#/$defs/CategoryId"},
+        "findings": {"$ref": "#/$defs/Count"},
+        "errors": {"$ref": "#/$defs/Count"},
+        "warnings": {"$ref": "#/$defs/Count"},
+        "suggestions": {"$ref": "#/$defs/Count"},
+        "per_100_words": {"$ref": "#/$defs/Density"},
+        "score": {"$ref": "#/$defs/Score"}
+      },
+      "required": ["category", "findings", "errors", "warnings", "suggestions", "per_100_words", "score"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "RunSummary": {
+      "description": "Every document rolled into one result. Densities use total words, not an average of per-document densities.",
+      "type": "object",
+      "properties": {
+        "documents": {"$ref": "#/$defs/Count"},
+        "words": {"$ref": "#/$defs/Count"},
+        "findings": {"$ref": "#/$defs/Count"},
+        "errors": {"$ref": "#/$defs/Count"},
+        "warnings": {"$ref": "#/$defs/Count"},
+        "suggestions": {"$ref": "#/$defs/Count"},
+        "per_100_words": {"$ref": "#/$defs/Density"},
+        "score": {"$ref": "#/$defs/Score"},
+        "passed": {"description": "True when every document passed its gate.", "type": "boolean"},
+        "categories": {"type": "array", "items": {"$ref": "#/$defs/CategorySummary"}},
+        "ai_register": {"$ref": "#/$defs/AiRegister"},
+        "prose": {"$ref": "#/$defs/AiRegisterSummary"}
+      },
+      "required": ["documents", "words", "findings", "errors", "warnings", "suggestions", "per_100_words", "score", "passed", "categories", "ai_register", "prose"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "GenreReason": {
+      "description": "One signal that led to the genre choice.",
+      "type": "object",
+      "properties": {
+        "signal": {"description": "Kebab-case signal name, such as `front-matter` or `path-glob`.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
+        "detail": {"type": "string"}
+      },
+      "required": ["signal", "detail"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "GenreResult": {
+      "description": "The genre applied to a document and why.",
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "source": {"description": "`explicit` came from config, the command line or front matter; `detected` from genre signals; `default` from the fallback.", "enum": ["explicit", "detected", "default"]},
+        "reasons": {"type": "array", "items": {"$ref": "#/$defs/GenreReason"}}
+      },
+      "required": ["id", "source", "reasons"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "CategoryScore": {
+      "description": "Per-category result for one document.",
+      "type": "object",
+      "properties": {
+        "category": {"$ref": "#/$defs/CategoryId"},
+        "findings": {"$ref": "#/$defs/Count"},
+        "errors": {"$ref": "#/$defs/Count"},
+        "warnings": {"$ref": "#/$defs/Count"},
+        "suggestions": {"$ref": "#/$defs/Count"},
+        "per_100_words": {"$ref": "#/$defs/Density"},
+        "gating_per_100_words": {"description": "Errors and warnings per 100 words: the figure the budget is checked against.", "$ref": "#/$defs/Density"},
+        "budget": {"description": "Gating density limit, or null when the category has none.", "type": ["number", "null"], "minimum": 0},
+        "score": {"$ref": "#/$defs/Score"},
+        "over_budget": {"type": "boolean"}
+      },
+      "required": ["category", "findings", "errors", "warnings", "suggestions", "per_100_words", "gating_per_100_words", "budget", "score", "over_budget"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "Gate": {
+      "description": "The pass or fail result for one document under its profile.",
+      "type": "object",
+      "properties": {
+        "passed": {"type": "boolean"},
+        "reasons": {"description": "Each failed threshold, named. Empty when passed.", "type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "required": ["passed", "reasons"],
+      "allOf": [
+        {"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}},
+        {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}
+      ],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "Fix": {
+      "description": "A machine-applicable correction. Edits address source bytes and never overlap.",
+      "type": "object",
+      "properties": {
+        "edits": {"type": "array", "minItems": 1, "items": {"$ref": "common.schema.json#/$defs/Edit"}}
+      },
+      "required": ["edits"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "Finding": {
+      "description": "One violation at one position. `line`, `column`, `end_line` and `end_column` are the display position; `span` is the byte range. A finding with no source range, such as a metric over a whole document, omits `span`, `end_line` and `end_column`.",
+      "type": "object",
+      "properties": {
+        "rule_id": {"$ref": "common.schema.json#/$defs/RuleId"},
+        "pack": {"$ref": "common.schema.json#/$defs/PackId"},
+        "category": {"$ref": "#/$defs/CategoryId"},
+        "severity": {"$ref": "common.schema.json#/$defs/Severity"},
+        "message": {"type": "string", "minLength": 1},
+        "span": {"$ref": "common.schema.json#/$defs/Span"},
+        "line": {"$ref": "common.schema.json#/$defs/LineCol/properties/line"},
+        "column": {"$ref": "common.schema.json#/$defs/LineCol/properties/column"},
+        "end_line": {"$ref": "common.schema.json#/$defs/LineCol/properties/line"},
+        "end_column": {"$ref": "common.schema.json#/$defs/LineCol/properties/column"},
+        "contexts": {"description": "Text contexts the match sits in, such as prose or code-comment.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true},
+        "ai_signal": {"$ref": "#/$defs/AiSignal"},
+        "matched_text": {"type": "string"},
+        "fix": {"$ref": "#/$defs/Fix"},
+        "provenance": {"$ref": "common.schema.json#/$defs/RuleProvenance"}
+      },
+      "required": ["rule_id", "pack", "category", "severity", "message", "line", "column", "contexts", "ai_signal", "matched_text"],
+      "dependentRequired": {
+        "span": ["end_line", "end_column"],
+        "end_line": ["end_column", "span"],
+        "end_column": ["end_line", "span"]
+      },
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
+    "Document": {
+      "description": "The whole result for one linted file.",
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "profile": {"type": "string", "minLength": 1},
+        "genre": {"$ref": "#/$defs/GenreResult"},
+        "contexts_seen": {"description": "Every text context found in the document, whether or not a finding fired in it.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true},
+        "config_sources": {"description": "Config layers that applied to this document, lowest priority first.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ConfigSource"}},
+        "words": {"$ref": "#/$defs/Count"},
+        "sentences": {"$ref": "#/$defs/Count"},
+        "paragraphs": {"$ref": "#/$defs/Count"},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "categories": {"type": "array", "items": {"$ref": "#/$defs/CategoryScore"}},
+        "total_findings": {"$ref": "#/$defs/Count"},
+        "errors": {"$ref": "#/$defs/Count"},
+        "warnings": {"$ref": "#/$defs/Count"},
+        "suggestions": {"$ref": "#/$defs/Count"},
+        "per_100_words": {"$ref": "#/$defs/Density"},
+        "score": {"$ref": "#/$defs/Score"},
+        "gate": {"$ref": "#/$defs/Gate"},
+        "unchecked": {"description": "What did not run, and why. A skipped check must never read as a pass.", "type": "array", "items": {"$ref": "#/$defs/Notice"}},
+        "ai_register": {"$ref": "#/$defs/AiRegister"},
+        "prose": {"$ref": "#/$defs/AiRegisterSummary"}
+      },
+      "required": ["path", "profile", "genre", "contexts_seen", "config_sources", "words", "sentences", "paragraphs", "findings", "categories", "total_findings", "errors", "warnings", "suggestions", "per_100_words", "score", "gate", "unchecked", "ai_register", "prose"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    }
+  }
+}
