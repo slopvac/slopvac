@@ -61,6 +61,9 @@ impl Level {
 pub struct Settings {
     /// Detail level.
     pub level: Level,
+    /// The migration guide for `prime migrate`; `None` uses the built-in short text.
+    // STUB(slopvac-8l4.11.9): the CLI passes slopvac_migrate::prime_migrate() here.
+    pub migrate_guide: Option<String>,
 }
 
 /// The topic names, in index order.
@@ -184,6 +187,7 @@ fn render_template(
         exit_incomplete => EXIT_INCOMPLETE,
         schema_version => SCHEMA_VERSION,
         harnesses => harness::names(),
+        migrate_guide => settings.migrate_guide.clone().unwrap_or_default(),
         commands => commands,
         topics => topics,
     };
@@ -230,7 +234,10 @@ pub fn render(
 /// runs this against the real tree.
 #[must_use]
 pub fn check_topics(cli: &Command) -> Vec<String> {
-    let settings = Settings { level: Level::Full };
+    let settings = Settings {
+        level: Level::Full,
+        ..Settings::default()
+    };
     let mut problems = Vec::new();
     let names = std::iter::once(None).chain(topic_names().into_iter().map(Some));
     for topic in names {
@@ -307,7 +314,10 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
         _ => Level::Default,
     };
     // STUB(slopvac-8l4.11.6): read `[guidance] level` from the config file once slopvac-config exists.
-    let settings = Settings { level };
+    let settings = Settings {
+        level,
+        ..Settings::default()
+    };
     let mut out = render(
         matches.get_one::<String>("topic").map(String::as_str),
         &settings,
