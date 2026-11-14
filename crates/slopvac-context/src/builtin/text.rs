@@ -1,24 +1,48 @@
 //! Text helpers for sentence-level taggers.
 
-/// Drop inline code spans, turning each into one space.
+/// Drop inline code spans, turning each into one space. A span opens with a run of N
+/// backticks and closes at the next run of exactly N, as in CommonMark. A run with no
+/// closing run of the same length stays literal text.
 pub(super) fn strip_code(s: &str) -> String {
+    let bytes = s.as_bytes();
     let mut out = String::with_capacity(s.len());
-    let mut in_code = false;
-    for c in s.chars() {
-        if c == '`' {
-            if in_code {
+    let mut i = 0;
+    let mut plain = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let run = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+        match closing_run(bytes, i + run, run) {
+            Some(end) => {
+                out.push_str(&s[plain..i]);
                 out.push(' ');
+                i = end;
+                plain = end;
             }
-            in_code = !in_code;
-        } else if !in_code {
-            out.push(c);
+            None => i += run,
         }
     }
-    if in_code {
-        // Unbalanced backtick: keep the text after it.
-        return s.replace('`', " ");
-    }
+    out.push_str(&s[plain..]);
     out
+}
+
+/// End offset of the first run of exactly `len` backticks at or after `from`.
+fn closing_run(bytes: &[u8], from: usize, len: usize) -> Option<usize> {
+    let mut j = from;
+    while j < bytes.len() {
+        if bytes[j] == b'`' {
+            let run = bytes[j..].iter().take_while(|&&b| b == b'`').count();
+            if run == len {
+                return Some(j + run);
+            }
+            j += run;
+        } else {
+            j += 1;
+        }
+    }
+    None
 }
 
 /// Reduce Markdown inline syntax to words: links to their text, no emphasis marks, no code.
