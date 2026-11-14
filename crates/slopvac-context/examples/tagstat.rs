@@ -1,6 +1,7 @@
 //! Corpus check: share of prose sentences that carry each built-in tag kind.
 //!
 //! Usage: `cargo run -p slopvac-context --example tagstat -- <files...>`
+#![allow(clippy::cast_precision_loss)]
 
 use std::collections::BTreeMap;
 
