@@ -69,11 +69,11 @@ These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand. `slop
 
 | Surface | What to do |
 |---|---|
-| `--profile` on `lint`, `rules`, `explain` and `init` | Set the profile in `slopvac.toml`. |
+| `--profile` on `lint`, `rules`, `explain` and `init` | Set the style preset in `slopvac.toml`. |
 | `--rules-dir` on `lint`, `rules`, `explain`, `prime` and `reference` | Declare a local pack in `slopvac.toml`. |
 | `--no-vale`, `doctor --binary` | Delete the flag. Vale is removed. |
 | `--comments` | Use `--mode code-comments`. |
 | `compile` and its options (`--outdir`, `--profile`, `--config`, `--rules-dir`, `--no-validate`, `--format`) | Delete the call. Compiled Vale styles are removed. |
 | `cache` and its options (`--prune`, `--all`) | Delete the call. The Vale cache is removed. |
-| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the profile and packs in `slopvac.toml`. |
+| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and packs in `slopvac.toml`. |
 | Hook id `slopvac-no-vale` | Delete the hook. |
