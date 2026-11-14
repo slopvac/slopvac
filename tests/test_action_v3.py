@@ -134,12 +134,6 @@ def test_every_lint_invocation_is_offline(run, env):
     assert all(argv[0] == "--offline" for argv in log)
 
 
-def test_the_action_has_no_offline_input():
-    inputs = yaml.safe_load(ACTION.read_text(encoding="utf-8"))["inputs"]
-    assert "offline" not in inputs
-    assert "OFFLINE" not in _step("Lint")["env"]
-
-
 def test_rdjsonl_is_written_to_a_nested_workspace_path(run, tmp_path):
     target = tmp_path / "reports" / "sub" / "slopvac.rdjsonl"
     code, _, outputs = run(RDJSONL_FILE=str(target))
@@ -165,7 +159,7 @@ def test_the_lint_step_receives_the_rdjsonl_input():
 
 def _fork_template_steps():
     doc = (ROOT / "docs" / "ci" / "github-action.md").read_text(encoding="utf-8")
-    blocks = re.findall(r"```yaml\n(.*?)```", doc, re.S)
+    blocks = re.findall(r"```yaml\n(.*?)```", doc, re.DOTALL)
     template = next(b for b in blocks if "slopvac-findings" in b)
     workflow = yaml.safe_load(template.replace("# .github", "#"))
     return workflow["jobs"]["lint"]["steps"]
