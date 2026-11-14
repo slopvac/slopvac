@@ -31,8 +31,8 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
+# Every job declares its own permissions; the default grants none.
+permissions: {}
 
 concurrency:
   group: candidate-${{ inputs.tag || github.ref_name }}
@@ -42,6 +42,8 @@ jobs:
   validate:
     name: Validate the candidate tag
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 10
     outputs:
       cargo-version: ${{ steps.parse.outputs.cargo }}
@@ -95,6 +97,8 @@ jobs:
     name: Offline evals and migration end-to-end
     needs: validate
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -124,6 +128,8 @@ jobs:
   wheels:
     name: Wheels
     needs: validate
+    permissions:
+      contents: read
     uses: ./.github/workflows/wheels.yml
     with:
       version: ${{ needs.validate.outputs.cargo-version }}
@@ -134,6 +140,8 @@ jobs:
     name: Archive (${{ matrix.target }})
     needs: validate
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     timeout-minutes: 45
     strategy:
       fail-fast: false
