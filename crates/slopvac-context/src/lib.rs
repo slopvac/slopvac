@@ -1,10 +1,12 @@
 //! Context taggers, the tag registry and genres.
 
+mod builtin;
 mod declarative;
 mod pattern;
 mod tag;
 mod view;
 
+pub use builtin::{EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_registry};
 pub use declarative::{DeclarativeTagger, FrontmatterCondition, Scope, TaggerSpec, When};
 pub use pattern::Pattern;
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
