@@ -204,15 +204,16 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         return Read::default();
     };
     let raw = &doc[block.content.clone()];
-    // The key `slopvac` can be spelled another way only through an escape, so text with neither
-    // the word nor a backslash cannot hold the block. Otherwise the decoded keys decide.
-    let names_slopvac = raw.contains("slopvac") || has_slopvac_key(raw, block.format);
-    if !names_slopvac && !raw.contains('\\') {
+    // Cheap candidate check: the key `slopvac` can be spelled another way only through an escape,
+    // so text with neither the word nor a backslash cannot hold the block and is never parsed.
+    if !raw.contains("slopvac") && !raw.contains('\\') {
         return Read::default();
     }
     let root = match parse_block(doc, &block) {
         Ok(n) => n,
-        Err(_) if !names_slopvac => return Read::default(),
+        // Ownership: a block that does not parse is ours only if a top-level key decodes to
+        // `slopvac`. The word inside a value or a nested key says nothing.
+        Err(_) if !has_slopvac_key(raw, block.format) => return Read::default(),
         Err(e) => {
             let at = e
                 .span
@@ -290,7 +291,7 @@ fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
 /// key that decodes to `slopvac` does not count. It is a best effort on broken text.
 fn has_slopvac_key(raw: &str, format: Format) -> bool {
     match format {
-        Format::Yaml => raw.lines().any(|line| {
+        Format::Yaml => lines_with_offsets(raw).any(|(_, line)| {
             !line.starts_with([' ', '\t', '#', '-'])
                 && leading_key(line).is_some_and(|k| k == "slopvac")
         }),
@@ -363,7 +364,7 @@ fn json_top_level_keys(raw: &str) -> Vec<String> {
 fn toml_top_level_names(raw: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut in_root = true;
-    for line in raw.lines() {
+    for (_, line) in lines_with_offsets(raw) {
         let t = line.trim_start();
         if t.starts_with('#') || t.is_empty() {
             continue;

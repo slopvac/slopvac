@@ -1,7 +1,7 @@
 //! Front-matter reading and the allow policy, through the public interface.
 
 use serde_json::json;
-use slopvac_config::frontmatter::{Policy, extract, read};
+use slopvac_config::frontmatter::{Policy, extract, parse_block, read};
 use slopvac_config::{Code, Inputs, Layer, NoPresets, Source, load};
 use std::path::Path;
 
@@ -301,11 +301,65 @@ fn only_top_level_keys_make_a_broken_block_ours() {
     for doc in [
         "---\ntags: [\"sl\\u006fpvac\"]\nbroken: [\n---\n",
         "---\nouter:\n  \"sl\\u006fpvac\": 1\nbroken: [\n---\n",
-        "{\"tags\": [\"sl\\u006fpvac\"], \"nested\": {\"sl\\u006fpvac\": 1, }}\n",
+        "{\"tags\": [\"sl\\u006fpvac\"], \"nested\": {\"sl\\u006fpvac\": 1}, \"bad\": [1, }\n",
         "+++\n[\"x\".\"sl\\u006fpvac\"]\nv = = 3\n+++\n",
         "+++\ntags = [\"sl\\u006fpvac\"]\n[other]\nv = = 3\n+++\n",
     ] {
         let out = read(doc, "a.md", &default_policy());
         assert_eq!(out.diagnostics, [], "{doc:?}");
+    }
+}
+
+#[test]
+fn the_word_slopvac_in_a_value_does_not_make_a_broken_block_ours() {
+    for doc in [
+        "---\ntitle: slopvac\nbroken: [\n---\n",
+        "{\"title\": \"slopvac\", \"bad\": [1, }\n",
+        "+++\ntitle = \"slopvac\"\nv = = 3\n+++\n",
+    ] {
+        let out = read(doc, "a.md", &default_policy());
+        assert_eq!(out.diagnostics, [], "{doc:?}");
+    }
+}
+
+#[test]
+fn lone_cr_line_ends_work_with_escaped_keys_in_broken_blocks() {
+    // The escaped key is on the second line; a splitter that ignores a lone CR sees one line.
+    for doc in [
+        "---\rtitle: x\r\"sl\\u006fpvac\": [\r---\r",
+        "+++\rtitle = \"x\"\r\"sl\\u006fpvac\".v = = 3\r+++\r",
+        "+++\rtitle = \"x\"\r[\"sl\\u006fpvac\"]\rv = = 3\r+++\r",
+    ] {
+        let out = read(doc, "a.md", &default_policy());
+        assert_eq!(out.diagnostics.len(), 1, "{doc:?}");
+        assert_eq!(out.diagnostics[0].code, Code::Parse, "{doc:?}");
+    }
+    let nested = "---\rtitle: x\router:\r  \"sl\\u006fpvac\": 1\rbroken: [\r---\r";
+    assert_eq!(read(nested, "a.md", &default_policy()).diagnostics, []);
+}
+
+/// A negative fixture is only a test of ownership if the block really fails to parse.
+fn assert_malformed(doc: &str) {
+    let block = extract(doc).unwrap_or_else(|| panic!("no block in {doc:?}"));
+    assert!(
+        parse_block(doc, &block).is_err(),
+        "{doc:?} parses, so it never reaches ownership"
+    );
+}
+
+#[test]
+fn the_negative_fixtures_are_genuinely_malformed() {
+    for doc in [
+        "---\ntags: [\"sl\\u006fpvac\"]\nbroken: [\n---\n",
+        "---\nouter:\n  \"sl\\u006fpvac\": 1\nbroken: [\n---\n",
+        "{\"tags\": [\"sl\\u006fpvac\"], \"nested\": {\"sl\\u006fpvac\": 1}, \"bad\": [1, }\n",
+        "+++\n[\"x\".\"sl\\u006fpvac\"]\nv = = 3\n+++\n",
+        "+++\ntags = [\"sl\\u006fpvac\"]\n[other]\nv = = 3\n+++\n",
+        "---\ntitle: slopvac\nbroken: [\n---\n",
+        "{\"title\": \"slopvac\", \"bad\": [1, }\n",
+        "+++\ntitle = \"slopvac\"\nv = = 3\n+++\n",
+        "---\rtitle: x\router:\r  \"sl\\u006fpvac\": 1\rbroken: [\r---\r",
+    ] {
+        assert_malformed(doc);
     }
 }
