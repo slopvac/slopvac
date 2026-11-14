@@ -19,7 +19,11 @@ slopvac-plugin = { workspace = true }
 members = ["packages/slopvac-lint", "packages/slopvac-plugin"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/slopvac-lint/tests", "packages/slopvac-plugin/tests", "tests"]
+testpaths = [
+  "packages/slopvac-lint/tests",
+  "packages/slopvac-plugin/tests",
+  "tests",
+]
 addopts = "-q"
 pythonpath = [".", "packages/slopvac-plugin/src"]
 
