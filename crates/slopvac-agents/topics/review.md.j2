@@ -44,6 +44,8 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 
 ## Reviewer
 
+{{ model_guidance }}
+
 - The reviewer model must differ from the author's. `slopvac review --reviewer-model <model>` rejects the author's model.
 - A model provider is a plugin. It runs only after `slopvac plugins trust` and a `[review] provider` entry.
 - `slopvac review --dry-run` prints the exact text a provider would get and calls nothing. Offline mode blocks every provider.
