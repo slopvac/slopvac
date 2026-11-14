@@ -934,7 +934,8 @@ impl Plugin {
         self.conn.dead()
     }
 
-    /// Run the shutdown sequence: `shutdown`, `exit`, then a kill after the exit timer.
+    /// Run the shutdown sequence: `shutdown`, `exit`, then a kill after the
+    /// exit timer and a wait of up to five seconds for the reap.
     ///
     /// Descendants that left the plugin's process group are killed first,
     /// while the walk can still find them through their parents.
@@ -960,6 +961,8 @@ impl Plugin {
         let exited = shared.group.wait_done(self.timeouts.exit);
         let left = exited && !shared.group.forced();
         shared.group.kill();
+        // The waiter reaps a killed leader; its status belongs in the report.
+        let _ = shared.group.wait_done(REAP_WAIT);
         Shutdown {
             acknowledged,
             left,

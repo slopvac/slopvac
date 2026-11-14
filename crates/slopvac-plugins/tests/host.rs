@@ -728,6 +728,16 @@ fn a_plugin_that_acknowledges_shutdown_and_then_exits_3_has_not_shut_down_cleanl
 }
 
 #[test]
+fn a_plugin_killed_at_shutdown_reports_the_kill_as_its_exit_status() {
+    use std::os::unix::process::ExitStatusExt;
+    // The plugin never reads, so `shutdown` gets no answer and the exit timer kills it.
+    let p = Plugin::start(&spec("no-read"), &tight(), &Allow).unwrap();
+    let out = p.shutdown();
+    assert!(!out.left, "{out:?}");
+    assert_eq!(out.status.and_then(|s| s.signal()), Some(9), "{out:?}");
+}
+
+#[test]
 fn a_plugin_that_refuses_shutdown_has_not_shut_down_cleanly_even_if_it_exits_0() {
     let out = start("refuse-shutdown").shutdown();
     assert!(!out.acknowledged, "{out:?}");
