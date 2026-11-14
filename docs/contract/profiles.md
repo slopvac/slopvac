@@ -66,7 +66,7 @@ The mapping relies on this precedence for the level of one checked rule. It is a
 - **E5.** 2.x credited the whole category as authored when a layer wrote any field of it. An advisory rule then took the category level. When an authored category has no `severity`, write the severity of the profile in force.
 - **E6.** `none` is the 3.0 spelling that clears a budget. A higher layer cannot unset a field by omission, and 2.x had no such spelling. The style and config schemas accept it, and the resolver treats it as "no budget".
 
-Override glob grammar. `migrate --preserve-behavior` accepts one pattern per block, in one of two forms: an anchored literal path such as `docs/a.md`, or a tree such as `docs/**`. A segment holds no wildcard, `!`, `#`, `.` or `..`, and the pattern contains a slash.
+Override glob grammar. `migrate --preserve-behavior` accepts one pattern per block, in one of two forms: an anchored literal path such as `docs/api`, or a tree such as `docs/**`. Gitignore matches a literal path and everything below it, and a tree matches the descendants only, so `docs/api` holds `docs/api/**`. A segment holds no wildcard, `!`, `#`, `.` or `..`, and the pattern contains a slash.
 
 The trees form a containment forest: a region is a node minus its children, plus the root region of files that no block matches. A project with n blocks has n + 1 regions at most. Any other pattern, a block with two or more patterns, or a negated pattern stops the migration with an error that names the block.
 

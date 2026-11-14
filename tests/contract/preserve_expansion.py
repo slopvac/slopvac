@@ -105,7 +105,7 @@ def parse_glob(files: list[str]) -> tuple[tuple[str, ...], bool]:
     """Grammar: anchored literal path segments with an optional trailing ``/**``.
 
     Returns (segments, is_tree). ``docs/**`` is the tree of ``docs``. ``docs/a.md``
-    is one file. Everything else is rejected: a single pattern is required, it must
+    is a literal path, which gitignore also matches for everything below it. Everything else is rejected: a single pattern is required, it must
     contain a slash (a pattern without one matches in every directory), and no
     segment may hold a wildcard, a negation, a comment mark, ``.`` or ``..``.
     """
@@ -122,14 +122,27 @@ def parse_glob(files: list[str]) -> tuple[tuple[str, ...], bool]:
     return segments, tree
 
 
+def _holds(a: tuple[tuple[str, ...], bool], b: tuple[tuple[str, ...], bool]) -> bool:
+    """Whether every path that b matches is also matched by a (a differs from b).
+
+    A tree ``docs/**`` matches the proper descendants of ``docs``. A literal path
+    ``docs/api`` matches that path and, under gitignore rules, everything below it.
+    """
+    (sa, ta), (sb, tb) = a, b
+    if a == b or sb[: len(sa)] != sa:
+        return False
+    if ta:
+        return len(sb) > len(sa)
+    return True
+
+
 def relate(a: tuple[tuple[str, ...], bool], b: tuple[tuple[str, ...], bool]) -> str:
     """equal, contains (a holds b), contained (a lies in b) or disjoint."""
     if a == b:
         return "equal"
-    (sa, ta), (sb, tb) = a, b
-    if ta and len(sb) > len(sa) and sb[: len(sa)] == sa:
+    if _holds(a, b):
         return "contains"
-    if tb and len(sa) > len(sb) and sa[: len(sb)] == sb:
+    if _holds(b, a):
         return "contained"
     return "disjoint"
 
@@ -148,7 +161,9 @@ def build_regions(blocks: list[list[str]]) -> list[tuple[frozenset[int], list[st
     parent: dict[tuple, tuple | None] = {}
     for key in nodes:
         holders = [o for o in nodes if o != key and relate(o, key) == "contains"]
-        parent[key] = max(holders, key=lambda o: len(o[0])) if holders else None
+        parent[key] = next(
+            (h for h in holders if all(o == h or _holds(o, h) for o in holders)), None
+        )
     children: dict[tuple | None, list[tuple]] = {}
     for key, up in parent.items():
         children.setdefault(up, []).append(key)

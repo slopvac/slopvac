@@ -424,6 +424,17 @@ SCENARIOS = {
         },
         ["docs/api/a.md", "docs/b.md", "c.md"],
     ),
+    "literal-path-also-matches-its-descendants": (
+        {
+            "profile": "strict",
+            "rules": {"orwell.not-un": "warning"},
+            "overrides": [
+                {"files": ["docs/api"], "profile": "relaxed"},
+                {"files": ["docs/api/**"], "profile": "strict"},
+            ],
+        },
+        ["docs/api", "docs/api/a.md", "docs/b.md"],
+    ),
     "two-profile-overrides": (
         {
             "profile": "normal",
@@ -530,6 +541,7 @@ def test_many_disjoint_blocks_expand_to_one_region_each_plus_the_root():
 
 REGION_PATHS = [
     "docs/a.md",
+    "docs/api",
     "docs/api/a.md",
     "docs/api/v1/a.md",
     "docs/guide/a.md",
@@ -548,8 +560,10 @@ REGION_PATHS = [
         [["docs/api/**"], ["docs/**"]],
         [["docs/**"], ["docs/api/**"], ["docs/api/v1/**"], ["docs/guide/**"]],
         [["docs/**"], ["docs/a.md"], ["docs/**"], ["src/**"]],
+        [["docs/api"], ["docs/api/**"]],
+        [["docs/api/**"], ["docs/api"], ["docs/**"]],
     ],
-    ids=["nested", "reversed", "forest", "equal-and-file"],
+    ids=["nested", "reversed", "forest", "equal-and-file", "path-and-tree", "tree-path-and-parent"],
 )
 def test_each_path_falls_in_exactly_one_region_that_names_its_blocks(blocks):
     from preserve_expansion import build_regions, matches_files
