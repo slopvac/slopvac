@@ -3,7 +3,9 @@
 Usage: raw_plugin.py [MODE]. Modes: no-limit, stdout-noise, bad-span, split-char-span,
 exit-zero-without-shutdown, no-version-check, read-oversized-body, slow-tagger,
 float-id, float-limit, big-init-reply, big-reply, deaf-after-init, in-flight-17, in-flight-unsafe, unknown-kind,
-mixed-features, many-hooks, call-oversized. Standard library only, like a plugin in
+mixed-features, many-hooks, call-oversized, small-limit (maxMessageBytes 65536),
+batch1 (maxBatchDocuments 1) and its variants batch1-swapped, batch1-both,
+batch1-malformed and batch1-slow. Standard library only, like a plugin in
 any other language would be.
 """
 
@@ -90,6 +92,8 @@ while True:
             )
             continue
         limit = params["limits"]["maxMessageBytes"]
+        if mode == "small-limit":
+            limit = 65536  # a frame over it ends this plugin
         reply(
             i,
             {
@@ -121,8 +125,12 @@ while True:
                     "requiresNetwork": False,
                 },
                 "limits": {
-                    "maxMessageBytes": float(limit) if mode == "float-limit" else limit,
-                    "maxBatchDocuments": 64,
+                    "maxMessageBytes": float(limit)
+                    if mode == "float-limit"
+                    else 65536
+                    if mode == "small-limit"
+                    else limit,
+                    "maxBatchDocuments": 1 if mode.startswith("batch1") else 64,
                     "maxInFlight": {"in-flight-17": 17, "in-flight-unsafe": 2**60}.get(
                         mode, 1
                     ),
@@ -162,13 +170,28 @@ while True:
         if mode == "stdout-noise":
             out.write(b"debug: handling a request\n")
             out.flush()
+        if mode == "batch1-slow":
+            time.sleep(0.3)
+        ids = [doc["id"] for doc in params["documents"]]
+        if mode == "batch1-malformed" and ids == ["doc-2"]:
+            reply(i, {"nope": 1})  # the second batch gets an answer with no results
+            continue
+        if mode == "batch1-both" and ids == ["doc-2"]:
+            reply(i, {"results": []})  # doc-2 was answered in the first reply
+            continue
         results = []
-        for doc in params["documents"]:
+        documents = list(params["documents"])
+        if mode == "batch1-both":
+            documents = [{"id": "doc-1", "text": ""}, {"id": "doc-2", "text": ""}]
+        for doc in documents:
             size = len(doc["text"].encode())
             end = {"bad-span": size + 1, "split-char-span": 2}.get(mode, size)
+            swapped = {"doc-1": "doc-2", "doc-2": "doc-1"}
             results.append(
                 {
-                    "document": doc["id"],
+                    "document": swapped[doc["id"]]
+                    if mode == "batch1-swapped"
+                    else doc["id"],
                     "tags": [
                         {
                             "kind": "prose",

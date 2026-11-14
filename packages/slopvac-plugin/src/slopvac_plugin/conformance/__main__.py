@@ -42,6 +42,18 @@ def main(argv: list[str] | None = None) -> int:
         help="seconds a plugin may take to answer after a cancel (section 6.3)",
     )
     parser.add_argument(
+        "--case-budget",
+        type=float,
+        default=120.0,
+        help="wall-clock seconds one case may take, all waits included",
+    )
+    parser.add_argument(
+        "--suite-budget",
+        type=float,
+        default=900.0,
+        help="wall-clock seconds the whole run may take",
+    )
+    parser.add_argument(
         "--env",
         action="append",
         default=[],
@@ -68,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
             exit_timeout=args.exit_timeout,
             cancel_grace=args.cancel_grace,
             pass_env=args.env,
+            case_budget=args.case_budget,
+            suite_budget=args.suite_budget,
             only=args.only.split(",") if args.only else None,
         )
     except (SuiteError, MissingDependency, OSError, ValueError) as exc:

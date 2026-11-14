@@ -54,6 +54,7 @@ slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
 | `--only P1,P13` | Run only these cases. |
 | `--timeout`, `--exit-timeout` | Seconds to wait for a reply and for an exit. |
 | `--cancel-grace` | Seconds a plugin may take to answer after a cancel. The default is 2, from section 6.3. |
+| `--case-budget`, `--suite-budget` | Wall-clock seconds one case and the whole run may take, all waits included. The defaults are 120 and 900. A case that runs over fails. |
 | `--env NAME` | Pass this environment variable to the plugin. Repeat for more names. |
 | `--format json` | Machine-readable report. |
 

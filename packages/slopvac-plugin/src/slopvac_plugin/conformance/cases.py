@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import itertools
-import json
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +15,7 @@ from typing import Any
 
 from .samples import DOCUMENT_KINDS, params_for
 from .schemas import MAX_UNIQUE_ITEMS, Schemas
-from .session import CaseFailure, CaseSkip, Session
+from .session import CaseFailure, CaseSkip, Session, serialise
 
 ALL_KINDS = ("tagger", "extractor", "reporter", "fixer", "scorer", "provider", "recipe")
 RESULT_DEFS = {
@@ -54,10 +53,16 @@ class Env:
     inputs: dict[str, Any] = field(default_factory=dict)
     declaration: dict[str, Any] | None = None
     hooks: list[tuple[str, str]] = field(default_factory=list)
+    # The wall-clock limit (time.monotonic) of the running case; the runner sets it.
+    deadline: float | None = None
 
     def spawn(self) -> Session:
         return Session(
-            self.command, self.schemas, self.timeout, env_names=self.pass_env
+            self.command,
+            self.schemas,
+            self.timeout,
+            env_names=self.pass_env,
+            deadline=self.deadline,
         )
 
     @contextlib.contextmanager
@@ -246,50 +251,76 @@ def check_result(env: Env, kind: str, params: dict[str, Any], result: Any) -> No
             check_edits(doc, edits)
 
 
-ENVELOPE_BYTES = 256  # room for the JSON-RPC wrapper around the params
+def request_size(s: Session, method: str, params: dict[str, Any]) -> int:
+    """Bytes of the body the session would send, measured with its own serialiser."""
+    message = {"jsonrpc": "2.0", "id": s.next_id, "method": method, "params": params}
+    return len(serialise(message))
 
 
-def _size(params: dict[str, Any]) -> int:
-    text = json.dumps(params, separators=(",", ":"), ensure_ascii=False)
-    return len(text.encode("utf-8", "surrogatepass")) + ENVELOPE_BYTES
-
-
-def fits(s: Session, params: dict[str, Any]) -> bool:
+def fits(s: Session, method: str, params: dict[str, Any]) -> bool:
     """Whether one request stays inside the limits the plugin negotiated."""
     documents = params.get("documents", [])
-    return len(documents) <= s.max_documents and _size(params) <= s.max_body_bytes
+    return (
+        len(documents) <= s.max_documents
+        and request_size(s, method, params) <= s.max_body_bytes
+    )
 
 
-def batches(s: Session, params: dict[str, Any]) -> list[dict[str, Any]]:
-    """Split a document request into requests that fit the negotiated limits.
+def batches(s: Session, kind: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Split a request into requests that fit the negotiated limits.
 
     The host respects maxBatchDocuments and maxMessageBytes (sections 2.2 and 5.3), so
-    the suite does too. A document that cannot fit alone goes out alone.
+    the suite does too. When a document cannot fit alone, the sample input is unsuitable
+    for this plugin: the case skips and no oversized frame is written.
     """
+    method = METHODS[kind]
     documents = params.get("documents")
     if not documents:
+        if not fits(s, method, params):
+            raise CaseSkip(
+                f"the {kind} request is larger than maxMessageBytes {s.max_body_bytes}"
+            )
         return [params]
     out: list[dict[str, Any]] = []
     current: list[dict[str, Any]] = []
     for document in documents:
         trial = {**params, "documents": [*current, document]}
-        if current and not fits(s, trial):
+        if current and not fits(s, method, trial):
             out.append({**params, "documents": current})
             current = []
         current.append(document)
+        if not fits(s, method, {**params, "documents": current}):
+            raise CaseSkip(
+                f"document {document.get('id')!r} alone exceeds the negotiated limits "
+                f"(maxMessageBytes {s.max_body_bytes}, maxBatchDocuments "
+                f"{s.max_documents}): unsuitable suite input"
+            )
     out.append({**params, "documents": current})
     return out
 
 
-def send_hook(s: Session, kind: str, params: dict[str, Any]) -> Any:
-    """Send a hook request in as many batches as the limits need; join the results."""
-    joined: dict[str, Any] | None = None
-    for part in batches(s, params):
-        result = result_of(s.request(METHODS[kind], part))
-        if joined is None:
-            joined = result
-        elif isinstance(result, dict) and isinstance(result.get("results"), list):
-            joined = {**joined, "results": [*joined["results"], *result["results"]]}
+def send_batches(
+    s: Session, kind: str, params: dict[str, Any]
+) -> list[tuple[dict[str, Any], Any]]:
+    """Send a request in as many batches as the limits need: (batch, result) pairs.
+
+    Every batch is planned before the first is sent, so a request that cannot be
+    split to fit skips before it writes anything.
+    """
+    return [
+        (part, result_of(s.request(METHODS[kind], part)))
+        for part in batches(s, kind, params)
+    ]
+
+
+def send_hook(env: Env, s: Session, kind: str, params: dict[str, Any]) -> Any:
+    """Send a hook request; check each reply against its own batch, then join them."""
+    pairs = send_batches(s, kind, params)
+    for part, result in pairs:
+        check_result(env, kind, part, result)
+    joined = pairs[0][1]
+    for _, result in pairs[1:]:
+        joined = {**joined, "results": [*joined["results"], *result["results"]]}
     return joined
 
 
@@ -297,7 +328,7 @@ def call_hook(
     env: Env, s: Session, kind: str, hook_id: str, **extra: Any
 ) -> tuple[dict, Any]:
     params = {**env.params(kind, hook_id), **extra}
-    return params, send_hook(s, kind, params)
+    return params, send_hook(env, s, kind, params)
 
 
 def sentinel(s: Session) -> None:
@@ -383,7 +414,7 @@ def p5(env: Env) -> None:
             for doc in params.get("documents", []):
                 doc["x-doc"] = True
                 doc["futureDocField"] = None
-            check_result(env, kind, params, send_hook(s, kind, params))
+            send_hook(env, s, kind, params)
 
 
 @case(
@@ -422,7 +453,7 @@ def p7(env: Env) -> None:
             params = env.params(kind, hook_id)
             bad = env.inputs[kind]["invalid_document"]
             params["documents"] = [params["documents"][0], bad]
-            if fits(s, params):
+            if fits(s, METHODS[kind], params):
                 mixed.append((kind, params))
         if not mixed:
             raise CaseSkip(
@@ -464,7 +495,7 @@ def p9(env: Env) -> None:
     with env.ready() as (s, _):
         if hooks:
             kind, hook_id = hooks[0]
-            first = batches(s, env.params(kind, hook_id))[0]
+            first = batches(s, kind, env.params(kind, hook_id))[0]
             request_id = s.start_request(METHODS[kind], first)
             # One deadline from before the cancel write covers write and response.
             response = s.cancel_and_wait(request_id, env.cancel_grace)
@@ -548,8 +579,7 @@ def p15(env: Env) -> None:
     hooks = need_hooks(env)
     with env.ready() as (s, _):
         for kind, hook_id in hooks:
-            params, result = call_hook(env, s, kind, hook_id)
-            check_result(env, kind, params, result)
+            call_hook(env, s, kind, hook_id)  # checks each batch against its request
 
 
 @case("P16", "a provider refuses with offline when offline mode is on")
@@ -584,8 +614,7 @@ def p17(env: Env) -> None:
     with env.ready() as (s, _):
         before = _snapshot(Path.cwd())
         for kind, hook_id in hooks:
-            params, result = call_hook(env, s, kind, hook_id)
-            check_result(env, kind, params, result)
+            call_hook(env, s, kind, hook_id)  # checks each batch against its request
         require(
             _snapshot(Path.cwd()) == before,
             "the working directory changed during recipe/plan",
@@ -597,8 +626,7 @@ def p18(env: Env) -> None:
     hooks = need_hooks(env, ("fixer",))
     with env.ready() as (s, _):
         for kind, hook_id in hooks:
-            params, result = call_hook(env, s, kind, hook_id)
-            check_result(env, kind, params, result)  # runs the edit rules per document
+            call_hook(env, s, kind, hook_id)  # checks each batch, edit rules included
 
 
 @case("P19", "hooks, network and features are a subset of the manifest declaration")

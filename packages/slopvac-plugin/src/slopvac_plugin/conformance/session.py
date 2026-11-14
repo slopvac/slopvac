@@ -111,6 +111,11 @@ def _bounded(fn: Callable[[], Any], seconds: float) -> bool:
     return not thread.is_alive()
 
 
+def serialise(message: dict[str, Any]) -> bytes:
+    """The bytes the host sends for one message: the body of its frame."""
+    return json.dumps(message).encode("utf-8")
+
+
 class Session:
     def __init__(
         self,
@@ -122,9 +127,12 @@ class Session:
         max_output_bytes: int = MAX_OUTPUT_BYTES,
         max_queued_messages: int = MAX_QUEUED_MESSAGES,
         max_queued_bytes: int = MAX_QUEUED_BYTES,
+        deadline: float | None = None,
     ) -> None:
         self.schemas = schemas
         self.timeout = timeout
+        # A host-owned wall-clock limit (time.monotonic) that clamps every wait.
+        self.deadline = deadline
         self._max_output = max_output_bytes
         self._max_messages = max_queued_messages
         self._max_queued_bytes = max_queued_bytes
@@ -268,6 +276,21 @@ class Session:
 
     # Sending -----------------------------------------------------------------
 
+    def _wait_limit(self, timeout: float | None) -> float:
+        """``timeout`` (default: the session timeout), cut to the time budget left."""
+        limit = self.timeout if timeout is None else timeout
+        if self.deadline is None:
+            return limit
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            raise CaseFailure("the time budget ran out")
+        return min(limit, left)
+
+    @property
+    def next_id(self) -> int:
+        """The id the next request gets."""
+        return self._ids + 1
+
     def send_bytes(
         self,
         data: bytes,
@@ -279,7 +302,7 @@ class Session:
 
         ``timeout`` defaults to the session timeout.
         """
-        limit = self.timeout if timeout is None else timeout
+        limit = self._wait_limit(timeout)
         stdin = self.proc.stdin
         assert stdin is not None
         problem: list[Exception] = []
@@ -302,9 +325,7 @@ class Session:
             raise CaseFailure(f"the plugin closed its input early: {problem[0]}")
 
     def send(self, message: dict[str, Any], *, timeout: float | None = None) -> None:
-        self.send_bytes(
-            framing.encode_frame(json.dumps(message).encode("utf-8")), timeout=timeout
-        )
+        self.send_bytes(framing.encode_frame(serialise(message)), timeout=timeout)
 
     def notify(
         self,
@@ -368,8 +389,10 @@ class Session:
 
     def next_event(self, timeout: float | None = None) -> tuple[str, Any]:
         try:
-            return self._get(self.timeout if timeout is None else timeout)
+            return self._get(self._wait_limit(timeout))
         except queue.Empty:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise CaseFailure("the time budget ran out") from None
             raise CaseFailure("no reply in time") from None
 
     def next_frame(self, timeout: float | None = None) -> dict[str, Any]:
@@ -434,7 +457,7 @@ class Session:
 
     def wait(self, timeout: float) -> int:
         try:
-            status = self.proc.wait(timeout=timeout)
+            status = self.proc.wait(timeout=self._wait_limit(timeout))
         except subprocess.TimeoutExpired:
             raise CaseFailure(f"the plugin did not exit within {timeout} s") from None
         self._sweep()

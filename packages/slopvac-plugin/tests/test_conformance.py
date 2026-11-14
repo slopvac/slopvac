@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import pytest
 from conftest import EXAMPLE, FIXTURES, SDK_ENV, bounded, script
 from slopvac_plugin.conformance import SuiteError, load_declaration, run_conformance
 from slopvac_plugin.conformance.cases import check_edits, handshake
-from slopvac_plugin.conformance.session import CaseFailure
+from slopvac_plugin.conformance.session import CaseFailure, Session
 
 ALL_IDS = [f"P{i}" for i in range(1, 20)]
 REPO = Path(__file__).resolve().parents[3]
@@ -414,3 +415,104 @@ def test_the_suite_accepts_two_inserts_at_one_offset_from_an_sdk_fixer(quiet_cwd
         only=["P15", "P18"],
     )
     assert statuses(report) == {"P15": "pass", "P18": "pass"}, report.to_text()
+
+
+JAPANESE = "\u65e5\u672c\u8a9e" * 1334  # 4002 characters: 12006 bytes, 24012 escaped
+
+
+def tagger_input(documents):
+    return {"tagger": {"documents": documents}}
+
+
+def test_batches_are_sized_by_the_escaped_bytes_the_session_sends(quiet_cwd):
+    # Six documents of 12006 UTF-8 bytes. Counted as raw UTF-8, five fit in 65536
+    # bytes, but the session sends them escaped (24012 bytes each), so two fit.
+    documents = [{"id": f"d{n}", "text": JAPANESE} for n in range(6)]
+    report = run_conformance(
+        script("raw_plugin.py", "small-limit"),
+        inputs=tagger_input(documents),
+        only=["P15"],
+    )
+    assert statuses(report) == {"P15": "pass"}, report.to_text()
+
+
+def test_a_document_over_the_limit_alone_skips_and_no_such_frame_is_written(
+    quiet_cwd, monkeypatch
+):
+    sent = []
+    original = Session.send_bytes
+
+    def spy(self, data, **kwargs):
+        sent.append(len(data.partition(b"\r\n\r\n")[2]))
+        return original(self, data, **kwargs)
+
+    monkeypatch.setattr(Session, "send_bytes", spy)
+    huge = {"id": "huge", "text": JAPANESE * 3}  # 72036 UTF-8 bytes, over 65536 alone
+    report = run_conformance(
+        script("raw_plugin.py", "small-limit"),
+        inputs=tagger_input([huge]),
+        only=["P15"],
+    )
+    assert statuses(report) == {"P15": "skip"}, report.to_text()
+    assert "huge" in report.results[0].detail
+    assert max(sent) <= 65536  # the handshake only; the oversized request never left
+
+
+def test_a_valid_split_into_singleton_batches_passes(quiet_cwd):
+    report = run_conformance(script("raw_plugin.py", "batch1"), only=["P15"])
+    assert statuses(report) == {"P15": "pass"}, report.to_text()
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "batch1-swapped",  # each reply names the other document
+        "batch1-both",  # the first reply answers both, the second answers none
+        "batch1-malformed",  # the second reply has no results
+    ],
+)
+def test_each_batch_reply_is_checked_against_its_own_request(mode, quiet_cwd):
+    report = run_conformance(script("raw_plugin.py", mode), only=["P15"])
+    assert statuses(report) == {"P15": "fail"}, report.to_text()
+
+
+def test_a_case_that_outruns_its_budget_fails_instead_of_running_on(quiet_cwd):
+    # 20 singleton batches at 0.3 s each would take 6 s.
+    documents = [{"id": f"d{n}", "text": "x"} for n in range(20)]
+    started = time.monotonic()
+    report = run_conformance(
+        script("raw_plugin.py", "batch1-slow"),
+        inputs=tagger_input(documents),
+        only=["P15"],
+        case_budget=1.0,
+    )
+    assert statuses(report) == {"P15": "fail"}, report.to_text()
+    assert "budget" in report.results[0].detail
+    assert time.monotonic() - started < 4
+
+
+def test_the_suite_budget_fails_the_cases_that_remain(quiet_cwd):
+    documents = [{"id": f"d{n}", "text": "x"} for n in range(20)]
+    report = run_conformance(
+        script("raw_plugin.py", "batch1-slow"),
+        inputs=tagger_input(documents),
+        only=["P15", "P16"],
+        suite_budget=1.0,
+    )
+    assert statuses(report) == {"P15": "fail", "P16": "fail"}, report.to_text()
+    assert "suite budget" in report.results[1].detail
+
+
+def test_cli_takes_the_budget_options(tmp_path):
+    result = cli(
+        "--case-budget",
+        "30",
+        "--suite-budget",
+        "60",
+        "--only",
+        "P1",
+        "--",
+        *script("raw_plugin.py"),
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stdout

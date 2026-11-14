@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -92,8 +93,17 @@ def run_conformance(
     cancel_grace: float = 2.0,
     pass_env: Sequence[str] = (),
     only: Sequence[str] | None = None,
+    case_budget: float = 120.0,
+    suite_budget: float = 900.0,
 ) -> Report:
-    """Run P1 to P19 against ``command``. Raises SuiteError when it cannot start."""
+    """Run P1 to P19 against ``command``. Raises SuiteError when it cannot start.
+
+    ``case_budget`` and ``suite_budget`` are wall-clock seconds the host spends on one
+    case and on the whole run. Every wait is cut to the time left, and a case that
+    runs out fails, whatever the per-reply ``timeout`` allows.
+    """
+    started = time.monotonic()
+    suite_end = started + suite_budget
     env = Env(
         command,
         Schemas(),
@@ -104,6 +114,7 @@ def run_conformance(
         inputs=inputs or {},
         declaration=declaration,
     )
+    env.deadline = min(started + case_budget, suite_end)
     with env.session() as probe:
         try:
             reply = handshake(probe)
@@ -120,6 +131,18 @@ def run_conformance(
     for case_id, (title, fn) in CASES.items():
         if only and case_id not in only:
             continue
+        now = time.monotonic()
+        if now >= suite_end:
+            report.results.append(
+                CaseResult(
+                    case_id,
+                    title,
+                    FAIL,
+                    f"the suite budget of {suite_budget:g} s ran out before this case",
+                )
+            )
+            continue
+        env.deadline = min(now + case_budget, suite_end)
         try:
             fn(env)
             report.results.append(CaseResult(case_id, title, PASS))
