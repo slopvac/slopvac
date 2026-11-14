@@ -20,11 +20,6 @@ pub struct Limits {
     ///
     /// Applies to YAML and JSON. TOML relies on the `toml_edit` nesting limit.
     pub max_depth: usize,
-    /// Most bytes that YAML aliases may add by expansion, summed over the block. Default 1 MiB.
-    ///
-    /// Each use of an alias is charged for the strings, keys and node overhead it copies, so
-    /// a large anchored value that is referenced many times fails fast.
-    pub max_alias_bytes: usize,
     /// Largest block content to parse, in bytes. Default 16 MiB.
     pub max_input_bytes: usize,
 }
@@ -33,7 +28,6 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             max_depth: 128,
-            max_alias_bytes: 1 << 20,
             max_input_bytes: 16 << 20,
         }
     }
@@ -44,13 +38,6 @@ impl Limits {
     #[must_use]
     pub fn with_max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = max_depth;
-        self
-    }
-
-    /// Set [`max_alias_bytes`](Self::max_alias_bytes).
-    #[must_use]
-    pub fn with_max_alias_bytes(mut self, max_alias_bytes: usize) -> Self {
-        self.max_alias_bytes = max_alias_bytes;
         self
     }
 

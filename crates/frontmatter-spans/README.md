@@ -44,8 +44,6 @@ for any offset in the document.
 - A TOML table span runs from its header, or its first key when it has none, to the end of its
   last entry.
 - A key span covers the key as written, so JSON keys include their quotes.
-- A node with an anchor or tag starts at the anchor or tag.
-- A YAML alias takes the anchored value and the span of the alias.
 
 ## Serde
 
@@ -72,16 +70,32 @@ key.
 ## Parsers
 
 - YAML uses `saphyr-parser` events, the parser behind `saphyr`. The crate builds the tree from
-  the events itself, so depth and alias expansion are checked before anything recurses or
-  clones. Positions are converted from characters to bytes.
+  the events itself, so depth is checked before anything recurses. Positions are converted from
+  characters to bytes.
 - TOML uses `toml_edit`, which reports byte spans for keys and values.
 - JSON uses a strict RFC 8259 parser inside the crate. The common JSON crates drop spans, and a
   YAML parser would accept comments and single quotes.
 
-A YAML tag only steers how a scalar is read. A non-scalar key is an error, a scalar alias works
-as a key, and a block with more than one YAML document is an error. A duplicate key in YAML is
-an error at the second key. A JSON object keeps every member in order, and `get` returns the
-last one.
+### The YAML subset
+
+The YAML reader is strict, like StrictYAML. This is a deliberate choice for small,
+human-written metadata. It removes alias expansion attacks and tag-driven type surprises.
+
+- **Anchors (`&x`), aliases (`*x`) and explicit tags (`!tag`, `!!str`) are errors.** The
+  `ParseError` span covers the offending token, whether it sits on the same line as its node or
+  on a line before it. Text such as `"&x"`, `x&y` or `hi!` is ordinary data.
+- **Merge keys are plain keys.** `<<` is a key named `<<`. Its value is read like any other.
+- **Keys are always strings, exactly as written.** `0x10`, `1.0`, `true`, `null` and `010` are
+  the strings `"0x10"`, `"1.0"`, `"true"`, `"null"` and `"010"`. Quoted keys are unquoted.
+- **Values follow the YAML 1.2 core schema.** Plain `null`, `Null`, `NULL`, `~` and an empty
+  value are null. `true`, `True`, `TRUE` and the `false` forms are booleans. Integers are
+  decimal with an optional sign, `0o` octal or `0x` hex. Floats include `.5`, `5.`, `1e3`,
+  `.inf` and `.nan`. A decimal integer past `i64` becomes a float. Everything else, and every
+  quoted or block scalar, is a string. So `yes`, `on` and `1_000` are strings.
+- A non-scalar key, a duplicate key and a second YAML document in the block are errors.
+
+TOML and JSON have no such features. A JSON object keeps every member in order, and `get`
+returns the last one.
 
 ## Limits
 
@@ -91,7 +105,6 @@ Hostile input returns a `ParseError` and does not abort or exhaust memory. Pass 
 | Limit | Default | Counts |
 | --- | --- | --- |
 | `max_depth` | 128 | Nested tables and arrays in YAML and JSON, root included |
-| `max_alias_bytes` | 1 MiB | Bytes copied by all YAML alias uses together |
 | `max_input_bytes` | 16 MiB | The block content, checked before parsing |
 
 TOML nesting is bounded by `toml_edit`. Building the line index and every span costs time
@@ -106,7 +119,7 @@ cargo +nightly fuzz run parse   # from crates/frontmatter-spans, needs cargo-fuz
 
 The property tests check that spans lie inside the document on character boundaries, and that
 written keys and integers sit at their spans in all three formats. The limit tests cover deep
-nesting, alias bombs, oversized blocks and a 1 MiB single-line input.
+nesting, oversized blocks and a 1 MiB single-line input.
 
 ## Licence
 

@@ -116,7 +116,7 @@ impl<'de> SeqAccess<'de> for Seq<'de> {
     ) -> Result<Option<T::Value>, DeError> {
         self.0
             .next()
-            .map(|n| seed.deserialize(NodeDe(n)))
+            .map(|n| seed.deserialize(NodeDe(n)).map_err(|e| e.or_span(&n.span)))
             .transpose()
     }
 }

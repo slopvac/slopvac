@@ -296,29 +296,6 @@ fn deeply_nested_json_is_an_error_not_a_crash() {
 }
 
 #[test]
-fn yaml_alias_takes_the_anchor_value_and_the_span_of_its_use() {
-    let doc = "---\na: &x 1\nb: *x\n---\n";
-    let fm = FrontMatter::parse(doc).unwrap().unwrap();
-    let b = fm.get("b").unwrap();
-    assert_eq!(b.value, Value::Integer(1));
-    assert_eq!(text(doc, b).trim_end(), "*x");
-}
-
-#[test]
-fn yaml_alias_bomb_is_an_error() {
-    let mut lines = vec![
-        "---".to_owned(),
-        "a: &a0 [x, x, x, x, x, x, x, x, x, x]".to_owned(),
-    ];
-    for i in 1..8 {
-        let refs = vec![format!("*a{}", i - 1); 10].join(", ");
-        lines.push(format!("l{i}: &a{i} [{refs}]"));
-    }
-    lines.push("---\n".to_owned());
-    assert!(FrontMatter::parse(&lines.join("\n")).is_err());
-}
-
-#[test]
 fn yaml_block_with_a_second_document_is_rejected() {
     let err = FrontMatter::parse("---\na: 1\n--- b\n---\n").unwrap_err();
     assert!(err.message.contains("more than one"), "{err}");

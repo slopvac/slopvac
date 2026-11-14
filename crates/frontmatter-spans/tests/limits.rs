@@ -22,7 +22,6 @@ fn limits_with_depth(max_depth: usize) -> Limits {
 fn defaults_are_documented_values() {
     let d = Limits::default();
     assert_eq!(d.max_depth, 128);
-    assert_eq!(d.max_alias_bytes, 1 << 20);
     assert_eq!(d.max_input_bytes, 16 << 20);
 }
 
@@ -72,58 +71,7 @@ fn depth_limit_is_configurable_and_counts_collections_from_the_root() {
     }
 }
 
-// ---- aliases --------------------------------------------------------------------------
-
-fn alias_doc(string_len: usize, refs: usize) -> String {
-    let uses: Vec<String> = (0..refs).map(|i| format!("r{i}: *big")).collect();
-    yaml(&format!(
-        "big: &big {}\n{}",
-        "x".repeat(string_len),
-        uses.join("\n")
-    ))
-}
-
-#[test]
-fn alias_expansion_counts_bytes_not_nodes() {
-    // 64 KiB anchor referenced 100 times is 6.4 MB of clones, far past the 1 MiB default.
-    let doc = alias_doc(64 * 1024, 100);
-    assert!(message(&doc, &Limits::default()).contains("alias"));
-}
-
-#[test]
-fn alias_limit_is_configurable() {
-    let doc = alias_doc(1_000, 5);
-    let tight = Limits::default().with_max_alias_bytes(4_000);
-    assert!(message(&doc, &tight).contains("alias"));
-    let roomy = Limits::default().with_max_alias_bytes(6_000);
-    assert!(FrontMatter::parse_with(&doc, &roomy).is_ok());
-}
-
-#[test]
-fn nested_alias_bomb_is_an_error() {
-    let mut lines = vec!["a0: &a0 [x, x, x, x, x, x, x, x, x, x]".to_owned()];
-    for i in 1..12 {
-        let refs = vec![format!("*a{}", i - 1); 10].join(", ");
-        lines.push(format!("a{i}: &a{i} [{refs}]"));
-    }
-    assert!(FrontMatter::parse(&yaml(&lines.join("\n"))).is_err());
-}
-
-#[test]
-fn small_aliases_expand_with_the_span_of_the_use() {
-    let doc = yaml("a: &x [1, 2]\nb: *x");
-    let fm = FrontMatter::parse(&doc).unwrap().unwrap();
-    assert_eq!(fm.get("a").unwrap().value, fm.get("b").unwrap().value);
-    let b = fm.get("b").unwrap();
-    assert_eq!(&doc[b.span.range.clone()], "*x");
-}
-
-#[test]
-fn scalar_alias_as_a_key_uses_the_anchored_text() {
-    let doc = yaml("a: &k name\n*k : 1");
-    let fm = FrontMatter::parse(&doc).unwrap().unwrap();
-    assert_eq!(fm.get("name").unwrap().value, Value::Integer(1));
-}
+// ---- duplicate keys ----------------------------------------------------------------
 
 #[test]
 fn duplicate_yaml_keys_are_an_error_at_the_second_key() {

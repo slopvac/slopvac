@@ -27,12 +27,12 @@ fn duplicate_json_members_are_all_kept_and_lookup_takes_the_last() {
 }
 
 #[test]
-fn yaml_flow_collections_with_an_anchor_or_tag_include_the_closing_bracket() {
+fn yaml_flow_collections_include_the_closing_bracket_on_any_line() {
     let cases = [
-        ("a: &x [1, 2]", "&x [1, 2]"),
-        ("a: !!seq [1, 2]", "!!seq [1, 2]"),
-        ("a: &x {b: 1}", "&x {b: 1}"),
-        ("a: &x !!map {b: 1}", "&x !!map {b: 1}"),
+        ("a: [1, 2]", "[1, 2]"),
+        ("a: {b: 1}", "{b: 1}"),
+        ("a:\n  [1, [2]]", "[1, [2]]"),
+        ("a:\n  {b: {c: 1}}", "{b: {c: 1}}"),
     ];
     for (body, want) in cases {
         let doc = format!("---\n{body}\n---\n");
@@ -47,7 +47,7 @@ fn yaml_quoted_scalar_span_stops_at_the_closing_quote_before_a_comment() {
         ("a: \"x\" # note", "\"x\""),
         ("a: 'it''s' # note", "'it''s'"),
         ("a: \"q\\\"uote\" # note", "\"q\\\"uote\""),
-        ("a: &n \"x\" # note", "&n \"x\""),
+        ("a:\n  \"x\" # note", "\"x\""),
     ];
     for (body, want) in cases {
         let doc = format!("---\n{body}\n---\n");
