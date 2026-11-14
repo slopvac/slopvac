@@ -66,8 +66,16 @@ struct Pending {
 }
 
 enum Marker {
-    Colon { count: usize, block: usize },
-    Fence { ch: u8, count: usize, block: usize },
+    Colon {
+        count: usize,
+        block: usize,
+    },
+    Fence {
+        ch: u8,
+        count: usize,
+        lead: usize,
+        block: usize,
+    },
 }
 
 struct IndentFrame {
@@ -76,15 +84,19 @@ struct IndentFrame {
 }
 
 /// Scan `text`, which starts at source offset `base`.
+///
+/// With `indented_code`, as in Markdown, a line indented four columns is code and a fence
+/// closer may be indented three columns past its opener. MDX has no indented code, and
+/// markdown-rs lets a closer use any indent there.
 #[allow(clippy::too_many_lines)]
-pub(crate) fn scan(text: &str, base: usize) -> Masked {
+pub(crate) fn scan(text: &str, base: usize, indented_code: bool) -> Masked {
     let mut out = String::with_capacity(text.len());
     let mut removals: Vec<(usize, usize)> = Vec::new();
     let mut removed = 0;
     let mut pending: Vec<Pending> = Vec::new();
     let mut markers: Vec<Marker> = Vec::new();
     let mut indents: Vec<IndentFrame> = Vec::new();
-    let mut fence: Option<(u8, usize)> = None;
+    let mut fence: Option<(u8, usize, usize)> = None;
     let mut alert: Option<usize> = None;
     let mut last_nonblank_end = base;
     let mut prev_quoted = false;
@@ -95,7 +107,9 @@ pub(crate) fn scan(text: &str, base: usize) -> Masked {
         if !blank {
             let cols = leading_cols(line);
             while indents.last().is_some_and(|f| f.body_cols > cols) {
-                indents.pop();
+                if let Some(frame) = indents.pop() {
+                    pending[frame.block].end = last_nonblank_end;
+                }
             }
         }
         let strip = if blank {
@@ -108,9 +122,6 @@ pub(crate) fn scan(text: &str, base: usize) -> Masked {
         let line_end = abs + line.len();
         if !blank {
             last_nonblank_end = line_end;
-            for frame in &indents {
-                pending[frame.block].end = line_end;
-            }
         }
         let quote = quote_body(content);
         if let Some(index) = alert {
@@ -125,13 +136,25 @@ pub(crate) fn scan(text: &str, base: usize) -> Masked {
         let lead = leading_cols(content);
         let t = content.trim_start();
         let t_abs = content_abs + (content.len() - t.len());
-        if let Some((ch, count)) = fence {
-            if is_fence_closer(t, ch, count) {
+        if let Some((ch, count, opened)) = fence {
+            if (!indented_code || lead <= opened + 3) && is_fence_closer(t, ch, count) {
                 fence = None;
             }
-        } else if lead >= 4 {
-            // Indented code: no markers.
-        } else if let Some(Marker::Fence { ch, count, block }) = markers.last()
+        } else if indented_code && lead >= 4 {
+            // Indented code, or a fence nested deep in a list. Track fences so that
+            // marker-like lines inside them stay code.
+            if let Some((ch, count, info)) = fence_opener(t)
+                && (ch == b'~' || !info.contains('`'))
+            {
+                fence = Some((ch, count, lead));
+            }
+        } else if let Some(Marker::Fence {
+            ch,
+            count,
+            lead: opened,
+            block,
+        }) = markers.last()
+            && (!indented_code || lead <= opened + 3)
             && is_fence_closer(t, *ch, *count)
         {
             pending[*block].end = line_end;
@@ -172,10 +195,15 @@ pub(crate) fn scan(text: &str, base: usize) -> Masked {
                     start: t_abs,
                     end: line_end,
                 });
-                markers.push(Marker::Fence { ch, count, block });
+                markers.push(Marker::Fence {
+                    ch,
+                    count,
+                    lead,
+                    block,
+                });
                 mask_from = Some(0);
             } else if ch == b'~' || !info.contains('`') {
-                fence = Some((ch, count));
+                fence = Some((ch, count, lead));
             }
         } else if let Some(body) = quote
             && !prev_quoted
@@ -209,6 +237,9 @@ pub(crate) fn scan(text: &str, base: usize) -> Masked {
             None => out.push_str(content),
         }
         out.push_str(terminator);
+    }
+    for frame in &indents {
+        pending[frame.block].end = last_nonblank_end;
     }
     for marker in &markers {
         let (Marker::Colon { block, .. } | Marker::Fence { block, .. }) = marker;

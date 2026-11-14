@@ -24,7 +24,7 @@ pub(crate) fn code_block(source: &str, span: Span, fenced: bool) -> BlockKind {
     }
     let text = &source[span.start()..span.end()];
     let opener = text.find(['\n', '\r']).map_or(text, |i| &text[..i]);
-    let opener = opener.trim_start();
+    let opener = strip_container(opener);
     let ch = opener.bytes().next().unwrap_or(b'`');
     let count = opener.bytes().take_while(|&b| b == ch).count();
     let info = opener[count..].trim();
@@ -48,9 +48,14 @@ fn fenced_body(text: &str, base: usize, ch: u8, count: usize) -> Span {
         first + 1
     };
     let last_start = text.rfind(['\n', '\r']).map_or(0, |i| i + 1);
-    let last = text[last_start..].trim();
+    let last = strip_container(&text[last_start..]).trim_end();
     let run = last.bytes().take_while(|&b| b == ch).count();
     let closed = last_start >= first_end && run >= count && last[run..].trim().is_empty();
     let end = if closed { last_start } else { text.len() };
     Span::new(base + first_end, base + end.max(first_end)).expect("end is clamped to start")
+}
+
+/// A line without the block quote markers and indentation that precede its content.
+fn strip_container(line: &str) -> &str {
+    line.trim_start_matches([' ', '\t', '>'])
 }

@@ -4,6 +4,7 @@
 //! two together and emits projection tokens: identity runs, entities, backslash escapes
 //! and soft wraps. Source the decoded text does not contain is a gap.
 
+use pulldown_cmark::{Event, Parser};
 use slopvac_model::Span;
 
 use crate::mask::Masked;
@@ -20,42 +21,63 @@ impl ProseBuilder {
         self.tokens.push((kind, text.to_owned(), src));
     }
 
-    /// A synthetic space after the last token. Skipped at the start and after whitespace.
+    /// The last non-empty projected text. Masked comments have none.
+    fn last_text(&self) -> Option<&str> {
+        self.tokens
+            .iter()
+            .rev()
+            .map(|(_, text, _)| text.as_str())
+            .find(|text| !text.is_empty())
+    }
+
+    /// A synthetic space after the last token. Skipped when no text came before it and
+    /// after whitespace.
     pub(crate) fn wrap(&mut self) {
-        let Some((_, text, src)) = self.tokens.last() else {
-            return;
-        };
-        if text.is_empty() || text.ends_with(char::is_whitespace) {
-            return;
-        }
-        let at = Span::empty(src.end());
-        self.tokens.push((TokenKind::Wrap, " ".to_owned(), at));
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.tokens.is_empty()
-    }
-
-    /// Build the projection. Trailing wraps go. With `trim`, trailing whitespace of the
-    /// last identity run goes too, which is what is left of a stripped heading attribute.
-    pub(crate) fn finish(mut self, trim: bool) -> Option<Projection> {
-        while self
-            .tokens
-            .last()
-            .is_some_and(|(kind, ..)| *kind == TokenKind::Wrap)
+        if self
+            .last_text()
+            .is_none_or(|text| text.ends_with(char::is_whitespace))
         {
-            self.tokens.pop();
+            return;
         }
-        if trim && let Some((TokenKind::Identity, text, src)) = self.tokens.last_mut() {
+        let at = self.tokens.last().map_or(0, |(_, _, src)| src.end());
+        self.tokens
+            .push((TokenKind::Wrap, " ".to_owned(), Span::empty(at)));
+    }
+
+    /// Whether any token has projected text.
+    pub(crate) fn has_text(&self) -> bool {
+        self.last_text().is_some()
+    }
+
+    /// Build the projection. Wraps with no text after them go. With `trim`, trailing
+    /// whitespace of the last identity run goes too, which is what is left of a stripped
+    /// heading attribute.
+    pub(crate) fn finish(mut self, trim: bool) -> Option<Projection> {
+        let tail = self
+            .tokens
+            .iter()
+            .rposition(|(kind, text, _)| *kind != TokenKind::Wrap && !text.is_empty())
+            .map_or(0, |i| i + 1);
+        let mut index = 0;
+        self.tokens.retain(|(kind, ..)| {
+            index += 1;
+            !(index > tail && *kind == TokenKind::Wrap)
+        });
+        if trim
+            && let Some((TokenKind::Identity, text, src)) = self
+                .tokens
+                .iter_mut()
+                .rev()
+                .find(|(_, text, _)| !text.is_empty())
+        {
             let kept = text.trim_end().len();
             if kept < text.len() {
                 text.truncate(kept);
                 *src = Span::new(src.start(), src.start() + kept).expect("kept <= len");
             }
-            if text.is_empty() {
-                self.tokens.pop();
-            }
         }
+        self.tokens
+            .retain(|(kind, text, _)| !(text.is_empty() && matches!(kind, TokenKind::Identity)));
         if self.tokens.is_empty() {
             return None;
         }
@@ -151,14 +173,14 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
         }
         if sc == '&'
             && let Some(len) = entity_len(&src[i..])
-            && !value[j..].starts_with(&src[i..i + len])
+            && let Some(decoded) = decode_entity(&src[i..i + len])
+            && value[j..].starts_with(&decoded)
         {
             flush(&mut tokens, &mut run, i, j);
-            let after = src[i + len..].chars().next();
-            let take = decoded_len(&value[j..], after);
+            let take = decoded.len();
             tokens.push(Raw {
                 kind: TokenKind::Entity,
-                text: value[j..j + take].to_owned(),
+                text: decoded,
                 start: base + i,
                 end: base + i + len,
             });
@@ -204,34 +226,50 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
         .then_some(tokens)
 }
 
+/// Longest named reference: 31 letters and digits. Numeric ones are shorter.
+const MAX_REFERENCE: usize = 33;
+
 /// Length in bytes of a character reference at the start of `s`, `;` included.
+///
+/// Looks at no more than `MAX_REFERENCE + 1` bytes, so a run of `&` costs constant time
+/// per character.
 fn entity_len(s: &str) -> Option<usize> {
-    let body = s.strip_prefix('&')?;
-    let end = body.find(';')?;
-    let name = &body[..end];
-    let valid = match name.strip_prefix('#') {
-        Some(digits) => match digits.strip_prefix(['x', 'X']) {
-            Some(hex) => (1..=6).contains(&hex.len()) && hex.bytes().all(|b| b.is_ascii_hexdigit()),
-            None => (1..=7).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()),
-        },
-        None => {
-            (1..=32).contains(&name.len())
-                && name.starts_with(|c: char| c.is_ascii_alphabetic())
-                && name.bytes().all(|b| b.is_ascii_alphanumeric())
+    let body = s.strip_prefix('&')?.as_bytes();
+    let mut end = None;
+    for (k, &b) in body.iter().take(MAX_REFERENCE + 1).enumerate() {
+        match b {
+            b';' => {
+                end = Some(k);
+                break;
+            }
+            b'#' if k == 0 => {}
+            _ if b.is_ascii_alphanumeric() => {}
+            _ => return None,
         }
+    }
+    let name = &body[..end?];
+    let valid = match name.strip_prefix(b"#") {
+        Some(digits) => match digits
+            .strip_prefix(b"x")
+            .or_else(|| digits.strip_prefix(b"X"))
+        {
+            Some(hex) => (1..=6).contains(&hex.len()) && hex.iter().all(u8::is_ascii_hexdigit),
+            None => (1..=7).contains(&digits.len()) && digits.iter().all(u8::is_ascii_digit),
+        },
+        None => (1..=31).contains(&name.len()) && name[0].is_ascii_alphabetic(),
     };
-    valid.then_some(end + 2)
+    valid.then_some(name.len() + 2)
 }
 
-/// Bytes of `value` that one entity decoded to: one or two code points. `after` is the
-/// source character that follows the entity.
-fn decoded_len(value: &str, after: Option<char>) -> usize {
-    let mut chars = value.char_indices();
-    let first_end = chars.next().map_or(0, |(i, c)| i + c.len_utf8());
-    let second_end = chars.next().map(|(i, c)| i + c.len_utf8());
-    let continues = |at: usize| value[at..].chars().next() == after;
-    match second_end {
-        Some(two) if !continues(first_end) && continues(two) => two,
-        _ => first_end,
-    }
+/// What a character reference decodes to, or `None` when the parser leaves it as text.
+///
+/// pulldown-cmark owns the entity table, so ask it.
+fn decode_entity(reference: &str) -> Option<String> {
+    let decoded: String = Parser::new(reference)
+        .filter_map(|event| match event {
+            Event::Text(text) => Some(text.into_string()),
+            _ => None,
+        })
+        .collect();
+    (decoded != reference).then_some(decoded)
 }

@@ -1,11 +1,12 @@
 //! MDX through markdown-rs.
 
 use markdown::mdast::Node;
-use markdown::{Constructs, MdxExpressionKind, MdxSignal, ParseOptions, to_mdast};
+use markdown::{Constructs, MdxSignal, ParseOptions, to_mdast};
 use slopvac_model::Span;
 
 use crate::align::{ProseBuilder, align};
 use crate::code::{code_block, trim_terminator};
+use crate::jsexpr::ExpressionChecker;
 use crate::markdown::{MASK, finish, resolve_body};
 use crate::mask::{Masked, scan};
 use crate::{Block, BlockKind, Document, ParseError, TokenKind};
@@ -21,7 +22,8 @@ use crate::{Block, BlockKind, Document, ParseError, TokenKind};
 /// [`ParseError::Mdx`] when the body is not valid MDX.
 pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
     let body = resolve_body(source, body)?;
-    let masked = scan(&source[body.start()..body.end()], body.start());
+    let masked = scan(&source[body.start()..body.end()], body.start(), false);
+    let checker = ExpressionChecker::default();
     let options = ParseOptions {
         constructs: Constructs {
             gfm_table: true,
@@ -29,7 +31,7 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
             gfm_task_list_item: true,
             ..Constructs::mdx()
         },
-        mdx_expression_parse: Some(Box::new(check_expression)),
+        mdx_expression_parse: Some(Box::new(move |code, kind| checker.check(code, kind))),
         mdx_esm_parse: Some(Box::new(|_| MdxSignal::Ok)),
         ..ParseOptions::mdx()
     };
@@ -86,6 +88,20 @@ impl Walker<'_> {
                     }
                 }
             }
+            Node::MdxFlowExpression(expr) => {
+                if let (Some(r), Some(text)) = (range(node), string_literal(&expr.value)) {
+                    let (start, end) = r;
+                    let mut prose = ProseBuilder::default();
+                    prose.push(TokenKind::Opaque, &text, self.masked.span(start, end));
+                    if let Some(projection) = prose.finish(false) {
+                        self.blocks.push(Block {
+                            kind: BlockKind::Paragraph,
+                            span: self.span(r),
+                            projection: Some(projection),
+                        });
+                    }
+                }
+            }
             Node::Code(_) => {
                 if let Some(r) = range(node) {
                     let span = self.span(r);
@@ -135,7 +151,7 @@ impl Walker<'_> {
             }
             Node::Break(_) => {
                 if let Some((s, e)) = range(node)
-                    && !prose.is_empty()
+                    && prose.has_text()
                 {
                     prose.push(TokenKind::Collapse, " ", self.masked.span(s, e));
                 }
@@ -157,43 +173,6 @@ impl Walker<'_> {
             }
             _ => {}
         }
-    }
-}
-
-/// Tell markdown-rs whether the text between braces is a complete expression.
-///
-/// Without a parser the library counts every `{`, so `{'{'}` never closes. This check
-/// ignores braces inside string and template literals. It does not validate JavaScript.
-fn check_expression(code: &str, _kind: &MdxExpressionKind) -> MdxSignal {
-    let mut depth = 0_usize;
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    for c in code.chars() {
-        if let Some(q) = quote {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == q {
-                quote = None;
-            }
-        } else {
-            match c {
-                '"' | '\'' | '`' => quote = Some(c),
-                '{' => depth += 1,
-                '}' => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-    }
-    if quote.is_none() && depth == 0 {
-        MdxSignal::Ok
-    } else {
-        MdxSignal::Eof(
-            "Unexpected end of file in expression".into(),
-            Box::new("slopvac-parse".into()),
-            Box::new("unexpected-eof".into()),
-        )
     }
 }
 

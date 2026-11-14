@@ -42,7 +42,7 @@ pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Docum
 /// Returns [`ParseError::Body`] when `body` is not a valid span of `source`.
 pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> {
     let body = resolve_body(source, body)?;
-    let masked = scan(&source[body.start()..body.end()], body.start());
+    let masked = scan(&source[body.start()..body.end()], body.start(), true);
     let mut collector = Collector::new(source, &masked);
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
@@ -196,7 +196,7 @@ impl<'a> Collector<'a> {
                     self.prose().prose.wrap();
                 }
             }
-            Event::HardBreak if self.image_depth == 0 && !self.prose().prose.is_empty() => {
+            Event::HardBreak if self.image_depth == 0 && self.prose().prose.has_text() => {
                 let span = self.masked.span(range.start, range.end);
                 self.prose().prose.push(TokenKind::Collapse, " ", span);
             }

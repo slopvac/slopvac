@@ -12,6 +12,7 @@
 mod align;
 mod code;
 mod document;
+mod jsexpr;
 mod markdown;
 mod mask;
 mod mdx;

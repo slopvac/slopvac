@@ -27,8 +27,9 @@ two agree on every word and on the source text of every word. The golden suite
 
 | Area | Behavior |
 | --- | --- |
-| Expressions | markdown-rs gets a brace checker that skips string and template literals, because the library has no JavaScript parser. An expression is prose only when it is one plain string literal; it becomes an `opaque` token. Other expressions render nothing. |
+| Expressions | markdown-rs gets a brace checker that skips string, template and comment text, because the library has no JavaScript parser. An expression, inline or standalone, is prose only when it is one plain string literal; it becomes an `opaque` token. Other expressions render nothing. An unfinished expression with more than 1000 closing braces is a `ParseError::Mdx`, because markdown-rs rebuilds the expression text on every closing brace. |
 | ESM | `import` and `export` blocks are accepted and are not prose. The code is not validated. |
+| Fence closers | MDX has no indented code, and markdown-rs lets a closing fence use any indent. Markdown allows three columns past the opener. The admonition scan follows each parser. |
 | Table cells | markdown-rs includes the leading pipe in a cell's span. Cell prose spans are exact. |
 | `<` and comments | `<` starts a JSX tag and `<!-- -->` is a syntax error, so MDX documents fail with `ParseError::Mdx`. |
 
@@ -36,5 +37,5 @@ two agree on every word and on the source text of every word. The golden suite
 
 The scan runs per line before parsing. Markers must start a line, with up to three spaces
 of indent after any `!!!` body indent. Markers inside block quotes or list items are not
-recognized. A GFM alert continues over following `>` lines only. A `:::` line that has a
+recognized. A code body inside a block quote keeps the `>` prefixes of its lines, because a body is one contiguous byte range; the closing fence is not part of it. A GFM alert continues over following `>` lines only. A `:::` line that has a
 word after the colons is an opener, so a prose line such as `::: and so on` is read as one.
