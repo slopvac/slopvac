@@ -26,9 +26,12 @@ slopvac-report = { path = "crates/slopvac-report" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
+slopvac-styles = { path = "crates/slopvac-styles" }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+thiserror = "2"
 clap = { version = "4.6", features = ["derive"] }
 similar = "3"
-thiserror = "2"
 toml_edit = "0.25"
 tempfile = "3"
 
@@ -37,6 +40,13 @@ unsafe_code = "forbid"
 missing_docs = "warn"
 unreachable_pub = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+invalid_html_tags = "deny"
+bare_urls = "deny"
+missing_crate_level_docs = "deny"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

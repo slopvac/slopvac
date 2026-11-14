@@ -76,3 +76,7 @@ perf-check $BASE="" $SCENARIO="": perf-wait-idle
 # Validate the v3 contract schemas and conformance corpus offline.
 contract:
     uv run --extra dev pytest tests/contract
+
+# Build rustdoc for every workspace crate with warnings denied.
+doc-rust:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items

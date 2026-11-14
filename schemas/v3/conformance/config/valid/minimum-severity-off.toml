@@ -1,0 +1,10 @@
+schema_version = 3
+
+[categories.ste-words]
+minimum_severity = "off"
+
+[[overrides]]
+files = ["docs/**"]
+
+[overrides.categories.ste-words]
+minimum_severity = "off"
