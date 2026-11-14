@@ -6,6 +6,7 @@ No model and no network. Fake commands are small Python scripts.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import stat
@@ -357,6 +358,20 @@ FAKE_AWS = """\
 import json, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 open(json.load(open(os.path.join(here, "fake.json"))).get("aws_log", os.devnull), "w").write(json.dumps({{"argv": sys.argv[1:], "home": os.environ.get("HOME")}}))
+plan = json.load(open(os.path.join(here, "fake.json")))
+if plan.get("aws_count"):
+    count_path = plan["aws_count"]
+    n = int(open(count_path).read()) if os.path.exists(count_path) else 0
+    open(count_path, "w").write(str(n + 1))
+if plan.get("aws_pidfile"):
+    open(plan["aws_pidfile"], "w").write(str(os.getpid()))
+if plan.get("aws_child_pidfile"):
+    import subprocess
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    open(plan["aws_child_pidfile"], "w").write(str(child.pid))
+if plan.get("aws_hang"):
+    import time
+    time.sleep(60)
 if "--profile" in sys.argv and sys.argv[sys.argv.index("--profile") + 1] == "good":
     print(json.dumps({{"Version": 1, "AccessKeyId": "AKIAFAKEFAKEFAKEFAKE", "SecretAccessKey": "s3cret-value", "SessionToken": "tok-value"}}))
 else:
@@ -752,3 +767,75 @@ def test_an_empty_journal_without_a_ledger_is_fine(tmp_path, monkeypatch):
         ["--max-invocations", "5"],
     )
     assert code == 0
+
+
+def test_cancelling_while_the_credential_helper_hangs_kills_it_and_its_children(
+    fake_opencode, tmp_path
+):
+    _, set_plan, parent = fake_opencode
+    pids = {"aws": tmp_path / "aws.pid", "child": tmp_path / "aws-child.pid"}
+    set_plan(
+        aws_hang=True,
+        aws_pidfile=str(pids["aws"]),
+        aws_child_pidfile=str(pids["child"]),
+    )
+    cmd = [*adapter_command(), "--aws-profile", "good"]
+    with pytest.raises(subprocess.TimeoutExpired):
+        procs.run_group(cmd, input="x", timeout=3, env=adapter_env(parent))
+    assert wait_dead(int(pids["aws"].read_text()))
+    assert wait_dead(int(pids["child"].read_text()))
+
+
+NOW = dt.datetime(2026, 11, 14, 12, 0, tzinfo=dt.UTC)
+
+
+def fake_export(expiries):
+    """An export_credentials stand-in that yields the given expiries in order."""
+    calls = []
+    queue = list(expiries)
+
+    def export(profile, parent):
+        calls.append(profile)
+        return dict(CREDS), queue.pop(0)
+
+    return export, calls
+
+
+@pytest.mark.parametrize(
+    ("minutes_left", "exports"),
+    [(None, 1), (11, 1), (10, 1)],
+)
+def test_credentials_with_enough_lifetime_are_used_as_they_are(
+    monkeypatch, minutes_left, exports
+):
+    expiry = None if minutes_left is None else NOW + dt.timedelta(minutes=minutes_left)
+    export, calls = fake_export([expiry])
+    monkeypatch.setattr(opencode_model, "export_credentials", export)
+    assert opencode_model.fresh_credentials("p", {}, now=lambda: NOW) == CREDS
+    assert len(calls) == exports
+
+
+def test_short_lived_credentials_are_exported_again(monkeypatch):
+    export, calls = fake_export(
+        [NOW + dt.timedelta(minutes=9, seconds=59), NOW + dt.timedelta(hours=1)]
+    )
+    monkeypatch.setattr(opencode_model, "export_credentials", export)
+    assert opencode_model.fresh_credentials("p", {}, now=lambda: NOW) == CREDS
+    assert len(calls) == 2
+
+
+def test_an_attempt_is_refused_when_the_credentials_stay_short_lived(monkeypatch):
+    short = NOW + dt.timedelta(minutes=3)
+    export, calls = fake_export([short, short])
+    monkeypatch.setattr(opencode_model, "export_credentials", export)
+    with pytest.raises(opencode_model.ModelCallError, match="under 10 minutes"):
+        opencode_model.fresh_credentials("p", {}, now=lambda: NOW)
+    assert len(calls) == 2
+
+
+def test_each_attempt_resolves_credentials_again(fake_opencode, tmp_path):
+    _, set_plan, parent = fake_opencode
+    set_plan(aws_log=str(tmp_path / "aws.log"), aws_count=str(tmp_path / "aws.count"))
+    for _ in range(2):
+        opencode_model.call("m", "x", profile="good", region="r", parent_env=parent)
+    assert (tmp_path / "aws.count").read_text() == "2"

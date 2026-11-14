@@ -25,13 +25,14 @@ Isolation is by construction, not by trust in the caller's environment:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from . import procs
@@ -53,6 +54,7 @@ CREDENTIAL_ENV = (
     "AWS_DEFAULT_REGION",
 )
 CREDENTIAL_TIMEOUT = 60
+MIN_LIFETIME = 600  # seconds a credential must still be valid when an attempt starts
 CREDENTIAL_KEYS = {
     "AccessKeyId": "AWS_ACCESS_KEY_ID",
     "SecretAccessKey": "AWS_SECRET_ACCESS_KEY",
@@ -105,8 +107,14 @@ def isolated_env(
     return env
 
 
-def export_credentials(profile: str, parent: Mapping[str, str]) -> dict[str, str]:
-    """Resolve an AWS profile to the three credential variables, printing nothing."""
+def export_credentials(
+    profile: str, parent: Mapping[str, str]
+) -> tuple[dict[str, str], dt.datetime | None]:
+    """Resolve an AWS profile to the three credential variables and their expiry.
+
+    The helper stays in the caller's process group (`own_group=False`), so the
+    harness's group kill reaches it when a run is cancelled. Nothing is printed.
+    """
     env = {k: parent[k] for k in CREDENTIAL_ENV if k in parent}
     try:
         proc = procs.run_group(
@@ -121,6 +129,7 @@ def export_credentials(profile: str, parent: Mapping[str, str]) -> dict[str, str
             ],
             timeout=CREDENTIAL_TIMEOUT,
             env=env,
+            own_group=False,
         )
     except FileNotFoundError:
         raise ModelCallError("the aws CLI is required to resolve credentials") from None
@@ -130,9 +139,34 @@ def export_credentials(profile: str, parent: Mapping[str, str]) -> dict[str, str
         data = {}
     if proc.returncode != 0 or "AccessKeyId" not in data:
         raise ModelCallError(f"could not resolve credentials for profile {profile!r}")
-    return {
-        env_name: data[key] for key, env_name in CREDENTIAL_KEYS.items() if key in data
-    }
+    expiry = None
+    if data.get("Expiration"):
+        expiry = dt.datetime.fromisoformat(
+            str(data["Expiration"]).replace("Z", "+00:00")
+        )
+    return (
+        {
+            env_name: data[key]
+            for key, env_name in CREDENTIAL_KEYS.items()
+            if key in data
+        },
+        expiry,
+    )
+
+
+def fresh_credentials(
+    profile: str,
+    parent: Mapping[str, str],
+    now: Callable[[], dt.datetime] = lambda: dt.datetime.now(dt.UTC),
+) -> dict[str, str]:
+    """Credentials with at least MIN_LIFETIME seconds left; export again once if short."""
+    for _ in range(2):
+        credentials, expiry = export_credentials(profile, parent)
+        if expiry is None or (expiry - now()).total_seconds() >= MIN_LIFETIME:
+            return credentials
+    raise ModelCallError(
+        f"credentials for profile {profile!r} expire in under {MIN_LIFETIME // 60} minutes"
+    )
 
 
 def parse_events(stdout: str) -> str:
@@ -167,7 +201,7 @@ def call(
     region = region or parent.get("AWS_REGION") or parent.get("AWS_DEFAULT_REGION")
     profile = profile or parent.get("AWS_PROFILE")
     if credentials is None and profile:
-        credentials = export_credentials(profile, parent)
+        credentials = fresh_credentials(profile, parent)
     with tempfile.TemporaryDirectory(prefix="slopvac-model-eval-") as raw:
         tmp = Path(raw).resolve()
         (tmp / "home").mkdir()
