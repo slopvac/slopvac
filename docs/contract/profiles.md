@@ -55,10 +55,16 @@ The mapping relies on this precedence for the level of one checked rule. It is a
 
 - **E1.** Set `profile` to the 2.x profile and `styles` to `["core:legacy-<profile>"]`. Copy the authored `categories` and `rules`.
 - **E2.** For each category that a layer authors, write into that layer a `rules` entry for each profile default of that category that the layer does not set itself. The value is the default for the profile in force in that layer. In 2.x a per-rule default beat an authored category level.
-- **E3.** The 3.0 config forbids `styles` in an override. For each override that sets `profile`, insert before all override blocks one block with the same `files`. It holds the category dials of the target style, minus any field the top level authors. For a category that the top level authors, it keeps the target's `off` entries and drops its advisory entries. It also holds one `rules` entry for each rule that any legacy style names, set to the state of the target profile, minus the rules the top level authors. A second profile override then resets everything the first one set.
-- **E4.** Drop an authored `rules` entry that 2.x ignored. 2.x ignored entries for rules that the profile excluded by tier, and for rules in a category that the profile turned off and the layer did not revive. `migrate` prints a notice for each dropped entry.
+- **E3.** The 3.0 config forbids `styles` in an override. For each override that sets `profile`, insert before all override blocks one block with the same `files`. It holds:
+  - the category dials of the target style, minus any field the top level authors, and `max_per_100_words = "none"` for each category that the target style leaves without a budget while another style gives it one (this clears a budget that the base style or an earlier switch set);
+  - one `rules` entry for each rule that any legacy style or the top level names, set to the state of the target profile;
+  - for a rule that the top level authors, the authored level when 2.x does not ignore it under the target profile, and the target state otherwise;
+  - no entry for an advisory rule in a category that the top level authors.
+
+  A second profile override then resets everything the first one set.
+- **E4.** Drop an authored `rules` entry that 2.x ignored in the scope of its layer, and print a notice for each. 2.x ignored an entry for a judgement rule, a tier-excluded rule, or a rule in a category that is off by that layer. A top-level entry that the baseline profile ignores is dropped from the project layer and comes back in the switch block of a profile that does not ignore it.
 - **E5.** 2.x credited the whole category as authored when a layer wrote any field of it. An advisory rule then took the category level. When an authored category has no `severity`, write the severity of the profile in force.
-- **E6.** A category that has no budget in the target profile but has one in the base style gets `max_per_100_words = "none"`. A higher layer cannot unset a field by omission, and `none` is the 3.0 spelling that clears the budget. 2.x had no such spelling. The style and config schemas accept it, and the resolver treats it as "no budget".
+- **E6.** `none` is the 3.0 spelling that clears a budget. A higher layer cannot unset a field by omission, and 2.x had no such spelling. The style and config schemas accept it, and the resolver treats it as "no budget".
 
 Known limits. A block without `profile` that authors a category takes its rule defaults from the top-level profile. When the block matches a file that a profile override also matches, three defaults can differ from 2.x: `orwell.compound-preposition`, `ai-tells-structure.definitional-negation-pair` and `ai-tells-structure.negative-guarantee-core`. E4 is a deliberate 3.0 difference: an authored entry for an excluded rule now takes effect only when the user writes it, and the migration omits it to keep the 2.x result.
 

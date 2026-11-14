@@ -319,6 +319,70 @@ SCENARIOS = {
         },
         ["docs/a.md"],
     ),
+    "judgement-entries-are-ignored": (
+        {
+            "profile": "normal",
+            "rules": {"orwell.concrete-floor": "off"},
+            "overrides": [
+                {"files": ["docs/**"], "rules": {"orwell.concrete-floor": "error"}}
+            ],
+        },
+        ["a.md", "docs/a.md"],
+    ),
+    "top-rule-ignored-at-baseline-valid-in-override": (
+        {
+            "profile": "relaxed",
+            "rules": {"orwell.not-un": "error"},
+            "overrides": [{"files": ["docs/**"], "profile": "strict"}],
+        },
+        ["a.md", "docs/a.md"],
+    ),
+    "top-rule-valid-at-baseline-ignored-in-override": (
+        {
+            "profile": "strict",
+            "rules": {"orwell.not-un": "warning"},
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
+        ["a.md", "docs/a.md"],
+    ),
+    "override-revives-category-and-rule": (
+        {
+            "profile": "relaxed",
+            "overrides": [
+                {
+                    "files": ["docs/**"],
+                    "categories": {"prose-craft": "warning"},
+                    "rules": {"prose-craft.spacing": "error"},
+                }
+            ],
+        },
+        ["a.md", "docs/a.md"],
+    ),
+    "budget-cleared-after-an-earlier-switch": (
+        {
+            "profile": "strict",
+            "overrides": [
+                {"files": ["docs/**"], "profile": "normal"},
+                {"files": ["docs/api/**"], "profile": "strict"},
+            ],
+        },
+        ["docs/api/a.md", "docs/b.md", "c.md"],
+    ),
+    "budget-restored-by-the-reverse-switch": (
+        {
+            "profile": "strict",
+            "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+        },
+        ["docs/a.md", "c.md"],
+    ),
+    "authored-budget-survives-a-switch": (
+        {
+            "profile": "normal",
+            "categories": {"orwell-voice": {"max_per_100_words": 2.0}},
+            "overrides": [{"files": ["docs/**"], "profile": "strict"}],
+        },
+        ["docs/a.md", "c.md"],
+    ),
     "two-profile-overrides": (
         {
             "profile": "normal",

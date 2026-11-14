@@ -96,10 +96,13 @@ def expand(config2: dict, ruleset) -> dict:
     E1 selects the style of the top-level profile and copies the authored tables.
     E2 states, in each layer that authors a category, the profile rule defaults
     of that category, because a rule default beat an authored category in 2.x.
-    E3 puts, before the override blocks, one block per profile override with the
-    target style, minus what the top level authors.
-    E4 drops an authored rule entry that 2.x ignored: a tier-excluded rule, and a
-    rule in a category that the profile turned off.
+    E3 puts, before the override blocks, one block per profile override. It holds
+    the target style, the authored settings that stay valid under the target
+    profile, and ``none`` where the target has no budget.
+    E4 drops an authored rule entry that 2.x ignored in the scope of its layer: a
+    judgement rule, a tier-excluded rule, and a rule in a category that is off
+    after the layers up to and including the entry.
+    E5 gives an authored category without a severity the severity in force.
     """
     top = config2.get("profile", "normal")
     styles = {p: style_layer(p) for p in mapping.PROFILES}
@@ -109,10 +112,14 @@ def expand(config2: dict, ruleset) -> dict:
     for rule in ruleset.all_rules:
         by_category.setdefault(rule.category, []).append(rule)
     tier = {r.qualified_id: r for r in ruleset.all_rules}
+    budgeted = {
+        name
+        for st in styles.values()
+        for name, d in st["categories"].items()
+        if "max_per_100_words" in d
+    }
 
     def authored(cats: dict, profile: str) -> dict:
-        """E5: 2.x credited the whole category as authored, so an advisory rule took
-        the category level even when only a floor or a budget was written."""
         out = {}
         for name, value in cats.items():
             d = dials(value)
@@ -121,18 +128,21 @@ def expand(config2: dict, ruleset) -> dict:
             out[name] = d
         return out
 
-    top_cat = authored(config2.get("categories", {}), top)
-    top_rules = {
-        k: (v if isinstance(v, str) else v["severity"])
-        for k, v in config2.get("rules", {}).items()
-    }
+    def rule_levels(rules: dict) -> dict:
+        return {
+            k: (v if isinstance(v, str) else v["severity"])
+            for k, v in rules.items()
+            if tier[k].kind.value != "judgement"
+        }
 
-    def ignored(qid: str, profile: str) -> bool:
+    def ignored(qid: str, profile: str, real_cats: list[dict]) -> bool:
         rule = tier[qid]
         if rule.tier_for(profile).value == "excluded":
             return True
-        cat = styles[profile]["categories"].get(rule.category, {})
-        return cat.get("severity") == "off" and rule.category not in top_cat
+        severity = styles[profile]["categories"].get(rule.category, {}).get("severity")
+        for cats in real_cats:
+            severity = cats.get(rule.category, {}).get("severity", severity)
+        return severity == "off"
 
     def sticky_for(categories: dict, profile: str, own_rules: dict) -> dict:
         out = {}
@@ -143,8 +153,12 @@ def expand(config2: dict, ruleset) -> dict:
                     out[qid] = defaults[profile][qid]
         return out
 
+    top_real = {k: dials(v) for k, v in config2.get("categories", {}).items()}
+    top_cat = authored(config2.get("categories", {}), top)
+    top_rules = rule_levels(config2.get("rules", {}))
+
     out: dict = {"profile": top, "styles": [mapping.style_name(top)]}
-    project_rules = {k: v for k, v in top_rules.items() if not ignored(k, top)}
+    project_rules = {k: v for k, v in top_rules.items() if not ignored(k, top, [top_real])}
     project_rules = {**sticky_for(top_cat, top, project_rules), **project_rules}
     out["categories"] = copy.deepcopy(top_cat)
     out["rules"] = project_rules
@@ -153,37 +167,40 @@ def expand(config2: dict, ruleset) -> dict:
     switch = []
     for block in config2.get("overrides", []):
         profile = block.get("profile")
-        cats = authored(block.get("categories", {}), profile or top)
-        rules = {
-            k: (v if isinstance(v, str) else v["severity"])
-            for k, v in block.get("rules", {}).items()
-        }
         in_force = profile or top
-        rules = {k: v for k, v in rules.items() if not ignored(k, in_force)}
+        real = {k: dials(v) for k, v in block.get("categories", {}).items()}
+        cats = authored(block.get("categories", {}), in_force)
+        rules = {
+            k: v
+            for k, v in rule_levels(block.get("rules", {})).items()
+            if not ignored(k, in_force, [top_real, real])
+        }
         rules = {**sticky_for(cats, in_force, rules), **rules}
         new = {"files": block["files"], "categories": cats, "rules": rules}
         if profile:
             new["profile"] = profile
             target = styles[profile]
-            base = styles[top]
             sw_cats = {}
             for name, d in target["categories"].items():
-                kept = {k: v for k, v in d.items() if k not in top_cat.get(name, {})}
+                kept = {k: v for k, v in d.items() if k not in top_real.get(name, {})}
                 if (
                     "max_per_100_words" not in d
-                    and "max_per_100_words" in base["categories"][name]
-                    and "max_per_100_words" not in top_cat.get(name, {})
+                    and name in budgeted
+                    and "max_per_100_words" not in top_real.get(name, {})
                 ):
                     kept["max_per_100_words"] = "none"
                 if kept:
                     sw_cats[name] = kept
+            keys = set().union(*(st["rules"] for st in styles.values())) | set(top_rules)
             sw_rules = {}
-            for qid in sorted(set().union(*(st["rules"] for st in styles.values()))):
+            for qid in sorted(keys):
                 if qid in top_rules:
+                    keep = not ignored(qid, profile, [top_real])
+                    sw_rules[qid] = top_rules[qid] if keep else states[profile][qid][1]
                     continue
                 rule = tier[qid]
                 if (
-                    rule.category in top_cat
+                    rule.category in top_real
                     and rule.kind.value != "judgement"
                     and rule.tier_for(profile).value == "advisory"
                     and qid not in defaults[profile]
