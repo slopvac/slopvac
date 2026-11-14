@@ -17,7 +17,7 @@ Origin classes:
 
 Human genres: product, reference, tutorials, changelogs, readmes, decision records (`adrs`), prs, commits, ui-strings, code-comments, diagrams. Stated-LLM text uses the genre `assistant-answers`.
 
-The repository commits each document with a permissive licence and at most 32 KiB under `corpus/`. `NOTICE` credits each repository. Other documents, such as GPL and AGPL text, stay out of the repository and are downloaded to a cache.
+The repository commits each document with a permissive licence and at most 32 KiB under `corpus/` with the suffix `.corpus`, so prose gates skip them. `NOTICE` credits each repository. Other documents, such as GPL and AGPL text, stay out of the repository and are downloaded to a cache.
 
 ## Fetch
 
