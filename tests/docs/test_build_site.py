@@ -203,7 +203,7 @@ def test_rule_url_uses_the_configured_site(sources: dict[str, Path]) -> None:
     site = build_site.load_site(sources["config"])
     assert (
         build_site.rule_url("demo", "no-foo", site)
-        == "https://docs.example.org/tools/v3/rules/demo/no-foo.html"
+        == "https://docs.example.org/tools/v3/rules/demo/no-foo/"
     )
 
 
