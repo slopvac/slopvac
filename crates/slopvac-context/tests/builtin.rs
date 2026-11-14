@@ -5,7 +5,7 @@ use slopvac_context::{BlockKind, OwnedBlock, PlainDocument, builtin_registry};
 
 fn kinds_for(path: &str, src: &str, needle: &str) -> Vec<String> {
     let doc = PlainDocument::from_markdown(path, src);
-    let idx = builtin_registry().unwrap().tag_document(&doc);
+    let idx = builtin_registry().unwrap().tag_document(&doc).unwrap();
     let start = src
         .find(needle)
         .unwrap_or_else(|| panic!("`{needle}` not in source"));
@@ -171,6 +171,7 @@ fn admonition_and_quote_blocks() {
         span,
         text: "x".repeat(10),
         heading_path: vec!["T".into()],
+        heading_level: None,
         admonition_title: title.map(String::from),
     };
     doc.blocks
@@ -180,7 +181,7 @@ fn admonition_and_quote_blocks() {
     doc.blocks.push(mk(BlockKind::Quote, 300..310, None));
     doc.blocks
         .push(mk(BlockKind::Paragraph, 400..410, Some("Changed in 2.0")));
-    let idx = builtin_registry().unwrap().tag_document(&doc);
+    let idx = builtin_registry().unwrap().tag_document(&doc).unwrap();
     assert_eq!(idx.kinds_at(&(100..110)), vec!["safety"]);
     assert!(idx.kinds_at(&(200..210)).is_empty());
     assert_eq!(idx.kinds_at(&(300..310)), vec!["quote"]);
