@@ -1,9 +1,17 @@
-"""Run a command in its own process group and kill the whole group on any exit path.
+"""Run commands so that nothing they start outlives the call.
 
 `subprocess.run(timeout=...)` kills only the direct child. A wrapper that spawns
 another process (the model adapter spawns `opencode`) would leave that process
-running. Here the command starts a new session, so `killpg` reaches every
-descendant, and the group is reaped before the call returns or raises.
+running. Two modes cover this:
+
+- `own_group=True` (the harness): the command starts a new session and becomes
+  the leader of its own process group. The harness waits for the leader to exit
+  WITHOUT reaping it, signals the group, and only then reaps. An unreaped leader
+  keeps its pid and group id reserved, so a recycled pid cannot receive the
+  signal.
+- `own_group=False` (the adapter): the command stays in the caller's group, so
+  the harness's group kill reaches it too. The adapter kills the command's
+  descendants itself on a timeout.
 """
 
 from __future__ import annotations
@@ -13,19 +21,59 @@ import re
 import signal
 import subprocess
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 # The adapter must give up before the harness does, so the adapter can report why.
 ADAPTER_TIMEOUT = 600
 OUTER_TIMEOUT = 900
+POLL_SECONDS = 0.02
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
+def _wait_exit_noreap(pid: int, timeout: float) -> None:
+    """Block until child `pid` has exited, leaving it unreaped. Raises TimeoutExpired."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None:
+            return
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(str(pid), timeout)
+        time.sleep(POLL_SECONDS)
+
+
+def _kill_group(pgid: int) -> None:
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        os.killpg(pgid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
+
+
+def descendants(pid: int) -> list[int]:
+    """Pids below `pid`, deepest first, from the process table."""
+    table = subprocess.run(
+        ["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, check=False
+    ).stdout
+    children: dict[int, list[int]] = {}
+    for line in table.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found: list[int] = []
+    stack = [pid]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            found.append(child)
+            stack.append(child)
+    return list(reversed(found))
+
+
+def kill_descendants(pid: int) -> None:
+    for child in descendants(pid):
+        try:
+            os.kill(child, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def run_group(
@@ -35,14 +83,14 @@ def run_group(
     timeout: float,
     cwd: str | Path | None = None,
     env: Mapping[str, str] | None = None,
+    own_group: bool = True,
 ) -> subprocess.CompletedProcess:
-    """Like `subprocess.run(capture_output=True, text=True)`, with group cleanup.
+    """Like `subprocess.run(capture_output=True, text=True)`, with cleanup.
 
     The command's own exit ends the wait, not the closing of its pipes, so a
-    leftover child that holds a pipe cannot stall the call. When the command exits
-    or the timeout passes, the whole group is killed and the pipes are drained.
-    Raises `subprocess.TimeoutExpired` after the group is dead. An interrupt also
-    kills the group before it propagates.
+    leftover child that holds a pipe cannot stall the call. Raises
+    `subprocess.TimeoutExpired` once everything is dead. An interrupt also cleans
+    up before it propagates.
     """
     proc = subprocess.Popen(
         list(argv),
@@ -52,7 +100,7 @@ def run_group(
         text=True,
         cwd=cwd,
         env=None if env is None else dict(env),
-        start_new_session=True,
+        start_new_session=own_group,
     )
     out: list[str] = []
     err: list[str] = []
@@ -64,17 +112,27 @@ def run_group(
         threads.append(threading.Thread(target=_feed, args=(proc, input), daemon=True))
     for thread in threads:
         thread.start()
-    try:
-        proc.wait(timeout=timeout)
-    except BaseException:
-        _kill_group(proc)
+
+    def cleanup() -> None:
+        if own_group:
+            _kill_group(proc.pid)  # the leader is still unreaped here
+        else:
+            kill_descendants(proc.pid)
+            proc.kill()
         proc.wait()
         for thread in threads:
             thread.join(timeout=5)
+
+    try:
+        _wait_exit_noreap(proc.pid, timeout)
+    except BaseException:
+        cleanup()
         raise
-    # Anything the command left behind in its group dies with it, which also
-    # closes the pipes the reader threads wait on.
-    _kill_group(proc)
+    if own_group:
+        # Anything the command left behind dies with it, which also closes the
+        # pipes the reader threads wait on.
+        _kill_group(proc.pid)
+    proc.wait()
     for thread in threads:
         thread.join(timeout=5)
     return subprocess.CompletedProcess(

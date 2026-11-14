@@ -101,11 +101,22 @@ def cmd_models(args: argparse.Namespace) -> int:
             return 2
         engine = runner.Engine.parse(args.engine)
         out = Path(args.out) if args.out else models.default_output(models.today())
-        journal = models.Journal(out.with_suffix(".journal.jsonl"))
+        journal_path = out.with_suffix(".journal.jsonl")
+        ledger_path = out.with_suffix(".ledger.jsonl")
+        if (
+            journal_path.is_file()
+            and journal_path.stat().st_size
+            and not ledger_path.is_file()
+        ):
+            print(
+                f"evals models run: {journal_path.name} exists without {ledger_path.name}, "
+                "so its spent invocations are unknown; start with a fresh --out path",
+                file=sys.stderr,
+            )
+            return 2
+        journal = models.Journal(journal_path)
         try:
-            with models.Budget(
-                args.max_invocations, out.with_suffix(".ledger.jsonl")
-            ) as budget:
+            with models.Budget(args.max_invocations, ledger_path) as budget:
                 results = models.execute(
                     tasks,
                     roster,

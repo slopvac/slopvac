@@ -337,6 +337,8 @@ import json, os, subprocess, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
 plan = json.load(open(os.path.join(here, "fake.json")))
 config = open("opencode.json").read() if os.path.exists("opencode.json") else None
+if plan.get("opencode_pidfile"):
+    open(plan["opencode_pidfile"], "w").write(str(os.getpid()))
 if plan.get("child_pidfile"):
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     open(plan["child_pidfile"], "w").write(str(child.pid))
@@ -345,9 +347,27 @@ if plan.get("hang"):
 open(plan["log"], "w").write(json.dumps({{
     "argv": sys.argv[1:], "cwd": os.getcwd(), "env": dict(os.environ),
     "config": config, "stdin": sys.stdin.read(),
+    "home_listing": sorted(os.listdir(os.environ["HOME"])),
 }}))
 print(json.dumps({{"type": "text", "part": {{"text": "fine"}}}}))
 """
+
+FAKE_AWS = """\
+#!{python}
+import json, os, sys
+here = os.path.dirname(os.path.abspath(__file__))
+open(json.load(open(os.path.join(here, "fake.json"))).get("aws_log", os.devnull), "w").write(json.dumps({{"argv": sys.argv[1:], "home": os.environ.get("HOME")}}))
+if "--profile" in sys.argv and sys.argv[sys.argv.index("--profile") + 1] == "good":
+    print(json.dumps({{"Version": 1, "AccessKeyId": "AKIAFAKEFAKEFAKEFAKE", "SecretAccessKey": "s3cret-value", "SessionToken": "tok-value"}}))
+else:
+    sys.exit(255)
+"""
+
+CREDS = {
+    "AWS_ACCESS_KEY_ID": "AKIAFAKEFAKEFAKEFAKE",
+    "AWS_SECRET_ACCESS_KEY": "s3cret-value",
+    "AWS_SESSION_TOKEN": "tok-value",
+}
 
 
 @pytest.fixture
@@ -355,6 +375,7 @@ def fake_opencode(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     script(bin_dir, "opencode", FAKE_OPENCODE.format(python=sys.executable))
+    script(bin_dir, "aws", FAKE_AWS.format(python=sys.executable))
     log = tmp_path / "opencode.log"
     plan = {"log": str(log)}
     (bin_dir / "fake.json").write_text(json.dumps(plan))
@@ -362,9 +383,14 @@ def fake_opencode(tmp_path):
     def set_plan(**more):
         (bin_dir / "fake.json").write_text(json.dumps({**plan, **more}))
 
+    real_home = tmp_path / "real-home"
+    (real_home / ".config" / "opencode").mkdir(parents=True)
+    (real_home / ".opencode").mkdir()
+    (real_home / ".aws").mkdir()
+    (real_home / ".config" / "opencode" / "opencode.json").write_text("{}")
     parent = {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "HOME": str(tmp_path / "home"),
+        "HOME": str(real_home),
     }
     return log, set_plan, parent
 
@@ -377,75 +403,190 @@ HOSTILE = {
     "XDG_CONFIG_HOME": "/hostile/xdg",
     "XDG_DATA_HOME": "/hostile/data",
     "AWS_ACCESS_KEY_ID": "AKIAHOSTILE00000000",
+    "AWS_SECRET_ACCESS_KEY": "hostile",
     "GITHUB_TOKEN": "ghp_hostile",
+    "AWS_CONFIG_FILE": "/hostile/aws-config",
     "PWD": "/hostile/repo",
 }
 
 
-def test_the_child_sees_only_allow_listed_variables_and_its_own_directories(
-    fake_opencode,
-):
+def test_the_child_gets_an_empty_home_and_only_allow_listed_variables(fake_opencode):
     log, _, parent = fake_opencode
-    parent = {**parent, **HOSTILE, "AWS_PROFILE": "from-parent", "LANG": "C"}
+    parent = {**parent, **HOSTILE, "LANG": "C", "AWS_PROFILE": "from-parent"}
     answer = opencode_model.call(
-        "amazon-bedrock/m", "hello", region="eu-west-1", profile="p", parent_env=parent
+        "amazon-bedrock/m",
+        "hello",
+        region="eu-west-1",
+        parent_env=parent,
+        credentials=CREDS,
     )
     assert answer == "fine"
     seen = json.loads(log.read_text())
     env = seen["env"]
     assert not any(k.startswith("OPENCODE") for k in env)
-    assert "GITHUB_TOKEN" not in env and "AWS_ACCESS_KEY_ID" not in env
-    allowed = set(opencode_model.ALLOWED_ENV) | {
-        "PWD",
-        "TMPDIR",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "XDG_CACHE_HOME",
-        "__CF_USER_TEXT_ENCODING",
-        "LC_CTYPE",  # macOS interpreter additions
-    }
+    assert (
+        "GITHUB_TOKEN" not in env
+        and "AWS_PROFILE" not in env
+        and "AWS_CONFIG_FILE" not in env
+    )
+    assert (
+        env["AWS_ACCESS_KEY_ID"] == CREDS["AWS_ACCESS_KEY_ID"]
+    )  # the resolved ones, not the hostile ones
+    assert env["AWS_SECRET_ACCESS_KEY"] == CREDS["AWS_SECRET_ACCESS_KEY"]
+    allowed = (
+        set(opencode_model.ALLOWED_ENV)
+        | set(CREDS)
+        | {
+            "HOME",
+            "PWD",
+            "TMPDIR",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_STATE_HOME",
+            "XDG_CACHE_HOME",
+            "__CF_USER_TEXT_ENCODING",
+            "LC_CTYPE",
+        }
+    )
     assert set(env) <= allowed, set(env) - allowed
     tmp = os.path.realpath(seen["cwd"])
     assert os.path.realpath(env["PWD"]) == tmp
     for name in (
+        "HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_STATE_HOME",
         "XDG_CACHE_HOME",
         "TMPDIR",
     ):
-        assert os.path.realpath(env[name]).startswith(tmp)
-    assert env["AWS_PROFILE"] == "p" and env["AWS_REGION"] == "eu-west-1"
+        assert os.path.realpath(env[name]).startswith(tmp), name
+    assert os.path.realpath(env["HOME"]) != os.path.realpath(parent["HOME"])
+    assert (
+        seen["home_listing"] == []
+    )  # no .config/opencode, .opencode or .aws in the child's HOME
+    assert env["AWS_REGION"] == "eu-west-1"
 
 
 def test_the_config_is_toolless_and_names_only_the_bare_agent(fake_opencode):
     log, _, parent = fake_opencode
     opencode_model.call(
-        "amazon-bedrock/some-model", "hello", region="r", profile="p", parent_env=parent
+        "amazon-bedrock/some-model",
+        "hello",
+        region="r",
+        parent_env=parent,
+        credentials={},
     )
     seen = json.loads(log.read_text())
     assert seen["argv"][:3] == ["run", "-m", "amazon-bedrock/some-model"]
     assert seen["argv"][seen["argv"].index("--agent") + 1] == opencode_model.AGENT
     config = json.loads(seen["config"])
     assert config["agent"][opencode_model.AGENT]["tools"] == {"*": False}
-    assert config["provider"] == {
-        "amazon-bedrock": {"options": {"region": "r", "profile": "p"}}
-    }
+    assert config["provider"] == {"amazon-bedrock": {"options": {"region": "r"}}}
     assert set(config) == {"$schema", "agent", "provider"}
     assert os.getcwd() not in seen["config"] and seen["stdin"] == "hello"
     assert os.path.realpath(seen["cwd"]) != os.path.realpath(os.getcwd())
 
 
-def test_a_hung_opencode_and_its_child_are_killed_at_the_timeout(
+def test_credentials_are_resolved_with_the_real_home_and_never_reach_a_file(
+    fake_opencode, tmp_path
+):
+    log, set_plan, parent = fake_opencode
+    aws_log = tmp_path / "aws.log"
+    set_plan(aws_log=str(aws_log))
+    keep = tmp_path / "kept"
+    opencode_model.call(
+        "m", "x", profile="good", region="r", parent_env=parent, keep=keep
+    )
+    asked = json.loads(aws_log.read_text())
+    assert asked["argv"] == [
+        "configure",
+        "export-credentials",
+        "--profile",
+        "good",
+        "--format",
+        "process",
+    ]
+    assert (
+        asked["home"] == parent["HOME"]
+    )  # only the credential helper sees the real HOME
+    seen = json.loads(log.read_text())
+    assert seen["env"]["AWS_ACCESS_KEY_ID"] == CREDS["AWS_ACCESS_KEY_ID"]
+    assert "AWS_PROFILE" not in seen["env"]
+    on_disk = "".join(
+        p.read_text()
+        for p in keep.rglob("*")
+        if p.is_file() and p.stat().st_size < 1_000_000
+    )
+    assert "s3cret-value" not in on_disk and "tok-value" not in on_disk
+
+
+def test_an_unresolvable_profile_fails_without_echoing_anything(fake_opencode):
+    _, _, parent = fake_opencode
+    with pytest.raises(
+        opencode_model.ModelCallError, match="could not resolve credentials"
+    ):
+        opencode_model.call("m", "x", profile="bad", parent_env=parent)
+
+
+def tree_plan(tmp_path, set_plan):
+    pids = {"opencode": tmp_path / "opencode.pid", "child": tmp_path / "child.pid"}
+    set_plan(
+        hang=True,
+        opencode_pidfile=str(pids["opencode"]),
+        child_pidfile=str(pids["child"]),
+    )
+    return pids
+
+
+def adapter_command():
+    return [sys.executable, "-m", "evals.opencode_model", "--model", "amazon-bedrock/m"]
+
+
+def adapter_env(parent):
+    repo = str(Path(models.lib.EVALS_DIR).parent)
+    return {**parent, "PYTHONPATH": repo}
+
+
+def test_interrupting_the_real_adapter_kills_opencode_and_its_descendants(
     fake_opencode, tmp_path
 ):
     _, set_plan, parent = fake_opencode
-    pidfile = tmp_path / "child.pid"
-    set_plan(hang=True, child_pidfile=str(pidfile))
+    pids = tree_plan(tmp_path, set_plan)
     with pytest.raises(subprocess.TimeoutExpired):
-        opencode_model.call("m", "x", timeout=2, parent_env=parent)
-    assert wait_dead(int(pidfile.read_text()))
+        procs.run_group(
+            adapter_command(), input="x", timeout=3, env=adapter_env(parent)
+        )
+    assert wait_dead(int(pids["opencode"].read_text()))
+    assert wait_dead(int(pids["child"].read_text()))
+
+
+def test_the_adapter_timeout_kills_opencode_and_everything_below_it(
+    fake_opencode, tmp_path
+):
+    _, set_plan, parent = fake_opencode
+    pids = tree_plan(tmp_path, set_plan)
+    started = time.time()
+    result = procs.run_group(
+        [*adapter_command(), "--timeout", "2"],
+        input="x",
+        timeout=30,
+        env=adapter_env(parent),
+    )
+    assert result.returncode == 1 and "timed out" in result.stderr
+    assert time.time() - started < 20
+    assert wait_dead(int(pids["opencode"].read_text()))
+    assert wait_dead(int(pids["child"].read_text()))
+
+
+def test_the_group_leader_is_not_reaped_before_its_group_is_signalled(tmp_path):
+    proc = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    procs._wait_exit_noreap(proc.pid, 10)
+    # Still a zombie that we own: waitid sees it again, and Popen has no return code yet.
+    assert proc.returncode is None
+    assert (
+        os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+    )
+    assert proc.wait() == 0
 
 
 # --- redaction ----------------------------------------------------------------------------------------
@@ -579,10 +720,35 @@ def test_a_second_launch_on_a_held_ledger_exits_two(tmp_path, monkeypatch, capsy
     assert code == 2 and "holds the ledger lock" in capsys.readouterr().err
 
 
-def test_region_and_profile_default_to_the_parent_environment(fake_opencode):
+def test_region_defaults_to_the_parent_environment(fake_opencode):
     log, _, parent = fake_opencode
-    parent = {**parent, "AWS_PROFILE": "from-env", "AWS_REGION": "us-east-1"}
-    opencode_model.call("m", "x", parent_env=parent)
+    parent = {**parent, "AWS_REGION": "us-east-1"}
+    opencode_model.call("m", "x", parent_env=parent, credentials={})
     seen = json.loads(log.read_text())
     options = json.loads(seen["config"])["provider"]["amazon-bedrock"]["options"]
-    assert options == {"region": "us-east-1", "profile": "from-env"}
+    assert options == {"region": "us-east-1"}
+
+
+def test_a_journal_without_a_ledger_is_refused(tmp_path, monkeypatch, capsys):
+    (tmp_path / "r.journal.jsonl").write_text(
+        json.dumps({"job": "j", "answer": "a", "error": None, "attempts": 1}) + "\n"
+    )
+    code = run_cli(
+        tmp_path,
+        monkeypatch,
+        lambda *a, **k: {"date": "d", "runs": []},
+        ["--max-invocations", "5"],
+    )
+    err = capsys.readouterr().err
+    assert code == 2 and "without r.ledger.jsonl" in err and "fresh --out" in err
+
+
+def test_an_empty_journal_without_a_ledger_is_fine(tmp_path, monkeypatch):
+    (tmp_path / "r.journal.jsonl").write_text("")
+    code = run_cli(
+        tmp_path,
+        monkeypatch,
+        lambda *a, **k: {"date": "d", "runs": []},
+        ["--max-invocations", "5"],
+    )
+    assert code == 0

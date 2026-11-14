@@ -9,13 +9,17 @@ schemas do not change what the model answers.
 
 Isolation is by construction, not by trust in the caller's environment:
 
-- The child gets an allow-listed environment. No `OPENCODE_*` or `XDG_*` variable
-  from the caller reaches it, and the XDG directories point inside the temporary
-  project, so the user's global opencode config, plugins and database stay out.
-- `PWD` matches the temporary working directory.
-- Credentials come from the AWS profile files under `HOME`, which the AWS SDK
-  reads. The adapter never reads or prints a credential.
-- On timeout or interrupt the whole process group is killed and reaped.
+- `HOME`, the XDG directories, `TMPDIR` and `PWD` all point inside the temporary
+  project, which holds only the bare config. The user's `~/.config/opencode`,
+  `~/.opencode`, plugins, rules and auth never load.
+- The child gets an allow-listed environment. No `OPENCODE_*` or caller `XDG_*`
+  variable reaches it.
+- AWS credentials are resolved up front with `aws configure export-credentials`
+  for the chosen profile and handed over as the three standard variables. The
+  child has no AWS profile files to read. The adapter never prints a credential.
+- `opencode` stays in the adapter's process group, so the harness's group kill
+  reaches it. On its own timeout the adapter kills `opencode` and everything
+  below it.
 """
 
 from __future__ import annotations
@@ -33,25 +37,34 @@ from pathlib import Path
 from . import procs
 
 AGENT = "evalbare"
-ALLOWED_ENV = (
+# Variables copied from the caller. HOME is not among them.
+ALLOWED_ENV = ("PATH", "USER", "LANG", "LC_ALL", "AWS_REGION", "AWS_DEFAULT_REGION")
+# Used only to run `aws configure export-credentials`, never given to opencode.
+CREDENTIAL_ENV = (
     "PATH",
     "HOME",
     "USER",
     "LANG",
     "LC_ALL",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
     "AWS_PROFILE",
     "AWS_REGION",
     "AWS_DEFAULT_REGION",
-    "AWS_CONFIG_FILE",
-    "AWS_SHARED_CREDENTIALS_FILE",
 )
+CREDENTIAL_TIMEOUT = 60
+CREDENTIAL_KEYS = {
+    "AccessKeyId": "AWS_ACCESS_KEY_ID",
+    "SecretAccessKey": "AWS_SECRET_ACCESS_KEY",
+    "SessionToken": "AWS_SESSION_TOKEN",
+}
 
 
 class ModelCallError(Exception):
     pass
 
 
-def build_config(region: str | None, profile: str | None) -> dict:
+def build_config(region: str | None) -> dict:
     config: dict = {
         "$schema": "https://opencode.ai/config.json",
         "agent": {
@@ -63,22 +76,25 @@ def build_config(region: str | None, profile: str | None) -> dict:
             }
         },
     }
-    options = {k: v for k, v in (("region", region), ("profile", profile)) if v}
-    if options:
-        config["provider"] = {"amazon-bedrock": {"options": options}}
+    if region:
+        config["provider"] = {"amazon-bedrock": {"options": {"region": region}}}
     return config
 
 
 def isolated_env(
-    tmp: Path, parent: Mapping[str, str], region: str | None, profile: str | None
+    tmp: Path,
+    parent: Mapping[str, str],
+    region: str | None,
+    credentials: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """The only environment the child sees."""
+    """The only environment the child sees. Its HOME is an empty directory."""
     env = {k: parent[k] for k in ALLOWED_ENV if k in parent}
-    if profile:
-        env["AWS_PROFILE"] = profile
     if region:
         env["AWS_REGION"] = region
+    env.update(credentials or {})
+    home = tmp / "home"
     env.update(
+        HOME=str(home),
         PWD=str(tmp),
         TMPDIR=str(tmp),
         XDG_CONFIG_HOME=str(tmp / "xdg-config"),
@@ -87,6 +103,36 @@ def isolated_env(
         XDG_CACHE_HOME=str(tmp / "xdg-cache"),
     )
     return env
+
+
+def export_credentials(profile: str, parent: Mapping[str, str]) -> dict[str, str]:
+    """Resolve an AWS profile to the three credential variables, printing nothing."""
+    env = {k: parent[k] for k in CREDENTIAL_ENV if k in parent}
+    try:
+        proc = procs.run_group(
+            [
+                "aws",
+                "configure",
+                "export-credentials",
+                "--profile",
+                profile,
+                "--format",
+                "process",
+            ],
+            timeout=CREDENTIAL_TIMEOUT,
+            env=env,
+        )
+    except FileNotFoundError:
+        raise ModelCallError("the aws CLI is required to resolve credentials") from None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        data = {}
+    if proc.returncode != 0 or "AccessKeyId" not in data:
+        raise ModelCallError(f"could not resolve credentials for profile {profile!r}")
+    return {
+        env_name: data[key] for key, env_name in CREDENTIAL_KEYS.items() if key in data
+    }
 
 
 def parse_events(stdout: str) -> str:
@@ -114,15 +160,19 @@ def call(
     profile: str | None = None,
     parent_env: Mapping[str, str] | None = None,
     keep: Path | None = None,
+    credentials: Mapping[str, str] | None = None,
 ) -> str:
     """Ask `model` once. `keep` names a directory to copy the temp project into, for audits."""
     parent = os.environ if parent_env is None else parent_env
     region = region or parent.get("AWS_REGION") or parent.get("AWS_DEFAULT_REGION")
     profile = profile or parent.get("AWS_PROFILE")
+    if credentials is None and profile:
+        credentials = export_credentials(profile, parent)
     with tempfile.TemporaryDirectory(prefix="slopvac-model-eval-") as raw:
         tmp = Path(raw).resolve()
+        (tmp / "home").mkdir()
         (tmp / "opencode.json").write_text(
-            json.dumps(build_config(region, profile)), encoding="utf-8"
+            json.dumps(build_config(region)), encoding="utf-8"
         )
         try:
             proc = procs.run_group(
@@ -140,7 +190,8 @@ def call(
                 input=prompt,
                 timeout=timeout,
                 cwd=tmp,
-                env=isolated_env(tmp, parent, region, profile),
+                env=isolated_env(tmp, parent, region, credentials),
+                own_group=False,
             )
         finally:
             if keep:
