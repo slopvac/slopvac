@@ -24,14 +24,18 @@
 //!    outside the group whose parent is stopped and is the leader, a member
 //!    of the group or a descendant already held. On Linux the walk opens a
 //!    pidfd for it, checks its parent through `/proc`, stops it and looks
-//!    again, until a round finds nothing new. Elsewhere it records the
-//!    process as escaped. The table comes from `/bin/ps`, never from
-//!    `PATH`, run with a scrubbed environment, a deadline and an output
-//!    limit, and parsed strictly. A helper that fails, hangs or prints
-//!    anything unexpected ends the walk, as do the deadline and a cap on
-//!    held descendants, and the walk is then reported incomplete.
+//!    again, until a round finds nothing new. A process whose parent `/proc`
+//!    does not confirm counts as gone only if its pidfd shows an exit, and
+//!    one that a pidfd call fails on only if the call fails with `ESRCH`.
+//!    The walk records every other one as escaped. Elsewhere it records
+//!    every such descendant as escaped. The table comes from `/bin/ps`,
+//!    never from `PATH`, run with a scrubbed environment, a deadline and an
+//!    output limit, and parsed strictly. A helper that fails, hangs or
+//!    prints anything unexpected ends the walk, as do the deadline and a
+//!    cap on held descendants, and the walk is then reported incomplete.
 //! 3. Kill the held descendants, deepest first, then the group and the
-//!    leader, whatever the walk found.
+//!    leader, whatever the walk found. A held descendant that the kill does
+//!    not reach is recorded as escaped.
 //!
 //! No snapshot outlives the lock, and descendants are found only at kill time.
 //! A stopped parent cannot fork, so a process that a pidfd names and that
@@ -93,8 +97,10 @@ pub fn kill_all_live() -> Teardown {
 pub struct Teardown {
     /// Ids of descendants outside the plugin's process group that the walk
     /// found but did not signal, because nothing binds them to their ids: on
-    /// a Unix without pidfds every one of them, on Linux one whose pidfd did
-    /// not open. They, and anything they started, may still run.
+    /// a Unix without pidfds every one of them; on Linux one whose pidfd did
+    /// not open or could not signal it, or whose parent `/proc` did not
+    /// confirm while the pidfd showed no exit. They, and anything they
+    /// started, may still run.
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
     /// deadline or the cap on held descendants was reached. Descendants it
@@ -392,7 +398,11 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
     }
 
     let Some(pid) = unix::pid(leader) else {
-        return Teardown::default();
+        // Nothing was signalled, so nothing is known to be dead.
+        return Teardown {
+            escaped: Vec::new(),
+            incomplete: true,
+        };
     };
     stop_group(leader);
     let _last = Last(
@@ -403,11 +413,7 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
         },
     );
     let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
-    let walk = unix::walk(leader, table, Instant::now() + within);
-    for s in walk.held.iter().rev() {
-        s.signal(Signal::KILL);
-    }
-    walk.left
+    unix::walk(leader, table, Instant::now() + within).kill()
 }
 
 #[cfg(not(unix))]
@@ -526,7 +532,7 @@ mod unix {
             expect(dead_code, reason = "nothing is held without pidfds")
         )]
         Held(Stray),
-        /// Gone, or the row did not describe a child of the stopped parent.
+        /// Gone: its id names no process, or its pidfd shows an exit.
         #[cfg_attr(
             not(target_os = "linux"),
             expect(dead_code, reason = "nothing is held without pidfds")
@@ -546,22 +552,22 @@ mod unix {
         pub(super) fn reach(e: &Entry) -> Reach {
             use rustix::process::{PidfdFlags, pidfd_open};
             let Some(p) = pid(e.pid) else {
-                return Reach::Skip;
+                return Reach::Escaped;
             };
             let fd = match pidfd_open(p, PidfdFlags::empty()) {
                 Ok(fd) => fd,
-                Err(err) => return open_failed(err),
+                Err(err) if gone(err) => return Reach::Skip,
+                Err(_) => return Reach::Escaped,
             };
-            match proc_ppid(e.pid) {
-                Ok(ppid) if ppid == e.ppid => Reach::Held(Self {
+            match revalidated(e.ppid, proc_ppid(e.pid).ok(), || exited(&fd)) {
+                Verdict::Bound => Reach::Held(Self {
                     pid: e.pid,
                     ppid: e.ppid,
                     start: e.start.clone(),
                     fd,
                 }),
-                Ok(_) => Reach::Skip,
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Reach::Skip,
-                Err(_) => Reach::Escaped,
+                Verdict::Gone => Reach::Skip,
+                Verdict::Escaped => Reach::Escaped,
             }
         }
 
@@ -578,9 +584,12 @@ mod unix {
             e.pid == self.pid && e.ppid == self.ppid && e.start == self.start
         }
 
-        pub(super) fn signal(&self, sig: Signal) {
+        /// Send `sig` through the pidfd.
+        pub(super) fn signal(&self, sig: Signal) -> rustix::io::Result<()> {
             #[cfg(target_os = "linux")]
-            let _ = rustix::process::pidfd_send_signal(&self.fd, sig);
+            {
+                rustix::process::pidfd_send_signal(&self.fd, sig)
+            }
             #[cfg(not(target_os = "linux"))]
             {
                 let _ = sig;
@@ -589,16 +598,59 @@ mod unix {
         }
     }
 
-    /// Classify a failed `pidfd_open`. Only `ESRCH` means the process is
-    /// gone; any other error (`ENOSYS` before Linux 5.3, `EMFILE`, `EPERM`)
-    /// leaves it running and unbound.
-    #[cfg(target_os = "linux")]
-    pub(super) fn open_failed(err: rustix::io::Errno) -> Reach {
-        if err == rustix::io::Errno::SRCH {
-            Reach::Skip
-        } else {
-            Reach::Escaped
+    /// Whether a failed pidfd call shows that the process is gone. Only
+    /// `ESRCH` does; any other error (`ENOSYS` before Linux 5.3, `EMFILE`,
+    /// `EPERM`) leaves it running and out of reach.
+    pub(super) fn gone(err: rustix::io::Errno) -> bool {
+        err == rustix::io::Errno::SRCH
+    }
+
+    /// What revalidating a descendant through its open pidfd showed.
+    #[cfg(any(target_os = "linux", test))]
+    #[derive(Debug, PartialEq, Eq)]
+    pub(super) enum Verdict {
+        /// The pidfd names the process from the snapshot.
+        Bound,
+        /// The pidfd shows that its process exited.
+        Gone,
+        /// It may still run, and nothing binds it to its id.
+        Escaped,
+    }
+
+    /// Judge a descendant whose parent in the snapshot was `want`, from the
+    /// parent that `/proc` shows for it now, or `None` if `/proc` could not
+    /// be read.
+    ///
+    /// Only that parent binds the pidfd to the process from the snapshot. A
+    /// failed read (`/proc` hides other users' processes under `hidepid`,
+    /// and a set-user-id program may run as one) or another parent (it was
+    /// reparented, or its id was reused) proves no exit. Only the pidfd can,
+    /// so `exited` asks it; otherwise the process escaped.
+    #[cfg(any(target_os = "linux", test))]
+    pub(super) fn revalidated(
+        want: u32,
+        seen: Option<u32>,
+        exited: impl FnOnce() -> bool,
+    ) -> Verdict {
+        match seen {
+            Some(parent) if parent == want => Verdict::Bound,
+            _ if exited() => Verdict::Gone,
+            _ => Verdict::Escaped,
         }
+    }
+
+    /// Whether the process a pidfd names has exited: the pidfd polls
+    /// readable then. A poll that fails shows no exit.
+    #[cfg(target_os = "linux")]
+    pub(super) fn exited(fd: &rustix::fd::OwnedFd) -> bool {
+        use rustix::event::{PollFd, PollFlags, Timespec, poll};
+        let mut fds = [PollFd::new(fd, PollFlags::IN)];
+        let now = Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        matches!(poll(&mut fds, Some(&now)), Ok(n) if n > 0)
+            && fds[0].revents().intersects(PollFlags::IN | PollFlags::HUP)
     }
 
     /// The parent of `pid` from `/proc/<pid>/stat`.
@@ -620,6 +672,20 @@ mod unix {
         pub(super) held: Vec<Stray>,
         /// What the walk left undone.
         pub(super) left: Teardown,
+    }
+
+    impl Walk {
+        /// Kill the held descendants, deepest first, and return what the
+        /// walk left undone, with any that the kill did not reach.
+        pub(super) fn kill(self) -> Teardown {
+            let mut left = self.left;
+            for s in self.held.iter().rev() {
+                if s.signal(Signal::KILL).is_err_and(|err| !gone(err)) {
+                    left.escaped.push(s.pid);
+                }
+            }
+            left
+        }
     }
 
     /// Find the descendants of the stopped `leader` and its group that left
@@ -671,11 +737,15 @@ mod unix {
             let mut grew = false;
             for e in found {
                 match Stray::reach(e) {
-                    Reach::Held(s) if held.len() < cap => {
-                        s.signal(Signal::STOP);
-                        held.push(s);
-                        grew = true;
-                    }
+                    Reach::Held(s) if held.len() < cap => match s.signal(Signal::STOP) {
+                        Ok(()) => {
+                            held.push(s);
+                            grew = true;
+                        }
+                        Err(err) if gone(err) => {}
+                        // For example `EPERM`: it runs as another user.
+                        Err(_) => left.escaped.push(e.pid),
+                    },
                     Reach::Held(_) => {
                         left.incomplete = true;
                         break 'rounds;
@@ -858,12 +928,12 @@ mod tests {
         assert_eq!(got, "a\nb\tc\u{FFFD}[31m\u{FFFD}\u{FFFD}\u{FFFD}x");
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     #[test]
-    fn only_esrch_from_pidfd_open_means_the_process_is_gone() {
-        use super::unix::{Reach, open_failed};
+    fn only_esrch_from_a_pidfd_call_means_the_process_is_gone() {
+        use super::unix::gone;
         use rustix::io::Errno;
-        assert!(matches!(open_failed(Errno::SRCH), Reach::Skip));
+        assert!(gone(Errno::SRCH));
         for err in [
             Errno::NOSYS,
             Errno::MFILE,
@@ -871,8 +941,63 @@ mod tests {
             Errno::PERM,
             Errno::NOMEM,
         ] {
-            assert!(matches!(open_failed(err), Reach::Escaped), "{err:?}");
+            assert!(!gone(err), "{err:?}");
         }
+    }
+
+    /// A pidfd names whatever held the id when it opened. Only the parent
+    /// from the snapshot binds it; anything else is gone only if the pidfd
+    /// itself shows an exit (`/proc` hides processes under `hidepid`).
+    #[cfg(unix)]
+    #[test]
+    fn a_descendant_whose_parent_is_not_confirmed_escapes_unless_its_pidfd_shows_an_exit() {
+        use super::unix::{Verdict, revalidated};
+        let parent = 7;
+        // (parent that `/proc` shows, or none if unreadable; the pidfd shows
+        // an exit; verdict)
+        let cases = [
+            (Some(7), false, Verdict::Bound),
+            (Some(7), true, Verdict::Bound),
+            (None, false, Verdict::Escaped),
+            (None, true, Verdict::Gone),
+            // Reparented after its parent was killed, or the id was reused.
+            (Some(1), false, Verdict::Escaped),
+            (Some(1), true, Verdict::Gone),
+        ];
+        for (seen, exited, want) in cases {
+            let got = revalidated(parent, seen, || exited);
+            assert_eq!(got, want, "{seen:?}, exited {exited}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_pidfd_shows_an_exit_only_once_the_process_has_exited() {
+        use rustix::process::{Pid, PidfdFlags, pidfd_open};
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("300")
+            .spawn()
+            .unwrap();
+        let pid = Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
+        let fd = pidfd_open(pid, PidfdFlags::empty()).unwrap();
+        let before = super::unix::exited(&fd);
+        child.kill().unwrap();
+        // The child stays unreaped, so only the exit can make the pidfd readable.
+        let end = Instant::now() + Duration::from_secs(10);
+        while !super::unix::exited(&fd) && Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let after = super::unix::exited(&fd);
+        child.wait().unwrap();
+        assert!(!before, "a running process showed an exit");
+        assert!(after, "an exited process showed no exit");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_teardown_that_cannot_name_its_leader_is_incomplete() {
+        let left = tear_down(u32::MAX, None, Then::Kill);
+        assert!(left.incomplete, "{left:?}");
     }
 
     #[cfg(unix)]

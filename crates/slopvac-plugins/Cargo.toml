@@ -18,5 +18,9 @@ sha2.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
 
+# Polling a pidfd shows whether its process exited.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event"] }
+
 [lints]
 workspace = true
