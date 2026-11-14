@@ -1,0 +1,19 @@
+# Reviewed deltas between the 2.x reference and the 3.0 default policy.
+#
+# STUB(slopvac-8l4.2.21): no 3.0 engine exists yet, so no delta is recorded. The
+# policy mode equals the parity mode until the engine beads add STE, context and
+# terms behavior and a maintainer reviews each change.
+#
+# Entry shape (every key but `finding`, `set` and `document` is required):
+#
+#   [[delta]]
+#   input = "stacklok-after"        # id from inputs.toml
+#   profile = "normal"
+#   kind = "removed"                # added | removed | changed
+#   rule_id = "core:ste-verbs.passive-voice"
+#   line = 12
+#   reason = "The requirement context exempts agentless passive."
+#   approved_by = "alias"
+#   set = { severity = "suggestion" }   # kind = changed
+#   finding = { ... }                   # kind = added
+#   document = { score = 71.2 }         # document-level values the delta moves

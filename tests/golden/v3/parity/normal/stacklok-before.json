@@ -1,0 +1,2648 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 2,
+        "per_100_words": 0.055,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 6,
+        "per_100_words": 0.166,
+        "warnings": 6
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 8,
+        "gating_per_100_words": 0.083,
+        "over_budget": false,
+        "per_100_words": 0.221,
+        "score": 95.7,
+        "suggestions": 2,
+        "warnings": 6
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.055,
+        "over_budget": false,
+        "per_100_words": 0.11,
+        "score": 96.7,
+        "suggestions": 0,
+        "warnings": 4
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.014,
+        "over_budget": false,
+        "per_100_words": 0.028,
+        "score": 99.5,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 6,
+        "gating_per_100_words": 0.055,
+        "over_budget": false,
+        "per_100_words": 0.166,
+        "score": 98.8,
+        "suggestions": 2,
+        "warnings": 4
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 17,
+        "gating_per_100_words": 0.235,
+        "over_budget": false,
+        "per_100_words": 0.469,
+        "score": 93.0,
+        "suggestions": 0,
+        "warnings": 17
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 7,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.193,
+        "score": 99.5,
+        "suggestions": 7,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.083,
+        "score": 99.8,
+        "suggestions": 3,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 8,
+        "gating_per_100_words": 0.055,
+        "over_budget": false,
+        "per_100_words": 0.221,
+        "score": 98.1,
+        "suggestions": 4,
+        "warnings": 4
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 35,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.967,
+        "score": 97.6,
+        "suggestions": 35,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 14,
+        "gating_per_100_words": 0.193,
+        "over_budget": false,
+        "per_100_words": 0.387,
+        "score": 96.1,
+        "suggestions": 0,
+        "warnings": 14
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 25,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.69,
+        "score": 98.3,
+        "suggestions": 25,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 8,
+        "gating_per_100_words": 0.097,
+        "over_budget": false,
+        "per_100_words": 0.221,
+        "score": 98.0,
+        "suggestions": 1,
+        "warnings": 7
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 47,
+        "end_column": 57,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "is allowed",
+        "message": "Passive voice \"is allowed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 323,
+          "start": 313
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 78,
+        "end_column": null,
+        "end_line": null,
+        "line": 13,
+        "matched_text": "is\ndenied",
+        "message": "Passive voice \"is denied\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 38,
+        "end_column": 45,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "require",
+        "message": "Use \"need\" rather than \"require\".",
+        "replacement": "need",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "warning",
+        "span": {
+          "end": 676,
+          "start": 669
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 10,
+        "end_column": 24,
+        "end_line": 28,
+        "line": 28,
+        "matched_text": "server hosted ",
+        "message": "Hyphenate the compound modifier \"server hosted \".",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.hyphen-missing-in-compound-modifier",
+        "severity": "suggestion",
+        "span": {
+          "end": 1010,
+          "start": 996
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 32,
+        "line": 32,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 1285,
+          "start": 1285
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 69,
+        "end_column": 18,
+        "end_line": 38,
+        "line": 36,
+        "matched_text": "For headless\nservers and one-shot jobs, configure the permissions required by the workload\nbefore it starts.",
+        "message": "The condition follows the command (\"For headless servers and one-shot jobs, configure the permissions required by the workload before it starts.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1615,
+          "start": 1507
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": null,
+        "end_line": null,
+        "line": 42,
+        "matched_text": "Pass ***************** when you start *******, *******, *******, or *********.",
+        "message": "The condition follows the command (\"Pass ***************** when you start *******, *******, *******, or *********.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 42,
+        "line": 42,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 1646,
+          "start": 1646
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 28,
+        "end_column": 29,
+        "end_line": 51,
+        "line": 51,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 2056,
+          "start": 2055
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 33,
+        "end_column": 62,
+        "end_line": 52,
+        "line": 52,
+        "matched_text": "Skipped unless opted in, then",
+        "message": "This step carries more than one instruction (\"Skipped unless opted in, then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 2189,
+          "start": 2160
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 54,
+        "line": 54,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 2206,
+          "start": 2206
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 50,
+        "end_column": 51,
+        "end_line": 55,
+        "line": 55,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 2329,
+          "start": 2328
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 52,
+        "end_column": null,
+        "end_line": null,
+        "line": 55,
+        "matched_text": "a permission mode never grants",
+        "message": "negative guarantee: a permission mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 34,
+        "end_column": 46,
+        "end_line": 58,
+        "line": 58,
+        "matched_text": "be addressed",
+        "message": "Passive voice \"be addressed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 2480,
+          "start": 2468
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 59,
+        "line": 59,
+        "matched_text": "",
+        "message": "This sentence has 26 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 2513,
+          "start": 2513
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 59,
+        "line": 59,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 2513,
+          "start": 2513
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 55,
+        "end_column": 56,
+        "end_line": 60,
+        "line": 60,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 2645,
+          "start": 2644
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 75,
+        "end_column": 13,
+        "end_line": 63,
+        "line": 62,
+        "matched_text": "are\nnever served",
+        "message": "Passive voice \"are never served\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 2836,
+          "start": 2820
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 33,
+        "end_column": 34,
+        "end_line": 64,
+        "line": 64,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 2937,
+          "start": 2936
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 65,
+        "line": 65,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 2986,
+          "start": 2986
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 89,
+        "line": 89,
+        "matched_text": "",
+        "message": "This sentence has 35 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 3946,
+          "start": 3946
+        }
+      },
+      {
+        "ai_signal": "strong",
+        "category": "ai-tells-structure",
+        "column": 16,
+        "end_column": 26,
+        "end_line": 92,
+        "line": 92,
+        "matched_text": "two things",
+        "message": "cataphoric lead-in: two things -- let the list carry its own length; cut the forecast",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.cataphoric-lead-in-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 3994,
+          "start": 3984
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 41,
+        "end_column": 54,
+        "end_line": 109,
+        "line": 109,
+        "matched_text": "You can remap",
+        "message": "This step is not in the imperative (\"You can remap\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 4666,
+          "start": 4653
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 40,
+        "end_column": 41,
+        "end_line": 110,
+        "line": 110,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 4731,
+          "start": 4730
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 24,
+        "end_line": 123,
+        "line": 123,
+        "matched_text": "The server also refuses",
+        "message": "anthropomorphism: The server also refuses -- name the mechanism, not a mind",
+        "replacement": null,
+        "rule_id": "core:prose-agency.anthropomorphism",
+        "severity": "warning",
+        "span": {
+          "end": 5389,
+          "start": 5366
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 14,
+        "end_column": 32,
+        "end_line": 127,
+        "line": 127,
+        "matched_text": "as described below",
+        "message": "directional reference: use 'in the following section' instead of 'as described below', or link the heading by name",
+        "replacement": "in the following section",
+        "rule_id": "core:prose-craft.directional-ref",
+        "severity": "suggestion",
+        "span": {
+          "end": 5630,
+          "start": 5612
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 98,
+        "end_column": 108,
+        "end_line": 127,
+        "line": 127,
+        "matched_text": "was raised",
+        "message": "Passive voice \"was raised\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 5706,
+          "start": 5696
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 20,
+        "end_column": 45,
+        "end_line": 128,
+        "line": 128,
+        "matched_text": "A mode change never stops",
+        "message": "negative guarantee: A mode change never stops -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": {
+          "end": 5780,
+          "start": 5755
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 131,
+        "line": 131,
+        "matched_text": "",
+        "message": "This sentence has 42 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 5818,
+          "start": 5818
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 3,
+        "end_line": 131,
+        "line": 131,
+        "matched_text": "If",
+        "message": "sentence of 41 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 5820,
+          "start": 5818
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 23,
+        "end_column": 25,
+        "end_line": 134,
+        "line": 134,
+        "matched_text": "If",
+        "message": "sentence of 39 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 6075,
+          "start": 6073
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 39,
+        "end_column": 49,
+        "end_line": 134,
+        "line": 134,
+        "matched_text": "is waiting",
+        "message": "Complex verb construction \"is waiting\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 6099,
+          "start": 6089
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 21,
+        "end_column": 23,
+        "end_line": 138,
+        "line": 138,
+        "matched_text": "If",
+        "message": "sentence of 41 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 6390,
+          "start": 6388
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 21,
+        "end_column": 72,
+        "end_line": 140,
+        "line": 138,
+        "matched_text": "If the session is waiting on an MCP server authorization,\ncompleting or cancelling that authorization records a result for the waiting\ntool call without running it or resuming the turn, and the session then",
+        "message": "This step carries more than one instruction (\"If the session is waiting on an MCP server authorization, completing or cancelling that authorization records a result for the waiting tool call without running it or resuming the turn, and the session then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 6594,
+          "start": 6388
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 36,
+        "end_column": 46,
+        "end_line": 138,
+        "line": 138,
+        "matched_text": "is waiting",
+        "message": "Complex verb construction \"is waiting\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 6413,
+          "start": 6403
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 15,
+        "end_column": 25,
+        "end_line": 139,
+        "line": 139,
+        "matched_text": "cancelling",
+        "message": "Use the en-US spelling \"canceling\".",
+        "replacement": "canceling",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "warning",
+        "span": {
+          "end": 6470,
+          "start": 6460
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 142,
+        "line": 142,
+        "matched_text": "",
+        "message": "This sentence has 39 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 6633,
+          "start": 6633
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 142,
+        "line": 142,
+        "matched_text": "",
+        "message": "This sentence has 41 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 6633,
+          "start": 6633
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 142,
+        "line": 142,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 6633,
+          "start": 6633
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 72,
+        "end_column": 73,
+        "end_line": 150,
+        "line": 150,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 7009,
+          "start": 7008
+        }
+      },
+      {
+        "ai_signal": "strong",
+        "category": "ai-tells-structure",
+        "column": 47,
+        "end_column": 57,
+        "end_line": 156,
+        "line": 156,
+        "matched_text": "two things",
+        "message": "cataphoric lead-in: two things -- let the list carry its own length; cut the forecast",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.cataphoric-lead-in-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 7303,
+          "start": 7293
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 176,
+        "line": 176,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 7969,
+          "start": 7969
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 62,
+        "end_column": 67,
+        "end_line": 178,
+        "line": 178,
+        "matched_text": "will ",
+        "message": "future tense: will  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 8190,
+          "start": 8185
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 67,
+        "end_column": 77,
+        "end_line": 178,
+        "line": 178,
+        "matched_text": "be removed",
+        "message": "Passive voice \"be removed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 8200,
+          "start": 8190
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 46,
+        "end_column": 56,
+        "end_line": 180,
+        "line": 180,
+        "matched_text": "is passing",
+        "message": "Complex verb construction \"is passing\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 8332,
+          "start": 8322
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 69,
+        "end_column": 79,
+        "end_line": 189,
+        "line": 189,
+        "matched_text": "be created",
+        "message": "Passive voice \"be created\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 8841,
+          "start": 8831
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 190,
+        "line": 190,
+        "matched_text": "",
+        "message": "This sentence has 26 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 8842,
+          "start": 8842
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 24,
+        "end_column": 26,
+        "end_line": 205,
+        "line": 205,
+        "matched_text": ". ",
+        "message": "This paragraph has 8 sentences. Use six or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.paragraph-too-many-sentences",
+        "severity": "warning",
+        "span": {
+          "end": 9723,
+          "start": 9721
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 70,
+        "end_column": 5,
+        "end_line": 207,
+        "line": 206,
+        "matched_text": "The checker\nthen",
+        "message": "This step carries more than one instruction (\"The checker then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 9854,
+          "start": 9838
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 73,
+        "end_column": 10,
+        "end_line": 211,
+        "line": 210,
+        "matched_text": "are\ncancelled",
+        "message": "Passive voice \"are cancelled\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 10176,
+          "start": 10163
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 211,
+        "line": 211,
+        "matched_text": "cancelled",
+        "message": "Use the en-US spelling \"canceled\".",
+        "replacement": "canceled",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "warning",
+        "span": {
+          "end": 10176,
+          "start": 10167
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 71,
+        "end_column": null,
+        "end_line": null,
+        "line": 212,
+        "matched_text": "Choose **** when you want the checker to block findings.",
+        "message": "The condition follows the command (\"Choose **** when you want the checker to block findings.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 215,
+        "line": 215,
+        "matched_text": "",
+        "message": "This sentence has 33 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 10469,
+          "start": 10469
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 215,
+        "line": 215,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 10469,
+          "start": 10469
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 218,
+        "line": 218,
+        "matched_text": "",
+        "message": "This sentence has 31 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 10507,
+          "start": 10507
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 9,
+        "end_column": 10,
+        "end_line": 220,
+        "line": 220,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 10668,
+          "start": 10667
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 17,
+        "end_column": 34,
+        "end_line": 220,
+        "line": 220,
+        "matched_text": "are still allowed",
+        "message": "Passive voice \"are still allowed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 10692,
+          "start": 10675
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 41,
+        "end_column": 42,
+        "end_line": 232,
+        "line": 232,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 11310,
+          "start": 11309
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 234,
+        "line": 234,
+        "matched_text": "",
+        "message": "This sentence has 33 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 11403,
+          "start": 11403
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 240,
+        "line": 240,
+        "matched_text": "",
+        "message": "This noun stack has 5 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 11769,
+          "start": 11769
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 57,
+        "end_column": 67,
+        "end_line": 242,
+        "line": 242,
+        "matched_text": "are denied",
+        "message": "Passive voice \"are denied\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 11915,
+          "start": 11905
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 247,
+        "line": 247,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 12104,
+          "start": 12104
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 22,
+        "end_column": 23,
+        "end_line": 248,
+        "line": 248,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 12206,
+          "start": 12205
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 251,
+        "line": 251,
+        "matched_text": "",
+        "message": "This sentence has 28 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 12267,
+          "start": 12267
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 66,
+        "end_column": 79,
+        "end_line": 252,
+        "line": 252,
+        "matched_text": "is configured",
+        "message": "Passive voice \"is configured\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 12413,
+          "start": 12400
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 24,
+        "end_column": 33,
+        "end_line": 254,
+        "line": 254,
+        "matched_text": "shows the",
+        "message": "Add \"that\" after \"shows the\".",
+        "replacement": null,
+        "rule_id": "core:ste-practices.omitted-conjunction-that",
+        "severity": "suggestion",
+        "span": {
+          "end": 12527,
+          "start": 12518
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 53,
+        "end_column": 63,
+        "end_line": 263,
+        "line": 263,
+        "matched_text": "Previously",
+        "message": "history narration: Previously -- deltas belong in change comms, not a doc body",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-narration",
+        "severity": "warning",
+        "span": {
+          "end": 12933,
+          "start": 12923
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 269,
+        "line": 269,
+        "matched_text": "",
+        "message": "This sentence has 26 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 13266,
+          "start": 13266
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 34,
+        "end_column": 44,
+        "end_line": 270,
+        "line": 270,
+        "matched_text": "Previously",
+        "message": "history narration: Previously -- deltas belong in change comms, not a doc body",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-narration",
+        "severity": "warning",
+        "span": {
+          "end": 13386,
+          "start": 13376
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 278,
+        "line": 278,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 13883,
+          "start": 13883
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 3,
+        "end_column": 13,
+        "end_line": 278,
+        "line": 278,
+        "matched_text": "Previously",
+        "message": "history narration: Previously -- deltas belong in change comms, not a doc body",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-narration",
+        "severity": "warning",
+        "span": {
+          "end": 13895,
+          "start": 13885
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 11,
+        "end_column": null,
+        "end_line": null,
+        "line": 281,
+        "matched_text": "Use **** if the main agent must run them unattended.",
+        "message": "The condition follows the command (\"Use **** if the main agent must run them unattended.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 5,
+        "end_column": 24,
+        "end_line": 282,
+        "line": 282,
+        "matched_text": "A mode never grants",
+        "message": "negative guarantee: A mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": {
+          "end": 14203,
+          "start": 14184
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 62,
+        "end_column": 77,
+        "end_line": 282,
+        "line": 282,
+        "matched_text": "no longer loads",
+        "message": "history narration: no longer loads -- state what the artifact does now; the delta belongs in change comms",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.no-longer-change",
+        "severity": "warning",
+        "span": {
+          "end": 14256,
+          "start": 14241
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 287,
+        "line": 287,
+        "matched_text": "",
+        "message": "This sentence has 41 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 14566,
+          "start": 14566
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 287,
+        "line": 287,
+        "matched_text": "",
+        "message": "The lead-in before the colon has 23 words. Use the sentence cap.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.colon-terminates-sentence-for-count",
+        "severity": "suggestion",
+        "span": {
+          "end": 14566,
+          "start": 14566
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 21,
+        "end_column": 23,
+        "end_line": 287,
+        "line": 287,
+        "matched_text": "If",
+        "message": "sentence of 36 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 14588,
+          "start": 14586
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 28,
+        "end_column": 37,
+        "end_line": 287,
+        "line": 287,
+        "matched_text": "roll back",
+        "message": "Phrasal verb \"roll back\". Use \"revert\".",
+        "replacement": "revert",
+        "rule_id": "core:ste-practices.phrasal-verb",
+        "severity": "suggestion",
+        "span": {
+          "end": 14602,
+          "start": 14593
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 298,
+        "line": 298,
+        "matched_text": "",
+        "message": "This sentence has 33 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 15301,
+          "start": 15301
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 298,
+        "line": 298,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 15301,
+          "start": 15301
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 307,
+        "line": 307,
+        "matched_text": "",
+        "message": "This sentence carries 7 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 15577,
+          "start": 15577
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 307,
+        "line": 307,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 15577,
+          "start": 15577
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 21,
+        "end_column": 22,
+        "end_line": 311,
+        "line": 311,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 15811,
+          "start": 15810
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 13,
+        "end_column": 22,
+        "end_line": 313,
+        "line": 313,
+        "matched_text": "is denied",
+        "message": "Passive voice \"is denied\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 15883,
+          "start": 15874
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 39,
+        "end_column": 48,
+        "end_line": 314,
+        "line": 314,
+        "matched_text": "shows the",
+        "message": "Add \"that\" after \"shows the\".",
+        "replacement": null,
+        "rule_id": "core:ste-practices.omitted-conjunction-that",
+        "severity": "suggestion",
+        "span": {
+          "end": 15987,
+          "start": 15978
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 23,
+        "end_column": 24,
+        "end_line": 316,
+        "line": 316,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 16040,
+          "start": 16039
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 42,
+        "end_column": 43,
+        "end_line": 317,
+        "line": 317,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 16083,
+          "start": 16082
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 41,
+        "end_line": 320,
+        "line": 320,
+        "matched_text": "An allow-always decision never overrides",
+        "message": "negative guarantee: An allow-always decision never overrides -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": {
+          "end": 16139,
+          "start": 16099
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 79,
+        "end_column": 80,
+        "end_line": 329,
+        "line": 329,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 16603,
+          "start": 16602
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": null,
+        "end_line": null,
+        "line": 333,
+        "matched_text": "Later chat assent never starts",
+        "message": "negative guarantee: Later chat assent never starts -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 45,
+        "end_column": 46,
+        "end_line": 335,
+        "line": 335,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 16899,
+          "start": 16898
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 62,
+        "end_column": 71,
+        "end_line": 336,
+        "line": 336,
+        "matched_text": "cancelled",
+        "message": "Use the en-US spelling \"canceled\".",
+        "replacement": "canceled",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "warning",
+        "span": {
+          "end": 17004,
+          "start": 16995
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 60,
+        "end_column": 72,
+        "end_line": 337,
+        "line": 337,
+        "matched_text": "be presented",
+        "message": "Passive voice \"be presented\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 17085,
+          "start": 17073
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 39,
+        "end_column": 45,
+        "end_line": 338,
+        "line": 338,
+        "matched_text": "an ask",
+        "message": "Do not use \"an ask\" as a noun. Use the noun form.",
+        "replacement": null,
+        "rule_id": "core:ste-words.verb-used-as-noun",
+        "severity": "warning",
+        "span": {
+          "end": 17138,
+          "start": 17132
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 24,
+        "end_column": 36,
+        "end_line": 339,
+        "line": 339,
+        "matched_text": "is denied by",
+        "message": "Passive voice \"is denied by\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 17210,
+          "start": 17198
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 44,
+        "end_column": 45,
+        "end_line": 339,
+        "line": 339,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 17219,
+          "start": 17218
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 30,
+        "end_column": 36,
+        "end_line": 340,
+        "line": 340,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "suggestion",
+        "span": {
+          "end": 17288,
+          "start": 17282
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 37,
+        "end_column": 47,
+        "end_line": 340,
+        "line": 340,
+        "matched_text": "be treated",
+        "message": "Passive voice \"be treated\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 17299,
+          "start": 17289
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 77,
+        "end_column": 78,
+        "end_line": 364,
+        "line": 364,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 17755,
+          "start": 17754
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 50,
+        "end_column": 60,
+        "end_line": 366,
+        "line": 366,
+        "matched_text": "be skipped",
+        "message": "Passive voice \"be skipped\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 17889,
+          "start": 17879
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 73,
+        "end_column": 74,
+        "end_line": 378,
+        "line": 378,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 18277,
+          "start": 18276
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 386,
+        "line": 386,
+        "matched_text": "",
+        "message": "This sentence has 29 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 18631,
+          "start": 18631
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 18,
+        "end_column": 19,
+        "end_line": 393,
+        "line": 393,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 18983,
+          "start": 18982
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 40,
+        "end_column": 41,
+        "end_line": 394,
+        "line": 394,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 19024,
+          "start": 19023
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 33,
+        "end_column": 34,
+        "end_line": 395,
+        "line": 395,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 19058,
+          "start": 19057
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 27,
+        "end_column": 28,
+        "end_line": 396,
+        "line": 396,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 19086,
+          "start": 19085
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 35,
+        "end_column": 36,
+        "end_line": 397,
+        "line": 397,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 19122,
+          "start": 19121
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 26,
+        "end_column": 38,
+        "end_line": 400,
+        "line": 400,
+        "matched_text": "are resolved",
+        "message": "Passive voice \"are resolved\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 19196,
+          "start": 19184
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 7,
+        "end_column": 14,
+        "end_line": 402,
+        "line": 402,
+        "matched_text": "require",
+        "message": "Use \"need\" rather than \"require\".",
+        "replacement": "need",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "warning",
+        "span": {
+          "end": 19325,
+          "start": 19318
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 7,
+        "end_column": 18,
+        "end_line": 406,
+        "line": 406,
+        "matched_text": "are dropped",
+        "message": "Passive voice \"are dropped\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 19513,
+          "start": 19502
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 76,
+        "end_column": 77,
+        "end_line": 414,
+        "line": 414,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 19973,
+          "start": 19972
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 16,
+        "end_column": 17,
+        "end_line": 420,
+        "line": 420,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 20253,
+          "start": 20252
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 67,
+        "end_column": 76,
+        "end_line": 428,
+        "line": 428,
+        "matched_text": "is loaded",
+        "message": "Passive voice \"is loaded\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 20716,
+          "start": 20707
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 11,
+        "end_column": 12,
+        "end_line": 429,
+        "line": 429,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 20733,
+          "start": 20732
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 70,
+        "end_column": 71,
+        "end_line": 438,
+        "line": 438,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 21325,
+          "start": 21324
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 27,
+        "end_column": 28,
+        "end_line": 445,
+        "line": 445,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 21512,
+          "start": 21511
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 33,
+        "end_column": 34,
+        "end_line": 446,
+        "line": 446,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 21546,
+          "start": 21545
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 41,
+        "end_column": 42,
+        "end_line": 447,
+        "line": 447,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 21588,
+          "start": 21587
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 450,
+        "line": 450,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 21656,
+          "start": 21656
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 35,
+        "end_column": 36,
+        "end_line": 452,
+        "line": 452,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 21839,
+          "start": 21838
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": null,
+        "end_line": null,
+        "line": 456,
+        "matched_text": "A permission mode never grants",
+        "message": "negative guarantee: A permission mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "warning",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 456,
+        "line": 456,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 22076,
+          "start": 22076
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 460,
+        "line": 460,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 22304,
+          "start": 22304
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 474,
+        "line": 474,
+        "matched_text": "",
+        "message": "This sentence has 29 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 22697,
+          "start": 22697
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 474,
+        "line": 474,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 22697,
+          "start": 22697
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 53,
+        "end_column": 54,
+        "end_line": 476,
+        "line": 476,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 22895,
+          "start": 22894
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 477,
+        "line": 477,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "suggestion",
+        "span": {
+          "end": 22922,
+          "start": 22922
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 481,
+        "line": 481,
+        "matched_text": "",
+        "message": "This sentence has 38 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 23085,
+          "start": 23085
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 11,
+        "end_column": 12,
+        "end_line": 488,
+        "line": 488,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 23653,
+          "start": 23652
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 25,
+        "end_column": 40,
+        "end_line": 500,
+        "line": 500,
+        "matched_text": "take precedence",
+        "message": "Nominalized action \"take precedence\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "suggestion",
+        "span": {
+          "end": 24353,
+          "start": 24338
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 508,
+        "line": 508,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 24656,
+          "start": 24656
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 13,
+        "end_column": 25,
+        "end_line": 517,
+        "line": 517,
+        "matched_text": "is displayed",
+        "message": "Passive voice \"is displayed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 25250,
+          "start": 25238
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 74,
+        "end_column": 75,
+        "end_line": 517,
+        "line": 517,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 25300,
+          "start": 25299
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 8,
+        "end_column": 14,
+        "end_line": 527,
+        "line": 527,
+        "matched_text": "an ask",
+        "message": "Do not use \"an ask\" as a noun. Use the noun form.",
+        "replacement": null,
+        "rule_id": "core:ste-words.verb-used-as-noun",
+        "severity": "warning",
+        "span": {
+          "end": 25751,
+          "start": 25745
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 529,
+        "line": 529,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 25846,
+          "start": 25846
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 17,
+        "end_column": 33,
+        "end_line": 529,
+        "line": 529,
+        "matched_text": "are untrusted by",
+        "message": "Passive voice \"are untrusted by\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 25878,
+          "start": 25862
+        }
+      }
+    ],
+    "gate": {
+      "passed": true,
+      "reasons": []
+    },
+    "paragraphs": 68,
+    "path": "stacklok-before.md",
+    "per_100_words": 3.756,
+    "profile": "normal",
+    "prose": {
+      "errors": 0,
+      "findings": 128,
+      "per_100_words": 3.535,
+      "warnings": 51
+    },
+    "score": 86.7,
+    "sentences": 302,
+    "suggestions": 79,
+    "total_findings": 136,
+    "unchecked": [],
+    "warnings": 57,
+    "words": 3621
+  },
+  "exit_code": 0
+}
