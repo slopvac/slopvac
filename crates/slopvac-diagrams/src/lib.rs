@@ -6,6 +6,7 @@
 //! protocol (`span`, `context`, `text`) so the same extractors can sit behind
 //! `extractor/extract` later.
 
+mod drawio;
 mod excalidraw;
 mod fences;
 mod json;
@@ -96,6 +97,12 @@ pub enum Format {
     PlantUml,
     /// An Excalidraw JSON scene.
     Excalidraw,
+    /// A draw.io file (`.drawio`, `.dio`), plain or compressed.
+    Drawio,
+    /// A `.drawio.svg` file that embeds the diagram in its `content` attribute.
+    DrawioSvg,
+    /// A `.drawio.png` file that embeds the diagram in a text chunk. Binary input.
+    DrawioPng,
 }
 
 impl Format {
@@ -112,8 +119,19 @@ impl Format {
     /// Pick a format from a file name, or `None` when it is not a diagram.
     #[must_use]
     pub fn from_path(path: &str) -> Option<Format> {
+        let name = std::path::Path::new(path)
+            .file_name()?
+            .to_str()?
+            .to_ascii_lowercase();
+        if name.ends_with(".drawio.svg") {
+            return Some(Format::DrawioSvg);
+        }
+        if name.ends_with(".drawio.png") {
+            return Some(Format::DrawioPng);
+        }
         let ext = std::path::Path::new(path).extension()?.to_str()?;
         match ext.to_ascii_lowercase().as_str() {
+            "drawio" | "dio" => Some(Format::Drawio),
             "mmd" | "mermaid" => Some(Format::Mermaid),
             "puml" | "plantuml" | "pu" | "wsd" | "iuml" => Some(Format::PlantUml),
             "excalidraw" => Some(Format::Excalidraw),
@@ -166,14 +184,28 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
     out
 }
 
-/// Extract the fragments of a diagram source whose first byte sits at `base` in the host file.
+/// Extract the fragments of a text diagram source whose first byte sits at `base` in the host file.
+///
+/// A binary format (`DrawioPng`) yields nothing here; use [`extract_bytes`].
 #[must_use]
 pub fn extract(format: Format, source: &str, base: usize) -> Extraction {
     match format {
         Format::Mermaid => mermaid::extract(source, base),
         Format::PlantUml => plantuml::extract(source, base),
         Format::Excalidraw => excalidraw::extract(source, base),
+        Format::Drawio => drawio::extract_xml(source, base),
+        Format::DrawioSvg => drawio::extract_svg(source, base),
+        Format::DrawioPng => Extraction::default(),
     }
+}
+
+/// Extract the fragments of a file given as bytes. Text formats must be UTF-8.
+#[must_use]
+pub fn extract_bytes(format: Format, bytes: &[u8], base: usize) -> Extraction {
+    if format == Format::DrawioPng {
+        return drawio::extract_png(bytes, base);
+    }
+    std::str::from_utf8(bytes).map_or_else(|_| Extraction::default(), |s| extract(format, s, base))
 }
 
 #[cfg(test)]
@@ -193,6 +225,13 @@ mod tests {
             ("seq.puml", Some(Format::PlantUml)),
             ("Seq.PlantUML", Some(Format::PlantUml)),
             ("board.excalidraw", Some(Format::Excalidraw)),
+            ("a.drawio", Some(Format::Drawio)),
+            ("a.dio", Some(Format::Drawio)),
+            ("a.drawio.svg", Some(Format::DrawioSvg)),
+            ("a.DRAWIO.png", Some(Format::DrawioPng)),
+            ("plain.svg", None),
+            ("plain.png", None),
+            ("dir.drawio.svg/readme", None),
             ("notes.md", None),
             ("", None),
         ] {
