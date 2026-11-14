@@ -331,7 +331,7 @@ rules:
     # will be visible"). There `will` places a later step of the process after
     # the present-tense main verb, and is not a promise. Main-clause `will`,
     # active `that will <verb>`, and complement `that the X will be` still fire.
-    pattern: '\b(?!(?:(?<=\bthat\s+)|(?<=\b(?:which|where|when|what)(?:\s+[\w-]+){0,2}\s+))(?:will|shall)\s+(?:not\s+)?be\b)(?:will|shall)\s+(?:not\s+)?(?=[a-z])|\b(?:we|it|this|that|you|they)''ll\b|\b(?:is|are) going to\s+(?=[a-z])'
+    pattern: '\b(?!(?:(?<=\bthat\s{1,3})|(?<=\b(?:which|where|when|what)(?:\s{1,3}[\w-]{1,40}){0,2}\s{1,3}))(?:will|shall)\s+(?:not\s+)?be\b)(?:will|shall)\s+(?:not\s+)?(?=[a-z])|\b(?:we|it|this|that|you|they)''ll\b|\b(?:is|are) going to\s+(?=[a-z])'
     ignore_case: false
     fix: Put the verb in the present tense.
     examples:
