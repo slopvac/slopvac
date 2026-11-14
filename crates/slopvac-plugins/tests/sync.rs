@@ -954,3 +954,28 @@ fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
     let aside = again.packs[0].quarantined.clone().expect("quarantine path");
     assert!(aside.exists(), "{}", aside.display());
 }
+#[test]
+fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
+    // Valid, pinned and newer than the lock's floor, so the verifier accepts it;
+    // sync still installs only the signature the lock recorded.
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id)
+        .replace(NOT_BEFORE, "2026-10-01T00:00:00Z");
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &lock_text(&[entry]),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, SyncError::SignatureDiffersFromLock { .. }),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
