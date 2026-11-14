@@ -30,6 +30,8 @@ pub enum Code {
     ExtendsMissing,
     /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
     DuplicateScope,
+    /// A front-matter field that `[frontmatter] allow` does not list.
+    FrontmatterFieldDenied,
 }
 
 impl Code {
@@ -47,6 +49,7 @@ impl Code {
             Code::ExtendsCycle => "config-extends-cycle",
             Code::ExtendsMissing => "config-extends-missing",
             Code::DuplicateScope => "config-duplicate-scope",
+            Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
         }
     }
 }

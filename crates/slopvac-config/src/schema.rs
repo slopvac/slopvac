@@ -522,12 +522,19 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => match node.value {
             Value::Int(3) => {}
+            Value::Int(n) if n > 3 => ctx.value_error(
+                node,
+                path,
+                format!("version {n} is newer than this slopvac reads"),
+                "this build reads version 3",
+                Some("upgrade slopvac".into()),
+            ),
             Value::Int(n) => ctx.value_error(
                 node,
                 path,
-                format!("the version is {n}, and only 3 is valid"),
+                format!("version {n} is not supported; this build reads version 3"),
                 "must be 3",
-                None,
+                Some("run `slopvac migrate` for a 2.x config".into()),
             ),
             _ => ctx.type_error(node, path, "the integer 3", None),
         },

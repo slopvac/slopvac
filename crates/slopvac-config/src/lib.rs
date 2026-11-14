@@ -9,6 +9,7 @@ pub mod diag;
 pub mod discover;
 pub mod error;
 pub mod flatten;
+pub mod frontmatter;
 pub mod load;
 pub mod presets;
 pub mod resolve;
