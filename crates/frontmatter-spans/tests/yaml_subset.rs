@@ -236,7 +236,7 @@ fn table_entries_a_visitor_leaves_unread_are_an_error_at_the_first_unread_key() 
     let err = fm.deserialize::<FirstOnly>().unwrap_err();
     let span = err.span.clone().expect("span");
     assert_eq!(&doc[span.range], "two");
-    assert!(err.message.contains("3"), "{err}");
+    assert!(err.message.contains('3'), "{err}");
 }
 
 #[derive(Debug, DeriveDeserialize)]
