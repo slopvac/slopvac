@@ -1,7 +1,7 @@
 //! Text helpers for sentence-level taggers.
 
 /// Drop inline code spans, turning each into one space. A span opens with a run of N
-/// backticks and closes at the next run of exactly N, as in CommonMark. A run with no
+/// backticks and closes at the next run of exactly N, as in `CommonMark`. A run with no
 /// closing run of the same length stays literal text.
 pub(super) fn strip_code(s: &str) -> String {
     let bytes = s.as_bytes();
