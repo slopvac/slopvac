@@ -4,9 +4,8 @@ use std::collections::BTreeSet;
 
 use slopvac_terms::{TermSet, TermsFile};
 
-/// Ordinary words that the list must not carry: case-insensitive matches on
-/// them would flag everyday prose.
-const AMBIGUOUS: &[&str] = &[
+/// Ordinary words that the list must not carry at all.
+const EXCLUDED: &[&str] = &[
     "go",
     "rust",
     "swift",
@@ -60,32 +59,112 @@ const AMBIGUOUS: &[&str] = &[
     "julia",
 ];
 
+/// Names that are also ordinary words or personal names. The list may carry
+/// them only as case-sensitive terms, so everyday prose never matches.
+const ORDINARY: &[&str] = &[
+    "python",
+    "java",
+    "perl",
+    "scala",
+    "lua",
+    "elixir",
+    "erlang",
+    "haskell",
+    "clojure",
+    "sass",
+    "zig",
+    "delphi",
+    "prolog",
+    "solidity",
+    "vyper",
+    "selenium",
+    "storybook",
+    "maven",
+    "homebrew",
+    "confluence",
+    "postman",
+    "fedora",
+    "vagrant",
+    "swagger",
+    "azure",
+    "chrome",
+    "git",
+    "docker",
+    "consul",
+    "packer",
+    "jenkins",
+    "claude",
+    "kafka",
+    "redis",
+    "cassandra",
+    "android",
+    "svelte",
+    "deno",
+    "prometheus",
+    "oracle",
+    "clang",
+    "presto",
+];
+
 #[test]
-fn builtin_file_parses_and_has_substance() {
-    let f = TermsFile::builtin();
-    assert!(f.terms.len() >= 300, "only {} terms", f.terms.len());
-    assert_eq!(TermSet::builtin().len(), f.terms.len());
+fn builtin_list_meets_the_size_requirement() {
+    let n = TermsFile::builtin().terms.len();
+    assert!((500..=1500).contains(&n), "{n} terms");
+    assert_eq!(TermSet::builtin().len(), n);
 }
 
 #[test]
-fn builtin_has_no_ordinary_words() {
+fn builtin_has_no_excluded_words() {
     let file = TermsFile::builtin();
     let bad: Vec<_> = file
         .terms
         .iter()
         .flat_map(|t| std::iter::once(&t.term).chain(t.variants.iter()))
-        .filter(|s| AMBIGUOUS.contains(&s.to_lowercase().as_str()))
+        .filter(|s| EXCLUDED.contains(&s.to_lowercase().as_str()))
         .collect();
     assert_eq!(bad, Vec::<&String>::new());
+}
+
+#[test]
+fn ordinary_word_names_are_case_sensitive() {
+    for t in TermsFile::builtin().terms {
+        if ORDINARY.contains(&t.term.to_lowercase().as_str()) {
+            assert!(t.case_sensitive, "{} must be case_sensitive", t.term);
+        }
+    }
+}
+
+#[test]
+fn lowercase_brands_keep_their_spelling_and_accept_a_sentence_start() {
+    let mut checked = 0;
+    for t in TermsFile::builtin().terms {
+        let all_lower = !t.term.chars().any(char::is_uppercase);
+        if all_lower && !t.case_sensitive {
+            let cap: String = t
+                .term
+                .chars()
+                .enumerate()
+                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+                .collect();
+            assert!(t.variants.contains(&cap), "{} needs variant {cap}", t.term);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 15, "only {checked} lowercase brands");
 }
 
 #[test]
 fn builtin_spellings_do_not_collide_case_insensitively() {
     let mut seen = BTreeSet::new();
     for t in TermsFile::builtin().terms {
-        for s in std::iter::once(t.term.clone()).chain(t.variants.clone()) {
-            assert!(seen.insert(s.to_lowercase()), "duplicate spelling {s}");
+        let own: BTreeSet<String> = std::iter::once(t.term.clone())
+            .chain(t.variants.clone())
+            .map(|s| s.to_lowercase())
+            .collect();
+        for s in &own {
+            assert!(!seen.contains(s), "duplicate spelling {s}");
         }
+        seen.extend(own);
     }
 }
 
@@ -106,4 +185,23 @@ fn builtin_flags_common_misspellings() {
             ("kubernetes".to_owned(), "Kubernetes".to_owned()),
         ]
     );
+}
+
+#[test]
+fn lowercase_brand_accepts_its_sentence_start_and_flags_shouting() {
+    let set = TermSet::builtin();
+    assert_eq!(set.check_casing("npm installs it. Npm caches it.", &[]), []);
+    let f = set.check_casing("Run WEBPACK now.", &[]);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].expected, "webpack");
+}
+
+#[test]
+fn ordinary_prose_produces_no_findings() {
+    let prose = "The python slid off the azure ledge. She packed a git of lunch, \
+        took a chrome kettle, and a maven's advice. In the confluence of rivers the \
+        fedora wore a jenkins hat; the oracle spoke of postman visits. I like \
+        java and the sass of cats, an android, a docker at the port, and kafka's \
+        novels. Redis and cassandra stories, a consul or a packer, vagrant swagger.";
+    assert_eq!(TermSet::builtin().check_casing(prose, &[]), []);
 }

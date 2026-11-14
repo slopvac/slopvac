@@ -282,10 +282,10 @@ terms = [
   { term = "Gradio", kind = "library" },
   { term = "Hugging Face", kind = "vendor" }, { term = "LangChain", kind = "library" },
   { term = "NumPy", kind = "library" }, { term = "SciPy", kind = "library" },
-  { term = "Jupyter", kind = "tool" }, { term = "scikit-learn", kind = "library" },
+  { term = "Jupyter", kind = "tool" }, { term = "scikit-learn", variants = ["Scikit-learn"], kind = "library" },
   { term = "spaCy", kind = "library" }, { term = "OpenCV", kind = "library" },
   { term = "CUDA", kind = "platform" }, { term = "NVIDIA", kind = "vendor" },
-  { term = "x86", kind = "acronym" }, { term = "RISC-V", kind = "acronym" },
+  { term = "x86", variants = ["X86"], kind = "acronym" }, { term = "RISC-V", kind = "acronym" },
   { term = "AI", kind = "acronym" },
   # Version control and workflow
   { term = "Git", kind = "tool", case_sensitive = true },
