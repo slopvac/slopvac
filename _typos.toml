@@ -44,7 +44,8 @@ Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
 
-# Product names in the built-in terms list (crates/slopvac-terms/data/builtin.toml).
+# Product name (Azure Kubernetes Service) in the bundled terms list,
+# crates/slopvac-terms/data/builtin.toml.
 AKS = "AKS"
 
 [default]
