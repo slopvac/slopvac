@@ -104,8 +104,9 @@ pub struct Teardown {
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
     /// deadline or the cap on held descendants was reached. On Windows,
-    /// `taskkill` did not exit with status 0. Descendants it did not reach
-    /// may still run.
+    /// `taskkill` did not exit with status 0; it does not run after the
+    /// plugin answered `shutdown` and exited with status 0 without a kill.
+    /// Descendants it did not reach may still run.
     pub incomplete: bool,
 }
 
@@ -149,6 +150,10 @@ pub struct TableSource {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts about one teardown, not a state machine"
+)]
 struct State {
     /// How the reap of the leader went: its exit status, or why the wait
     /// failed. No kill runs once this is set.
@@ -160,6 +165,8 @@ struct State {
     killed: bool,
     /// What the teardowns so far left undone.
     left: Teardown,
+    /// The plugin answered `shutdown` with `null`. Only Windows reads it.
+    acknowledged: bool,
     /// The leader is reaped and the group unregistered.
     done: bool,
 }
@@ -266,15 +273,30 @@ impl Group {
             .and_then(|r| r.as_ref().ok().copied())
     }
 
+    /// Record that the plugin answered `shutdown` with `null`. Called
+    /// before `exit` goes out, so before the leader exits on its own.
+    pub(crate) fn acknowledge(&self) {
+        lock(&self.state).acknowledged = true;
+    }
+
     /// End the group after its leader exited: kill everything still in it
     /// while the leader holds its ids, reap the leader, then unregister.
     ///
     /// Called by the waiter only. A leader that has not exited yet is
-    /// killed and then reaped.
+    /// killed and then reaped. On Windows a graceful exit, an answered
+    /// `shutdown` and then status 0 without a kill, skips the tree kill.
     pub(crate) fn finish(&self, leader: Leader) {
         {
             let mut st = lock(&self.state);
+            #[cfg(unix)]
             self.kill_once(&mut st);
+            #[cfg(not(unix))]
+            if !st.killed {
+                st.killed = true;
+                let spare = graceful(st.acknowledged, st.forced, leader.exited_zero());
+                let left = windows_teardown(spare, || taskkill(self.pid));
+                st.left.merge(left);
+            }
             st.reaped = Some(leader.reap());
         }
         lock(&LIVE).retain(|g| !std::ptr::eq(Arc::as_ptr(g), self));
@@ -357,6 +379,12 @@ impl Leader {
         self.exited = Some(self.child.wait());
     }
 
+    /// Whether the leader has exited with status 0.
+    #[cfg(not(unix))]
+    fn exited_zero(&self) -> bool {
+        matches!(&self.exited, Some(Ok(s)) if s.success())
+    }
+
     /// Reap the leader and release its ids. Returns the exit status, or why
     /// the wait failed.
     fn reap(mut self) -> Result<ExitStatus, String> {
@@ -427,7 +455,7 @@ fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
     if matches!(then, Then::Resume) {
         return Teardown::default();
     }
-    after_taskkill(taskkill(pid))
+    windows_teardown(false, || taskkill(pid))
 }
 
 /// Run `taskkill /T /F` on `pid` and return its exit code, or `None` if it
@@ -462,18 +490,31 @@ fn taskkill(pid: u32) -> Option<i32> {
     None
 }
 
-/// What a teardown left after `taskkill` ended with `code` (`None`: it did
-/// not start, could not be watched or passed the deadline).
-///
-/// Only status 0 means it killed the tree. Status 128, "process not found",
-/// means the leader had exited: `taskkill` then finds no tree, and the
-/// leader's descendants, if any, are out of its reach until job objects
-/// replace it (NEW-3).
+/// Whether a leader's exit is graceful: the plugin answered `shutdown` with
+/// `null` and the leader then exited with status 0 with no kill before it.
 #[cfg(any(not(unix), test))]
-fn after_taskkill(code: Option<i32>) -> Teardown {
+fn graceful(acknowledged: bool, forced: bool, exited_zero: bool) -> bool {
+    acknowledged && !forced && exited_zero
+}
+
+/// What a Windows teardown leaves; `taskkill` runs `taskkill /T /F` and
+/// returns its exit code (`None`: it did not start, could not be watched or
+/// passed the deadline).
+///
+/// After a `graceful` exit `taskkill` does not run and the teardown is
+/// complete. Once the leader has exited, `taskkill` finds no tree, and
+/// containing the leader's descendants then is the work of job objects
+/// (residual risk, NEW-3, `slopvac-8l4.9.13`).
+///
+/// Any other teardown, a kill on a timeout, a failure, a drop or an
+/// interrupt, is complete only if `taskkill` exits with status 0. Status
+/// 128, "process not found", means the leader had exited, and its
+/// descendants, if any, were out of `taskkill`'s reach.
+#[cfg(any(not(unix), test))]
+fn windows_teardown(graceful: bool, taskkill: impl FnOnce() -> Option<i32>) -> Teardown {
     Teardown {
         escaped: Vec::new(),
-        incomplete: code != Some(0),
+        incomplete: !graceful && taskkill() != Some(0),
     }
 }
 
@@ -1010,15 +1051,39 @@ mod tests {
         assert!(after, "an exited process showed no exit");
     }
 
-    /// `taskkill` exits 128 when the leader is already gone; it then finds no
-    /// tree, so the leader's descendants are out of its reach.
+    /// Off the graceful path `taskkill` runs, and it exits 128 when the
+    /// leader is already gone; it then finds no tree, so the leader's
+    /// descendants are out of its reach.
     #[test]
-    fn only_a_taskkill_that_exits_0_completes_the_teardown() {
-        assert_eq!(after_taskkill(Some(0)), Teardown::default());
+    fn off_the_graceful_path_only_a_taskkill_that_exits_0_completes_the_teardown() {
+        assert_eq!(windows_teardown(false, || Some(0)), Teardown::default());
         // A failing exit, "process not found", or no exit status at all.
         for code in [Some(1), Some(128), Some(255), None] {
-            let left = after_taskkill(code);
+            let left = windows_teardown(false, || code);
             assert!(left.incomplete && left.escaped.is_empty(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn a_graceful_exit_completes_the_windows_teardown_without_taskkill() {
+        let left = windows_teardown(true, || panic!("taskkill ran"));
+        assert_eq!(left, Teardown::default());
+    }
+
+    #[test]
+    fn only_an_acknowledged_exit_0_without_a_kill_is_graceful() {
+        // (acknowledged, forced, exited 0)
+        for acknowledged in [false, true] {
+            for forced in [false, true] {
+                for zero in [false, true] {
+                    let want = (acknowledged, forced, zero) == (true, false, true);
+                    assert_eq!(
+                        graceful(acknowledged, forced, zero),
+                        want,
+                        "acknowledged {acknowledged}, forced {forced}, exited 0 {zero}"
+                    );
+                }
+            }
         }
     }
 

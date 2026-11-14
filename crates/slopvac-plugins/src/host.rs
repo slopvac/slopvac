@@ -953,6 +953,10 @@ impl Plugin {
                 .conn
                 .request("shutdown", None, self.timeouts.shutdown, false)
                 .is_ok_and(|v| v.is_null());
+            if acknowledged {
+                // Before `exit`, so the waiter sees it when the leader leaves.
+                shared.group.acknowledge();
+            }
             let _ = self.conn.notify("exit", None, self.timeouts.exit);
         }
         // Closing the pipe ends the writer after it flushes `exit`.
