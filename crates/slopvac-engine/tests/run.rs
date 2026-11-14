@@ -110,7 +110,7 @@ fn applies_to_limits_a_rule_to_modes_and_genres() {
 fn rules_of_kinds_the_engine_does_not_run_are_reported_in_an_info_notice() {
     let metric = rule(
         "long",
-        &json!({"kind": "metric", "metric": "sentence_words", "threshold": 20, "comparison": "gt"}),
+        &json!({"kind": "metric", "metric": "syllables_per_word", "threshold": 2, "comparison": "gt"}),
         &json!({"scope": "sentence"}),
     );
     let doc = lint(&engine(&[metric, leverage()]), "Use leverage.\n");

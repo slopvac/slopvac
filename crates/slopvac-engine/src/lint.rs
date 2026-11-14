@@ -14,8 +14,8 @@ use slopvac_context::{TagIndex, TagRegistry};
 use slopvac_diagrams::{Extraction, Format as DiagramFormat, extract};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
-    KebabName, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId, RuleProvenance,
-    Severity, SourceIndex, Span,
+    KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
+    RuleProvenance, Severity, SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -27,6 +27,7 @@ use crate::exceptions::{Detectors, MatchSite};
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
+use crate::metrics::{self, Subject};
 use crate::prepare::{Prepared, Unit};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -148,6 +149,8 @@ pub struct Engine {
     checkers: Vec<Box<dyn DiagramChecker>>,
     /// Lexical rules that run.
     active: Vec<Active>,
+    /// Metric rules that run.
+    metrics: Vec<Active>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
     /// Every known rule id.
@@ -181,8 +184,9 @@ impl Engine {
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
-    /// Rules of kinds the engine does not run yet (metrics, structure checks, vocabulary
-    /// and capitalization) are skipped, and each document says so in an `info` notice.
+    /// Rules of kinds the engine does not run yet (structure checks, vocabulary and
+    /// capitalization, and metrics it does not measure) are skipped, and each document says
+    /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
@@ -193,6 +197,7 @@ impl Engine {
             tagger,
             checkers: Vec::new(),
             active: Vec::new(),
+            metrics: Vec::new(),
             diagram_rules: HashMap::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
@@ -291,7 +296,23 @@ impl Engine {
                             });
                         }
                         MatchKind::Judgement => {}
-                        MatchKind::Metric => *unrun.entry("metric").or_default() += 1,
+                        MatchKind::Metric => {
+                            let supported = matches!(
+                                &rule.match_,
+                                Match::Metric(m) if metrics::supported(m.metric.as_str())
+                            );
+                            if supported {
+                                self.metrics.push(Active {
+                                    set: s,
+                                    category: c,
+                                    rule: r,
+                                    severity,
+                                    replacements: LazyReplacements::default(),
+                                });
+                            } else {
+                                *unrun.entry("metric").or_default() += 1;
+                            }
+                        }
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
                         MatchKind::Capitalization => {
@@ -388,6 +409,7 @@ impl Engine {
                 }
             }),
         };
+        let subject = Subject::new(&prepared, &parsed, &lines, front_span);
         let run = Run {
             engine: self,
             input,
@@ -397,9 +419,11 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
+            subject: &subject,
             index: SourceIndex::new(input.source, input.bom),
         };
         let mut findings = run.lexical()?;
+        findings.extend(run.metrics()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
@@ -475,6 +499,7 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
+    subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }
 
@@ -585,6 +610,57 @@ impl Run<'_> {
                         out.push(self.finding(c)?);
                     }
                 }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Findings of metric rules: one per sentence or paragraph over its threshold, or one for
+    /// the document. A finding has a line and column 1 and no source range.
+    fn metrics(&self) -> Result<Vec<Finding>, EngineError> {
+        let engine = self.engine;
+        if matches!(self.input.kind, Kind::Diagram(_)) {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        for active in &engine.metrics {
+            let set = &engine.sets[active.set];
+            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let rule = loaded.rule();
+            let Match::Metric(metric) = &rule.match_ else {
+                continue;
+            };
+            let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
+            for hit in self.subject.measure(metric, rule.text_type)? {
+                let at = Span::empty(hit.at);
+                if self.suppressed(loaded.id().as_str(), &exceptions, at) {
+                    continue;
+                }
+                let line = self.index.line_col(hit.at)?.line();
+                out.push(Finding {
+                    rule_id: loaded.id().clone(),
+                    pack: set.pack().clone(),
+                    category: loaded.category().clone(),
+                    severity: active.severity,
+                    message: NonEmptyString::new(format_message(
+                        rule.message.as_str(),
+                        &hit.shown,
+                        &hit.limit,
+                    ))
+                    .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    start: LineCol::new(line, 1)
+                        .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    extent: None,
+                    contexts: Contexts::default(),
+                    ai_signal: rule.ai_signal,
+                    matched_text: String::new(),
+                    fix: None,
+                    provenance: Some(RuleProvenance {
+                        pack: set.pack().clone(),
+                        version: None,
+                        source: None,
+                    }),
+                });
             }
         }
         Ok(out)
