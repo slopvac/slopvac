@@ -1,0 +1,3184 @@
+[
+ {
+  "text": "Open the file.",
+  "words": 3,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Open the file.",
+    "start": 0,
+    "end": 14,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Do not remove the cover. Make sure the power is off.",
+  "words": 11,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Do not remove the cover.",
+    "start": 0,
+    "end": 24,
+    "word_count": 5,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Make sure the power is off.",
+    "start": 25,
+    "end": 52,
+    "word_count": 6,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "WARNING: Do not touch the contacts.",
+  "words": 6,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "WARNING: Do not touch the contacts.",
+    "start": 0,
+    "end": 35,
+    "word_count": 6,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "WARNING: High voltage is present inside the unit.",
+  "words": 8,
+  "text_type": "safety",
+  "sentences": [
+   {
+    "text": "WARNING: High voltage is present inside the unit.",
+    "start": 0,
+    "end": 49,
+    "word_count": 8,
+    "text_type": "safety"
+   }
+  ]
+ },
+ {
+  "text": "IMPORTANT: Restart the service after the change.",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "IMPORTANT: Restart the service after the change.",
+    "start": 0,
+    "end": 48,
+    "word_count": 7,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "NOTE: The cache is cleared on restart.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "NOTE: The cache is cleared on restart.",
+    "start": 0,
+    "end": 38,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "> **CAUTION** Remove the battery first.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "> **CAUTION** Remove the battery first.",
+    "start": 0,
+    "end": 39,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Tip: use the --force flag.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Tip: use the --force flag.",
+    "start": 0,
+    "end": 26,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "1. Open the valve.",
+  "words": 3,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "1.",
+    "start": 0,
+    "end": 2,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Open the valve.",
+    "start": 3,
+    "end": 18,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Step 2.1: Close the valve slowly.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Step 2.1: Close the valve slowly.",
+    "start": 0,
+    "end": 33,
+    "word_count": 4,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "(a) Remove the cap.",
+  "words": 3,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "(a) Remove the cap.",
+    "start": 0,
+    "end": 19,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Deploy scripts live in the ops folder.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Deploy scripts live in the ops folder.",
+    "start": 0,
+    "end": 38,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Deploy the 3 scripts live.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Deploy the 3 scripts live.",
+    "start": 0,
+    "end": 26,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Run the install script.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Run the install script.",
+    "start": 0,
+    "end": 23,
+    "word_count": 4,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Set up the server. Then log in.",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Set up the server.",
+    "start": 0,
+    "end": 18,
+    "word_count": 4,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then log in.",
+    "start": 19,
+    "end": 31,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "To start the engine, press the button.",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "To start the engine, press the button.",
+    "start": 0,
+    "end": 38,
+    "word_count": 7,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Remember to check the logs.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Remember to check the logs.",
+    "start": 0,
+    "end": 27,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Never reuse the old key.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Never reuse the old key.",
+    "start": 0,
+    "end": 24,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Don't panic.",
+  "words": 2,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Don't panic.",
+    "start": 0,
+    "end": 12,
+    "word_count": 2,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "You should restart the node.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "You should restart the node.",
+    "start": 0,
+    "end": 28,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The API returned an error.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The API returned an error.",
+    "start": 0,
+    "end": 26,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Amazon Web Services announced a new region.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Amazon Web Services announced a new region.",
+    "start": 0,
+    "end": 43,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The U.S. government announced it. It was big.",
+  "words": 8,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The U.S. government announced it.",
+    "start": 0,
+    "end": 33,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It was big.",
+    "start": 34,
+    "end": 45,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Use e.g. a hammer. Then rest.",
+  "words": 6,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Use e.g. a hammer.",
+    "start": 0,
+    "end": 18,
+    "word_count": 4,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then rest.",
+    "start": 19,
+    "end": 29,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "He works at Acme Inc. and likes it.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "He works at Acme Inc. and likes it.",
+    "start": 0,
+    "end": 35,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The U.S. Army uses it.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The U.S. Army uses it.",
+    "start": 0,
+    "end": 22,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Wait 10 ms then retry. The delay is 512 MiB per second.",
+  "words": 10,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Wait 10 ms then retry.",
+    "start": 0,
+    "end": 22,
+    "word_count": 4,
+    "text_type": "procedural"
+   },
+   {
+    "text": "The delay is 512 MiB per second.",
+    "start": 23,
+    "end": 55,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Set the temperature to 20 degrees Celsius.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Set the temperature to 20 degrees Celsius.",
+    "start": 0,
+    "end": 42,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "He said \"stop right there\" and left. She stayed.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "He said \"stop right there\" and left.",
+    "start": 0,
+    "end": 36,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "She stayed.",
+    "start": 37,
+    "end": 48,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Call foo.bar() or http://example.com/a/b now.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Call foo.bar() or http://example.com/a/b now.",
+    "start": 0,
+    "end": 45,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Edit /etc/hosts and ./config/app.toml first.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Edit /etc/hosts and ./config/app.toml first.",
+    "start": 0,
+    "end": 44,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Export $HOME and pass --verbose to the tool.",
+  "words": 8,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Export $HOME and pass --verbose to the tool.",
+    "start": 0,
+    "end": 44,
+    "word_count": 8,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "See fig. 3 for details. The result is clear.",
+  "words": 8,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "See fig.",
+    "start": 0,
+    "end": 8,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "3 for details.",
+    "start": 9,
+    "end": 23,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The result is clear.",
+    "start": 24,
+    "end": 44,
+    "word_count": 4,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Version 1.2.3 is out. Upgrade now.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Version 1.2.3 is out.",
+    "start": 0,
+    "end": 21,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Upgrade now.",
+    "start": 22,
+    "end": 34,
+    "word_count": 2,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "It costs 3.5 dollars. That is cheap.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "It costs 3.5 dollars.",
+    "start": 0,
+    "end": 21,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "That is cheap.",
+    "start": 22,
+    "end": 36,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Is it ready? Yes! It is.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Is it ready?",
+    "start": 0,
+    "end": 12,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Yes!",
+    "start": 13,
+    "end": 17,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It is.",
+    "start": 18,
+    "end": 24,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The twenty-one-year-old student's book is here.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The twenty-one-year-old student's book is here.",
+    "start": 0,
+    "end": 47,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Café naïve résumé coöperate. 日本語のテキスト。",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Café naïve résumé coöperate. 日本語のテキスト。",
+    "start": 0,
+    "end": 61,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Emoji 😀 and text. Next sentence here.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Emoji 😀 and text.",
+    "start": 0,
+    "end": 20,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next sentence here.",
+    "start": 21,
+    "end": 40,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Do the following:\n- Open the file.\n- Close the file.\n- Save it.",
+  "words": 11,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Do the following:",
+    "start": 0,
+    "end": 17,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- Open the file.",
+    "start": 18,
+    "end": 34,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- Close the file.",
+    "start": 35,
+    "end": 52,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- Save it.",
+    "start": 53,
+    "end": 63,
+    "word_count": 2,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The steps are:\n1. Open it\n2. Close it",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The steps are:",
+    "start": 0,
+    "end": 14,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "1.",
+    "start": 15,
+    "end": 17,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Open it",
+    "start": 18,
+    "end": 25,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "2.",
+    "start": 26,
+    "end": 28,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Close it",
+    "start": 29,
+    "end": 37,
+    "word_count": 2,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "First line wraps\nonto the second line. Then ends.",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "First line wraps\nonto the second line.",
+    "start": 0,
+    "end": 38,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then ends.",
+    "start": 39,
+    "end": 49,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Wait (for ten minutes) before you go. Then go.",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Wait (for ten minutes) before you go.",
+    "start": 0,
+    "end": 37,
+    "word_count": 5,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then go.",
+    "start": 38,
+    "end": 46,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`code span` is skipped. Next one.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`code span` is skipped.",
+    "start": 0,
+    "end": 23,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one.",
+    "start": 24,
+    "end": 33,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "A. B. C. initials here. Next.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "A.",
+    "start": 0,
+    "end": 2,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "B.",
+    "start": 3,
+    "end": 5,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "C. initials here.",
+    "start": 6,
+    "end": 23,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 24,
+    "end": 29,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "   Leading space sentence. Another one.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Leading space sentence.",
+    "start": 3,
+    "end": 26,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Another one.",
+    "start": 27,
+    "end": 39,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Trailing space sentence.   ",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Trailing space sentence.",
+    "start": 0,
+    "end": 24,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "",
+  "words": 0,
+  "text_type": "descriptive",
+  "sentences": []
+ },
+ {
+  "text": "   ",
+  "words": 0,
+  "text_type": "descriptive",
+  "sentences": []
+ },
+ {
+  "text": "...",
+  "words": 0,
+  "text_type": "descriptive",
+  "sentences": []
+ },
+ {
+  "text": "Hello",
+  "words": 1,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Hello",
+    "start": 0,
+    "end": 5,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "x1 y22 and abc3def are mixed identifiers.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "x1 y22 and abc3def are mixed identifiers.",
+    "start": 0,
+    "end": 41,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Go to Section 4 and read No. 5 carefully.",
+  "words": 8,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Go to Section 4 and read No.",
+    "start": 0,
+    "end": 28,
+    "word_count": 7,
+    "text_type": "procedural"
+   },
+   {
+    "text": "5 carefully.",
+    "start": 29,
+    "end": 41,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Log in. Sign out. Shut down. Power off the unit.",
+  "words": 10,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Log in.",
+    "start": 0,
+    "end": 7,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Sign out.",
+    "start": 8,
+    "end": 17,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Shut down.",
+    "start": 18,
+    "end": 28,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Power off the unit.",
+    "start": 29,
+    "end": 48,
+    "word_count": 4,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Turn off the fan and back up the data.",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Turn off the fan and back up the data.",
+    "start": 0,
+    "end": 38,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Please do not use the tool. Please use another.",
+  "words": 9,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Please do not use the tool.",
+    "start": 0,
+    "end": 27,
+    "word_count": 6,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Please use another.",
+    "start": 28,
+    "end": 47,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Hold on. Leave the room.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Hold on.",
+    "start": 0,
+    "end": 8,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Leave the room.",
+    "start": 9,
+    "end": 24,
+    "word_count": 3,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The United States of America and the Republic of France met.",
+  "words": 2,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The United States of America and the Republic of France met.",
+    "start": 0,
+    "end": 60,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Don’t use curly quotes’ here; it’s fine.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Don’t use curly quotes’ here; it’s fine.",
+    "start": 0,
+    "end": 46,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "“Quoted words here” and ‘single quoted’ too.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "“Quoted words here” and ‘single quoted’ too.",
+    "start": 0,
+    "end": 52,
+    "word_count": 4,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Rules: run tests; fix bugs; ship it.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Rules: run tests; fix bugs; ship it.",
+    "start": 0,
+    "end": 36,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
+    "start": 0,
+    "end": 447,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "[Quick start](#quick-start) · [CLI reference](packages/slopvac-lint/README.md) ·\n[Rules](packages/slopvac-lint/docs/rules.md) ·\n[Metrics](packages/slopvac-lint/docs/metrics.md) ·\n[Triage](packages/slopvac-lint/docs/triage.md) ·\n[Suppressions](packages/slopvac-lint/docs/suppressions.md) ·\n[Configuration](packages/slopvac-lint/README.md#configuration) ·\n[Agent setup](#agent-setup) · [Writing guidance](#writing-guidance) ·\n[Semantic review](#semantic-review) · [CI](#ci-integration) · [Roadmap](#roadmap)",
+  "words": 29,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "[Quick start](#quick-start) · [CLI reference](packages/slopvac-lint/README.md) ·\n[Rules](packages/slopvac-lint/docs/rules.md) ·\n[Metrics](packages/slopvac-lint/docs/metrics.md) ·\n[Triage](packages/slopvac-lint/docs/triage.md) ·\n[Suppressions](packages/slopvac-lint/docs/suppressions.md) ·\n[Configuration](packages/slopvac-lint/README.md#configuration) ·\n[Agent setup](#agent-setup) · [Writing guidance](#writing-guidance) ·\n[Semantic review](#semantic-review) · [CI](#ci-integration) · [Roadmap](#roadmap)",
+    "start": 0,
+    "end": 516,
+    "word_count": 29,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`slopvac` lints prose and source comments. Its rules cover AI writing patterns\nand general prose quality, including documentation discipline and\ntechnical-writing constraints. Use it on AI-generated documentation, PR\ndescriptions, Markdown, and comments in supported source files such as TSX and\nJSX. Comment mode checks comments, not code or strings.",
+  "words": 47,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`slopvac` lints prose and source comments.",
+    "start": 0,
+    "end": 42,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Its rules cover AI writing patterns\nand general prose quality, including documentation discipline and\ntechnical-writing constraints.",
+    "start": 43,
+    "end": 175,
+    "word_count": 16,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Use it on AI-generated documentation, PR\ndescriptions, Markdown, and comments in supported source files such as TSX and\nJSX.",
+    "start": 176,
+    "end": 300,
+    "word_count": 17,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Comment mode checks comments, not code or strings.",
+    "start": 301,
+    "end": 351,
+    "word_count": 8,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Coding agents use the CLI to inspect findings and apply fixes. The same checks\ncan run in pre-commit or CI for automated validation.",
+  "words": 23,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Coding agents use the CLI to inspect findings and apply fixes.",
+    "start": 0,
+    "end": 62,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The same checks\ncan run in pre-commit or CI for automated validation.",
+    "start": 63,
+    "end": 132,
+    "word_count": 12,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use\nPython 3.11 or later. **[Vale](https://vale.sh) 3.18 or later is required\nfor a complete lint run.** Vale executes most deterministic rules and must be\navailable on `PATH`. Slopvac checks the Vale version before compiling rules.\nWithout Vale, lint exits 2 (incomplete) instead of 0 (pass).",
+  "words": 49,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use\nPython 3.11 or later. **[Vale](https://vale.sh) 3.18 or later is required\nfor a complete lint run.** Vale executes most deterministic rules and must be\navailable on `PATH`.",
+    "start": 0,
+    "end": 250,
+    "word_count": 32,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Slopvac checks the Vale version before compiling rules.",
+    "start": 251,
+    "end": 306,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Without Vale, lint exits 2 (incomplete) instead of 0 (pass).",
+    "start": 307,
+    "end": 367,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "With Homebrew, install Vale and check the installed version:",
+  "words": 9,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "With Homebrew, install Vale and check the installed version:",
+    "start": 0,
+    "end": 60,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Other platforms can use the [Vale installation instructions](https://vale.sh).\nContributors can run `mise install` to install the pinned Python, uv, and Vale\ntools from `mise.toml`. **End users do not need mise.** After installation,\nrun `slopvac doctor` to check the Vale prerequisite.",
+  "words": 39,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Other platforms can use the [Vale installation instructions](https://vale.sh).",
+    "start": 0,
+    "end": 78,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Contributors can run `mise install` to install the pinned Python, uv, and Vale\ntools from `mise.toml`. **End users do not need mise.** After installation,\nrun `slopvac doctor` to check the Vale prerequisite.",
+    "start": 79,
+    "end": 286,
+    "word_count": 30,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Install slopvac for persistent use with uv:",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Install slopvac for persistent use with uv:",
+    "start": 0,
+    "end": 43,
+    "word_count": 7,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Upgrade the installation with `uv tool upgrade slopvac`. To run slopvac without\na persistent install, use `uvx slopvac README.md`. uvx reuses its cached\nenvironment. Use `uvx slopvac@latest README.md` to force the latest release.",
+  "words": 26,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Upgrade the installation with `uv tool upgrade slopvac`.",
+    "start": 0,
+    "end": 56,
+    "word_count": 5,
+    "text_type": "procedural"
+   },
+   {
+    "text": "To run slopvac without\na persistent install, use `uvx slopvac README.md`. uvx reuses its cached\nenvironment.",
+    "start": 57,
+    "end": 165,
+    "word_count": 14,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Use `uvx slopvac@latest README.md` to force the latest release.",
+    "start": 166,
+    "end": 229,
+    "word_count": 7,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "`init` creates `slopvac.toml` with the `normal` profile when absent and keeps an\nexisting config unless you pass `--force`. Replace `README.md` with the file or\ndirectory to check. A passing run exits 0. Findings above a threshold exit 1.\nAn incomplete check exits 2.",
+  "words": 43,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`init` creates `slopvac.toml` with the `normal` profile when absent and keeps an\nexisting config unless you pass `--force`.",
+    "start": 0,
+    "end": 123,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Replace `README.md` with the file or\ndirectory to check.",
+    "start": 124,
+    "end": 180,
+    "word_count": 9,
+    "text_type": "procedural"
+   },
+   {
+    "text": "A passing run exits 0.",
+    "start": 181,
+    "end": 203,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Findings above a threshold exit 1.",
+    "start": 204,
+    "end": 238,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "An incomplete check exits 2.",
+    "start": 239,
+    "end": 267,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "If the cache contains a newer stable PyPI release, Slopvac prints an update notice after an eligible command.\nSlopvac refreshes that cache in the background. A newly discovered release can appear on a later run.\nSlopvac skips the check in these cases:",
+  "words": 42,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "If the cache contains a newer stable PyPI release, Slopvac prints an update notice after an eligible command.",
+    "start": 0,
+    "end": 109,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac refreshes that cache in the background.",
+    "start": 110,
+    "end": 157,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A newly discovered release can appear on a later run.",
+    "start": 158,
+    "end": 211,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac skips the check in these cases:",
+    "start": 212,
+    "end": 251,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- The command is `prime`.\n- The output format is non-text.\n- The report goes to a file or opens in a browser.\n- The environment contains `CI`.\n- Standard error is not a terminal.",
+  "words": 30,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- The command is `prime`.\n- The output format is non-text.\n- The report goes to a file or opens in a browser.\n- The environment contains `CI`.\n- Standard error is not a terminal.",
+    "start": 0,
+    "end": 178,
+    "word_count": 30,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "To disable the check, set one of these environment variables:",
+  "words": 10,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "To disable the check, set one of these environment variables:",
+    "start": 0,
+    "end": 61,
+    "word_count": 10,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "- `NO_UPDATE_NOTIFIER=1`\n- `SLOPVAC_NO_UPDATE_CHECK=1`\n- `DO_NOT_TRACK=1`",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- `NO_UPDATE_NOTIFIER=1`\n- `SLOPVAC_NO_UPDATE_CHECK=1`\n- `DO_NOT_TRACK=1`",
+    "start": 0,
+    "end": 73,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`--fix` edits source files using deterministic replacements. Before keeping those edits, review the diff. The **[CLI reference](packages/slopvac-lint/README.md)**\ncovers [linting and fixes](packages/slopvac-lint/README.md#lint-documents),\n[profiles](packages/slopvac-lint/README.md#profiles), and\n[scoring](packages/slopvac-lint/README.md#scoring).",
+  "words": 28,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`--fix` edits source files using deterministic replacements.",
+    "start": 0,
+    "end": 60,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Before keeping those edits, review the diff.",
+    "start": 61,
+    "end": 105,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The **[CLI reference](packages/slopvac-lint/README.md)**\ncovers [linting and fixes](packages/slopvac-lint/README.md#lint-documents),\n[profiles](packages/slopvac-lint/README.md#profiles), and\n[scoring](packages/slopvac-lint/README.md#scoring).",
+    "start": 106,
+    "end": 348,
+    "word_count": 14,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The linter ships 167 checked rules across 26 categories. The catalog also\ncarries 68 judgment rules that lint never reports. The\n[writing guidance](#writing-guidance) and [semantic review](#semantic-review)\napply them.",
+  "words": 30,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The linter ships 167 checked rules across 26 categories.",
+    "start": 0,
+    "end": 56,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The catalog also\ncarries 68 judgment rules that lint never reports.",
+    "start": 57,
+    "end": 124,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The\n[writing guidance](#writing-guidance) and [semantic review](#semantic-review)\napply them.",
+    "start": 125,
+    "end": 218,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The [rule reference](packages/slopvac-lint/docs/rules.md) lists individual rules\nand examples. Inspect them from the CLI:",
+  "words": 14,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The [rule reference](packages/slopvac-lint/docs/rules.md) lists individual rules\nand examples.",
+    "start": 0,
+    "end": 94,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Inspect them from the CLI:",
+    "start": 95,
+    "end": 121,
+    "word_count": 5,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The native engine and Vale report findings with source locations. The report\nincludes density per 100 words and a 0-100 score. Profiles and project settings\ncontrol which findings fail a run.",
+  "words": 32,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The native engine and Vale report findings with source locations.",
+    "start": 0,
+    "end": 65,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The report\nincludes density per 100 words and a 0-100 score.",
+    "start": 66,
+    "end": 126,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Profiles and project settings\ncontrol which findings fail a run.",
+    "start": 127,
+    "end": 191,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Missing or unsupported Vale, or `--no-vale`, leaves selected Vale-backed checks unchecked.\nNative findings remain available, but the run returns exit 2.",
+  "words": 21,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Missing or unsupported Vale, or `--no-vale`, leaves selected Vale-backed checks unchecked.",
+    "start": 0,
+    "end": 90,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Native findings remain available, but the run returns exit 2.",
+    "start": 91,
+    "end": 152,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Slopvac installs small project-local files instead of harness marketplaces.\nThe managed steering block tells the agent to run `slopvac prime`.\nHarnesses that load project skills also receive `slopvac-prose`.\nThat skill directs agents to run `slopvac prime write` and `slopvac prime review` around prose work. Neither\ncopies rule policy. The installed CLI prints it.",
+  "words": 48,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Slopvac installs small project-local files instead of harness marketplaces.",
+    "start": 0,
+    "end": 75,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The managed steering block tells the agent to run `slopvac prime`.",
+    "start": 76,
+    "end": 142,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Harnesses that load project skills also receive `slopvac-prose`.",
+    "start": 143,
+    "end": 207,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "That skill directs agents to run `slopvac prime write` and `slopvac prime review` around prose work.",
+    "start": 208,
+    "end": 308,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Neither\ncopies rule policy.",
+    "start": 309,
+    "end": 336,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The installed CLI prints it.",
+    "start": 337,
+    "end": 365,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Two commands write these files:",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Two commands write these files:",
+    "start": 0,
+    "end": 31,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- `slopvac init` creates `slopvac.toml` when absent and keeps an existing file\n  unless you pass `--force`. Repeat `--harness <name>` to select multiple harnesses.\n  Without `--harness`, it writes generic `AGENTS.md` steering. Naming a harness\n  replaces that default, so add `--harness agents` to keep it. `--no-skills`\n  writes steering without skills. `--skip-agents` writes only the config and\n  rejects `--harness` and `--no-skills`.\n- `slopvac setup <harness>` writes, checks, or removes one harness's steering\n  and its skill when available. It writes only those files: it reads\n  `[guidance]` from `slopvac.toml`, or uses the defaults when no config exists.\n  Run it with or without `init`.",
+  "words": 91,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- `slopvac init` creates `slopvac.toml` when absent and keeps an existing file\n  unless you pass `--force`.",
+    "start": 0,
+    "end": 107,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Repeat `--harness <name>` to select multiple harnesses.",
+    "start": 108,
+    "end": 163,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Without `--harness`, it writes generic `AGENTS.md` steering.",
+    "start": 166,
+    "end": 226,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Naming a harness\n  replaces that default, so add `--harness agents` to keep it. `--no-skills`\n  writes steering without skills. `--skip-agents` writes only the config and\n  rejects `--harness` and `--no-skills`.\n- `slopvac setup <harness>` writes, checks, or removes one harness's steering\n  and its skill when available.",
+    "start": 227,
+    "end": 548,
+    "word_count": 40,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It writes only those files: it reads\n  `[guidance]` from `slopvac.toml`, or uses the defaults when no config exists.",
+    "start": 549,
+    "end": 665,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Run it with or without `init`.",
+    "start": 668,
+    "end": 698,
+    "word_count": 6,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "`slopvac setup --list` prints each harness with its steering and skill paths.\nThe [CLI reference](packages/slopvac-lint/README.md#agent-steering) lists the\nper-harness paths, `setup --check` exit codes, and `--remove` behavior.",
+  "words": 24,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`slopvac setup --list` prints each harness with its steering and skill paths.",
+    "start": 0,
+    "end": 77,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The [CLI reference](packages/slopvac-lint/README.md#agent-steering) lists the\nper-harness paths, `setup --check` exit codes, and `--remove` behavior.",
+    "start": 78,
+    "end": 227,
+    "word_count": 14,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Agents get detailed guidance on demand:",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Agents get detailed guidance on demand:",
+    "start": 0,
+    "end": 39,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`prime` covers linting, exit-code semantics, Vale coverage, rule explanation,\nnamed exceptions, factual-claim verification, and writing, review, and reporting\nguidance. `slopvac prime report` prints an approval-gated issue workflow and\nposts nothing until the user approves the exact post.\n`slopvac onboard` prints a short setup handoff that points the agent to `prime`.",
+  "words": 47,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`prime` covers linting, exit-code semantics, Vale coverage, rule explanation,\nnamed exceptions, factual-claim verification, and writing, review, and reporting\nguidance. `slopvac prime report` prints an approval-gated issue workflow and\nposts nothing until the user approves the exact post.\n`slopvac onboard` prints a short setup handoff that points the agent to `prime`.",
+    "start": 0,
+    "end": 370,
+    "word_count": 47,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`slopvac prime write` prints a writing guide for READMEs, docs, PR or MR\ndescriptions, commit and release text, and specifications. The guide provides a genre table and a documentation contract.\nIt also gives the `slopvac rules` command for the genre's judgment rules. `slopvac prime` tells the\nagent to run it before drafting or editing that prose.",
+  "words": 52,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`slopvac prime write` prints a writing guide for READMEs, docs, PR or MR\ndescriptions, commit and release text, and specifications.",
+    "start": 0,
+    "end": 131,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The guide provides a genre table and a documentation contract.",
+    "start": 132,
+    "end": 194,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It also gives the `slopvac rules` command for the genre's judgment rules. `slopvac prime` tells the\nagent to run it before drafting or editing that prose.",
+    "start": 195,
+    "end": 349,
+    "word_count": 24,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Disable it with `[guidance] write = \"off\"` in `slopvac.toml`. The\n[semantic guidance reference](packages/slopvac-lint/docs/semantic-guidance.md)\nlists every mode.",
+  "words": 14,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Disable it with `[guidance] write = \"off\"` in `slopvac.toml`.",
+    "start": 0,
+    "end": 61,
+    "word_count": 6,
+    "text_type": "procedural"
+   },
+   {
+    "text": "The\n[semantic guidance reference](packages/slopvac-lint/docs/semantic-guidance.md)\nlists every mode.",
+    "start": 62,
+    "end": 162,
+    "word_count": 8,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "`slopvac prime review` prints a review workflow. The agent runs `slopvac lint`\nfirst, answers the judgment checklist for the document's genre, and checks\nfactual claims against the code. The default reviewer pass uses one fresh-context subagent.\n The reviewer receives the text and the review output.\nFor a revision, it also receives the original. It receives the source or brief when available.\nThe reviewer runs lint and applies the checklist. It verifies factual claims against the source.\nIts report names each rule and quotes the affected text, with a proposed rewrite.\nIt also identifies lost facts and claims stronger than the source. The author fixes or\nrebuts each finding. No loop follows unless requested.",
+  "words": 110,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "`slopvac prime review` prints a review workflow.",
+    "start": 0,
+    "end": 48,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The agent runs `slopvac lint`\nfirst, answers the judgment checklist for the document's genre, and checks\nfactual claims against the code.",
+    "start": 49,
+    "end": 186,
+    "word_count": 20,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The default reviewer pass uses one fresh-context subagent.",
+    "start": 187,
+    "end": 245,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The reviewer receives the text and the review output.",
+    "start": 247,
+    "end": 300,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "For a revision, it also receives the original.",
+    "start": 301,
+    "end": 347,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It receives the source or brief when available.",
+    "start": 348,
+    "end": 395,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The reviewer runs lint and applies the checklist.",
+    "start": 396,
+    "end": 445,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It verifies factual claims against the source.",
+    "start": 446,
+    "end": 492,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Its report names each rule and quotes the affected text, with a proposed rewrite.",
+    "start": 493,
+    "end": 574,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It also identifies lost facts and claims stronger than the source.",
+    "start": 575,
+    "end": 641,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The author fixes or\nrebuts each finding.",
+    "start": 642,
+    "end": 682,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "No loop follows unless requested.",
+    "start": 683,
+    "end": 716,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "For a pass by the author, set `[guidance] review_depth = \"self\"`.\nFor repeated reviewer rounds, set `review_depth = \"adversary\"`. Each round gets the findings the\nauthor rebutted earlier, and the loop stops when a round reports no finding the\nauthor accepts. If no subagent is available, the author runs the pass and\nrecords `self (no subagent available)`. `review = \"ask\"` asks before the review.\n`review = \"off\"` disables it. Slopvac only prints the workflow and the\nchecklist. The agent's own model runs the review.",
+  "words": 72,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "For a pass by the author, set `[guidance] review_depth = \"self\"`.",
+    "start": 0,
+    "end": 65,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "For repeated reviewer rounds, set `review_depth = \"adversary\"`.",
+    "start": 66,
+    "end": 129,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each round gets the findings the\nauthor rebutted earlier, and the loop stops when a round reports no finding the\nauthor accepts.",
+    "start": 130,
+    "end": 258,
+    "word_count": 22,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "If no subagent is available, the author runs the pass and\nrecords `self (no subagent available)`. `review = \"ask\"` asks before the review.\n`review = \"off\"` disables it.",
+    "start": 259,
+    "end": 427,
+    "word_count": 21,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac only prints the workflow and the\nchecklist.",
+    "start": 428,
+    "end": 479,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The agent's own model runs the review.",
+    "start": 480,
+    "end": 518,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Use the `slopvac-strict` hook for the strict profile. Install Vale on the machine\nrunning pre-commit. The `slopvac-no-vale` hook leaves selected Vale-backed checks\nunchecked and returns exit 2.",
+  "words": 27,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Use the `slopvac-strict` hook for the strict profile.",
+    "start": 0,
+    "end": 53,
+    "word_count": 8,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Install Vale on the machine\nrunning pre-commit.",
+    "start": 54,
+    "end": 101,
+    "word_count": 7,
+    "text_type": "procedural"
+   },
+   {
+    "text": "The `slopvac-no-vale` hook leaves selected Vale-backed checks\nunchecked and returns exit 2.",
+    "start": 102,
+    "end": 193,
+    "word_count": 12,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Add these steps to a workflow job:",
+  "words": 7,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Add these steps to a workflow job:",
+    "start": 0,
+    "end": 34,
+    "word_count": 7,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The action supports annotations and SARIF output, plus configuration and\nchanged-file selection. See [action.yml](action.yml) for its inputs and outputs.",
+  "words": 20,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The action supports annotations and SARIF output, plus configuration and\nchanged-file selection.",
+    "start": 0,
+    "end": 96,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "See [action.yml](action.yml) for its inputs and outputs.",
+    "start": 97,
+    "end": 153,
+    "word_count": 8,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The default profile is `normal`. Use `strict` for reference material or\n`relaxed` for informal text. Configure thresholds and rule severities in\n`slopvac.toml`, with `[[overrides]]` for path-specific settings.",
+  "words": 27,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The default profile is `normal`.",
+    "start": 0,
+    "end": 32,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Use `strict` for reference material or\n`relaxed` for informal text.",
+    "start": 33,
+    "end": 100,
+    "word_count": 10,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Configure thresholds and rule severities in\n`slopvac.toml`, with `[[overrides]]` for path-specific settings.",
+    "start": 101,
+    "end": 209,
+    "word_count": 12,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "The [configuration reference](packages/slopvac-lint/README.md#configuration)\nincludes precedence and examples. See\n[suppressions and exclusions](packages/slopvac-lint/docs/suppressions.md) for a\nlocal exception or an excluded file, and\n[comment mode](packages/slopvac-lint/README.md#comment-mode) for source files.",
+  "words": 28,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The [configuration reference](packages/slopvac-lint/README.md#configuration)\nincludes precedence and examples.",
+    "start": 0,
+    "end": 110,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "See\n[suppressions and exclusions](packages/slopvac-lint/docs/suppressions.md) for a\nlocal exception or an excluded file, and\n[comment mode](packages/slopvac-lint/README.md#comment-mode) for source files.",
+    "start": 111,
+    "end": 314,
+    "word_count": 20,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "A passing run means the selected checks stayed within configured thresholds.\nIt does not establish factual correctness or make an overall judgment about\nwriting quality beyond the configured rules. AI-signal labels describe rule\nevidence without changing the gate.",
+  "words": 38,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "A passing run means the selected checks stayed within configured thresholds.",
+    "start": 0,
+    "end": 76,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It does not establish factual correctness or make an overall judgment about\nwriting quality beyond the configured rules.",
+    "start": 77,
+    "end": 197,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "AI-signal labels describe rule\nevidence without changing the gate.",
+    "start": 198,
+    "end": 264,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Before merging a release PR, maintainers can run the report-only local\n[performance comparison](packages/slopvac-lint/docs/performance.md#pre-release-regression-comparison)\non an idle host. It reports regressions and exits 0. Set `PERF_FAIL=1` to fail\non them.",
+  "words": 30,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Before merging a release PR, maintainers can run the report-only local\n[performance comparison](packages/slopvac-lint/docs/performance.md#pre-release-regression-comparison)\non an idle host.",
+    "start": 0,
+    "end": 189,
+    "word_count": 18,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It reports regressions and exits 0.",
+    "start": 190,
+    "end": 225,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Set `PERF_FAIL=1` to fail\non them.",
+    "start": 226,
+    "end": 260,
+    "word_count": 6,
+    "text_type": "procedural"
+   }
+  ]
+ },
+ {
+  "text": "Lint is deterministic, and the [semantic review](#semantic-review) is a\nchecklist that an agent applies. A separate development track evaluates optional **typed judge models** for semantic decisions. Candidate backends include\nhosted [Jev](https://www.typesafeai.org/jev) and local/open models such as\n[Laya](https://github.com/NandhaKishorM/laya),\n[Nimble](https://github.com/bespokelabsai/nimble), and\n[Kev](https://github.com/jaredpalmer/kev), plus the\n[SemIf](https://github.com/theoleecj/semif) direct-logit scoring approach.\nThe design appears in\n[issue #162](https://github.com/srobroek/slopvac/issues/162).",
+  "words": 59,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Lint is deterministic, and the [semantic review](#semantic-review) is a\nchecklist that an agent applies.",
+    "start": 0,
+    "end": 104,
+    "word_count": 15,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A separate development track evaluates optional **typed judge models** for semantic decisions.",
+    "start": 105,
+    "end": 199,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Candidate backends include\nhosted [Jev](https://www.typesafeai.org/jev) and local/open models such as\n[Laya](https://github.com/NandhaKishorM/laya),\n[Nimble](https://github.com/bespokelabsai/nimble), and\n[Kev](https://github.com/jaredpalmer/kev), plus the\n[SemIf](https://github.com/theoleecj/semif) direct-logit scoring approach.",
+    "start": 200,
+    "end": 530,
+    "word_count": 25,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The design appears in\n[issue #162](https://github.com/srobroek/slopvac/issues/162).",
+    "start": 531,
+    "end": 614,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The proposed layer would run **after** Slopvac parses the document and generates candidate spans. It has two uses:",
+  "words": 18,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The proposed layer would run **after** Slopvac parses the document and generates candidate spans.",
+    "start": 0,
+    "end": 97,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It has two uses:",
+    "start": 98,
+    "end": 114,
+    "word_count": 4,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "1. **Semantic detection.** For AI/style defects that cannot be expressed\n   reliably as syntax, structure, or fixed patterns, a typed judge evaluates\n   bounded questions such as applicability, semantic fit, evidence sufficiency,\n   and repair category. Slopvac code, not the model, derives the final\n   confirm/reject/uncertain policy.\n2. **Rule validation.** The provider receives a finding's rule id, exact source span, and local context.\n   It assesses whether the trigger matches the intended defect.\n   These assessments would measure false positives and validate rule changes against gold/control corpora.\n   They would also identify deterministic triggers to improve.",
+  "words": 88,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "1. **Semantic detection.** For AI/style defects that cannot be expressed\n   reliably as syntax, structure, or fixed patterns, a typed judge evaluates\n   bounded questions such as applicability, semantic fit, evidence sufficiency,\n   and repair category.",
+    "start": 0,
+    "end": 253,
+    "word_count": 32,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Slopvac code, not the model, derives the final\n   confirm/reject/uncertain policy.",
+    "start": 254,
+    "end": 336,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "2. **Rule validation.** The provider receives a finding's rule id, exact source span, and local context.",
+    "start": 337,
+    "end": 441,
+    "word_count": 15,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It assesses whether the trigger matches the intended defect.",
+    "start": 445,
+    "end": 505,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "These assessments would measure false positives and validate rule changes against gold/control corpora.",
+    "start": 509,
+    "end": 612,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "They would also identify deterministic triggers to improve.",
+    "start": 616,
+    "end": 675,
+    "word_count": 8,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "An optional local reranker may sit before the typed judge when candidate volume\nis high. The first candidate is\n[Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B).\nIt can prioritize likely candidates to reduce judge cost, but the typed judge\nand deterministic host policy remain authoritative.",
+  "words": 43,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "An optional local reranker may sit before the typed judge when candidate volume\nis high.",
+    "start": 0,
+    "end": 88,
+    "word_count": 15,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The first candidate is\n[Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B).",
+    "start": 89,
+    "end": 183,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It can prioritize likely candidates to reduce judge cost, but the typed judge\nand deterministic host policy remain authoritative.",
+    "start": 184,
+    "end": 313,
+    "word_count": 19,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Status: approved direction, 2026-11-14. Beads epic `slopvac-8l4`, labelled `slopvac-3.0`, tracks the work.\nThis document records the decisions, the evidence behind them, and the order of work.\nslopvac 3.0 is a Rust rewrite with a public data and plugin API. It also absorbs the fixes that were meant for 2.x, because no further 2.x release ships.",
+  "words": 59,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Status: approved direction, 2026-11-14.",
+    "start": 0,
+    "end": 39,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Beads epic `slopvac-8l4`, labelled `slopvac-3.0`, tracks the work.",
+    "start": 40,
+    "end": 106,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "This document records the decisions, the evidence behind them, and the order of work.\nslopvac 3.0 is a Rust rewrite with a public data and plugin API.",
+    "start": 107,
+    "end": 257,
+    "word_count": 27,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It also absorbs the fixes that were meant for 2.x, because no further 2.x release ships.",
+    "start": 258,
+    "end": 346,
+    "word_count": 18,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- GitHub issues #252 to #257 from the Mecatl documentation trial, and the open dependency PRs.\n- A Slack thread with the same reporter: trial results, model evaluations, and integration feedback.\n- Experiments run on 2026-11-14. Their outputs stay out of the repository. The closed evidence beads in the table below record each method and result.",
+  "words": 54,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- GitHub issues #252 to #257 from the Mecatl documentation trial, and the open dependency PRs.\n- A Slack thread with the same reporter: trial results, model evaluations, and integration feedback.\n- Experiments run on 2026-11-14.",
+    "start": 0,
+    "end": 228,
+    "word_count": 34,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Their outputs stay out of the repository.",
+    "start": 229,
+    "end": 270,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The closed evidence beads in the table below record each method and result.",
+    "start": 271,
+    "end": 346,
+    "word_count": 13,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Labels in these experiments are single-annotator, and several samples are small. Treat the figures as estimates for these corpora.",
+  "words": 19,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Labels in these experiments are single-annotator, and several samples are small.",
+    "start": 0,
+    "end": 80,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Treat the figures as estimates for these corpora.",
+    "start": 81,
+    "end": 130,
+    "word_count": 8,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "No 2.18.x or 2.19 release ships. The epic \"Fixes rolled into 3.0\" holds the fixes.",
+  "words": 13,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "No 2.18.x or 2.19 release ships.",
+    "start": 0,
+    "end": 32,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The epic \"Fixes rolled into 3.0\" holds the fixes.",
+    "start": 33,
+    "end": 82,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "**Rule-data fixes in the Python reference.** These land on `main` without a release. The golden suite then records the fixed behavior, and the rule YAML carries into 3.0.",
+  "words": 28,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "**Rule-data fixes in the Python reference.** These land on `main` without a release.",
+    "start": 0,
+    "end": 84,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The golden suite then records the fixed behavior, and the rule YAML carries into 3.0.",
+    "start": 85,
+    "end": 170,
+    "word_count": 15,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- #257 title case: count only words that start with one capital, then lower case. Skip acronyms, CamelCase, and project terms.\n- #255: split \"no longer\" into its own rule that fires before change verbs only.\n- #254: skip headings and table cells, and require an imperative opener.\n- `negative-inventory-core`: fire on inventory forms only, and add the `requirement` exception.\n- #256: accept the `versioned-change-note` exception.\n- Bound the `future-tense` lookbehind. Hoist shared boundaries in the substitution and token pattern builders.",
+  "words": 74,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- #257 title case: count only words that start with one capital, then lower case.",
+    "start": 0,
+    "end": 81,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Skip acronyms, CamelCase, and project terms.\n- #255: split \"no longer\" into its own rule that fires before change verbs only.\n- #254: skip headings and table cells, and require an imperative opener.\n- `negative-inventory-core`: fire on inventory forms only, and add the `requirement` exception.\n- #256: accept the `versioned-change-note` exception.\n- Bound the `future-tense` lookbehind.",
+    "start": 82,
+    "end": 469,
+    "word_count": 50,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Hoist shared boundaries in the substitution and token pattern builders.",
+    "start": 470,
+    "end": 541,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "**Fixes the Rust beads own.** The 2.x beads for these are superseded by 3.0 beads that carry each requirement:",
+  "words": 18,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "**Fixes the Rust beads own.** The 2.x beads for these are superseded by 3.0 beads that carry each requirement:",
+    "start": 0,
+    "end": 110,
+    "word_count": 18,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- #253 symlinks outside lint targets.\n- #252: the `judgement` checklist honors config, error text keeps every interpolated value, and `prime write` reflects config.\n- Update notices reach agents.\n- `--format rdjsonl`.\n- A warning for `[[overrides]]` globs that match nothing.\n- STE stays out of the default behavior.\n- release-please covers the Cargo workspace.",
+  "words": 46,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- #253 symlinks outside lint targets.\n- #252: the `judgement` checklist honors config, error text keeps every interpolated value, and `prime write` reflects config.\n- Update notices reach agents.\n- `--format rdjsonl`.\n- A warning for `[[overrides]]` globs that match nothing.\n- STE stays out of the default behavior.\n- release-please covers the Cargo workspace.",
+    "start": 0,
+    "end": 361,
+    "word_count": 46,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "**Repository hygiene, to do now.**",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "**Repository hygiene, to do now.**",
+    "start": 0,
+    "end": 34,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- Dependabot only: remove `renovate.json`. Auto-merge patch updates and security updates with `dependabot/fetch-metadata` and the release app token. A weekly workflow checks the mise and Vale pins.\n- Triage the open PRs. Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.\n- Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job. Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.",
+  "words": 71,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- Dependabot only: remove `renovate.json`.",
+    "start": 0,
+    "end": 42,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Auto-merge patch updates and security updates with `dependabot/fetch-metadata` and the release app token.",
+    "start": 43,
+    "end": 148,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A weekly workflow checks the mise and Vale pins.\n- Triage the open PRs.",
+    "start": 149,
+    "end": 220,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.\n- Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job.",
+    "start": 221,
+    "end": 400,
+    "word_count": 30,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.",
+    "start": 401,
+    "end": 462,
+    "word_count": 11,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Python-only work is closed as not needed. That covers the standard-library swaps, Vale 3.27 support, and Python 3.15 classifiers.\nWhen 3.0 ships, a bead tracks the replies on #252 to #257 and the Slack thread.",
+  "words": 35,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Python-only work is closed as not needed.",
+    "start": 0,
+    "end": 41,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "That covers the standard-library swaps, Vale 3.27 support, and Python 3.15 classifiers.",
+    "start": 42,
+    "end": 129,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "When 3.0 ships, a bead tracks the replies on #252 to #257 and the Slack thread.",
+    "start": 130,
+    "end": 209,
+    "word_count": 16,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- **Language:** Rust, in a Cargo workspace. The Python 2.x code is the reference implementation until the golden suite passes.\n- **Concurrency:** no async runtime. rayon handles CPU work. Dedicated threads handle waiting work. crossbeam-channel connects them, and `select!` with deadlines handles timeouts. ureq handles HTTP.\n- **Engine:** slopvac matches every rule itself, and Vale is removed entirely. The README keeps an \"Inspired by Vale\" section that thanks the project.",
+  "words": 64,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- **Language:** Rust, in a Cargo workspace.",
+    "start": 0,
+    "end": 43,
+    "word_count": 6,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The Python 2.x code is the reference implementation until the golden suite passes.\n- **Concurrency:** no async runtime. rayon handles CPU work.",
+    "start": 44,
+    "end": 187,
+    "word_count": 22,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Dedicated threads handle waiting work. crossbeam-channel connects them, and `select!` with deadlines handles timeouts. ureq handles HTTP.\n- **Engine:** slopvac matches every rule itself, and Vale is removed entirely.",
+    "start": 188,
+    "end": 404,
+    "word_count": 28,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The README keeps an \"Inspired by Vale\" section that thanks the project.",
+    "start": 405,
+    "end": 476,
+    "word_count": 10,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "pydantic models defined the 2.x schema. In 3.0, Rust types generate the JSON Schema, which is published per API major version.",
+  "words": 20,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "pydantic models defined the 2.x schema.",
+    "start": 0,
+    "end": 39,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "In 3.0, Rust types generate the JSON Schema, which is published per API major version.",
+    "start": 40,
+    "end": 126,
+    "word_count": 13,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- **IDs:** namespaced as `<pack>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.\n- **Rules:**\n  - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).\n  - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.\n  - Test cases in the `vale test` style: `input`, `want`, `contains`, `absent`.\n  - `tiers` is removed.\n- **Profiles:** set gate thresholds and a severity shift only.\n- **Styles:** ordered presets with `extends` and declared `conflicts`. The last listed style wins.\n- **Genres:** data files with detection signals. A content type such as `how-to` is a genre that extends a genre. Diátaxis types are consumer content types.\n- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers. Taggers are declarative in data packs and code in plugins.\n- **Terms:** `.slopvac/terms.toml`. Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `packs`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics. Each rule has a stable documentation page that the formats link to.",
+  "words": 194,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- **IDs:** namespaced as `<pack>:<id>`.",
+    "start": 0,
+    "end": 39,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Built-ins live in `core`.",
+    "start": 40,
+    "end": 65,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Short names still work where they are unambiguous.\n- **Rules:**\n  - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).\n  - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.\n  - Test cases in the `vale test` style: `input`, `want`, `contains`, `absent`.\n  - `tiers` is removed.\n- **Profiles:** set gate thresholds and a severity shift only.\n- **Styles:** ordered presets with `extends` and declared `conflicts`.",
+    "start": 66,
+    "end": 591,
+    "word_count": 53,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The last listed style wins.\n- **Genres:** data files with detection signals.",
+    "start": 592,
+    "end": 668,
+    "word_count": 11,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A content type such as `how-to` is a genre that extends a genre.",
+    "start": 669,
+    "end": 733,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Diátaxis types are consumer content types.\n- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers.",
+    "start": 734,
+    "end": 859,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Taggers are declarative in data packs and code in plugins.\n- **Terms:** `.slopvac/terms.toml`.",
+    "start": 860,
+    "end": 954,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `packs`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics.",
+    "start": 955,
+    "end": 1625,
+    "word_count": 73,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each rule has a stable documentation page that the formats link to.",
+    "start": 1626,
+    "end": 1693,
+    "word_count": 12,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "From lowest priority to highest: core defaults, styles, the genre chain, `extends`, project config, matching `[[genres]]` and `[[overrides]]`, front matter, inline directives, CLI flags.\n`--explain-config` prints the layer, the file, and the line for each value, and what the value overrode.",
+  "words": 41,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "From lowest priority to highest: core defaults, styles, the genre chain, `extends`, project config, matching `[[genres]]` and `[[overrides]]`, front matter, inline directives, CLI flags.\n`--explain-config` prints the layer, the file, and the line for each value, and what the value overrode.",
+    "start": 0,
+    "end": 291,
+    "word_count": 41,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-pack.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio. Framing follows LSP. The `initialize` handshake exchanges capabilities. A Python SDK ships with them, and a conformance suite tests them.\n  - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.\n  - Python plugins run in their own environment.\n- **Distribution:** OCI artifacts on GHCR or any registry is the primary channel. Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers. Publisher keys are listed in the index.\n- **Trust:**\n  - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.\n  - `slopvac plugins trust` records trust per content hash. Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `pack new`, `validate`, `test`, and `publish` complete the set.",
+  "words": 178,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets.",
+    "start": 0,
+    "end": 92,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "They contain no code.",
+    "start": 93,
+    "end": 114,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A `slopvac-pack.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio.",
+    "start": 115,
+    "end": 219,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Framing follows LSP.",
+    "start": 220,
+    "end": 240,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The `initialize` handshake exchanges capabilities.",
+    "start": 241,
+    "end": 291,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A Python SDK ships with them, and a conformance suite tests them.\n  - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.\n  - Python plugins run in their own environment.\n- **Distribution:** OCI artifacts on GHCR or any registry is the primary channel.",
+    "start": 292,
+    "end": 592,
+    "word_count": 41,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers.",
+    "start": 593,
+    "end": 805,
+    "word_count": 27,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Publisher keys are listed in the index.\n- **Trust:**\n  - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.\n  - `slopvac plugins trust` records trust per content hash.",
+    "start": 806,
+    "end": 1036,
+    "word_count": 34,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `pack new`, `validate`, `test`, and `publish` complete the set.",
+    "start": 1037,
+    "end": 1339,
+    "word_count": 40,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- **prime:**\n  - The base topic is about 250 words. It has one line per command and an index of topics.\n  - Each topic is a terse checklist with its own index.\n  - slopvac renders each topic from a Markdown file, against the config, at the detail that `[guidance] level` selects.\n  - `.slopvac/PRIME.md` overrides a topic.\n- **Setup:** `setup <harness>` supports `opencode`. The flags select the block, the skill, and the reviewer agent, and set the reviewer model. Skills follow the Agent Skills specification.\n- **Review:**\n  - Types are `mechanical`, `update`, and `rewrite`.\n  - Fact checking covers changed claims only, with a scope that scales with the change. slopvac asks the user to confirm the scope when it would be exceeded.\n  - Fact preservation uses lexical alignment and a literal diff.\n  - The reviewer must use a different model from the author.\n- **Model guidance:** prime and the docs list model recommendations per review type. The eval results generate the list.",
+  "words": 145,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- **prime:**\n  - The base topic is about 250 words.",
+    "start": 0,
+    "end": 51,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It has one line per command and an index of topics.\n  - Each topic is a terse checklist with its own index.\n  - slopvac renders each topic from a Markdown file, against the config, at the detail that `[guidance] level` selects.\n  - `.slopvac/PRIME.md` overrides a topic.\n- **Setup:** `setup <harness>` supports `opencode`.",
+    "start": 52,
+    "end": 374,
+    "word_count": 46,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The flags select the block, the skill, and the reviewer agent, and set the reviewer model.",
+    "start": 375,
+    "end": 465,
+    "word_count": 16,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Skills follow the Agent Skills specification.\n- **Review:**\n  - Types are `mechanical`, `update`, and `rewrite`.\n  - Fact checking covers changed claims only, with a scope that scales with the change. slopvac asks the user to confirm the scope when it would be exceeded.\n  - Fact preservation uses lexical alignment and a literal diff.\n  - The reviewer must use a different model from the author.\n- **Model guidance:** prime and the docs list model recommendations per review type.",
+    "start": 466,
+    "end": 947,
+    "word_count": 69,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The eval results generate the list.",
+    "start": 948,
+    "end": 983,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable. In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.\n- Releases carry minisign signatures. GitHub attestations, an SBOM, and an auditable binary come with each release.\n- `slopvac self update` runs for installs made by our installer. Other installs print the matching upgrade command.\n- The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed.\n- MegaLinter and Trunk descriptors follow the release.",
+  "words": 109,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable.",
+    "start": 0,
+    "end": 258,
+    "word_count": 32,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.\n- Releases carry minisign signatures.",
+    "start": 259,
+    "end": 444,
+    "word_count": 31,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "GitHub attestations, an SBOM, and an auditable binary come with each release.\n- `slopvac self update` runs for installs made by our installer.",
+    "start": 445,
+    "end": 587,
+    "word_count": 20,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Other installs print the matching upgrade command.\n- The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF.",
+    "start": 588,
+    "end": 714,
+    "word_count": 15,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Its own annotation code is removed.\n- MegaLinter and Trunk descriptors follow the release.",
+    "start": 715,
+    "end": 805,
+    "word_count": 11,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Dependabot for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
+  "words": 44,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Dependabot for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
+    "start": 0,
+    "end": 361,
+    "word_count": 44,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "slopvac generates every reference document from code and data, and CI fails when a generated file is stale:",
+  "words": 18,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "slopvac generates every reference document from code and data, and CI fails when a generated file is stale:",
+    "start": 0,
+    "end": 107,
+    "word_count": 18,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- API schemas from the Rust types: lint JSON, config, front matter, pack manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages. Each schema is versioned per API major and published at a stable URL.\n- One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance. Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the pack manifest reference, and a page per pack.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
+  "words": 103,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- API schemas from the Rust types: lint JSON, config, front matter, pack manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages.",
+    "start": 0,
+    "end": 152,
+    "word_count": 22,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each schema is versioned per API major and published at a stable URL.\n- One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance.",
+    "start": 153,
+    "end": 328,
+    "word_count": 28,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the pack manifest reference, and a page per pack.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
+    "start": 329,
+    "end": 668,
+    "word_count": 53,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- An eval corpus lives in the repository as a manifest and a fetch script. It contains:\n  - human text written before 2022;\n  - LLM text that its publisher labels as model output;\n  - human twins, where models write from human outlines;\n  - seeded defects with clean controls;\n  - rewrite pairs.\n- Labels come from judges of two model families plus a human spot check.\n- A paired bootstrap over documents measures each change.\n- `just eval` runs an offline tier in CI, A/B comparisons between refs, and model comparisons.\n- A precision ratchet blocks rule changes that lower precision beyond the noise.",
+  "words": 92,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- An eval corpus lives in the repository as a manifest and a fetch script.",
+    "start": 0,
+    "end": 74,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It contains:",
+    "start": 75,
+    "end": 87,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- human text written before 2022;",
+    "start": 90,
+    "end": 123,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- LLM text that its publisher labels as model output;",
+    "start": 126,
+    "end": 179,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- human twins, where models write from human outlines;",
+    "start": 182,
+    "end": 236,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- seeded defects with clean controls;",
+    "start": 239,
+    "end": 276,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- rewrite pairs.",
+    "start": 279,
+    "end": 295,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- Labels come from judges of two model families plus a human spot check.",
+    "start": 296,
+    "end": 368,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- A paired bootstrap over documents measures each change.",
+    "start": 369,
+    "end": 426,
+    "word_count": 8,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- `just eval` runs an offline tier in CI, A/B comparisons between refs, and model comparisons.",
+    "start": 427,
+    "end": 521,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- A precision ratchet blocks rule changes that lower precision beyond the noise.",
+    "start": 522,
+    "end": 602,
+    "word_count": 12,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- `uvx slopvac@latest prime migrate` runs the chain of migrations from the detected version.\n- `docs/migrate-2-to-3.md` and `prime migrate` render from one source.\n- `slopvac migrate` previews the changes, then rewrites the config with comments kept. It updates directive IDs and steering blocks. It compares findings before and after migration.\n- 3.0 has no 2.x compatibility mode. It rejects a 2.x config with exit 2 and points to `slopvac migrate`. Removed flags, options, and hooks fail with an error, with no warning period.",
+  "words": 75,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- `uvx slopvac@latest prime migrate` runs the chain of migrations from the detected version.\n- `docs/migrate-2-to-3.md` and `prime migrate` render from one source.\n- `slopvac migrate` previews the changes, then rewrites the config with comments kept.",
+    "start": 0,
+    "end": 250,
+    "word_count": 28,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It updates directive IDs and steering blocks.",
+    "start": 251,
+    "end": 296,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It compares findings before and after migration.\n- 3.0 has no 2.x compatibility mode.",
+    "start": 297,
+    "end": 382,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "It rejects a 2.x config with exit 2 and points to `slopvac migrate`.",
+    "start": 383,
+    "end": 451,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Removed flags, options, and hooks fail with an error, with no warning period.",
+    "start": 452,
+    "end": 529,
+    "word_count": 13,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "An adversarial review of this plan and its beads found these gaps. Each one now has a bead:",
+  "words": 18,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "An adversarial review of this plan and its beads found these gaps.",
+    "start": 0,
+    "end": 66,
+    "word_count": 12,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Each one now has a bead:",
+    "start": 67,
+    "end": 91,
+    "word_count": 6,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.\n- **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests. The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.\n- **Plugin security:** a threat model and an independent review before the plugin host and OCI client close. The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged. A Rust port of the `prose` tagger passed, with 99.1% exact tag match. Only the opt-in vocabulary blocklist check depends on POS. The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).\n- **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.\n- **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16. Agree these before fixes and suggestions ship.\n- **RST:** stays in core through a bundled docutils adapter. AsciiDoc is new and experimental.\n- **Performance:** budgets for the installed binary, measured before they gate releases.\n- **Policies:** network and privacy, accessibility, and API lifecycle. Breaking changes happen at major versions, with no deprecation windows.\n- **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.\n- **Interim status:** no 2.x release ships, so the issues get status and workarounds now.",
+  "words": 320,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead.",
+    "start": 0,
+    "end": 151,
+    "word_count": 20,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.\n- **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests.",
+    "start": 152,
+    "end": 534,
+    "word_count": 48,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.\n- **Plugin security:** a threat model and an independent review before the plugin host and OCI client close.",
+    "start": 535,
+    "end": 737,
+    "word_count": 34,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged.",
+    "start": 738,
+    "end": 1162,
+    "word_count": 57,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "A Rust port of the `prose` tagger passed, with 99.1% exact tag match.",
+    "start": 1163,
+    "end": 1232,
+    "word_count": 13,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Only the opt-in vocabulary blocklist check depends on POS.",
+    "start": 1233,
+    "end": 1291,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).\n- **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.\n- **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16.",
+    "start": 1292,
+    "end": 1719,
+    "word_count": 60,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Agree these before fixes and suggestions ship.\n- **RST:** stays in core through a bundled docutils adapter.",
+    "start": 1720,
+    "end": 1827,
+    "word_count": 16,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "AsciiDoc is new and experimental.\n- **Performance:** budgets for the installed binary, measured before they gate releases.\n- **Policies:** network and privacy, accessibility, and API lifecycle.",
+    "start": 1828,
+    "end": 2021,
+    "word_count": 24,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Breaking changes happen at major versions, with no deprecation windows.\n- **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.\n- **Interim status:** no 2.x release ships, so the issues get status and workarounds now.",
+    "start": 2022,
+    "end": 2293,
+    "word_count": 40,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The review also proposed a smaller 3.0.0 that moves the new platforms to 3.1. The decision, made 2026-11-14, is to keep the full scope in 3.0.0. Every programme bead outside the backlog carries the `release:3.0.0` label. The release-readiness gate still applies to the whole scope.",
+  "words": 47,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The review also proposed a smaller 3.0.0 that moves the new platforms to 3.1.",
+    "start": 0,
+    "end": 77,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The decision, made 2026-11-14, is to keep the full scope in 3.0.0.",
+    "start": 78,
+    "end": 144,
+    "word_count": 14,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Every programme bead outside the backlog carries the `release:3.0.0` label.",
+    "start": 145,
+    "end": 220,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "The release-readiness gate still applies to the whole scope.",
+    "start": 221,
+    "end": 281,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "1. Rule-data fixes in the Python reference, and repository hygiene.\n2. 3.0 contract: schemas, plugin protocol, golden suite, fixtures.\n3. Rust engine crates, behind the golden suite.\n4. Config, front matter, terms, genres, styles, and context tagger.\n5. CLI, output formats, LSP, prime, and setup.\n6. Packs and plugins: protocol, OCI, trust, signatures, and first-party packs.\n7. Diagrams, experimental.\n8. Distribution, release candidates, and migration.\n9. Evals and the precision ratchet. These start in step 2 and continue in parallel.",
+  "words": 79,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "1.",
+    "start": 0,
+    "end": 2,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Rule-data fixes in the Python reference, and repository hygiene.",
+    "start": 3,
+    "end": 67,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "2.",
+    "start": 68,
+    "end": 70,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "3.0 contract: schemas, plugin protocol, golden suite, fixtures.",
+    "start": 71,
+    "end": 134,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "3.",
+    "start": 135,
+    "end": 137,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Rust engine crates, behind the golden suite.",
+    "start": 138,
+    "end": 182,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "4.",
+    "start": 183,
+    "end": 185,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Config, front matter, terms, genres, styles, and context tagger.",
+    "start": 186,
+    "end": 250,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "5.",
+    "start": 251,
+    "end": 253,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "CLI, output formats, LSP, prime, and setup.",
+    "start": 254,
+    "end": 297,
+    "word_count": 7,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "6.",
+    "start": 298,
+    "end": 300,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Packs and plugins: protocol, OCI, trust, signatures, and first-party packs.",
+    "start": 301,
+    "end": 376,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "7.",
+    "start": 377,
+    "end": 379,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Diagrams, experimental.",
+    "start": 380,
+    "end": 403,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "8.",
+    "start": 404,
+    "end": 406,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Distribution, release candidates, and migration.",
+    "start": 407,
+    "end": 455,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "9.",
+    "start": 456,
+    "end": 458,
+    "word_count": 0,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Evals and the precision ratchet.",
+    "start": 459,
+    "end": 491,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "These start in step 2 and continue in parallel.",
+    "start": 492,
+    "end": 539,
+    "word_count": 9,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "- A WASM build.\n- Languages other than English.\n- D2 and Structurizr extractors.\n- An optional MCP wrapper.\n- Sigstore and attestation verification in Rust.\n- A model2vec plugin.",
+  "words": 23,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "- A WASM build.\n- Languages other than English.\n- D2 and Structurizr extractors.\n- An optional MCP wrapper.\n- Sigstore and attestation verification in Rust.\n- A model2vec plugin.",
+    "start": 0,
+    "end": 178,
+    "word_count": 23,
+    "text_type": "descriptive"
+   }
+  ]
+ }
+]
