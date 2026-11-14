@@ -224,9 +224,11 @@ def check_suites_configured(config: dict) -> Result:
 
 def check_command(runner: Runner, entry: dict) -> Result:
     argv = entry["run"]
-    if shutil.which(argv[0]) is None:
+    tool = "cargo-nextest" if argv[:2] == ["cargo", "nextest"] else argv[0]
+    if shutil.which(argv[0]) is None or shutil.which(tool) is None:
+        missing = argv[0] if shutil.which(argv[0]) is None else tool
         return Result(
-            entry["id"], entry["title"], INCOMPLETE, f"{argv[0]} is not installed"
+            entry["id"], entry["title"], INCOMPLETE, f"{missing} is not installed"
         )
     done = runner(argv)
     command = f"`{' '.join(argv)}` exit {done.returncode}"

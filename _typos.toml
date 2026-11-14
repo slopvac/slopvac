@@ -8,6 +8,8 @@
 extend-exclude = [
   "CHANGELOG.md",
   "packages/slopvac-lint/tests/fixtures/text_type/runbook-labels-v1.jsonl",
+  # Generated Unicode tables (tools/generate_unicode.py); code-point names are not words.
+  "crates/slopvac-text/src/unicode_data.rs",
 ]
 
 [default.extend-words]

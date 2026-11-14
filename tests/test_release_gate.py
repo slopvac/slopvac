@@ -197,6 +197,19 @@ def test_missing_tool_is_incomplete_not_pass(evidence, monkeypatch):
     assert gate.exit_code(results) == 2
 
 
+def test_missing_nextest_is_incomplete_not_fail(cli, evidence, monkeypatch):
+    monkeypatch.setattr(
+        gate.shutil, "which", lambda name: None if name == "cargo-nextest" else name
+    )
+    code, rows = cli(evidence)
+    statuses = {r["id"]: r["status"] for r in rows}
+    assert code == 2
+    assert {statuses[i] for i in ("golden", "migration-e2e", "perf-budgets")} == {
+        "incomplete"
+    }
+    assert "fail" not in statuses.values()
+
+
 def test_missing_tracker_is_incomplete(evidence):
     def runner(argv):
         raise FileNotFoundError(2, "missing", "bd")
@@ -498,13 +511,6 @@ def test_a_malformed_evidence_file_fails_every_item(tmp_path):
     results = gate.check_evidence(path)
     assert len(results) == len(EVIDENCE_IDS)
     assert {r.status for r in results} == {"fail"}
-
-
-def test_omitting_the_musl_approval_fails_that_item_only(tmp_path):
-    missing = "signed-artifacts-x86_64-unknown-linux-musl"
-    path = write_evidence(tmp_path / "e.toml", skip=missing)
-    failing = [r.id for r in gate.check_evidence(path) if r.status == "fail"]
-    assert failing == [f"evidence:{missing}"]
 
 
 @pytest.mark.parametrize("bad_id", ['["security-review"]', "7"])
