@@ -10,3 +10,11 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+serde_json.workspace = true
+slopvac-model.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

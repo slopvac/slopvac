@@ -2383,6 +2383,11 @@ dependencies = [
 [[package]]
 name = "slopvac-report"
 version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "slopvac-model",
+ "thiserror",
+]
 
 [[package]]
 name = "slopvac-rules"
