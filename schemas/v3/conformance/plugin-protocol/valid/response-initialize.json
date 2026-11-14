@@ -1,0 +1,31 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": 1,
+    "pluginInfo": {
+      "name": "requirement-tagger",
+      "version": "0.1.0"
+    },
+    "capabilities": {
+      "hooks": [
+        {
+          "kind": "tagger",
+          "id": "requirement"
+        }
+      ],
+      "features": {
+        "required": [],
+        "optional": [
+          "document-path"
+        ]
+      },
+      "requiresNetwork": false
+    },
+    "limits": {
+      "maxMessageBytes": 1048576,
+      "maxBatchDocuments": 16,
+      "maxInFlight": 1
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "protocolVersion": 1,
+  "pluginInfo": {
+    "name": "requirement-tagger",
+    "version": "0.1.0"
+  },
+  "capabilities": {
+    "hooks": [
+      {
+        "kind": "tagger"
+      }
+    ],
+    "features": {
+      "required": [],
+      "optional": [
+        "document-path"
+      ]
+    },
+    "requiresNetwork": false
+  },
+  "limits": {
+    "maxMessageBytes": 1048576,
+    "maxBatchDocuments": 16,
+    "maxInFlight": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "error": {
+    "code": -32601,
+    "message": "unknown method",
+    "data": {
+      "slopvac_code": "method-not-found",
+      "method": "future/thing"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "files": [
+    {
+      "path": "/etc/passwd",
+      "action": "write",
+      "content": "x"
+    }
+  ]
+}

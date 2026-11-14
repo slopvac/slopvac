@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "item": "c1",
+      "text": "Unverified.",
+      "model": "model-b"
+    },
+    {
+      "item": "c2",
+      "error": {
+        "code": -32603,
+        "message": "upstream failed",
+        "data": {
+          "slopvac_code": "provider-failed"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "tags": [
+        {
+          "kind": "requirement",
+          "span": {
+            "start": 3,
+            "end": 7
+          },
+          "confidence": 1.5,
+          "evidence": "x"
+        }
+      ]
+    }
+  ]
+}

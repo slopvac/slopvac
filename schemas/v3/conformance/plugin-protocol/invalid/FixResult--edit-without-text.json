@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "edits": [
+        {
+          "span": {
+            "start": 3,
+            "end": 7
+          }
+        }
+      ]
+    }
+  ]
+}

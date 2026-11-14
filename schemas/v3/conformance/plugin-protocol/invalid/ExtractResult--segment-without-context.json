@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "segments": [
+        {
+          "span": {
+            "start": 3,
+            "end": 7
+          }
+        }
+      ]
+    }
+  ]
+}

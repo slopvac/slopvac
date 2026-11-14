@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "scorer/score",
+  "params": {
+    "scorer": "density",
+    "documents": [
+      {
+        "id": "d1",
+        "text": "We must never fail.\n",
+        "findings": []
+      }
+    ]
+  }
+}

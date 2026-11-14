@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tagger/tag",
+  "params": {
+    "tagger": "requirement",
+    "documents": [
+      {
+        "id": "d1",
+        "text": "We must never fail.\n"
+      }
+    ],
+    "x-trace": "abc",
+    "newField": 1
+  },
+  "x-extra": 1
+}

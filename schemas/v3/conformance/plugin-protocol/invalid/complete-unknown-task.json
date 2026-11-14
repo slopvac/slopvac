@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "provider/complete",
+  "params": {
+    "provider": "claude",
+    "task": "summarize",
+    "model": "m",
+    "items": [
+      {
+        "id": "c",
+        "text": "t"
+      }
+    ]
+  }
+}

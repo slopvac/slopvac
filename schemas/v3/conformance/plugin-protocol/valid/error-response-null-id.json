@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": null,
+  "error": {
+    "code": -32700,
+    "message": "parse error",
+    "data": {
+      "slopvac_code": "parse-error"
+    }
+  }
+}

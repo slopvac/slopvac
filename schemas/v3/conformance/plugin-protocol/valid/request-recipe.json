@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "method": "recipe/plan",
+  "params": {
+    "recipe": "opencode",
+    "harness": "opencode",
+    "options": {
+      "skill": true
+    }
+  }
+}

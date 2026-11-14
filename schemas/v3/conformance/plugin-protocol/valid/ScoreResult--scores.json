@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "score": 0
+    },
+    {
+      "document": "d2",
+      "score": 12.5
+    }
+  ]
+}
