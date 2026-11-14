@@ -25,7 +25,6 @@ struct Offsets<'a> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Collection,
     Plain,
     Quoted(u8),
 }
@@ -44,18 +43,16 @@ impl Offsets<'_> {
         self.index.span(at..at)
     }
 
-    /// The span of a key or value as written.
+    /// The span of a scalar (or a rejected alias) as written.
     ///
-    /// saphyr ends a flow collection before its closing bracket, keeps the trailing newline
-    /// on block nodes, and runs a quoted scalar on through a trailing comment. This fixes the
-    /// end. Nodes have no anchor or tag, so the start is the node's first byte.
+    /// saphyr keeps the trailing newline on block scalars and runs a quoted scalar on through a
+    /// trailing comment. This fixes the end. Nodes have no anchor or tag, so the start is the
+    /// node's first byte.
     fn span(&self, start: Marker, end: Marker, kind: Kind) -> crate::Span {
         let lo = self.local(start);
         let mut hi = self.local(end).max(lo);
         let bytes = self.content.as_bytes();
         match (kind, bytes.get(lo)) {
-            (Kind::Collection, Some(b'[')) if bytes.get(hi) == Some(&b']') => hi += 1,
-            (Kind::Collection, Some(b'{')) if bytes.get(hi) == Some(&b'}') => hi += 1,
             (Kind::Quoted(q), Some(&b)) if b == q => {
                 if let Some(close) = closing_quote(bytes, lo, q, hi) {
                     hi = close + 1;
@@ -69,6 +66,51 @@ impl Offsets<'_> {
             }
         }
         self.index.span(self.base + lo..self.base + hi)
+    }
+
+    /// The span of a sequence or mapping.
+    ///
+    /// A flow collection ends one byte after its closing delimiter, found from the start of
+    /// saphyr's closing event. A block collection ends where its last entry ends, so trailing
+    /// comments and blank lines stay outside.
+    fn collection_span(
+        &self,
+        open: Marker,
+        close: Marker,
+        last_child_end: Option<usize>,
+    ) -> crate::Span {
+        let bytes = self.content.as_bytes();
+        let lo = self.local(open);
+        let closer = match bytes.get(lo) {
+            Some(b'[') => Some(b']'),
+            Some(b'{') => Some(b'}'),
+            _ => None,
+        };
+        let close_at = self.local(close);
+        let hi = match closer {
+            Some(c) if bytes.get(close_at) == Some(&c) => close_at + 1,
+            _ => last_child_end.map_or(lo, |e| e - self.base),
+        };
+        self.index.span(self.base + lo..self.base + hi.max(lo))
+    }
+
+    /// The `*name` token around a scan error, when the error is about an alias.
+    fn alias_token(&self, at: Marker) -> Option<crate::Span> {
+        let bytes = self.content.as_bytes();
+        let is_name =
+            |b: u8| !b.is_ascii_whitespace() && !matches!(b, b',' | b'[' | b']' | b'{' | b'}');
+        let mut lo = self.local(at);
+        if bytes.get(lo) != Some(&b'*') {
+            while lo > 0 && is_name(bytes[lo - 1]) && bytes[lo - 1] != b'*' {
+                lo -= 1;
+            }
+            lo = lo.checked_sub(1).filter(|&i| bytes[i] == b'*')?;
+        }
+        let mut hi = lo + 1;
+        while hi < bytes.len() && is_name(bytes[hi]) {
+            hi += 1;
+        }
+        Some(self.index.span(self.base + lo..self.base + hi))
     }
 
     /// The span of the first `&` anchor or `!` tag token that belongs to the node starting at
@@ -214,7 +256,15 @@ pub(crate) fn parse(
 
 impl Builder<'_> {
     fn scan_error(&self, e: &ScanError) -> ParseError {
-        fail(e.info(), Some(self.offsets.caret(*e.marker())))
+        let span = if e.info().contains("anchor") {
+            self.offsets.alias_token(*e.marker())
+        } else {
+            None
+        };
+        fail(
+            e.info(),
+            Some(span.unwrap_or_else(|| self.offsets.caret(*e.marker()))),
+        )
     }
 
     /// Refuse an anchor or tag on the node that starts at `start`.
@@ -305,11 +355,19 @@ impl Builder<'_> {
                 let Some(frame) = self.stack.pop() else {
                     return Err(fail("unbalanced collection", Some(self.offsets.caret(end))));
                 };
-                let (start, value) = match frame {
-                    Frame::Seq { start, items } => (start, Value::Array(items)),
-                    Frame::Map { start, entries, .. } => (start, Value::Table(entries)),
+                let (open, last_end, value) = match frame {
+                    Frame::Seq { start, items } => {
+                        let last = items.last().map(|n| n.span.range.end);
+                        (start, last, Value::Array(items))
+                    }
+                    Frame::Map { start, entries, .. } => {
+                        let last = entries
+                            .last()
+                            .map(|e| e.value.span.range.end.max(e.key_span.range.end));
+                        (start, last, Value::Table(entries))
+                    }
                 };
-                let span = self.offsets.span(start, end, Kind::Collection);
+                let span = self.offsets.collection_span(open, start, last_end);
                 self.complete(Node { value, span })?;
             }
         }

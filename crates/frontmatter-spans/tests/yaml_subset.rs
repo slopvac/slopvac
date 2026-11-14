@@ -59,7 +59,8 @@ fn an_alias_is_rejected_at_the_alias() {
     // The anchor comes first, so use a bare alias: the parser or this crate must refuse it.
     let doc = yaml("b: *x");
     let err = FrontMatter::parse(&doc).unwrap_err();
-    assert_eq!(err.span.expect("span").start.line, 2);
+    let span = err.span.expect("span");
+    assert_eq!(&doc[span.range], "*x");
 }
 
 #[test]
