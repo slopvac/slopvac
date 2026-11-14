@@ -1,0 +1,9 @@
+rt: refactor current-thread scheduler (#4377)
+
+This patch does some refactoring to the current-thread scheduler bringing it closer to the
+structure of the multi-threaded scheduler. More specifically, the core scheduler data is stored
+in a Core struct and that struct is passed around as a "token" indicating permission to do
+work. The Core structure is also stored in the thread-local context.
+
+This refactor is intended to support #4373, making it easier to track counters in more locations
+in the current-thread scheduler.

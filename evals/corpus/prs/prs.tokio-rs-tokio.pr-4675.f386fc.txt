@@ -1,0 +1,17 @@
+util: implement `ReusableBoxFuture` with one function
+
+## Motivation
+
+`ReusableBoxFuture` is currently complex-ish, with `unsafe` code and types in multiple places.
+
+## Solution
+
+Move all the `unsafe`ty into a single function `reuse_pin_box` (and a helper type). I think this makes the definition of `ReusableBoxFuture` a bit simpler, and I'm pretty sure that it's sound. The function has the signature:
+
+```rs
+fn reuse_pin_box<T: ?Sized, U, O, F>(boxed: Pin<Box<T>>, new_value: U, callback: F) -> Result<O, U>
+where
+    F: FnOnce(Box<U>) -> O,
+```
+
+It encapsulates the basic premise of `ReusableBoxFuture` — a `Box` that can be reused — and `ReusableBoxFuture` is then implemented on top of it. It accepts a callback instead of returning `Result<Box<U>, O>` so that code can be run even if dropping the old `T` fails.

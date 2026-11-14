@@ -1,0 +1,12 @@
+feat(docs-html): try to use tags for ToC headings
+
+Problem:
+The generated ToC (table of contents) uses anchors derived from the
+heading title, e.g. the "Global Plugins" heading yields:
+https://neovim.io/doc/user/usr_05.html#_global-plugins-
+so if the heading title changes, then the old URL (anchor) is broken.
+
+Solution:
+:help tags change less often than heading titles, so if a heading
+contains a *tag*, use that as its anchor name instead. Example:
+https://neovim.io/doc/user/usr_05.html#standard-plugin

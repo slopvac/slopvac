@@ -1,0 +1,14 @@
+e2e: remove JSON progress output on stdout
+
+The original intention was to address "frustration of end users running the e2e
+suite is that they take a significant amount of time and it is difficult to
+gauge progress".
+
+But Ginkgo's output is different now than it was in Kubernetes 1.19. If users
+want to see progress, then "ginkgo --progress" might provide enough
+information.
+
+Printing to os.Stdout doesn't work as intended anyway when output redirection
+is enabled (the default for parallel runs) and causes these JSON snippets to
+appear as "show stdout" for each failed test in a Prow job, which is
+distracting.

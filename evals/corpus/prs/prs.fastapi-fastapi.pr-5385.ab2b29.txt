@@ -1,0 +1,3 @@
+🌐 🔠 📄 🐢 Translate docs to Emoji 🥳 🎉 💥 🤯 🤯
+
+**I just really love 💕 🤩 the idea of adding some emojis 😄😁😅 here and there across the 📄 docs 📄 (like [in here](https://fastapi.tiangolo.com/async) for example). So I decided to write ✍ the entire documentation out of emojis 💥🎉🌟. All these words 🤮🤢 and... fancy-looking letters.. 👎👎👎 ugh... That's so boring 🥱. I believe reading documentation made of emojis will definitely (don't argue 😛🤪) be much funnier 😃 and easier 😻 for beginners. Just take a look at a new awesome  🔥 [async page](https://6426a9b35d5fc100b1db0463--fastapi.netlify.app/emj/async/) 🔥. So here it is, don't thank me. 💥💯💫⭐**

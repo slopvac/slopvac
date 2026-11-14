@@ -1,0 +1,23 @@
+Switch LGPL'd chardet for MIT licensed charset_normalizer (#5797)
+
+Although using the (non-vendored) chardet library is fine for requests
+itself, but using a LGPL dependency the story is a lot less clear
+for downstream projects, particularly ones that might like to bundle
+requests (and thus chardet) in to a single binary -- think something
+similar to what docker-compose is doing. By including an LGPL'd module
+it is no longer clear if the resulting artefact must also be LGPL'd.
+
+By changing out this dependency for one under MIT we remove all
+license ambiguity.
+
+As an "escape hatch" I have made the code so that it will use chardet
+first if it is installed, but we no longer depend upon it directly,
+although there is a new extra added, `requests[lgpl]`. This should
+minimize the impact to users, and give them an escape hatch if
+charset_normalizer turns out to be not as good. (In my non-exhaustive
+tests it detects the same encoding as chartdet in every case I threw at
+it)
+
+Co-authored-by: Jarek Potiuk <jarek@potiuk.com>
+
+Co-authored-by: Jarek Potiuk <jarek@potiuk.com>

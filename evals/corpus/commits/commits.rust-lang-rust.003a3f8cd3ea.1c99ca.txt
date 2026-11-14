@@ -1,0 +1,47 @@
+Use `br` instead of `switch` in more cases.
+
+`codegen_switchint_terminator` already uses `br` instead of `switch`
+when there is one normal target plus the `otherwise` target. But there's
+another common case with two normal targets and an `otherwise` target
+that points to an empty unreachable BB. This comes up a lot when
+switching on the tags of enums that use niches.
+
+The pattern looks like this:
+```
+bb1:                                              ; preds = %bb6
+  %3 = load i8, ptr %_2, align 1, !range !9, !noundef !4
+  %4 = sub i8 %3, 2
+  %5 = icmp eq i8 %4, 0
+  %_6 = select i1 %5, i64 0, i64 1
+  switch i64 %_6, label %bb3 [
+    i64 0, label %bb4
+    i64 1, label %bb2
+  ]
+
+bb3:                                              ; preds = %bb1
+  unreachable
+```
+This commit adds code to convert the `switch` to a `br`:
+```
+bb1:                                              ; preds = %bb6
+  %3 = load i8, ptr %_2, align 1, !range !9, !noundef !4
+  %4 = sub i8 %3, 2
+  %5 = icmp eq i8 %4, 0
+  %_6 = select i1 %5, i64 0, i64 1
+  %6 = icmp eq i64 %_6, 0
+  br i1 %6, label %bb4, label %bb2
+
+bb3:                                              ; No predecessors!
+  unreachable
+```
+This has a surprisingly large effect on compile times, with reductions
+of 5% on debug builds of some crates. The reduction is all due to LLVM
+taking less time. Maybe LLVM is just much better at handling `br` than
+`switch`.
+
+The resulting code is still suboptimal.
+- The `icmp`, `select`, `icmp` sequence is silly, converting an `i1` to an `i64`
+  and back to an `i1`. But with the current code structure it's hard to avoid,
+  and LLVM will easily clean it up, in opt builds at least.
+- `bb3` is usually now truly dead code (though not always, so it can't
+  be removed universally).

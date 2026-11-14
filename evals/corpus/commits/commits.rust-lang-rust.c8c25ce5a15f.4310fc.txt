@@ -1,0 +1,10 @@
+Rename some `OwnerId` fields.
+
+spastorino noticed some silly expressions like `item_id.def_id.def_id`.
+
+This commit renames several `def_id: OwnerId` fields as `owner_id`, so
+those expressions become `item_id.owner_id.def_id`.
+
+`item_id.owner_id.local_def_id` would be even clearer, but the use of
+`def_id` for values of type `LocalDefId` is *very* widespread, so I left
+that alone.

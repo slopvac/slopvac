@@ -25,3 +25,6 @@ dist/
 
 # Local profiling and benchmark output.
 perf-results/
+
+# Eval corpus downloads and generated twins; see evals/README.md.
+evals/.cache/

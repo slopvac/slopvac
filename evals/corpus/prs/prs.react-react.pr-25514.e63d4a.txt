@@ -1,0 +1,15 @@
+[Float] support meta tags as Resources
+
+Stacked on #25508
+
+This PR adds meta tags as a resource type.
+
+metas are classified in the following priority
+
+1. charset
+2. http-equiv
+3. property
+4. name
+5. itemprop
+
+when using property, there is special logic for og type properties where a `property="og:image:height"` following a `property="og:image"` will inherit the key of the previous tag. this relies on timing effects to stay consistent so when mounting new metas it is important that if structured properties are being used all members of a structure mount together. This is similarly true for arrays where the implicit sequential order defines the array structure. if you need an array you need to mount all array members in the same pass.

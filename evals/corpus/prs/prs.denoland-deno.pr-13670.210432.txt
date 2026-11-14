@@ -1,0 +1,20 @@
+feat: deno vendor
+
+Not part of this first pass:
+
+- Warning when dynamic import is not statically analyzable (https://github.com/denoland/deno_graph/issues/138)
+- Special handling of file system layout to take into account Window's 260 character path limit. I had some code that handled this, but it wasn't very good and I thought of a better solution. I'll open an issue and do another PR at a later time.
+- Module specifiers with different text in the same module that resolve to the same module aren't handled (https://github.com/denoland/deno_graph/issues/132) -- Not a big deal because this is probably super rare
+- Directories with different casing resolve to the same folder on case insensistive file systems. I will have an upcomming PR with the 260 char limit that fixes this (just added this to dnt [here](https://github.com/denoland/dnt/pull/125))
+- The specified import map is not combined with the generated import map. It might be hard to do this correctly because the base of the import map changes when going into the vendor folder. Right now it's not a big deal for people to manually update the created import map after.
+
+Differences with proposal:
+
+- Uses `vendor` folder instead of `_vendor` by default (seemed like in the meeting people wanted `vendor` instead?).
+- Output is not dependent on the existing state of the vendor folder.
+  - Errors when the vendor folder exists and is non-empty. Allows using a `--force` flag to potentially overwrite the contents.
+  - No `--info` flag
+  - Specifying an import map via `--import-map ...` located within the output directory will error.
+  -  Why: Vendor is already a complex feature and I think basing the vendor output on the existing state of the vendor folder would be very difficult to do. It would also be hard to fix bugs because we'd need to know the previous state of the vendor folder. I think it also might be difficult for some users to understand.
+
+Closes #13346

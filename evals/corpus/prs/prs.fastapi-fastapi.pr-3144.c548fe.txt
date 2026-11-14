@@ -1,0 +1,19 @@
+✨ Allow hiding from OpenAPI (and Swagger UI) `Query`, `Cookie`, `Header`, and `Path` parameters
+
+Add parameter `include_in_schema` to partially address #1708 for subclasses of `Param`: `Cookie`, `Header`, `Path` and `Query`
+
+Implements the `Param` portion of https://github.com/tiangolo/fastapi/issues/1708#issuecomment-663366079, relevant parts of code sample reproduced below:
+
+> ```python
+> from fastapi import FastAPI, Query
+> 
+> app = FastAPI()
+> 
+> 
+> @app.get("/")
+> def read_root(hidden_param: str = Query(None, include_in_schema=False)):
+>     if hidden_param:
+>         return {"Hello": "Master!"}
+>     else:
+>         return {"Hello": "World"}
+> ```

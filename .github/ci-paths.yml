@@ -26,6 +26,7 @@ code:
   - 'docs/contract/**'
   - 'scripts/contract/**'
   - 'tests/contract/**'
+  - 'evals/**'
 
 package:
   - '.github/workflows/**'

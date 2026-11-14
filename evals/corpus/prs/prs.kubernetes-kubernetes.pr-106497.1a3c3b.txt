@@ -1,0 +1,38 @@
+fix internalTrafficPolicy
+
+#### What type of PR is this?
+/kind bug
+/kind cleanup
+
+#### What this PR does / why we need it:
+Primary:
+- Fixes `internalTrafficPolicy: Local, externalTrafficPolicy: Cluster` in the iptables proxy. (Previously if iTP was Local, eTP would be essentially forced to Local as well.)
+- Makes `internalTrafficPolicy: Local` implement `ProxyTerminatingEndpoints`. It is not clear that this is actually useful in the way that it is in the external traffic case, but it's consistent, and it makes the implementation simpler (because it means that if the internal and external traffic policies are the same, then the internal and external endpoints are the same too).
+- Makes `internalTrafficPolicy: Local` DROP rather than REJECT traffic if there are remote endpoints but not local endpoints, again for consistency and simplicity. (If we didn't do this then it would complicate the case where iTP and eTP were both Local and the service had no endpoints.)
+- Stops creating `KUBE-FW-XXXX` chains for LoadBalancer services that aren't using `LoadBalancerSourceRanges`
+
+Secondary:
+- ready/local/serving-terminating handling is now centralized rather than being implemented separately by iptables and ipvs
+- iptables rule reorganizations that will result in fewer total rules (services now have one masq rule total rather than one masq rule per externalIP/nodePort/LB IP)
+- additional topology/filtering unit test cases
+
+#### Which issue(s) this PR fixes:
+Fixes #100313
+
+#### Special notes for your reviewer:
+
+#### Does this PR introduce a user-facing change?
+```release-note
+Services with "internalTrafficPolicy: Local" now behave more like
+"externalTrafficPolicy: Local". Also, "internalTrafficPolicy: Local,
+externalTrafficPolicy: Cluster" is now implemented correctly.
+```
+
+#### Additional documentation e.g., KEPs (Kubernetes Enhancement Proposals), usage docs, etc.:
+```docs
+- [KEP]: https://github.com/kubernetes/enhancements/tree/9ad538c8c04f7a15a6e7c17c49cac2c47b63a1a1/keps/sig-network/2086-service-internal-traffic-policy
+```
+
+/priority important-soon
+/sig network
+/triage accepted

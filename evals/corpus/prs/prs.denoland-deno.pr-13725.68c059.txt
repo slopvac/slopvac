@@ -1,0 +1,151 @@
+feat: "deno task" subcommand
+
+__Don't expect to land it, just a quick experiment.__
+
+_This functionality should be compatible with `scripts` in `package.json`, but it would require `deno script --config package.json <script_name>` syntax at the moment_
+
+<img width="857" alt="Screenshot 2022-02-21 at 00 07 43" src="https://user-images.githubusercontent.com/13602871/154868435-13075022-df01-41b9-a9f5-2e14c50421bd.png">
+
+## Performance
+Faster than [`npm scripts`](https://docs.npmjs.com/cli/v8/using-npm/scripts) and [`dum`](https://github.com/egoist/dum)
+```
+deno on  deno_scripts [!?] via 🦕 v1.19.0 via  v17.4.0 via 🦀 v1.58.1
+❯ time dum foo
+$ foo
+$ node example_script
+from example []
+
+________________________________________________________
+Executed in   53.38 millis    fish           external
+   usr time   35.13 millis    0.07 millis   35.06 millis
+   sys time   12.79 millis    1.70 millis   11.09 millis
+
+
+deno on  deno_scripts [!?] via 🦕 v1.19.0 via  v17.4.0 via 🦀 v1.58.1
+❯ time npm run foo
+
+> foo
+> node example_script
+
+from example []
+
+________________________________________________________
+Executed in  195.03 millis    fish           external
+   usr time  175.96 millis    0.06 millis  175.90 millis
+   sys time   37.74 millis    1.84 millis   35.90 millis
+
+
+deno on  deno_scripts [!?] via 🦕 v1.19.0 via  v17.4.0 via 🦀 v1.58.1
+❯ time ./target/release/deno script foo
+from example []
+
+________________________________________________________
+Executed in   42.95 millis    fish           external
+   usr time   18.63 millis    0.07 millis   18.56 millis
+   sys time   12.56 millis    1.81 millis   10.75 millis
+
+
+```
+
+## Examples
+
+Example with [`docland`](https://github.com/denoland/docland):
+```
+// deno.json
+{
+    "scripts": {
+        "build": "deno run --config deno.jsonc --import-map import-map.json --allow-read=. --allow-write=./static --allow-net build.ts"
+    }
+}
+```
+
+```
+$ deno script
+Available scripts:
+- build
+    deno run --config deno.jsonc --import-map import-map.json --allow-read=. --allow-write=./static --allow-net build.ts
+
+$ deno script build
+Script build deno run --config deno.jsonc --import-map import-map.json --allow-read=. --allow-write=./static --allow-net build.ts
+Building deploy_doc...
+Fetching Deno CLI releases...
+Latest release: v1.19.0
+Documenting latest stable APIs...
+Saving latest stable APIs...
+Documenting latest unstable APIs...
+Saving latest unstable APIs...
+Documenting lib esnext...
+Saving lib esnext...
+Documenting lib dom...
+Saving lib dom...
+Done.
+
+```
+
+Example with [`deno_std`](https://github.com/denoland/deno_std)
+```
+// deno.json
+{
+  "scripts": {
+    "node:setup": "deno run --allow-read --allow-net --allow-write node/_tools/setup.ts",
+    "node:test": "deno test --allow-read --allow-run node/_tools/test.ts"
+  },
+  "fmt": {
+    "files": {
+      "exclude": [
+        ".git",
+        "_wasm_crypto/target",
+        "cov",
+        "node/_tools/versions",
+        "node/_tools/suites",
+        "node/integrationtest/yarn.js",
+        "wasi/testdata"
+      ]
+    }
+  },
+  "lint": {
+    "files": {
+      "exclude": [
+        ".git",
+        "_wasm_crypto/target",
+        "cov",
+        "node/vendor",
+        "node/_module/node_modules/",
+        "node/_tools/versions",
+        "node/_tools/suites",
+        "node/integrationtest/yarn.js",
+        "wasi/testdata"
+      ]
+    }
+  }
+}
+```
+
+```
+$ deno script
+Available scripts:
+- node:setup
+    deno run --allow-read --allow-net --allow-write node/_tools/setup.ts
+- node:test
+    deno test --allow-read --allow-run node/_tools/test.ts
+
+$ deno script node:setup
+Script node:setup deno run --allow-read --allow-net --allow-write node/_tools/setup.ts
+Check file:///Users/ib/dev/deno_std/node/_tools/setup.ts
+Downloading https://nodejs.org/dist/v16.13.0/node-v16.13.0.tar.gz in path "versions/node-v16.13.0.tar.gz" ...
+Downloaded: https://nodejs.org/dist/v16.13.0/node-v16.13.0.tar.gz into versions/node-v16.13.0.tar.gz
+Decompressing node-v16.13.0.tar.gz...
+
+Cleaning up previous tests
+Copying test files...
+
+$ deno script node:test -- test-event-emitter-check-listener-leaks.js
+Script node:test deno test --allow-read --allow-run node/_tools/test.ts
+Check file:///Users/ib/dev/deno_std/node/_tools/test.ts
+running 2 tests from file:///Users/ib/dev/deno_std/node/_tools/test.ts
+test Node.js compatibility "parallel/test-event-emitter-check-listener-leaks.js" ... ok (551ms)
+test checkConfigTestFilesOrder ... ok (1ms)
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (566ms)
+
+```

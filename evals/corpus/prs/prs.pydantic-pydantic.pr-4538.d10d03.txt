@@ -1,0 +1,18 @@
+[1.10.X] Fix field regex with StrictStr type annotation
+
+There's an inconsistency between `constr(...)` and `ConstrainedStr`, which is the base class of `StrictStr`, with regard to the expected type of the `regex` argument/attribute which causes a field of type `StrictStr` with a `regex` constraint specified via the `Field(...)` class to raise an error:
+
+```text
+File "pydantic/main.py", line 340, in pydantic.main.BaseModel.__init__
+File "pydantic/main.py", line 1076, in pydantic.main.validate_model
+File "pydantic/fields.py", line 884, in pydantic.fields.ModelField.validate
+File "pydantic/fields.py", line 1101, in pydantic.fields.ModelField._validate_singleton
+File "pydantic/fields.py", line 1148, in pydantic.fields.ModelField._apply_validators
+File "pydantic/class_validators.py", line 318, in pydantic.class_validators._generic_validator_basic.lambda13
+File "pydantic/types.py", line 433, in pydantic.types.ConstrainedStr.validate
+AttributeError: 'str' object has no attribute 'match'
+```
+
+I've fixed this inconsistency in a backwards compatible way by extending the type of `regex` in `ConstrainedStr` to also support a `str` value in addition to `Pattern[str]`.
+
+I hope this fix will be considered despite the ongoing efforts towards Pydantic v2. :slightly_smiling_face:

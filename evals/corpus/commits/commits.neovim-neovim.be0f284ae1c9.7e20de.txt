@@ -1,0 +1,9 @@
+vim-patch:partial:8.2.0418: code in eval.c not sufficiently covered by tests
+
+Problem:    Code in eval.c not sufficiently covered by tests.
+Solution:   Add more tests. (Yegappan Lakshmanan, closes vim/vim#5815)
+https://github.com/vim/vim/commit/8b633135106dda8605463b780573c45b00c22afe
+
+Only port test_expr.vim and the first hunk of test_cmdline.vim.
+Add missing test from patch 7.4.1755.
+Cherry-pick test_expr.vim change from patch 8.2.2060.

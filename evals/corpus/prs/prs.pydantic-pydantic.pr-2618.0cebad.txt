@@ -1,0 +1,43 @@
+feat: Add unique items validation to constrained lists
+
+<!-- Thank you for your contribution! -->
+<!-- Unless your change is trivial, please create an issue to discuss the change before creating a PR -->
+<!-- See https://pydantic-docs.helpmanual.io/contributing/ for help on Contributing -->
+
+## Change Summary
+
+Add `unique_items` property and validation to `ConstrainedList` (and `conlist`).
+
+## Related issue number
+
+fix #2011
+
+## Checklist
+
+* [x] Unit tests for the changes exist
+* [x] Tests pass on CI and coverage remains at 100%
+* [x] Documentation reflects the changes where applicable
+* [x] `changes/<pull request or issue id>-<github username>.md` file added describing change
+  (see [changes/README.md](https://github.com/samuelcolvin/pydantic/blob/master/changes/README.md) for details)
+* [x] My PR is ready to review, __please add a comment including the phrase "please review" to assign reviewers__
+
+## Rationale
+
+This proposal solves two related issues:
+
+- `{"type": "array", "uniqueItems": true}` schemas being interpreted as a Python set.
+  JSON Schema specs define `array` as [an ordered sequence of zero or more values](https://tools.ietf.org/html/rfc8259#section-1) and its instance equality as [_both are arrays, and have an equal value item-for-item_](http://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.4.2.2). So both casting JSON arrays to Python sets and defining Python sets as JSON arrays in the schema can lead to validation errors and/or data corruption.
+- `conset` used instead of `uniqueItems`
+  In addition to the ordering issue, `ConstrainedSet` casts arrays to Python sets with no previous validation of items uniqueness; which is fully consistent with the Python `set` behavior, but opposite to that of the schema with which it is equated.
+
+A `unique_items` validation in `ConstrainedList` would solve both issues while keeping the current `conset` behavior untouched.
+
+~~This PR is a POC and lacks the proper tests and docs, and also it does not replicate the property into other data models (`FieldInfo`?). If you consider this proposal relevant, I will be glad to complete it for evaluation.~~
+
+## To be evaluated
+
+- Implementation follows the specs, with one exception: __default value__ is `None` instead of `False` so as `"uniqueItems": false` will not be added to the schema unless explicitly stated.
+
+- In the feature request the __property name__ is `unique`. This PR named it `unique_items` for consistency with `max_items` and `min_items`.
+
+~~- Current __error message__ is a placeholder. As specs do not state which mathematical object corresponds to this schema, there's no clearly defined concept of multiplicity. E.g. in `[1, 1, 2, 2, 2, 3]` one could understand: two items (1, 2), three items (1, 2, 2), or five items (1, 1, 2, 2, 2). I tend to see it as a set, so the first statement makes more sense to me.~~

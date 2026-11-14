@@ -1,0 +1,9 @@
+logo: better alignment of layers
+
+The existing logo, particularly the one with border, did not have the
+border as a full underlying layer, just the visible portion.  It was
+possible to see individual pixels in some modes, which cause problems
+with, for example, cutting machines.
+
+Now the background is a full underlay.  Updated both logos to newer
+inkscape settings.

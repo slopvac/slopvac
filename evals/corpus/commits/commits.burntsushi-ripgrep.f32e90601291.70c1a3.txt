@@ -1,0 +1,20 @@
+doc: clarify that CLI invocation must always be valid
+
+This comes up as a corner case where folks provide -e/--regexp in a
+configuration file and then expect to be able to run 'rg' with no args.
+However, ripgrep fails because it still expects at least one pattern
+even though one was specified in the config file.
+
+This occurs because ripgrep has to parse its CLI parameters before
+reading the config file. (For log output settings and to handle the
+--no-config flag.) This initial parse will fail if there are no patterns
+specified.
+
+The only way to solve this that I can see is to somehow relax the
+requirements of the initial parse. But this is problematic because we
+would still need to enforce those requirements in cases where we don't
+do a second parse (when no config file is present).
+
+All in all, this doesn't seem like a problem that is worth solving.
+
+Closes #1730

@@ -1,0 +1,15 @@
+Clean up Scheduler forks
+
+## Overview
+
+This PR cleans up the scheduler files to reduce bundle size, support more environments correctly, and allow for better layering in the future.
+
+### Details
+Previously, we had a scheduler for DOM environments (`SchedulerDOM`) and a scheduler for non-DOM environments (`SchedulerNoDom`). In this model, users would select the `Scheduler` they needed based on the environment they used.
+
+There were a few problems with this approach. SchedulerDOM included the MessageChannel implementation which should be used outside of DOM environments (e.g. Worker environments). Second, in practice we were still shipping feature detection to select between different environments, which added bundle size without achieving the desired layering. Finally, we've since refactored these two Schedulers such that the only difference between them is how they schedule work in the event loop. This means the files are identical except for a few lines, so the added bundle size is unnecessary.
+
+The updated structure includes the following forks:
+- `Scheduler`: The current scheduler implementation which will use `setImmediate`, `MessageChannel`, or `setTimeout`, in that order, based on what is globally available.
+- `SchedulerPostTask`: An experimental, internal-only scheduler which is a different implementation based on the new Chrome `postTask` API. This does not add bundle size because it is not exposed.
+- `SchedulerMock`: An internal-only scheduler for testing. Also not exposed.

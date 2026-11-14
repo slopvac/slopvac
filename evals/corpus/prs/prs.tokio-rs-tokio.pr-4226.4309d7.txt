@@ -1,0 +1,48 @@
+sync: fix racy `UnsafeCell` access on a closed oneshot
+
+## Motivation
+
+Issue #4225 describes a potential race condition in the `oneshot`
+channel in `tokio-sync`. The race occurs when the oneshot is closed, and
+then a thread calls `oneshot::Sender::send` while another thread is
+calling `oneshot::Receiver::try_recv` or awaiting the reciever. The call
+to `send` puts the sent value in the cell. Then, it sets the
+`VALUE_SENT` (completed) bit, returning a snapshot of the state. If the
+state is closed, the sender takes the sent value back out of the cell.
+Receiving from the channel _also_ loads the state. The reciever first
+checks if the channel is completed, and takes the value out of the cell
+if the completed bit is set. This is racy, because if a call to `recv`
+loads the state after the completed bit has been set, it will no longer
+treat the channel as closed, and will try to take the value out of the
+cell. This results in both threads accessing the cell concurrently.
+
+## Solution
+
+This branch adds two `loom` tests reproducing the race, for `try_recv`
+and for awaiting a `Receiver`. Both of these tests fail with a causality
+violation when accessing the `UnsafeCell` on `master`.
+
+I fixed the race condition by changing `State::set_completed` to not set
+the `VALUE_SENT` bit if the `CLOSED` bit has already been set. This way,
+if the channel is closed before `send` is called, we won't set the bit
+that tells the receiver that it's okay to access the `UnsafeCell`, and
+we the sender can take the value back out without the risk of the
+receiver also concurrently accessing the `UnsafeCell`.
+
+This required changing `State::set_completed` from a simple fetch-or to
+a compare-and-swap loop, which is slightly a bummer, as it's less
+efficient than a single fetch-or. However, as far as I can tell,
+changing this to a CAS loop is the only solution to the race that
+doesn't also change the oneshot's behavior. We currently have tests
+asserting that if the channel is closed _after_ a value is sent, the
+value is still received. A simpler solution to this problem would be
+changing `poll_recv` and `try_recv` to check if the channel is closed
+_first_, and only check if the channel is completed and take the value
+out if it is not closed. This fixes the race, since the receiver will no
+longer try to access the `UnsafeCell` if the channel has been closed.
+But, this would break the existing tests asserting that calling `close`
+_after_ a value has been sent still results in the value being received.
+Changing that behavior seems undesirable, so I thought this was worth
+the CAS loop.
+
+Fixes: #4225

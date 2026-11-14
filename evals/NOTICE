@@ -1,0 +1,715 @@
+Third-party text in evals/corpus
+================================
+
+The files under evals/corpus are excerpts of public documents, kept as test
+data for the Slopvac eval corpus. Each is released by its authors under the
+licence named below. The only changes are line-ending normalisation and, where
+the manifest lists a `lines` range, cutting the file to that range. The
+manifest (manifest.json) gives the exact upstream URL, pinned commit and
+SHA-256 for every file.
+
+The cached documents that evals.fetch downloads are not redistributed here.
+
+5102a/Drawing-Board-Canvas
+  Source:    https://github.com/5102a/Drawing-Board-Canvas
+  Licence:   MIT
+  Copyright: The 5102a/Drawing-Board-Canvas authors
+  Files:     1 (diagrams)
+  Commits:   28884659d5d0
+
+BurntSushi/ripgrep
+  Source:    https://github.com/BurntSushi/ripgrep
+  Licence:   MIT OR Unlicense
+  Copyright: The BurntSushi/ripgrep authors
+  Files:     12 (code-comments, commits, readmes)
+  Commits:   0bc4f0447b05, 6f2b79f5847f, aab3d80374d5, c032cda4b7af, ee21897ebd35, f32e90601291, f8418c6a5271
+
+Evertras/go-wasm-rpc
+  Source:    https://github.com/Evertras/go-wasm-rpc
+  Licence:   MIT
+  Copyright: The Evertras/go-wasm-rpc authors
+  Files:     1 (diagrams)
+  Commits:   77ec7a69ff78
+
+Honghe/iwubi
+  Source:    https://github.com/Honghe/iwubi
+  Licence:   Apache-2.0
+  Copyright: The Honghe/iwubi authors
+  Files:     1 (diagrams)
+  Commits:   2e6e6f374d66
+
+JakeSteam/Mermaid
+  Source:    https://github.com/JakeSteam/Mermaid
+  Licence:   MIT
+  Copyright: The JakeSteam/Mermaid authors
+  Files:     2 (diagrams)
+  Commits:   e5076adc0f8e
+
+JavaScript-Open-Curriculum-Foundation/JavaScript-First
+  Source:    https://github.com/JavaScript-Open-Curriculum-Foundation/JavaScript-First
+  Licence:   MIT
+  Copyright: The JavaScript-Open-Curriculum-Foundation/JavaScript-First authors
+  Files:     1 (diagrams)
+  Commits:   e0e3be050b77
+
+KenanBek/dbui
+  Source:    https://github.com/KenanBek/dbui
+  Licence:   Apache-2.0
+  Copyright: The KenanBek/dbui authors
+  Files:     1 (diagrams)
+  Commits:   41cb66bb6f45
+
+Malomalote/simple_group_kanban
+  Source:    https://github.com/Malomalote/simple_group_kanban
+  Licence:   MIT
+  Copyright: The Malomalote/simple_group_kanban authors
+  Files:     1 (diagrams)
+  Commits:   3d746dde78b9
+
+Misterio77/BSI-SCC0540-projeto
+  Source:    https://github.com/Misterio77/BSI-SCC0540-projeto
+  Licence:   Unlicense
+  Copyright: The Misterio77/BSI-SCC0540-projeto authors
+  Files:     1 (diagrams)
+  Commits:   f7f4a4d0e541
+
+PacktPublishing/The-Official-Guide-to-Mermaid.js
+  Source:    https://github.com/PacktPublishing/The-Official-Guide-to-Mermaid.js
+  Licence:   MIT
+  Copyright: The PacktPublishing/The-Official-Guide-to-Mermaid.js authors
+  Files:     1 (diagrams)
+  Commits:   826b9c6ce781
+
+Sliim/pentest-lab
+  Source:    https://github.com/Sliim/pentest-lab
+  Licence:   Apache-2.0
+  Copyright: The Sliim/pentest-lab authors
+  Files:     1 (diagrams)
+  Commits:   617e7530069c
+
+Textualize/rich
+  Source:    https://github.com/Textualize/rich
+  Licence:   MIT
+  Copyright: Copyright (c) 2020 Will McGugan
+  Files:     1 (readmes)
+  Commits:   7dc5f95f684c
+
+ThanosFisherman/MayI
+  Source:    https://github.com/ThanosFisherman/MayI
+  Licence:   Apache-2.0
+  Copyright: The ThanosFisherman/MayI authors
+  Files:     1 (diagrams)
+  Commits:   6db0765e5529
+
+TrueCommerce/MermaidJS.Blazor
+  Source:    https://github.com/TrueCommerce/MermaidJS.Blazor
+  Licence:   MIT
+  Copyright: The TrueCommerce/MermaidJS.Blazor authors
+  Files:     1 (diagrams)
+  Commits:   4e1f6369e3a2
+
+adr/madr
+  Source:    https://github.com/adr/madr
+  Licence:   MIT
+  Copyright: The adr/madr authors
+  Files:     3 (adrs)
+  Commits:   33afb78ce682
+
+aleju/mario-ai
+  Source:    https://github.com/aleju/mario-ai
+  Licence:   MIT
+  Copyright: The aleju/mario-ai authors
+  Files:     1 (diagrams)
+  Commits:   d1c9af09be25
+
+allgreed/presentation-git
+  Source:    https://github.com/allgreed/presentation-git
+  Licence:   MIT
+  Copyright: The allgreed/presentation-git authors
+  Files:     1 (diagrams)
+  Commits:   8f2738f6cc15
+
+alphagov/content-publisher
+  Source:    https://github.com/alphagov/content-publisher
+  Licence:   MIT
+  Copyright: Copyright (c) 2018 Crown Copyright (Government Digital Service)
+  Files:     3 (adrs)
+  Commits:   ebb7e3e5029e
+
+alphagov/govuk-infrastructure
+  Source:    https://github.com/alphagov/govuk-infrastructure
+  Licence:   MIT
+  Copyright: Copyright © 2020-2023 Crown Copyright (Government Digital Service)
+  Files:     3 (adrs)
+  Commits:   3fa7d72ea003
+
+am-kantox/finitomata
+  Source:    https://github.com/am-kantox/finitomata
+  Licence:   MIT
+  Copyright: The am-kantox/finitomata authors
+  Files:     1 (diagrams)
+  Commits:   35b283f2e789
+
+apache/incubator-resilientdb-blog
+  Source:    https://github.com/apache/incubator-resilientdb-blog
+  Licence:   Apache-2.0
+  Copyright: The apache/incubator-resilientdb-blog authors
+  Files:     1 (diagrams)
+  Commits:   f616cd5d82b9
+
+apache/tinkerpop
+  Source:    https://github.com/apache/tinkerpop
+  Licence:   Apache-2.0
+  Copyright: The apache/tinkerpop authors
+  Files:     1 (diagrams)
+  Commits:   f65023a850d7
+
+astral-sh/ruff
+  Source:    https://github.com/astral-sh/ruff
+  Licence:   MIT
+  Copyright: Copyright (c) 2022 Charles Marsh
+  Files:     9 (prs, readmes)
+  Commits:   5aa8455258b3
+
+backstage/backstage
+  Source:    https://github.com/backstage/backstage
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     3 (adrs)
+  Commits:   5d7b14027fad
+
+bitbrain/braingdx
+  Source:    https://github.com/bitbrain/braingdx
+  Licence:   Apache-2.0
+  Copyright: The bitbrain/braingdx authors
+  Files:     1 (diagrams)
+  Commits:   ddb36eca9184
+
+caddyserver/caddy
+  Source:    https://github.com/caddyserver/caddy
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     1 (readmes)
+  Commits:   087f126cf4c8
+
+cert-manager/website
+  Source:    https://github.com/cert-manager/website
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     5 (product)
+  Commits:   7755e9a07cd1
+
+cjrequena/spring-integration-gateway-kafka-sample
+  Source:    https://github.com/cjrequena/spring-integration-gateway-kafka-sample
+  Licence:   MIT
+  Copyright: The cjrequena/spring-integration-gateway-kafka-sample authors
+  Files:     1 (diagrams)
+  Commits:   62858ac38c5c
+
+darshanime/devkube
+  Source:    https://github.com/darshanime/devkube
+  Licence:   Apache-2.0
+  Copyright: The darshanime/devkube authors
+  Files:     1 (diagrams)
+  Commits:   8635ed6f397d
+
+denoland/deno
+  Source:    https://github.com/denoland/deno
+  Licence:   MIT
+  Copyright: Copyright 2018-2022 the Deno authors
+  Files:     6 (prs)
+
+django/django
+  Source:    https://github.com/django/django
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) Django Software Foundation and individual contributors.
+  Files:     32 (changelogs, commits, product, reference, tutorials)
+  Commits:   0701bb8e1f17, 1674c70525bc, 19b866c254b5, 2bc47d7fe95e, 32536b1324e9, 3d734c09ff01, 42cd8c390d5f, 9dff316be418, ddf0002bb760, f387d024fc75, fbac2a4dd846
+
+docker/docs
+  Source:    https://github.com/docker/docs
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     8 (product)
+  Commits:   4c62232fa5c6
+
+element-hq/element-web
+  Source:    https://github.com/element-hq/element-web
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     1 (ui-strings)
+  Commits:   fed759ec0e7c
+
+emersonbottero/vitepress-plugin-mermaid
+  Source:    https://github.com/emersonbottero/vitepress-plugin-mermaid
+  Licence:   MIT
+  Copyright: The emersonbottero/vitepress-plugin-mermaid authors
+  Files:     2 (diagrams)
+  Commits:   4ebf1c970b04, 71dd9f9e598a
+
+encode/httpx
+  Source:    https://github.com/encode/httpx
+  Licence:   BSD-3-Clause
+  Copyright: Copyright © 2019, [Encode OSS Ltd](https://www.encode.io/).
+  Files:     1 (changelogs)
+  Commits:   9e97d7d42963
+
+eslint/eslint
+  Source:    https://github.com/eslint/eslint
+  Licence:   MIT
+  Copyright: Copyright OpenJS Foundation and other contributors, <www.openjsf.org>
+  Files:     1 (readmes)
+  Commits:   d03a8bf8978b
+
+expressjs/express
+  Source:    https://github.com/expressjs/express
+  Licence:   MIT
+  Copyright: Copyright (c) 2009-2014 TJ Holowaychuk <tj@vision-media.ca>
+  Files:     6 (changelogs, code-comments, readmes)
+  Commits:   8368dc178af1
+
+faceyspacey/babel-plugin-dual-import
+  Source:    https://github.com/faceyspacey/babel-plugin-dual-import
+  Licence:   MIT
+  Copyright: The faceyspacey/babel-plugin-dual-import authors
+  Files:     1 (diagrams)
+  Commits:   d279a303dc80
+
+fastapi/fastapi
+  Source:    https://github.com/fastapi/fastapi
+  Licence:   MIT
+  Copyright: Copyright (c) 2018 Sebastián Ramírez
+  Files:     19 (product, prs, readmes, tutorials)
+  Commits:   d0917ce01566
+
+flashyiyi/A-Simple-ECS-Example
+  Source:    https://github.com/flashyiyi/A-Simple-ECS-Example
+  Licence:   MIT
+  Copyright: The flashyiyi/A-Simple-ECS-Example authors
+  Files:     1 (diagrams)
+  Commits:   bc96bc15476c
+
+gabrielepalma/sublimate
+  Source:    https://github.com/gabrielepalma/sublimate
+  Licence:   MIT
+  Copyright: The gabrielepalma/sublimate authors
+  Files:     1 (diagrams)
+  Commits:   f0b83cdb1691
+
+gin-gonic/gin
+  Source:    https://github.com/gin-gonic/gin
+  Licence:   MIT
+  Copyright: Copyright (c) 2014 Manuel Martínez-Almeida
+  Files:     1 (readmes)
+  Commits:   51aea73ba0f1
+
+github/docs
+  Source:    https://github.com/github/docs
+  Licence:   CC-BY-4.0
+  Copyright: copyright and certain other rights. Our licenses are
+  Files:     12 (product)
+  Commits:   f9a227a6aefc
+
+go-gitea/gitea
+  Source:    https://github.com/go-gitea/gitea
+  Licence:   MIT
+  Copyright: Copyright (c) 2016 The Gitea Authors
+  Files:     1 (ui-strings)
+  Commits:   f211d235c7a4
+
+golang/go
+  Source:    https://github.com/golang/go
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) 2009 The Go Authors. All rights reserved.
+  Files:     16 (code-comments, commits)
+  Commits:   090ec611dffe, 0a6c4c87404e, 0bf7ee9977c0, 0ca355318f6c, 13d48bb6a1ad, 17622b891a47, 5f18e4632897, a8e4b8c2a793, c81c02798275
+
+home-assistant/core
+  Source:    https://github.com/home-assistant/core
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     20 (prs, ui-strings)
+  Commits:   009d5aedd51e
+
+httpie/httpie
+  Source:    https://github.com/httpie/httpie
+  Licence:   BSD-3-Clause
+  Copyright: Copyright © 2012-2022 Jakub Roztocil <jakub@roztocil.co>
+  Files:     1 (readmes)
+  Commits:   621042a0486c
+
+ixaxaar/pytorch-dnc
+  Source:    https://github.com/ixaxaar/pytorch-dnc
+  Licence:   MIT
+  Copyright: The ixaxaar/pytorch-dnc authors
+  Files:     1 (diagrams)
+  Commits:   126fbd4ca41a
+
+jbelmont/golang-workshop
+  Source:    https://github.com/jbelmont/golang-workshop
+  Licence:   MIT
+  Copyright: The jbelmont/golang-workshop authors
+  Files:     1 (diagrams)
+  Commits:   781f68ffed2a
+
+jesseduffield/lazygit
+  Source:    https://github.com/jesseduffield/lazygit
+  Licence:   MIT
+  Copyright: Copyright (c) 2018 Jesse Duffield
+  Files:     1 (readmes)
+  Commits:   c4e71356bbb0
+
+jphall663/hc_ml
+  Source:    https://github.com/jphall663/hc_ml
+  Licence:   CC-BY-4.0
+  Copyright: The jphall663/hc_ml authors
+  Files:     1 (diagrams)
+  Commits:   c39a6ba0afb1
+
+jqlang/jq
+  Source:    https://github.com/jqlang/jq
+  Licence:   MIT
+  Copyright: Copyright (c) 1991, 2000, 2001 by Lucent Technologies.
+  Files:     1 (readmes)
+  Commits:   cff5336ec71b
+
+junegunn/fzf
+  Source:    https://github.com/junegunn/fzf
+  Licence:   MIT
+  Copyright: Copyright (c) 2013-2022 Junegunn Choi
+  Files:     1 (readmes)
+  Commits:   0de1aacb0cea
+
+krywicki/ticker-rs
+  Source:    https://github.com/krywicki/ticker-rs
+  Licence:   MIT
+  Copyright: The krywicki/ticker-rs authors
+  Files:     1 (diagrams)
+  Commits:   0ce96c69df56
+
+kubegems/design
+  Source:    https://github.com/kubegems/design
+  Licence:   Apache-2.0
+  Copyright: The kubegems/design authors
+  Files:     1 (diagrams)
+  Commits:   61933c4c864b
+
+kubernetes/kubernetes
+  Source:    https://github.com/kubernetes/kubernetes
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     16 (changelogs, commits, prs)
+  Commits:   023baa5e45dd, 0564fcce0f17, 20de240d5bdb, 3e560e8341c4, 47d329978135, 856146e67e93, af77381e0177, d9a58a39b69a, f15d7f6cca16
+
+kubernetes/website
+  Source:    https://github.com/kubernetes/website
+  Licence:   CC-BY-4.0
+  Copyright: copyright and certain other rights. Our licenses are
+  Files:     24 (product, reference, tutorials)
+  Commits:   26a9496c23d5
+
+lxp521125/7788chat
+  Source:    https://github.com/lxp521125/7788chat
+  Licence:   Apache-2.0
+  Copyright: The lxp521125/7788chat authors
+  Files:     1 (diagrams)
+  Commits:   e23f7ccc98ea
+
+mermaid-js/mermaid
+  Source:    https://github.com/mermaid-js/mermaid
+  Licence:   MIT
+  Copyright: The mermaid-js/mermaid authors
+  Files:     2 (diagrams)
+  Commits:   8f5fe3821241, b62873a1950a
+
+microsoft/TypeScript
+  Source:    https://github.com/microsoft/TypeScript
+  Licence:   Apache-2.0
+  Copyright: The microsoft/TypeScript authors
+  Files:     4 (code-comments)
+  Commits:   c49c733c1f5d
+
+microsoft/Web-Dev-For-Beginners
+  Source:    https://github.com/microsoft/Web-Dev-For-Beginners
+  Licence:   MIT
+  Copyright: Copyright (c) Microsoft Corporation.
+  Files:     6 (tutorials)
+  Commits:   ee14534cafc5
+
+microsoft/vscode
+  Source:    https://github.com/microsoft/vscode
+  Licence:   MIT
+  Copyright: Copyright (c) 2015 - present Microsoft Corporation
+  Files:     8 (ui-strings)
+  Commits:   caf921d2855b
+
+ministryofjustice/cloud-platform
+  Source:    https://github.com/ministryofjustice/cloud-platform
+  Licence:   MIT
+  Copyright: Copyright (c) 2018 Ministry of Justice
+  Files:     3 (adrs)
+  Commits:   e1ddee5ac1eb
+
+neovim/neovim
+  Source:    https://github.com/neovim/neovim
+  Licence:   Apache-2.0
+  Copyright: Copyright Neovim contributors. All rights reserved.
+  Files:     7 (commits, readmes)
+  Commits:   3c5b43580163, 6b01e9bf872c, 8f0b94b36d4d, 9353e2f7ef6d, aa2f08a05068, be0f284ae1c9, d8dbf58b4372
+
+niuxiangchen/mini-redux
+  Source:    https://github.com/niuxiangchen/mini-redux
+  Licence:   MIT
+  Copyright: The niuxiangchen/mini-redux authors
+  Files:     1 (diagrams)
+  Commits:   005be4a2298a
+
+nodejs/node
+  Source:    https://github.com/nodejs/node
+  Licence:   MIT
+  Copyright: Copyright Node.js contributors. All rights reserved.
+  Files:     3 (reference)
+  Commits:   d6ee27445b58
+
+novanet/ndc2017
+  Source:    https://github.com/novanet/ndc2017
+  Licence:   MIT
+  Copyright: The novanet/ndc2017 authors
+  Files:     1 (diagrams)
+  Commits:   a34e157ae689
+
+numpy/numpy
+  Source:    https://github.com/numpy/numpy
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) 2005-2022, NumPy Developers.
+  Files:     8 (changelogs, reference)
+  Commits:   f569129ff09c
+
+onlyasmalllizard/phantom-elephants-frontend
+  Source:    https://github.com/onlyasmalllizard/phantom-elephants-frontend
+  Licence:   MIT
+  Copyright: The onlyasmalllizard/phantom-elephants-frontend authors
+  Files:     1 (diagrams)
+  Commits:   a0bcfe20c780
+
+pallets/click
+  Source:    https://github.com/pallets/click
+  Licence:   BSD-3-Clause
+  Copyright: Copyright 2014 Pallets
+  Files:     4 (changelogs, code-comments)
+  Commits:   2b60d8163a45
+
+pallets/flask
+  Source:    https://github.com/pallets/flask
+  Licence:   BSD-3-Clause
+  Copyright: Copyright 2010 Pallets
+  Files:     11 (changelogs, code-comments, commits, tutorials)
+  Commits:   08a283af5efc, 2a54cfa5cecf, 9b44bf2818d8, a841cfabb58d
+
+pandas-dev/pandas
+  Source:    https://github.com/pandas-dev/pandas
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) 2008-2011, AQR Capital Management, LLC, Lambda Foundry, Inc. and PyData Development Team
+  Files:     1 (readmes)
+  Commits:   eb69d8943fdc
+
+prettier/prettier
+  Source:    https://github.com/prettier/prettier
+  Licence:   MIT
+  Copyright: Copyright © James Long and contributors
+  Files:     1 (readmes)
+  Commits:   7bfed175ef96
+
+princemaple/dg
+  Source:    https://github.com/princemaple/dg
+  Licence:   MIT
+  Copyright: The princemaple/dg authors
+  Files:     1 (diagrams)
+  Commits:   baa645de23ce
+
+prometheus/docs
+  Source:    https://github.com/prometheus/docs
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     6 (product)
+  Commits:   9f705a7423f1
+
+psf/requests
+  Source:    https://github.com/psf/requests
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     13 (changelogs, code-comments, commits, reference)
+  Commits:   24630743cecd, 2ed84f55b22f, 427e8eb1e755, 5351469472ec, 53a0562331c4, e253eba5ed89
+
+pydantic/pydantic
+  Source:    https://github.com/pydantic/pydantic
+  Licence:   MIT
+  Copyright: Copyright (c) 2017 - 2022 Samuel Colvin and other contributors
+  Files:     10 (changelogs, product, prs)
+  Commits:   5dd9b4f5ca57
+
+pytorch/tutorials
+  Source:    https://github.com/pytorch/tutorials
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) 2017-2022, Pytorch contributors
+  Files:     5 (tutorials)
+  Commits:   3888bcd1bfff
+
+ratijas/dropSQL
+  Source:    https://github.com/ratijas/dropSQL
+  Licence:   MIT
+  Copyright: The ratijas/dropSQL authors
+  Files:     1 (diagrams)
+  Commits:   0c340c908ecb
+
+react/react
+  Source:    https://github.com/react/react
+  Licence:   MIT
+  Copyright: Copyright (c) Meta Platforms, Inc. and affiliates.
+  Files:     6 (prs)
+
+reactjs/reactjs.org
+  Source:    https://github.com/reactjs/reactjs.org
+  Licence:   CC-BY-4.0
+  Copyright: copyright and certain other rights. Our licenses are
+  Files:     4 (product, tutorials)
+  Commits:   751a13f5fc88
+
+redis/redis
+  Source:    https://github.com/redis/redis
+  Licence:   BSD-3-Clause
+  Copyright: Copyright (c) 2006-2020, Salvatore Sanfilippo
+  Files:     13 (code-comments, commits, readmes)
+  Commits:   36abc0fa8f50, 464aa04188c4, 4c6d9bbd626b, 5b102e2339f4, 6461f09f433b, 7d1ad6ca9663, bb6513cbba97
+
+rust-lang/reference
+  Source:    https://github.com/rust-lang/reference
+  Licence:   MIT OR Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     8 (reference)
+  Commits:   36579679fe9e
+
+rust-lang/rust
+  Source:    https://github.com/rust-lang/rust
+  Licence:   MIT OR Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     15 (changelogs, commits, prs)
+  Commits:   003a3f8cd3ea, 024207ab43ac, 0cd2dd7263a2, 3cddc8bff6d5, 4d4b567bcc64, 5a1c8e8e5c8b, b166ad0b1ebd, c8c25ce5a15f, e9502010b470
+
+rust-lang/rust-by-example
+  Source:    https://github.com/rust-lang/rust-by-example
+  Licence:   MIT OR Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     8 (tutorials)
+  Commits:   2b15c0abf2ba
+
+shaqsnake/Data-Structures-and-Algorithms-in-Python
+  Source:    https://github.com/shaqsnake/Data-Structures-and-Algorithms-in-Python
+  Licence:   MIT
+  Copyright: The shaqsnake/Data-Structures-and-Algorithms-in-Python authors
+  Files:     2 (diagrams)
+  Commits:   f3bbb17adc55, fcdda34a86a4
+
+sharkdp/bat
+  Source:    https://github.com/sharkdp/bat
+  Licence:   MIT OR Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     1 (readmes)
+  Commits:   a7b0449967f6
+
+sjwall/mdx-mermaid
+  Source:    https://github.com/sjwall/mdx-mermaid
+  Licence:   MIT
+  Copyright: The sjwall/mdx-mermaid authors
+  Files:     2 (diagrams)
+  Commits:   138147d303fc, efc61162e1b3
+
+starship/starship
+  Source:    https://github.com/starship/starship
+  Licence:   ISC
+  Copyright: Copyright (c) 2019-2022, Starship Contributors
+  Files:     1 (readmes)
+  Commits:   d3cf18ffe965
+
+tatsu-lab/alpaca_eval
+  Source:    https://github.com/tatsu-lab/alpaca_eval
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     72 (assistant-answers)
+  Commits:   cd543a149df8
+
+thehivecorporation/docker-commander
+  Source:    https://github.com/thehivecorporation/docker-commander
+  Licence:   Apache-2.0
+  Copyright: The thehivecorporation/docker-commander authors
+  Files:     1 (diagrams)
+  Commits:   f0e71b638ac1
+
+thi-ng/tinyalloc
+  Source:    https://github.com/thi-ng/tinyalloc
+  Licence:   Apache-2.0
+  Copyright: The thi-ng/tinyalloc authors
+  Files:     1 (diagrams)
+  Commits:   1c06015c61c0
+
+thomvaill/log4brains
+  Source:    https://github.com/thomvaill/log4brains
+  Licence:   Apache-2.0
+  Copyright: copyright notice that is included in or attached to the work
+  Files:     3 (adrs)
+  Commits:   37187fc8e0cd
+
+tokio-rs/tokio
+  Source:    https://github.com/tokio-rs/tokio
+  Licence:   MIT
+  Copyright: Copyright (c) 2022 Tokio Contributors
+  Files:     22 (changelogs, code-comments, commits, prs, readmes)
+  Commits:   18efef7d3b92, 218f2629fffa, 28ce4eeab2fe, 98e642d23477, b1f40f4356c7, b891714bdb3f, cc8ad367a0e5
+
+travisolbrich/315-P1-DBMS
+  Source:    https://github.com/travisolbrich/315-P1-DBMS
+  Licence:   MIT
+  Copyright: The travisolbrich/315-P1-DBMS authors
+  Files:     2 (diagrams)
+  Commits:   b1e13fbf1f4b
+
+tuwrraphael/PushServer
+  Source:    https://github.com/tuwrraphael/PushServer
+  Licence:   MIT
+  Copyright: The tuwrraphael/PushServer authors
+  Files:     1 (diagrams)
+  Commits:   2a843483b94f
+
+ucbl/HyLAR-Reasoner
+  Source:    https://github.com/ucbl/HyLAR-Reasoner
+  Licence:   MIT
+  Copyright: The ucbl/HyLAR-Reasoner authors
+  Files:     1 (diagrams)
+  Commits:   e105c1ad86c2
+
+vercel/next.js
+  Source:    https://github.com/vercel/next.js
+  Licence:   MIT
+  Copyright: Copyright (c) 2025 Vercel, Inc.
+  Files:     6 (prs)
+
+vitejs/vite
+  Source:    https://github.com/vitejs/vite
+  Licence:   MIT
+  Copyright: Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
+  Files:     6 (changelogs, prs)
+  Commits:   1358a3c75bfa
+
+webketje/drawio-font-awesome
+  Source:    https://github.com/webketje/drawio-font-awesome
+  Licence:   MIT
+  Copyright: The webketje/drawio-font-awesome authors
+  Files:     1 (diagrams)
+  Commits:   7164b0a293ad
+
+yangchengkai1/draw.io
+  Source:    https://github.com/yangchengkai1/draw.io
+  Licence:   MIT
+  Copyright: The yangchengkai1/draw.io authors
+  Files:     1 (diagrams)
+  Commits:   1a2ae78a3225

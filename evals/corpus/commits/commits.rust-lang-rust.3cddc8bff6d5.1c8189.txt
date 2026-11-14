@@ -1,0 +1,15 @@
+More inference-friendly API for lazy
+
+The signature for new was
+
+```
+fn new<F>(f: F) -> Lazy<T, F>
+```
+
+Notably, with `F` unconstrained, `T` can be literally anything, and just
+`let _ = Lazy::new(|| 92)` would not typecheck.
+
+This historiacally was a necessity -- `new` is a `const` function, it
+couldn't have any bounds. Today though, we can move `new` under the `F:
+FnOnce() -> T` bound, which gives the compiler enough data to infer the
+type of T from closure.

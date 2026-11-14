@@ -1,0 +1,9 @@
+Fixed #34024 -- Fixed crash when aggregating querysets with Q objects annotations.
+
+This reverts b64db05b9cedd96905d637a2d824cbbf428e40e7.
+
+It was reasonable to assume it was unnecessary code as there were
+no failing tests upon its removal. This commit adds the necessary
+regression tests for the failing condition identified in #34024
+alongside the original tests added in the PR for which
+WhereNode.is_summary was introduced.

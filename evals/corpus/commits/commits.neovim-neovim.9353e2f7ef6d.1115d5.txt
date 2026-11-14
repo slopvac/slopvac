@@ -1,0 +1,8 @@
+vim-patch:8.2.2542: highlight of char beyond line end is not correct (#20424)
+
+Problem:    Highlight of char beyond line end is not correct. (Chuan Wei Foo)
+Solution:   Fix counting NUL as one cell.  Draw one more character if the EOL
+            is part of the match. (closes vim/vim#7883)
+https://github.com/vim/vim/commit/41f0895c6e3c7b921e3c102ad42be52b1be48018
+
+Reorder test_search.vim to match Vim.
