@@ -103,8 +103,9 @@ pub struct Teardown {
     /// started, may still run.
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
-    /// deadline or the cap on held descendants was reached. Descendants it
-    /// did not reach may still run.
+    /// deadline or the cap on held descendants was reached. On Windows,
+    /// `taskkill` did not exit with status 0. Descendants it did not reach
+    /// may still run.
     pub incomplete: bool,
 }
 
@@ -421,23 +422,24 @@ fn stop_group(_leader: u32) {}
 
 /// `taskkill /T /F` on the leader's tree. The leader's open handle keeps its
 /// id reserved; the tree walk itself is `taskkill`'s (job objects: NEW-3).
-/// A `taskkill` that does not start or does not finish by the deadline
-/// leaves the teardown incomplete.
 #[cfg(not(unix))]
 fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
-    use std::process::{Command, Stdio};
-    let incomplete = Teardown {
-        escaped: Vec::new(),
-        incomplete: true,
-    };
     if matches!(then, Then::Resume) {
         return Teardown::default();
     }
+    after_taskkill(taskkill(pid))
+}
+
+/// Run `taskkill /T /F` on `pid` and return its exit code, or `None` if it
+/// did not start, could not be watched or passed the deadline.
+#[cfg(not(unix))]
+fn taskkill(pid: u32) -> Option<i32> {
+    use std::process::{Command, Stdio};
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
-    let taskkill = std::path::Path::new(&root)
+    let program = std::path::Path::new(&root)
         .join("System32")
         .join("taskkill.exe");
-    let Ok(mut child) = Command::new(taskkill)
+    let mut child = Command::new(program)
         .args(["/T", "/F", "/PID", &pid.to_string()])
         .env_clear()
         .env("SystemRoot", &root)
@@ -445,19 +447,34 @@ fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-    else {
-        return incomplete;
-    };
+        .ok()?;
     let deadline = Instant::now() + WALK_DEADLINE;
-    while Instant::now() < deadline {
+    loop {
         match child.try_wait() {
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            _ => return Teardown::default(),
+            Ok(Some(status)) => return status.code(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            // A wait error or the deadline.
+            _ => break,
         }
     }
     let _ = child.kill();
     let _ = child.wait();
-    incomplete
+    None
+}
+
+/// What a teardown left after `taskkill` ended with `code` (`None`: it did
+/// not start, could not be watched or passed the deadline).
+///
+/// Only status 0 means it killed the tree. Status 128, "process not found",
+/// means the leader had exited: `taskkill` then finds no tree, and the
+/// leader's descendants, if any, are out of its reach until job objects
+/// replace it (NEW-3).
+#[cfg(any(not(unix), test))]
+fn after_taskkill(code: Option<i32>) -> Teardown {
+    Teardown {
+        escaped: Vec::new(),
+        incomplete: code != Some(0),
+    }
 }
 
 #[cfg(unix)]
@@ -991,6 +1008,18 @@ mod tests {
         child.wait().unwrap();
         assert!(!before, "a running process showed an exit");
         assert!(after, "an exited process showed no exit");
+    }
+
+    /// `taskkill` exits 128 when the leader is already gone; it then finds no
+    /// tree, so the leader's descendants are out of its reach.
+    #[test]
+    fn only_a_taskkill_that_exits_0_completes_the_teardown() {
+        assert_eq!(after_taskkill(Some(0)), Teardown::default());
+        // A failing exit, "process not found", or no exit status at all.
+        for code in [Some(1), Some(128), Some(255), None] {
+            let left = after_taskkill(code);
+            assert!(left.incomplete && left.escaped.is_empty(), "{code:?}");
+        }
     }
 
     #[cfg(unix)]
