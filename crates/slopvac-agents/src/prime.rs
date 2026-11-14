@@ -14,6 +14,7 @@ use minijinja::{Environment, UndefinedBehavior, Value, context};
 
 use crate::error::AgentsError;
 use crate::harness;
+use crate::review::{Approval, ReviewType};
 use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
 
 /// Schema version the topics name for lint JSON and config.
@@ -23,8 +24,9 @@ pub const SCHEMA_VERSION: u8 = 3;
 const BASE: &str = include_str!("../topics/base.md.j2");
 
 /// Topics in index order: name and source.
-const TOPICS: [(&str, &str); 6] = [
+const TOPICS: [(&str, &str); 7] = [
     ("write", include_str!("../topics/write.md.j2")),
+    ("review", include_str!("../topics/review.md.j2")),
     ("report", include_str!("../topics/report.md.j2")),
     ("configure", include_str!("../topics/configure.md.j2")),
     ("migrate", include_str!("../topics/migrate.md.j2")),
@@ -64,6 +66,10 @@ pub struct Settings {
     /// The migration guide for `prime migrate`; `None` uses the built-in short text.
     // STUB(slopvac-8l4.11.9): the CLI passes slopvac_migrate::prime_migrate() here.
     pub migrate_guide: Option<String>,
+    /// Render the review topic for one type; `None` shows how to pick.
+    pub review_type: Option<ReviewType>,
+    /// `review_approval` from the config.
+    pub review_approval: Approval,
 }
 
 /// The topic names, in index order.
@@ -188,6 +194,8 @@ fn render_template(
         schema_version => SCHEMA_VERSION,
         harnesses => harness::names(),
         migrate_guide => settings.migrate_guide.clone().unwrap_or_default(),
+        review_type => settings.review_type.map_or("auto", ReviewType::name),
+        review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },
         commands => commands,
         topics => topics,
     };
@@ -234,21 +242,32 @@ pub fn render(
 /// runs this against the real tree.
 #[must_use]
 pub fn check_topics(cli: &Command) -> Vec<String> {
-    let settings = Settings {
-        level: Level::Full,
-        ..Settings::default()
-    };
     let mut problems = Vec::new();
     let names = std::iter::once(None).chain(topic_names().into_iter().map(Some));
+    let variants = [
+        None,
+        Some(ReviewType::Mechanical),
+        Some(ReviewType::Update),
+        Some(ReviewType::Rewrite),
+    ];
     for topic in names {
-        let Ok(text) = render(topic, &settings, cli, Path::new("/nonexistent")) else {
-            problems.push(format!("topic {topic:?} does not render"));
-            continue;
-        };
-        for span in text.split('`').skip(1).step_by(2) {
-            problems.extend(check_span(span, cli, topic));
+        for review_type in variants {
+            let settings = Settings {
+                level: Level::Full,
+                review_type,
+                ..Settings::default()
+            };
+            let Ok(text) = render(topic, &settings, cli, Path::new("/nonexistent")) else {
+                problems.push(format!("topic {topic:?} does not render"));
+                continue;
+            };
+            for span in text.split('`').skip(1).step_by(2) {
+                problems.extend(check_span(span, cli, topic));
+            }
         }
     }
+    problems.sort();
+    problems.dedup();
     problems
 }
 
@@ -297,6 +316,12 @@ pub fn command() -> Command {
                 .help("Detail level for this run"),
         )
         .arg(
+            Arg::new("type")
+                .long("type")
+                .value_parser(["mechanical", "update", "rewrite"])
+                .help("Review type, for the review topic"),
+        )
+        .arg(
             Arg::new("config")
                 .long("config")
                 .value_name("FILE")
@@ -316,6 +341,9 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
     // STUB(slopvac-8l4.11.6): read `[guidance] level` from the config file once slopvac-config exists.
     let settings = Settings {
         level,
+        review_type: matches
+            .get_one::<String>("type")
+            .and_then(|t| ReviewType::parse(t)),
         ..Settings::default()
     };
     let mut out = render(

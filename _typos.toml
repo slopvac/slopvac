@@ -28,8 +28,8 @@ fter = "fter"
 struc = "struc"
 utiliz = "utiliz"
 retrie = "retrie"
-deprecat = "deprecat"
 validat = "validat"
+deprecat = "deprecat"
 
 # Crate name `flate2` (gzip/deflate) cited in the v3 design doc.
 flate = "flate"
