@@ -140,6 +140,10 @@ def harden(text: str) -> str:
     text = _add_tag_flag_env(text)
     text = _gate_on_provenance(text)
     text = _replace_once(text, _BUILD_OLD, _BUILD_NEW, "build artifacts step")
+    text = _replace_once(text, _DIST_ARGS_OLD, _DIST_ARGS_NEW, "dist_args expression")
+    for run, what in _COMMAND_RUNS:
+        first, _, rest = run.partition("\n")
+        text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
     text = _route_by_major_version(text)
@@ -173,7 +177,34 @@ _HOST_IF_NEW = (
 
 
 _BUILD_OLD = "      - name: Build artifacts\n        run: |\n"
-_BUILD_NEW = "      - name: Build artifacts\n        shell: bash\n        run: |\n"
+_BUILD_NEW = (
+    "      - name: Build artifacts\n"
+    "        shell: bash\n"
+    "        env:\n"
+    "          DIST_ARGS: ${{ matrix.dist_args }}\n"
+    "        run: |\n"
+)
+# dist_args is a space-separated flag list; bash splits `$DIST_ARGS` the way the inline
+# expression was split, but the value no longer sits inside the script text.
+_DIST_ARGS_OLD = "--output-format=json ${{ matrix.dist_args }} >"
+_DIST_ARGS_NEW = "--output-format=json $DIST_ARGS >"
+# The matrix comes from `dist plan` on the tagged tree's dist-workspace.toml. These
+# values are commands by design, so they stay expressions and carry a justification.
+_ZIZMOR_WHY = (
+    " # zizmor: ignore[template-injection] value comes from dist plan of the tagged "
+    "tree's dist-workspace.toml, not from untrusted input\n"
+)
+_COMMAND_RUNS = (
+    ("        run: ${{ matrix.install_dist.run }}\n", "install_dist command"),
+    (
+        "        run: ${{ matrix.install_cargo_auditable.run }}\n",
+        "install_cargo_auditable command",
+    ),
+    (
+        "        run: |\n          ${{ matrix.packages_install }}\n",
+        "packages_install command",
+    ),
+)
 _SBOM_OLD = "steps.cargo-cyclonedx.output.paths"
 _SBOM_NEW = "steps.cargo-cyclonedx.outputs.paths"
 _VERIFY_STEP = """\

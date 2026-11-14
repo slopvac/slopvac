@@ -135,7 +135,7 @@ def test_a_matching_checksum_passes(archive, tmp_path, line):
 
 
 def test_a_wrong_checksum_fails(archive, tmp_path):
-    (tmp_path / "sum").write_text(hashlib.sha256(b"abd").hexdigest() + "  x\n")
+    (tmp_path / "sum").write_text(hashlib.sha256(b"tampered").hexdigest() + "  x\n")
     with pytest.raises(ValueError, match="does not match"):
         smoke.verify_sha256(archive, tmp_path / "sum")
 

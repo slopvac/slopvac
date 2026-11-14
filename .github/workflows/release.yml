@@ -186,7 +186,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
       - name: Install dist
-        run: ${{ matrix.install_dist.run }}
+        run: ${{ matrix.install_dist.run }} # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -195,15 +195,17 @@ jobs:
           path: target/distrib/
           merge-multiple: true
       - name: Install cargo-auditable
-        run: ${{ matrix.install_cargo_auditable.run }}
+        run: ${{ matrix.install_cargo_auditable.run }} # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
       - name: Install dependencies
-        run: |
+        run: | # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
           ${{ matrix.packages_install }}
       - name: Build artifacts
         shell: bash
+        env:
+          DIST_ARGS: ${{ matrix.dist_args }}
         run: |
           # Actually do builds and make zips and whatnot
-          dist build $TAG_FLAG --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          dist build $TAG_FLAG --print=linkage --output-format=json $DIST_ARGS > dist-manifest.json
           echo "dist ran successfully"
       - name: Attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

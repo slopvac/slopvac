@@ -421,3 +421,30 @@ def test_the_candidate_check_keeps_the_workflow_token(provenance):
     steps = provenance["jobs"]["provenance"]["steps"]
     candidate = next(s for s in steps if s.get("name") == "Check the candidate")
     assert candidate["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+
+def test_dist_args_reach_the_build_through_the_environment(workflow):
+    steps = workflow["jobs"]["build-local-artifacts"]["steps"]
+    build = next(step for step in steps if step.get("name") == "Build artifacts")
+    assert build["env"] == {"DIST_ARGS": "${{ matrix.dist_args }}"}
+    assert "$DIST_ARGS" in build["run"]
+    assert "matrix.dist_args" not in build["run"]
+
+
+@pytest.mark.parametrize(
+    ("expression", "key_line_offset"),
+    [
+        ("matrix.install_dist.run", 0),
+        ("matrix.install_cargo_auditable.run", 0),
+        ("matrix.packages_install", -1),  # the expression sits under `run: |`
+    ],
+)
+def test_matrix_commands_keep_a_justified_zizmor_ignore_on_their_run_line(
+    expression, key_line_offset
+):
+    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    (at,) = [i for i, line in enumerate(lines) if "${{ " + expression + " }}" in line]
+    key_line = lines[at + key_line_offset]
+    assert key_line.strip().startswith("run:")
+    assert "# zizmor: ignore[template-injection]" in key_line
+    assert "dist-workspace.toml" in key_line

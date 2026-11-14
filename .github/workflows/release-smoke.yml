@@ -16,7 +16,9 @@ name: Release smoke test
 # environment, and scripts/release_smoke.py validates it first.
 
 on:
-  workflow_run:
+  # workflow_run starts this only after Release succeeds on a push. The jobs check out the
+  # default branch, download no run artifacts, and use a read-only token.
+  workflow_run: # zizmor: ignore[dangerous-triggers] see the comment above
     workflows: [Release]
     types: [completed]
   workflow_dispatch:
