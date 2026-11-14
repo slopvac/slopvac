@@ -32,6 +32,13 @@ class Doc:
         return cls.from_bytes(text.encode("utf-8"))
 
     @classmethod
+    def from_buffer(cls, data: bytes) -> Doc:
+        """View bytes as an LSP buffer: a leading U+FEFF is an ordinary character."""
+        doc = cls.from_bytes(data)
+        starts = [0] + list(doc.line_starts[1:])
+        return cls(doc.data, 0, tuple(starts))
+
+    @classmethod
     def from_bytes(cls, data: bytes) -> Doc:
         try:
             data.decode("utf-8")
@@ -146,13 +153,23 @@ def formats(doc: Doc, start: int, end: int) -> dict[str, object]:
         "markdown": f"{s['utf32'][0]}:{s['utf32'][1]}",
         "html": f"{s['utf32'][0]}:{s['utf32'][1]}",
     }
-    lsp = {}
+    return out
+
+
+def lsp_range(buffer: Doc, start: int, end: int) -> dict[str, dict]:
+    """Return the 0-based LSP range per encoding over the received buffer text.
+
+    ``buffer`` must come from :meth:`Doc.from_buffer`, so a leading U+FEFF counts as a
+    character. Disk coordinates exclude the BOM and MUST NOT be reused here.
+    """
+    check_span(buffer, start, end)
+    out = {}
     for unit in UNITS:
-        lsp[LSP_ENCODING[unit]] = {
-            "start": {"line": s[unit][0] - 1, "character": s[unit][1] - 1},
-            "end": {"line": e[unit][0] - 1, "character": e[unit][1] - 1},
+        s, e = position(buffer, start, unit), position(buffer, end, unit)
+        out[LSP_ENCODING[unit]] = {
+            "start": {"line": s[0] - 1, "character": s[1] - 1},
+            "end": {"line": e[0] - 1, "character": e[1] - 1},
         }
-    out["lsp"] = lsp
     return out
 
 
@@ -247,7 +264,7 @@ def project_range(tokens: list[dict], start_cp: int, end_cp: int) -> tuple[int, 
     if start_cp == end_cp:
         if start_cp < len(points):
             return points[start_cp][1], points[start_cp][1]
-        tail = points[-1][2] if points else 0
+        tail = tokens[-1]["src"][1] if tokens else 0
         return tail, tail
     window = points[start_cp:end_cp]
     while window and not window[0][0]:

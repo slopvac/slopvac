@@ -30,11 +30,12 @@ LSP mode. Four rules fix how it is read.
 1. **UTF-8 only.** A file that is not valid UTF-8 is an incomplete check (exit 2). The
    linter MUST NOT repair it with replacement characters. A repair changes byte lengths
    and shifts every later offset.
-2. **BOM.** A leading `EF BB BF` is part of the bytes, so offsets count it. It is not
+2. **BOM on disk.** A leading `EF BB BF` is part of the bytes, so offsets count it. It is not
    part of any line. A column on line 1 starts at 1 on the first byte after the BOM, in
    every unit. Offset 0 and offset 3 both map to line 1, column 1. SARIF requires this
    independence from the BOM
    ([SARIF 2.1.0 §3.30.2](https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/sarif-v2.1.0-errata01-os-complete.html)).
+   LSP counts a received U+FEFF as a character. See the LSP section.
 3. **Line terminators** are LF, CRLF and a CR that does not precede LF. CRLF is one
    terminator of two bytes. Nothing else ends a line: VT, FF, NEL (U+0085), U+2028 and
    U+2029 stay inside their line. This matches LSP's end-of-line list (`\n`, `\r\n`, `\r`,
@@ -211,7 +212,8 @@ consumers use makes the declared unit and the number agree even when a consumer 
 code point.
 
 `startColumn` and `endColumn` are 1-based. `endColumn` is exclusive: the region does not
-include the character at `endColumn` (SARIF §3.30.2). Emit `endLine` always, so a multi-line
+include the character at `endColumn` (§3.30.8). A region that includes a line's terminator
+ends at column 1 of the next line (§3.30.2), which is what a span does. Emit `endLine` always, so a multi-line
 region is not lost. A BOM never changes a column.
 
 A SARIF `fix` replacement uses a text region with the same conversion as the result
@@ -257,10 +259,10 @@ Emit the 1-based start with a code-point column. Checkstyle itself expands tabs 
 
 ### GitHub annotations
 
-The workflow command takes `file`, `line`, `col`, `endLine` and `endColumn`, all
-1-based
+The workflow command takes `file`, `line`, `col`, `endLine` and `endColumn`. The page says
+`line` and `col` start at 1, and it describes `endColumn` only as the "end column number"
 ([GitHub workflow commands](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands)).
-The page does not name the column unit or whether the end is inclusive. Slopvac emits
+It does not name the column unit, the `endColumn` base or whether the end is inclusive. Slopvac emits
 `line` and `col` only, with a code-point column, as 2.x does.
 
 ### Markdown and HTML reports
@@ -282,8 +284,18 @@ the code point unit of `LineCol`. UTF-16 is the fallback every client handles. A
 list counts as `['utf-16']`.
 
 `Position.line` and `Position.character` are 0-based, so convert with `line - 1` and
-`character - 1` of the unit's column. A `Range` end is exclusive. The text the server holds
-is the buffer the client sent, which has no BOM, so the BOM rule above is already in effect.
+`character - 1` of the unit's column. A `Range` end is exclusive.
+
+**Buffer coordinates.** LSP positions count the text the server received in `didOpen` or
+`didChange`, not the file on disk. If that text starts with U+FEFF, the character is part
+of line 1 and counts one column in every unit (three in `utf-8`). The disk rule that
+excludes the BOM does not apply. So `Hi` after a BOM starts at character 1 in `utf-16`
+and `utf-32` and at character 3 in `utf-8`. The server MUST compute LSP ranges from the
+buffer text, never from disk columns. Byte offsets in a buffer also include the U+FEFF
+bytes. A client that strips the BOM before it sends the buffer sends no U+FEFF, and the
+server's offsets are then 3 less than the disk offsets. The server tracks which case it
+holds per document.
+
 An offset in a `TextEdit` or diagnostic converts through the negotiated encoding only. The
 server MUST re-derive positions from its own copy of the document after each change
 notification and MUST NOT cache them across versions.
@@ -342,13 +354,14 @@ survives editors that normalize text. The sections are:
 
 - `positions`: offset to line and column in `utf8`, `utf16` and `utf32`.
 - `invalid_offsets`: offsets that MUST be rejected.
-- `spans`: start and end positions per unit, and the payload of every output format.
+- `spans`: start and end positions per unit, and the payload of every output format except LSP.
 - `invalid_spans`: spans that MUST be rejected.
 - `edits` and `invalid_edits`: edit sets and their results.
 - `projections`: token lists and the span each projected range maps to.
+- `lsp_ranges`: LSP ranges per encoding, computed over the received buffer text. They include BOM regression vectors.
 - `lsp_negotiation`: client offers and the encoding the server picks.
 
-The documents cover ASCII, emoji, supplementary-plane letters, combining marks, CJK, tabs,
+The documents cover ASCII, emoji, a ZWJ family sequence, supplementary-plane letters, combining marks, CJK, tabs,
 CRLF, a lone CR, a BOM, characters that are not terminators, a final newline and an empty
 file. The projection cases cover entities, escapes, escaped MDX, soft wraps, collapsed
 whitespace, skipped tags, RST emphasis, comment lines and masked code.

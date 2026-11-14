@@ -20,6 +20,7 @@ from position_reference import (
     apply_edits,
     check_tokens,
     formats,
+    lsp_range,
     negotiate_encoding,
     position,
     project_range,
@@ -77,16 +78,28 @@ def test_span_start_end_and_format_payloads(case: dict) -> None:
 def test_format_units_follow_the_contract(case: dict) -> None:
     """Each format reads its documented unit from the core positions."""
     out, start, end = case["formats"], case["start"], case["end"]
+    assert "lsp" not in out
     assert out["sarif"]["startColumn"] == start["utf16"]
     assert out["sarif"]["endColumn"] == end["utf16"]
     assert out["rdjsonl"]["start"]["column"] == start["utf8"]
     assert out["rdjsonl"]["end"]["column"] == end["utf8"]
     assert out["json"]["start"]["column"] == start["utf32"]
     assert out["json"]["end"]["column"] == end["utf32"]
-    for unit in UNITS:
-        lsp = out["lsp"][LSP_ENCODING[unit]]
-        assert lsp["start"] == {"line": start["line"] - 1, "character": start[unit] - 1}
-        assert lsp["end"] == {"line": end["line"] - 1, "character": end[unit] - 1}
+
+
+@pytest.mark.parametrize("case", VECTORS["lsp_ranges"], ids=_ids("lsp_ranges"))
+def test_lsp_range_over_the_received_buffer(case: dict) -> None:
+    """LSP positions count the buffer text as received, a leading U+FEFF included."""
+    buffer = Doc.from_buffer(DOCS[case["document"]].data)
+    span = case["span"]
+    assert lsp_range(buffer, span["start"], span["end"]) == case["expected"]
+
+
+def test_buffer_coordinates_differ_from_disk_coordinates_after_a_bom() -> None:
+    disk = DOCS["bom"]
+    buffer = Doc.from_buffer(disk.data)
+    assert position(disk, 5, "utf16") == (1, 3)
+    assert lsp_range(buffer, 5, 5)["utf-16"]["start"] == {"line": 0, "character": 3}
 
 
 @pytest.mark.parametrize("case", VECTORS["invalid_spans"], ids=_ids("invalid_spans"))
@@ -127,6 +140,15 @@ def test_projected_ranges_map_to_source_spans(case: dict) -> None:
 )
 def test_lsp_encoding_negotiation(case: dict) -> None:
     assert negotiate_encoding(case["client"]) == case["server"]
+
+
+def test_empty_range_at_the_end_anchors_to_the_last_token_source_end() -> None:
+    trailing = [
+        {"kind": "identity", "text": "foo", "src": [0, 3]},
+        {"kind": "masked", "text": "", "src": [3, 8]},
+    ]
+    assert project_range(trailing, 3, 3) == (8, 8)
+    assert project_range([{"kind": "masked", "text": "", "src": [0, 5]}], 0, 0) == (5, 5)
 
 
 @pytest.mark.parametrize(
