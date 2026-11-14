@@ -4,6 +4,7 @@
 //! Every token is a byte range into the unmodified input, so offsets never
 //! drift when a word is split or when inline code is replaced.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 /// One token of the input.
@@ -26,6 +27,18 @@ struct Segment {
     code: bool,
 }
 
+/// An inline code span: where its opening run starts, the text between the
+/// runs, and the offset just past its closing run.
+struct CodeSpan {
+    open: usize,
+    inner: Range<usize>,
+    end: usize,
+}
+
+/// Splits one whitespace-free chunk (starting at byte `base` of the working
+/// text) into token ranges.
+type SplitFn = fn(&str, usize, &mut Vec<Range<usize>>);
+
 /// Splits `text` into tokens.
 ///
 /// Inline code spans become runs of `*` before splitting, so that they keep
@@ -33,32 +46,69 @@ struct Segment {
 /// chunks; each chunk is then split like prose's `Tokenizer.Tokenize`: prefix
 /// and suffix punctuation peel off, and contractions split (`don't` becomes
 /// `do` and `n't`). Hyphenated words stay whole, which matches Vale.
+///
+/// Every pass is linear in the length of `text`.
 pub(crate) fn tokenize(text: &str) -> Vec<Token> {
+    assemble(text, &find_code_spans(text), split_span)
+}
+
+/// Finds the inline code spans of `text`, left to right.
+///
+/// A span opened by a run of N backticks closes at the next run of exactly N;
+/// without one, the run is literal text (`CommonMark`). The next run of each
+/// length is looked up from a table built in one backward pass, so unclosed
+/// openers cost nothing extra.
+fn find_code_spans(text: &str) -> Vec<CodeSpan> {
+    let bytes = text.as_bytes();
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let len = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            runs.push(i..i + len);
+            i += len;
+        } else {
+            i += 1;
+        }
+    }
+    let mut next_same: Vec<Option<usize>> = vec![None; runs.len()];
+    let mut latest: HashMap<usize, usize> = HashMap::new();
+    for (idx, run) in runs.iter().enumerate().rev() {
+        next_same[idx] = latest.insert(run.len(), idx);
+    }
+    let mut spans = Vec::new();
+    let mut idx = 0;
+    while idx < runs.len() {
+        if let Some(close) = next_same[idx] {
+            spans.push(CodeSpan {
+                open: runs[idx].start,
+                inner: runs[idx].end..runs[close].start,
+                end: runs[close].end,
+            });
+            idx = close + 1;
+        } else {
+            idx += 1;
+        }
+    }
+    spans
+}
+
+/// Replaces the code spans with star runs, splits the result into chunks and
+/// each chunk with `split`, and maps the pieces back to byte ranges of `text`.
+fn assemble(text: &str, code_spans: &[CodeSpan], split: SplitFn) -> Vec<Token> {
     let mut work = String::with_capacity(text.len());
     let mut segments: Vec<Segment> = Vec::new();
     let mut plain_start = 0;
-    let mut i = 0;
-    while i < text.len() {
-        if text.as_bytes()[i] != b'`' {
-            i += 1;
-        } else if let Some((inner, end)) = code_span(text, i) {
-            push_plain(text, plain_start..i, &mut work, &mut segments);
-            let start = work.len();
-            work.extend(text[inner].chars().map(|_| '*'));
-            segments.push(Segment {
-                work: start..work.len(),
-                orig: i..end,
-                code: true,
-            });
-            plain_start = end;
-            i = end;
-        } else {
-            // Unclosed: the whole run of backticks is literal text.
-            i += text.as_bytes()[i..]
-                .iter()
-                .take_while(|&&b| b == b'`')
-                .count();
-        }
+    for span in code_spans {
+        push_plain(text, plain_start..span.open, &mut work, &mut segments);
+        let start = work.len();
+        work.extend(text[span.inner.clone()].chars().map(|_| '*'));
+        segments.push(Segment {
+            work: start..work.len(),
+            orig: span.open..span.end,
+            code: true,
+        });
+        plain_start = span.end;
     }
     push_plain(text, plain_start..text.len(), &mut work, &mut segments);
 
@@ -68,12 +118,12 @@ pub(crate) fn tokenize(text: &str) -> Vec<Token> {
         // Rust's White_Space set equals Go's unicode.IsSpace (checked over all
         // code points against Go 1.27.4), which prose splits on.
         if c.is_whitespace() {
-            flush(&work, &mut chunk_start, pos, &mut spans);
+            flush(&work, &mut chunk_start, pos, &mut spans, split);
         } else if chunk_start.is_none() {
             chunk_start = Some(pos);
         }
     }
-    flush(&work, &mut chunk_start, work.len(), &mut spans);
+    flush(&work, &mut chunk_start, work.len(), &mut spans, split);
 
     spans
         .into_iter()
@@ -117,32 +167,16 @@ fn segment_at(segments: &[Segment], work_offset: usize) -> &Segment {
     &segments[idx]
 }
 
-fn flush(work: &str, start: &mut Option<usize>, end: usize, out: &mut Vec<Range<usize>>) {
+fn flush(
+    work: &str,
+    start: &mut Option<usize>,
+    end: usize,
+    out: &mut Vec<Range<usize>>,
+    split: SplitFn,
+) {
     if let Some(s) = start.take() {
-        split_span(&work[s..end], s, out);
+        split(&work[s..end], s, out);
     }
-}
-
-/// If a code span opens at `open` (a backtick), returns its inner range and
-/// the offset just past its closing run. A span opened by a run of N backticks
-/// closes at the next run of exactly N; without one, the backticks are literal
-/// text (`CommonMark`).
-fn code_span(text: &str, open: usize) -> Option<(Range<usize>, usize)> {
-    let bytes = text.as_bytes();
-    let run = bytes[open..].iter().take_while(|&&b| b == b'`').count();
-    let mut i = open + run;
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
-            let close = bytes[i..].iter().take_while(|&&b| b == b'`').count();
-            if close == run {
-                return Some((open + run..i, i + close));
-            }
-            i += close;
-        } else {
-            i += 1;
-        }
-    }
-    None
 }
 
 /// Contraction endings that split off the rest of a word; ASCII case is
@@ -179,12 +213,20 @@ const PREFIXES: [&str; 20] = [
 ];
 
 /// Splits one whitespace-free chunk, which starts at byte `base` of the input.
+///
+/// Prefixes peel off the front, then contractions split, then suffixes peel
+/// off the end, one step at a time, as in prose. Contraction positions are
+/// found once for the chunk; `next` only moves forward because the span only
+/// shrinks, so the whole chunk costs a constant number of steps per byte.
 fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
-    let mut span = chunk;
-    let mut base = base;
+    let occurrences = contraction_occurrences(chunk);
+    let mut next = 0;
+    // The span is chunk[lo..hi]; `base` is the input offset of chunk[0].
+    let (mut lo, mut hi) = (0, chunk.len());
     // Suffixes peel off the end, so they are collected in reverse.
     let mut suffixes: Vec<Range<usize>> = Vec::new();
-    while !span.is_empty() {
+    while lo < hi {
+        let span = &chunk[lo..hi];
         if is_special(span) {
             break;
         }
@@ -192,45 +234,55 @@ fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
             .iter()
             .find(|p| span.starts_with(**p) && span.len() > p.len())
         {
-            out.push(base..base + p.len());
-            span = &span[p.len()..];
-            base += p.len();
+            out.push(base + lo..base + lo + p.len());
+            lo += p.len();
             continue;
         }
-        if let Some(idx) = contraction_at(span) {
-            out.push(base..base + idx);
-            span = &span[idx..];
-            base += idx;
+        // The earliest contraction that starts after the span's first byte and
+        // ends inside it. One that fails either test now fails it for good.
+        while next < occurrences.len()
+            && (occurrences[next].start <= lo || occurrences[next].end > hi)
+        {
+            next += 1;
+        }
+        if let Some(occurrence) = occurrences.get(next) {
+            out.push(base + lo..base + occurrence.start);
+            lo = occurrence.start;
             continue;
         }
         if let Some(s) = SUFFIXES
             .iter()
             .find(|s| span.ends_with(**s) && span.len() > s.len())
         {
-            let cut = span.len() - s.len();
-            suffixes.push(base + cut..base + span.len());
-            span = &span[..cut];
+            suffixes.push(base + hi - s.len()..base + hi);
+            hi -= s.len();
             continue;
         }
         break;
     }
-    if !span.is_empty() {
-        out.push(base..base + span.len());
+    if lo < hi {
+        out.push(base + lo..base + hi);
     }
     out.extend(suffixes.into_iter().rev());
 }
 
-/// Byte offset of the earliest contraction ending after the first byte.
-fn contraction_at(span: &str) -> Option<usize> {
-    let bytes = span.as_bytes();
-    CONTRACTIONS
-        .iter()
-        .filter_map(|c| {
-            let c = c.as_bytes();
-            (1..=bytes.len().checked_sub(c.len())?)
-                .find(|&i| bytes[i..i + c.len()].eq_ignore_ascii_case(c))
-        })
-        .min()
+/// Every place in `chunk` where a contraction ending occurs (ASCII case
+/// ignored), in order of start. Two endings never start at the same byte.
+fn contraction_occurrences(chunk: &str) -> Vec<Range<usize>> {
+    let bytes = chunk.as_bytes();
+    let mut found = Vec::new();
+    for start in 1..bytes.len() {
+        for ending in CONTRACTIONS {
+            let ending = ending.as_bytes();
+            if bytes[start..].len() >= ending.len()
+                && bytes[start..start + ending.len()].eq_ignore_ascii_case(ending)
+            {
+                found.push(start..start + ending.len());
+                break;
+            }
+        }
+    }
+    found
 }
 
 /// Spans prose keeps whole: dotted abbreviations (`e.g.`, `U.S.`) and short
@@ -238,12 +290,14 @@ fn contraction_at(span: &str) -> Option<usize> {
 /// Go: `^(?:[A-Za-z]\.){2,}$|^[A-Z][a-z]{1,2}\.$`.
 fn is_special(span: &str) -> bool {
     let b = span.as_bytes();
+    let pair = |p: &[u8]| p[0].is_ascii_alphabetic() && p[1] == b'.';
+    // Checking both ends first rejects most spans in constant time, so
+    // peeling a long run of punctuation does not rescan the middle each step.
     let dotted = b.len() >= 4
         && b.len().is_multiple_of(2)
-        && b.as_chunks::<2>()
-            .0
-            .iter()
-            .all(|p| p[0].is_ascii_alphabetic() && p[1] == b'.');
+        && pair(&b[..2])
+        && pair(&b[b.len() - 2..])
+        && b.as_chunks::<2>().0.iter().all(|p| pair(p));
     let title = (3..=4).contains(&b.len())
         && b[0].is_ascii_uppercase()
         && b[b.len() - 1] == b'.'
@@ -313,7 +367,7 @@ fn is_closer(word: &str) -> bool {
 }
 
 fn starts_lowercase(word: &str) -> bool {
-    word.chars().next().is_some_and(char::is_lowercase)
+    word.chars().next().is_some_and(crate::go_unicode::is_lower)
 }
 
 /// A period after one of these does not end the sentence.
@@ -449,5 +503,234 @@ mod tests {
         let text = "Title\n\nBody text";
         let toks = tokenize(text);
         assert_eq!(sentences(text, &toks), [0..1, 1..3]);
+    }
+}
+
+/// The quadratic implementation this module replaced, kept as an oracle: the
+/// linear code must produce the same tokens.
+#[cfg(test)]
+mod oracle {
+    use super::*;
+
+    fn code_span(text: &str, open: usize) -> Option<(Range<usize>, usize)> {
+        let bytes = text.as_bytes();
+        let run = bytes[open..].iter().take_while(|&&b| b == b'`').count();
+        let mut i = open + run;
+        while i < bytes.len() {
+            if bytes[i] == b'`' {
+                let close = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+                if close == run {
+                    return Some((open + run..i, i + close));
+                }
+                i += close;
+            } else {
+                i += 1;
+            }
+        }
+        None
+    }
+
+    pub(super) fn find_code_spans(text: &str) -> Vec<CodeSpan> {
+        let mut spans = Vec::new();
+        let mut i = 0;
+        while i < text.len() {
+            if text.as_bytes()[i] != b'`' {
+                i += 1;
+            } else if let Some((inner, end)) = code_span(text, i) {
+                spans.push(CodeSpan {
+                    open: i,
+                    inner,
+                    end,
+                });
+                i = end;
+            } else {
+                i += text.as_bytes()[i..]
+                    .iter()
+                    .take_while(|&&b| b == b'`')
+                    .count();
+            }
+        }
+        spans
+    }
+
+    fn contraction_at(span: &str) -> Option<usize> {
+        let bytes = span.as_bytes();
+        CONTRACTIONS
+            .iter()
+            .filter_map(|c| {
+                let c = c.as_bytes();
+                (1..=bytes.len().checked_sub(c.len())?)
+                    .find(|&i| bytes[i..i + c.len()].eq_ignore_ascii_case(c))
+            })
+            .min()
+    }
+
+    fn is_special(span: &str) -> bool {
+        let b = span.as_bytes();
+        let dotted = b.len() >= 4
+            && b.len().is_multiple_of(2)
+            && b.as_chunks::<2>()
+                .0
+                .iter()
+                .all(|p| p[0].is_ascii_alphabetic() && p[1] == b'.');
+        let title = (3..=4).contains(&b.len())
+            && b[0].is_ascii_uppercase()
+            && b[b.len() - 1] == b'.'
+            && b[1..b.len() - 1].iter().all(u8::is_ascii_lowercase);
+        dotted || title
+    }
+
+    pub(super) fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
+        let mut span = chunk;
+        let mut base = base;
+        let mut suffixes: Vec<Range<usize>> = Vec::new();
+        while !span.is_empty() {
+            if is_special(span) {
+                break;
+            }
+            if let Some(p) = PREFIXES
+                .iter()
+                .find(|p| span.starts_with(**p) && span.len() > p.len())
+            {
+                out.push(base..base + p.len());
+                span = &span[p.len()..];
+                base += p.len();
+                continue;
+            }
+            if let Some(idx) = contraction_at(span) {
+                out.push(base..base + idx);
+                span = &span[idx..];
+                base += idx;
+                continue;
+            }
+            if let Some(s) = SUFFIXES
+                .iter()
+                .find(|s| span.ends_with(**s) && span.len() > s.len())
+            {
+                let cut = span.len() - s.len();
+                suffixes.push(base + cut..base + span.len());
+                span = &span[..cut];
+                continue;
+            }
+            break;
+        }
+        if !span.is_empty() {
+            out.push(base..base + span.len());
+        }
+        out.extend(suffixes.into_iter().rev());
+    }
+
+    pub(super) fn tokenize(text: &str) -> Vec<Token> {
+        assemble(text, &find_code_spans(text), split_span)
+    }
+}
+
+#[cfg(test)]
+mod differential_tests {
+    use super::*;
+
+    /// A small deterministic generator (xorshift64*), so failures reproduce.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            usize::try_from(self.next() % u64::try_from(n).unwrap()).unwrap()
+        }
+    }
+
+    /// Pieces that exercise every affix, contraction, code-span and
+    /// abbreviation rule, including overlapping and unclosed cases.
+    const PIECES: [&str; 44] = [
+        "a",
+        "B",
+        "n",
+        "t",
+        "'",
+        "'s",
+        "'LL",
+        "n't",
+        "N'T",
+        "\u{2019}",
+        "\u{2019}re",
+        "n\u{2019}t",
+        "m",
+        "e.g.",
+        "U.S.",
+        "Dr.",
+        "x.y.",
+        " ",
+        " ",
+        "\n",
+        "\n\n",
+        ".",
+        ",",
+        "!",
+        "?",
+        ":",
+        ";",
+        "(",
+        ")",
+        "[",
+        "]",
+        "\"",
+        "$",
+        "\u{201c}",
+        "\u{201d}",
+        "\u{2039}",
+        "-",
+        "`",
+        "``",
+        "```",
+        "*",
+        "\u{e9}",
+        "\u{ff08}",
+        "\u{3002}",
+    ];
+
+    fn random_text(rng: &mut Rng) -> String {
+        let n = rng.below(40);
+        (0..n).map(|_| PIECES[rng.below(PIECES.len())]).collect()
+    }
+
+    #[test]
+    fn linear_tokenizer_matches_the_quadratic_oracle_on_random_text() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..40_000 {
+            let text = random_text(&mut rng);
+            assert_eq!(tokenize(&text), oracle::tokenize(&text), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn linear_tokenizer_matches_the_quadratic_oracle_on_the_corpus_slice() {
+        let corpus = include_str!("../tests/fixtures/corpus.md");
+        assert_eq!(tokenize(corpus), oracle::tokenize(corpus));
+        for line in corpus.lines() {
+            assert_eq!(tokenize(line), oracle::tokenize(line), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn code_span_lookup_matches_the_oracle() {
+        let mut rng = Rng(7);
+        for _ in 0..20_000 {
+            let text = random_text(&mut rng);
+            let new: Vec<_> = find_code_spans(&text)
+                .into_iter()
+                .map(|s| (s.open, s.inner, s.end))
+                .collect();
+            let old: Vec<_> = oracle::find_code_spans(&text)
+                .into_iter()
+                .map(|s| (s.open, s.inner, s.end))
+                .collect();
+            assert_eq!(new, old, "{text:?}");
+        }
     }
 }
