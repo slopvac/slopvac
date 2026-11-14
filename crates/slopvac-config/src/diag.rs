@@ -20,6 +20,16 @@ pub enum Code {
     InvalidValue,
     /// A required key is absent.
     MissingKey,
+    /// A 2.x config: no `schema_version`, or version 2.
+    LegacyVersion,
+    /// A `schema_version` newer than this build supports.
+    UnsupportedVersion,
+    /// An `extends` chain that loops back on itself.
+    ExtendsCycle,
+    /// An `extends` entry that names no readable config.
+    ExtendsMissing,
+    /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
+    DuplicateScope,
 }
 
 impl Code {
@@ -32,6 +42,11 @@ impl Code {
             Code::InvalidType => "config-invalid-type",
             Code::InvalidValue => "config-invalid-value",
             Code::MissingKey => "config-missing-key",
+            Code::LegacyVersion => "config-legacy-version",
+            Code::UnsupportedVersion => "config-unsupported-version",
+            Code::ExtendsCycle => "config-extends-cycle",
+            Code::ExtendsMissing => "config-extends-missing",
+            Code::DuplicateScope => "config-duplicate-scope",
         }
     }
 }
