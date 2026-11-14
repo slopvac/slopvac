@@ -75,6 +75,8 @@ ureq = { version = "3.5", default-features = false, features = [
   "platform-verifier",
 ] }
 semver = "1"
+rayon = "1.11"
+frontmatter-spans = { path = "crates/frontmatter-spans" }
 caseless = "0.2"
 tar = { version = "0.4", default-features = false }
 unicode-normalization = "0.1"

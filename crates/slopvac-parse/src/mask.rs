@@ -281,6 +281,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
             kind: BlockKind::Admonition(p.admonition),
             span: Span::new(p.start, p.end.0.max(p.start)).expect("end is clamped to start"),
             projection: None,
+            containers: Vec::new(),
         })
         .collect();
     Masked {

@@ -9,7 +9,7 @@ use crate::code::{code_kind, mdast_body, trim_terminator};
 use crate::jsexpr::ExpressionChecker;
 use crate::markdown::{MASK, finish, resolve_body};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, ParseError, TokenKind};
 
 /// Read `text` with the MDX options.
 ///
@@ -78,6 +78,8 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
         masked: &masked,
         blocks: Vec::new(),
         code_spans: Vec::new(),
+        containers: Vec::new(),
+        lists: Vec::new(),
     };
     walker.block(&tree);
     let Walker {
@@ -94,6 +96,10 @@ struct Walker<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
+    /// The lists and block quotes the walk is inside.
+    containers: Vec<Container>,
+    /// Whether each enclosing list is ordered.
+    lists: Vec<bool>,
 }
 
 /// Masked byte range of a node.
@@ -117,6 +123,7 @@ impl Walker<'_> {
                         kind: BlockKind::Table,
                         span,
                         projection: None,
+                        containers: self.containers.clone(),
                     });
                 }
                 for (row, tr) in table.children.iter().enumerate() {
@@ -135,6 +142,7 @@ impl Walker<'_> {
                             kind: BlockKind::Paragraph,
                             span: self.span(r),
                             projection: Some(projection),
+                            containers: self.containers.clone(),
                         });
                     }
                 }
@@ -152,13 +160,26 @@ impl Walker<'_> {
                         kind: code_kind(Some(&info), self.masked.span(start, end)),
                         span,
                         projection: None,
+                        containers: self.containers.clone(),
                     });
                 }
             }
             _ => {
+                let (lists, containers) = (self.lists.len(), self.containers.len());
+                match node {
+                    Node::List(list) => self.lists.push(list.ordered),
+                    Node::ListItem(_) => self.containers.push(Container::ListItem {
+                        ordered: self.lists.last().copied().unwrap_or(false),
+                        depth: self.lists.len(),
+                    }),
+                    Node::Blockquote(_) => self.containers.push(Container::BlockQuote),
+                    _ => {}
+                }
                 for child in node.children().into_iter().flatten() {
                     self.block(child);
                 }
+                self.lists.truncate(lists);
+                self.containers.truncate(containers);
             }
         }
     }
@@ -174,6 +195,7 @@ impl Walker<'_> {
                 kind,
                 span: self.span(r),
                 projection: Some(projection),
+                containers: self.containers.clone(),
             });
         }
     }
