@@ -147,7 +147,7 @@ fn dropping_a_plugin_waits_for_a_teardown_in_flight() {
 #[test]
 fn an_interrupt_waits_for_a_teardown_in_flight() {
     waits_for_held_teardown("hold-interrupt", |p| {
-        kill_all_live();
+        let _ = kill_all_live();
         Some(p)
     });
 }
@@ -166,7 +166,7 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
     // pids[0] stays in the plugin's group; pids[1] left it with `setsid`.
     let pids = pids_from(&dir.join("pids"));
     let started = Instant::now();
-    kill_all_live();
+    let _ = kill_all_live();
     let took = started.elapsed();
     let helper: i32 = std::fs::read_to_string(dir.join("helper"))
         .unwrap()
@@ -187,6 +187,20 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
 }
 
 #[test]
+fn a_walk_that_cannot_read_the_process_table_is_reported_incomplete() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (dir, cfg) = seam("failed-walk", "exit 1\n", WALK);
+    let p = start_mode("ok", &dir, &cfg);
+    let out = p.shutdown();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(out.left, "{out:?}");
+    assert!(out.teardown.incomplete, "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+
+#[test]
 fn table_rows_naming_the_host_or_init_as_descendants_are_never_signalled() {
     let _serial = SERIAL
         .lock()
@@ -203,7 +217,7 @@ echo "$2 $leader $2 T $t"
     let p = start_mode("hang", &dir, &cfg);
     let leader = pids_n(&dir.join("pids"), 1);
     // A stopped host would hang here; a killed one would end the test binary.
-    kill_all_live();
+    let _ = kill_all_live();
     let gone = wait_gone(&leader);
     drop(p);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -234,7 +248,7 @@ echo "{v} $leader {v} S $t"
     let (dir, cfg) = seam("forged-parent", &forged, WALK);
     let p = start_mode("hang", &dir, &cfg);
     let leader = pids_n(&dir.join("pids"), 1);
-    kill_all_live();
+    let _ = kill_all_live();
     let gone = wait_gone(&leader);
     let untouched = victim.try_wait().unwrap().is_none()
         && std::fs::read_to_string(format!("/proc/{}/stat", victim.id()))

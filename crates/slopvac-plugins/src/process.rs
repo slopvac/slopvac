@@ -7,32 +7,41 @@
 //! time. Only the waiter reaps the leader. It observes the exit without
 //! reaping, tears the group down under the same lock, and reaps last.
 //!
+//! The host signals a process only when it knows which process the signal
+//! reaches. That holds for the group and for the leader, which is signalled
+//! by its own id too, since it may have moved to another group of its
+//! session. No other group is ever signalled. A descendant outside the group
+//! is signalled only through a Linux pidfd. Without one, a process id can
+//! pass to an unrelated process between the snapshot and the signal, so the
+//! host reports such a descendant in the [`Teardown`] and leaves it running.
+//!
 //! A teardown on Unix runs in three steps under that lock (threat model P5):
 //!
-//! 1. Stop the group with one `SIGSTOP`. Nothing a helper does can delay or
-//!    redirect this signal. A stopped process cannot fork, reap a child or
-//!    exit on its own.
+//! 1. Stop the group and the leader with `SIGSTOP`. Nothing a helper does
+//!    can delay or redirect these signals. A stopped process cannot fork,
+//!    reap a child or exit on its own.
 //! 2. Walk the process table for descendants that left the group: a process
-//!    whose parent is a stopped member of the group, or a descendant already
-//!    stopped. Stop each one found and repeat until a round finds nothing new.
-//!    The table comes from `/bin/ps`, never from `PATH`, run with a scrubbed
-//!    environment, a deadline and an output limit, and parsed strictly. A
-//!    helper that fails, hangs or prints anything unexpected ends the walk.
-//! 3. Kill the stopped descendants, deepest first, then the group, whatever
-//!    the walk found.
+//!    outside the group whose parent is stopped and is the leader, a member
+//!    of the group or a descendant already held. On Linux the walk opens a
+//!    pidfd for it, checks its parent through `/proc`, stops it and looks
+//!    again, until a round finds nothing new. Elsewhere it records the
+//!    process as escaped. The table comes from `/bin/ps`, never from
+//!    `PATH`, run with a scrubbed environment, a deadline and an output
+//!    limit, and parsed strictly. A helper that fails, hangs or prints
+//!    anything unexpected ends the walk, as do the deadline and a cap on
+//!    held descendants, and the walk is then reported incomplete.
+//! 3. Kill the held descendants, deepest first, then the group and the
+//!    leader, whatever the walk found.
 //!
 //! No snapshot outlives the lock, and descendants are found only at kill time.
-//! A process keeps its id while its parent is stopped, because nothing else
-//! may reap it, so each descendant keeps the id it had in the snapshot until
-//! the kill. Each later round also re-checks the parent and start time of
-//! every descendant already stopped. On Linux each descendant is signalled
-//! through a pidfd, and its parent is checked after the pidfd is opened.
+//! A stopped parent cannot fork, so a process that a pidfd names and that
+//! still has the parent from the snapshot is the process from the snapshot.
 //!
-//! Residual risk R2: a parent that ignores `SIGCHLD` has exited children
-//! reaped by the kernel even while stopped, so a numeric signal on macOS can
-//! still reach a reused id in that window. A descendant whose parent exited
-//! before the kill was reparented to init and is not found; on Linux the
-//! subreaper of `slopvac-8l4.9.13` closes that gap.
+//! Residual risk R2 (`slopvac-8l4.9.13`): on macOS and any Unix without
+//! pidfds, a descendant that left the group survives the teardown and is
+//! only reported. A descendant whose parent exited before the walk was
+//! reparented to init and is not found at all; the Linux subreaper of that
+//! bead closes the gap on Linux.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -56,18 +65,57 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// each one down through its `Group`, so it waits for a teardown in flight
 /// and never signals a reaped leader's id.
 ///
+/// Returns what the teardowns of those plugins left undone, for a
+/// diagnostic: an empty [`Teardown`] means every process the walks found is
+/// dead or dying.
+///
 /// This function is not async-signal-safe (CWE-479): it takes locks, waits on
 /// a condition variable, allocates and starts `/bin/ps`. Never call it from a
 /// raw signal handler. The handler should only set an atomic flag or write a
 /// byte to a self-pipe, and an ordinary thread that watches for it calls this
 /// function. A signal crate that runs handlers on its own thread does the same.
-pub fn kill_all_live() {
+#[must_use = "report what the teardowns left running"]
+pub fn kill_all_live() -> Teardown {
     let groups: Vec<Arc<Group>> = lock(&LIVE).clone();
     for g in &groups {
         g.freeze();
     }
+    let mut left = Teardown::default();
     for g in &groups {
         g.kill();
+        left.merge(g.teardown());
+    }
+    left
+}
+
+/// What the teardowns of a plugin left undone (threat model P5, residual R2).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Teardown {
+    /// Ids of descendants outside the plugin's process group that the walk
+    /// found but did not signal, because nothing binds them to their ids: on
+    /// a Unix without pidfds every one of them, on Linux one whose pidfd did
+    /// not open. They, and anything they started, may still run.
+    pub escaped: Vec<u32>,
+    /// A walk ended early: the process table could not be read, or the
+    /// deadline or the cap on held descendants was reached. Descendants it
+    /// did not reach may still run.
+    pub incomplete: bool,
+}
+
+impl Teardown {
+    /// Whether every walk finished and found nothing it had to leave running.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.escaped.is_empty() && !self.incomplete
+    }
+
+    fn merge(&mut self, other: Self) {
+        for p in other.escaped {
+            if !self.escaped.contains(&p) {
+                self.escaped.push(p);
+            }
+        }
+        self.incomplete |= other.incomplete;
     }
 }
 
@@ -96,6 +144,8 @@ struct State {
     status: Option<String>,
     /// A kill ran before the leader was reaped.
     forced: bool,
+    /// What the teardowns so far left undone.
+    left: Teardown,
     /// The leader is reaped and the group unregistered.
     done: bool,
 }
@@ -128,8 +178,8 @@ impl Group {
         g
     }
 
-    /// Stop the group now, unless the leader is reaped or a teardown already
-    /// holds the lock (that teardown stops the group itself).
+    /// Stop the group and the leader now, unless the leader is reaped or a
+    /// teardown already holds the lock (that teardown stops them itself).
     fn freeze(&self) {
         let st = match self.state.try_lock() {
             Ok(st) => st,
@@ -148,7 +198,8 @@ impl Group {
         let mut st = lock(&self.state);
         if st.status.is_none() {
             st.forced = true;
-            tear_down(self.pid, self.table.as_ref(), Then::Kill);
+            let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
+            st.left.merge(left);
         }
     }
 
@@ -158,15 +209,21 @@ impl Group {
     /// left the group is reparented when its parent exits, and the walk at
     /// the final kill no longer finds it.
     pub(crate) fn kill_strays(&self) {
-        let st = lock(&self.state);
+        let mut st = lock(&self.state);
         if st.status.is_none() {
-            tear_down(self.pid, self.table.as_ref(), Then::Resume);
+            let left = tear_down(self.pid, self.table.as_ref(), Then::Resume);
+            st.left.merge(left);
         }
     }
 
     /// Whether a kill ran before the leader was reaped.
     pub(crate) fn forced(&self) -> bool {
         lock(&self.state).forced
+    }
+
+    /// What the teardowns so far left undone.
+    pub(crate) fn teardown(&self) -> Teardown {
+        lock(&self.state).left.clone()
     }
 
     /// The leader's exit status, once it is reaped.
@@ -182,7 +239,8 @@ impl Group {
     pub(crate) fn finish(&self, leader: Leader) {
         {
             let mut st = lock(&self.state);
-            tear_down(self.pid, self.table.as_ref(), Then::Kill);
+            let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
+            st.left.merge(left);
             st.status = Some(leader.reap());
         }
         lock(&LIVE).retain(|g| !std::ptr::eq(Arc::as_ptr(g), self));
@@ -289,13 +347,14 @@ fn stop_group(leader: u32) {
     }
 }
 
-/// Tear down the group led by `leader`, which the caller keeps unreaped.
+/// Tear down the group led by `leader`, which the caller keeps unreaped, and
+/// return what it left undone.
 ///
 /// The leader is signalled by its own id as well as through its group, since
 /// it may have moved to another group of its session. No other group is
 /// ever signalled.
 #[cfg(unix)]
-fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) {
+fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
     use rustix::process::{Signal, kill_process, kill_process_group};
 
     /// Signals the group and the leader last, even if the walk unwinds.
@@ -307,22 +366,23 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) {
         }
     }
 
-    let Some(pgid) = unix::pid(leader) else {
-        return;
+    let Some(pid) = unix::pid(leader) else {
+        return Teardown::default();
     };
     stop_group(leader);
     let _last = Last(
-        pgid,
+        pid,
         match then {
             Then::Kill => Signal::KILL,
             Then::Resume => Signal::CONT,
         },
     );
     let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
-    let strays = unix::freeze_strays(leader, table, Instant::now() + within);
-    for s in strays.iter().rev() {
+    let walk = unix::walk(leader, table, Instant::now() + within);
+    for s in walk.held.iter().rev() {
         s.signal(Signal::KILL);
     }
+    walk.left
 }
 
 #[cfg(not(unix))]
@@ -330,11 +390,17 @@ fn stop_group(_leader: u32) {}
 
 /// `taskkill /T /F` on the leader's tree. The leader's open handle keeps its
 /// id reserved; the tree walk itself is `taskkill`'s (job objects: NEW-3).
+/// A `taskkill` that does not start or does not finish by the deadline
+/// leaves the teardown incomplete.
 #[cfg(not(unix))]
-fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) {
+fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
     use std::process::{Command, Stdio};
+    let incomplete = Teardown {
+        escaped: Vec::new(),
+        incomplete: true,
+    };
     if matches!(then, Then::Resume) {
-        return;
+        return Teardown::default();
     }
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
     let taskkill = std::path::Path::new(&root)
@@ -349,17 +415,18 @@ fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) {
         .stderr(Stdio::null())
         .spawn()
     else {
-        return;
+        return incomplete;
     };
     let deadline = Instant::now() + WALK_DEADLINE;
     while Instant::now() < deadline {
         match child.try_wait() {
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            _ => return,
+            _ => return Teardown::default(),
         }
     }
     let _ = child.kill();
     let _ = child.wait();
+    incomplete
 }
 
 #[cfg(unix)]
@@ -375,15 +442,15 @@ mod unix {
 
     use rustix::process::{Pid, Signal};
 
-    use super::TableSource;
+    use super::{TableSource, Teardown};
 
     /// The only program production runs to read the process table.
     const PS: &str = "/bin/ps";
     const PS_ARGS: [&str; 3] = ["-A", "-o", "pid=,ppid=,pgid=,stat=,lstart="];
     /// Largest process table the host reads.
     pub(super) const TABLE_MAX_BYTES: usize = 4 << 20;
-    /// Rounds of the walk; each one reaches one level further down.
-    const ROUNDS: usize = 8;
+    /// Most descendants outside the group that one walk holds.
+    const MAX_HELD: usize = 1024;
 
     pub(super) fn pid(raw: u32) -> Option<Pid> {
         i32::try_from(raw).ok().and_then(Pid::from_raw)
@@ -410,100 +477,149 @@ mod unix {
         }
     }
 
-    /// A descendant outside the group that this teardown stopped.
+    /// What binds a held descendant to its id: a pidfd.
+    #[cfg(target_os = "linux")]
+    type Handle = rustix::fd::OwnedFd;
+    /// Nothing binds a process to its id without pidfds, so no [`Stray`] exists.
+    #[cfg(not(target_os = "linux"))]
+    type Handle = std::convert::Infallible;
+
+    /// A descendant outside the group that this teardown holds and stopped.
     pub(super) struct Stray {
         pid: u32,
         ppid: u32,
         start: String,
-        #[cfg(target_os = "linux")]
-        fd: rustix::fd::OwnedFd,
+        fd: Handle,
+    }
+
+    /// What the walk does with a descendant outside the group.
+    pub(super) enum Reach {
+        /// Bound to its id: stopped now, killed with the group.
+        #[cfg_attr(
+            not(target_os = "linux"),
+            expect(dead_code, reason = "nothing is held without pidfds")
+        )]
+        Held(Stray),
+        /// Gone, or the row did not describe a child of the stopped parent.
+        #[cfg_attr(
+            not(target_os = "linux"),
+            expect(dead_code, reason = "nothing is held without pidfds")
+        )]
+        Skip,
+        /// Running, but nothing binds it to its id: reported, never signalled.
+        Escaped,
     }
 
     impl Stray {
-        /// A handle on the process in `e`, whose parent is stopped.
+        /// Bind the process in `e`, whose parent is stopped, to its id.
         ///
         /// The pidfd names whatever held the id when it was opened. A stopped
         /// parent cannot fork, so if that process still has the parent from
         /// the snapshot, it is the process from the snapshot.
         #[cfg(target_os = "linux")]
-        fn open(e: &Entry) -> Option<Self> {
+        pub(super) fn reach(e: &Entry) -> Reach {
             use rustix::process::{PidfdFlags, pidfd_open};
-            let fd = pidfd_open(pid(e.pid)?, PidfdFlags::empty()).ok()?;
-            (proc_ppid(e.pid)? == e.ppid).then(|| Self {
-                pid: e.pid,
-                ppid: e.ppid,
-                start: e.start.clone(),
-                fd,
-            })
+            let Some(p) = pid(e.pid) else {
+                return Reach::Skip;
+            };
+            let fd = match pidfd_open(p, PidfdFlags::empty()) {
+                Ok(fd) => fd,
+                Err(err) => return open_failed(err),
+            };
+            match proc_ppid(e.pid) {
+                Ok(ppid) if ppid == e.ppid => Reach::Held(Self {
+                    pid: e.pid,
+                    ppid: e.ppid,
+                    start: e.start.clone(),
+                    fd,
+                }),
+                Ok(_) => Reach::Skip,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Reach::Skip,
+                Err(_) => Reach::Escaped,
+            }
         }
 
-        /// A handle on the process in `e`, whose parent is stopped.
-        ///
-        /// macOS has no pidfd. The id cannot pass to another process while
-        /// the parent is stopped, which is the only guard here (module docs).
+        /// Without pidfds no process outside the group is bound to its id:
+        /// a stopped parent that ignores `SIGCHLD` still has its exited
+        /// children reaped, and their ids reused.
         #[cfg(not(target_os = "linux"))]
-        #[expect(clippy::unnecessary_wraps, reason = "matches the Linux signature")]
-        fn open(e: &Entry) -> Option<Self> {
-            Some(Self {
-                pid: e.pid,
-                ppid: e.ppid,
-                start: e.start.clone(),
-            })
+        pub(super) fn reach(_e: &Entry) -> Reach {
+            Reach::Escaped
+        }
+
+        /// Whether `e` still shows this process: same id, parent and start time.
+        fn is(&self, e: &Entry) -> bool {
+            e.pid == self.pid && e.ppid == self.ppid && e.start == self.start
         }
 
         pub(super) fn signal(&self, sig: Signal) {
             #[cfg(target_os = "linux")]
             let _ = rustix::process::pidfd_send_signal(&self.fd, sig);
             #[cfg(not(target_os = "linux"))]
-            if let Some(p) = pid(self.pid) {
-                let _ = rustix::process::kill_process(p, sig);
+            {
+                let _ = sig;
+                match self.fd {}
             }
+        }
+    }
+
+    /// Classify a failed `pidfd_open`. Only `ESRCH` means the process is
+    /// gone; any other error (`ENOSYS` before Linux 5.3, `EMFILE`, `EPERM`)
+    /// leaves it running and unbound.
+    #[cfg(target_os = "linux")]
+    pub(super) fn open_failed(err: rustix::io::Errno) -> Reach {
+        if err == rustix::io::Errno::SRCH {
+            Reach::Skip
+        } else {
+            Reach::Escaped
         }
     }
 
     /// The parent of `pid` from `/proc/<pid>/stat`.
     #[cfg(target_os = "linux")]
-    fn proc_ppid(pid: u32) -> Option<u32> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    fn proc_ppid(pid: u32) -> std::io::Result<u32> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+        let bad = || std::io::Error::from(std::io::ErrorKind::InvalidData);
         // The command name may hold spaces and parentheses; it ends at the last `)`.
-        let rest = &stat[stat.rfind(')')? + 1..];
-        rest.split_ascii_whitespace().nth(1)?.parse().ok()
+        let rest = &stat[stat.rfind(')').ok_or_else(bad)? + 1..];
+        rest.split_ascii_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(bad)
     }
 
-    /// Stop every descendant of the stopped group `leader` that left the group.
-    ///
-    /// Returns them in the order they were stopped, parents before children.
-    pub(super) fn freeze_strays(
-        leader: u32,
-        source: Option<&TableSource>,
-        deadline: Instant,
-    ) -> Vec<Stray> {
+    /// The outcome of one walk.
+    pub(super) struct Walk {
+        /// Held descendants, parents before children.
+        pub(super) held: Vec<Stray>,
+        /// What the walk left undone.
+        pub(super) left: Teardown,
+    }
+
+    /// Find the descendants of the stopped `leader` and its group that left
+    /// the group: hold and stop each one that can be bound to its id, report
+    /// the rest. Runs until a round finds nothing new, the table cannot be
+    /// read, `deadline` passes or [`MAX_HELD`] is reached; all but the first
+    /// leave the walk incomplete.
+    pub(super) fn walk(leader: u32, source: Option<&TableSource>, deadline: Instant) -> Walk {
         let me = std::process::id();
-        let mut frozen: Vec<Stray> = Vec::new();
-        for _ in 0..ROUNDS {
-            let Some(table) = snapshot(source, deadline) else {
-                break;
-            };
-            // A table without the leader is not this system's. The leader may
-            // have left its group, and the walk starts from it either way.
-            if !table.contains_key(&leader) {
+        let mut held: Vec<Stray> = Vec::new();
+        let mut left = Teardown::default();
+        'rounds: loop {
+            if Instant::now() >= deadline {
+                left.incomplete = true;
                 break;
             }
-            // A stray whose parent or start time changed is not the process
-            // that was stopped: resume what holds the id now.
-            frozen.retain(|s| {
-                let same = table
-                    .get(&s.pid)
-                    .is_some_and(|e| e.ppid == s.ppid && e.start == s.start);
-                if !same {
-                    s.signal(Signal::CONT);
-                }
-                same
-            });
-            let ours = |e: &Entry| {
-                e.pid == leader || e.pgid == leader || frozen.iter().any(|s| s.pid == e.pid)
+            // A table without the leader is not this system's.
+            let Some(table) = snapshot(source, deadline).filter(|t| t.contains_key(&leader)) else {
+                left.incomplete = true;
+                break;
             };
-            let held: HashSet<u32> = table
+            // The leader counts whatever its group, a held process only while
+            // its row still shows it.
+            let ours =
+                |e: &Entry| e.pid == leader || e.pgid == leader || held.iter().any(|s| s.is(e));
+            let stopped: HashSet<u32> = table
                 .values()
                 .filter(|e| ours(e) && e.stopped())
                 .map(|e| e.pid)
@@ -517,27 +633,39 @@ mod unix {
                 .filter(|e| {
                     e.pgid != leader
                         && e.pid != leader
-                        && held.contains(&e.ppid)
+                        && stopped.contains(&e.ppid)
                         && e.pid > 1
                         && e.pid != me
-                        && !frozen.iter().any(|s| s.pid == e.pid)
+                        && !held.iter().any(|s| s.pid == e.pid)
+                        && !left.escaped.contains(&e.pid)
                 })
                 .collect();
-            if found.is_empty() && !settling {
-                break;
-            }
             found.sort_by_key(|e| e.pid);
+            let mut grew = false;
             for e in found {
-                if let Some(s) = Stray::open(e) {
-                    s.signal(Signal::STOP);
-                    frozen.push(s);
+                match Stray::reach(e) {
+                    Reach::Held(s) if held.len() < MAX_HELD => {
+                        s.signal(Signal::STOP);
+                        held.push(s);
+                        grew = true;
+                    }
+                    Reach::Held(_) => {
+                        left.incomplete = true;
+                        break 'rounds;
+                    }
+                    Reach::Skip => {}
+                    Reach::Escaped => left.escaped.push(e.pid),
                 }
+            }
+            // A process held in this round has children only the next one sees.
+            if !grew && !settling {
+                break;
             }
             if settling {
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
-        frozen
+        Walk { held, left }
     }
 
     fn snapshot(source: Option<&TableSource>, deadline: Instant) -> Option<HashMap<u32, Entry>> {
@@ -701,6 +829,23 @@ mod tests {
     fn sanitize_keeps_newline_and_tab_and_replaces_escapes() {
         let got = sanitize_display("a\nb\tc\u{1b}[31m\u{9b}\u{7f}\u{202e}x");
         assert_eq!(got, "a\nb\tc\u{FFFD}[31m\u{FFFD}\u{FFFD}\u{FFFD}x");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn only_esrch_from_pidfd_open_means_the_process_is_gone() {
+        use super::unix::{Reach, open_failed};
+        use rustix::io::Errno;
+        assert!(matches!(open_failed(Errno::SRCH), Reach::Skip));
+        for err in [
+            Errno::NOSYS,
+            Errno::MFILE,
+            Errno::NFILE,
+            Errno::PERM,
+            Errno::NOMEM,
+        ] {
+            assert!(matches!(open_failed(err), Reach::Escaped), "{err:?}");
+        }
     }
 
     #[cfg(unix)]

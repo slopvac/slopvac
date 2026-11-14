@@ -23,7 +23,7 @@ fn a_well_behaved_plugin_tags_documents_and_shuts_down_cleanly() {
     let tags = out[0].outcome.as_ref().unwrap();
     assert_eq!(tags[0].kind, "code-fence");
     assert_eq!((tags[0].span.start, tags[0].span.end), (0, 6));
-    assert!(p.shutdown());
+    assert!(p.shutdown().clean());
 }
 
 #[test]
@@ -208,15 +208,18 @@ fn h17_a_plugin_that_ignores_shutdown_is_killed_with_its_children() {
     )
     .unwrap();
     let pids = pids_from(&pidfile);
-    assert!(!p.shutdown(), "the plugin did not leave on its own");
-    let gone = wait_gone(&pids);
+    let out = p.shutdown();
+    let (killed, reported) = reach(&pids);
+    let gone = wait_gone(killed);
+    end(reported);
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(gone, "children {pids:?} survived");
+    assert!(!out.left, "the plugin did not leave on its own");
+    assert!(gone, "children {killed:?} survived");
 }
 
-#[test]
-fn tm4_children_in_and_out_of_the_process_group_die_with_the_plugin() {
-    let dir = scratch("tm4");
+/// Start the `children` fixture: pids[0] stays in the group, pids[1] left it.
+fn children(name: &str) -> (PathBuf, Plugin, Vec<i32>) {
+    let dir = scratch(name);
     let pidfile = dir.join("pids");
     let p = Plugin::start(
         &spec_with("children", &json!({}), Some(&pidfile), decl()),
@@ -225,12 +228,43 @@ fn tm4_children_in_and_out_of_the_process_group_die_with_the_plugin() {
     )
     .unwrap();
     let pids = pids_from(&pidfile);
-    assert!(p.shutdown());
+    (dir, p, pids)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn tm4_children_in_and_out_of_the_process_group_die_with_the_plugin() {
+    let (dir, p, pids) = children("tm4");
+    let out = p.shutdown();
     let gone = wait_gone(&pids);
     std::fs::remove_dir_all(&dir).unwrap();
+    assert!(out.clean(), "{out:?}");
     assert!(gone, "children {pids:?} survived");
 }
 
+/// Without a pidfd the host cannot bind a process outside the group to its
+/// id, so it reports that process instead of signalling it (residual R2).
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn tm4_a_child_outside_the_group_is_reported_and_never_signalled() {
+    let (dir, p, pids) = children("tm4-report");
+    let out = p.shutdown();
+    let in_group_gone = wait_gone(&pids[..1]);
+    let state = std::process::Command::new("/bin/ps")
+        .args(["-o", "stat=", "-p", &pids[1].to_string()])
+        .output()
+        .unwrap();
+    let state = String::from_utf8_lossy(&state.stdout).trim().to_owned();
+    end(&pids[1..]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(in_group_gone, "the group member {} survived", pids[0]);
+    assert_eq!(out.teardown.escaped, [pids[1].unsigned_abs()], "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+    // Sleeping, not stopped or gone: no signal reached it.
+    assert!(state.starts_with('S'), "{state:?}");
+}
+
+#[cfg(target_os = "linux")]
 #[test]
 fn tm4_a_child_of_a_child_that_left_the_group_dies_with_the_plugin() {
     let dir = scratch("tm4-nested");
@@ -262,27 +296,46 @@ fn tm4_a_hung_leader_that_moved_to_another_process_group_is_killed() {
     // The leader moved into the group its child pids[1] heads, then stopped reading.
     let pids = pids_from(&pidfile);
     drop(p);
-    let gone = wait_gone(&pids[..1]);
-    end(&pids[1..]);
+    let (killed, reported) = reach(&pids);
+    let gone = wait_gone(killed);
+    end(reported);
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(gone, "the leader {} survived", pids[0]);
+    assert!(gone, "processes {killed:?} survived");
 }
 
+/// Each generation is found only once its parent is stopped, one level per
+/// walk round, so the walk runs to its fixpoint and not to a round count.
+#[cfg(target_os = "linux")]
 #[test]
-fn dropping_a_plugin_kills_its_process_group() {
-    let dir = scratch("drop");
+fn tm4_a_chain_of_twelve_generations_outside_the_group_dies_with_the_plugin() {
+    let dir = scratch("tm4-chain");
     let pidfile = dir.join("pids");
     let p = Plugin::start(
-        &spec_with("children", &json!({}), Some(&pidfile), decl()),
+        &spec_with("chain:12", &json!({}), Some(&pidfile), decl()),
         &cfg(),
         &Allow,
     )
     .unwrap();
-    let pids = pids_from(&pidfile);
-    drop(p);
+    let pids = pids_n(&pidfile, 12);
+    let out = p.shutdown();
     let gone = wait_gone(&pids);
+    if !gone {
+        end(&pids);
+    }
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(gone, "children {pids:?} survived");
+    assert!(gone, "generations {pids:?} survived");
+    assert!(out.teardown.is_complete(), "{out:?}");
+}
+
+#[test]
+fn dropping_a_plugin_kills_its_process_group() {
+    let (dir, p, pids) = children("drop");
+    drop(p);
+    let (killed, reported) = reach(&pids);
+    let gone = wait_gone(killed);
+    end(reported);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "children {killed:?} survived");
 }
 
 #[test]
@@ -486,10 +539,12 @@ fn tm5_the_lifetime_cap_kills_an_idle_plugin_and_its_children() {
     )
     .unwrap();
     let pids = pids_from(&pidfile);
-    let gone = wait_gone_within(&pids, NO_HANG);
+    let (killed, reported) = reach(&pids);
+    let gone = wait_gone_within(killed, NO_HANG);
+    end(reported);
     let code = p.failure().map(|e| e.slopvac_code().to_owned());
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(gone, "children {pids:?} survived the cap");
+    assert!(gone, "children {killed:?} survived the cap");
     assert_eq!(code.as_deref(), Some("plugin-timeout"));
     assert!(p.tag("main", &docs(1)).is_err());
 }
@@ -656,7 +711,7 @@ fn h34_a_cancelled_request_id_is_not_reused() {
 fn standard_output_ending_before_the_exit_does_not_spoil_a_clean_shutdown() {
     // The fixture closes standard output, then exits only after the host has
     // closed standard input, so the reader sees end of stream first.
-    assert!(start("eof-before-exit").shutdown());
+    assert!(start("eof-before-exit").shutdown().clean());
 }
 
 #[test]

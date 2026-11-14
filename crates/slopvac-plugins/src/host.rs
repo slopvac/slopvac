@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use crate::error::PluginError;
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
-use crate::process::{Group, Leader, TableSource, sanitize_display};
+use crate::process::{Group, Leader, TableSource, Teardown, sanitize_display};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
     PROTOCOL_VERSION, PluginDeclaration,
@@ -923,10 +923,8 @@ impl Plugin {
     ///
     /// Descendants that left the plugin's process group are killed first,
     /// while the walk can still find them through their parents.
-    ///
-    /// Returns whether the plugin left on its own.
     #[must_use]
-    pub fn shutdown(self) -> bool {
+    pub fn shutdown(self) -> Shutdown {
         let shared = Arc::clone(&self.conn.shared);
         shared.shutting_down.store(true, Ordering::SeqCst);
         // A descendant that left the group is lost to the final walk once its
@@ -941,10 +939,38 @@ impl Plugin {
         // Closing the pipe ends the writer after it flushes `exit`.
         lock(&shared.frames).take();
         // The waiter reaps the leader and kills what is left of its group.
-        let left = shared.group.wait_done(self.timeouts.exit);
-        let clean = left && !shared.group.forced();
+        let exited = shared.group.wait_done(self.timeouts.exit);
+        let left = exited && !shared.group.forced();
         shared.group.kill();
-        clean
+        Shutdown {
+            left,
+            teardown: shared.group.teardown(),
+        }
+    }
+
+    /// What the teardowns of this plugin left undone so far, for example
+    /// after a failure killed it.
+    #[must_use]
+    pub fn teardown(&self) -> Teardown {
+        self.conn.shared.group.teardown()
+    }
+}
+
+/// How [`Plugin::shutdown`] ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shutdown {
+    /// The plugin left on its own, without a kill.
+    pub left: bool,
+    /// What the teardowns left undone.
+    pub teardown: Teardown,
+}
+
+impl Shutdown {
+    /// The plugin left on its own and the teardowns left nothing running
+    /// that they found.
+    #[must_use]
+    pub fn clean(&self) -> bool {
+        self.left && self.teardown.is_complete()
     }
 }
 

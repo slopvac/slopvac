@@ -18,11 +18,13 @@ fn h18_an_interrupt_kills_every_live_plugin() {
     )
     .unwrap();
     let pids = pids_from(&pidfile);
-    kill_all_live();
-    let gone = wait_gone(&pids);
+    let _ = kill_all_live();
+    let (killed, reported) = reach(&pids);
+    let gone = wait_gone(killed);
+    end(reported);
     let r = p.tag("main", &docs(1));
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(gone, "children {pids:?} survived");
+    assert!(gone, "children {killed:?} survived");
     assert!(r.is_err());
 }
 
@@ -40,7 +42,7 @@ fn h18_an_interrupt_still_reaches_a_child_after_its_parent_exited_first() {
     let pids = pids_from(&pidfile);
     // Interrupt only once the host has reaped the exited parent.
     assert!(wait_gone(&pids[1..]), "parent {} never exited", pids[1]);
-    kill_all_live();
+    let _ = kill_all_live();
     let gone = wait_gone(&pids);
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(gone, "processes {pids:?} survived");

@@ -205,6 +205,18 @@ pub fn end(pids: &[i32]) {
     }
 }
 
+/// Split a fixture's pids, where `pids[0]` is in the plugin's process group and
+/// the rest left it, into those the host kills and those it only reports.
+/// Only Linux binds a process outside the group to its id (a pidfd); without
+/// one the host never signals it (residual risk R2), so the test ends it.
+pub fn reach(pids: &[i32]) -> (&[i32], &[i32]) {
+    pids.split_at(if cfg!(target_os = "linux") {
+        pids.len()
+    } else {
+        1
+    })
+}
+
 pub fn pids_from(file: &Path) -> Vec<i32> {
     pids_n(file, 2)
 }
