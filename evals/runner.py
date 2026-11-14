@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -81,6 +82,16 @@ class MissingText(EngineError):
     """A document text is neither committed nor in the cache."""
 
 
+def _resolve_executable(name: str) -> str:
+    """Make a relative path absolute now, because the engine runs from another directory.
+
+    A bare name stays as it is and is found on PATH at run time.
+    """
+    if os.sep in name or name.startswith("."):
+        return str(Path(name).resolve())
+    return name
+
+
 @dataclass(frozen=True)
 class Engine:
     name: str
@@ -93,7 +104,10 @@ class Engine:
     def parse(cls, spec: str, cwd: Path | None = None) -> Engine:
         if spec == "python":
             return cls("python", python_reference(), cwd, PYTHON_UNSUPPORTED)
-        return cls(Path(spec).name, tuple(shlex.split(spec)), cwd)
+        command = shlex.split(spec)
+        return cls(
+            Path(command[0]).name, (_resolve_executable(command[0]), *command[1:]), cwd
+        )
 
     def lint(self, paths: Iterable[Path], extra: Iterable[str] = ()) -> dict[str, Any]:
         argv = [
