@@ -2,3 +2,5 @@
 "extends-uppercase.toml" = "/extends/0"
 "no-id.toml" = ""
 "unknown-key.toml" = ""
+"dials-unknown-key.toml" = "/categories/prose-craft"
+"dials-negative-weight.toml" = "/categories/prose-craft/weight"

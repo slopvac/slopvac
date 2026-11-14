@@ -1,0 +1,15 @@
+schema_version = 3
+id = "legacy-normal"
+
+[categories.prose-craft]
+severity = "warning"
+max_per_100_words = 1.5
+weight = 0.8
+
+[categories.prose-density]
+severity = "suggestion"
+max_per_100_words = 1.0
+weight = 0.5
+
+[categories.ste-vocabulary]
+severity = "off"
