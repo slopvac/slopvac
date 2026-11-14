@@ -30,8 +30,9 @@
 
 mod exclude;
 mod kind;
+mod syntax;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 use globset::GlobBuilder;
@@ -123,6 +124,14 @@ pub enum DiscoverError {
         /// What is unsupported and what is supported.
         message: String,
     },
+    /// A glob target holds more brace alternatives than discovery will expand.
+    #[error("glob {pattern} expands to more than {limit} alternatives")]
+    TooManyAlternatives {
+        /// The pattern as given.
+        pattern: String,
+        /// The expansion cap.
+        limit: usize,
+    },
     /// A glob target does not parse.
     #[error("invalid glob {pattern}: {source}")]
     InvalidGlob {
@@ -151,7 +160,8 @@ pub fn discover<S: AsRef<str>>(
 
     for target in targets {
         let target = target.as_ref();
-        let path = Path::new(target);
+        let cleaned = syntax::lexical_clean(Path::new(target));
+        let path = cleaned.as_path();
         if path.is_dir() {
             walk_dir(path, &options, &mut out)?;
         } else if path.is_file() {
@@ -326,30 +336,58 @@ fn walk_order(path: &Path) -> Vec<(bool, std::ffi::OsString)> {
         .collect()
 }
 
+/// The most brace alternatives one glob target may expand to.
+const MAX_ALTERNATIVES: usize = 1024;
+
 /// Match a non-existent target as a glob, relative to the working directory or
-/// absolute. Only files match; results are sorted.
+/// absolute. Only files match; results are sorted and unique.
+///
+/// Brace groups are expanded into brace-free patterns first, so each one gets its
+/// own depth bound and directory pruning.
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
-    let none = || DiscoverError::NoSuchTarget(pattern.to_owned());
     // `./docs/*.md` and `docs/*.md` are the same pattern; candidates below are
     // normalised the same way.
     let normalised: PathBuf = Path::new(pattern)
         .components()
         .filter(|c| *c != Component::CurDir)
         .collect();
-    let pattern = normalised.to_string_lossy().into_owned();
-    let pattern = pattern.as_str();
-    let glob = GlobBuilder::new(pattern)
-        .literal_separator(true)
-        .build()
-        .map_err(|source| DiscoverError::InvalidGlob {
+    let normalised = normalised.to_string_lossy();
+    let alternatives = syntax::expand_braces(&normalised, MAX_ALTERNATIVES).ok_or_else(|| {
+        DiscoverError::TooManyAlternatives {
             pattern: pattern.to_owned(),
-            source,
-        })?
-        .compile_matcher();
+            limit: MAX_ALTERNATIVES,
+        }
+    })?;
+    let mut matches = BTreeSet::new();
+    for alternative in &alternatives {
+        matches.extend(glob_files(alternative, pattern)?);
+    }
+    if matches.is_empty() {
+        return Err(DiscoverError::NoSuchTarget(pattern.to_owned()));
+    }
+    Ok(matches.into_iter().collect())
+}
 
-    // Walk from the longest leading run of components without glob syntax.
+/// Files matching one brace-free `pattern`. `target` is the pattern as typed.
+fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError> {
+    let invalid = |source| DiscoverError::InvalidGlob {
+        pattern: target.to_owned(),
+        source,
+    };
+    let compile = |text: &str| {
+        GlobBuilder::new(text)
+            .literal_separator(true)
+            .build()
+            .map(|g| g.compile_matcher())
+            .map_err(invalid)
+    };
+    let glob = compile(pattern)?;
+
+    // Walk from the longest leading run of components without glob syntax. The
+    // last component is never part of it: it names what to match.
     let mut base = PathBuf::new();
-    for component in Path::new(pattern).components() {
+    let components: Vec<_> = Path::new(pattern).components().collect();
+    for component in &components[..components.len().saturating_sub(1)] {
         let text = component.as_os_str().to_string_lossy();
         if text.contains(['*', '?', '[', '{']) {
             break;
@@ -361,33 +399,23 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
         base.push(".");
     }
     if !base.is_dir() {
-        return Err(none());
+        return Ok(Vec::new());
     }
 
-    // Bound the walk by the pattern: no recursion without `**` (or `{}` that could
-    // hide a separator), and directories that cannot match their component are
-    // never read.
+    // Bound the walk by the pattern: no recursion without `**`, and directories
+    // that cannot match their component are never read.
     let rest: Vec<String> = Path::new(pattern)
         .components()
         .skip(base_len)
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect();
-    let recursive = pattern.contains('{') || rest.iter().any(|c| c.contains("**"));
-    let prefix: Vec<globset::GlobMatcher> = if recursive {
+    let recursive = rest.iter().any(|c| c.contains("**"));
+    let prefix = if recursive {
         Vec::new()
     } else {
         rest.iter()
-            .map(|c| {
-                GlobBuilder::new(c)
-                    .literal_separator(true)
-                    .build()
-                    .map(|g| g.compile_matcher())
-            })
-            .collect::<Result<_, _>>()
-            .map_err(|source| DiscoverError::InvalidGlob {
-                pattern: pattern.to_owned(),
-                source,
-            })?
+            .map(|c| compile(c))
+            .collect::<Result<Vec<_>, _>>()?
     };
     let mut builder = WalkBuilder::new(&base);
     builder
@@ -402,7 +430,7 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
                 _ => true,
             }
         });
-    let mut matches: Vec<PathBuf> = Vec::new();
+    let mut matches = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(|source| DiscoverError::Walk {
             path: base.clone(),
@@ -417,10 +445,6 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, DiscoverError> {
             matches.push(candidate);
         }
     }
-    if matches.is_empty() {
-        return Err(none());
-    }
-    matches.sort();
     Ok(matches)
 }
 

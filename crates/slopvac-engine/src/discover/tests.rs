@@ -446,7 +446,17 @@ fn a_dot_slash_relative_glob_matches_like_the_bare_form() {
     };
     let plain = discover(&["src/discover/*.rs"], opts.clone()).unwrap();
     let prefixed = discover(&["./src/discover/*.rs"], opts).unwrap();
-    assert_eq!(plain.files.len(), 4);
+    let sources = fs::read_dir("src/discover")
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|x| x == "rs")
+        })
+        .count();
+    assert_eq!(plain.files.len(), sources);
     assert_eq!(prefixed, plain);
 }
 
@@ -677,6 +687,26 @@ mod locked {
     }
 
     #[test]
+    fn a_brace_glob_without_recursion_does_not_descend() {
+        let dir = TempDir::new().unwrap();
+        write(dir.path(), "docs/a.md", "");
+        write(dir.path(), "docs/b.txt", "");
+        let locked = dir.path().join("docs/locked");
+        fs::create_dir(&locked).unwrap();
+        let pattern = format!("{}/docs/*.{{md,txt}}", dir.path().display());
+        let result = with_locked(&locked, || {
+            discover(&[pattern.as_str()], Options::default())
+        });
+        if let Some(result) = result {
+            let got: Vec<_> = result.unwrap().files.into_iter().map(|f| f.path).collect();
+            assert_eq!(
+                got,
+                [dir.path().join("docs/a.md"), dir.path().join("docs/b.txt")]
+            );
+        }
+    }
+
+    #[test]
     fn a_recursive_glob_still_reports_an_unreadable_directory() {
         let dir = TempDir::new().unwrap();
         write(dir.path(), "docs/a.md", "");
@@ -690,4 +720,64 @@ mod locked {
             assert!(matches!(result, Err(DiscoverError::Walk { .. })));
         }
     }
+}
+
+#[test]
+fn brace_alternatives_may_hold_separators_and_nest() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "a/x.md", "");
+    write(dir.path(), "b/c/x.md", "");
+    write(dir.path(), "d/x.md", "");
+    write(dir.path(), "b/x.md", "");
+    for pattern in ["{a,b/c}/x.md", "{a,{b/c,zz}}/x.md"] {
+        let full = format!("{}/{pattern}", dir.path().display());
+        let found = discover(&[full.as_str()], Options::default()).unwrap();
+        let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+        assert_eq!(
+            got,
+            [dir.path().join("a/x.md"), dir.path().join("b/c/x.md")],
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn overlapping_brace_alternatives_list_each_file_once() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "a.md", "");
+    let full = format!("{}/{{a,a*}}.md", dir.path().display());
+    let found = discover(&[full.as_str()], Options::default()).unwrap();
+    assert_eq!(found.files.len(), 1);
+}
+
+#[test]
+fn too_many_brace_alternatives_are_rejected() {
+    let dir = TempDir::new().unwrap();
+    let groups = ["{a,b}"; 11].join("/");
+    let full = format!("{}/{groups}", dir.path().display());
+    let err = discover(&[full.as_str()], Options::default()).unwrap_err();
+    assert!(matches!(
+        err,
+        DiscoverError::TooManyAlternatives { limit: 1024, .. }
+    ));
+}
+
+#[test]
+fn parent_traversal_in_a_target_does_not_leak_into_exclude_matching() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "drafts/wip.md", "");
+    write(dir.path(), "docs/guide.md", "");
+    let target = dir.path().join("drafts/../docs");
+    let opts = with_excludes(dir.path(), &["drafts/"]);
+    let found = discover(&[target.to_str().unwrap()], opts).unwrap();
+    let got: Vec<_> = found.files.into_iter().map(|f| f.path).collect();
+    assert_eq!(got, [dir.path().join("docs/guide.md")]);
+}
+
+#[test]
+fn lexical_dot_dot_is_collapsed_when_the_path_does_not_exist() {
+    let root = Path::new("/project");
+    let ex = Excludes::new(root, &["drafts/"]).unwrap();
+    assert!(!ex.is_excluded(Path::new("/project/drafts/../docs/guide.md")));
+    assert!(ex.is_excluded(Path::new("/project/docs/../drafts/wip.md")));
 }

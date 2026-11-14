@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
+use super::syntax::{class_end, lexical_clean};
+
 /// Why an exclude pattern was rejected.
 #[derive(Debug, thiserror::Error)]
 #[error("invalid exclude pattern: {0}")]
@@ -53,7 +55,7 @@ impl Excludes {
     /// the 2.x fallback to the bare file name.
     #[must_use]
     pub fn is_excluded(&self, path: &Path) -> bool {
-        let Some(relative) = self.relative(path) else {
+        let Some(relative) = self.relative(path).filter(|r| !r.as_os_str().is_empty()) else {
             return false;
         };
         self.matchers
@@ -64,18 +66,22 @@ impl Excludes {
             .is_some_and(|m| m.is_ignore())
     }
 
+    /// `path` relative to the root. Existing paths are resolved first, so
+    /// symlinks and `..` cannot change which directories the matcher sees. When
+    /// either side does not exist, `.` and `..` are collapsed lexically instead.
     fn relative(&self, path: &Path) -> Option<PathBuf> {
-        if let Ok(rest) = path.strip_prefix(&self.root) {
-            return Some(rest.to_path_buf());
-        }
-        // Different spellings of the same location (relative against absolute,
-        // symlinked prefixes): compare resolved paths, as 2.x did.
         if let (Ok(p), Ok(r)) = (path.canonicalize(), self.root.canonicalize())
             && let Ok(rest) = p.strip_prefix(&r)
         {
             return Some(rest.to_path_buf());
         }
-        None
+        let lexical = |p: &Path| lexical_clean(p);
+        if let Ok(rest) = lexical(path).strip_prefix(lexical(&self.root)) {
+            return Some(rest.to_path_buf());
+        }
+        let absolute = |p: &Path| std::path::absolute(p).map(|a| lexical_clean(&a));
+        let (p, r) = (absolute(path).ok()?, absolute(&self.root).ok()?);
+        p.strip_prefix(r).ok().map(Path::to_path_buf)
     }
 }
 
@@ -109,17 +115,9 @@ fn translate(pattern: &str) -> Option<String> {
                 i += 2;
             }
             '[' => {
-                let mut j = i + 1;
-                if matches!(chars.get(j), Some('!' | '^')) {
-                    j += 1;
-                }
-                if chars.get(j) == Some(&']') {
-                    j += 1;
-                }
-                let close = chars[j.min(chars.len())..].iter().position(|&c| c == ']')?;
-                let end = j + close;
-                out.extend(&chars[i..=end]);
-                i = end + 1;
+                let end = class_end(&chars, i)?;
+                out.extend(&chars[i..end]);
+                i = end;
             }
             c @ ('{' | '}') => {
                 out.push('[');
