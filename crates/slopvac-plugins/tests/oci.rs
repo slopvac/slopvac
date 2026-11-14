@@ -744,7 +744,7 @@ fn referrers_reject_ten_thousand_and_one_descriptors() {
 #[test]
 fn the_next_page_is_the_link_with_rel_next_wherever_it_appears() {
     // Each case is the `Link` header lines of the first page; "b" is on page 2.
-    let cases: [(&[&str], &[&str]); 7] = [
+    let cases: [(&[&str], &[&str]); 8] = [
         (
             &["<?page=0>; rel=\"prev\", <?page=2>; rel=\"next\""],
             &["a", "b"],
@@ -761,6 +761,8 @@ fn the_next_page_is_the_link_with_rel_next_wherever_it_appears() {
             &["a"],
         ),
         (&["<?page=2>"], &["a"]),
+        // An escaped quote inside a quoted parameter does not end it.
+        (&[r#"<?page=2>; title="a\"b"; rel="next""#], &["a", "b"]),
     ];
     for (links, want) in cases {
         let server = Server::start(move |req| {
@@ -863,6 +865,156 @@ fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
         "{outcome:?}"
     );
 }
+// ---- size gates: caller maximum, blob and manifest uploads ----
+
+#[test]
+fn fetch_blob_bytes_accepts_a_blob_of_exactly_the_caller_maximum() {
+    let data = b"four";
+    let desc = Descriptor::for_bytes("x", data);
+    let server = Server::start(move |_| Response::new(200).body(data.to_vec()));
+    let got = anonymous_client()
+        .fetch_blob_bytes(&reference(&server, "a/b:1"), &desc, 4)
+        .unwrap();
+    assert_eq!(got, data);
+}
+
+#[test]
+fn fetch_blob_bytes_refuses_one_byte_over_the_caller_maximum_before_any_request() {
+    let desc = Descriptor::for_bytes("x", b"fives");
+    let server = Server::start(|_| Response::new(500));
+    let err = anonymous_client()
+        .fetch_blob_bytes(&reference(&server, "a/b:1"), &desc, 4)
+        .unwrap_err();
+    assert!(
+        matches!(err, OciError::TooLarge { limit: 4, .. }),
+        "{err:?}"
+    );
+    assert!(server.requests().is_empty());
+}
+
+#[test]
+fn push_blob_refuses_one_byte_over_256_mib_before_any_request() {
+    let server = Server::start(|_| Response::new(500));
+    let bytes = vec![0u8; (256 << 20) + 1];
+    let err = anonymous_client()
+        .push_blob(&reference(&server, "a/b:1"), "x", &bytes)
+        .unwrap_err();
+    assert!(matches!(err, OciError::TooLarge { .. }), "{err:?}");
+    assert!(server.requests().is_empty());
+}
+
+#[test]
+fn push_manifest_accepts_exactly_four_mib() {
+    let server = Server::start(|_| Response::new(201));
+    let body = vec![b' '; 4 << 20];
+    let digest = anonymous_client()
+        .push_manifest(&reference(&server, "a/b:1"), MEDIA_MANIFEST, &body)
+        .unwrap();
+    assert_eq!(digest, Digest::of(&body));
+}
+
+#[test]
+fn push_manifest_refuses_one_byte_over_four_mib_before_any_request() {
+    let server = Server::start(|_| Response::new(500));
+    let body = vec![b' '; (4 << 20) + 1];
+    let err = anonymous_client()
+        .push_manifest(&reference(&server, "a/b:1"), MEDIA_MANIFEST, &body)
+        .unwrap_err();
+    assert!(matches!(err, OciError::TooLarge { .. }), "{err:?}");
+    assert!(server.requests().is_empty());
+}
+
+// ---- environment discovery through the public constructor ----
+
+#[test]
+fn docker_config_dir_discovery_follows_each_platforms_home() {
+    use std::path::{Path, PathBuf};
+    for (windows, pairs, want) in [
+        (
+            false,
+            vec![("HOME", "/h")],
+            Some(Path::new("/h").join(".docker")),
+        ),
+        (false, vec![("USERPROFILE", "C:\\u")], None),
+        (
+            true,
+            vec![("USERPROFILE", "C:\\u")],
+            Some(Path::new("C:\\u").join(".docker")),
+        ),
+        (
+            true,
+            vec![("HOME", "/h")],
+            Some(Path::new("/h").join(".docker")),
+        ),
+        (
+            true,
+            vec![("USERPROFILE", "C:\\u"), ("HOME", "/h")],
+            Some(Path::new("C:\\u").join(".docker")),
+        ),
+        (
+            true,
+            vec![("DOCKER_CONFIG", "/d"), ("USERPROFILE", "C:\\u")],
+            Some(PathBuf::from("/d")),
+        ),
+        (false, vec![], None),
+    ] {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        let got = DefaultCredentials::from_lookup_for_tests(|k| map.get(k).cloned(), windows)
+            .docker_config_dir;
+        assert_eq!(got, want, "windows={windows} {pairs:?}");
+    }
+}
+
+/// Windows runs only `.exe` and `.com` helpers. The files here are empty, so a
+/// found helper fails to start; "not found" means discovery skipped it.
+#[cfg(windows)]
+mod windows_helpers {
+    use super::*;
+    use slopvac_plugins::oci::CredentialSource;
+
+    fn lookup_with_file(tag: &str, store: &str, file: &str) -> String {
+        let dir =
+            std::env::temp_dir().join(format!("slopvac-oci-win-{tag}-{}", std::process::id()));
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            json!({"credsStore": store}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(bin.join(file), b"").unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(dir.clone()),
+            helper_search_path: Some(bin.into_os_string()),
+            ..DefaultCredentials::default()
+        };
+        let msg = creds.credential("ghcr.io").unwrap_err().to_string();
+        std::fs::remove_dir_all(&dir).unwrap();
+        msg
+    }
+
+    #[test]
+    fn a_bare_helper_name_finds_its_exe() {
+        let msg = lookup_with_file("bare", "pass", "docker-credential-pass.exe");
+        assert!(msg.contains("cannot start"), "{msg}");
+    }
+
+    #[test]
+    fn a_helper_name_with_its_suffix_is_found_as_written() {
+        let msg = lookup_with_file("suffixed", "desktop.exe", "docker-credential-desktop.exe");
+        assert!(msg.contains("cannot start"), "{msg}");
+    }
+
+    #[test]
+    fn a_batch_file_is_never_a_helper() {
+        let msg = lookup_with_file("bat", "x", "docker-credential-x.bat");
+        assert!(msg.contains("not found"), "{msg}");
+    }
+}
+
 #[cfg(unix)]
 mod helpers {
     use std::os::unix::fs::PermissionsExt;

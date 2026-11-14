@@ -115,9 +115,17 @@ impl DefaultCredentials {
         Self::from_lookup(|k| std::env::var(k).ok(), cfg!(windows))
     }
 
-    /// [`Self::from_env`] over any variable lookup. Docker finds its default
-    /// config under `USERPROFILE` on Windows and `HOME` elsewhere; on Windows
-    /// `HOME` is the fallback for shells that set only it.
+    /// Test seam: [`Self::from_env`] over any variable lookup and platform, so
+    /// tests need no process environment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn from_lookup_for_tests(var: impl Fn(&str) -> Option<String>, windows: bool) -> Self {
+        Self::from_lookup(var, windows)
+    }
+
+    /// Docker finds its default config under `USERPROFILE` on Windows and
+    /// `HOME` elsewhere; on Windows `HOME` is the fallback for shells that set
+    /// only it.
     fn from_lookup(var: impl Fn(&str) -> Option<String>, windows: bool) -> Self {
         let get = |k: &str| var(k).filter(|v| !v.is_empty());
         let home = if windows {
@@ -544,94 +552,6 @@ mod tests {
             .unwrap();
         assert_eq!(c.param("realm"), Some("https://r.example/token"));
         assert_eq!(c.param("service"), Some("reg"));
-    }
-
-    #[test]
-    fn a_helper_name_that_already_carries_a_suffix_is_found_as_written() {
-        let dir = std::env::temp_dir().join(format!("slopvac-suffixed-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("docker-credential-desktop.exe"), b"").unwrap();
-        let search = std::env::join_paths([&dir]).unwrap();
-        let suffixes = [".exe".to_owned(), ".com".to_owned()];
-        let found = find_with_suffixes("docker-credential-desktop.exe", Some(&search), &suffixes);
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(
-            found.unwrap().file_name().unwrap(),
-            "docker-credential-desktop.exe"
-        );
-    }
-
-    #[test]
-    fn a_suffixed_helper_name_is_not_found_without_an_executable_suffix() {
-        let dir = std::env::temp_dir().join(format!("slopvac-notexe-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("docker-credential-x.bat"), b"").unwrap();
-        let search = std::env::join_paths([&dir]).unwrap();
-        let suffixes = [".exe".to_owned(), ".com".to_owned()];
-        let found = find_with_suffixes("docker-credential-x.bat", Some(&search), &suffixes);
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert!(found.is_none(), "batch files must never be run");
-    }
-
-    fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let map: std::collections::HashMap<String, String> = pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
-        move |k| map.get(k).cloned()
-    }
-
-    #[test]
-    fn docker_config_dir_discovery_follows_each_platforms_home() {
-        for (windows, pairs, want) in [
-            (
-                false,
-                vec![("HOME", "/h")],
-                Some(Path::new("/h").join(".docker")),
-            ),
-            (false, vec![("USERPROFILE", "C:\\u")], None),
-            (
-                true,
-                vec![("USERPROFILE", "C:\\u")],
-                Some(Path::new("C:\\u").join(".docker")),
-            ),
-            (
-                true,
-                vec![("HOME", "/h")],
-                Some(Path::new("/h").join(".docker")),
-            ),
-            (
-                true,
-                vec![("USERPROFILE", "C:\\u"), ("HOME", "/h")],
-                Some(Path::new("C:\\u").join(".docker")),
-            ),
-            (
-                true,
-                vec![("DOCKER_CONFIG", "/d"), ("USERPROFILE", "C:\\u")],
-                Some(PathBuf::from("/d")),
-            ),
-            (false, vec![], None),
-        ] {
-            let got = DefaultCredentials::from_lookup(env_of(&pairs), windows).docker_config_dir;
-            assert_eq!(got, want, "windows={windows} {pairs:?}");
-        }
-    }
-
-    #[test]
-    fn helper_lookup_tries_each_executable_suffix() {
-        let dir = std::env::temp_dir().join(format!("slopvac-suffix-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("docker-credential-pass.exe"), b"").unwrap();
-        let search = std::env::join_paths([&dir]).unwrap();
-        let with_exe = [".com".to_owned(), ".exe".to_owned()];
-        let found = find_with_suffixes("docker-credential-pass", Some(&search), &with_exe);
-        let bare = find_with_suffixes("docker-credential-pass", Some(&search), &[String::new()]);
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(
-            found.unwrap().file_name().unwrap(),
-            "docker-credential-pass.exe"
-        );
-        assert!(bare.is_none());
     }
 
     #[test]

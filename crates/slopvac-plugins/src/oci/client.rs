@@ -563,13 +563,13 @@ impl Client {
         media_type: &str,
         bytes: &[u8],
     ) -> Result<Descriptor, OciError> {
-        let desc = Descriptor::for_bytes(media_type, bytes);
-        if desc.size > MAX_BLOB_BYTES {
+        if bytes.len() as u64 > MAX_BLOB_BYTES {
             return Err(OciError::TooLarge {
                 what: "blob".into(),
                 limit: MAX_BLOB_BYTES,
             });
         }
+        let desc = Descriptor::for_bytes(media_type, bytes);
         let base = self.base(r);
         let head = format!("{base}/v2/{}/blobs/{}", r.repository, desc.digest);
         let exists = self.call(r, "pull,push", "HEAD", &head, &[], None)?;
@@ -709,11 +709,13 @@ fn next_target(header: &str) -> Option<&str> {
 }
 
 fn has_rel_next(params: &str) -> bool {
-    let mut quoted = false;
+    let (mut quoted, mut escaped) = (false, false);
     let mut start = 0;
     let mut pieces = Vec::new();
     for (i, c) in params.char_indices() {
         match c {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
             '"' => quoted = !quoted,
             ';' if !quoted => {
                 pieces.push(&params[start..i]);
