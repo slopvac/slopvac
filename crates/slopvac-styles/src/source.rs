@@ -51,7 +51,7 @@ impl StyleSource for MapSource {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuiltinSource;
 
-const BUILTIN: &[(&str, &str)] = &[
+pub(crate) const BUILTIN: &[(&str, &str)] = &[
     ("ste", include_str!("../presets/ste.toml")),
     ("google", include_str!("../presets/google.toml")),
 ];

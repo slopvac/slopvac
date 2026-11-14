@@ -8,12 +8,14 @@
 
 mod error;
 mod patch;
+mod reference;
 mod resolve;
 mod shape;
 mod source;
 
 pub use error::StyleError;
 pub use patch::{CategoryDials, CategoryPatch, Level, SettingValue, SettingsPatch, TermsPatch};
+pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, Setting, resolve};
 pub use shape::Style;
 pub use source::{BuiltinSource, DirSource, MapSource, StyleSource};
