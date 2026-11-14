@@ -184,3 +184,15 @@ def test_inserted_bytes_are_counted_as_utf8():
     # 1369 three-byte characters are 4107 bytes: over the limit, under it by length.
     with pytest.raises(OutputInvalid, match="bytes"):
         check_edits(b"ab", [finding], [Edit(0, Span(0, 2), "日" * 1369)])
+
+
+def test_a_reply_with_hundreds_of_thousands_of_invalid_entries_is_checked_quickly(
+    schemas,
+):
+    """Round 3, finding 3: only a few violations are kept, so the rest are not collected."""
+    result = {"results": [{"document": 1, "tags": []}] * 400_000}
+    started = time.monotonic()
+    problems = schemas.errors("TagResult", result)
+    assert problems
+    assert len(problems) <= 3
+    assert time.monotonic() - started < 2

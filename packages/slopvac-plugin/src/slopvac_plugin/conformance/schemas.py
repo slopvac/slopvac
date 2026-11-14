@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from .. import framing
 
 PROTOCOL = "plugin-protocol.schema.json"
 COMMON = "common.schema.json"
+MAX_REPORTED = 3
 
 
 class MissingDependency(RuntimeError):
@@ -66,11 +68,10 @@ class Schemas:
         else:
             schema = {"$ref": f"{self._protocol['$id']}#/$defs/{definition}"}
         validator = self._validator_class(schema, registry=self._registry)
-        found = sorted(
-            validator.iter_errors(instance),
-            key=lambda e: list(map(str, e.absolute_path)),
-        )
+        # Lazily take a few: a reply with hundreds of thousands of invalid entries must
+        # not be exhausted, sorted or held in memory (threat model section 5.5).
+        found = islice(validator.iter_errors(instance), MAX_REPORTED)
         return [
             f"{'/'.join(map(str, e.absolute_path)) or '<root>'}: {e.message[:200]}"
-            for e in found[:3]
+            for e in found
         ]

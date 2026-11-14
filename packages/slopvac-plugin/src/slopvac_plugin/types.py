@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
+from itertools import accumulate
 from typing import NamedTuple
 
 
@@ -27,11 +29,26 @@ class Document:
         """The UTF-8 bytes that every span indexes."""
         return self.text.encode("utf-8")
 
+    @cached_property
+    def _byte_offsets(self) -> Sequence[int] | None:
+        """Byte offset of every character index, built once; None for ASCII text."""
+        if self.text.isascii():
+            return None
+        offsets = [0]
+        offsets.extend(accumulate(len(char.encode("utf-8")) for char in self.text))
+        return offsets
+
+    def _byte_offset(self, index: int) -> int:
+        offsets = self._byte_offsets
+        clamped = max(0, min(index, len(self.text)))
+        return clamped if offsets is None else offsets[clamped]
+
     def span(self, start: int, end: int) -> Span:
-        """Convert character offsets of ``text`` into a byte ``Span``."""
-        return Span(
-            len(self.text[:start].encode("utf-8")), len(self.text[:end].encode("utf-8"))
-        )
+        """Convert character offsets of ``text`` into a byte ``Span``.
+
+        The first call on a document indexes it, so converting many spans is linear.
+        """
+        return Span(self._byte_offset(start), self._byte_offset(end))
 
     def slice(self, span: Span) -> str:
         return self.data[span.start : span.end].decode("utf-8")

@@ -52,6 +52,20 @@ class _Eof:
 
 
 @dataclass(frozen=True)
+class _Incoming:
+    """A parsed message and what the reader reserved for it.
+
+    ``reserved`` means the reader holds an admission slot (a cancel event) for the
+    message id; whoever rejects the message must release it. ``duplicate`` means the
+    id is already pending, so the message gets an error and holds nothing.
+    """
+
+    message: Any
+    reserved: bool = False
+    duplicate: bool = False
+
+
+@dataclass(frozen=True)
 class _Unreadable:
     """A body that is not JSON. The answer carries a null id."""
 
@@ -197,7 +211,13 @@ class Plugin:
                 if isinstance(item, _Unreadable):
                     self._respond_error(None, item.error)
                     continue
-                outcome = self._handle(item, state, pool)
+                if item.duplicate:
+                    self._respond_error(
+                        item.message["id"],
+                        RpcError(INVALID_REQUEST, "a request with this id is pending"),
+                    )
+                    continue
+                outcome = self._handle(item.message, item.reserved, state, pool)
                 if isinstance(outcome, int):
                     return outcome
                 state = outcome
@@ -223,8 +243,7 @@ class Plugin:
                     continue
                 if self._take_cancel(message):
                     continue
-                self._register_request(message)
-                inbox.put(message)
+                inbox.put(self._admit(message))
         except framing.FramingError as exc:
             inbox.put(_Fatal(str(exc)))
         except (OSError, ValueError):
@@ -247,29 +266,38 @@ class Plugin:
                 event.set()
         return True
 
-    def _register_request(self, message: Any) -> None:
-        if (
+    def _admit(self, message: Any) -> _Incoming:
+        """Reserve capacity for a well-formed hook request; pass anything else on.
+
+        Only a request the dispatcher can run reserves a slot, so every rejection
+        of one releases it (``_handle``) and a malformed message holds nothing. A
+        pending id is never admitted twice, which also bounds queued plus running
+        jobs by ``maxInFlight``.
+        """
+        if not (
             isinstance(message, dict)
-            and "method" in message
+            and message.get("jsonrpc") == "2.0"
+            and isinstance(message.get("method"), str)
+            and message["method"] in BY_METHOD
             and is_request_id(message.get("id"))
         ):
-            with self._events_lock:
-                method = message["method"]
-                if isinstance(method, str) and method in BY_METHOD:
-                    # The host keeps at most maxInFlight requests pending. A peer that
-                    # sends more waits here, with the rest of its input unread, until a
-                    # slot frees. The contract has no busy error to answer with.
-                    self._events_lock.wait_for(
-                        lambda: (
-                            message["id"] in self._events
-                            or len(self._events) < self.max_in_flight
-                        )
-                    )
-                self._events.setdefault(message["id"], threading.Event())
+            return _Incoming(message)
+        msg_id = message["id"]
+        with self._events_lock:
+            if msg_id in self._events:
+                return _Incoming(message, duplicate=True)
+            # The host keeps at most maxInFlight requests pending. A peer that sends
+            # more waits here, with the rest of its input unread, until a slot
+            # frees. The contract has no busy error to answer with.
+            self._events_lock.wait_for(lambda: len(self._events) < self.max_in_flight)
+            self._events[msg_id] = threading.Event()
+        return _Incoming(message, reserved=True)
 
     # Main thread --------------------------------------------------------------
 
-    def _handle(self, message: Any, state: str, pool: ThreadPoolExecutor) -> str | int:
+    def _handle(
+        self, message: Any, reserved: bool, state: str, pool: ThreadPoolExecutor
+    ) -> str | int:
         """Process one message. Returns the next state, or an exit status."""
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             self._respond_error(
@@ -295,7 +323,8 @@ class Plugin:
             return self._request(msg_id, method, message.get("params"), state, pool)
         except RpcError as exc:
             self._respond_error(msg_id, exc)
-            self._drop(msg_id)
+            if reserved:
+                self._drop(msg_id)
             return state
 
     def _notification(self, method: str, state: str) -> str | int:
@@ -315,7 +344,6 @@ class Plugin:
             if state != "new":
                 raise RpcError(INVALID_REQUEST, "already initialized")
             self._respond(msg_id, self._initialize(params))
-            self._drop(msg_id)
             return "ready"
         if state == "new":
             raise RpcError(NOT_INITIALIZED, "send initialize first")
@@ -323,7 +351,6 @@ class Plugin:
             raise RpcError(INVALID_REQUEST, "the plugin is shut down")
         if method == "shutdown":
             self._respond(msg_id, None)
-            self._drop(msg_id)
             return "shutdown"
         kind = BY_METHOD.get(method)
         if kind is None or not any(k == kind.kind for k, _ in self._hooks):

@@ -208,3 +208,61 @@ def test_a_peer_that_floods_while_a_hook_stalls_is_not_read_without_bound(start)
     with pytest.raises(CaseFailure, match="did not read its input"):
         for _ in range(300):
             s.start_request("tagger/tag", params, timeout=1)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"jsonrpc":"1.0","id":900,"method":"tagger/tag","params":{}}',
+        b'{"id":900,"method":"tagger/tag","params":{}}',
+        b'{"jsonrpc":"2.0","id":900,"method":"extractor/extract","params":{}}',
+    ],
+    ids=["wrong-version", "missing-version", "kind-not-registered"],
+)
+def test_a_rejected_request_frees_its_slot_for_the_next_hook_and_for_exit(start, body):
+    """Round 3, finding 1: maxInFlight is 1, so a leaked slot would wedge the plugin."""
+    s = start(script("behaviour_plugin.py"))
+    handshake(s)
+    s.send_bytes(raw_frame(body))
+    assert "error" in s.response_to(900, 5)
+    result_of(s.request("tagger/tag", tag_params("features")))
+    result_of(s.request("shutdown"))
+    s.notify("exit")
+    assert s.wait(5) == 0
+
+
+def test_a_hook_request_before_initialize_does_not_hold_a_slot(start):
+    s = start(script("behaviour_plugin.py"))
+    s.send_bytes(
+        raw_frame(
+            b'{"jsonrpc":"2.0","id":900,"method":"tagger/tag","params":{"tagger":"features"}}'
+        )
+    )
+    error_of(s.response_to(900, 5), -32003, "not-initialized")
+    handshake(s)
+    result_of(s.request("tagger/tag", tag_params("features")))
+
+
+def test_a_hook_that_names_an_unknown_id_frees_its_slot(start):
+    s = start(script("behaviour_plugin.py"))
+    handshake(s)
+    error_of(s.request("tagger/tag", tag_params("nope")), -32602, "invalid-params")
+    result_of(s.request("tagger/tag", tag_params("features")))
+
+
+def test_a_duplicate_pending_id_is_refused_and_does_not_disturb_the_first(start):
+    """Round 3, finding 2: the stalled hook keeps its slot and the copies queue nothing."""
+    s = start(script("behaviour_plugin.py"))
+    handshake(s)
+    first = s.start_request("tagger/tag", tag_params("slow"))
+    body = (
+        b'{"jsonrpc":"2.0","id":%d,"method":"tagger/tag","params":{"tagger":"slow",'
+        b'"documents":[{"id":"d1","text":"x"}]}}' % first
+    )
+    for _ in range(50):
+        s.send_bytes(raw_frame(body))
+    for _ in range(50):
+        error_of(s.response_to(first, 5), -32600, "invalid-request")
+    s.notify("$/cancelRequest", {"id": first})
+    error_of(s.response_to(first, 5), -32005, "request-cancelled")
+    result_of(s.request("tagger/tag", tag_params("features")))

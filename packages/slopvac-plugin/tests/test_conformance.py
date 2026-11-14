@@ -312,3 +312,49 @@ def test_an_unknown_hook_kind_is_ignored_by_the_cases_that_call_hooks(quiet_cwd)
         script("raw_plugin.py", "unknown-kind"), only=["P5", "P6"], timeout=5
     )
     assert statuses(report) == {"P5": "pass", "P6": "pass"}, report.to_text()
+
+
+def _load_example():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "fence_tagger_example", EXAMPLE / "plugin.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _context(cancelled: bool = False):
+    import threading
+
+    from slopvac_plugin import Context
+
+    event = threading.Event()
+    if cancelled:
+        event.set()
+    return Context(1, True, frozenset(), event)
+
+
+def test_example_tags_a_document_with_many_fences_in_linear_time():
+    """Round 3, finding 4: 60,000 non-ASCII fences took quadratic time to convert."""
+    from slopvac_plugin import Document
+
+    example = _load_example()
+    doc = Document("d", "```\né\n```\n" * 60_000)
+    out: list = []
+    assert bounded(lambda: out.extend(example.tag_fences(doc, _context())), 5)
+    assert len(out) == 60_000
+    # The block "```\né\n```\n" is 3+1+2+1+3+1 = 11 bytes; the last one starts at 11 * 59999.
+    assert out[-1].span == (11 * 59_999, 11 * 60_000)
+
+
+def test_example_stops_when_the_request_is_cancelled():
+    from slopvac_plugin import Document
+    from slopvac_plugin.errors import RequestCancelled
+
+    example = _load_example()
+    with pytest.raises(RequestCancelled):
+        example.tag_fences(
+            Document("d", "```\nx\n```\n" * 10), _context(cancelled=True)
+        )

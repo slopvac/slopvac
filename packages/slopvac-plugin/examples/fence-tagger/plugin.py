@@ -13,6 +13,7 @@ def tag_fences(doc: Document, ctx: Context) -> list[Tag]:
     start: int | None = None
     offset = 0
     for line in doc.text.splitlines(keepends=True):
+        ctx.raise_if_cancelled()
         if line.lstrip().startswith("```"):
             if start is None:
                 start = offset
