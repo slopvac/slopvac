@@ -31,7 +31,7 @@ Every file carries `schema_version = 3`. Unknown keys are errors, and keys with 
 
 ## 3. Styles
 
-A style sets levels for categories and rules, and may bring terms. A style has no id: its name is the file name without the extension, qualified by the pack id. A category entry is a bare level or a table with `severity`, `minimum_severity`, `max_per_100_words` and `weight`. The host applies `extends` in the order listed. Then it applies the style. When a config lists two or more styles, the last one wins. A rule entry beats a category entry in the same style.
+A style sets levels for categories and rules, and may bring terms. A style has no id: its name is the file name without the extension, qualified by the pack id. A category entry is a bare level or a table with `severity`, `minimum_severity`, `max_per_100_words` and `weight`. `max_per_100_words = "none"` clears a budget that a lower layer set. 2.x had no way to unset a field, and 3.0 adds this one because a profile override must be able to drop a budget. The host applies `extends` in the order listed. Then it applies the style. When a config lists two or more styles, the last one wins. A rule entry beats a category entry in the same style.
 
 `conflicts` names styles that must not be active with this one. When both are active, the run reports `style-conflict` as a notice with both names and uses the order rule above. Both styles stay active, and the notice is the only effect.
 

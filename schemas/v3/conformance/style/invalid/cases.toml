@@ -10,3 +10,5 @@
 "minimum-severity-unknown.toml" = "/categories/prose-craft/minimum_severity"
 "rules-x-key-bad-level.toml" = "/rules/x-note"
 "id-key.toml" = ""
+"budget-none-uppercase.toml" = "/categories/orwell-voice/max_per_100_words"
+"budget-string-number.toml" = "/categories/orwell-voice/max_per_100_words"

@@ -120,8 +120,16 @@
             "$ref": "#/$defs/Level"
           },
           "max_per_100_words": {
-            "type": "number",
-            "minimum": 0
+            "description": "Density budget per 100 words. The string none clears a budget that a lower layer set, so the category has no budget. A higher layer cannot unset a field in any other way.",
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "const": "none"
+              }
+            ]
           },
           "weight": {
             "type": "number",
