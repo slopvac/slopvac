@@ -8,7 +8,7 @@ Worked examples of each tool live in [`crates/slopvac/tests/testing_toolkit.rs`]
 
 | Need | Tool | Where |
 |---|---|---|
-| Run tests | `cargo nextest run` | Everywhere. The `ci` profile writes JUnit. |
+| Run tests | `cargo nextest run` | Everywhere. CI runs `--profile ci`. |
 | Doctests | `cargo test --doc` | nextest does not run them. |
 | Command-line behaviour | snapbox | `crates/<crate>/tests/*.rs`, driving the built binary. |
 | Large or structured output | insta | Beside the test, in `snapshots/`. |
