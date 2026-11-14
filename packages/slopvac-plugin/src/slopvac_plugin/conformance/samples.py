@@ -25,6 +25,84 @@ def sample_documents(*, findings: bool) -> list[dict[str, Any]]:
     return docs
 
 
+def sample_report() -> dict[str, Any]:
+    """A complete lint report (schema_version 3) with one document and one finding."""
+    counts = {"findings": 1, "errors": 0, "warnings": 1}
+    strong = {**counts, "per_100_words": 10.0}
+    weak = {"findings": 0, "errors": 0, "warnings": 0, "per_100_words": 0.0}
+    category = {
+        "category": "prose-inflation",
+        **counts,
+        "suggestions": 0,
+        "per_100_words": 10.0,
+        "score": 90.0,
+    }
+    finding = {
+        "rule_id": "conformance:sample",
+        "pack": "conformance",
+        "category": "prose-inflation",
+        "severity": "warning",
+        "message": "sample finding",
+        "span": {"start": 0, "end": 5},
+        "line": 1,
+        "column": 1,
+        "end_line": 1,
+        "end_column": 6,
+        "contexts": ["prose"],
+        "ai_signal": "strong",
+        "matched_text": "Hello",
+    }
+    document = {
+        "path": "sample.md",
+        "profile": "normal",
+        "genre": {"id": "internal", "source": "default", "reasons": []},
+        "contexts_seen": ["prose"],
+        "config_sources": [{"layer": "core"}],
+        "words": 10,
+        "sentences": 1,
+        "paragraphs": 1,
+        "findings": [finding],
+        "categories": [
+            {
+                **category,
+                "gating_per_100_words": 10.0,
+                "budget": None,
+                "over_budget": False,
+            }
+        ],
+        "total_findings": 1,
+        "errors": 0,
+        "warnings": 1,
+        "suggestions": 0,
+        "per_100_words": 10.0,
+        "score": 90.0,
+        "gate": {"passed": True, "reasons": []},
+        "unchecked": [],
+        "ai_register": {"strong": strong, "weak": weak},
+        "prose": {**counts, "per_100_words": 10.0},
+    }
+    return {
+        "schema_version": 3,
+        "slopvac_version": "3.0.0",
+        "summary": {
+            "documents": 1,
+            "words": 10,
+            "findings": 1,
+            "errors": 0,
+            "warnings": 1,
+            "suggestions": 0,
+            "per_100_words": 10.0,
+            "score": 90.0,
+            "passed": True,
+            "categories": [category],
+            "ai_register": {"strong": strong, "weak": weak},
+            "prose": {**counts, "per_100_words": 10.0},
+        },
+        "documents": [document],
+        "notices": [],
+    }
+
+
 def _finding(start: int, end: int) -> dict[str, Any]:
     return {
         "rule": "conformance:sample",
@@ -43,7 +121,7 @@ def params_for(kind: str, hook_id: str, inputs: dict[str, Any]) -> dict[str, Any
             "documents": sample_documents(findings=kind in ("fixer", "scorer")),
         }
     elif kind == "reporter":
-        params = {"reporter": hook_id, "report": {"schema_version": 3}, "options": {}}
+        params = {"reporter": hook_id, "report": sample_report(), "options": {}}
     elif kind == "provider":
         params = {
             "provider": hook_id,
