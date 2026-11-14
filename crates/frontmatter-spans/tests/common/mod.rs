@@ -135,6 +135,7 @@ fn has_trailing_comment(text: &str) -> bool {
 }
 
 /// Parse `doc` and assert the span invariants for every node and key. Returns the root shape.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn check(doc: &str) -> String {
     let fm = FrontMatter::parse(doc)
         .unwrap_or_else(|e| panic!("{doc:?}: {e}"))

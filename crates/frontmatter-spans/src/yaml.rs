@@ -355,7 +355,7 @@ impl Builder<'_> {
                     ScalarStyle::SingleQuoted => Kind::Quoted(b'\''),
                     ScalarStyle::DoubleQuoted => Kind::Quoted(b'"'),
                     ScalarStyle::Literal | ScalarStyle::Folded => Kind::Block,
-                    _ => Kind::Plain,
+                    ScalarStyle::Plain => Kind::Plain,
                 };
                 let span = if text.is_empty() && style == ScalarStyle::Plain {
                     self.offsets.empty_value(start)
