@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 
 use semver::{Version, VersionReq};
 
-pub use cache::{Store, TreeState};
+pub use cache::{Store, StoreLock, TreeState};
 pub use error::SyncError;
 
 use crate::extract::{ExtractError, Limits, extract_targz, tree_hash};
@@ -175,7 +175,7 @@ impl<'a> Syncer<'a> {
     /// The first [`SyncError`]. Verification failures leave the store without
     /// new trees; see the module documentation.
     pub fn sync(&self, lock: &Lockfile) -> Result<SyncReport, SyncError> {
-        self.store.prepare()?;
+        let _lock = self.store.lock()?;
         let mut acquired = Vec::with_capacity(lock.packs().len());
         for pack in lock.packs() {
             acquired.push((pack, self.acquire(pack)?));
@@ -185,8 +185,10 @@ impl<'a> Syncer<'a> {
         for (pack, how) in &acquired {
             if matches!(how, Acquired::Archive(_)) {
                 let state = self.store.inspect(&pack.digest)?;
+                let mut set_aside = None;
                 if let TreeState::Tampered(dir) = &state {
                     let aside = cache::evict_tree(dir)?;
+                    set_aside.clone_from(&aside);
                     if matches!(self.network, Network::Offline) {
                         return Err(SyncError::CacheTampered {
                             id: pack.id.clone(),
@@ -194,15 +196,18 @@ impl<'a> Syncer<'a> {
                         });
                     }
                 }
-                states.push(state);
+                states.push((state, set_aside));
             } else {
-                states.push(TreeState::Absent);
+                states.push((TreeState::Absent, None));
             }
         }
 
         let mut report = SyncReport::default();
-        for ((pack, how), before) in acquired.into_iter().zip(states) {
-            report.packs.push(self.install(pack, &how, &before)?);
+        for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
+            let mut outcome = self.install(pack, &how, &before)?;
+            // A modified tree too large to delete was moved aside; keep reporting it.
+            outcome.quarantined = outcome.quarantined.or(aside);
+            report.packs.push(outcome);
         }
         Ok(report)
     }
@@ -512,6 +517,14 @@ impl<'a> Syncer<'a> {
                 return Err(source(format!("path source `{rel}` goes through a link")));
             }
         }
+        // Defence in depth after the segment walk: the resolved path must stay inside
+        // the project root, whatever the platform makes of the segments.
+        let inside = fs::canonicalize(self.project_root)
+            .and_then(|root| fs::canonicalize(&path).map(|p| p.starts_with(root)))
+            .map_err(|e| source(format!("path source `{rel}`: {e}")))?;
+        if !inside {
+            return Err(source(format!("path source `{rel}` leaves the project")));
+        }
         let mismatch = |actual: &str| SyncError::DigestMismatch {
             id: id.clone(),
             expected: pack.digest.to_string(),
@@ -562,8 +575,10 @@ fn cache_hash(path: &Path) -> io::Result<Digest> {
 pub enum PackState {
     /// Not installed (or its record is gone).
     NotInstalled,
-    /// Installed, and the tree hashes to its record.
-    Installed(PathBuf),
+    /// The store records this tree for the locked digest and the tree still
+    /// hashes to its record. Status does not re-derive the tree from the
+    /// artifact, so an edited record would pass; `sync` always re-derives.
+    Recorded(PathBuf),
     /// Installed, but the tree differs from its record. `sync` repairs it.
     Tampered(PathBuf),
     /// A project directory whose tree hash matches the lock.
@@ -584,10 +599,12 @@ pub struct PackStatus {
 }
 
 impl PackStatus {
-    /// True when the pack is exactly what the lock names.
+    /// True when the pack has an intact recorded tree or a matching project
+    /// directory. This is a report, not a proof: the CI gate is `sync` or
+    /// [`check_lock`].
     #[must_use]
-    pub fn is_current(&self) -> bool {
-        matches!(self.state, PackState::Installed(_) | PackState::InPlace(_))
+    pub fn is_recorded(&self) -> bool {
+        matches!(self.state, PackState::Recorded(_) | PackState::InPlace(_))
     }
 }
 
@@ -615,7 +632,7 @@ pub fn status(
                 }
                 _ => match store.inspect(&pack.digest)? {
                     TreeState::Absent => PackState::NotInstalled,
-                    TreeState::Intact(dir) => PackState::Installed(dir),
+                    TreeState::Intact(dir) => PackState::Recorded(dir),
                     TreeState::Tampered(dir) => PackState::Tampered(dir),
                 },
             };

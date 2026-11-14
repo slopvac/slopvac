@@ -541,7 +541,7 @@ fn a_tampered_tree_is_reinstalled_online() {
         assert_eq!(fs::read(tree.join("rules/a.yml")).unwrap(), b"rule: a\n");
         assert!(!tree.join("extra.yml").exists());
         let states = status(&env.store(), env.project.path(), &lock).unwrap();
-        assert!(states[0].is_current(), "{states:?}");
+        assert!(states[0].is_recorded(), "{states:?}");
     }
 }
 
@@ -572,12 +572,12 @@ fn status_reports_missing_then_installed() {
     let lock = oci_lock(&server.registry(), &p);
     let before = status(&env.store(), env.project.path(), &lock).unwrap();
     assert_eq!(before[0].state, PackState::NotInstalled);
-    assert!(!before[0].is_current());
+    assert!(!before[0].is_recorded());
     let report = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap();
     let after = status(&env.store(), env.project.path(), &lock).unwrap();
     assert_eq!(
         after[0].state,
-        PackState::Installed(report.packs[0].tree.clone())
+        PackState::Recorded(report.packs[0].tree.clone())
     );
 }
 
@@ -737,4 +737,220 @@ fn available_versions_lists_semver_tags_in_order() {
         .map(ToString::to_string)
         .collect();
     assert_eq!(got, ["1.0.0", "1.2.0", "1.3.0", "2.0.0-rc.1"]);
+}
+// ---- review round 1 ----
+
+fn archive_entry(id: &str, url: &str, digest: &str) -> String {
+    format!(
+        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+         source = \"{url}\"\ndigest = \"{digest}\"\n"
+    )
+}
+
+/// Write `files` as `dist/<name>.tar.gz` in the project and return its lock entry.
+fn local_archive(env: &Env, id: &str, files: &[(&str, &[u8])]) -> String {
+    let bytes = targz(files);
+    fs::create_dir_all(env.project.path().join("dist")).unwrap();
+    fs::write(env.project.path().join(format!("dist/{id}.tar.gz")), &bytes).unwrap();
+    archive_entry(
+        id,
+        &format!("dist/{id}.tar.gz"),
+        &Digest::of(&bytes).to_string(),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_trees_link_cannot_redirect_extraction_outside_the_store() {
+    // CWE-59: `trees` is a link to a directory the attacker chose.
+    let env = Env::new();
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir_all(env.data.path().join("slopvac")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), env.data.path().join("slopvac/trees")).unwrap();
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Store(_)), "{err:?}");
+    let entries: Vec<_> = fs::read_dir(outside.path()).unwrap().flatten().collect();
+    assert!(entries.is_empty(), "wrote outside the store: {entries:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_source_through_a_link_is_refused() {
+    let env = Env::new();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("pack.toml"), b"x").unwrap();
+    fs::create_dir_all(env.project.path().join("packs")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), env.project.path().join("packs/link")).unwrap();
+    let lock = lock_text(&[format!(
+        "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+         source = \"packs/link\"\ndigest = \"sha256:{}\"\n",
+        "00".repeat(32)
+    )]);
+    let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Source { .. }), "{err:?}");
+}
+
+#[test]
+fn a_second_sync_waits_for_the_store_lock_and_then_sees_the_first_result() {
+    // E9: one process holds the store; another sync must not run in between.
+    let env = Env::new();
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let store = env.store();
+    let held = store.lock().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let pol = KeyPolicy::default();
+            let report = Syncer::new(&store, Network::Offline, &pol, env.project.path())
+                .sync(&lock)
+                .unwrap();
+            tx.send(report.packs[0].change.clone()).unwrap();
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(400))
+                .is_err(),
+            "sync ran while the store lock was held"
+        );
+        drop(held);
+        let change = rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
+        assert_eq!(change, Change::Installed);
+    });
+}
+
+#[test]
+fn concurrent_syncs_of_one_store_all_succeed_with_an_intact_tree() {
+    let env = Env::new();
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let store = env.store();
+    let pol = KeyPolicy::default();
+    let changes: Vec<Change> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    Syncer::new(&store, Network::Offline, &pol, env.project.path())
+                        .sync(&lock)
+                        .unwrap()
+                        .packs[0]
+                        .change
+                        .clone()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let count = |wanted: Change| changes.iter().filter(|c| **c == wanted).count();
+    assert_eq!(count(Change::Installed), 1, "{changes:?}");
+    assert_eq!(count(Change::Unchanged), 3, "{changes:?}");
+    let states = status(&store, env.project.path(), &lock).unwrap();
+    assert!(states[0].is_recorded(), "{states:?}");
+}
+
+fn https_archive_lock(server: &Server, digest: &str) -> Lockfile {
+    lock_text(&[archive_entry(
+        "style",
+        &format!("https://{}/p/style-1.2.0.tar.gz", server.registry()),
+        digest,
+    )])
+}
+
+#[test]
+fn an_https_archive_is_downloaded_checked_installed_and_replayed_from_cache() {
+    let archive = targz(FILES);
+    let digest = Digest::of(&archive).to_string();
+    let env = Env::new();
+    let pol = KeyPolicy::default();
+    let (lock, requests) = {
+        let body = archive.clone();
+        let server = Server::start(move |_| Response::new(200).body(body.clone()));
+        let lock = https_archive_lock(&server, &digest);
+        let c = client();
+        let report = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+        assert_eq!(report.packs[0].change, Change::Installed);
+        assert_eq!(
+            fs::read(report.packs[0].tree.join("rules/a.yml")).unwrap(),
+            b"rule: a\n"
+        );
+        (lock, server.requests().len())
+    };
+    assert_eq!(requests, 1);
+    // The trees are removed and the server is not consulted: the cached download is enough.
+    slopvac_plugins::extract::evict(&env.data.path().join("slopvac/trees")).unwrap();
+    let again = run(&env, Network::Offline, &pol, &lock).unwrap();
+    assert_eq!(again.packs[0].change, Change::Installed);
+}
+
+#[test]
+fn an_https_archive_with_the_wrong_digest_installs_and_caches_nothing() {
+    let archive = targz(FILES);
+    let server = Server::start(move |_| Response::new(200).body(archive.clone()));
+    let env = Env::new();
+    let c = client();
+    let pol = KeyPolicy::default();
+    let wrong = format!("sha256:{}", "00".repeat(32));
+    let lock = https_archive_lock(&server, &wrong);
+    let err = run(&env, Network::Online(&c), &pol, &lock).unwrap_err();
+    assert_eq!(err.code(), "digest-mismatch", "{err:?}");
+    env.assert_no_trees();
+    // Nothing was cached either: an offline run finds the pack missing.
+    let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
+    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+}
+
+#[test]
+fn an_edited_record_cannot_make_sync_keep_another_tree() {
+    // The record for `a` is rewritten to point at the intact tree of `b`.
+    let env = Env::new();
+    let lock = lock_text(&[
+        local_archive(&env, "a", &[("pack.toml", b"a\n")]),
+        local_archive(&env, "b", &[("pack.toml", b"b\n")]),
+    ]);
+    let pol = KeyPolicy::default();
+    let first = run(&env, Network::Offline, &pol, &lock).unwrap();
+    let (tree_a, tree_b) = (first.packs[0].tree.clone(), first.packs[1].tree.clone());
+    let digest_a = lock.packs()[0].digest.to_string();
+    let record = env
+        .data
+        .path()
+        .join("slopvac/refs")
+        .join(digest_a.trim_start_matches("sha256:"));
+    let name_b = tree_b.file_name().unwrap().to_string_lossy().into_owned();
+    fs::write(record, name_b.trim_start_matches("tree-")).unwrap();
+
+    // Status only checks the record, and says so by name.
+    let states = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(states[0].state, PackState::Recorded(tree_b));
+
+    // Sync re-derives the tree from the verified download.
+    let again = run(&env, Network::Offline, &pol, &lock).unwrap();
+    assert_eq!(again.packs[0].tree, tree_a);
+    assert_eq!(again.packs[0].change, Change::Installed);
+    let states = status(&env.store(), env.project.path(), &lock).unwrap();
+    assert_eq!(states[0].state, PackState::Recorded(tree_a));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
+    use std::os::unix::fs::PermissionsExt;
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    let tree = first.packs[0].tree.clone();
+    // More than 20 000 nodes: past the bound the extractor never walks.
+    fs::set_permissions(&tree, fs::Permissions::from_mode(0o755)).unwrap();
+    let crowd = tree.join("crowd");
+    fs::create_dir(&crowd).unwrap();
+    for i in 0..20_001 {
+        fs::write(crowd.join(format!("f{i}")), b"").unwrap();
+    }
+    let again = run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    assert_eq!(again.packs[0].change, Change::Reinstalled);
+    let aside = again.packs[0].quarantined.clone().expect("quarantine path");
+    assert!(aside.exists(), "{}", aside.display());
 }

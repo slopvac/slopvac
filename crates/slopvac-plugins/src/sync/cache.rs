@@ -23,6 +23,12 @@ pub enum TreeState {
     Tampered(PathBuf),
 }
 
+/// The exclusive store lock. Dropping it releases the lock.
+#[derive(Debug)]
+pub struct StoreLock {
+    _file: File,
+}
+
 /// The per-user data directory of packs: extracted trees, the downloaded
 /// artifacts they came from and the records that link a locked digest to a tree.
 ///
@@ -71,10 +77,41 @@ impl Store {
     pub(super) fn prepare(&self) -> Result<(), SyncError> {
         let store = |e: ExtractError| SyncError::Store(e.to_string());
         ensure_private_dir(&self.root).map_err(store)?;
-        for dir in [self.blobs(), self.refs()] {
+        // Every child is checked as an owned, non-link directory before use: extraction
+        // chmods and renames inside `trees`, so a planted link must not redirect it.
+        for dir in [self.trees(), self.blobs(), self.refs()] {
             ensure_private_child(&dir).map_err(store)?;
         }
         ensure_private_child(&self.blobs().join(".tmp")).map_err(store)
+    }
+
+    /// Take the exclusive store lock, waiting until another process releases it.
+    ///
+    /// `sync` holds it from the first inspection to the last record, so two
+    /// syncs cannot evict and restore the same tree under each other (threat
+    /// model E9). The OS drops the lock if the holder dies. Read-only calls such
+    /// as [`status`](super::status) do not take it.
+    ///
+    /// # Errors
+    /// [`SyncError::Store`] when the data directory or lock file cannot be used.
+    pub fn lock(&self) -> Result<StoreLock, SyncError> {
+        self.prepare()?;
+        let path = self.root.join(".lock");
+        if fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file()) {
+            return Err(SyncError::Store(format!(
+                "{} is not a plain file",
+                path.display()
+            )));
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|e| SyncError::Store(format!("opening the store lock: {e}")))?;
+        file.lock()
+            .map_err(|e| SyncError::Store(format!("taking the store lock: {e}")))?;
+        Ok(StoreLock { _file: file })
     }
 
     /// The directory of a tree.
