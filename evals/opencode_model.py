@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -70,6 +71,7 @@ def call(model: str, prompt: str, timeout: int = 600) -> str:
             capture_output=True,
             text=True,
             cwd=tmp,
+            env={**os.environ, "PWD": tmp},
             timeout=timeout,
             check=False,
         )
