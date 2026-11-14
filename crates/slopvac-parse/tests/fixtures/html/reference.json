@@ -1,0 +1,890 @@
+[
+ {
+  "id": "paragraph",
+  "source": "<p>One plain paragraph.</p>\n",
+  "words": [
+   {
+    "text": "One",
+    "src": "One"
+   },
+   {
+    "text": "plain",
+    "src": "plain"
+   },
+   {
+    "text": "paragraph.",
+    "src": "paragraph."
+   }
+  ]
+ },
+ {
+  "id": "two_paragraphs_one_line",
+  "source": "<p>First one.</p><p>Second one.</p>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   }
+  ]
+ },
+ {
+  "id": "two_paragraphs_two_lines",
+  "source": "<p>First one.</p>\n<p>Second one.</p>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   }
+  ]
+ },
+ {
+  "id": "wrapped_paragraph",
+  "source": "<p>First line wraps\nonto the second line.</p>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "wraps",
+    "src": "wraps"
+   },
+   {
+    "text": "onto",
+    "src": "onto"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "second",
+    "src": "second"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "wrapped_paragraph_crlf",
+  "source": "<p>First line wraps\r\nonto the second line.</p>\r\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "wraps",
+    "src": "wraps"
+   },
+   {
+    "text": "onto",
+    "src": "onto"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "second",
+    "src": "second"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "multibyte",
+  "source": "<p>Café naïve 日本語のテキスト and emoji 😀 here.</p>\n",
+  "words": [
+   {
+    "text": "Café",
+    "src": "Café"
+   },
+   {
+    "text": "naïve",
+    "src": "naïve"
+   },
+   {
+    "text": "日本語のテキスト",
+    "src": "日本語のテキスト"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "emoji",
+    "src": "emoji"
+   },
+   {
+    "text": "😀",
+    "src": "😀"
+   },
+   {
+    "text": "here.",
+    "src": "here."
+   }
+  ]
+ },
+ {
+  "id": "no_final_newline",
+  "source": "<p>Ends without a newline</p>",
+  "words": [
+   {
+    "text": "Ends",
+    "src": "Ends"
+   },
+   {
+    "text": "without",
+    "src": "without"
+   },
+   {
+    "text": "a",
+    "src": "a"
+   },
+   {
+    "text": "newline",
+    "src": "newline"
+   }
+  ]
+ },
+ {
+  "id": "bare_text",
+  "source": "Words with no tags at all.\n",
+  "words": [
+   {
+    "text": "Words",
+    "src": "Words"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "no",
+    "src": "no"
+   },
+   {
+    "text": "tags",
+    "src": "tags"
+   },
+   {
+    "text": "at",
+    "src": "at"
+   },
+   {
+    "text": "all.",
+    "src": "all."
+   }
+  ]
+ },
+ {
+  "id": "headings",
+  "source": "<h1>Title here</h1>\n<p>Body text follows.</p>\n<h2>Second heading</h2>\n",
+  "words": [
+   {
+    "text": "Title",
+    "src": "Title"
+   },
+   {
+    "text": "here",
+    "src": "here"
+   },
+   {
+    "text": "Body",
+    "src": "Body"
+   },
+   {
+    "text": "text",
+    "src": "text"
+   },
+   {
+    "text": "follows.",
+    "src": "follows."
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "heading",
+    "src": "heading"
+   }
+  ]
+ },
+ {
+  "id": "list",
+  "source": "<ul>\n<li>First item</li>\n<li>Second item</li>\n</ul>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   }
+  ]
+ },
+ {
+  "id": "list_one_line",
+  "source": "<ul><li>First item</li><li>Second item</li></ul>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   }
+  ]
+ },
+ {
+  "id": "unclosed_items",
+  "source": "<ul>\n<li>First item\n<li>Second item\n</ul>\n",
+  "words": [
+   {
+    "text": "First",
+    "src": "First"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   },
+   {
+    "text": "Second",
+    "src": "Second"
+   },
+   {
+    "text": "item",
+    "src": "item"
+   }
+  ]
+ },
+ {
+  "id": "table",
+  "source": "<table>\n<tr><th>Name</th><th>Value</th></tr>\n<tr><td>alpha</td><td>beta</td></tr>\n</table>\n",
+  "words": [
+   {
+    "text": "Name",
+    "src": "Name"
+   },
+   {
+    "text": "Value",
+    "src": "Value"
+   },
+   {
+    "text": "alpha",
+    "src": "alpha"
+   },
+   {
+    "text": "beta",
+    "src": "beta"
+   }
+  ]
+ },
+ {
+  "id": "inline_emphasis",
+  "source": "<p>A <em>tagged</em> word and <strong>another</strong> one.</p>\n",
+  "words": [
+   {
+    "text": "A",
+    "src": "A"
+   },
+   {
+    "text": "tagged",
+    "src": "tagged"
+   },
+   {
+    "text": "word",
+    "src": "word"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "another",
+    "src": "another"
+   },
+   {
+    "text": "one.",
+    "src": "one."
+   }
+  ]
+ },
+ {
+  "id": "inline_in_cell",
+  "source": "<table><tr><td>The <em>leverage</em> is high</td></tr></table>\n",
+  "words": [
+   {
+    "text": "The",
+    "src": "The"
+   },
+   {
+    "text": "leverage",
+    "src": "leverage"
+   },
+   {
+    "text": "is",
+    "src": "is"
+   },
+   {
+    "text": "high",
+    "src": "high"
+   }
+  ]
+ },
+ {
+  "id": "link",
+  "source": "<p>See <a href=\"https://example.com/a?x=1&amp;y=2\">the guide</a> for details.</p>\n",
+  "words": [
+   {
+    "text": "See",
+    "src": "See"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "guide",
+    "src": "guide"
+   },
+   {
+    "text": "for",
+    "src": "for"
+   },
+   {
+    "text": "details.",
+    "src": "details."
+   }
+  ]
+ },
+ {
+  "id": "attribute_with_angle",
+  "source": "<p title=\"a > b\">Visible text.</p>\n",
+  "words": [
+   {
+    "text": "Visible",
+    "src": "Visible"
+   },
+   {
+    "text": "text.",
+    "src": "text."
+   }
+  ]
+ },
+ {
+  "id": "comment",
+  "source": "<p>Visible <!-- hidden words --> text.</p>\n",
+  "words": [
+   {
+    "text": "Visible",
+    "src": "Visible"
+   },
+   {
+    "text": "text.",
+    "src": "text."
+   }
+  ]
+ },
+ {
+  "id": "comment_multiline",
+  "source": "<p>Before</p>\n<!-- hidden\nacross lines -->\n<p>After</p>\n",
+  "words": [
+   {
+    "text": "Before",
+    "src": "Before"
+   },
+   {
+    "text": "After",
+    "src": "After"
+   }
+  ]
+ },
+ {
+  "id": "entity_inside_word",
+  "source": "<p>AT&amp;T rocks and a&lt;b work.</p>\n",
+  "words": [
+   {
+    "text": "AT&T",
+    "src": "AT&amp;T"
+   },
+   {
+    "text": "rocks",
+    "src": "rocks"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "a<b",
+    "src": "a&lt;b"
+   },
+   {
+    "text": "work.",
+    "src": "work."
+   }
+  ]
+ },
+ {
+  "id": "entity_at_word_end",
+  "source": "<p>R&amp;D. Q&amp;A, Tom&amp;</p>\n",
+  "words": [
+   {
+    "text": "R&D.",
+    "src": "R&amp;D."
+   },
+   {
+    "text": "Q&A,",
+    "src": "Q&amp;A,"
+   },
+   {
+    "text": "Tom&",
+    "src": "Tom&amp;"
+   }
+  ]
+ },
+ {
+  "id": "numeric_entities",
+  "source": "<p>Use a&#169;b and c&#x1F600;d marks.</p>\n",
+  "words": [
+   {
+    "text": "Use",
+    "src": "Use"
+   },
+   {
+    "text": "a©b",
+    "src": "a&#169;b"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "c😀d",
+    "src": "c&#x1F600;d"
+   },
+   {
+    "text": "marks.",
+    "src": "marks."
+   }
+  ]
+ },
+ {
+  "id": "named_entities",
+  "source": "<p>caf&eacute; &mdash; &quot;quoted&quot; &copy; 2026</p>\n",
+  "words": [
+   {
+    "text": "café",
+    "src": "caf&eacute;"
+   },
+   {
+    "text": "—",
+    "src": "&mdash;"
+   },
+   {
+    "text": "\"quoted\"",
+    "src": "&quot;quoted&quot;"
+   },
+   {
+    "text": "©",
+    "src": "&copy;"
+   },
+   {
+    "text": "2026",
+    "src": "2026"
+   }
+  ]
+ },
+ {
+  "id": "nbsp",
+  "source": "<p>one&nbsp;two three</p>\n",
+  "words": [
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   },
+   {
+    "text": "three",
+    "src": "three"
+   }
+  ]
+ },
+ {
+  "id": "script_skipped",
+  "source": "<p>Keep this.</p>\n<script>var a = '<b>no</b>'; // &amp;</script>\n<p>And this.</p>\n",
+  "words": [
+   {
+    "text": "Keep",
+    "src": "Keep"
+   },
+   {
+    "text": "this.",
+    "src": "this."
+   },
+   {
+    "text": "And",
+    "src": "And"
+   },
+   {
+    "text": "this.",
+    "src": "this."
+   }
+  ]
+ },
+ {
+  "id": "style_skipped",
+  "source": "<style>p { color: red }</style>\n<p>Styled text.</p>\n",
+  "words": [
+   {
+    "text": "Styled",
+    "src": "Styled"
+   },
+   {
+    "text": "text.",
+    "src": "text."
+   }
+  ]
+ },
+ {
+  "id": "head_skipped",
+  "source": "<html><head><title>Page title</title></head>\n<body>\n<p>Body words.</p>\n</body></html>\n",
+  "words": [
+   {
+    "text": "Body",
+    "src": "Body"
+   },
+   {
+    "text": "words.",
+    "src": "words."
+   }
+  ]
+ },
+ {
+  "id": "pre_skipped",
+  "source": "<p>Run this:</p>\n<pre>cargo test\nmake all</pre>\n<p>Then stop.</p>\n",
+  "words": [
+   {
+    "text": "Run",
+    "src": "Run"
+   },
+   {
+    "text": "this:",
+    "src": "this:"
+   },
+   {
+    "text": "Then",
+    "src": "Then"
+   },
+   {
+    "text": "stop.",
+    "src": "stop."
+   }
+  ]
+ },
+ {
+  "id": "inline_code_skipped",
+  "source": "<p>Run <code>cargo test</code> before you push.</p>\n",
+  "words": [
+   {
+    "text": "Run",
+    "src": "Run"
+   },
+   {
+    "text": "before",
+    "src": "before"
+   },
+   {
+    "text": "you",
+    "src": "you"
+   },
+   {
+    "text": "push.",
+    "src": "push."
+   }
+  ]
+ },
+ {
+  "id": "kbd_skipped",
+  "source": "<p>Press <kbd>Ctrl</kbd> to continue.</p>\n",
+  "words": [
+   {
+    "text": "Press",
+    "src": "Press"
+   },
+   {
+    "text": "to",
+    "src": "to"
+   },
+   {
+    "text": "continue.",
+    "src": "continue."
+   }
+  ]
+ },
+ {
+  "id": "template_skipped",
+  "source": "<template><p>Hidden words.</p></template>\n<p>Shown words.</p>\n",
+  "words": [
+   {
+    "text": "Shown",
+    "src": "Shown"
+   },
+   {
+    "text": "words.",
+    "src": "words."
+   }
+  ]
+ },
+ {
+  "id": "noscript_skipped",
+  "source": "<noscript>Enable scripts.</noscript>\n<p>Shown words.</p>\n",
+  "words": [
+   {
+    "text": "Shown",
+    "src": "Shown"
+   },
+   {
+    "text": "words.",
+    "src": "words."
+   }
+  ]
+ },
+ {
+  "id": "br_with_spaces",
+  "source": "<p>line one <br> line two</p>\n",
+  "words": [
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   }
+  ]
+ },
+ {
+  "id": "blockquote",
+  "source": "<blockquote>\nQuoted line one\nquoted line two\n</blockquote>\n<p>After the quote.</p>\n",
+  "words": [
+   {
+    "text": "Quoted",
+    "src": "Quoted"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "quoted",
+    "src": "quoted"
+   },
+   {
+    "text": "line",
+    "src": "line"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   },
+   {
+    "text": "After",
+    "src": "After"
+   },
+   {
+    "text": "the",
+    "src": "the"
+   },
+   {
+    "text": "quote.",
+    "src": "quote."
+   }
+  ]
+ },
+ {
+  "id": "blank_lines_many",
+  "source": "<p>One.</p>\n\n\n\n<p>Two.</p>\n",
+  "words": [
+   {
+    "text": "One.",
+    "src": "One."
+   },
+   {
+    "text": "Two.",
+    "src": "Two."
+   }
+  ]
+ },
+ {
+  "id": "trailing_spaces",
+  "source": "<p>Line with trailing spaces   \nnext line.</p>\n",
+  "words": [
+   {
+    "text": "Line",
+    "src": "Line"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "trailing",
+    "src": "trailing"
+   },
+   {
+    "text": "spaces",
+    "src": "spaces"
+   },
+   {
+    "text": "next",
+    "src": "next"
+   },
+   {
+    "text": "line.",
+    "src": "line."
+   }
+  ]
+ },
+ {
+  "id": "tabs",
+  "source": "<p>\tIndented\twith\ttabs</p>\n",
+  "words": [
+   {
+    "text": "Indented",
+    "src": "Indented"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "tabs",
+    "src": "tabs"
+   }
+  ]
+ },
+ {
+  "id": "full_page",
+  "source": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>T</title>\n<style>b { x: y }</style>\n</head>\n<body>\n<h1>Guide</h1>\n<p>Intro text with <code>code</code> and <b>bold</b> parts.</p>\n<ul>\n<li>Step one</li>\n<li>Step two</li>\n</ul>\n<script>go()</script>\n</body>\n</html>\n",
+  "words": [
+   {
+    "text": "Guide",
+    "src": "Guide"
+   },
+   {
+    "text": "Intro",
+    "src": "Intro"
+   },
+   {
+    "text": "text",
+    "src": "text"
+   },
+   {
+    "text": "with",
+    "src": "with"
+   },
+   {
+    "text": "and",
+    "src": "and"
+   },
+   {
+    "text": "bold",
+    "src": "bold"
+   },
+   {
+    "text": "parts.",
+    "src": "parts."
+   },
+   {
+    "text": "Step",
+    "src": "Step"
+   },
+   {
+    "text": "one",
+    "src": "one"
+   },
+   {
+    "text": "Step",
+    "src": "Step"
+   },
+   {
+    "text": "two",
+    "src": "two"
+   }
+  ]
+ }
+]

@@ -10,3 +10,14 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+slopvac-model = { workspace = true }
+html5gum = { workspace = true }
+html5ever = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+markup5ever_rcdom = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
