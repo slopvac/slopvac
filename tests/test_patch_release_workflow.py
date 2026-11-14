@@ -121,3 +121,26 @@ def test_the_checker_rejects_tag_interpolation_in_a_script():
     bad = "jobs:\n  a:\n    steps:\n      - run: |\n          echo ${{ github.ref_name }}\n"
     with pytest.raises(ValueError, match="tag interpolated"):
         patcher._assert_clean(bad)
+
+
+def test_host_requires_the_provenance_job(workflow):
+    host = workflow["jobs"]["host"]
+    assert "custom-release-provenance" in host["needs"]
+    assert "needs.custom-release-provenance.result == 'success'" in host["if"]
+
+
+def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
+    job = workflow["jobs"]["custom-release-provenance"]
+    assert job["uses"] == "./.github/workflows/release-provenance.yml"
+    assert "secrets" not in job
+    assert job["permissions"] == {"actions": "read", "contents": "read"}
+
+
+def test_the_stable_pypi_job_requires_the_provenance_job():
+    publish = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "publish-lint.yml").read_text(
+            encoding="utf-8"
+        )
+    )["jobs"]
+    assert "provenance" in publish["pypi"]["needs"]
+    assert publish["provenance"]["uses"] == "./.github/workflows/release-provenance.yml"

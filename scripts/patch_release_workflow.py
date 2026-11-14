@@ -108,8 +108,43 @@ def harden(text: str) -> str:
         "host job env",
     )
     text = _add_tag_flag_env(text)
+    text = _gate_on_provenance(text)
     _assert_clean(text)
     return text
+
+
+_CUSTOM_OLD = """\
+  custom-release-provenance:
+    uses: $/.github/workflows/release-provenance.yml
+    secrets: inherit
+"""
+_CUSTOM_NEW = """\
+  custom-release-provenance:
+    uses: ./.github/workflows/release-provenance.yml
+    permissions:
+      "actions": "read"
+      "contents": "read"
+"""
+_HOST_NEEDS_OLD = "  host:\n    needs:\n      - plan\n"
+_HOST_NEEDS_NEW = (
+    "  host:\n    needs:\n      - plan\n      - custom-release-provenance\n"
+)
+_HOST_IF_OLD = "if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' &&"
+_HOST_IF_NEW = (
+    "if: ${{ always() && needs.plan.result == 'success' && needs.custom-release-provenance.result == 'success'"
+    " && needs.plan.outputs.publishing == 'true' &&"
+)
+
+
+def _gate_on_provenance(text: str) -> str:
+    """Run the provenance job without inherited secrets, and make `host` require it.
+
+    dist lets `host` run when the build jobs were skipped, so a failed provenance
+    job that skips the builds must still stop `host`.
+    """
+    text = _replace_once(text, _CUSTOM_OLD, _CUSTOM_NEW, "provenance plan job")
+    text = _replace_once(text, _HOST_NEEDS_OLD, _HOST_NEEDS_NEW, "host needs")
+    return _replace_once(text, _HOST_IF_OLD, _HOST_IF_NEW, "host condition")
 
 
 def _insert_validation(text: str) -> str:

@@ -284,9 +284,24 @@ jobs:
    - name: Publish
      uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
+ provenance:
+  name: Stable release has a passed candidate
+  needs: build
+  # Same condition as the stable job below, so a stable upload always passes the gate.
+  if: >-
+   needs.build.outputs.rc != 'true' &&
+   github.event_name == 'workflow_dispatch' &&
+   github.ref_type == 'tag' &&
+   !inputs.dry-run &&
+   inputs.target == 'pypi'
+  permissions:
+   actions: read
+   contents: read
+  uses: ./.github/workflows/release-provenance.yml
+
  pypi:
   name: Publish to PyPI
-  needs: build
+  needs: [build, provenance]
   # Stable publishing is manual and only from a tag the build step accepted as
   # exactly v<package version>. A push to the release PR branch is an RC and
   # never reaches this job.

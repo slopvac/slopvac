@@ -31,6 +31,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 - Only tags that match `v<digits>.<digits>.<digits>` start the workflow. Candidate tags (`rc/vX.Y.Z-rc.N`) never start it, so a candidate cannot publish through this workflow.
 - The first step of the plan job rejects any tag that is not exactly `vX.Y.Z`, before dist runs.
 - The tag reaches every shell step through an environment variable, never through `${{ }}` inside the script.
+- The `custom-release-provenance` plan job runs `release-provenance.yml` without inherited secrets. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The stable PyPI job in `publish-lint.yml` needs the same gate. The gate is described in [release candidates](candidates.md).
 - The workflow token is read-only. Only the host job, which creates the GitHub release, can write contents.
 
 `dist-workspace.toml` sets `allow-dirty = ["ci"]` so dist accepts the hardened file. The script fails if a dist upgrade changes the template, and `tests/test_patch_release_workflow.py` checks the committed workflow. After changing `dist-workspace.toml` or upgrading dist, run `scripts/dist_generate.sh` and commit the result.

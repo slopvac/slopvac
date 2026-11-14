@@ -1,0 +1,35 @@
+name: Release provenance
+
+# Reusable gate for stable releases (bead slopvac-8l4.13.4). The cargo-dist
+# release workflow calls it as a plan job, so a stable `vX.Y.Z` tag cannot
+# publish unless a passed candidate (rc/vX.Y.Z-rc.N) tested the same tree.
+# The release workflow only starts on plain vX.Y.Z tags.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  provenance:
+    name: Stable release has a passed candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Check the candidate
+        # Pull requests run the release plan too; only a tag push can publish.
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_provenance.py check-stable "$TAG" --repo "$REPO"
