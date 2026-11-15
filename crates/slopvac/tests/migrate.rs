@@ -75,7 +75,7 @@ fn unrepresentable_setting_exits_2_and_writes_nothing() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "config-legacy-dropped: .slopvac.toml:2: `vale.enabled`",
+            "error[config-legacy-dropped]: .slopvac.toml:2: `vale.enabled`",
         ));
     assert!(dir.path().join(".slopvac.toml").exists());
     assert!(!dir.path().join("slopvac.toml").exists());
@@ -93,5 +93,33 @@ fn restore_rejects_a_manifest_that_escapes_the_project() {
         .arg("--restore")
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("unsafe"));
+        .stderr(predicate::str::starts_with("error[migrate-unsafe-path]: "));
+}
+
+#[test]
+fn missing_project_reports_a_coded_error_without_the_absolute_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("no-such-project");
+    slopvac()
+        .arg("migrate")
+        .arg(&missing)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[migrate-io-failed]: "))
+        .stderr(predicate::str::contains(dir.path().to_str().expect("utf-8")).not());
+}
+
+#[test]
+fn conflicting_config_sources_report_a_coded_error() {
+    let dir = project("profile = \"strict\"\n");
+    fs::write(dir.path().join("slopvac.toml"), "profile = \"normal\"\n").expect("write");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[migrate-config-conflict]: ",
+        ))
+        .stderr(predicate::str::contains(dir.path().to_str().expect("utf-8")).not());
 }
