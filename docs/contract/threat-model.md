@@ -27,7 +27,7 @@ Out of scope for 3.0:
 - the Vale subprocess of 2.x, which 3.0 removes;
 - the security of the registry operator, beyond what signatures and digests cover.
 
-Method. Section 2 lists assets, section 3 actors, and section 4 boundaries and flows. Section 5 fixes four design decisions that the threats depend on. Section 6 is the register. Each threat has a STRIDE category, a CWE, a likelihood and an impact (L, M or H), a mitigation, an owning bead and a proving test. Section 7 maps the hand-offs from the plugin protocol (section 11.2) and the acceptance list onto the register. Section 8 lists proposed work that has no owner yet. Section 9 lists residual risks. Likelihood assumes a published pack ecosystem. Impact assumes the user's own rights.
+Method. Section 2 lists assets, section 3 actors, and section 4 boundaries and flows. Section 5 fixes four design decisions that the threats depend on. Section 6 is the register. Each threat has a STRIDE category, a CWE, a likelihood and an impact (L, M or H), a mitigation, an owning bead and a proving test. Section 7 maps the hand-offs from the plugin protocol (section 11.2) and the acceptance list onto the register. Section 8 lists the beads that carry the new work. Section 9 lists residual risks. Likelihood assumes a published pack ecosystem. Impact assumes the user's own rights.
 
 ## 2. Assets
 
@@ -100,25 +100,39 @@ Boundaries. B1 is hostile. B2 is a program chosen by a file in the user's home d
 
 A minisign signature covers one byte string, the **signed statement**. A layer cannot sign the manifest that contains it, because the layer digest would have to appear in the manifest it signs. The signature therefore does not sign the manifest. It signs a statement that names the manifest's other content, and the verifier recomputes the match.
 
-- The statement is a canonical JSON document of at most 64 KiB, sorted keys, no insignificant whitespace, no duplicate keys. The signature layer (media type to be fixed by `slopvac-8l4.9.5`) holds the statement and the `.minisig` file as two blobs, or as one blob with two parts.
-- The statement holds these fields:
-  - the schema version;
-  - the pack or plugin id with its namespace, and the version;
-  - the `artifactType`;
-  - the digest of the config blob;
-  - the ordered digests and sizes of every other layer;
-  - the publisher key id;
-  - a `notBefore` time.
-- The verifier runs these checks in order:
-  1. The minisign signature over the exact statement bytes.
-  2. The key against section 5.2.
-  3. The statement names exactly the non-signature layers of the manifest.
-  4. The `artifactType`, id and version match the manifest annotations and the lockfile request.
-  5. The config digest matches.
-- A layer that the statement does not list makes the artifact invalid. A second signature layer is invalid. Manifest annotations are not trusted unless the statement repeats them.
-- The minisign trusted comment is signed, but the host never decides on it.
-- After verification the lockfile pins the **manifest digest**. Later runs compare that digest, and the signature gate runs again only on `sync` and `update`. A registry cannot change what a pinned digest resolves to.
-- Referrers are not used. GHCR lacks the referrers API (`slopvac-8l4.2.17`), and the layer approach works everywhere.
+Layout in the OCI artifact (implemented in `crates/slopvac-plugins/src/sign.rs`):
+
+- The artifact is an OCI manifest with an `artifactType` for the pack kind, one config blob and the content layers. Two further layers carry the signature, and the verifier finds each by media type:
+  - `application/vnd.slopvac.signature.statement.v1+json` holds the canonical statement;
+  - `application/vnd.slopvac.signature.minisig.v1` holds the `.minisig` text, at most 4 KiB.
+- An artifact has exactly one layer of each type. A missing layer is `MissingSignature` and a repeated one is `DuplicateSignature`. The statement does not list the two signature layers, because the digest of the statement layer depends on the statement.
+- The manifest carries the annotations `dev.slopvac.id` and `dev.slopvac.version`. They are trusted only because the statement repeats the same values.
+
+What is signed. The signed bytes are the canonical statement, byte for byte, and nothing else. Minisign signs them in the prehashed mode. The verifier refuses a legacy (non-prehashed) signature.
+
+- The statement is a canonical JSON object of at most 64 KiB, with sorted keys at every depth and no insignificant whitespace.
+- The verifier parses it strictly (duplicate keys fail), encodes it again and requires equal bytes, so the signed bytes cannot differ from the parsed value. Unknown fields fail.
+- Its fields are:
+  - `schema_version`, always 1;
+  - `id`, the pack id from its manifest, and `namespace`, the owner segment of the repository the artifact is published under (both lowercase names);
+  - `version`, a semantic version without build metadata;
+  - `artifactType`;
+  - `config`, the digest of the config blob;
+  - `layers`, the digest, size and media type of every layer except the two signature layers, in manifest order;
+  - `keyId`, 16 uppercase hex digits;
+  - `notBefore`, a time as `YYYY-MM-DDTHH:MM:SSZ` in UTC.
+
+The verifier runs these steps in order, and the first failure ends the check:
+
+1. The statement is at most 64 KiB, strict and canonical, and its fields parse.
+2. The key comes from the policy for the statement's namespace (section 5.2) and has the statement's `keyId`.
+3. The minisign signature verifies over the exact statement bytes.
+4. The statement and the manifest agree. `schema_version` is 1, the listed layers equal the manifest's other layers, and the config digest matches. The `artifactType` matches the manifest and the request. The `id`, `namespace` and `version` match the request, and the annotations match.
+5. `notBefore` is a real calendar time, and the rollback rule of section 5.3 holds.
+
+A layer that the statement does not list makes the artifact invalid. The minisign trusted comment is signed, but the host does not use it to decide anything.
+
+After verification the lockfile pins the **manifest digest**, and records the `keyId` and `notBefore` of the signature in its `[packs.signature]` table. `sync` fetches by that digest, never by tag, and verifies the signature on every run. It fails with `SignatureDiffersFromLock` when the key id or `notBefore` differs from the lock. A registry cannot change what a pinned digest resolves to. Referrers are not used. GHCR lacks the referrers API (`slopvac-8l4.2.17`), and the layer approach works everywhere.
 
 What the signature does not cover: the registry tag (a tag is mutable and only the digest counts), anything outside the artifact, and the behavior of a signed plugin. A signature says who published the bytes. It says nothing about whether they are safe.
 
@@ -126,14 +140,14 @@ What the signature does not cover: the registry tag (a tag is mutable and only t
 
 The pack index is rebuilt by a job. Whoever controls that job, or a pull request that the job accepts, controls the index. If the index were the only place that binds a pack to a key, an index compromise would let an attacker publish a validly signed artifact under any name. So the index is not an authority for keys.
 
-- Authority order, strongest first:
-  1. Keys compiled into the slopvac binary for the first-party namespace.
-  2. Keys pinned in the user's trust store by an explicit command that prints the fingerprint.
-  3. Keys pinned in the lockfile by an earlier verified sync.
-- The index may display a key and its fingerprint. A first install shows the fingerprint and exits 2 until the user runs the pinning command (`slopvac plugins trust --key <fingerprint>` or the data-pack equivalent). No flag, `--yes` or environment variable pins a key on its own. `SLOPVAC_TRUST` may name a fingerprint, as policies.md section 1.6 allows for hashes.
+- Two sources supply keys, and nothing else does:
+  1. Keys compiled into the slopvac binary, for the first-party namespaces. A first-party namespace with no compiled key fails closed (`slopvac-8l4.9.16`).
+  2. Keys that the user pinned in the trust store for one namespace, by an explicit command that prints the fingerprint. The first pin binds the namespace to the key. A key pinned for one namespace signs only that namespace.
+- The lockfile supplies no keys. It records the key id and `notBefore` of the signature that `sync` verified, so a later change shows up as `SignatureDiffersFromLock` (section 5.1).
+- The index may display a key and its fingerprint. A first install shows the fingerprint and exits 2 until the user runs the pinning command (`slopvac plugins trust --key <fingerprint>` or the data-pack equivalent). No flag, `--yes` or environment variable pins a key on its own. `SLOPVAC_TRUST` names content hashes only and cannot pin a key. A fingerprint or a name in it is an error.
 - A pinned key that differs from the index is a hard failure with exit 2. A pin stays in force whatever the index lists.
 - A pack namespace binds to a key set at first pin. A pack that claims the first-party namespace must verify against a compiled key.
-- A key id inside a statement selects among pinned keys. Only the pinned set supplies keys.
+- A key id inside a statement selects among the keys the policy already holds. It adds none.
 
 ### 5.3 Rotation and revocation
 
@@ -141,7 +155,7 @@ The pack index is rebuilt by a job. Whoever controls that job, or a pull request
 - **Compromised key.** The publisher cannot sign its own revocation if the key is lost, so a revocation is a statement signed by the first-party root key. It lists key ids and artifact manifest digests. The host caches the signed list, fetches it during `sync`, `update` and `outdated`, and checks it at every plugin spawn from the cache.
 - **Effect.** A revoked key or digest fails `sync` with exit 2 and refuses to spawn. Trust records for a revoked digest are inert and `plugins status` flags them.
 - **Offline.** An offline run uses the cached list. A cache older than 30 days (proposed) prints a notice and does not block. The window is a residual risk (R3).
-- **Rollback.** A statement carries `notBefore` and the version. `plugins update` refuses an earlier version or an older `notBefore` than the lockfile holds unless the user passes an explicit downgrade flag.
+- **Rollback.** A statement carries `version` and `notBefore`, and the lockfile holds both as a floor. The verifier refuses an earlier version and, independently, an earlier `notBefore`, unless the caller passes the explicit downgrade flag. A new statement with the same version and an older `notBefore` is refused. A malformed floor time fails closed. The lockfile also fixes the exact `keyId` and `notBefore`, so `sync` rejects any other valid signature for the same digest. The implemented test is `tm25_an_older_version_or_older_not_before_is_refused_without_the_downgrade_flag` in `crates/slopvac-plugins/tests/sign.rs`.
 
 ### 5.4 Trust scope
 
@@ -158,7 +172,7 @@ Trust is stored per user, outside the project. A trust file inside a project is 
 
 ### 5.5 Limits set by this model
 
-The plugin protocol hands the numbers to this model. These values are proposed and bind the owning beads.
+The plugin protocol hands the numbers to this model. The per-plugin run caps are implemented as the `RunCaps` defaults in `crates/slopvac-plugins/src/host.rs`. The process limits come from the open limits PR (#389, `slopvac-8l4.9.13`). The whole-run budget is new work (`slopvac-8l4.9.33`).
 
 | Limit | Value | Bead |
 |---|---|---|
@@ -167,6 +181,12 @@ The plugin protocol hands the numbers to this model. These values are proposed a
 | Bytes read from a plugin's standard output per run | 512 MiB, then kill | `slopvac-8l4.9.6` |
 | Bytes read from a plugin's standard error per run | 128 MiB read and discarded, then kill; last 64 KiB kept | `slopvac-8l4.9.6` |
 | Wall-clock time per plugin per run | 30 minutes, then kill and exit 2 | `slopvac-8l4.9.6` |
+| Whole-run budget across all plugins | 2 GiB of standard output, 512 MiB of standard error and 4,000 unsolicited messages in total, then kill the offending plugin and exit 2 | `slopvac-8l4.9.33` |
+| Message rate per second | No limit. Bounded channels give backpressure, and the byte and message caps bound the total work. | `slopvac-8l4.9.6` |
+| CPU time per plugin process | 30 minutes, with `SIGXCPU` at the limit and `SIGKILL` 1 s later | `slopvac-8l4.9.13` |
+| Open files, file size, core files | 1,024 files, 256 MiB, no core files | `slopvac-8l4.9.13` |
+| Memory per plugin process | 4 GiB (`RLIMIT_DATA`) on Linux only | `slopvac-8l4.9.13` |
+| Process count | No limit. `RLIMIT_NPROC` counts every process of the user, so the group kill and the wall-clock cap end a fork loop (R2). | `slopvac-8l4.9.13` |
 | Fixer edits per document | 1,000 | `slopvac-8l4.9.6` |
 | Fixer inserted bytes per document | the lesser of 1 MiB and four times the selected findings' span bytes plus 4 KiB | `slopvac-8l4.9.6` |
 | OCI manifest or index body | 4 MiB | `slopvac-8l4.9.2` |
@@ -184,7 +204,7 @@ The plugin protocol hands the numbers to this model. These values are proposed a
 
 ## 6. Threat register
 
-Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is the bead that builds the control. "NEW" refers to the proposed work in section 8. "Test" is the test that proves the control. H-numbers are tests of plugin-protocol.md section 12.1. TM-numbers are tests this model adds, and section 7 lists them again by acceptance heading.
+Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is the bead that builds the control. "Test" is the test that proves the control. H-numbers are tests of plugin-protocol.md section 12.1. TM-numbers are tests this model adds, and section 7 lists them again by acceptance heading.
 
 ### 6.1 Plugin host and subprocess
 
@@ -192,10 +212,10 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 |---|---|---|---|---|---|---|---|
 | P1 | An oversized or malformed frame exhausts memory or desynchronises the stream. | D | CWE-770, CWE-190 | M/H | Check `Content-Length` with checked arithmetic before allocating. Stop at a framing error and kill. 1 MiB limit before `initialize`. | `slopvac-8l4.9.6` | H1, H2, H3, H25, TM-1 (oversized frames) |
 | P2 | Nested JSON or duplicate keys crash the parser or split parsers. | D, T | CWE-674, CWE-1286 | M/M | Depth limit 64, reject duplicate keys and non-integer numbers. | `slopvac-8l4.9.6` | H25, H35 |
-| P3 | A flood of small messages or responses burns CPU or fills a queue. | D | CWE-400, CWE-770 | M/M | Bounded channels with backpressure. Cap on unsolicited messages and per-run byte caps from section 5.5. | `slopvac-8l4.9.6` | TM-2 (message flood: kill at the cap, memory stays flat) |
+| P3 | A flood of small messages or responses burns CPU or fills a queue. | D | CWE-400, CWE-770 | M/M | Bounded channels with backpressure. Cap on unsolicited messages and per-run byte caps from section 5.5. | `slopvac-8l4.9.6`, `slopvac-8l4.9.33` | TM-2 (message flood: kill at the cap, memory stays flat) |
 | P4 | A standard error flood fills the pipe and stalls the plugin, or consumes memory. | D | CWE-400, CWE-779 | H/M | A dedicated drain thread reads from spawn. A fixed ring keeps 64 KiB with no line buffering. Total read is capped, then the plugin dies. | `slopvac-8l4.9.6` | H16, TM-3 (stderr floods: 10 MiB and a single 1 GiB line without newline) |
 | P5 | A plugin starts children that outlive the run or escape the process group. | D, E | CWE-404, CWE-459 | H/H | Kill the process group on Unix and the job object on Windows. On Linux, mark the host a child subreaper and kill reparented children. On macOS, walk the process tree before the kill and kill every descendant found. Drop guard and signal handler. | `slopvac-8l4.9.6` | H17, H18, TM-4 (descendant processes: one in the group, one that calls `setsid`, one that double-forks) |
-| P6 | A plugin uses unbounded CPU, memory, files, disk or processes. | D | CWE-400, CWE-770 | M/M | Wall-clock cap per run. `setrlimit` for CPU time, open files, core size and file size on Unix. Job object limits on Windows. Memory and process limits are best effort (R2). | NEW-3 | TM-5 (limit test: busy loop, allocation loop and fork loop end with a diagnostic and exit 2) |
+| P6 | A plugin uses unbounded CPU, memory, files, disk or processes. | D | CWE-400, CWE-770 | M/M | Wall-clock cap per run. `setrlimit` for CPU time, open files, core size and file size on Unix. Job object limits on Windows. Memory and process limits are best effort (R2). | `slopvac-8l4.9.13` | TM-5 (limit test: busy loop, allocation loop and fork loop end with a diagnostic and exit 2) |
 | P7 | A plugin read or write blocks the host. | D | CWE-833, CWE-400 | M/M | The host writes on its own thread. Every deadline is wall-clock and ends in a kill. | `slopvac-8l4.9.6` | H4, H13, H32, H33 |
 | P8 | A plugin lies about its capabilities: reports `network: false` and connects, or offers more hooks than declared. | S, E | CWE-693, CWE-807 | M/H | Spawn decisions come from the hashed manifest. A wider reply is `plugin-declaration-mismatch`. A false `network: false` is not detectable in 3.0 (R1). | `slopvac-8l4.9.6` | H19, H26 |
 | P9 | A plugin returns hostile results: false spans, edits outside the finding, wrong limits. | T | CWE-20, CWE-1284 | H/M | Validate every result before use. Reject the whole document on an edit outside its envelope. Never clamp. | `slopvac-8l4.9.6` | H11, H27, H28, H29, H30 |
@@ -204,21 +224,21 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 | P12 | The environment leaks secrets or lets the plugin change loader behavior. | I, E | CWE-526, CWE-426 | M/H | Allowlist: host-set `PATH`, a locale, variables the manifest names and the user allowed. No `HOME`, tokens, CI variables, `PYTHON*`, `LD_*`, `DYLD_*`. All descriptors except 0 to 2 are closed. | `slopvac-8l4.9.6` | TM-8 (a plugin prints its environment: only the allowlist appears) |
 | P13 | A trusted plugin turns hostile after an update. | E | CWE-1357 | M/H | A new version is a new hash. `plugins update` never records trust and shows the declaration change. Revocation list (T3 in section 6.3). | `slopvac-8l4.9.4` | TM-9 (update to a new hash: spawn refused, diff printed) |
 | P14 | The plugin's standard error leaks document text into host logs. | I | CWE-532 | M/L | The host cannot redact free text. Stderr is shown only after a failure (last 4 KiB) or under `SLOPVAC_LOG`. Plugin docs say not to log content. | `slopvac-8l4.9.6`, `slopvac-8l4.12.1` | TM-10 (stderr text absent from a clean run's output) |
-| P15 | Unicode control sequences in plugin text reach a terminal. | T, S | CWE-150 | H/M | The shared sanitiser of O1 strips them. | `slopvac-8l4.12.2` | TM-11 |
+| P15 | Unicode control sequences in plugin text reach a terminal. | T, S | CWE-150 | H/M | Strip them with the shared sanitiser of O1. | `slopvac-8l4.9.32` | TM-11 |
 
 ### 6.2 Plugin output, fixers, recipes and providers
 
 | ID | Threat | STRIDE | CWE | L/I | Mitigation | Owner | Test |
 |---|---|---|---|---|---|---|---|
-| O1 | Plugin text carries terminal escapes, OSC 8 links, C1 controls or bidi overrides into the terminal, an agent's context, or CI logs. | T, S | CWE-150, CWE-451 | H/M | One sanitiser for all plugin-origin text: strip C0 (except newline and tab), C1, DEL, escape sequences and bidi override characters before any terminal or log write. Applies to reporter output, messages, stderr tails and error text. | `slopvac-8l4.12.2` | TM-11 |
-| O2 | Plugin text injects Markdown or HTML into reports, or script into an HTML report. | T, E | CWE-79, CWE-116 | M/M | Escape for the target format on output. The HTML renderer escapes all plugin text and emits no raw HTML, no `javascript:` or `data:` links and no remote resources. | `slopvac-8l4.12.2` | TM-12 |
-| O3 | SARIF or CodeClimate fields carry hostile URIs or paths. | T | CWE-74, CWE-22 | M/M | Locations are relative project paths. `helpUri` and links allow `https` only. JSON encoding of every string. | `slopvac-8l4.12.2` | TM-12 |
-| O4 | Newlines in a message become GitHub Actions workflow commands (`::set-output`, `::error`) or forge annotations. | T, E | CWE-93, CWE-117 | M/H | The Action escapes `%`, `\r`, `\n` and `::` for every annotation. The text reporter writes a line that starts with `::` only after it escapes the start. | `slopvac-8l4.13.6`, `slopvac-8l4.12.2` | TM-13 |
+| O1 | Plugin text carries terminal escapes, OSC 8 links, C1 controls or bidi overrides into the terminal, an agent's context, or CI logs. | T, S | CWE-150, CWE-451 | H/M | One sanitiser for all plugin-origin text: strip C0 (except newline and tab), C1, DEL, escape sequences and bidi override characters before any terminal or log write. Applies to reporter output, messages, stderr tails and error text. | `slopvac-8l4.9.32`, `slopvac-8l4.12.2` | TM-11 |
+| O2 | Plugin text injects Markdown or HTML into reports, or script into an HTML report. | T, E | CWE-79, CWE-116 | M/M | Escape for the target format on output. The HTML renderer escapes all plugin text and emits no raw HTML, no `javascript:` or `data:` links and no remote resources. | `slopvac-8l4.9.32`, `slopvac-8l4.12.2` | TM-12 |
+| O3 | SARIF or CodeClimate fields carry hostile URIs or paths. | T | CWE-74, CWE-22 | M/M | Locations are relative project paths. `helpUri` and links allow `https` only. JSON encoding of every string. | `slopvac-8l4.9.32`, `slopvac-8l4.12.2` | TM-12 |
+| O4 | Newlines in a message become GitHub Actions workflow commands (`::set-output`, `::error`) or forge annotations. | T, E | CWE-93, CWE-117 | M/H | The Action escapes `%`, `\r`, `\n` and `::` for every annotation. The text reporter writes a line that starts with `::` only after it escapes the start. | `slopvac-8l4.9.32`, `slopvac-8l4.13.6` | TM-13 |
 | O5 | A fixer rewrites more than the selected findings through many edits. | T | CWE-20 | M/M | Edit-in-envelope rule, plus the per-document limits in section 5.5. Over a limit, the document fails with `plugin-output-invalid`. | `slopvac-8l4.9.6`, `slopvac-8l4.3.17` | H27, H28, H29, TM-14 (1,001 edits rejected; inserted bytes over the cap rejected) |
-| O6 | Applying edits or recipes tears a file, loses an update, or follows a swapped path. | T, D | CWE-367, CWE-362 | M/M | Write a temporary file in the same directory, check the source is unchanged (size, mtime and content hash), rename atomically. Open with no-follow flags and parent descriptors. Refuse a hardlinked target (link count above 1) and a path whose parent chain contains a symlink that leaves the root. | NEW-2 | TM-15 (rename race, hardlink and symlink swap tests) |
-| O7 | A recipe targets a sensitive in-project file: `.git/`, hooks, `.slopvac/` state, CI workflows, `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc`, `.vscode/tasks.json`. | E | CWE-73, CWE-22 | M/H | A deny list the host enforces. A recipe may touch a denied path only after a separate approval per path, in a command that allows writes (`--allow-sensitive <path>`). The plan output marks them. No plugin sets the flag. | NEW-2 | TM-16 (each denied path refused without the flag, nothing written) |
-| O8 | A recipe writes agent harness files (`AGENTS.md`, hooks, MCP server entries, `.claude/`, `.opencode/`) that later run code with an agent's rights. Writing these files is the recipe's purpose, and it is also an escalation path. | E | CWE-94, CWE-829 | M/H | Show the full plan and content before applying. Hook-like and command-bearing entries are marked in the plan. Apply only with an explicit write command, only from a command that allows writes. | NEW-2 | TM-17 (a plan with a hook entry prints a marked warning and writes nothing under `--dry-run`) |
-| O9 | A recipe path escapes the root: absolute, `..`, Windows drive, case-folding tricks, reserved device names, or a symlink. | T, E | CWE-22, CWE-59, CWE-178 | M/H | Host check is the boundary (plugin-protocol.md section 8.2). Resolve symlinks, compare case-insensitively on case-insensitive file systems, refuse Windows reserved names and trailing dots or spaces. | NEW-2 | H22, TM-18 (Windows path forms and case-fold collisions) |
+| O6 | Applying edits or recipes tears a file, loses an update, or follows a swapped path. | T, D | CWE-367, CWE-362 | M/M | Write a temporary file in the same directory, check the source is unchanged (size, mtime and content hash), rename atomically. Open with no-follow flags and parent descriptors. Refuse a hardlinked target (link count above 1) and a path whose parent chain contains a symlink that leaves the root. | `slopvac-8l4.9.14` | TM-15 (rename race, hardlink and symlink swap tests) |
+| O7 | A recipe targets a sensitive in-project file: `.git/`, hooks, `.slopvac/` state, CI workflows, `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc`, `.vscode/tasks.json`. | E | CWE-73, CWE-22 | M/H | A deny list the host enforces. A recipe may touch a denied path only after a separate approval per path, in a command that allows writes (`--allow-sensitive <path>`). The plan output marks them. No plugin sets the flag. | `slopvac-8l4.9.14` | TM-16 (each denied path refused without the flag, nothing written) |
+| O8 | A recipe writes agent harness files (`AGENTS.md`, hooks, MCP server entries, `.claude/`, `.opencode/`) that later run code with an agent's rights. Writing these files is the recipe's purpose, and it is also an escalation path. | E | CWE-94, CWE-829 | M/H | Show the full plan and content before applying. Hook-like and command-bearing entries are marked in the plan. Apply only with an explicit write command, only from a command that allows writes. | `slopvac-8l4.9.14` | TM-17 (a plan with a hook entry prints a marked warning and writes nothing under `--dry-run`) |
+| O9 | A recipe path escapes the root: absolute, `..`, Windows drive, case-folding tricks, reserved device names, or a symlink. | T, E | CWE-22, CWE-59, CWE-178 | M/H | Host check is the boundary (plugin-protocol.md section 8.2). Resolve symlinks, compare case-insensitively on case-insensitive file systems, refuse Windows reserved names and trailing dots or spaces. | `slopvac-8l4.9.14` | H22, TM-18 (Windows path forms and case-fold collisions) |
 | O10 | A provider receives more text than the review type needs, or secrets from the document. | I | CWE-201, CWE-359 | M/H | `review --dry-run` prints the payload. Only the review type's text is sent (policies.md section 1.5). A provider runs only when trusted, named in config and online. The plugin may still forward anything it received (R4). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` | N12, TM-19 (payload equals the dry-run output) |
 | O11 | A provider's credentials reach the wrong plugin or the logs. | I | CWE-522, CWE-532 | L/H | A provider key goes in only through an explicit config entry for that plugin, and only to that plugin's environment. Never to other plugins. Logs strip tokens (policies.md section 1.7). | `slopvac-8l4.4.2`, `slopvac-8l4.9.6` | R4, TM-20 (a second plugin's environment holds no provider key) |
 | O12 | Prompt injection: a document tells the provider what to output, and the output reaches a fixer, a recipe or a verdict. | T, E | CWE-1427 | H/M | Provider output is marked untrusted in every report. The host has no code path from provider output to a fixer or a recipe in 3.0. It cannot change a lint verdict. | `slopvac-8l4.11.3`, `slopvac-8l4.9.6` | TM-21 (a provider returning edit-like text cannot reach `fixer/fix` or `recipe/plan`) |
@@ -231,9 +251,9 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 | K1 | An attacker substitutes a key in the auto-rebuilt index so a hostile artifact verifies. | S, T | CWE-345, CWE-347 | M/H | The index is not an authority (section 5.2). A first install pins a key only through an explicit command that shows the fingerprint. A pinned key never changes from the index. | `slopvac-8l4.9.5`, `slopvac-8l4.9.8` | TM-22 (substituted index key: sync exits 2, nothing extracted) |
 | K2 | A layer or the manifest is swapped while the signature still verifies (signature covers the wrong bytes). | T | CWE-347, CWE-345 | M/H | The statement lists every other layer digest and the config digest. Any extra, missing or reordered layer, or a mismatched annotation, invalidates the artifact (section 5.1). | `slopvac-8l4.9.5` | TM-23 (add a layer, drop a layer, edit an annotation, swap the config: each fails) |
 | K3 | A pack claims a first-party or foreign namespace to trade on its name. | S | CWE-290 | M/M | The namespace binds to a key set. First-party names verify against compiled keys only. | `slopvac-8l4.9.1`, `slopvac-8l4.9.5` | TM-24 |
-| K4 | A signed but old artifact replays (rollback) to bring back a flaw. | T | CWE-494 | M/M | The statement holds `version` and `notBefore`. `update` refuses an earlier version. The lockfile pins the manifest digest. | `slopvac-8l4.9.3`, `slopvac-8l4.9.5` | TM-25 |
-| K5 | A compromised publisher key signs a hostile update. | S, E | CWE-321 | L/H | Revocation list signed by the first-party root (section 5.3). Rotation needs an old-key statement. Trust still needs the user's command for each new hash. | `slopvac-8l4.9.5` | TM-26 (a revoked key or digest fails sync and refuses to spawn) |
-| K6 | A revocation list is withheld, stale or forged. | T, D | CWE-299 | M/M | The list is signed by the root key and cached with its time. Online commands fetch it. A stale offline cache warns. A forged list fails verification. | `slopvac-8l4.9.5` | TM-27 (forged and stale lists) |
+| K4 | A signed but old artifact replays (rollback) to bring back a flaw. | T | CWE-494 | M/M | The statement holds `version` and `notBefore`. `verify` refuses an earlier version and, separately, an earlier `notBefore` than the lockfile floor, and `sync` requires the lock's exact `keyId` and `notBefore`. The lockfile pins the manifest digest. | `slopvac-8l4.9.3`, `slopvac-8l4.9.5` | TM-25 |
+| K5 | A compromised publisher key signs a hostile update. | S, E | CWE-321 | L/H | Revocation list signed by the first-party root (section 5.3). Rotation needs an old-key statement. Trust still needs the user's command for each new hash. | `slopvac-8l4.9.15` | TM-26 (a revoked key or digest fails sync and refuses to spawn) |
+| K6 | A revocation list is withheld, stale or forged. | T, D | CWE-299 | M/M | The list is signed by the root key and cached with its time. Online commands fetch it. A stale offline cache warns. A forged list fails verification. | `slopvac-8l4.9.15` | TM-27 (forged and stale lists) |
 | K7 | The trust store is tampered with or is read from the project. | T, E | CWE-732, CWE-807 | M/H | The store lives in the per-user state directory, mode 0600, written atomically under a lock. A project file named like the store is ignored. | `slopvac-8l4.9.4` | TM-28 (a trust file in the project grants nothing) |
 | K8 | A tool, agent or flag records trust. | E | CWE-358 | M/H | Only `plugins trust` and `SLOPVAC_TRUST` write trust. `sync`, `update` and `--yes` never do. No prompt exists. | `slopvac-8l4.9.4` | N8 |
 | K9 | A hostile pull request edits CI configuration to set `SLOPVAC_TRUST` for its own plugin. | E | CWE-829 | M/H | `SLOPVAC_TRUST` names hashes. Docs tell projects to protect workflow files with code owners. Slopvac cannot enforce review (R5). | `slopvac-8l4.9.4`, `slopvac-8l4.13.6` | TM-29 (the variable names a hash that differs from the plugin on disk: no spawn) |
@@ -278,13 +298,13 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 
 | ID | Threat | STRIDE | CWE | L/I | Mitigation | Owner | Test |
 |---|---|---|---|---|---|---|---|
-| Y1 | Installing dependencies runs code before any trust decision, through sdist builds, `setup.py`, build backends or install hooks. | E | CWE-94, CWE-829 | H/H | Build environments only from locked, hash-pinned wheels (`--only-binary :all:`, `--require-hashes`, `--no-deps`) with no build isolation steps that run project code. A plugin with a source-only dependency is rejected, or ships the dependency vendored inside the signed artifact. | NEW-1 | TM-49 (an sdist dependency is refused; no build backend runs) |
-| Y2 | Dependency substitution or change after trust: index confusion, a moved release, a changed lock. | T, S | CWE-1357, CWE-829 | M/H | The lock with hashes ships in the signed artifact. The environment is built only from it. The lock and the resulting file listing are part of the trust hash (section 5.4). No resolver runs at install time. | NEW-1, `slopvac-8l4.9.4` | TM-50 (dependency changes: edit one pin, add a package, swap a wheel: each changes the trust hash and refuses spawn) |
-| Y3 | User or environment configuration redirects the installer: `PIP_INDEX_URL`, `UV_*`, `pip.conf`, `.netrc`, `PYTHONPATH`. | S, E | CWE-426, CWE-807 | M/H | Run the installer with a scrubbed environment and its configuration discovery turned off. Run Python in isolated mode (`-I`) so `PYTHON*` variables, the user site and the current directory do not load. | NEW-1 | TM-51 (hostile `PIP_INDEX_URL`, `PYTHONPATH` and `usercustomize` have no effect) |
-| Y4 | A `.pth` file, `sitecustomize` or entry point runs code at interpreter start. | E | CWE-94 | M/H | The file listing in the trust hash covers every file in the environment, so a new `.pth` changes the hash. Bytecode is compiled at build time and `PYTHONDONTWRITEBYTECODE` is set. | NEW-1 | TM-50 |
-| Y5 | The environment changes after trust: a running plugin edits its own site-packages. | T | CWE-732, CWE-367 | M/M | Make the environment read-only after the build. Verify at spawn with a stored listing of paths, sizes and hashes. If a full hash is too slow, verify size and modification time at spawn and a full hash in `plugins status` and `doctor`. The cost trade-off is an open decision for NEW-1. Same-user writes remain a residual risk (R6). | NEW-1 | TM-52 (modify a file in the environment: spawn refused) |
-| Y6 | The interpreter is substituted: a `python` found on `PATH` or a project-local one. | S, E | CWE-426, CWE-427 | M/H | Use an interpreter that the managed build recorded, by absolute path. Its identity is in the trust hash. | NEW-1 | TM-53 |
-| Y7 | Environment disk use grows without bound. | D | CWE-400 | L/L | Environments are cache entries with the extraction limits of section 5.5, and `doctor` lists them for removal. | NEW-1 | TM-44 |
+| Y1 | Installing dependencies runs code before any trust decision, through sdist builds, `setup.py`, build backends or install hooks. | E | CWE-94, CWE-829 | H/H | Build environments only from locked, hash-pinned wheels (`--only-binary :all:`, `--require-hashes`, `--no-deps`) with no build isolation steps that run project code. A plugin with a source-only dependency is rejected, or ships the dependency vendored inside the signed artifact. | `slopvac-8l4.9.31` | TM-49 (an sdist dependency is refused; no build backend runs) |
+| Y2 | Dependency substitution or change after trust: index confusion, a moved release, a changed lock. | T, S | CWE-1357, CWE-829 | M/H | The lock with hashes ships in the signed artifact. The environment is built only from it. The lock and the resulting file listing are part of the trust hash (section 5.4). No resolver runs at install time. | `slopvac-8l4.9.31`, `slopvac-8l4.9.4` | TM-50 (dependency changes: edit one pin, add a package, swap a wheel: each changes the trust hash and refuses spawn) |
+| Y3 | User or environment configuration redirects the installer: `PIP_INDEX_URL`, `UV_*`, `pip.conf`, `.netrc`, `PYTHONPATH`. | S, E | CWE-426, CWE-807 | M/H | Run the installer with a scrubbed environment and its configuration discovery turned off. Run Python in isolated mode (`-I`) so `PYTHON*` variables, the user site and the current directory do not load. | `slopvac-8l4.9.31` | TM-51 (hostile `PIP_INDEX_URL`, `PYTHONPATH` and `usercustomize` have no effect) |
+| Y4 | A `.pth` file, `sitecustomize` or entry point runs code at interpreter start. | E | CWE-94 | M/H | The file listing in the trust hash covers every file in the environment, so a new `.pth` changes the hash. Bytecode is compiled at build time and `PYTHONDONTWRITEBYTECODE` is set. | `slopvac-8l4.9.31` | TM-50 |
+| Y5 | The environment changes after trust: a running plugin edits its own site-packages. | T | CWE-732, CWE-367 | M/M | Make the environment read-only after the build. Verify at spawn with a stored listing of paths, sizes and hashes. If a full hash is too slow, verify size and modification time at spawn and a full hash in `plugins status` and `doctor`. The cost trade-off is an open decision for `slopvac-8l4.9.31`. Same-user writes remain a residual risk (R6). | `slopvac-8l4.9.31` | TM-52 (modify a file in the environment: spawn refused) |
+| Y6 | The interpreter is substituted: a `python` found on `PATH` or a project-local one. | S, E | CWE-426, CWE-427 | M/H | Use an interpreter that the managed build recorded, by absolute path. Its identity is in the trust hash. | `slopvac-8l4.9.31` | TM-53 |
+| Y7 | Environment disk use grows without bound. | D | CWE-400 | L/L | Environments are cache entries with the extraction limits of section 5.5, and `doctor` lists them for removal. | `slopvac-8l4.9.31` | TM-44 |
 
 ### 6.7 Data packs and regular expressions
 
@@ -365,7 +385,7 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-22 | The index lists a new key for a pinned pack, and for a new pack. | Exit 2. The new pack waits for the explicit pin. Nothing extracted. |
 | TM-23 | Valid signature; then add a layer, remove a layer, reorder layers, change an annotation, swap the config. | Each fails verification. |
 | TM-24 | A pack claims the first-party namespace under a different key. | Rejected. |
-| TM-25 | Offer an earlier version with an older `notBefore`. | `update` refuses without the downgrade flag. |
+| TM-25 | Offer an earlier version, and separately the same version with an older `notBefore`. | Each is a `Rollback` error without the downgrade flag. |
 | TM-26 | A revocation list names a key and a digest. | `sync` exits 2. The plugin does not spawn. `status` flags the trust record. |
 | TM-27 | A forged list, and a stale cache offline. | The forged list is rejected. The stale cache prints a notice and runs. |
 | TM-28 | Put a trust file in the project. | It grants nothing. |
@@ -401,18 +421,39 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-58 | A document over the byte cap. | Reported at the cap, exit 2. |
 | TM-59 | A pack that tries to suppress another pack's rules. | Ignored, with a diagnostic. |
 
-## 8. Proposed work without an owner
+### 7.4 Implemented tests
 
-These items have no bead. The lead decides whether to create them. Until then, the threats that cite them are open.
+These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in the table are test-name prefixes (`tm25_...`). Tests marked "open" belong to a bead that is not merged yet.
 
-| Ref | Proposal | Threats |
+| Tests | File | Covers |
 |---|---|---|
-| NEW-1 | Managed Python environments: build from locked wheels only, isolated interpreter, scrubbed installer, trust-hash coverage, spawn-time verification. | Y1 to Y7 |
-| NEW-2 | Safe application of fixer edits and recipe plans: atomic writes, no-follow opens, hardlink refusal, sensitive-path deny list with per-path approval, agent-harness warnings. | O6 to O9 |
-| NEW-3 | Plugin resource limits: `setrlimit` and job objects, the wall-clock cap, aggregate output limits, a subreaper on Linux and a tree walk on macOS. The numbers are in section 5.5. | P5, P6 |
-| NEW-4 | Revocation and rotation: the signed list, the cache, `status` flags, rotation statements. | K5, K6 |
-| NEW-5 | The sanitiser for plugin-origin text and the Action annotation escaping, as one shared component. | O1 to O4 |
-| NEW-6 | Archive extraction as its own module with the TM-43 to TM-45 corpus, used by OCI, release archives and git content. | E1 to E7 |
+| H-tests (`h<N>_...`), TM-2, TM-3, TM-4, TM-5, TM-8 | `host.rs`, `teardown.rs`, `interrupt.rs` | P1 to P5, P7 to P9, P12 |
+| TM-6, TM-9, TM-26, TM-28, TM-29 | `trust.rs` | P10, P13, K5 (revoked inputs), K7, K8, K9, O13 |
+| TM-22, TM-23, TM-24, TM-25, TM-30 | `sign.rs` | K1 to K4, K10 |
+| TM-22, TM-39, TM-46, TM-48 | `sync.rs` | K1, N9, E8, E10 |
+| TM-41 | `index.rs` | N11 |
+| TM-33, TM-34, TM-35, TM-36, TM-38 | `oci.rs` | N1 to N4, N6 |
+| TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
+| TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
+| TM-5 limits, TM-4 on Linux (open, PR #389) | `limits.rs` | P5, P6 |
+
+Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10 to TM-14, TM-19 to TM-21, TM-27, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-49 to TM-59. TM-49 to TM-53 belong to `slopvac-8l4.9.31`, TM-11 to TM-13 to `slopvac-8l4.9.32`, TM-27 to `slopvac-8l4.9.15`, and TM-54 to TM-58 to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat.
+
+## 8. Work items from this model
+
+Every work item of this model has a bead.
+
+| Work | Bead | Status | Threats |
+|---|---|---|---|
+| Managed Python environments | `slopvac-8l4.9.31` | open | Y1 to Y7 |
+| Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
+| Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
+| Rotation and the signed revocation list | `slopvac-8l4.9.15` | open | K5, K6 |
+| Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | open | O1 to O4, P15 |
+| Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged (PR #344) | E1 to E7 |
+| Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |
+
+Other beads that this model depends on: `slopvac-8l4.9.16` (compiled first-party key), `slopvac-8l4.9.19` (credential values in the public trust hash), `slopvac-8l4.9.27` (pinned-commit git fetch), `slopvac-8l4.9.28` (executable set of a plugin pack), `slopvac-8l4.9.29` (escaping in error messages) and `slopvac-8l4.3.20` (PCRE2 limits).
 
 ## 9. Residual risks
 
@@ -438,6 +479,6 @@ The independent review needs to record the following before `slopvac-8l4.9.2` an
 1. Each threat in section 6 has a built control or an accepted residual risk, and a passing test.
 2. The signature statement format of section 5.1 is fixed in `slopvac-8l4.9.5` and matches the verifier.
 3. The key authority of section 5.2 holds against a rebuilt index in a live test (TM-22).
-4. The open decisions are settled in this file: the Python environment verification cost (Y5), the media type of the signature layer, and the revocation staleness window (R3).
-5. The proposed work in section 8 has beads or is dropped with a recorded reason.
+4. The open decisions are settled in this file: the Python environment verification cost (Y5) and the revocation staleness window (R3). The signature layer media types are fixed in section 5.1.
+5. Every open bead in section 8 has a schedule, and a dropped item has a recorded reason.
 6. R1 is visible in user-facing text.
