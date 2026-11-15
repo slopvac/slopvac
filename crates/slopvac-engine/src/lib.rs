@@ -34,6 +34,7 @@ mod diagrams;
 mod directives;
 pub mod discover;
 mod exceptions;
+mod file;
 mod fix;
 mod lint;
 mod matching;
@@ -46,10 +47,8 @@ mod tagging;
 
 pub use diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite};
-pub use fix::{
-    FileFix, FixError, FixReport, Refusal, SkipReason, Skipped, fix_document, fix_file,
-    unified_diff,
-};
+pub use file::{FileFix, Refusal, fix_file, fix_file_hooked};
+pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
 pub use lint::{Engine, EngineError, Input, Kind};
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};

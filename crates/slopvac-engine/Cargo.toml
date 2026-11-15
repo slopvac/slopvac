@@ -23,10 +23,14 @@ slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-text = { workspace = true }
+tempfile.workspace = true
 thiserror = { workspace = true }
+
+# NOFOLLOW and NONBLOCK for the opens in `fix_file`, and the user id for ownership.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs", "process"] }
 
 [dev-dependencies]
 proptest.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile.workspace = true

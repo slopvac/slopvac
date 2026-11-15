@@ -16,17 +16,22 @@ use common::{engine, rule};
 use serde_json::Value;
 use serde_json::json;
 use slopvac_engine::{
-    Engine, FixReport, Input, Kind, Refusal, SkipReason, fix_document, fix_file, unified_diff,
+    Engine, FixReport, Input, Kind, Refusal, SkipReason, fix_document, fix_file, fix_file_hooked,
+    unified_diff,
 };
 
 fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// A document where Rust differs from the reference on purpose. `expected` lists edits,
+/// worked out by hand, that turn the reference text into the text Rust must write. Each
+/// `find` occurs once in the reference text.
 #[derive(serde::Deserialize)]
 struct Divergence {
     #[allow(dead_code)]
     reason: String,
+    expected: Vec<(String, String)>,
 }
 
 #[test]
@@ -48,15 +53,19 @@ fn fixed_text_matches_the_2x_reference() {
         let input = Input::markdown(name, text);
         let doc = engine.lint(&input).unwrap();
         let report = fix_document(&input, &doc, None).unwrap();
-        let want = entry["fixed"].as_str().unwrap();
-        let same = report.text == want;
-        match (same, divergences.contains_key(name)) {
-            (false, false) => problems.push(format!(
+        let mut want = entry["fixed"].as_str().unwrap().to_owned();
+        if let Some(divergence) = divergences.get(name) {
+            assert_ne!(report.text, want, "{name}: agrees; remove it from the list");
+            for (find, replace) in &divergence.expected {
+                assert_eq!(want.matches(find.as_str()).count(), 1, "{name}: {find:?}");
+                want = want.replacen(find.as_str(), replace, 1);
+            }
+        }
+        if report.text != want {
+            problems.push(format!(
                 "{name}: differs\n{}",
-                unified_diff(name, want, &report.text)
-            )),
-            (true, true) => problems.push(format!("{name}: agrees; remove it from the list")),
-            _ => {}
+                unified_diff(name, &want, &report.text)
+            ));
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));
@@ -244,4 +253,177 @@ fn a_hard_linked_file_is_refused_and_both_names_are_unchanged() {
         std::fs::read_to_string(&second).unwrap(),
         "Use delta here.\n"
     );
+}
+
+fn single(key: &str, to: &str, extra: &serde_json::Value) -> Engine {
+    engine(&[rule(
+        "one",
+        &json!({"kind": "substitution", "substitutions": {key: to}}),
+        extra,
+    )])
+}
+
+#[test]
+fn a_destination_is_never_rewritten_but_its_label_and_prose_are() {
+    let e = single("delta", "d", &json!({}));
+    for (text, want) in [
+        (
+            "<https://example.com/delta> and delta.\n",
+            "<https://example.com/delta> and d.\n",
+        ),
+        (
+            "<mailto:delta@example.com> delta\n",
+            "<mailto:delta@example.com> d\n",
+        ),
+        (
+            "see https://example.com/delta now delta\n",
+            "see https://example.com/delta now d\n",
+        ),
+        (
+            "see www.delta.example now delta\n",
+            "see www.delta.example now d\n",
+        ),
+        (
+            "mail delta@example.com or delta\n",
+            "mail delta@example.com or d\n",
+        ),
+        (
+            "[delta](https://example.com/delta) delta\n",
+            "[d](https://example.com/delta) d\n",
+        ),
+        (
+            "[delta][r] delta\n\n[r]: https://example.com/delta\n",
+            "[d][r] d\n\n[r]: https://example.com/delta\n",
+        ),
+        ("[delta]\n\n[delta]: /x\n", "[delta]\n\n[delta]: /x\n"),
+        (
+            "[a][delta] delta\n\n[Delta]: /x\n",
+            "[a][delta] d\n\n[Delta]: /x\n",
+        ),
+    ] {
+        assert_eq!(fix(&e, text, None).text, want, "{text:?}");
+    }
+}
+
+#[test]
+fn stale_unicode_input_is_reported_not_a_panic() {
+    let engine = swaps();
+    let doc = engine.lint(&Input::markdown("doc.md", "delta\n")).unwrap();
+    let current = "abcd\u{e9}\n";
+    let report = fix_document(&Input::markdown("doc.md", current), &doc, None).unwrap();
+    assert_eq!(report.text, current);
+    assert_eq!(report.skipped[0].reason, SkipReason::Stale);
+}
+
+#[test]
+fn the_replacement_takes_the_case_of_the_match() {
+    let all_caps = engine(&[rule(
+        "one",
+        &json!({"kind": "substitution", "substitutions": {"utilize": "use"}, "ignore_case": true, "match_all_caps": true}),
+        &json!({}),
+    )]);
+    for (text, want) in [
+        ("utilize it\n", "use it\n"),
+        ("Utilize it\n", "Use it\n"),
+        ("UTILIZE it\n", "USE it\n"),
+    ] {
+        assert_eq!(fix(&all_caps, text, None).text, want, "{text:?}");
+    }
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Run `fix_file` on a file holding `Use delta here.`, with `tamper` run just before the commit.
+fn raced(tamper: impl FnOnce(&Path)) -> (tempfile::TempDir, slopvac_engine::FileFix) {
+    let d = dir();
+    let path = d.path().join("doc.md");
+    std::fs::write(&path, "Use delta here.\n").unwrap();
+    let mut tamper = Some(tamper);
+    let out = fix_file_hooked(&swaps(), &path, Kind::Markdown, false, None, &mut || {
+        tamper.take().unwrap()(&path);
+    })
+    .unwrap();
+    (d, out)
+}
+
+#[test]
+fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
+    // Same length, so only the bytes tell.
+    let (d, out) = raced(|p| std::fs::write(p, "Use gamma here.\n").unwrap());
+    assert_eq!(out.refused, Some(Refusal::Changed));
+    assert!(!out.written);
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("doc.md")).unwrap(),
+        "Use gamma here.\n"
+    );
+    assert_eq!(names(d.path()), ["doc.md"], "no temporary file is left");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_swapped_for_a_symlink_before_the_commit_is_not_written_through() {
+    let outside = dir();
+    let secret = outside.path().join("secret.md");
+    std::fs::write(&secret, "Use delta here.\n").unwrap();
+    let (d, out) = raced(|p| {
+        std::fs::remove_file(p).unwrap();
+        std::os::unix::fs::symlink(&secret, p).unwrap();
+    });
+    assert_eq!(out.refused, Some(Refusal::Changed));
+    assert_eq!(
+        std::fs::read_to_string(&secret).unwrap(),
+        "Use delta here.\n"
+    );
+    assert!(
+        std::fs::symlink_metadata(d.path().join("doc.md"))
+            .unwrap()
+            .is_symlink()
+    );
+    assert_eq!(names(d.path()), ["doc.md"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_swapped_for_another_file_before_the_commit_is_left_alone() {
+    let (d, out) = raced(|p| {
+        let other = p.with_file_name("other.md");
+        std::fs::write(&other, "Use delta here.\n").unwrap();
+        std::fs::rename(&other, p).unwrap();
+    });
+    assert_eq!(out.refused, Some(Refusal::Changed));
+    assert_eq!(names(d.path()), ["doc.md"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_link_added_before_the_commit_stops_the_write() {
+    let (d, out) = raced(|p| std::fs::hard_link(p, p.with_file_name("alias.md")).unwrap());
+    assert_eq!(out.refused, Some(Refusal::Changed));
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("alias.md")).unwrap(),
+        "Use delta here.\n"
+    );
+    assert_eq!(names(d.path()), ["alias.md", "doc.md"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_write_keeps_the_mode_and_leaves_no_temporary_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = dir();
+    let path = d.path().join("doc.md");
+    std::fs::write(&path, "Use delta here.\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let out = fix_file(&swaps(), &path, Kind::Markdown, false, None).unwrap();
+    assert!(out.written);
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
+    assert_eq!(mode, 0o640);
+    assert_eq!(names(d.path()), ["doc.md"]);
 }

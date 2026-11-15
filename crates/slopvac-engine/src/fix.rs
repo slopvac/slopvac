@@ -2,8 +2,8 @@
 //!
 //! [`fix_document`] turns the [`Fix`](slopvac_model::Fix) edits on a document's findings
 //! into one atomic edit set ([`slopvac_model::apply_edits`]) and returns the fixed text. It
-//! never writes. [`fix_file`] reads a file, lints it, fixes it, optionally writes the
-//! result back, and lints the fixed text again. [`unified_diff`] renders a dry run.
+//! never writes. [`unified_diff`] renders a dry run. The file-level entry point,
+//! [`fix_file`](crate::fix_file), lives in `file.rs`.
 //!
 //! A fix applies only when all of these hold:
 //!
@@ -24,7 +24,6 @@
 //! only (slopvac-8l4.3.14 adds code comments).
 
 use std::ops::RangeInclusive;
-use std::path::Path;
 
 use frontmatter_spans::detect;
 use similar::TextDiff;
@@ -33,7 +32,7 @@ use slopvac_model::{
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 
-use crate::lint::{Engine, EngineError, Input, Kind};
+use crate::lint::{EngineError, Input, Kind};
 
 /// Why a finding that carries a fix was left alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,16 +97,6 @@ pub enum FixError {
     NotUtf8(String),
 }
 
-/// Why [`fix_file`] left a file unchanged.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Refusal {
-    /// The path is a symbolic link. Writing would change the target.
-    Symlink,
-    /// The file has more than one hard link. Writing would change every name.
-    Hardlinked,
-}
-
 /// Fix the findings of `doc`, which was linted from `input`.
 ///
 /// `changed_lines` limits fixes to edits whose every line is in one of the one-based
@@ -164,7 +153,12 @@ fn refusal(
     accepted: &[Edit],
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Option<SkipReason> {
-    if fix.iter().any(|e| e.span.end() > source.len()) {
+    // A span from another version of the text may end inside a character or past the end.
+    if fix.iter().any(|e| {
+        e.span.end() > source.len()
+            || !source.is_char_boundary(e.span.start())
+            || !source.is_char_boundary(e.span.end())
+    }) {
         return Some(SkipReason::Stale);
     }
     if let [edit] = fix
@@ -223,6 +217,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         Kind::Diagram(_) => Parsed::default(),
     };
     spans.extend(parsed.code_spans.iter().copied());
+    spans.extend(destination_spans(input.source));
     spans.extend(
         parsed
             .blocks
@@ -231,6 +226,126 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
             .map(|b| b.span),
     );
     Ok(spans)
+}
+
+/// Link targets that the parser shows as prose, and the labels that name a definition.
+///
+/// A fix inside one of these changes where a link goes, so it is refused. This reads the
+/// source directly and errs towards protecting too much:
+///
+/// - a URL, `www.` host, email address or angle-bracket autolink (`<https://...>`,
+///   `<mailto:...>`) in the text;
+/// - a reference definition line (`[label]: target`);
+/// - a bracket group whose label equals a definition's label, in any of the forms
+///   `[label]`, `[label][]` and `[text][label]`.
+///
+/// Link text such as the `delta` in `[delta](https://example.com)` stays fixable. Link
+/// destinations in `[text](dest)` and HTML attributes are already absent from the prose.
+fn destination_spans(source: &str) -> Vec<Span> {
+    let mut spans = Vec::new();
+    let mut push = |start: usize, end: usize| {
+        if let Ok(span) = Span::new(start, end) {
+            spans.push(span);
+        }
+    };
+    let mut run_start = None;
+    for (at, c) in source
+        .char_indices()
+        .chain(std::iter::once((source.len(), ' ')))
+    {
+        match (c.is_whitespace(), run_start) {
+            (false, None) => run_start = Some(at),
+            (true, Some(start)) => {
+                for (from, to) in addresses(&source[start..at]) {
+                    push(start + from, start + to);
+                }
+                run_start = None;
+            }
+            _ => {}
+        }
+    }
+    let mut labels: Vec<String> = Vec::new();
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim_start_matches(' ');
+        let indent = line.len() - trimmed.len();
+        if indent <= 3
+            && let Some(rest) = trimmed.strip_prefix('[')
+            && let Some(close) = rest.find("]:")
+            && !rest[..close].contains(['[', ']'])
+        {
+            labels.push(normal_label(&rest[..close]));
+            push(offset, offset + line.trim_end_matches(['\r', '\n']).len());
+        }
+        offset += line.len();
+    }
+    if !labels.is_empty() {
+        for (i, _) in source.match_indices('[') {
+            if source[..i].ends_with('\\') {
+                continue;
+            }
+            let inner = &source[i + 1..];
+            if let Some(len) = inner.find([']', '[', '\n'])
+                && inner[len..].starts_with(']')
+                && labels.contains(&normal_label(&inner[..len]))
+            {
+                push(i, i + len + 2);
+            }
+        }
+    }
+    spans
+}
+
+/// Byte ranges in one run of non-space text that are an address: a URL from its scheme to
+/// the end of the run, a `www.` host from its start to the end of the run, an email address,
+/// or an angle-bracket autolink such as `<tel:123>`.
+fn addresses(run: &str) -> Vec<(usize, usize)> {
+    const STOP: &[char] = &['[', ']', '(', ')', '<', '>', '"', '\'', ',', ';'];
+    let mut found = Vec::new();
+    for (at, _) in run.match_indices("://") {
+        let scheme = run[..at]
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+.-".contains(c)))
+            .map_or(0, |i| i + 1);
+        found.push((scheme, run.len()));
+    }
+    for (at, _) in run.match_indices("www.") {
+        if run[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric())
+        {
+            found.push((at, run.len()));
+        }
+    }
+    for (at, _) in run.match_indices('@') {
+        let start = run[..at].rfind(STOP).map_or(0, |i| i + 1);
+        let end = run[at..].find(STOP).map_or(run.len(), |i| at + i);
+        found.push((start, end));
+    }
+    for (at, _) in run.match_indices('<') {
+        let rest = &run[at + 1..];
+        let scheme = rest.find(':').filter(|&i| {
+            i > 1
+                && rest[..i].starts_with(|c: char| c.is_ascii_alphabetic())
+                && rest[..i]
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        });
+        if let (Some(_), Some(close)) = (scheme, rest.find('>')) {
+            found.push((at, at + 1 + close + 1));
+        }
+    }
+    found
+}
+
+/// A reference label as `CommonMark` compares it: case-folded, with runs of white space
+/// collapsed.
+fn normal_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// `replacement` in the case of `original`: upper case after an upper-case match, a
@@ -261,118 +376,4 @@ pub fn unified_diff(path: &str, before: &str, after: &str) -> String {
         .context_radius(3)
         .header(&format!("a/{path}"), &format!("b/{path}"))
         .to_string()
-}
-
-/// What [`fix_file`] did to one file.
-#[derive(Debug, Clone)]
-pub struct FileFix {
-    /// The lint report: of the fixed text when the file was written, else of the file as
-    /// it was.
-    pub document: Document,
-    /// The fix result. Empty and unchanged when the file was refused.
-    pub report: FixReport,
-    /// The unified diff of the change, empty when nothing changed or the file was refused.
-    pub diff: String,
-    /// Whether the file was written.
-    pub written: bool,
-    /// Why the file was left alone, if it was.
-    pub refused: Option<Refusal>,
-}
-
-/// Lint `path`, fix it and, unless `dry_run`, write the result in place.
-///
-/// A symbolic link or a file with several hard links is refused and left unchanged. The
-/// lint report of a written file is rerun on the fixed text, so a caller scores what is on
-/// disk. A dry run changes nothing and reports the diff the write would make.
-pub fn fix_file(
-    engine: &Engine,
-    path: &Path,
-    kind: Kind,
-    dry_run: bool,
-    changed_lines: Option<&[RangeInclusive<usize>]>,
-) -> Result<FileFix, FixError> {
-    let shown = path.to_string_lossy();
-    let io = |source| FixError::Io {
-        path: shown.to_string(),
-        source,
-    };
-    let bytes = std::fs::read(path).map_err(io)?;
-    let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.to_string()))?;
-    let input = Input {
-        kind,
-        ..Input::markdown(&shown, &source)
-    };
-    let document = engine.lint(&input)?;
-    let refused = refuse_path(path).map_err(io)?;
-    if refused.is_some() {
-        return Ok(FileFix {
-            document,
-            report: FixReport {
-                text: source,
-                applied: 0,
-                skipped: Vec::new(),
-            },
-            diff: String::new(),
-            written: false,
-            refused,
-        });
-    }
-    let report = fix_document(&input, &document, changed_lines)?;
-    let diff = unified_diff(&shown, &source, &report.text);
-    if dry_run || report.text == source {
-        return Ok(FileFix {
-            document,
-            report,
-            diff,
-            written: false,
-            refused: None,
-        });
-    }
-    std::fs::write(path, report.text.as_bytes()).map_err(io)?;
-    let relinted = Input {
-        source: &report.text,
-        ..input
-    };
-    let document = engine.lint(&relinted)?;
-    Ok(FileFix {
-        document,
-        report,
-        diff,
-        written: true,
-        refused: None,
-    })
-}
-
-fn refuse_path(path: &Path) -> std::io::Result<Option<Refusal>> {
-    let meta = std::fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() {
-        return Ok(Some(Refusal::Symlink));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if meta.nlink() > 1 {
-            return Ok(Some(Refusal::Hardlinked));
-        }
-    }
-    Ok(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::preserve_case;
-
-    #[test]
-    fn replacement_follows_the_case_of_the_match() {
-        for (original, replacement, want) in [
-            ("utilize", "use", "use"),
-            ("Utilize", "use", "Use"),
-            ("UTILIZE", "use", "USE"),
-            ("In order to", "to", "To"),
-            ("iPhone", "phone", "phone"),
-            ("Ünder", "over", "Over"),
-        ] {
-            assert_eq!(preserve_case(original, replacement), want, "{original}");
-        }
-    }
 }

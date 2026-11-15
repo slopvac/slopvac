@@ -1,8 +1,20 @@
 {
  "CONTRIBUTING.md": {
-  "reason": "2.x maps the position of a match after inline code to the wrong column, finds a different text there and skips the fix, so it leaves one `should` that Rust fixes at the right place."
+  "reason": "2.x maps the position of a match after inline code to the wrong column, finds a different text there and skips the fix, so it leaves two `should` that Rust fixes at the right place.",
+  "expected": [
+   [
+    "text the rule should flag and text it should leave alone",
+    "text the rule must flag and text it must leave alone"
+   ]
+  ]
  },
  "fix/code-span": {
-  "reason": "The 2.x position bug moves the fix onto the second inline code span: it rewrites `utilize` inside backticks and leaves the prose word. Rust fixes the prose word and never edits code."
+  "reason": "The 2.x position bug moves the fix onto the second inline code span: it rewrites `utilize` inside backticks and leaves the prose word. Rust fixes the prose word and never edits code.",
+  "expected": [
+   [
+    "and utilize it, or `use` it",
+    "and use it, or `utilize` it"
+   ]
+  ]
  }
 }
