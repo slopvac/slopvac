@@ -13,10 +13,10 @@ pub fn manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// The vendored `STUB(slopvac-8l4.3.28)` copy of the published rule and category schemas
-/// and their conformance corpora.
-pub fn stub() -> PathBuf {
-    manifest().join("tests/fixtures/stub-3.28")
+/// The repository's published `schemas/v3` directory: the schemas and their conformance
+/// corpora.
+pub fn schemas() -> PathBuf {
+    manifest().join("../../schemas/v3")
 }
 
 pub fn load(path: &Path) -> Value {
@@ -49,9 +49,9 @@ fn registry() -> jsonschema::Registry<'static> {
     let read = |path: PathBuf| -> Value {
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     };
-    let common = read(manifest().join("../../schemas/v3/common.schema.json"));
-    let rule = read(stub().join("schemas/rule.schema.json"));
-    let category = read(stub().join("schemas/category.schema.json"));
+    let common = read(schemas().join("common.schema.json"));
+    let rule = read(schemas().join("rule.schema.json"));
+    let category = read(schemas().join("category.schema.json"));
     jsonschema::Registry::new()
         .add(format!("{BASE}/common.schema.json"), common)
         .unwrap()

@@ -1,0 +1,6 @@
+"no-match.toml" = "/match"
+"matcher-both.toml" = "/match/0"
+"matcher-neither.toml" = "/match/0"
+"confidence-high.toml" = "/confidence"
+"bad-tag.toml" = "/tag"
+"unknown-unit.toml" = "/unit"

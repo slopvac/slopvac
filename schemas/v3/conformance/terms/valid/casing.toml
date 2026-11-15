@@ -1,0 +1,16 @@
+schema_version = 3
+
+[[terms]]
+term = "Go"
+kind = "language"
+case_sensitive = true
+
+[[terms]]
+term = "REST"
+kind = "protocol"
+case_sensitive = true
+
+[[terms]]
+term = "kubernetes"
+variants = ["K8s"]
+ignore_case = true

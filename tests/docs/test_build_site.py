@@ -35,7 +35,7 @@ rules:
       - bad: Remove this.
         good: ''
         note: The ending is dropped.
-    provenance: {source: Hand written, url: 'https://example.test/foo'}
+    provenance: {source: "Hand written \u2014 draft", url: 'https://example.test/foo'}
 """
 
 
@@ -102,9 +102,18 @@ def test_build_writes_rule_page_with_required_fields(sources: dict[str, Path]) -
     page = _read(sources, "rules/demo/no-foo.md")
     assert page.startswith("# Avoid foo\n")
     assert "| Severity | error |" in page
-    assert "| Profile `relaxed` | excluded |" in page
+    assert "| Profile `relaxed` | `excluded` |" in page
     assert "Delete foo." in page
     assert "<https://example.test/foo>" in page
+
+
+def test_unicode_dashes_in_catalogue_prose_become_ascii(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "rules/demo/no-foo.md")
+    assert "Hand written -- draft" in page
+    assert "\u2014" not in page
 
 
 def test_message_slots_render_as_visible_text_not_html_tags(
@@ -203,7 +212,7 @@ def test_rule_url_uses_the_configured_site(sources: dict[str, Path]) -> None:
     site = build_site.load_site(sources["config"])
     assert (
         build_site.rule_url("demo", "no-foo", site)
-        == "https://docs.example.org/tools/v3/rules/demo/no-foo.html"
+        == "https://docs.example.org/tools/v3/rules/demo/no-foo/"
     )
 
 

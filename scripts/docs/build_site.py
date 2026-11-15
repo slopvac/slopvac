@@ -31,7 +31,9 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import starlight
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,9 +77,7 @@ def rule_page_path(category: str, rule: str) -> str:
 def rule_url(category: str, rule: str, site: Site | None = None) -> str:
     """Stable public URL of a rule page, as outputs link to it."""
     site = site or load_site()
-    return site.versioned_url(
-        rule_page_path(category, rule).removesuffix(".md") + ".html"
-    )
+    return site.versioned_url(rule_page_path(category, rule).removesuffix(".md") + "/")
 
 
 def _one_line(text: object) -> str:
@@ -85,8 +85,12 @@ def _one_line(text: object) -> str:
 
 
 def _text(value: object) -> str:
-    """Catalogue prose as one Markdown line, with HTML specials escaped."""
-    return html.escape(_one_line(value), quote=False)
+    """Catalogue prose as one Markdown line, with HTML specials escaped.
+
+    Unicode dashes become the ASCII ``--`` that the prose rules ask for.
+    """
+    one_line = _one_line(value).replace("\u2014", "--").replace("\u2013", "--")
+    return html.escape(one_line, quote=False)
 
 
 def _cell(value: object) -> str:
@@ -149,7 +153,7 @@ def _rule_page(category: dict, rule: dict) -> str:
         f"| Severity | {_cell(rule.get('severity', 'warning'))} |",
         f"| Scope | {_cell(rule.get('scope', 'prose'))} |",
     ]
-    lines += [f"| Profile `{name}` | {_cell(tier)} |" for name, tier in tiers.items()]
+    lines += [f"| Profile `{name}` | `{_cell(tier)}` |" for name, tier in tiers.items()]
     lines += ["", "## Message", "", _message(rule["message"])]
     if rule.get("fix"):
         lines += ["", "## Fix", "", _text(rule["fix"])]
@@ -381,6 +385,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="compare --out with a fresh build and change nothing; exit 1 on a difference",
     )
+    parser.add_argument(
+        "--starlight",
+        type=Path,
+        metavar="SITE_DIR",
+        help="also adapt the pages for the Starlight project in SITE_DIR",
+    )
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(site, args.rules_dir, args.schemas_dir)
@@ -389,6 +399,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         problems += stale_problems(pages, args.out)
     elif not problems:
         write(pages, args.out)
+        if args.starlight:
+            parts = urlsplit(site.url)
+            starlight.write_site(
+                pages,
+                args.starlight,
+                site.api_version,
+                site_url=f"{parts.scheme}://{parts.netloc}",
+                base=parts.path.rstrip("/") or "/",
+            )
     for problem in problems:
         print(problem, file=sys.stderr)
     return 1 if problems else 0

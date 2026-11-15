@@ -8,8 +8,7 @@ It writes two things, and the Rust tests read both, so the expected values come 
 Python implementation and never from the Rust code:
 
 * ``core-v3/<category>.json``: the shipped 2.x rules converted to v3 category files. The
-  converter is the vendored copy under ``stub-3.28/``; STUB(slopvac-8l4.3.28) replaces it
-  with ``scripts/contract/convert_rules_v2_to_v3.py`` once PR #281 lands.
+  converter is ``scripts/contract/convert_rules_v2_to_v3.py``.
 * ``pattern-parity.json``: a frozen corpus of texts and, for every lexical rule, the spans
   Python's ``regex`` module finds in each text (``engine.rule_pattern``). Spans are code
   point offsets; the Rust test converts them to bytes.
@@ -37,7 +36,7 @@ from slopvac.rules import load_ruleset
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 RULES_DIR = ROOT / "packages/slopvac-lint/src/slopvac/rules"
-CONVERTER = HERE / "stub-3.28/convert_rules_v2_to_v3.py"
+CONVERTER = ROOT / "scripts/contract/convert_rules_v2_to_v3.py"
 CORE = HERE / "core-v3"
 PARITY = HERE / "pattern-parity.json"
 

@@ -37,7 +37,7 @@ The order comes from the plan, section "Layer order". Environment switches (`SLO
 - A list replaces the lower list. This covers `exclude`, `styles`, `terms.allow`, `terms.files`, `terms.blocklists` and `files`. A project that wants the default `exclude` plus one pattern restates the defaults. This matches 2.x, where a user `exclude` replaced the default list (`Config.exclude`) and an override `locale.allow` replaced the project's.
 - An explicit threshold survives a profile change. The resolver picks the final profile across all layers. Then it applies each `thresholds` entry on top, layer by layer (`resolve_for`, which also does this in 2.x).
 - `severity_shift` moves the levels that come from rule definitions, styles and the genre chain. A level that a `rules` or `categories` entry sets is final, and the shift leaves it alone. `off` stays `off`, and the result clamps at `suggestion` and `error`. The numbers for each built-in profile are in the profile mapping (`slopvac-8l4.2.10`).
-- A higher layer cannot reset a field to unset. It sets a value.
+- A higher layer cannot reset a field to unset. It sets a value. The one exception is the category budget: `max_per_100_words = "none"` clears a budget that a lower layer set, so a profile override can drop it. 2.x had no spelling for this, and thresholds have none either.
 
 Sticky settings break the rule. `network.offline = true` in any layer, from any file in an `extends` chain, from the `SLOPVAC_OFFLINE` variable or from `--offline`, makes the run offline. No layer can set it back. See [policies.md](policies.md), section 1.3.
 

@@ -1,0 +1,18 @@
+schema_version = 3
+
+[[entries]]
+word = "utilize"
+pos = "verb"
+reason = "Plain word exists."
+replacement = "use"
+
+[[entries]]
+word = "leverage"
+pos = "v"
+reason = "Business jargon."
+
+[[entries]]
+word = "seamless"
+pos = "adj"
+reason = "Unmeasurable claim."
+x-source = "review 2026-09"

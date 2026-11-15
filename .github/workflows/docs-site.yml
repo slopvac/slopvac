@@ -1,0 +1,138 @@
+name: Docs site
+# Generates the reference pages, lints the generated Markdown, builds the Starlight site,
+# adds the rustdoc output, checks internal links, and publishes that same artifact to
+# GitHub Pages. Pull requests build everything and deploy nothing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs-site.yml"
+      - "site/**"
+      - "docs/site.toml"
+      - "docs/site-lint.toml"
+      - "scripts/docs/**"
+      - "tests/docs/**"
+      - "schemas/**"
+      - "packages/slopvac-lint/src/slopvac/rules/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "mise.toml"
+  pull_request:
+    paths:
+      - ".github/workflows/docs-site.yml"
+      - "site/**"
+      - "docs/site.toml"
+      - "docs/site-lint.toml"
+      - "scripts/docs/**"
+      - "tests/docs/**"
+      - "schemas/**"
+      - "packages/slopvac-lint/src/slopvac/rules/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "mise.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      # Keep the version in step with mise.toml.
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.22.3"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      # The 2.x linter runs Vale and exits 2 without it.
+      - name: Install vale
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+      - name: Add vale to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Test the generator
+        run: uv run --extra dev pytest tests/docs
+      # The pages go outside the checkout. The linter skips ignored paths, and
+      # build/ is ignored.
+      - name: Generate the pages
+        run: >-
+          uv run python scripts/docs/build_site.py
+          --out "$RUNNER_TEMP/site-src" --starlight site
+      # STUB(slopvac-8l4.19.14): this step calls the 2.x CLI and config format; port it to 3.0.
+      - name: Lint the generated Markdown
+        run: >-
+          uvx --from ./packages/slopvac-lint slopvac lint
+          "$RUNNER_TEMP/site-src" --profile relaxed --config docs/site-lint.toml
+      - name: Build the site
+        working-directory: site
+        env:
+          ASTRO_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci
+          npm run build
+      - name: Build rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+      - name: Add rustdoc to the site
+        run: |
+          rm -rf site/dist/api
+          cp -R target/doc site/dist/api
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
+      - name: Install lychee
+        run: cargo binstall lychee@0.24.2 --no-confirm
+      # The site is built for the /slopvac base path. A symlink gives lychee a root
+      # where /slopvac/... resolves. Offline mode checks internal links only.
+      - name: Check internal links
+        run: |
+          set -euo pipefail
+          base="$(python3 -c 'import json; print(json.load(open("site/generated/site.json"))["base"].strip("/"))')"
+          mkdir -p "$RUNNER_TEMP/lychee-root"
+          ln -sfn "$PWD/site/dist" "$RUNNER_TEMP/lychee-root/$base"
+          lychee --offline --no-progress --root-dir "$RUNNER_TEMP/lychee-root" \
+            "$RUNNER_TEMP/lychee-root/$base/index.html" \
+            "$RUNNER_TEMP/lychee-root/$base/v3/**/*.html"
+      - name: Upload the Pages artifact
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
