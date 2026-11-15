@@ -346,3 +346,21 @@ fn a_failed_out_write_keeps_the_previous_report() {
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(fs::read_to_string(&target).unwrap(), "previous");
 }
+
+#[test]
+fn sarif_says_the_run_failed_when_an_input_was_skipped() {
+    let out = slopvac()
+        .args(["lint", "missing.md", "--format", "sarif"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let sarif: Value = serde_json::from_slice(&out).expect("sarif json");
+    let invocation = &sarif["runs"][0]["invocations"][0];
+    assert_eq!(invocation["executionSuccessful"], false);
+    assert_eq!(
+        invocation["toolExecutionNotifications"][0]["descriptor"]["id"],
+        "input-unreadable"
+    );
+}

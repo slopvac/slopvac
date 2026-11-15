@@ -481,3 +481,24 @@ fn contrast_helper_matches_known_ratios() {
     assert!((contrast("#000", "#fff") - 21.0).abs() < 1e-9);
     assert!((contrast("#767676", "#fff") - 4.54).abs() < 0.01);
 }
+
+/// A report whose documents have nothing unchecked and one root notice of `level`.
+fn sarif_successful(level: &str) -> Value {
+    let mut value = serde_json::to_value(report()).unwrap();
+    value["documents"][0]["unchecked"] = json!([]);
+    value["notices"] = json!([{"code": "input-unreadable", "level": level, "message": "x.md: NotFound", "path": "x.md"}]);
+    let report: Report = serde_json::from_value(value).unwrap();
+    let sarif: Value =
+        serde_json::from_str(&render(Format::Sarif, &report, &sources()).unwrap()).unwrap();
+    sarif["runs"][0]["invocations"][0]["executionSuccessful"].clone()
+}
+
+#[test]
+fn sarif_run_with_a_warning_root_notice_is_not_successful() {
+    assert_eq!(sarif_successful("warning"), json!(false));
+}
+
+#[test]
+fn sarif_run_with_only_an_info_root_notice_is_successful() {
+    assert_eq!(sarif_successful("info"), json!(true));
+}
