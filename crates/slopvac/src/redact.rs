@@ -19,6 +19,16 @@ pub fn path_for_log(path: &Path, root: &Path) -> String {
     format!("<external>/{name}")
 }
 
+/// How a path appears in a message: as given when relative, redacted when absolute.
+#[must_use]
+pub fn shown_path(path: &Path, root: &Path) -> String {
+    if path.is_absolute() {
+        path_for_log(path, root)
+    } else {
+        path.display().to_string()
+    }
+}
+
 /// Remove the user-info part of every `scheme://user:pass@host` in `text`.
 #[must_use]
 pub fn strip_url_userinfo(text: &str) -> String {
