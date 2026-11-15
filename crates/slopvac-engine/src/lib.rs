@@ -28,26 +28,37 @@
 //! part-of-speech tagger of `slopvac-pos`. One rule owns the sweep. Without a blocklist
 //! they do not run, and a notice says so.
 //!
+//! [`fix_document`] and [`fix_file`] apply the single-replacement substitutions that a run
+//! found, atomically and never over code, links or front matter. [`unified_diff`] renders a
+//! dry run.
+//!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.
 
 mod capitalization;
+mod commit;
 mod diagrams;
 mod directives;
 pub mod discover;
 mod exceptions;
+mod file;
+mod fix;
 mod lint;
 mod matching;
 mod metrics;
 mod prepare;
+mod protect;
 pub mod rst;
 mod score;
 mod settings;
 mod skip;
 mod tagging;
 
+pub use commit::{MAX_FILE_BYTES, Refusal, Step};
 pub use diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite};
+pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
+pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
 pub use lint::{Engine, EngineError, Input, Kind};
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};

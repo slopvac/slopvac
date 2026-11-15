@@ -351,6 +351,31 @@ fn a_section_context_reaches_the_continuation_lines_of_a_wrapped_cell() {
 }
 
 #[test]
+fn an_rst_fix_is_refused_as_protected_until_literals_are_known() {
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("fake-python"));
+    let e = engine(&[rule(
+        "swap",
+        &json!({"kind": "substitution", "substitutions": {"installer": "tool"}}),
+        &json!({}),
+    )])
+    .with_rst(options);
+    let source = sections();
+    let input = Input::rst("notes.rst", &source);
+    let doc = e.lint(&input).unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert!(doc.findings[0].fix.is_some());
+    let report = slopvac_engine::fix_document(&input, &doc, None).unwrap();
+    assert_eq!(report.applied, 0);
+    assert_eq!(report.text, source);
+    assert_eq!(report.skipped.len(), 1);
+    assert_eq!(
+        report.skipped[0].reason,
+        slopvac_engine::SkipReason::Protected
+    );
+}
+
+#[test]
 fn the_rst_kind_is_public() {
     assert_eq!(Input::rst("a.rst", "x").kind, Kind::Rst);
 }

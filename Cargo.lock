@@ -2441,14 +2441,19 @@ dependencies = [
 name = "slopvac-engine"
 version = "0.0.0"
 dependencies = [
+ "cap-fs-ext",
+ "cap-std",
  "crossbeam-channel",
  "frontmatter-spans",
  "globset",
  "ignore",
  "proptest",
+ "pulldown-cmark",
  "rayon",
+ "rustix",
  "serde",
  "serde_json",
+ "similar",
  "slopvac-context",
  "slopvac-diagrams",
  "slopvac-model",
