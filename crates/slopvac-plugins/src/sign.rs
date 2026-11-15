@@ -119,6 +119,19 @@ impl PublicKey {
         Ok(Self { inner, id, raw })
     }
 
+    /// Parse the text of a `minisign.pub` file: an `untrusted comment:` line, then the base64 line.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the file has no key line or the line is not a minisign key.
+    pub fn from_pub_file(text: &str) -> Result<Self, SignError> {
+        let line = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("untrusted comment:"))
+            .ok_or_else(|| SignError::InvalidKey("no key line".into()))?;
+        Self::from_base64(line)
+    }
+
     /// The 8-byte key id as 16 uppercase hex digits, as `minisign -V` prints it and as the lockfile stores it.
     #[must_use]
     pub fn key_id(&self) -> String {
@@ -142,6 +155,23 @@ impl PublicKey {
     }
 }
 
+/// The first-party release public key, compiled in from `keys/slopvac-release.pub`.
+/// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
+const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
+
+/// Namespaces that only the first-party release key may sign.
+pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
+
+/// The compiled first-party release key. It signs first-party packs and the
+/// revocation list.
+///
+/// # Panics
+/// Never in a built binary: a unit test parses the committed file.
+#[must_use]
+pub fn release_key() -> PublicKey {
+    PublicKey::from_pub_file(RELEASE_KEY_FILE).expect("keys/slopvac-release.pub is a minisign key")
+}
+
 /// Which keys may sign which namespaces.
 #[derive(Debug, Clone, Default)]
 pub struct KeyPolicy {
@@ -155,6 +185,20 @@ pub struct KeyPolicy {
 }
 
 impl KeyPolicy {
+    /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
+    /// and no pinned keys. Tests build the struct directly to inject other keys.
+    #[must_use]
+    pub fn compiled() -> Self {
+        Self {
+            first_party: vec![release_key()],
+            first_party_namespaces: FIRST_PARTY_NAMESPACES
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect(),
+            pinned: BTreeMap::new(),
+        }
+    }
+
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
         if self.first_party_namespaces.iter().any(|n| n == namespace) {
             &self.first_party

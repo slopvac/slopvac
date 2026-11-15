@@ -60,7 +60,8 @@ use thiserror::Error;
 
 use crate::oci::{Client, Digest, OciError, Reference};
 use crate::sign::{
-    MEDIA_MINISIG, PublicKey, SignError, is_key_id, parse_canonical, utc_seconds, verify_bytes,
+    MEDIA_MINISIG, PublicKey, SignError, is_key_id, parse_canonical, release_key, utc_seconds,
+    verify_bytes,
 };
 use crate::trust::{Revocation, TrustRecord};
 
@@ -434,8 +435,6 @@ pub struct Revocations {
 }
 
 impl Revocations {
-    // STUB(slopvac-8l4.9.16): the CLI passes the compiled first-party root key
-    // (key id D9914BDB4570AC6D, `keys/slopvac-release.pub`) as `roots` once it exists.
     /// `dir` is the per-user state directory. `roots` are the first-party root
     /// keys; with none, every list fails closed. `now` is the caller's clock as
     /// `YYYY-MM-DDTHH:MM:SSZ`.
@@ -456,6 +455,25 @@ impl Revocations {
             now: now.to_owned(),
             now_at,
         })
+    }
+
+    /// The shipped configuration: the compiled first-party release key is the
+    /// only root. Tests and tools that need another root use [`Revocations::new`].
+    ///
+    /// # Errors
+    /// [`RevocationError::Clock`] for a malformed `now`.
+    pub fn with_compiled_root(
+        dir: impl Into<PathBuf>,
+        source: Reference,
+        now: &str,
+    ) -> Result<Self, RevocationError> {
+        Self::new(dir, vec![release_key()], source, now)
+    }
+
+    /// The root keys that verify a list.
+    #[must_use]
+    pub fn roots(&self) -> &[PublicKey] {
+        &self.roots
     }
 
     /// The cache file.

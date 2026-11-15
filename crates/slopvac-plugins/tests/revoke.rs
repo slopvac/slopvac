@@ -1069,3 +1069,12 @@ fn a_second_rotation_must_be_newer_than_the_first() {
     rotate(&store, &b, &c, "2026-11-10T00:00:01Z").unwrap();
     assert_eq!(pinned_ids(&store), vec![c.public().key_id()]);
 }
+
+#[test]
+fn the_revocation_root_defaults_to_the_compiled_release_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let revocations =
+        Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
+    let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
+    assert_eq!(ids, ["D9914BDB4570AC6D"]);
+}
