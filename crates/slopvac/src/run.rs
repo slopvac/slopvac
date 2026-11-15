@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, inspect, logging, offline, stdin};
+use crate::{exit, generate, inspect, logging, offline, redact, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,16 +97,17 @@ where
 {
     let tree = cli::command();
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
-    let policy = match slopvac_update::policy::network_policy(
-        &std::env::current_dir().unwrap_or_default(),
-    ) {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
         Err(err) => {
-            let _ = writeln!(
-                err_out,
-                "{}",
-                CliError::new("config-unreadable", err.to_string())
+            // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
+            let message = format!(
+                "{}: {}",
+                redact::path_for_log(err.path(), &cwd),
+                err.problem()
             );
+            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
             return exit::code(exit::INCOMPLETE);
         }
     };

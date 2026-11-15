@@ -232,6 +232,17 @@ fn cargo_bin(var: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
         .map(|d| d.join("bin"))
 }
 
+/// Drop the `\\?\` prefix that `canonicalize` adds on Windows, so a path compares with the
+/// install prefix in a receipt. UNC paths keep theirs.
+#[must_use]
+pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Detect the install method of the binary at `exe`.
 ///
 /// Pass the resolved path of the running executable. `var` reads the environment. The checks run
@@ -239,6 +250,11 @@ fn cargo_bin(var: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
 /// directory layouts, then wheel environments, then the cargo bin directory.
 #[must_use]
 pub fn detect(exe: &Path, var: &dyn Fn(&str) -> Option<String>) -> InstallMethod {
+    let exe = &if cfg!(windows) {
+        strip_verbatim_prefix(exe)
+    } else {
+        exe.to_path_buf()
+    };
     if receipt_owns(exe, var) {
         return InstallMethod::Installer;
     }
@@ -274,6 +290,13 @@ mod tests {
         move |k| map.get(k).cloned()
     }
 
+    /// The variable that locates the per-user config directory on this platform.
+    const CONFIG_HOME_VAR: &str = if cfg!(windows) {
+        "LOCALAPPDATA"
+    } else {
+        "XDG_CONFIG_HOME"
+    };
+
     fn write_receipt(dir: &Path, prefix: &Path, app: &str) {
         std::fs::create_dir_all(dir).unwrap();
         let json = serde_json::json!({
@@ -293,7 +316,7 @@ mod tests {
         let prefix = tmp.path().join("home/.cargo");
         write_receipt(&tmp.path().join("cfg/slopvac"), &prefix, "slopvac");
         let cfg = tmp.path().join("cfg").display().to_string();
-        let var = env(&[("XDG_CONFIG_HOME", cfg)]);
+        let var = env(&[(CONFIG_HOME_VAR, cfg)]);
         // Both layouts: binary in the prefix, or in prefix/bin.
         assert_eq!(
             detect(&prefix.join("bin/slopvac"), &var),
@@ -314,7 +337,7 @@ mod tests {
             "slopvac",
         );
         let cfg = tmp.path().join("cfg").display().to_string();
-        let var = env(&[("XDG_CONFIG_HOME", cfg)]);
+        let var = env(&[(CONFIG_HOME_VAR, cfg)]);
         assert_eq!(
             detect(&tmp.path().join("b/bin/slopvac"), &var),
             InstallMethod::Unknown
@@ -327,7 +350,7 @@ mod tests {
         let prefix = tmp.path().join("p");
         write_receipt(&tmp.path().join("cfg/slopvac"), &prefix, "other");
         let cfg = tmp.path().join("cfg").display().to_string();
-        let var = env(&[("XDG_CONFIG_HOME", cfg)]);
+        let var = env(&[(CONFIG_HOME_VAR, cfg)]);
         assert_eq!(
             detect(&prefix.join("bin/slopvac"), &var),
             InstallMethod::Unknown
@@ -356,7 +379,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("slopvac-receipt.json"), "{nope").unwrap();
         let var = env(&[(
-            "XDG_CONFIG_HOME",
+            CONFIG_HOME_VAR,
             tmp.path().join("cfg").display().to_string(),
         )]);
         assert_eq!(
@@ -472,6 +495,28 @@ mod tests {
             detect(Path::new("/home/u/.cargo/bin/slopvac"), &var),
             InstallMethod::Cargo
         );
+    }
+
+    #[test]
+    fn verbatim_prefix_is_stripped_but_unc_is_kept() {
+        for (input, want) in [
+            (
+                r"\\?\C:\Users\u\.cargo\bin\slopvac.exe",
+                r"C:\Users\u\.cargo\bin\slopvac.exe",
+            ),
+            (
+                r"\\?\UNC\server\share\slopvac.exe",
+                r"\\?\UNC\server\share\slopvac.exe",
+            ),
+            (r"C:\plain\slopvac.exe", r"C:\plain\slopvac.exe"),
+            ("/usr/bin/slopvac", "/usr/bin/slopvac"),
+        ] {
+            assert_eq!(
+                strip_verbatim_prefix(Path::new(input)),
+                Path::new(want),
+                "{input}"
+            );
+        }
     }
 
     #[test]

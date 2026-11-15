@@ -12,6 +12,12 @@ use slopvac_update::verify::{ArtifactVerifier, ReleaseVerifier, VerifyError};
 
 const LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
 const BASE: &str = "https://example.test/dl";
+/// The variable that locates the per-user config directory (receipts) on this platform.
+const CONFIG_HOME_VAR: &str = if cfg!(windows) {
+    "LOCALAPPDATA"
+} else {
+    "XDG_CONFIG_HOME"
+};
 const TARGET: &str = "aarch64-apple-darwin";
 
 struct Server {
@@ -90,7 +96,7 @@ fn runtime(fx: &Fixture, server: Arc<Server>, verifier: Box<dyn ArtifactVerifier
     let cfg = fx.dir.path().join("cfg").display().to_string();
     let cache = fx.dir.path().join("cache").display().to_string();
     let var = Box::new(move |k: &str| match k {
-        "XDG_CONFIG_HOME" => Some(cfg.clone()),
+        k if k == CONFIG_HOME_VAR => Some(cfg.clone()),
         "SLOPVAC_CACHE_DIR" => Some(cache.clone()),
         _ => None,
     });

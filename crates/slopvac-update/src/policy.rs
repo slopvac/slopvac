@@ -46,6 +46,27 @@ pub enum PolicyError {
     },
 }
 
+impl PolicyError {
+    /// The file the error is about.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::NotRegular(p) | Self::TooLarge(p) => p,
+            Self::Unreadable { path, .. } => path,
+        }
+    }
+
+    /// What went wrong, without the path.
+    #[must_use]
+    pub fn problem(&self) -> String {
+        match self {
+            Self::NotRegular(_) => "not a regular file".to_owned(),
+            Self::TooLarge(_) => format!("larger than {MAX_CONFIG_BYTES} bytes"),
+            Self::Unreadable { reason, .. } => format!("cannot read: {reason}"),
+        }
+    }
+}
+
 /// Read the policy of the nearest `slopvac.toml` at or above `start`.
 pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
     for dir in start.ancestors() {
@@ -73,6 +94,12 @@ fn read_bounded(file: &Path) -> Result<Option<String>, PolicyError> {
         use std::os::unix::fs::OpenOptionsExt;
         // A FIFO with no writer would block an ordinary open.
         opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_BACKUP_SEMANTICS lets a directory open, so the handle check names it.
+        opts.custom_flags(0x0200_0000);
     }
     let handle = match opts.open(file) {
         Ok(h) => h,

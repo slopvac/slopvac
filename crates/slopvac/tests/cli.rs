@@ -490,3 +490,53 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
         }
     }
 }
+
+#[test]
+fn config_read_errors_do_not_print_absolute_paths() {
+    // policies.md 1.7: paths in errors are relative to the project root, or `<external>/<name>`.
+    let base = tempfile::Builder::new()
+        .prefix("sentinel-secret-")
+        .tempdir()
+        .unwrap();
+    let sentinel = base
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    fs::create_dir(base.path().join("slopvac.toml")).unwrap();
+    let sub = base.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+
+    // The config sits above the working directory, so it is outside the root.
+    let outside = slopvac()
+        .current_dir(&sub)
+        .arg("--version")
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let outside = String::from_utf8(outside).unwrap();
+    assert!(!outside.contains(&sentinel), "{outside}");
+    assert!(
+        outside.contains("error[config-unreadable]: <external>/slopvac.toml: not a regular file"),
+        "{outside}"
+    );
+
+    // The config sits in the working directory: shown relative to it.
+    let inside = slopvac()
+        .current_dir(base.path())
+        .arg("--version")
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let inside = String::from_utf8(inside).unwrap();
+    assert!(!inside.contains(&sentinel), "{inside}");
+    assert!(
+        inside.contains("error[config-unreadable]: slopvac.toml: not a regular file"),
+        "{inside}"
+    );
+}

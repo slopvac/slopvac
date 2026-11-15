@@ -156,8 +156,22 @@ impl Cache {
             &mut tmp,
             &serde_json::to_vec(entry).map_err(std::io::Error::other)?,
         )?;
-        tmp.persist(&self.path).map_err(|e| e.error)?;
-        Ok(())
+        // On Windows a rename over a file that another writer is replacing can fail with
+        // PermissionDenied for a moment, so retry briefly.
+        let mut attempt = 0;
+        loop {
+            match tmp.persist(&self.path) {
+                Ok(_) => return Ok(()),
+                Err(e)
+                    if e.error.kind() == std::io::ErrorKind::PermissionDenied && attempt < 20 =>
+                {
+                    attempt += 1;
+                    std::thread::sleep(Duration::from_millis(10));
+                    tmp = e.file;
+                }
+                Err(e) => return Err(e.error),
+            }
+        }
     }
 
     /// Path of the cache file.
