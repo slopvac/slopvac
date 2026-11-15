@@ -460,7 +460,7 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         std::fs::read_to_string(&path).map_err(|e| AgentsError::io(path, e))
     };
     let (original, revised) = (read("original")?, read("revised")?);
-    let report = claims::compare(&original, &revised);
+    let report = claims::compare(&original, &revised)?;
     let stats = ChangeStats::from_report(&report);
     let (auto_type, auto_reason) = select_type(
         &stats,
