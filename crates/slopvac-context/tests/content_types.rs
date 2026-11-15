@@ -1,7 +1,9 @@
 //! Content-type genres: ui-copy, agent-instructions and the Diataxis types.
 #![allow(clippy::assert_is_empty)]
 
-use slopvac_context::{GenreSource, PlainDocument, ResolveOptions, builtin_genres};
+use slopvac_context::{
+    GenreSource, PlainDocument, Profile, ResolveOptions, RuleLevel, builtin_genres,
+};
 
 fn genre_of(path: &str, src: &str) -> (String, GenreSource) {
     let r = builtin_genres()
@@ -66,31 +68,31 @@ fn genres_detect_on_fixtures() {
 fn content_types_extend_consumer_and_agent_instructions_extend_reference() {
     let reg = builtin_genres().unwrap();
     for id in ["tutorial", "how-to", "reference-page", "explanation"] {
-        assert_eq!(reg.profile(id).unwrap().as_deref(), Some("normal"), "{id}");
+        assert_eq!(reg.profile(id).unwrap(), Some(Profile::Normal), "{id}");
         assert_eq!(reg.chain(id).unwrap()[0].id, "consumer");
     }
     assert_eq!(
-        reg.profile("agent-instructions").unwrap().as_deref(),
-        Some("strict")
+        reg.profile("agent-instructions").unwrap(),
+        Some(Profile::Strict)
     );
     assert_eq!(
-        reg.tolerances("agent-instructions").unwrap()["prose-craft.negative-requirement"],
-        "off"
+        reg.rules("agent-instructions").unwrap()["prose-craft.negative-requirement"],
+        RuleLevel::Off
     );
 }
 
 #[test]
-fn tolerances_follow_the_content_type() {
+fn rule_levels_follow_the_content_type() {
     let reg = builtin_genres().unwrap();
     assert_eq!(
-        reg.tolerances("tutorial").unwrap()["prose-craft.future-tense"],
-        "off"
+        reg.rules("tutorial").unwrap()["prose-craft.future-tense"],
+        RuleLevel::Off
     );
     assert_eq!(
-        reg.tolerances("explanation").unwrap()["prose-scope.contrastive-inversion-frames"],
-        "off"
+        reg.rules("explanation").unwrap()["prose-scope.contrastive-inversion-frames"],
+        RuleLevel::Off
     );
-    assert!(reg.tolerances("how-to").unwrap().is_empty());
+    assert!(reg.rules("how-to").unwrap().is_empty());
 }
 
 #[test]

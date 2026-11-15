@@ -2,12 +2,12 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, TagIndex, TagRegistry, Tagger,
-    TaggerSpec,
+    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, StructuralSpec, TagIndex,
+    TagRegistry, Tagger,
 };
 
 fn tagger(yaml: &str) -> Box<dyn Tagger> {
-    Box::new(TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap())
+    Box::new(StructuralSpec::from_yaml(yaml).unwrap().compile().unwrap())
 }
 
 fn run(yaml: &str, path: &str, src: &str) -> TagIndex {
@@ -194,7 +194,7 @@ fn duplicate_tagger_ids_are_rejected() {
 
 #[test]
 fn invalid_specs_are_errors() {
-    let compile = |y: &str| TaggerSpec::from_yaml(y).and_then(TaggerSpec::compile);
+    let compile = |y: &str| StructuralSpec::from_yaml(y).and_then(StructuralSpec::compile);
     let cases = [
         "id: t\nkind: a\nwhen:\n  sentence: x\nbogus: 1\n",
         "id: t\nkind: a\nwhen: {}\n",
