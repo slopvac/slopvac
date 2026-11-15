@@ -97,7 +97,9 @@ def test_generated_entry_has_the_shape_release_please_expects(tmp_path: Path) ->
     _write_workspace(tmp_path, ["frontmatter-spans"], [])
     assert sync.main(["--root", str(tmp_path)]) == 0
     config = json.loads((tmp_path / sync.CONFIG).read_text())
-    assert config["packages"]["."]["extra-files"][1] == {
+    extra = config["packages"]["."]["extra-files"]
+    (entry,) = [e for e in extra if isinstance(e, dict) and e["path"] == "Cargo.lock"]
+    assert entry == {
         "type": "toml",
         "path": "Cargo.lock",
         "jsonpath": "$.package[?(@.name.value=='frontmatter-spans')].version",
