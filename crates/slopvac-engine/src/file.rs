@@ -7,7 +7,7 @@
 //! [`Refusal::Symlink`]. It checks the open file (regular, one link, size, and on unix an
 //! owner that is the current user) and reads through that handle only. Nothing that is
 //! refused is read. The platform layer is `commit.rs`, built on `cap-std`, the crate the
-//! plugin host also uses: `openat` on unix and handle-relative NT opens on Windows.
+//! plugin host also uses.
 //!
 //! To write, it stages the fixed text in a temporary file created with `O_EXCL` semantics in
 //! the same directory, gives it the original's mode and group (a group it cannot give is
@@ -19,9 +19,16 @@
 //! as the exception.
 //!
 //! The re-check and the rename cannot be one system call, so a change inside that gap is
-//! not caught. On unix, only the directory's owner or root can make one. On Windows the
-//! checks use the file index, length, modification time and bytes, and the directory
-//! restriction does not apply, so a local user who can write the directory can win the race.
+//! not caught. Only the directory's owner or root can make one, because a write needs a
+//! directory that group and others cannot change.
+//!
+//! A file with an access ACL, or in a directory with a default ACL, is refused with
+//! [`Refusal::AclPresent`] on Linux. macOS keeps ACLs in an attribute that `rustix` cannot
+//! read, so an ACL is not detected there.
+//!
+//! In-place writes exist on unix only. Elsewhere a dry run and a diff work, and a write is
+//! refused with [`Refusal::UnsupportedPlatform`] (bead slopvac-8l4.3.35 tracks a safe
+//! implementation).
 
 use std::ops::RangeInclusive;
 use std::path::{Component, Path, PathBuf};

@@ -83,6 +83,7 @@ fn a_dry_run_reports_the_diff_and_leaves_the_file_alone() {
     assert_eq!(read(root.path().join("doc.md")), DOC);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_write_fixes_the_file_and_lints_the_fixed_text_again() {
     let root = project();
@@ -93,6 +94,7 @@ fn a_write_fixes_the_file_and_lints_the_fixed_text_again() {
     assert!(out.document.findings.is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn an_absolute_path_inside_the_root_works_and_a_nested_one_too() {
     let root = project();
@@ -197,6 +199,7 @@ fn at(
     )
 }
 
+#[cfg(unix)]
 #[test]
 fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
     let root = project();
@@ -211,6 +214,7 @@ fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
     assert_eq!(names(root.path()), ["doc.md"], "no temporary file is left");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_write_keeps_the_original_when_any_step_fails() {
     for step in [
@@ -233,6 +237,21 @@ fn a_write_keeps_the_original_when_any_step_fails() {
             "{step:?} left a temporary file"
         );
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn a_write_is_refused_but_a_dry_run_and_a_diff_work() {
+    let root = project();
+    let out = done(run(root.path(), "doc.md", true));
+    assert_eq!(out.report.text, FIXED);
+    assert!(out.diff.contains("+Use d here.\n"));
+    assert_eq!(
+        refused(&run(root.path(), "doc.md", false)),
+        Refusal::UnsupportedPlatform
+    );
+    assert_eq!(read(root.path().join("doc.md")), DOC);
+    assert_eq!(names(root.path()), ["doc.md"]);
 }
 
 #[cfg(unix)]
@@ -330,6 +349,59 @@ mod unix {
         }
         assert!(done(run(root.path(), "doc.md", false)).written);
         assert_eq!(std::fs::metadata(&path).unwrap().gid(), group);
+    }
+
+    #[test]
+    fn a_failed_group_assignment_refuses_and_leaves_no_trace() {
+        let root = project();
+        let out = at(root.path(), Step::Group, || Err(Error::other("injected"))).unwrap();
+        assert_eq!(refused(&out), Refusal::GroupMismatch);
+        assert_eq!(read(root.path().join("doc.md")), DOC);
+        assert_eq!(
+            names(root.path()),
+            ["doc.md"],
+            "the temporary file is removed"
+        );
+    }
+
+    /// Run `setfacl` on `path`; false when the tool or the file system cannot.
+    #[cfg(target_os = "linux")]
+    fn setfacl(args: &[&str], path: &Path) -> bool {
+        std::process::Command::new("setfacl")
+            .args(args)
+            .arg(path)
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_default_acl_on_the_directory_or_an_access_acl_on_the_file_refuses_the_write() {
+        for (on_directory, args) in [
+            (true, ["-d", "-m", "u:nobody:r"]),
+            (false, ["-m", "u:nobody:r", ""]),
+        ] {
+            let root = project();
+            let target = if on_directory {
+                root.path().to_path_buf()
+            } else {
+                root.path().join("doc.md")
+            };
+            let args: Vec<&str> = args.into_iter().filter(|a| !a.is_empty()).collect();
+            if !setfacl(&args, &target) {
+                return; // no setfacl, or no ACL support here
+            }
+            assert!(
+                !done(run(root.path(), "doc.md", true)).written,
+                "a dry run still works"
+            );
+            assert_eq!(
+                refused(&run(root.path(), "doc.md", false)),
+                Refusal::AclPresent
+            );
+            assert_eq!(read(root.path().join("doc.md")), DOC);
+            assert_eq!(names(root.path()), ["doc.md"]);
+        }
     }
 
     #[test]

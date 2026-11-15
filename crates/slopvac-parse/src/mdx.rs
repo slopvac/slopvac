@@ -100,17 +100,28 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
 /// # Errors
 /// Returns [`ParseError::Body`] or [`ParseError::Mdx`] in the cases of [`parse_mdx`].
 pub fn mdx_syntax_spans(source: &str, body: Span) -> Result<Vec<Span>, ParseError> {
+    mdx_syntax_spans_counted(source, body).map(|(spans, _)| spans)
+}
+
+/// [`mdx_syntax_spans`] with the number of bytes the tag scanner looked at, so a test can
+/// check the work stays linear.
+#[doc(hidden)]
+pub fn mdx_syntax_spans_counted(
+    source: &str,
+    body: Span,
+) -> Result<(Vec<Span>, usize), ParseError> {
     let body = resolve_body(source, body)?;
     let text = &source[body.start()..body.end()];
     let regions = code_regions(&parse(text)?);
     let masked = scan(text, body.start(), &regions, false);
     let tree = parse(&masked.text)?;
     let mut spans = Vec::new();
-    collect_syntax(&tree, &masked, &mut spans);
-    Ok(spans)
+    let mut work = 0;
+    collect_syntax(&tree, &masked, &mut spans, &mut work);
+    Ok((spans, work))
 }
 
-fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>) {
+fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>, work: &mut usize) {
     match node {
         Node::MdxFlowExpression(_) | Node::MdxTextExpression(_) | Node::MdxjsEsm(_) => {
             if let Some((s, e)) = range(node) {
@@ -119,7 +130,7 @@ fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>) {
         }
         Node::MdxJsxFlowElement(_) | Node::MdxJsxTextElement(_) => {
             if let Some((s, e)) = range(node) {
-                let open_end = jsx_tag_end(&masked.text, s).min(e);
+                let open_end = jsx_tag_end(&masked.text, s, e, work);
                 out.push(masked.span(s, open_end));
                 // A closing tag is the last `</` in the node when the opening tag did not
                 // end the node.
@@ -133,26 +144,83 @@ fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>) {
         _ => {}
     }
     for child in node.children().into_iter().flatten() {
-        collect_syntax(child, masked, out);
+        collect_syntax(child, masked, out, work);
     }
 }
 
-/// The end of the JSX tag that starts at `start`: its closing `>`, found outside quotes and
-/// `{}` expressions.
-fn jsx_tag_end(text: &str, start: usize) -> usize {
-    let mut quote = None;
-    let mut depth = 0usize;
-    for (i, c) in text[start..].char_indices() {
-        match (quote, c) {
-            (Some(q), c) if c == q => quote = None,
-            (None, '"' | '\'') => quote = Some(c),
-            (None, '{') => depth += 1,
-            (None, '}') => depth = depth.saturating_sub(1),
-            (None, '>') if depth == 0 => return start + i + 1,
-            _ => {}
+/// What the tag scanner is inside, innermost last.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Js {
+    /// `{ ... }` holding JavaScript.
+    Braces,
+    /// A template literal. `${` opens [`Js::Braces`] inside it.
+    Template,
+}
+
+/// The end of the JSX tag that starts at `start`: its closing `>`, found outside attribute
+/// strings and JavaScript. It reads strings (with escapes), template literals with nested
+/// `${}`, and `//` and `/* */` comments, and it never reads past `limit`, the end of the
+/// element's own range. `work` counts the bytes looked at.
+fn jsx_tag_end(text: &str, start: usize, limit: usize, work: &mut usize) -> usize {
+    let bytes = text.as_bytes();
+    let limit = limit.min(bytes.len());
+    let mut stack: Vec<Js> = Vec::new();
+    // An open string: its quote, and whether it is JavaScript (with escapes) or a JSX
+    // attribute value (without).
+    let mut string: Option<(u8, bool)> = None;
+    let mut i = start;
+    while i < limit {
+        *work += 1;
+        let b = bytes[i];
+        let next = bytes.get(i + 1).copied();
+        if let Some((quote, script)) = string {
+            if script && b == b'\\' {
+                i += 1;
+            } else if b == quote {
+                string = None;
+            }
+        } else if stack.last() == Some(&Js::Template) {
+            match (b, next) {
+                (b'\\', _) => i += 1,
+                (b'`', _) => {
+                    stack.pop();
+                }
+                (b'$', Some(b'{')) => {
+                    stack.push(Js::Braces);
+                    i += 1;
+                }
+                _ => {}
+            }
+        } else {
+            let script = !stack.is_empty();
+            match (b, next) {
+                (b'/', Some(b'/')) if script => {
+                    while i < limit && bytes[i] != b'\n' {
+                        i += 1;
+                        *work += 1;
+                    }
+                }
+                (b'/', Some(b'*')) if script => {
+                    i += 2;
+                    while i + 1 < limit && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                        i += 1;
+                        *work += 1;
+                    }
+                    i += 1;
+                }
+                (b'"' | b'\'', _) => string = Some((b, script)),
+                (b'`', _) if script => stack.push(Js::Template),
+                (b'{', _) => stack.push(Js::Braces),
+                (b'}', _) => {
+                    stack.pop();
+                }
+                (b'>', _) if stack.is_empty() => return i + 1,
+                _ => {}
+            }
         }
+        i += 1;
     }
-    text.len()
+    limit
 }
 
 struct Walker<'a> {
