@@ -911,18 +911,34 @@ mod runaway {
         changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options).unwrap_err()
     }
 
+    /// The deadline starts at spawn, so on a loaded machine it can fire before the
+    /// stand-in has recorded its pids; that attempt proves nothing about the kill. Retry
+    /// with a doubled deadline until an attempt timed out after the stand-in was ready.
+    /// What is asserted is a state (timed out, readiness recorded), never a duration.
+    fn run_to_a_deadline_after_the_stand_in_is_ready(repo: &Repo) -> Shim {
+        let mut timeout = Duration::from_millis(500);
+        for _ in 0..8 {
+            let shim = shim("sleep 600");
+            let limits = Limits {
+                timeout,
+                ..Limits::default()
+            };
+            let err = run(repo, &shim, limits);
+            assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
+            if shim.pid.exists() {
+                return shim;
+            }
+            timeout *= 2;
+        }
+        panic!("the stand-in git never started before any of the deadlines");
+    }
+
     #[test]
     fn a_run_past_the_deadline_kills_and_reaps_git_and_its_children() {
         let repo = repo!();
-        let shim = shim("sleep 600");
-        let limits = Limits {
-            timeout: Duration::from_secs(2),
-            ..Limits::default()
-        };
 
-        let err = run(&repo, &shim, limits);
+        let shim = run_to_a_deadline_after_the_stand_in_is_ready(&repo);
 
-        assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
         assert_gone(&read_pid(&shim.pid), "git");
         assert_gone(&read_pid(&shim.child_pid), "the child of git");
     }

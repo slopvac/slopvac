@@ -1,0 +1,175 @@
+{
+  "schema_version": 3,
+  "id": "diagram",
+  "title": "Diagram labels",
+  "description": "Experimental rules for the text inside diagrams: labels that read as sentences, notes that run long, and prose that points at a diagram or walks through its labels. They run on Mermaid, PlantUML, Excalidraw and draw.io sources and on fenced Mermaid and PlantUML blocks.",
+  "weight": 1.0,
+  "recommended_for": ["consumer"],
+  "rules": [
+    {
+      "id": "label-run-on",
+      "name": "Keep a diagram label to a short noun phrase",
+      "message": "label run-on: use a short noun phrase and move the detail to the text",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {"kind": "structure", "check": "diagram-label-run-on"},
+      "examples": [
+        {
+          "bad": "A[This label has far too many words in it]",
+          "good": "A[Retry queue]"
+        },
+        {
+          "bad": "B[send the request to the remote service now]",
+          "good": "B[Request sender]",
+          "note": "the threshold is seven words"
+        }
+      ],
+      "fix": "Cut the label to a noun phrase of at most four words and put the rest in the surrounding text.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "Seven words or more. Precision 0.78 and recall 0.88 on the 60 hand-labelled diagrams of the spike. Code tokens such as paths and calls are exempt. On the 50 human diagrams and 2 tutorials of evals/corpus it fires on 6 of 477 node, edge and group labels (0.11 per diagram), so it stays a warning; the corpus holds no stated-LLM diagram, so precision and recall are not re-measured there."
+      }
+    },
+    {
+      "id": "label-title-plus-gloss",
+      "name": "Keep the name in the label and the description in the text",
+      "message": "label holds a name and a description: keep the name",
+      "severity": "suggestion",
+      "scope": "prose",
+      "match": {"kind": "structure", "check": "diagram-label-title-plus-gloss"},
+      "examples": [
+        {
+          "bad": "A[Clean Data: remove duplicates, nulls]",
+          "good": "A[Clean Data]"
+        }
+      ],
+      "fix": "Keep the component name and move the description to the text.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "Five words or more, a name of one to four words, then a gloss of two or more words after a colon, dash, slash, line break or bracket. The spike did not score it alone. On evals/corpus it fires 9 times in 2 human diagrams, 6 of them on one repeated multi-line component list, so it stays a suggestion."
+      }
+    },
+    {
+      "id": "note-long",
+      "name": "Keep a diagram note to a few words",
+      "message": "note is long: name the component or cut the note to a few words",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {"kind": "structure", "check": "diagram-note-long"},
+      "examples": [
+        {
+          "bad": "note right of A: keys rotate every night at midnight",
+          "good": "note right of A: nightly key rotation"
+        }
+      ],
+      "fix": "Name the component, or cut the note to a few words.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "Six words or more. Precision 1.00 and recall 0.38 on the 60 hand-labelled diagrams of the spike. On evals/corpus it fires on 3 of 7 human notes, all in one tutorial, so the warning rests on the spike sample alone."
+      }
+    },
+    {
+      "id": "meta-reference",
+      "name": "Do not point at the diagram",
+      "message": "this sentence points at the diagram: say what the system does",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {"kind": "structure", "check": "diagram-meta-reference"},
+      "examples": [
+        {
+          "bad": "As shown in the diagram, requests fan out.",
+          "good": "Requests fan out to three workers."
+        }
+      ],
+      "fix": "Say what the system does and let the diagram show the shape.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "A complete phrase that ends in a diagram noun or a locating word. Precision 1.00 and recall 0.05 on the spike sample. It fires nowhere on the human diagrams and fences of evals/corpus."
+      }
+    },
+    {
+      "id": "prose-restates-labels",
+      "name": "Add what the diagram cannot show",
+      "message": "the text names most of the labels in the diagram: keep reasons, limits and failure modes",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {"kind": "structure", "check": "diagram-prose-restates-labels"},
+      "examples": [
+        {
+          "bad": "Requests reach the load balancer first. The balancer forwards each request to the API gateway, which asks the auth service to check the token.",
+          "good": "Each tenant is capped at 200 requests per second because the shared cache saturates beyond that.",
+          "note": "applies to the paragraphs next to a diagram with three or more labels and 40 or more prose words"
+        }
+      ],
+      "fix": "Delete the walk-through. Keep reasons, limits, numbers and failure modes.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "At least 60% of three or more labels appear in 40 or more words of nearby prose. Precision 1.00 and recall 0.67 on the spike sample, with a lower bound of about 0.77. It fires nowhere on the human diagrams and fences of evals/corpus."
+      }
+    },
+    {
+      "id": "over-explained",
+      "name": "Judge whether a label carries more than a noun phrase needs",
+      "message": "over-explained diagram: a short noun phrase would carry the same meaning",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "For each node, edge and note in this diagram, would a short noun phrase of at most 4 words carry the same meaning for the intended reader? Quote any label that bundles a name with a description, any note that explains something the component name already says, and any edge label that is a sentence. Exempt sequence-diagram message verbs and legends. Answer yes/no per quoted item."
+      },
+      "fix": "Replace each quoted label with a short noun phrase.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "Needs a reviewer who knows what the intended reader already knows."
+      }
+    },
+    {
+      "id": "prose-restates",
+      "name": "Judge whether the text only walks through the diagram",
+      "message": "the text walks through the diagram: keep what the diagram cannot show",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does the paragraph before or after this diagram only walk through the nodes and edges in the diagram's own order, or enumerate the components that the diagram already names, without adding a reason, constraint, number, failure mode or decision? If yes, quote the sentences that can be deleted or replaced by one sentence of added insight."
+      },
+      "fix": "Delete the quoted sentences, or replace them with one sentence that adds the insight.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "The judgement counterpart of prose-restates-labels, for walk-throughs the token overlap misses."
+      }
+    },
+    {
+      "id": "note-needed",
+      "name": "Judge whether a note adds anything",
+      "message": "a note repeats what the component name and its neighbours already say",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does each note or annotation on a component tell the reader something that is not obvious from the component's name and its neighbours?"
+      },
+      "fix": "Delete the note, or say what the name and the neighbours leave out.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diagram spike slopvac-8l4.10.1",
+        "note": "Needs a reviewer who can tell whether the note adds information."
+      }
+    }
+  ]
+}

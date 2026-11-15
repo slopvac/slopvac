@@ -68,6 +68,26 @@ fn pyproject_drop_reports_the_pyproject_line() {
 }
 
 #[test]
+fn pyproject_overlap_error_reports_the_pyproject_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n\n\
+         [[tool.slopvac.overrides]]\nfiles = [\"a.md\"]\n",
+    );
+    let options = Options {
+        preserve_behavior: true,
+    };
+    match plan(dir.path(), &RenameTable::bundled(), options) {
+        Err(Error::OverrideOverlap {
+            file, line, block, ..
+        }) => assert_eq!((file.as_str(), line, block), ("pyproject.toml", 7, 0)),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn two_config_sources_in_one_directory_conflict() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
