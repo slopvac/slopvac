@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger, normalize_path};
 
 /// How far a matching condition spreads its tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -153,7 +153,7 @@ pub struct DeclarativeTagger {
 impl DeclarativeTagger {
     fn document_level_ok(&self, doc: &dyn DocumentView) -> Result<bool, Error> {
         if let Some(p) = &self.path
-            && !p.is_match(doc.path())?
+            && !p.is_match(&normalize_path(doc.path()))?
         {
             return Ok(false);
         }

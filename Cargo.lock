@@ -2546,6 +2546,8 @@ version = "0.0.0"
 name = "slopvac-context"
 version = "0.0.0"
 dependencies = [
+ "clap",
+ "ignore",
  "pcre2",
  "serde",
  "serde-saphyr",
