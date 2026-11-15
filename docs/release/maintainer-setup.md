@@ -55,11 +55,11 @@ minisign -Vm <file> -p keys/slopvac-release.pub
 
 ### Where the binary uses the key
 
-The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Tests inject other keys through the public fields of `KeyPolicy` and through `Revocations::new`, so no test needs the secret key.
+The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses. Tests inject other keys through the public fields of `KeyPolicy` and through `Revocations::new`, so no test needs the secret key.
 
 ### How first-party packs are signed
 
-Release CI signs with `MINISIGN_SECRET_KEY` in the prehashed mode. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list is signed with the same key. No one signs by hand and no one reads the secret key.
+Release workflow signing is pending: PR #409 adds it. Once it lands, release CI signs with `MINISIGN_SECRET_KEY` in the prehashed mode. Until then no first-party pack or revocation list is signed. A signed empty revocation list must be published before the CLI ships. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list will be signed with the same key. No one signs by hand and no one reads the secret key.
 
 ### Rotate the key
 

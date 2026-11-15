@@ -92,6 +92,9 @@ pub enum RevocationError {
     /// No root key is configured, so no list can verify. Fails closed.
     #[error("no first-party root key is configured to verify the revocation list")]
     NoRootKey,
+    /// The compiled root key does not parse. Fails closed like [`Self::NoRootKey`].
+    #[error("the compiled first-party root key is unusable: {0}")]
+    RootKey(String),
     /// The list is larger than [`MAX_LIST_BYTES`].
     #[error("the revocation list is larger than {MAX_LIST_BYTES} bytes")]
     TooLarge,
@@ -163,6 +166,7 @@ impl RevocationError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoRootKey
+            | Self::RootKey(_)
             | Self::TooLarge
             | Self::Invalid(_)
             | Self::BadSignature
@@ -461,13 +465,15 @@ impl Revocations {
     /// only root. Tests and tools that need another root use [`Revocations::new`].
     ///
     /// # Errors
-    /// [`RevocationError::Clock`] for a malformed `now`.
+    /// [`RevocationError::RootKey`] when the compiled key does not parse, so no
+    /// list can verify, and [`RevocationError::Clock`] for a malformed `now`.
     pub fn with_compiled_root(
         dir: impl Into<PathBuf>,
         source: Reference,
         now: &str,
     ) -> Result<Self, RevocationError> {
-        Self::new(dir, vec![release_key()], source, now)
+        let root = release_key().map_err(|e| RevocationError::RootKey(e.to_string()))?;
+        Self::new(dir, vec![root], source, now)
     }
 
     /// The root keys that verify a list.

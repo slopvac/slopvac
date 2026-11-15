@@ -818,7 +818,7 @@ fn the_compiled_release_key_has_the_published_key_id() {
     let line = RELEASE_PUB_FILE.lines().nth(1).unwrap();
     let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, line).unwrap();
     assert_eq!(raw[2..10], [0x6D, 0xAC, 0x70, 0x45, 0xDB, 0x4B, 0x91, 0xD9]);
-    assert_eq!(release_key().key_id(), "D9914BDB4570AC6D");
+    assert_eq!(release_key().unwrap().key_id(), "D9914BDB4570AC6D");
 }
 
 fn first_party_signed(key: &Key) -> Signed {
@@ -842,7 +842,7 @@ fn first_party_expect() -> Expectation<'static> {
 
 #[test]
 fn the_compiled_policy_binds_the_first_party_namespace_to_the_release_key() {
-    let policy = KeyPolicy::compiled();
+    let policy = KeyPolicy::compiled().unwrap();
     assert_eq!(policy.first_party.len(), 1);
     assert_eq!(policy.first_party[0].key_id(), "D9914BDB4570AC6D");
     assert_eq!(policy.first_party_namespaces, ["slopvac"]);
@@ -854,7 +854,7 @@ fn a_first_party_pack_signed_by_another_key_is_refused_with_the_compiled_key() {
     let other = Key::new();
     let s = first_party_signed(&other);
     assert!(matches!(
-        run(&s, &KeyPolicy::compiled(), &first_party_expect()),
+        run(&s, &KeyPolicy::compiled().unwrap(), &first_party_expect()),
         Err(SignError::KeyNotPinned { .. })
     ));
 }
@@ -865,7 +865,7 @@ fn a_first_party_pack_verifies_only_when_the_signing_key_is_injected() {
     let s = first_party_signed(&test_key);
     let injected = KeyPolicy {
         first_party: vec![test_key.public()],
-        ..KeyPolicy::compiled()
+        ..KeyPolicy::compiled().unwrap()
     };
     assert_eq!(run(&s, &injected, &first_party_expect()), Ok(()));
 }

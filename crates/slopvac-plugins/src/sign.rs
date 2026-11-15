@@ -165,11 +165,11 @@ pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
 /// The compiled first-party release key. It signs first-party packs and the
 /// revocation list.
 ///
-/// # Panics
-/// Never in a built binary: a unit test parses the committed file.
-#[must_use]
-pub fn release_key() -> PublicKey {
-    PublicKey::from_pub_file(RELEASE_KEY_FILE).expect("keys/slopvac-release.pub is a minisign key")
+/// # Errors
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
+/// then have no first-party key, so first-party verification refuses.
+pub fn release_key() -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(RELEASE_KEY_FILE)
 }
 
 /// Which keys may sign which namespaces.
@@ -187,10 +187,17 @@ pub struct KeyPolicy {
 impl KeyPolicy {
     /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
     /// and no pinned keys. Tests build the struct directly to inject other keys.
-    #[must_use]
-    pub fn compiled() -> Self {
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
+    /// no policy, so nothing verifies as first-party.
+    pub fn compiled() -> Result<Self, SignError> {
+        Ok(Self::with_first_party_key(release_key()?))
+    }
+
+    fn with_first_party_key(key: PublicKey) -> Self {
         Self {
-            first_party: vec![release_key()],
+            first_party: vec![key],
             first_party_namespaces: FIRST_PARTY_NAMESPACES
                 .iter()
                 .map(|n| (*n).to_owned())
@@ -726,4 +733,26 @@ pub fn verify_rotation(
         }
     }
     Ok(st)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_malformed_key_file_is_a_typed_error_not_a_panic() {
+        for text in [
+            "",
+            "untrusted comment: x\n",
+            "untrusted comment: x\nnot-a-key\n",
+        ] {
+            assert!(
+                matches!(
+                    PublicKey::from_pub_file(text),
+                    Err(SignError::InvalidKey(_))
+                ),
+                "{text:?}"
+            );
+        }
+    }
 }
