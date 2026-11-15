@@ -23,7 +23,7 @@ use slopvac_terms::Blocklist;
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
-use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
+use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite};
 use crate::matching::{
@@ -353,6 +353,8 @@ impl Engine {
                 owner.insert(rule.id(), s);
             }
         }
+        // Sets that have a rule for a signal of `slopvac-diagrams`.
+        let mut signal_sets = std::collections::BTreeSet::new();
         for (s, set) in self.sets.iter().enumerate() {
             for (c, category) in set.categories().iter().enumerate() {
                 let meta = self.settings.categories.get(category.id());
@@ -418,7 +420,16 @@ impl Engine {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
-                        MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
+                        MatchKind::Structure => {
+                            let signal = matches!(&rule.match_, Match::Structure(m) if diagrams::signal_of(m).is_some());
+                            if signal {
+                                self.diagram_rules
+                                    .insert(loaded.id().clone(), ActiveDiagram { severity });
+                                signal_sets.insert(s);
+                            } else {
+                                *unrun.entry("structure").or_default() += 1;
+                            }
+                        }
                         MatchKind::Vocabulary => {
                             self.vocabulary_rules.push(Active::new(s, c, r, severity));
                         }
@@ -427,6 +438,11 @@ impl Engine {
                         }
                     }
                 }
+            }
+        }
+        for s in signal_sets {
+            if let Some(checker) = SignalChecker::from_rule_set(&self.sets[s]) {
+                self.checkers.push(Box::new(checker));
             }
         }
         for (s, set) in self.sets.iter().enumerate() {

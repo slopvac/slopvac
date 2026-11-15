@@ -12,8 +12,8 @@ mod common;
 use common::{category, id, ruleset, settings};
 use slopvac_diagrams::Format;
 use slopvac_engine::{
-    DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level, SignalChecker,
-    skip_ranges,
+    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level,
+    diagram_rule_set, skip_ranges,
 };
 use slopvac_model::{PackId, Severity, Span};
 use slopvac_parse::parse_markdown;
@@ -62,9 +62,8 @@ fn skip_ranges_hold_list_items_and_quotes() {
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
 
 fn diagram_engine(settings: slopvac_engine::Settings) -> Engine {
-    Engine::new(vec![ruleset(vec![category("cat", &[])])], settings)
-        .unwrap()
-        .with_diagram_checker(Box::new(SignalChecker::new(PackId::new("core").unwrap())))
+    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings).unwrap()
 }
 
 #[test]
@@ -74,7 +73,7 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
         .unwrap();
     assert_eq!(doc.findings.len(), 1);
     let f = &doc.findings[0];
-    assert_eq!(f.rule_id, id("core:diagram.label-run-on"));
+    assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
     assert_eq!(f.category.as_str(), "diagram");
     assert_eq!(f.severity, Severity::Warning);
     assert_eq!(f.matched_text, "This label has far too many words in it");
@@ -100,7 +99,7 @@ fn a_diagram_file_is_checked_without_prose() {
 fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
     let mut off = settings();
     off.rule_levels
-        .insert(id("core:diagram.label-run-on"), Level::Off);
+        .insert(id("diagrams:diagram.label-run-on"), Level::Off);
     assert!(
         diagram_engine(off)
             .lint(&Input::markdown("a.md", MERMAID))
@@ -109,9 +108,10 @@ fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
             .is_empty()
     );
     let mut error = settings();
-    error
-        .rule_levels
-        .insert(id("core:diagram.label-run-on"), Level::On(Severity::Error));
+    error.rule_levels.insert(
+        id("diagrams:diagram.label-run-on"),
+        Level::On(Severity::Error),
+    );
     let doc = diagram_engine(error)
         .lint(&Input::markdown("a.md", MERMAID))
         .unwrap();
@@ -136,6 +136,62 @@ fn a_fence_without_a_diagram_language_is_not_a_diagram() {
             .findings
             .is_empty()
     );
+}
+
+#[test]
+fn the_shipped_pack_holds_five_signal_rules_and_three_judgement_rules() {
+    let set = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let mut got: Vec<_> = set
+        .rules()
+        .map(|r| (r.id().to_string(), r.rule().severity))
+        .collect();
+    got.sort_by(|a, b| a.0.cmp(&b.0));
+    let want = [
+        ("diagrams:diagram.label-run-on", Severity::Warning),
+        (
+            "diagrams:diagram.label-title-plus-gloss",
+            Severity::Suggestion,
+        ),
+        ("diagrams:diagram.meta-reference", Severity::Warning),
+        ("diagrams:diagram.note-long", Severity::Warning),
+        ("diagrams:diagram.note-needed", Severity::Suggestion),
+        ("diagrams:diagram.over-explained", Severity::Suggestion),
+        ("diagrams:diagram.prose-restates", Severity::Suggestion),
+        ("diagrams:diagram.prose-restates-labels", Severity::Warning),
+    ];
+    assert_eq!(got, want.map(|(i, s)| (i.to_owned(), s)));
+}
+
+#[test]
+fn the_pack_severity_is_the_shipped_level_and_a_category_level_replaces_it() {
+    let source = "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
+    let input = Input::diagram("flow.mmd", source, Format::Mermaid);
+    let shipped = diagram_engine(settings()).lint(&input).unwrap();
+    assert_eq!(shipped.findings[0].severity, Severity::Warning);
+    let mut capped = settings();
+    capped.categories.insert(
+        slopvac_model::CategoryId::new("diagram").unwrap(),
+        slopvac_engine::CategoryDials {
+            level: Some(Level::On(Severity::Suggestion)),
+            ..Default::default()
+        },
+    );
+    let doc = diagram_engine(capped).lint(&input).unwrap();
+    assert_eq!(doc.findings[0].severity, Severity::Suggestion);
+}
+
+#[test]
+fn a_title_plus_gloss_label_ships_as_a_suggestion() {
+    let source = "flowchart TD\n  A[Clean Data: remove duplicates, nulls] --> B[End]\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("flow.mmd", source, Format::Mermaid))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(
+        doc.findings[0].rule_id,
+        id("diagrams:diagram.label-title-plus-gloss")
+    );
+    assert_eq!(doc.findings[0].severity, Severity::Suggestion);
 }
 
 /// A checker that flags every fragment, to show the dispatch hands over each one.
@@ -186,7 +242,7 @@ fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
         .unwrap();
     doc.findings
         .iter()
-        .filter(|f| f.rule_id == id("core:diagram.meta-reference"))
+        .filter(|f| f.rule_id == id("diagrams:diagram.meta-reference"))
         .map(|f| {
             let span = f.extent.unwrap().span;
             (f.matched_text.clone(), span.start(), span.end())

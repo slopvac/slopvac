@@ -7,9 +7,11 @@
 //! score.
 
 use std::ops::Range;
+use std::path::PathBuf;
 
-use slopvac_diagrams::{DiagramFinding, Extraction, ProseBlock};
+use slopvac_diagrams::{Extraction, ProseBlock, Signal, SignalHit};
 use slopvac_model::{PackId, RuleId, Severity};
+use slopvac_rules::{CompileOptions, LoadErrors, Match, RuleSet, StructureMatch};
 
 /// A rule a checker reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,46 +53,69 @@ pub trait DiagramChecker: Send + Sync {
     fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit>;
 }
 
-/// The deterministic label and prose signals of `slopvac-diagrams` (`diagram.label-run-on`,
-/// `diagram.label-title-plus-gloss`, `diagram.note-long`, `diagram.meta-reference` and
-/// `diagram.prose-restates-labels`) as one checker under `pack`.
+/// The pack id to give [`diagram_rule_set`] when a caller has no other.
+pub const DIAGRAM_PACK: &str = "diagrams";
+
+/// The diagram rule pack that ships with `slopvac-diagrams` as a rule set under `pack`:
+/// `diagram.label-run-on`, `diagram.label-title-plus-gloss`, `diagram.note-long`,
+/// `diagram.meta-reference` and `diagram.prose-restates-labels`, plus three judgement rules.
 ///
-/// They are experimental and no pack ships them yet, so the engine does not register them
-/// on its own. Pass this to [`crate::Engine::with_diagram_checker`].
+/// The rules are experimental and no default pack includes them. Pass this set to
+/// [`crate::Engine::new`] with the other sets. The engine runs each rule whose
+/// `match.check` names a [`Signal`], and applies its level, `applies_to`, category and
+/// suppression settings to it like any other rule.
+///
+/// # Errors
+/// The shipped pack fails to load, which the tests rule out.
+pub fn diagram_rule_set(pack: &PackId) -> Result<RuleSet, LoadErrors> {
+    RuleSet::from_sources(
+        pack,
+        slopvac_diagrams::PACK
+            .iter()
+            .map(|&(file, text)| (PathBuf::from(file), text.to_owned())),
+        &CompileOptions::default(),
+    )
+}
+
+/// The signal a structure rule selects, if it selects one.
+pub(crate) fn signal_of(m: &StructureMatch) -> Option<Signal> {
+    Signal::from_check(m.check.as_str())
+}
+
+/// The deterministic signals of `slopvac-diagrams` as one checker, for the rules of a
+/// [`RuleSet`] that name them in `match.check`.
+///
+/// [`crate::Engine::new`] builds one for each set that has such rules, so callers rarely
+/// need this.
 #[derive(Debug, Clone)]
 pub struct SignalChecker {
-    pack: PackId,
+    rules: Vec<(Signal, DiagramRule)>,
 }
 
 impl SignalChecker {
-    /// Report the signals as rules of `pack`.
+    /// A checker for the signal rules of `set`, or `None` when it has none.
     #[must_use]
-    pub const fn new(pack: PackId) -> Self {
-        Self { pack }
-    }
-
-    fn id(&self, rule: &str) -> RuleId {
-        RuleId::new(format!("{}:{rule}", self.pack)).expect("a diagram rule id is valid")
+    pub fn from_rule_set(set: &RuleSet) -> Option<Self> {
+        let rules: Vec<_> = set
+            .rules()
+            .filter_map(|loaded| {
+                let Match::Structure(m) = &loaded.rule().match_ else {
+                    return None;
+                };
+                let rule = DiagramRule {
+                    id: loaded.id().clone(),
+                    severity: loaded.rule().severity,
+                };
+                Some((signal_of(m)?, rule))
+            })
+            .collect();
+        (!rules.is_empty()).then_some(Self { rules })
     }
 }
 
-const SIGNALS: [(&str, Severity); 5] = [
-    ("diagram.label-run-on", Severity::Warning),
-    ("diagram.label-title-plus-gloss", Severity::Suggestion),
-    ("diagram.note-long", Severity::Warning),
-    ("diagram.meta-reference", Severity::Warning),
-    ("diagram.prose-restates-labels", Severity::Warning),
-];
-
 impl DiagramChecker for SignalChecker {
     fn rules(&self) -> Vec<DiagramRule> {
-        SIGNALS
-            .iter()
-            .map(|&(rule, severity)| DiagramRule {
-                id: self.id(rule),
-                severity,
-            })
-            .collect()
+        self.rules.iter().map(|(_, rule)| rule.clone()).collect()
     }
 
     fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit> {
@@ -103,10 +128,13 @@ impl DiagramChecker for SignalChecker {
         ));
         found
             .into_iter()
-            .map(|f: DiagramFinding| DiagramHit {
-                rule: self.id(f.rule),
-                span: f.span,
-                message: f.message,
+            .filter_map(|hit: SignalHit| {
+                let (_, rule) = self.rules.iter().find(|(s, _)| *s == hit.signal)?;
+                Some(DiagramHit {
+                    rule: rule.id.clone(),
+                    span: hit.span,
+                    message: hit.message,
+                })
             })
             .collect()
     }
