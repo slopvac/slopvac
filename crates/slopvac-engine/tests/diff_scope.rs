@@ -22,6 +22,9 @@ use tempfile::TempDir;
 
 struct Repo {
     _dir: TempDir,
+    /// The work tree by its plain temp path. Git for Windows takes this as a working
+    /// directory; the canonical `root` is a `\\?\` verbatim path there.
+    work: PathBuf,
     /// Canonical path of the work tree.
     root: PathBuf,
     config: PathBuf,
@@ -34,9 +37,12 @@ impl Repo {
         let base = fs::canonicalize(dir.path()).unwrap();
         let root = base.join("repo");
         fs::create_dir(&root).unwrap();
-        let config = base.join("gitconfig");
+        // Git for Windows cannot read a config named by a `\\?\` verbatim path, which
+        // `canonicalize` returns there; the plain temp path works on every platform.
+        let config = dir.path().join("gitconfig");
         fs::write(&config, "").unwrap();
         let repo = Self {
+            work: dir.path().join("repo"),
             _dir: dir,
             root,
             config,
@@ -57,7 +63,7 @@ impl Repo {
     fn git<S: AsRef<OsStr>>(&self, args: &[S]) -> String {
         let output = Command::new("git")
             .args(args)
-            .current_dir(&self.root)
+            .current_dir(&self.work)
             .env("GIT_CONFIG_GLOBAL", &self.config)
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .output()
@@ -1101,8 +1107,14 @@ fn a_missing_object_is_an_incomplete_error_and_is_never_fetched() {
     repo.commit("edit");
     repo.git(&["config", "uploadpack.allowFilter", "true"]);
     repo.git(&["config", "uploadpack.allowAnySHA1InWant", "true"]);
-    let clone = repo.root.parent().unwrap().join("clone");
-    let url = format!("file://{}", repo.root.display());
+    let clone = repo.work.parent().unwrap().join("clone");
+    // A file URL: `file:///C:/...` on Windows, `file:///tmp/...` elsewhere.
+    let origin = repo.work.display().to_string().replace('\\', "/");
+    let url = if origin.starts_with('/') {
+        format!("file://{origin}")
+    } else {
+        format!("file:///{origin}")
+    };
     repo.git(&[
         "clone",
         "-q",

@@ -137,13 +137,12 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
     let limits = &options.limits;
     let mut command = Command::new(&options.program);
     command.args(GLOBAL_ARGS).args(args);
-    command.current_dir(cwd);
+    command.current_dir(plain_path(cwd));
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    scrub_environment(&mut command);
-    command.env("GIT_NO_LAZY_FETCH", "1");
+    apply_environment(&mut command);
     // Its own process group, so a limit can stop git and the filters it started.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
@@ -271,14 +270,33 @@ fn classify(stderr: String) -> DiffError {
     }
 }
 
-/// Remove every `GIT_*` variable from the child's environment.
-fn scrub_environment(command: &mut Command) {
-    let names: Vec<OsString> = std::env::vars_os()
-        .map(|(name, _)| name)
+/// What to do to the child's environment, as `(name, value)`: `None` removes the
+/// variable, `Some` sets it. Applied in order.
+type EnvEdit = (OsString, Option<&'static str>);
+
+/// The environment changes for a child, given the names the parent has.
+///
+/// Only `GIT_*` variables are removed. Everything else stays, because git needs the
+/// platform's own variables to find its configuration and temp space: `HOME` and `XDG_*`
+/// on Unix, and `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`,
+/// `PROGRAMDATA`, `SystemRoot`, `TEMP` and `TMP` on Windows. `GIT_NO_LAZY_FETCH=1` comes
+/// last, so it wins over an inherited value.
+fn env_edits(inherited: impl IntoIterator<Item = OsString>) -> Vec<EnvEdit> {
+    let mut edits: Vec<EnvEdit> = inherited
+        .into_iter()
         .filter(|name| is_git_variable(name))
+        .map(|name| (name, None))
         .collect();
-    for name in names {
-        command.env_remove(name);
+    edits.push((OsString::from("GIT_NO_LAZY_FETCH"), Some("1")));
+    edits
+}
+
+fn apply_environment(command: &mut Command) {
+    for (name, value) in env_edits(std::env::vars_os().map(|(name, _)| name)) {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
     }
 }
 
@@ -287,4 +305,90 @@ fn is_git_variable(name: &OsStr) -> bool {
     name.to_string_lossy()
         .to_ascii_uppercase()
         .starts_with("GIT_")
+}
+
+/// A directory path git can use as its working directory.
+///
+/// `fs::canonicalize` on Windows returns a `\\?\C:\...` verbatim path. Git for Windows
+/// does not accept that form for a working directory or a config path, so the prefix is
+/// dropped when the rest is an ordinary drive path. UNC and other forms are left alone.
+fn plain_path(path: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            let bytes = rest.as_bytes();
+            if bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && bytes[2] == b'\\'
+            {
+                return std::path::PathBuf::from(rest);
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn only_git_variables_are_removed_and_the_lazy_fetch_switch_is_last() {
+        let inherited = names(&[
+            "GIT_DIR",
+            "git_work_tree",
+            "GIT_CONFIG_COUNT",
+            "GIT_NO_LAZY_FETCH",
+            "PATH",
+            "HOME",
+            "USERPROFILE",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "PROGRAMDATA",
+            "SystemRoot",
+            "TEMP",
+            "TMP",
+            "XDG_CONFIG_HOME",
+            "GITHUB_TOKEN",
+        ]);
+
+        let edits = env_edits(inherited);
+
+        let removed: Vec<&str> = edits
+            .iter()
+            .filter(|(_, value)| value.is_none())
+            .map(|(name, _)| name.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            removed,
+            [
+                "GIT_DIR",
+                "git_work_tree",
+                "GIT_CONFIG_COUNT",
+                "GIT_NO_LAZY_FETCH"
+            ]
+        );
+        assert_eq!(
+            edits.last(),
+            Some(&(OsString::from("GIT_NO_LAZY_FETCH"), Some("1")))
+        );
+        assert_eq!(edits.len(), removed.len() + 1, "nothing else is touched");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_drive_path_loses_its_prefix_and_other_forms_stay() {
+        let plain = |s: &str| plain_path(Path::new(s)).to_string_lossy().into_owned();
+        assert_eq!(plain(r"\\?\C:\Users\x\repo"), r"C:\Users\x\repo");
+        assert_eq!(plain(r"\\?\UNC\server\share"), r"\\?\UNC\server\share");
+        assert_eq!(plain(r"C:\Users\x"), r"C:\Users\x");
+    }
 }
