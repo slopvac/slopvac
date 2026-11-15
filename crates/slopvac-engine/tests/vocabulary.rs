@@ -453,20 +453,15 @@ fn raw_html_in_a_list_item_is_swept_with_exact_positions() {
 }
 
 #[test]
-fn a_table_exclusion_reaches_the_cells_of_an_html_table() {
+fn a_table_exclusion_does_not_reach_the_cells_of_an_html_table() {
     let source = "<table>\n<tr><td>Please request data</td></tr>\n</table>\n";
     let none = lint_with(
         &json!({"exclude_blocks": ["table"]}),
         &[("request", "verb")],
         source,
     );
-    assert!(none.findings.is_empty());
-    let all = lint_with(&json!({}), &[("request", "verb")], source);
-    assert_eq!(
-        all.findings.len(),
-        1,
-        "without the exclusion the cell is swept"
-    );
+    // 2.x reads the prose of a raw HTML block as a paragraph, not as table cells.
+    assert_eq!(none.findings.len(), 1);
 }
 
 #[test]
@@ -483,28 +478,28 @@ fn lines(doc: &Document) -> Vec<usize> {
 }
 
 #[test]
-fn a_quote_exclusion_reaches_raw_html_in_a_block_quote() {
+fn a_quote_exclusion_does_not_reach_raw_html_in_a_block_quote() {
     let doc = lint_with(
         &json!({"exclude_blocks": ["quote"]}),
         &[("request", "verb")],
         QUOTED_HTML,
     );
-    assert_eq!(lines(&doc), [3]);
+    assert_eq!(lines(&doc), [1, 3]);
 }
 
 #[test]
-fn a_quote_exclusion_reaches_raw_html_in_a_list_item() {
+fn a_list_item_exclusion_does_not_reach_raw_html_in_a_list_item() {
     let source = "- item\n\n  <p>Please request data</p>\n\n<p>Please request data</p>\n";
     let doc = lint_with(
         &json!({"exclude_blocks": ["list-item"]}),
         &[("request", "verb")],
         source,
     );
-    assert_eq!(lines(&doc), [5]);
+    assert_eq!(lines(&doc), [3, 5]);
 }
 
 #[test]
-fn a_quote_exclusion_reaches_an_html_block_quote_inside_raw_html() {
+fn a_quote_exclusion_does_not_reach_an_html_block_quote_inside_raw_html() {
     let source =
         "<blockquote><p>Please request data</p></blockquote>\n\n<p>Please request data</p>\n";
     let doc = lint_with(
@@ -512,23 +507,23 @@ fn a_quote_exclusion_reaches_an_html_block_quote_inside_raw_html() {
         &[("request", "verb")],
         source,
     );
-    assert_eq!(lines(&doc), [3]);
+    assert_eq!(lines(&doc), [1, 3]);
 }
 
 #[test]
-fn a_list_item_exclusion_reaches_an_html_list_inside_raw_html() {
+fn a_list_item_exclusion_does_not_reach_an_html_list_inside_raw_html() {
     let source = "<ul><li>Please request data</li></ul>\n\n<p>Please request data</p>\n";
     let doc = lint_with(
         &json!({"exclude_blocks": ["list-item"]}),
         &[("request", "verb")],
         source,
     );
-    assert_eq!(lines(&doc), [3]);
+    assert_eq!(lines(&doc), [1, 3]);
 }
 
 #[test]
-fn an_html_list_in_a_markdown_quote_keeps_both_containers() {
-    // Each exclusion alone must drop the item: the quote comes from Markdown, the item from HTML.
+fn an_html_list_in_a_markdown_quote_is_a_plain_paragraph() {
+    // 2.x holds the prose of a raw HTML block in no quote and no list item, whatever it is in.
     let source = "> <ul><li>Please request data</li></ul>\n\n<p>Please request data</p>\n";
     for kind in ["quote", "list-item"] {
         let doc = lint_with(
@@ -536,12 +531,12 @@ fn an_html_list_in_a_markdown_quote_keeps_both_containers() {
             &[("request", "verb")],
             source,
         );
-        assert_eq!(lines(&doc), [3], "exclude_blocks {kind}");
+        assert_eq!(lines(&doc), [1, 3], "exclude_blocks {kind}");
     }
 }
 
 #[test]
-fn context_gates_see_an_html_block_quote_inside_raw_html() {
+fn context_gates_do_not_see_an_html_block_quote_inside_raw_html() {
     let source =
         "<blockquote><p>Please request data</p></blockquote>\n\n<p>Please request data</p>\n";
     let only = lint_with(
@@ -549,34 +544,34 @@ fn context_gates_see_an_html_block_quote_inside_raw_html() {
         &[("request", "verb")],
         source,
     );
-    assert_eq!(lines(&only), [1]);
+    assert_eq!(lines(&only), Vec::<usize>::new());
 }
 
 #[test]
-fn context_gates_see_raw_html_in_a_block_quote() {
+fn context_gates_do_not_see_raw_html_in_a_block_quote() {
     let skip = lint_with(
         &json!({"contexts": {"skip": ["quote"]}}),
         &[("request", "verb")],
         QUOTED_HTML,
     );
-    assert_eq!(lines(&skip), [3]);
+    assert_eq!(lines(&skip), [1, 3]);
     let only = lint_with(
         &json!({"contexts": {"only": ["quote"]}}),
         &[("request", "verb")],
         QUOTED_HTML,
     );
-    assert_eq!(lines(&only), [1]);
+    assert_eq!(lines(&only), Vec::<usize>::new());
 }
 
 #[test]
-fn a_tag_exception_detector_suppresses_raw_html_in_a_block_quote() {
+fn a_tag_exception_detector_does_not_see_raw_html_in_a_block_quote() {
     // A detector with no registered implementation matches a context tag of that name.
     let doc = lint_with(
         &json!({"exceptions": [{"name": "quoted", "detector": "quote"}]}),
         &[("request", "verb")],
         QUOTED_HTML,
     );
-    assert_eq!(lines(&doc), [3]);
+    assert_eq!(lines(&doc), [1, 3]);
 }
 const SECTIONS: &str =
     "## Examples\n\n<p>Please request data</p>\n\n## Other\n\n<p>Please request data</p>\n";

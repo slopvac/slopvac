@@ -379,3 +379,13 @@ fn html_code_and_pre_contents_stay_while_neighbouring_prose_is_fixed() {
         "<p>d <code>delta</code> d <kbd>delta</kbd></p>\n\n<pre>\ndelta\n</pre>\n"
     );
 }
+
+#[test]
+fn a_tab_indented_fence_in_a_raw_html_block_is_never_rewritten() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    let text = "<div>\n\t```\ndelta code\n\t```\nSee delta now.\n</div>\n";
+    assert_eq!(
+        fix(&raw, text, None).text,
+        "<div>\n\t```\ndelta code\n\t```\nSee d now.\n</div>\n"
+    );
+}
