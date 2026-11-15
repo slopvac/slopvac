@@ -504,6 +504,8 @@ impl EnvStore {
 
     /// Test seam: smaller environment bounds (entries, directory levels,
     /// file bytes) and a shorter deadline for each uv or interpreter run.
+    /// Each value is clamped to the production limit, so the seam can only
+    /// tighten them.
     #[doc(hidden)]
     #[must_use]
     pub fn with_test_bounds(
@@ -513,12 +515,13 @@ impl EnvStore {
         bytes: u64,
         step: Duration,
     ) -> Self {
+        let max = WalkBounds::default();
         self.limits.walk = WalkBounds {
-            nodes: entries,
-            depth,
-            bytes,
+            nodes: entries.min(max.nodes),
+            depth: depth.min(max.depth),
+            bytes: bytes.min(max.bytes),
         };
-        self.limits.step = step;
+        self.limits.step = step.min(STEP_DEADLINE);
         self
     }
 
@@ -1026,4 +1029,31 @@ fn create_private_dir(dir: &Path) -> Result<(), PyEnvError> {
 #[cfg(not(unix))]
 fn create_private_dir(dir: &Path) -> Result<(), PyEnvError> {
     fs::create_dir_all(dir).map_err(PyEnvError::io(format!("creating {}", dir.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounds_only_tighten_the_production_limits() {
+        let loose = EnvStore::open("/nonexistent").with_test_bounds(
+            usize::MAX,
+            usize::MAX,
+            u64::MAX,
+            Duration::MAX,
+        );
+        let l = loose.limits;
+        assert_eq!(
+            (l.walk.nodes, l.walk.depth, l.walk.bytes, l.step),
+            (20_000, 32, 1 << 30, Duration::from_secs(600))
+        );
+        let tight =
+            EnvStore::open("/nonexistent").with_test_bounds(5, 3, 7, Duration::from_millis(9));
+        let t = tight.limits;
+        assert_eq!(
+            (t.walk.nodes, t.walk.depth, t.walk.bytes, t.step),
+            (5, 3, 7, Duration::from_millis(9))
+        );
+    }
 }

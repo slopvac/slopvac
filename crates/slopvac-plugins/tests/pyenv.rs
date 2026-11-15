@@ -1438,6 +1438,60 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
         }
     }
 
+    /// The byte bound holds in the metadata walk before bytecode compilation,
+    /// not only in the final hashing walk: an oversized environment never
+    /// reaches the interpreter.
+    #[test]
+    fn an_environment_past_the_byte_bound_never_reaches_bytecode_compilation() {
+        let s = Scratch::new("u-bytes-early");
+        let marker = s.dir("compile-ran");
+        let interp = s.dir("interp/python");
+        write_exec(
+            &interp,
+            &format!(
+                "#!/bin/sh\ncase \" $* \" in *\" compileall \"*) touch '{}' ;; esac\nexec '{}' \"$@\"\n",
+                marker.display(),
+                python().display()
+            ),
+        );
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let build = |extra: &str, store: &str| {
+            let uv = fake_uv(
+                &s.dir(&format!("{store}-bin")),
+                &Fake {
+                    interpreter: interp.clone(),
+                    pip_extra: extra,
+                    ..Fake::real()
+                },
+            );
+            EnvStore::open(s.dir(store))
+                .with_test_bounds(20_000, 32, 100_000, Duration::from_secs(60))
+                .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+        };
+        // Control: the marker records a compile when the environment fits.
+        build("", "fits").unwrap();
+        assert!(
+            marker.exists(),
+            "the interpreter marker does not record compileall"
+        );
+        fs::remove_file(&marker).unwrap();
+        // Four 40,000-byte files, each under the 100,000-byte bound, together over it.
+        let err = build(
+            r#"for i in 1 2 3 4; do head -c 40000 /dev/zero > "$site/part$i"; done"#,
+            "over",
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, PyEnvError::Refused(m) if m.contains("more than 100000 bytes")),
+            "{err:?}"
+        );
+        assert!(
+            !marker.exists(),
+            "the oversized environment reached bytecode compilation"
+        );
+    }
+
     #[test]
     fn a_step_past_its_deadline_is_killed_and_fails_the_build() {
         let s = Scratch::new("u-deadline");
