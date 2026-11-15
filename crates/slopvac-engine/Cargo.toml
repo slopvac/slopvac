@@ -24,10 +24,9 @@ slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-text = { workspace = true }
-tempfile.workspace = true
 thiserror = { workspace = true }
 
-# NOFOLLOW and NONBLOCK for the opens in `fix_file`, and the user id for ownership.
+# Descriptor-anchored opens, renames and the effective user id for `fix_file`.
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs", "process"] }
 
@@ -35,3 +34,4 @@ rustix = { workspace = true, features = ["fs", "process"] }
 proptest.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile.workspace = true

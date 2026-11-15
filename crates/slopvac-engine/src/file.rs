@@ -420,7 +420,7 @@ mod sys {
 
         fn create_temp(&self) -> std::io::Result<(File, Temp)> {
             let flags =
-                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+                OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
             for _ in 0..16 {
                 let name = temp_name(&self.name);
                 match rustix::fs::openat(
