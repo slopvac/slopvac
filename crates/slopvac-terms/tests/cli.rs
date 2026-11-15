@@ -217,7 +217,7 @@ fn import_reads_cspell_with_comments() {
 #[test]
 fn import_reads_codespell_lists_in_both_forms() {
     let dir = scratch("import-codespell");
-    std::fs::write(dir.join("ignore.txt"), "# c\nteh\nmispel\n").unwrap();
+    std::fs::write(dir.join("ignore.txt"), "# c\nfrobz\nmispel\n").unwrap();
     std::fs::write(
         dir.join(".codespellrc"),
         "[codespell]\nignore-words-list = alpha,beta\nskip = x\n",
@@ -228,7 +228,7 @@ fn import_reads_codespell_lists_in_both_forms() {
     let (_, out) = terms(&dir, &["import", "--from", "codespell", ".codespellrc"]);
     assert!(out.starts_with("imported 2 terms"), "{out}");
     let text = file(&dir);
-    for w in ["teh", "mispel", "alpha", "beta"] {
+    for w in ["frobz", "mispel", "alpha", "beta"] {
         assert!(text.contains(&format!("term = \"{w}\"")), "{w}: {text}");
     }
     std::fs::remove_dir_all(&dir).unwrap();
