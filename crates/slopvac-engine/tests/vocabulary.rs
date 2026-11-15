@@ -416,3 +416,63 @@ fn fallback_owners_report_a_blocklist_message_without_open_placeholders() {
         );
     }
 }
+#[test]
+fn a_multi_line_pre_in_a_block_quote_hides_its_lines() {
+    // Each quoted line is its own source range. Read one by one, the middle line would
+    // look like prose.
+    let source = "> <pre>\n> We request data\n> </pre>\n";
+    let doc = lint(&[("request", "verb")], source);
+    assert!(doc.findings.is_empty(), "{:?}", matched(&doc));
+}
+
+#[test]
+fn a_multi_line_comment_in_a_block_quote_hides_its_lines() {
+    let source = "> <!--\n> We request data\n> -->\n";
+    let doc = lint(&[("request", "verb")], source);
+    assert!(doc.findings.is_empty(), "{:?}", matched(&doc));
+}
+
+#[test]
+fn quoted_html_prose_keeps_its_sentence_across_lines_and_exact_positions() {
+    let source = "> <p>Please\n> request\n> data</p>\n";
+    let doc = lint(&[("request", "verb")], source);
+    assert_eq!(doc.findings.len(), 1);
+    let finding = &doc.findings[0];
+    assert_eq!((finding.start.line(), finding.start.column()), (2, 3));
+    let span = finding.extent.unwrap().span;
+    assert_eq!(&source[span.start()..span.end()], "request");
+}
+
+#[test]
+fn raw_html_in_a_list_item_is_swept_with_exact_positions() {
+    let source = "- item\n\n  <p>Please\n  request data</p>\n";
+    let doc = lint(&[("request", "verb")], source);
+    assert_eq!(doc.findings.len(), 1);
+    let span = doc.findings[0].extent.unwrap().span;
+    assert_eq!(&source[span.start()..span.end()], "request");
+}
+
+#[test]
+fn a_table_exclusion_reaches_the_cells_of_an_html_table() {
+    let source = "<table>\n<tr><td>Please request data</td></tr>\n</table>\n";
+    let none = lint_with(
+        &json!({"exclude_blocks": ["table"]}),
+        &[("request", "verb")],
+        source,
+    );
+    assert!(none.findings.is_empty());
+    let all = lint_with(&json!({}), &[("request", "verb")], source);
+    assert_eq!(
+        all.findings.len(),
+        1,
+        "without the exclusion the cell is swept"
+    );
+}
+
+#[test]
+fn an_escaped_backtick_stays_attached_to_its_word_as_in_vale() {
+    // Vale tags nothing for `deploy`` here: the backtick keeps the word whole, so the
+    // blocked noun does not match.
+    let doc = lint(&[("deploy", "noun")], "The deploy\\` failed.\n");
+    assert_eq!(matched(&doc), Vec::<&str>::new());
+}

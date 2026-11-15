@@ -12,9 +12,10 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
+use slopvac_model::Span;
 use slopvac_model::{Finding, Notice, NoticeLevel};
-use slopvac_parse::{Document as Parsed, parse_html};
-use slopvac_pos::Tagger;
+use slopvac_parse::{Document as Parsed, parse_html_segments};
+use slopvac_pos::{Mask, Tagger};
 use slopvac_rules::{LoadedRule, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
 
@@ -129,53 +130,23 @@ impl Engine {
     }
 }
 
-/// The text the tagger reads for projected prose, and how to map its offsets back.
-struct TaggerText {
-    text: String,
-    /// Each stand-in for a code span as `(start in text, bytes it adds over the one NUL)`,
-    /// ascending.
-    stand_ins: Vec<(usize, usize)>,
-}
-
-impl TaggerText {
-    /// The projection masks each inline code span as one NUL. Replace it with a code span
-    /// the tagger drops, as it drops any code, so a hyphen or a sentence break next to code
-    /// behaves as it does in the source. `code_width(at)` is the number of characters
-    /// between the backticks of the span masked at byte `at`: the tagger puts a run of that
-    /// many `*` in the span's place, as Vale does, so the tags around it see the same word.
-    fn new(prose: &str, code_width: impl Fn(usize) -> usize) -> Self {
-        let mut text = String::with_capacity(prose.len());
-        let mut stand_ins = Vec::new();
-        for (at, c) in prose.char_indices() {
-            if c == '\0' {
-                let width = code_width(at).max(1);
-                stand_ins.push((text.len(), width + 1));
-                text.push('`');
-                text.extend(std::iter::repeat_n('x', width));
-                text.push('`');
-            } else if c == '`' {
-                // A literal backtick (the parser decoded an escape) is prose. The tagger
-                // would pair it with a stand-in and drop the words between them. The
-                // replacement has the same width, so offsets still line up.
-                text.push('\'');
-            } else {
-                text.push(c);
+/// The code spans of projected prose: the projection masks each one as a NUL. The tagger
+/// puts in its place a run of `*` as wide as the span's text between the backticks, as Vale
+/// does, so the tags around it see the same word. `unit_span` maps a range of the prose
+/// to the source.
+fn masks(text: &str, source: &str, unit_span: impl Fn(Range<usize>) -> Span) -> Vec<Mask> {
+    text.match_indices('\0')
+        .map(|(at, _)| {
+            let span = unit_span(at..at + 1);
+            Mask {
+                range: at..at + 1,
+                stars: source[span.start()..span.end()]
+                    .trim_matches('`')
+                    .chars()
+                    .count(),
             }
-        }
-        Self { text, stand_ins }
-    }
-
-    /// The offset in the projected prose of an offset in the tagger text. A token never
-    /// starts or ends inside a stand-in, so each one before `at` is exactly one NUL.
-    fn to_prose(&self, at: usize) -> usize {
-        let before = self
-            .stand_ins
-            .partition_point(|&(start, added)| start + added < at);
-        at - self.stand_ins[..before]
-            .iter()
-            .map(|&(_, added)| added)
-            .sum::<usize>()
-    }
+        })
+        .collect()
 }
 
 /// What one sweep needs from the owner rule.
@@ -217,7 +188,7 @@ impl Run<'_> {
         let mut out = Vec::new();
         self.sweep_document(&sweep, self.parsed, self.prepared, &mut out)?;
         for block in &self.parsed.html_blocks {
-            let html = parse_html(self.input.source, *block)?;
+            let html = parse_html_segments(self.input.source, &self.index, block)?;
             let prepared = Prepared::new(self.input.source, &html)?;
             self.sweep_document(&sweep, &html, &prepared, &mut out)?;
         }
@@ -241,19 +212,15 @@ impl Run<'_> {
         );
         let tagger = Tagger::english();
         for unit in prepared.units(Scope::Prose)? {
-            let prose = TaggerText::new(unit.text, |at| {
-                let span = unit.span(&(at..at + 1));
-                self.input.source[span.start()..span.end()]
-                    .trim_matches('`')
-                    .chars()
-                    .count()
-            });
-            for token in tagger.tag_text(&prose.text) {
+            let text = unit.text;
+            let masks = masks(text, self.input.source, |r| unit.span(&r));
+            for token in
+                tagger.tag_blocks_masked(text, std::slice::from_ref(&(0..text.len())), &masks)
+            {
                 let Some(pos) = refused(&engine.vocabulary.words, token.text, token.tag) else {
                     continue;
                 };
-                let range: Range<usize> =
-                    prose.to_prose(token.span.start)..prose.to_prose(token.span.end);
+                let range: Range<usize> = token.span.clone();
                 let span = unit.span(&range);
                 if skip.hides(span)
                     || !self.passes_context(
