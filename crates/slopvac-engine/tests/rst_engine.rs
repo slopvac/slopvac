@@ -31,9 +31,19 @@ fn interpreter() -> &'static Path {
         let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("rst-engine-fakes");
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("fake-python");
-        let body = format!("#!/bin/sh\ncat >/dev/null\ncat '{FIXTURES}/sections.json'\n");
-        fs::write(&path, body).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        let write = |path: &Path, body: String| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let json =
+            |name: &str| format!("#!/bin/sh\ncat >/dev/null\ncat '{FIXTURES}/{name}.json'\n");
+        write(&path, json("sections"));
+        write(&dir.join("tables-python"), json("table-repeat"));
+        write(
+            &dir.join("planted/python3"),
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\nexit 0\n".to_owned(),
+        );
         path
     })
 }
@@ -88,6 +98,68 @@ fn a_missing_interpreter_makes_the_document_incomplete() {
         warnings[0].message
     );
     assert!(!doc.gate.is_passed());
+}
+
+fn tables_engine(rules: &[serde_json::Value]) -> Engine {
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("tables-python"));
+    engine(rules).with_rst(options)
+}
+
+fn tables() -> String {
+    fs::read_to_string(format!("{FIXTURES}/table-repeat.rst")).unwrap()
+}
+
+#[test]
+fn a_rule_that_excludes_tables_is_silent_in_an_rst_table() {
+    let open = tables_engine(&[tokens("dull", "Alpha", &json!({}))]);
+    let doc = open.lint(&Input::rst("t.rst", &tables())).unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    let closed = tables_engine(&[tokens(
+        "dull",
+        "Alpha",
+        &json!({"exclude_blocks": ["table"]}),
+    )]);
+    let doc = closed.lint(&Input::rst("t.rst", &tables())).unwrap();
+    assert_eq!(doc.findings.len(), 0);
+}
+
+#[test]
+fn an_engine_without_project_boundaries_runs_nothing_from_the_path() {
+    let planted = interpreter().with_file_name("planted");
+    let marker = planted.join("ran");
+    let _ = fs::remove_file(&marker);
+    let mut options = RstOptions::default();
+    options.search_path = Some(planted.clone().into_os_string());
+    let e = engine(&[tokens("dull", "installer", &json!({}))]).with_rst(options);
+    let doc = e.lint(&Input::rst("a.rst", &sections())).unwrap();
+    assert!(
+        !marker.exists(),
+        "the interpreter ran without project boundaries"
+    );
+    assert!(
+        doc.unchecked
+            .iter()
+            .any(|n| n.code.as_str() == "rst-converter-missing")
+    );
+}
+
+#[test]
+fn project_roots_given_to_the_engine_reach_the_search() {
+    let planted = interpreter().with_file_name("planted");
+    let mut options = RstOptions::default();
+    options.search_path = Some(planted.clone().into_os_string());
+    let e = engine(&[tokens("dull", "installer", &json!({}))])
+        .with_rst(options)
+        .with_project_roots(vec![planted.join("..")]);
+    let doc = e.lint(&Input::rst("a.rst", &sections())).unwrap();
+    // The planted directory is inside the project root, so it is passed over.
+    assert!(
+        doc.unchecked
+            .iter()
+            .any(|n| n.code.as_str() == "rst-converter-missing")
+    );
+    assert!(!planted.join("ran").exists());
 }
 
 #[test]

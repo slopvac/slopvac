@@ -107,7 +107,11 @@ def main():
                 break
             if isinstance(sibling, (nodes.thead, nodes.tbody)):
                 before += len(sibling.children)
-        return [before + group.index(row), row.index(entry)]
+        return [
+            before + group.index(row),
+            row.index(entry),
+            entry.get("morecols", 0) + 1,
+        ]
 
     def section_level(node):
         parent = node.parent
@@ -152,12 +156,15 @@ def main():
     out = []
     # Post-order bookkeeping for the admonition extents.
     admonitions = []
+    tables = []
     stack = [document]
     while stack:
         node = stack.pop()
         tag = node.tagname
         if tag in skip_subtree:
             continue
+        if tag == "topic" and "contents" in node.get("classes", []):
+            continue  # Its title and entries are generated, not written.
         if isinstance(node, nodes.Admonition):
             start = node.line
             entry = {
@@ -173,6 +180,16 @@ def main():
             }
             out.append(entry)
             admonitions.append((entry, node))
+        elif tag == "table":
+            entry = {
+                "tag": "table",
+                "table": True,
+                "start": None,
+                "end": None,
+                "containers": containers(node),
+            }
+            out.append(entry)
+            tables.append((entry, node))
         elif tag in code_tags:
             start, end = lines_of(node)
             text = node.astext()
@@ -219,25 +236,36 @@ def main():
             if isinstance(child, nodes.Element) and not isinstance(child, nodes.Inline):
                 stack.append(child)
 
-    # An admonition runs to the last line of anything inside it.
-    for entry, node in admonitions:
-        last = entry["start"]
+    def extent(node, first):
+        """The first and last source line of anything inside `node`."""
+        last = None
         inner = [node]
         while inner:
             current = inner.pop()
-            if current.line is not None:
-                _, end = lines_of(current)
-                if end is not None:
-                    last = max(last, end)
+            if current is not node and current.line is not None:
+                start, end = lines_of(current)
+                if start is not None:
+                    first = start if first is None else min(first, start)
+                    last = end if last is None else max(last, end)
             inner.extend(
                 c
                 for c in current.children
                 if isinstance(c, nodes.Element) and not isinstance(c, nodes.Inline)
             )
-        entry["end"] = last
+        return first, last
 
-    # Admonitions come before their children in source order.
-    out.sort(key=lambda e: e["start"] if e["start"] is not None else 10**9)
+    # An admonition runs to the last line of anything inside it.
+    for entry, node in admonitions:
+        _, last = extent(node, entry["start"])
+        entry["end"] = max(entry["start"], last or entry["start"])
+
+    # A table has no lines of its own on docutils 0.21: it spans its cells.
+    for entry, node in tables:
+        entry["start"], entry["end"] = extent(node, None)
+    out = [e for e in out if not (e.get("table") and e["start"] is None)]
+
+    # Admonitions and tables come before their children in source order.
+    out.sort(key=lambda e: (e["start"] if e["start"] is not None else 10**9))
 
     result = {"docutils": docutils.__version__, "nodes": out}
     sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))

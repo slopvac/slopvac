@@ -161,7 +161,10 @@ Three consequences follow:
   to the node's whole trimmed lines (`opaque`), so the position is line-precise, and the
   document carries an `info` notice. A node with no usable source lines makes the check
   incomplete. docutils 0.21 puts the line of some directive output one line late, so the
-  mapper retries with one line of slack before it falls back.
+  mapper retries with one line of slack before it falls back. A table cell is matched only
+  inside its own columns, read from the table border, and a table is a block that covers
+  its cells and borders. Text docutils generates, such as the title and entries of a
+  `contents` directive, is not prose.
 - **Code comments.** The delimiters (`//`, `#`, `/*`, `*/`, a leading `*`) are gaps.
   Consecutive comment lines join with `wrap`. Comment text is not decoded.
 

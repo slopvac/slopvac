@@ -98,6 +98,14 @@ fn fakes() -> &'static Fakes {
         script(&dir.join("project/bin/python3"), "exit 0");
         script(&dir.join("project/bin/python"), "exit 0");
         script(&dir.join("open/python3"), "exit 0");
+        script(
+            &dir.join("marker-bin/python3"),
+            "touch \"$(dirname \"$0\")/ran\"\nexit 0",
+        );
+        script(
+            &dir.join("marker-bin-b/python3"),
+            "touch \"$(dirname \"$0\")/ran\"\nexit 0",
+        );
         fs::set_permissions(dir.join("open"), fs::Permissions::from_mode(0o777)).unwrap();
         fs::create_dir_all(dir.join("links")).unwrap();
         symlink(dir.join("project/bin/python3"), dir.join("links/python3")).unwrap();
@@ -476,7 +484,7 @@ fn an_override_that_does_not_exist_is_a_missing_converter_that_says_so() {
 fn the_result_names_the_interpreter_and_docutils() {
     let (_, parsed) = parse_fixture("sections");
     assert_eq!(parsed.interpreter, fake("json-sections"));
-    assert_eq!(parsed.docutils, "0.23");
+    assert_eq!(parsed.docutils, "0.21.2");
 }
 
 // --- mapping on docutils output ----------------------------------------------------------
@@ -804,4 +812,104 @@ fn prose_after_a_comment_longer_than_16_kib_is_still_found() {
         parsed.document.blocks[0].span.start(),
         source.rfind("Real prose").unwrap()
     );
+}
+
+// --- round 2: boundaries, tables, generated text -------------------------------------------
+
+#[test]
+fn without_project_boundaries_nothing_on_the_path_is_run() {
+    // A trusted-looking directory, but the adapter does not know where the project is.
+    let marker = fake("marker-bin/ran");
+    let _ = fs::remove_file(&marker);
+    let mut options = RstOptions::default();
+    options.search_path = Some(path_list(&[&fake("marker-bin")]));
+    let error = parse_rst("text\n", &options).unwrap_err();
+    assert!(error.is_missing(), "{error}");
+    assert!(error.to_string().contains("project"), "{error}");
+    assert!(
+        !marker.exists(),
+        "the interpreter ran before the boundaries were known"
+    );
+}
+
+#[test]
+fn with_boundaries_the_same_search_path_runs_the_probe() {
+    let marker = fake("marker-bin-b/ran");
+    let mut options = RstOptions::default();
+    options.search_path = Some(path_list(&[&fake("marker-bin-b")]));
+    options.project_roots = vec![fake("empty")];
+    let _ = parse_rst("text\n", &options);
+    assert!(marker.exists(), "the probe did not run");
+    let _ = fs::remove_file(&marker);
+}
+
+#[test]
+fn table_cells_with_the_same_text_keep_their_own_columns() {
+    let (source, parsed) = parse_fixture("table-repeat");
+    let cells: Vec<_> = parsed
+        .document
+        .blocks
+        .iter()
+        .filter_map(|b| match b.kind {
+            BlockKind::TableCell { row, column } => {
+                Some((row, column, b.span.start(), slice(&source, b.span)))
+            }
+            _ => None,
+        })
+        .collect();
+    let line_start = |needle: &str| source.find(needle).unwrap();
+    let first = line_start("| Same words | Same words |");
+    let other = line_start("| Other      | Same words |");
+    let grid: Vec<_> = cells.iter().take(4).copied().collect();
+    assert_eq!(
+        grid,
+        [
+            (0, 0, first + 2, "Same words"),
+            (0, 1, first + 15, "Same words"),
+            (1, 0, other + 2, "Other"),
+            (1, 1, other + 15, "Same words |\n|            | continued"),
+        ]
+    );
+    let simple: Vec<_> = cells.iter().skip(4).map(|c| (c.0, c.1, c.3)).collect();
+    assert_eq!(
+        simple,
+        [
+            (0, 0, "Left"),
+            (0, 1, "Left"),
+            (1, 0, "Alpha"),
+            (1, 1, "Beta")
+        ]
+    );
+    let left = line_start("Left       Left");
+    assert_eq!([cells[4].2, cells[5].2], [left, left + 11]);
+}
+
+#[test]
+fn a_table_is_a_block_that_covers_its_cells_and_borders() {
+    let (source, parsed) = parse_fixture("table-repeat");
+    let tables: Vec<_> = parsed
+        .document
+        .blocks
+        .iter()
+        .filter(|b| b.kind == BlockKind::Table)
+        .map(|b| slice(&source, b.span))
+        .collect();
+    assert_eq!(tables.len(), 2);
+    assert!(
+        tables[0].starts_with("+----") && tables[0].ends_with("----+"),
+        "{}",
+        tables[0]
+    );
+    assert!(
+        tables[1].starts_with("=====") && tables[1].ends_with("====="),
+        "{}",
+        tables[1]
+    );
+    assert_eq!(parsed.document.blocks[1].kind, BlockKind::Table);
+}
+
+#[test]
+fn a_contents_directive_leaves_no_notice() {
+    let (_, parsed) = parse_fixture("contents");
+    assert_eq!(parsed.notices, []);
 }

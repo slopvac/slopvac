@@ -172,7 +172,9 @@ pub struct Engine {
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
-    /// Reads RST files. Finds its interpreter on the first file.
+    /// How RST files are read, and the adapter built from it. The adapter finds its
+    /// interpreter on the first file.
+    rst_options: RstOptions,
     rst: RstAdapter,
 }
 
@@ -217,6 +219,7 @@ impl Engine {
             running: HashSet::new(),
             notices: Vec::new(),
             categories: std::collections::BTreeMap::new(),
+            rst_options: RstOptions::from_env(),
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
@@ -241,7 +244,18 @@ impl Engine {
     /// out of, and the limits. The default reads `SLOPVAC_RST_CONVERTER`.
     #[must_use]
     pub fn with_rst(mut self, options: RstOptions) -> Self {
-        self.rst = RstAdapter::new(options);
+        self.rst = RstAdapter::new(options.clone());
+        self.rst_options = options;
+        self
+    }
+
+    /// Tell the engine where the project is: the repository and the targets of the run.
+    /// An RST interpreter is never taken from inside these directories. Until they are
+    /// given, no interpreter is found on `PATH` and RST files are an incomplete check.
+    #[must_use]
+    pub fn with_project_roots(mut self, roots: Vec<std::path::PathBuf>) -> Self {
+        self.rst_options.project_roots = roots;
+        self.rst = RstAdapter::new(self.rst_options.clone());
         self
     }
 

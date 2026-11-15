@@ -4,8 +4,8 @@
 The Rust tests feed this JSON to the position mapper through a fake interpreter, so the
 mapping runs on real docutils output without docutils on the test machine.
 
-    uv run --with docutils==0.23 python generate.py          # write
-    uv run --with docutils==0.23 python generate.py --check  # exit 1 when stale
+    uv run --with docutils==0.21.2 python generate.py          # write
+    uv run --with docutils==0.21.2 python generate.py --check  # exit 1 when stale
 
 The program is `src/rst/driver.py`, the file the adapter embeds, run the way the adapter
 runs it: `python -E -B -X utf8 -c <driver>`.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE.parents[2] / "src" / "rst" / "driver.py"
-DOCUTILS_VERSION = "0.23"
+DOCUTILS_VERSION = "0.21.2"
 
 
 def convert(source: Path) -> str:

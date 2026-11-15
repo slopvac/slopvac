@@ -1,5 +1,5 @@
 {
- "docutils": "0.23",
+ "docutils": "0.21.2",
  "nodes": [
   {
    "tag": "title",
@@ -15,6 +15,13 @@
    "level": 1
   },
   {
+   "tag": "table",
+   "table": true,
+   "start": 5,
+   "end": 8,
+   "containers": []
+  },
+  {
    "tag": "paragraph",
    "start": 5,
    "end": 5,
@@ -27,7 +34,8 @@
    "containers": [],
    "cell": [
     0,
-    0
+    0,
+    1
    ]
   },
   {
@@ -43,6 +51,7 @@
    "containers": [],
    "cell": [
     0,
+    1,
     1
    ]
   },
@@ -59,7 +68,8 @@
    "containers": [],
    "cell": [
     1,
-    0
+    0,
+    1
    ]
   },
   {
@@ -74,6 +84,7 @@
    ],
    "containers": [],
    "cell": [
+    1,
     1,
     1
    ]
@@ -91,7 +102,8 @@
    "containers": [],
    "cell": [
     2,
-    0
+    0,
+    1
    ]
   },
   {
@@ -107,6 +119,7 @@
    "containers": [],
    "cell": [
     2,
+    1,
     1
    ]
   },

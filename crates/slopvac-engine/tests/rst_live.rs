@@ -9,14 +9,25 @@
 )]
 
 use std::fs;
+use std::path::PathBuf;
 
 use slopvac_engine::rst::{RstAdapter, RstOptions, RstParse};
 use slopvac_model::Span;
 
-/// An adapter over the interpreter on `PATH`, or `None` after a note that the test skipped.
+/// An adapter over the interpreter on `PATH`.
+///
+/// Without one the test returns early after a note, unless `SLOPVAC_RST_LIVE` is set. CI
+/// sets it, so a missing docutils fails the run instead of skipping every live test.
 fn installed() -> Option<RstAdapter> {
-    let adapter = RstAdapter::new(RstOptions::default());
+    let mut options = RstOptions::default();
+    // The repository is the project: an interpreter inside it is never used.
+    options.project_roots = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR"))];
+    let adapter = RstAdapter::new(options);
     if let Err(error) = adapter.interpreter() {
+        assert!(
+            std::env::var_os("SLOPVAC_RST_LIVE").is_none(),
+            "SLOPVAC_RST_LIVE is set but there is no usable docutils: {error}"
+        );
         eprintln!("skipped: {error}");
         return None;
     }
@@ -92,4 +103,35 @@ fn a_comment_that_repeats_the_next_paragraph_does_not_take_its_position() {
     let parsed = adapter.parse(source).unwrap();
     let last = &parsed.document.blocks[1];
     assert_eq!(last.span.start(), source.rfind("Repeated").unwrap());
+}
+
+#[test]
+fn a_contents_directive_leaves_no_notice_and_no_extra_prose() {
+    let Some(adapter) = installed() else {
+        return;
+    };
+    let source = "Guide\n=====\n\n.. contents::\n\nSetup\n-----\n\nSetup comes first.\n";
+    let parsed = adapter.parse(source).unwrap();
+    assert_eq!(parsed.notices, []);
+    assert_eq!(texts(&parsed), ["Guide", "Setup", "Setup comes first."]);
+}
+
+#[test]
+fn repeated_table_cells_keep_their_columns() {
+    let Some(adapter) = installed() else {
+        return;
+    };
+    let source = "+------+------+\n| Same | Same |\n+------+------+\n";
+    let parsed = adapter.parse(source).unwrap();
+    let starts: Vec<_> = parsed
+        .document
+        .blocks
+        .iter()
+        .filter(|b| b.projection.is_some())
+        .map(|b| b.span.start())
+        .collect();
+    assert_eq!(
+        starts,
+        [source.find("Same").unwrap(), source.rfind("Same").unwrap()]
+    );
 }

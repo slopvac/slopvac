@@ -62,7 +62,9 @@ pub struct RstOptions {
     /// The directories to search, in `PATH` syntax. `None` reads the `PATH` variable.
     pub search_path: Option<OsString>,
     /// Directories whose content the interpreter must not come from: the project being
-    /// linted and the targets of the run.
+    /// linted and the targets of the run. The search fails closed while this is empty:
+    /// without it no `PATH` entry is trusted and nothing is run. An interpreter named by
+    /// the user is the one exception.
     pub project_roots: Vec<PathBuf>,
     /// How long the driver may run.
     pub timeout: Duration,
@@ -246,6 +248,16 @@ impl RstAdapter {
         if let Some(path) = &self.options.interpreter {
             return trust::check_override(path, &self.options.project_roots)
                 .map_err(|e: OverrideError| format!("{OVERRIDE_VARIABLE} is unusable: {e}"));
+        }
+        if self.options.project_roots.is_empty() {
+            // Without the project and target directories nothing tells a repository
+            // directory from a user directory, so no PATH entry can be trusted, and
+            // probing would already run the candidate.
+            return Err(
+                "the project boundaries are unknown, so no PATH entry can be trusted; the \
+                 caller must give the project and target directories"
+                    .to_owned(),
+            );
         }
         let from_env;
         let search = if let Some(path) = &self.options.search_path {

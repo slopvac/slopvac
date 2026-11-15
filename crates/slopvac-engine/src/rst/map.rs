@@ -121,6 +121,58 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
     }
 }
 
+/// The columns of a table border line.
+enum Border {
+    /// Character columns of the `+` signs of a grid table.
+    Grid(Vec<usize>),
+    /// Character columns where each `=` run of a simple table starts.
+    Simple(Vec<usize>),
+}
+
+impl Border {
+    /// The character columns of the cell in `column`, widened over `columns` columns.
+    fn window(&self, column: usize, columns: usize) -> Option<(usize, usize)> {
+        let end = column + columns.max(1);
+        match self {
+            Self::Grid(pluses) => Some((*pluses.get(column)? + 1, *pluses.get(end)?)),
+            Self::Simple(starts) => Some((
+                *starts.get(column)?,
+                starts.get(end).copied().unwrap_or(usize::MAX),
+            )),
+        }
+    }
+}
+
+/// Read a grid (`+----+----+`) or simple (`====  ====`) table border.
+fn parse_border(line: &str) -> Option<Border> {
+    let text = line.trim_end();
+    let body = text.trim_start();
+    if body.is_empty() {
+        return None;
+    }
+    if body.starts_with('+') && body.ends_with('+') && body.chars().all(|c| "+-=:".contains(c)) {
+        let pluses = text
+            .chars()
+            .enumerate()
+            .filter(|&(_, c)| c == '+')
+            .map(|(i, _)| i)
+            .collect();
+        return Some(Border::Grid(pluses));
+    }
+    if body.starts_with('=') && body.chars().all(|c| c == '=' || c == ' ') {
+        let mut starts = Vec::new();
+        let mut previous = ' ';
+        for (i, c) in text.chars().enumerate() {
+            if c == '=' && previous == ' ' {
+                starts.push(i);
+            }
+            previous = c;
+        }
+        return Some(Border::Simple(starts));
+    }
+    None
+}
+
 /// Start offsets of the lines: LF, CRLF and a lone CR end a line.
 fn line_starts(source: &str, bom: usize) -> Vec<usize> {
     let bytes = source.as_bytes();
@@ -205,6 +257,25 @@ impl Mapper<'_> {
             codes: Vec::new(),
             precise: false,
         };
+        if node.table {
+            // The border lines above and below belong to the table.
+            let (first, last) = (node.start.unwrap_or(1), node.end.unwrap_or(1));
+            let top = first > 1 && self.border(first - 1).is_some();
+            let bottom = last < self.starts.len() && self.border(last + 1).is_some();
+            let (lo, hi) = self
+                .byte_range(first - usize::from(top), last + usize::from(bottom))
+                .unwrap_or((lo, hi));
+            return Outcome::Block {
+                block: Block {
+                    kind: BlockKind::Table,
+                    span: span(lo, hi),
+                    projection: None,
+                    containers,
+                },
+                codes: Vec::new(),
+                precise: false,
+            };
+        }
         if node.code {
             return structural(BlockKind::CodeBlock {
                 lang: node.lang.clone(),
@@ -226,7 +297,7 @@ impl Mapper<'_> {
         };
         let kind = match (node.level, node.cell) {
             (Some(level), _) => BlockKind::Heading { level },
-            (None, Some((row, column))) => BlockKind::TableCell { row, column },
+            (None, Some((row, column, _))) => BlockKind::TableCell { row, column },
             _ => BlockKind::Paragraph,
         };
         Outcome::Block {
@@ -271,12 +342,22 @@ impl Mapper<'_> {
         self.work <= self.budget
     }
 
+    /// Charge `units`; `None` once the budget is spent.
+    fn spend(&mut self, units: usize) -> Option<()> {
+        self.charge(units).then_some(())
+    }
+
     const fn exhausted(&self) -> bool {
         self.work > self.budget
     }
 
     /// Place a prose node inside lines `lo..hi`.
     fn place(&mut self, node: &Node, lo: usize, hi: usize) -> Option<Placed> {
+        if let Some((_, column, columns)) = node.cell
+            && let Some(window) = self.column_window(node, column, columns)
+        {
+            return self.place_in_column(node, lo, hi, window);
+        }
         if !self.exhausted() {
             let (first, last) = (node.start?, node.end?);
             let wider = self.byte_range(first.saturating_sub(1).max(1), last + 1);
@@ -288,6 +369,93 @@ impl Mapper<'_> {
             }
         }
         self.fallback(&node.pieces, lo, hi)
+    }
+
+    /// The text of line `line` (1-based), without its terminator.
+    fn line_text(&self, line: usize) -> &str {
+        &self.src[self.starts[line - 1]..self.line_end(line)]
+    }
+
+    /// The columns of a table border on `line`, if the line is one.
+    fn border(&self, line: usize) -> Option<Border> {
+        parse_border(self.line_text(line))
+    }
+
+    /// The character columns `start..end` of the cell's column, read from the nearest
+    /// border line above the node.
+    fn column_window(
+        &mut self,
+        node: &Node,
+        column: usize,
+        columns: usize,
+    ) -> Option<(usize, usize)> {
+        let first = node.start?;
+        for line in (1..first.min(self.starts.len() + 1)).rev() {
+            if !self.charge(1) {
+                return None;
+            }
+            let text = self.line_text(line);
+            if text.trim().is_empty() {
+                return None;
+            }
+            if let Some(border) = parse_border(text) {
+                return border.window(column, columns);
+            }
+        }
+        None
+    }
+
+    /// Place a table cell. Everything outside the cell's columns is blanked first, so the
+    /// words of the neighbouring cells on the same lines cannot match.
+    fn place_in_column(
+        &mut self,
+        node: &Node,
+        lo: usize,
+        hi: usize,
+        (x0, x1): (usize, usize),
+    ) -> Option<Placed> {
+        let mut masked = String::with_capacity(hi - lo);
+        let mut col = 0;
+        for ch in self.src[lo..hi].chars() {
+            if ch == '\n' || ch == '\r' {
+                masked.push(ch);
+                col = 0;
+            } else if (x0..x1).contains(&col) {
+                masked.push(ch);
+                col += 1;
+            } else {
+                masked.extend(std::iter::repeat_n(' ', ch.len_utf8()));
+                col += 1;
+            }
+        }
+        let mut inner = Mapper {
+            src: &masked,
+            starts: vec![0],
+            work: self.work,
+            budget: self.budget,
+        };
+        let placed = if inner.exhausted() {
+            None
+        } else {
+            inner
+                .align(&node.pieces, 0, masked.len())
+                .and_then(Self::finish)
+        }
+        .or_else(|| inner.fallback(&node.pieces, 0, masked.len()));
+        self.work = inner.work;
+        let shift = |s: Span| span(s.start() + lo, s.end() + lo);
+        placed.map(|p| {
+            let mut projection = Projection::new();
+            for t in p.projection.tokens() {
+                projection.push(t.kind, &t.text, shift(t.src));
+            }
+            Placed {
+                projection,
+                span: shift(p.span),
+                codes: p.codes.into_iter().map(shift).collect(),
+                line_precise: p.line_precise,
+            }
+        })
     }
 
     fn finish(done: Attempt) -> Option<Placed> {
@@ -389,7 +557,7 @@ impl Mapper<'_> {
                     let begin = if first {
                         self.find_raw(cursor, hi, &piece.raw)?
                     } else {
-                        self.skip_gap(cursor, hi)
+                        self.skip_gap(cursor, hi)?
                     };
                     let end = self.eat_raw(begin, hi, &piece.raw)?;
                     first = false;
@@ -430,19 +598,17 @@ impl Mapper<'_> {
         }
     }
 
-    /// Skip `\ ` and `\` + newline pairs, which docutils removes.
-    fn skip_gap(&mut self, mut at: usize, hi: usize) -> usize {
-        let bytes = self.src.as_bytes();
-        while at + 1 < hi && bytes[at] == b'\\' {
-            let Some(next) = self.src[at + 1..hi].chars().next() else {
-                break;
-            };
+    /// Skip `\ ` and `\` + newline pairs, which docutils removes. Every pair is charged.
+    fn skip_gap(&mut self, mut at: usize, hi: usize) -> Option<usize> {
+        while at + 1 < hi && self.src.as_bytes()[at] == b'\\' {
+            let next = self.src[at + 1..hi].chars().next()?;
             if !next.is_whitespace() {
                 break;
             }
+            self.spend(1)?;
             at += 1 + next.len_utf8();
         }
-        at
+        Some(at)
     }
 
     /// The first position in `from..hi` where `raw` starts.
@@ -480,7 +646,9 @@ impl Mapper<'_> {
                 while chars.peek().is_some_and(|n| n.is_whitespace()) {
                     chars.next();
                 }
-                p += self.src[p..hi].len() - self.src[p..hi].trim_start().len();
+                let run = self.src[p..hi].len() - self.src[p..hi].trim_start().len();
+                self.spend(run)?;
+                p += run;
             } else if c == ch {
                 p += c.len_utf8();
             } else {
@@ -561,6 +729,7 @@ impl Mapper<'_> {
                     if c.is_whitespace()
                         || (next.is_some() && matches!(c, '|' | '+') && next != Some(c))
                     {
+                        self.spend(1)?;
                         p += c.len_utf8();
                     } else {
                         break;
@@ -589,6 +758,7 @@ impl Mapper<'_> {
                 if !next.is_whitespace() {
                     return None;
                 }
+                self.spend(1)?;
                 q += 1 + next.len_utf8();
             }
             if q > p {
@@ -810,5 +980,48 @@ mod tests {
             mapped.work,
             source.len()
         );
+    }
+
+    #[test]
+    fn skipped_escaped_whitespace_is_charged() {
+        let pairs = 50_000;
+        let source = format!("a{}b\n", "\\ ".repeat(pairs));
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", paragraph(1, 1, "ab"))));
+        assert!(
+            mapped.work >= pairs,
+            "only {} charged for {pairs} skipped pairs",
+            mapped.work
+        );
+    }
+
+    #[test]
+    fn a_skipped_gap_before_inline_markup_is_charged() {
+        let pairs = 50_000;
+        let source = format!("a{}*e*\n", "\\ ".repeat(pairs));
+        let json = r#"[{"tag":"paragraph","start":1,"end":1,"pieces":[{"k":"t","t":"a"},{"k":"i","t":"e","raw":"*e*"}]}]"#;
+        let mapped = project(&source, 0, &nodes(json));
+        assert!(mapped.work >= pairs, "only {} charged", mapped.work);
+    }
+
+    #[test]
+    fn whitespace_runs_in_text_and_in_raw_are_charged() {
+        let run = 60_000;
+        let source = format!("a{}b\n", " ".repeat(run));
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", paragraph(1, 1, "a b"))));
+        assert!(mapped.work >= run, "text: only {} charged", mapped.work);
+        let source = format!("*e{}f*\n", " ".repeat(run));
+        let json = r#"[{"tag":"paragraph","start":1,"end":1,"pieces":[{"k":"i","t":"e f","raw":"*e f*"}]}]"#;
+        let mapped = project(&source, 0, &nodes(json));
+        assert!(mapped.work >= run, "raw: only {} charged", mapped.work);
+    }
+
+    #[test]
+    fn exhausting_the_budget_in_a_skip_stops_the_matching_at_once() {
+        // Skipped characters alone overrun the budget; the node falls back to its lines.
+        let pairs = (WORK_BASE / 2) + 10;
+        let source = format!("a{}b\n", "\\ ".repeat(pairs));
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", paragraph(1, 1, "ab"))));
+        let budget = WORK_PER_BYTE * (source.len() + 2) + WORK_BASE;
+        assert!(mapped.work <= budget + 1, "{} over {budget}", mapped.work);
     }
 }

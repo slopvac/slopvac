@@ -34,9 +34,12 @@ pub(super) struct Node {
     /// Heading level, for a section title.
     #[serde(default)]
     pub(super) level: Option<u8>,
-    /// Table row and column, for the text of a table cell.
+    /// Table row, column and column span, for the text of a table cell.
     #[serde(default)]
-    pub(super) cell: Option<(usize, usize)>,
+    pub(super) cell: Option<(usize, usize, usize)>,
+    /// Whether the node is a table. Its lines run from its first to its last cell.
+    #[serde(default)]
+    pub(super) table: bool,
     #[serde(default)]
     pub(super) pieces: Vec<Piece>,
     #[serde(default)]
