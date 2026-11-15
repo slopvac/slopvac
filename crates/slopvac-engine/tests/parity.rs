@@ -44,11 +44,43 @@ fn severity(name: &str) -> Level {
     }
 }
 
-fn engine(fixture: &Value) -> Engine {
+/// The rule the converted 2.x data still writes as a pattern, and the reference ran as one.
+/// Rust runs it as the native `capitalization` kind, so its findings check that kind against
+/// the 2.x pattern.
+const TITLE_CASE: &str = "title-case-heading";
+
+/// The core rule files, with `title-case-heading` rewritten to the capitalization kind.
+fn core_sources() -> Vec<(PathBuf, String)> {
     let core = manifest().join("../slopvac-rules/tests/fixtures/core-v3");
-    let set = RuleSet::load_dir(
+    let mut files: Vec<PathBuf> = std::fs::read_dir(core)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+    let mut swapped = 0;
+    let sources = files
+        .into_iter()
+        .map(|path| {
+            let mut doc = read(&path);
+            for rule in doc["rules"].as_array_mut().into_iter().flatten() {
+                if rule["id"] == TITLE_CASE {
+                    rule["match"] =
+                        serde_json::json!({"kind": "capitalization", "style": "sentence"});
+                    swapped += 1;
+                }
+            }
+            (path, doc.to_string())
+        })
+        .collect();
+    assert_eq!(swapped, 1, "{TITLE_CASE} is one rule of the core data");
+    sources
+}
+
+fn engine(fixture: &Value) -> Engine {
+    let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
-        &core,
+        core_sources(),
         &CompileOptions::default(),
     )
     .unwrap_or_else(|e| panic!("{e}"));

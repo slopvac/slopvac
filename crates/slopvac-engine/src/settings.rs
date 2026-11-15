@@ -82,6 +82,9 @@ pub struct Settings {
     pub thresholds: Thresholds,
     /// Where the settings came from, copied to each document.
     pub config_sources: Vec<ConfigSource>,
+    /// Words that capitalization rules exempt, such as the `[locale] allow` words and project
+    /// terms. Case is ignored.
+    pub allowed_words: Vec<String>,
 }
 
 impl Settings {
@@ -96,6 +99,7 @@ impl Settings {
             categories: BTreeMap::new(),
             thresholds: Thresholds::default(),
             config_sources: Vec::new(),
+            allowed_words: Vec::new(),
         }
     }
 }
