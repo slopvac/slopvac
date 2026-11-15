@@ -475,7 +475,7 @@ Every work item of this model has a bead.
 
 | Work | Bead | Status | Threats |
 |---|---|---|---|
-| Managed Python environments | `slopvac-8l4.9.31` | open | Y1 to Y7 |
+| Managed Python environments | `slopvac-8l4.9.31` | in progress (PR #428) | Y1 to Y7 |
 | Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
 | Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
 | Rotation and the signed revocation list | `slopvac-8l4.9.15` | open | K5, K6 |
