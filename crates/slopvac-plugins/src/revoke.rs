@@ -61,7 +61,8 @@ use thiserror::Error;
 
 use crate::oci::{Client, Digest, OciError, Reference};
 use crate::sign::{
-    MEDIA_MINISIG, PublicKey, SignError, is_key_id, parse_canonical, utc_seconds, verify_bytes,
+    MEDIA_MINISIG, PublicKey, RELEASE_KEY_FILE, SignError, is_key_id, parse_canonical,
+    release_key_from, utc_seconds, verify_bytes,
 };
 use crate::trust::{Revocation, TrustRecord};
 
@@ -92,6 +93,9 @@ pub enum RevocationError {
     /// No root key is configured, so no list can verify. Fails closed.
     #[error("no first-party root key is configured to verify the revocation list")]
     NoRootKey,
+    /// The compiled root key does not parse. Fails closed like [`Self::NoRootKey`].
+    #[error("the compiled first-party root key is unusable: {0}")]
+    RootKey(String),
     /// The list is larger than [`MAX_LIST_BYTES`].
     #[error("the revocation list is larger than {MAX_LIST_BYTES} bytes")]
     TooLarge,
@@ -167,6 +171,7 @@ impl RevocationError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoRootKey
+            | Self::RootKey(_)
             | Self::TooLarge
             | Self::Invalid(_)
             | Self::BadSignature
@@ -457,8 +462,6 @@ pub struct Revocations {
 }
 
 impl Revocations {
-    // STUB(slopvac-8l4.9.16): the CLI passes the compiled first-party root key
-    // (key id D9914BDB4570AC6D, `keys/slopvac-release.pub`) as `roots` once it exists.
     /// `dir` is the per-user state directory. `roots` are the first-party root
     /// keys; with none, every list fails closed. `now` is the caller's clock as
     /// `YYYY-MM-DDTHH:MM:SSZ`.
@@ -479,6 +482,37 @@ impl Revocations {
             now: now.to_owned(),
             now_at,
         })
+    }
+
+    /// The shipped configuration: the compiled first-party release key is the
+    /// only root. Tests and tools that need another root use [`Revocations::new`].
+    ///
+    /// # Errors
+    /// [`RevocationError::RootKey`] when the compiled key does not parse, so no
+    /// list can verify, and [`RevocationError::Clock`] for a malformed `now`.
+    pub fn with_compiled_root(
+        dir: impl Into<PathBuf>,
+        source: Reference,
+        now: &str,
+    ) -> Result<Self, RevocationError> {
+        Self::with_root_text(RELEASE_KEY_FILE, dir, source, now)
+    }
+
+    fn with_root_text(
+        key_file: &str,
+        dir: impl Into<PathBuf>,
+        source: Reference,
+        now: &str,
+    ) -> Result<Self, RevocationError> {
+        let root =
+            release_key_from(key_file).map_err(|e| RevocationError::RootKey(e.to_string()))?;
+        Self::new(dir, vec![root], source, now)
+    }
+
+    /// The root keys that verify a list.
+    #[must_use]
+    pub fn roots(&self) -> &[PublicKey] {
+        &self.roots
     }
 
     /// The cache file.
@@ -685,4 +719,23 @@ fn set_private_file(path: &Path) -> io::Result<()> {
 #[allow(clippy::unnecessary_wraps)]
 fn set_private_file(_: &Path) -> io::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_malformed_compiled_root_builds_no_revocations() {
+        let source = Reference::parse("127.0.0.1:9/slopvac/revocations:latest").unwrap();
+        for text in [
+            "",
+            "untrusted comment: x\n",
+            "untrusted comment: x\nnot-a-key\n",
+        ] {
+            let r =
+                Revocations::with_root_text(text, "unused", source.clone(), "2026-11-01T00:00:00Z");
+            assert!(matches!(r, Err(RevocationError::RootKey(_))), "{text:?}");
+        }
+    }
 }

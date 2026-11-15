@@ -113,8 +113,12 @@ def main():
                         column += 1
                     width = entry.get("morecols", 0) + 1
                     cells[id(entry)] = (row_number, column, width)
-                    for below in range(row_number, row_number + entry.get("morerows", 0) + 1):
-                        occupied.setdefault(below, set()).update(range(column, column + width))
+                    for below in range(
+                        row_number, row_number + entry.get("morerows", 0) + 1
+                    ):
+                        occupied.setdefault(below, set()).update(
+                            range(column, column + width)
+                        )
                     column += width
                 row_number += 1
         return cells
@@ -145,6 +149,32 @@ def main():
             parent = parent.parent
         return min(level, 6)
 
+    used_names = {
+        nodes.fully_normalize_name(r["refname"])
+        for r in document.findall(nodes.reference)
+        if r.get("refname")
+    }
+
+    def locked(child):
+        """Whether a fix inside the words of an inline node could change its meaning.
+
+        Only emphasis and strong written with `*` are plain prose. Interpreted text (a role,
+        or the default role, which docutils may map to any node) is locked, whatever node it
+        became. A reference is locked when its words name its target.
+        """
+        raw = child.rawsource or ""
+        tag = child.tagname
+        if tag in ("emphasis", "strong"):
+            return not raw.startswith("*")
+        if tag != "reference":
+            return True
+        embedded = raw.endswith("_") and raw.rstrip("_").endswith("`")
+        if child.get("refname") or not embedded:
+            return True  # Named, a bare address or a role: the text is the target.
+        name = child.get("name")
+        # `text <url>`_ also defines a target named by its text.
+        return bool(name) and nodes.fully_normalize_name(name) in used_names
+
     def pieces_of(node):
         pieces = []
         for child in node.children:
@@ -163,7 +193,10 @@ def main():
                 if raw:
                     pieces.append({"k": "o", "raw": raw})
             else:
-                pieces.append({"k": "i", "t": child.astext(), "raw": raw})
+                piece = {"k": "i", "t": child.astext(), "raw": raw}
+                if locked(child):
+                    piece["lock"] = True
+                pieces.append(piece)
         return pieces
 
     def has_prose(node):
@@ -186,6 +219,17 @@ def main():
             continue
         if tag == "topic" and "contents" in node.get("classes", []):
             continue  # Its title and entries are generated, not written.
+        if tag == "field" and node.line is not None and len(node.children):
+            # The name sits on the field's first line; docutils records no line for it.
+            out.append(
+                {
+                    "tag": "field_name",
+                    "mark": True,
+                    "start": node.line,
+                    "end": node.line,
+                    "text": node.children[0].astext(),
+                }
+            )
         if isinstance(node, nodes.Admonition):
             start = node.line
             entry = {
@@ -286,7 +330,7 @@ def main():
     out = [e for e in out if not (e.get("table") and e["start"] is None)]
 
     # Admonitions and tables come before their children in source order.
-    out.sort(key=lambda e: (e["start"] if e["start"] is not None else 10**9))
+    out.sort(key=lambda e: e["start"] if e["start"] is not None else 10**9)
 
     result = {"docutils": docutils.__version__, "nodes": out}
     sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))

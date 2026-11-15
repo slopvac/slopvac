@@ -122,6 +122,19 @@ impl PublicKey {
         Ok(Self { inner, id, raw })
     }
 
+    /// Parse the text of a `minisign.pub` file: an `untrusted comment:` line, then the base64 line.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the file has no key line or the line is not a minisign key.
+    pub fn from_pub_file(text: &str) -> Result<Self, SignError> {
+        let line = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("untrusted comment:"))
+            .ok_or_else(|| SignError::InvalidKey("no key line".into()))?;
+        Self::from_base64(line)
+    }
+
     /// The 8-byte key id as 16 uppercase hex digits, as `minisign -V` prints it and as the lockfile stores it.
     #[must_use]
     pub fn key_id(&self) -> String {
@@ -145,6 +158,27 @@ impl PublicKey {
     }
 }
 
+/// The first-party release public key, compiled in from `keys/slopvac-release.pub`.
+/// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
+pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
+
+/// Namespaces that only the first-party release key may sign.
+pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
+
+/// The compiled first-party release key. It signs first-party packs and the
+/// revocation list.
+///
+/// # Errors
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
+/// then have no first-party key, so first-party verification refuses.
+pub fn release_key() -> Result<PublicKey, SignError> {
+    release_key_from(RELEASE_KEY_FILE)
+}
+
+pub(crate) fn release_key_from(text: &str) -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(text)
+}
+
 /// Which keys may sign which namespaces.
 #[derive(Debug, Clone, Default)]
 pub struct KeyPolicy {
@@ -158,6 +192,27 @@ pub struct KeyPolicy {
 }
 
 impl KeyPolicy {
+    /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
+    /// and no pinned keys. Tests build the struct directly to inject other keys.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
+    /// no policy, so nothing verifies as first-party.
+    pub fn compiled() -> Result<Self, SignError> {
+        Self::compiled_from(RELEASE_KEY_FILE)
+    }
+
+    fn compiled_from(key_file: &str) -> Result<Self, SignError> {
+        Ok(Self {
+            first_party: vec![release_key_from(key_file)?],
+            first_party_namespaces: FIRST_PARTY_NAMESPACES
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect(),
+            pinned: BTreeMap::new(),
+        })
+    }
+
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
         if self.first_party_namespaces.iter().any(|n| n == namespace) {
             &self.first_party
@@ -685,4 +740,38 @@ pub fn verify_rotation(
         }
     }
     Ok(st)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MALFORMED: [&str; 3] = [
+        "",
+        "untrusted comment: x\n",
+        "untrusted comment: x\nnot-a-key\n",
+    ];
+
+    #[test]
+    fn a_malformed_compiled_key_is_a_typed_error_not_a_panic() {
+        for text in MALFORMED {
+            assert!(
+                matches!(release_key_from(text), Err(SignError::InvalidKey(_))),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_compiled_key_builds_no_policy() {
+        for text in MALFORMED {
+            assert!(
+                matches!(
+                    KeyPolicy::compiled_from(text),
+                    Err(SignError::InvalidKey(_))
+                ),
+                "{text:?}"
+            );
+        }
+    }
 }

@@ -15,33 +15,68 @@
 //! | `diagram.prose-restates-labels` | 60% of 3 or more labels in 40 or more prose words | warning | 1.00 (0.67), lower bound about 0.77 |
 //!
 //! The human baseline for the prose rules is thin: only three human diagrams had
-//! enough prose to score. Severities wait for the rebuilt corpus.
+//! enough prose to score. `evals/corpus` has 50 committed human diagrams and no
+//! stated-LLM diagram, so it can bound false positives but not recall.
 //!
-//! STUB(slopvac-8l4.10.6): `DiagramFinding` and `Severity` stand in for the finding
-//! types of `slopvac-model`, and the checks run on their own until `slopvac-engine`
-//! dispatches rules.
+//! A [`Signal`] says which check fired. The rule id, severity and message of each
+//! signal's rule live in the diagram rule pack ([`PACK`]); `slopvac-engine` loads the pack
+//! and turns a [`SignalHit`] into a finding, so suppression and severity follow its
+//! configuration.
 
 use std::collections::HashSet;
 use std::ops::Range;
 
 use crate::{Fragment, Role};
 
-/// Rule severity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Severity {
-    /// A likely problem.
-    Warning,
-    /// A possible improvement.
-    Suggestion,
+/// A deterministic check that a rule of the diagram pack names in `match.check`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Signal {
+    /// A label of seven words or more.
+    LabelRunOn,
+    /// A label that holds a name and a description.
+    LabelTitlePlusGloss,
+    /// A note of six words or more.
+    NoteLong,
+    /// Prose that points at the diagram.
+    MetaReference,
+    /// Prose that walks through the labels.
+    ProseRestatesLabels,
 }
 
-/// One diagram finding.
+impl Signal {
+    /// Every signal.
+    pub const ALL: [Self; 5] = [
+        Self::LabelRunOn,
+        Self::LabelTitlePlusGloss,
+        Self::NoteLong,
+        Self::MetaReference,
+        Self::ProseRestatesLabels,
+    ];
+
+    /// The `match.check` name of the pack rule that runs this signal.
+    #[must_use]
+    pub const fn check(self) -> &'static str {
+        match self {
+            Self::LabelRunOn => "diagram-label-run-on",
+            Self::LabelTitlePlusGloss => "diagram-label-title-plus-gloss",
+            Self::NoteLong => "diagram-note-long",
+            Self::MetaReference => "diagram-meta-reference",
+            Self::ProseRestatesLabels => "diagram-prose-restates-labels",
+        }
+    }
+
+    /// The signal a `match.check` name selects.
+    #[must_use]
+    pub fn from_check(check: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.check() == check)
+    }
+}
+
+/// One hit of a [`Signal`]. The engine decides what it becomes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiagramFinding {
-    /// The qualified rule id.
-    pub rule: &'static str,
-    /// The severity.
-    pub severity: Severity,
+pub struct SignalHit {
+    /// The check that fired.
+    pub signal: Signal,
     /// Byte range in the host file.
     pub span: Range<usize>,
     /// What is wrong and what to do.
@@ -57,21 +92,10 @@ pub struct ProseBlock<'a> {
     pub text: &'a str,
 }
 
-/// Rules that need a reviewer. Each pairs an id with the question to answer.
-pub const JUDGEMENT_RULES: [(&str, &str); 3] = [
-    (
-        "diagram.over-explained",
-        "For each node, edge and note in this diagram, would a short noun phrase of at most 4 words carry the same meaning for the intended reader? Quote any label that bundles a name with a description, any note that explains something the component name already says, and any edge label that is a sentence. Exempt sequence-diagram message verbs and legends. Answer yes/no per quoted item.",
-    ),
-    (
-        "diagram.prose-restates",
-        "Does the paragraph before or after this diagram only walk through the nodes and edges in the diagram's own order, or enumerate the components that the diagram already names, without adding a reason, constraint, number, failure mode or decision? If yes, quote the sentences that can be deleted or replaced by one sentence of added insight.",
-    ),
-    (
-        "diagram.note-needed",
-        "Does each note or annotation on a component tell the reader something that is not obvious from the component's name and its neighbours?",
-    ),
-];
+/// The diagram rule pack: category files as `(file name, JSON text)`, ready for
+/// `RuleSet::from_sources`. It holds a rule for every [`Signal`] and the rules that need a
+/// reviewer.
+pub const PACK: [(&str, &str); 1] = [("diagram.json", include_str!("../pack/diagram.json"))];
 
 const RUN_ON_WORDS: usize = 7;
 const GLOSS_MIN_WORDS: usize = 5;
@@ -129,14 +153,13 @@ fn gloss_split(label: &str) -> Option<(&str, &str)> {
 
 /// Check the labels of one diagram.
 #[must_use]
-pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<DiagramFinding> {
+pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<SignalHit> {
     let mut out = Vec::new();
     for f in fragments {
         let label = label_text(source, f);
         let count = word_count(label);
-        let finding = |rule, severity, message: String| DiagramFinding {
-            rule,
-            severity,
+        let finding = |signal, message: String| SignalHit {
+            signal,
             span: f.span.clone(),
             message,
         };
@@ -147,18 +170,14 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<DiagramFinding>
         match f.role {
             Role::Note => {
                 if count >= NOTE_WORDS {
-                    out.push(finding(
-                        "diagram.note-long",
-                        Severity::Warning,
+                    out.push(finding(Signal::NoteLong,
                         format!("This note has {count} words. Name the component or cut the note to a few words."),
                     ));
                 }
             }
             Role::Node | Role::Edge | Role::Group => {
                 if count >= RUN_ON_WORDS {
-                    out.push(finding(
-                        "diagram.label-run-on",
-                        Severity::Warning,
+                    out.push(finding(Signal::LabelRunOn,
                         format!("This label has {count} words. Use a short noun phrase and move the detail to the text."),
                     ));
                 } else if f.role != Role::Edge
@@ -169,9 +188,7 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<DiagramFinding>
                     let gloss_words = word_count(gloss);
                     let list = gloss.contains(',') || gloss_words >= 3;
                     if (1..=4).contains(&head_words) && gloss_words >= 2 && list {
-                        out.push(finding(
-                            "diagram.label-title-plus-gloss",
-                            Severity::Suggestion,
+                        out.push(finding(Signal::LabelTitlePlusGloss,
                             "This label holds a name and a description. Keep the name and move the description to the text.".to_string(),
                         ));
                     }
@@ -261,13 +278,12 @@ pub fn check_prose(
     source: &str,
     fragments: &[Fragment],
     prose: &[ProseBlock<'_>],
-) -> Vec<DiagramFinding> {
+) -> Vec<SignalHit> {
     let mut out = Vec::new();
     for block in prose {
         for span in meta_references(block) {
-            out.push(DiagramFinding {
-                rule: "diagram.meta-reference",
-                severity: Severity::Warning,
+            out.push(SignalHit {
+                signal: Signal::MetaReference,
                 span,
                 message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_string(),
             });
@@ -293,9 +309,8 @@ pub fn check_prose(
             })
             .count();
         if count_f64(mentioned) >= COVERAGE * count_f64(labels.len()) {
-            out.push(DiagramFinding {
-                rule: "diagram.prose-restates-labels",
-                severity: Severity::Warning,
+            out.push(SignalHit {
+                signal: Signal::ProseRestatesLabels,
                 span: first.span.clone(),
                 message: format!(
                     "The text names {mentioned} of the {} labels in the diagram. Keep what the diagram cannot show, such as reasons, limits and failure modes.",
@@ -326,11 +341,11 @@ mod tests {
         }
     }
 
-    fn rules(source: &str, parts: &[(Role, &str)]) -> Vec<&'static str> {
+    fn rules(source: &str, parts: &[(Role, &str)]) -> Vec<Signal> {
         let fragments: Vec<_> = parts.iter().map(|(r, l)| frag(*r, source, l)).collect();
         check_labels(source, &fragments)
             .iter()
-            .map(|f| f.rule)
+            .map(|f| f.signal)
             .collect()
     }
 
@@ -345,7 +360,7 @@ mod tests {
                     (Role::Node, "one two three four five six seven"),
                 ]
             ),
-            ["diagram.label-run-on"]
+            [Signal::LabelRunOn]
         );
     }
 
@@ -364,7 +379,7 @@ mod tests {
                     (Role::Node, code),
                 ]
             ),
-            Vec::<&str>::new()
+            Vec::<Signal>::new()
         );
     }
 
@@ -376,17 +391,14 @@ mod tests {
         let src = format!("{a}\n{b}\n{c}\n");
         assert_eq!(
             rules(&src, &[(Role::Node, a), (Role::Node, b), (Role::Node, c)]),
-            [
-                "diagram.label-title-plus-gloss",
-                "diagram.label-title-plus-gloss"
-            ]
+            [Signal::LabelTitlePlusGloss, Signal::LabelTitlePlusGloss]
         );
     }
 
     #[test]
     fn code_tokens_exempt_long_notes_too() {
         let note = "reads config from src/app/config.rs on every start";
-        assert_eq!(rules(note, &[(Role::Note, note)]), Vec::<&str>::new());
+        assert_eq!(rules(note, &[(Role::Note, note)]), Vec::<Signal>::new());
     }
 
     #[test]
@@ -396,7 +408,7 @@ mod tests {
         let src = format!("{five}\n{six}\n");
         assert_eq!(
             rules(&src, &[(Role::Note, five), (Role::Note, six)]),
-            ["diagram.note-long"]
+            [Signal::NoteLong]
         );
     }
 
@@ -409,10 +421,10 @@ mod tests {
             role: Role::Node,
             logical: String::new(),
         };
-        assert_eq!(check_labels(src, &[f])[0].rule, "diagram.label-run-on");
+        assert_eq!(check_labels(src, &[f])[0].signal, Signal::LabelRunOn);
     }
 
-    fn prose_rules(source: &str, labels: &[&str], text: &str) -> Vec<DiagramFinding> {
+    fn prose_rules(source: &str, labels: &[&str], text: &str) -> Vec<SignalHit> {
         let fragments: Vec<_> = labels.iter().map(|l| frag(Role::Node, source, l)).collect();
         let block = ProseBlock {
             span: 100..100 + text.len(),
@@ -426,7 +438,7 @@ mod tests {
         let text = "Overall, the diagram above shows the flow. Next, retries.";
         let found = prose_rules("", &[], text);
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].rule, "diagram.meta-reference");
+        assert_eq!(found[0].signal, Signal::MetaReference);
         let start = text.find("the diagram above").unwrap() + 100;
         assert_eq!(found[0].span, start..start + "the diagram above".len());
     }
@@ -457,12 +469,12 @@ mod tests {
     fn two_distinct_meta_references_are_reported_once_each() {
         let text = "In the diagram above and the figure below, requests retry.";
         let found = prose_rules("", &[], text);
-        let got: Vec<_> = found.iter().map(|f| (f.rule, f.span.clone())).collect();
+        let got: Vec<_> = found.iter().map(|f| (f.signal, f.span.clone())).collect();
         assert_eq!(
             got,
             [
-                ("diagram.meta-reference", 100..120),
-                ("diagram.meta-reference", 125..141),
+                (Signal::MetaReference, 100..120),
+                (Signal::MetaReference, 125..141),
             ]
         );
     }
@@ -492,7 +504,7 @@ mod tests {
         ] {
             let found = prose_rules("", &[], text);
             assert_eq!(found.len(), 1, "{text}");
-            assert_eq!(found[0].rule, "diagram.meta-reference", "{text}");
+            assert_eq!(found[0].signal, Signal::MetaReference, "{text}");
             let start = text.find(phrase).unwrap() + 100;
             assert_eq!(found[0].span, start..start + phrase.len(), "{text}");
         }
@@ -515,7 +527,7 @@ mod tests {
         ];
         let found = prose_rules(LABELS, &labels, RESTATING);
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].rule, "diagram.prose-restates-labels");
+        assert_eq!(found[0].signal, Signal::ProseRestatesLabels);
         assert_eq!(found[0].span, 100..100 + RESTATING.len());
     }
 
@@ -544,11 +556,5 @@ mod tests {
             ),
             Vec::new()
         );
-    }
-
-    #[test]
-    fn judgement_rules_have_unique_ids() {
-        let ids: HashSet<_> = JUDGEMENT_RULES.iter().map(|(id, _)| id).collect();
-        assert_eq!(ids.len(), JUDGEMENT_RULES.len());
     }
 }

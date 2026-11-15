@@ -28,6 +28,18 @@
 //!
 //! The private `map` module documents it: byte exact where the words are found inside the
 //! node's lines, line-precise where they are not, never dropped.
+//!
+//! # Protected spans
+//!
+//! [`RstParse::protected`] lists the source a fix must not touch. A fix may write only
+//! inside prose that was placed word by word. Everything outside it is protected: literal
+//! and code blocks, directive markup and options, comments, `_target:` definitions,
+//! substitution definitions, table borders and any block placed by line only. Inside a
+//! placed paragraph the adapter also protects inline literals, roles, footnote and
+//! substitution references, the markup around inline words, a link's address, and the words
+//! of a reference that name its target (`` `name`_ ``, a bare URL, or `text <url>`_ when
+//! another reference uses the same name). Field names are protected too. The mapper charges
+//! this work to the same meter as the placement.
 
 mod map;
 mod meter;
@@ -120,7 +132,11 @@ pub struct RstParse {
     pub docutils: String,
     /// Facts about the precision or completeness of the result.
     pub notices: Vec<RstNotice>,
-    /// Characters the position mapper looked at. It stays under a budget that grows
+    /// Source spans a fix must not touch (see [`crate::fix_document`]): all but the words
+    /// of prose placed exactly, minus the code, link targets, roles and markup inside them.
+    /// Sorted by start; the spans may overlap.
+    pub protected: Vec<Span>,
+    /// Characters the mapper looked at. It stays under a budget that grows
     /// linearly with the size of the document.
     pub work: usize,
     /// Source bytes the mapper looked at, charged to the budget or not. The uncharged part
@@ -306,6 +322,7 @@ impl RstAdapter {
             interpreter: interpreter.to_owned(),
             docutils: output.docutils,
             notices: mapped.notices,
+            protected: mapped.protected,
             work: mapped.work,
             scanned: mapped.scanned + bytes.len(),
         })

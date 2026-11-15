@@ -17,6 +17,7 @@ homepage = "https://github.com/srobroek/slopvac"
 publish = false
 
 [workspace.dependencies]
+annotate-snippets = "0.12.18"
 base64 = "0.23"
 cap-fs-ext = "4"
 cap-std = "4"
@@ -77,6 +78,7 @@ slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-terms = { path = "crates/slopvac-terms" }
 slopvac-text = { path = "crates/slopvac-text" }
 snapbox = "1.2"
+strsim = "0.11.1"
 tar = { version = "0.4", default-features = false }
 tempfile = "3"
 thiserror = "2"

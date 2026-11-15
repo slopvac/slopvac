@@ -49,7 +49,7 @@ fn fixed_text_matches_the_2x_reference() {
         let text = entry["text"].as_str().unwrap();
         let input = Input::markdown(name, text);
         let doc = engine.lint(&input).unwrap();
-        let report = fix_document(&input, &doc, None).unwrap();
+        let report = fix_document(&engine, &input, &doc, None).unwrap();
         let mut want = entry["fixed"].as_str().unwrap().to_owned();
         if let Some(divergence) = divergences.get(name) {
             assert_ne!(report.text, want, "{name}: agrees; remove it from the list");
@@ -84,7 +84,7 @@ fn fix(
 ) -> FixReport {
     let input = Input::markdown("doc.md", text);
     let doc = engine.lint(&input).unwrap();
-    fix_document(&input, &doc, lines).unwrap()
+    fix_document(engine, &input, &doc, lines).unwrap()
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn a_document_that_changed_since_the_lint_is_not_fixed() {
     let linted = "Use delta here.\n";
     let doc = engine.lint(&Input::markdown("doc.md", linted)).unwrap();
     let current = "Use gamma here.\n";
-    let report = fix_document(&Input::markdown("doc.md", current), &doc, None).unwrap();
+    let report = fix_document(&engine, &Input::markdown("doc.md", current), &doc, None).unwrap();
     assert_eq!(report.text, current);
     assert_eq!(report.skipped[0].reason, SkipReason::Stale);
 }
@@ -220,7 +220,7 @@ fn stale_unicode_input_is_reported_not_a_panic() {
     let engine = swaps();
     let doc = engine.lint(&Input::markdown("doc.md", "delta\n")).unwrap();
     let current = "abcd\u{e9}\n";
-    let report = fix_document(&Input::markdown("doc.md", current), &doc, None).unwrap();
+    let report = fix_document(&engine, &Input::markdown("doc.md", current), &doc, None).unwrap();
     assert_eq!(report.text, current);
     assert_eq!(report.skipped[0].reason, SkipReason::Stale);
 }
@@ -281,7 +281,7 @@ fn a_definition_inside_a_quote_keeps_its_references_resolving() {
 fn fix_mdx(engine: &Engine, text: &str) -> String {
     let input = Input::mdx("doc.mdx", text);
     let doc = engine.lint(&input).unwrap();
-    fix_document(&input, &doc, None).unwrap().text
+    fix_document(engine, &input, &doc, None).unwrap().text
 }
 
 #[test]

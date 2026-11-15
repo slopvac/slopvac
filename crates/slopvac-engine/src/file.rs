@@ -118,7 +118,7 @@ pub fn fix_file_hooked(
         ..Input::markdown(&shown, &source)
     };
     let document = engine.lint(&input)?;
-    let report = fix_document(&input, &document, changed_lines)?;
+    let report = fix_document(engine, &input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);
     if dry_run || report.text == source {
         return Ok(FileFix::Done(Box::new(FileResult {

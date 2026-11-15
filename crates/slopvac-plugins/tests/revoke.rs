@@ -1120,3 +1120,12 @@ fn an_unknown_field_name_in_a_signed_list_is_escaped_once() {
         "{msg}"
     );
 }
+
+#[test]
+fn the_revocation_root_defaults_to_the_compiled_release_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let revocations =
+        Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
+    let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
+    assert_eq!(ids, ["D9914BDB4570AC6D"]);
+}
