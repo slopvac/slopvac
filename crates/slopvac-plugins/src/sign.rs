@@ -591,6 +591,11 @@ pub struct RotationStatement {
     /// Key id of the key that replaces it.
     #[serde(rename = "newKeyId")]
     pub new_key_id: String,
+    /// The whole new public key, as the base64 line of its `minisign.pub`.
+    /// A key id is unsigned metadata that anyone can copy, so the statement
+    /// binds the key bytes themselves.
+    #[serde(rename = "newKey")]
+    pub new_key: String,
     /// `YYYY-MM-DDTHH:MM:SSZ`. It must be later than the pin's own `notBefore`.
     #[serde(rename = "notBefore")]
     pub not_before: String,
@@ -612,9 +617,10 @@ pub struct RotationProof<'a> {
 /// Verify a rotation for `namespace` against the key pinned for it.
 ///
 /// The statement must be strict canonical JSON naming `namespace`, the pinned
-/// key as `oldKeyId` and `proof.new_key` as `newKeyId`. Both keys must sign
-/// it, and its `notBefore` must be later than `floor`, the pin's own
-/// `notBefore` when the pin came from an earlier rotation.
+/// key as `oldKeyId` and `proof.new_key` as `newKeyId` and, byte for byte, as
+/// `newKey`. Both keys must sign it, and its `notBefore` must be later than
+/// `floor`, the pin's own `notBefore` when the pin came from an earlier
+/// rotation.
 ///
 /// # Errors
 /// [`SignError::KeyNotPinned`] when `oldKeyId` is not the pinned key,
@@ -651,6 +657,13 @@ pub fn verify_rotation(
     if st.new_key_id != proof.new_key.key_id() || st.new_key_id == st.old_key_id {
         return Err(mismatch(
             "the new key is not the one the rotation names, or equals the old key",
+        ));
+    }
+    let bound = PublicKey::from_base64(&st.new_key)
+        .map_err(|_| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
+    if bound.raw != proof.new_key.raw || bound.key_id() != st.new_key_id {
+        return Err(mismatch(
+            "the new key differs from the key the rotation binds",
         ));
     }
     verify_bytes(pinned, proof.statement, proof.old_signature)?;

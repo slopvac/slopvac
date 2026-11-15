@@ -200,7 +200,10 @@ impl Env {
     /// The revocation source serves an empty list signed by the root.
     fn new() -> Self {
         let root = Root::new();
-        let empty = Signed::by(&root, list_json("2026-11-01T00:00:00Z", &[], &[]));
+        let empty = Signed::by(
+            &root,
+            list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
+        );
         Self {
             data: tempfile::tempdir().unwrap(),
             project: tempfile::tempdir().unwrap(),
@@ -220,7 +223,12 @@ impl Env {
     fn revoke(&self, keys: &[&str], digests: &[&str]) {
         self.list.serve(Some(Signed::by(
             &self.root,
-            list_json("2026-11-10T00:00:00Z", keys, digests),
+            list_json(
+                "2026-11-10T00:00:00Z",
+                "2026-12-10T00:00:00Z",
+                keys,
+                digests,
+            ),
         )));
     }
     fn store(&self) -> Store {
@@ -1110,7 +1118,7 @@ fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
     let env = Env::new();
     env.list.serve(Some(Signed::by(
         &Root::new(),
-        list_json("2026-11-10T00:00:00Z", &[], &[]),
+        list_json("2026-11-10T00:00:00Z", "2026-12-10T00:00:00Z", &[], &[]),
     )));
     let c = client();
     let err = run(
@@ -1164,6 +1172,28 @@ fn k6_an_online_sync_fails_when_the_list_is_withheld() {
     let err = run(&env, Network::Online(&c), &KeyPolicy::default(), &lock).unwrap_err();
     assert!(
         matches!(err, SyncError::Revocation(RevocationError::Fetch(_))),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
+
+#[test]
+fn k6_an_online_sync_fails_when_the_served_list_has_expired() {
+    let env = Env::new();
+    // The empty list the source serves expires 2026-12-01.
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let c = client();
+    let err = run_at(
+        &env,
+        Network::Online(&c),
+        &KeyPolicy::default(),
+        &lock,
+        "2026-12-01T00:00:01Z",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, SyncError::Revocation(RevocationError::Expired { .. })),
         "{err:?}"
     );
     assert_eq!(err.exit_code(), 2);

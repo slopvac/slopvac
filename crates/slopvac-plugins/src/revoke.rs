@@ -12,35 +12,45 @@
 //! 1 MiB), signed by a root key in minisign's prehashed mode:
 //!
 //! ```json
-//! {"digests":["sha256:..."],"issued":"2026-11-12T00:00:00Z","keys":["8384841ACDC75F77"],"schema_version":1,"type":"revocations"}
+//! {"digests":["sha256:..."],"expires":"2026-12-12T00:00:00Z","issued":"2026-11-12T00:00:00Z","keys":["C0E5E326B2F9B470"],"schema_version":1,"type":"revocations"}
 //! ```
 //!
 //! `keys` holds 16-digit uppercase key ids and `digests` holds manifest
 //! digests, each sorted and without repeats, so one list has one encoding.
 //! `issued` orders lists: a fetched list older than the cached one is a
-//! rollback and is refused.
+//! rollback and is refused. `expires` is later than `issued` by at most
+//! [`STALE_AFTER_DAYS`] days, so the root must sign a new list at least that
+//! often.
 //!
 //! # Where it comes from
 //!
-//! The list is an OCI artifact of type [`ARTIFACT_TYPE_REVOCATIONS`] with two
-//! layers, the list ([`MEDIA_REVOCATIONS`]) and its `.minisig`
-//! ([`crate::sign::MEDIA_MINISIG`]). [`DEFAULT_SOURCE`] is the provisional
-//! location. `sync` fetches it on every online run ([`Revocations::refresh`]),
-//! and so must the CLI's `update` and `outdated`.
+//! The list is an OCI artifact of type [`ARTIFACT_TYPE_REVOCATIONS`] with
+//! exactly two layers, the list ([`MEDIA_REVOCATIONS`]) and its `.minisig`
+//! ([`crate::sign::MEDIA_MINISIG`]), at [`DEFAULT_SOURCE`]. `sync` fetches it
+//! on every online run ([`Revocations::refresh`]), and so must the CLI's
+//! `update` and `outdated`. Online, a list that cannot be fetched, or whose
+//! signed `expires` has passed (a replayed old list), fails the command with
+//! exit 2 and leaves the cache as it was; the user must go offline explicitly
+//! to run on the cache.
 //!
 //! # Cache and offline use
 //!
-//! A verified list is cached with the time it was fetched, in one private file
-//! in the per-user state directory. Every read verifies the signature again,
-//! so an edited cache fails closed ([`RevocationError::CacheInvalid`]): spawn
-//! and offline sync exit 2 until an online refresh replaces it. Offline runs
-//! and every spawn read the cache ([`Revocations::cached`]). A cache fetched
-//! more than [`STALE_AFTER_DAYS`] days ago prints a notice and does not block;
-//! a machine that never fetched one runs with a notice too (residual risk R3).
-//! The fetch time is not signed: a local process of the same user can change
-//! it, or put back an older signed list (R6).
+//! A verified list is cached in one private file in the per-user state
+//! directory, with the time it was fetched. A refresh holds the cache lock
+//! ([`Revocations::lock`]) while it re-reads the cache, compares and replaces
+//! it, so two refreshes cannot commit a newer list and then an older one.
+//!
+//! Every read verifies the signature again, so an edit to the signed list
+//! fails closed ([`RevocationError::CacheInvalid`]): spawn and offline sync
+//! exit 2 until an online refresh replaces it. The fetch time beside the list
+//! is not signed and is only shown to the user; freshness comes from the
+//! signed `expires`. Offline runs and every spawn read the cache
+//! ([`Revocations::cached`]). A cached list past its `expires` prints a notice
+//! and does not block; a machine that never fetched a list runs with a notice
+//! too (residual risk R3). A local process of the same user can still put back
+//! an older signed list (R6).
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -59,16 +69,19 @@ pub const ARTIFACT_TYPE_REVOCATIONS: &str = "application/vnd.slopvac.revocations
 pub const MEDIA_REVOCATIONS: &str = "application/vnd.slopvac.revocations.v1+json";
 /// The `type` field of a list.
 pub const LIST_TYPE: &str = "revocations";
-/// Where the list is published. Provisional until the release process
-/// publishes it (`slopvac-8l4.9.15` PR asks).
+/// Where the list is published. The release process must publish a signed
+/// list here before the CLI ships.
 pub const DEFAULT_SOURCE: &str = "ghcr.io/srobroek/slopvac-revocations:latest";
 /// Largest list the verifier reads.
 pub const MAX_LIST_BYTES: usize = 1 << 20;
-/// A cache fetched longer ago than this prints a notice (threat model R3).
+/// The longest a list is valid (`expires` minus `issued`). An offline cache
+/// past its `expires` prints a notice (threat model R3).
 pub const STALE_AFTER_DAYS: i64 = 30;
 
+const DAY: i64 = 86_400;
 const MAX_MINISIG_BYTES: u64 = 4 * 1024;
 const CACHE_FILE: &str = "revocations.json";
+const LOCK_FILE: &str = "revocations.lock";
 const MAX_CACHE_BYTES: u64 = 3 << 20;
 
 /// Why the list could not be used. Every variant makes the command exit 2.
@@ -77,6 +90,9 @@ pub enum RevocationError {
     /// No root key is configured, so no list can verify. Fails closed.
     #[error("no first-party root key is configured to verify the revocation list")]
     NoRootKey,
+    /// The list is larger than [`MAX_LIST_BYTES`].
+    #[error("the revocation list is larger than {MAX_LIST_BYTES} bytes")]
+    TooLarge,
     /// The list is not a valid version 1 list.
     #[error("the revocation list is invalid: {0}")]
     Invalid(String),
@@ -86,6 +102,15 @@ pub enum RevocationError {
     /// The registry or the network failed, or withheld the list.
     #[error("the revocation list could not be fetched: {0}")]
     Fetch(#[from] OciError),
+    /// The fetched list is past its signed `expires`: the source serves an
+    /// old list. Treated like a withheld list.
+    #[error(
+        "the revocation list served online expired at {expires}; the source is replaying an old list"
+    )]
+    Expired {
+        /// The list's `expires`.
+        expires: String,
+    },
     /// The artifact does not have the shape of a list artifact.
     #[error("the revocation list artifact is malformed: {0}")]
     Layout(String),
@@ -126,10 +151,13 @@ impl RevocationError {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
-            Self::NoRootKey | Self::Invalid(_) | Self::BadSignature | Self::Layout(_) => {
-                "revocation-list-invalid"
-            }
+            Self::NoRootKey
+            | Self::TooLarge
+            | Self::Invalid(_)
+            | Self::BadSignature
+            | Self::Layout(_) => "revocation-list-invalid",
             Self::Fetch(_) => "revocation-list-unavailable",
+            Self::Expired { .. } => "revocation-list-expired",
             Self::Rollback { .. } => "revocation-list-rollback",
             Self::CacheInvalid { .. } | Self::Io { .. } => "revocation-cache-invalid",
             Self::Clock(_) => "revocation-clock-invalid",
@@ -141,8 +169,16 @@ impl From<SignError> for RevocationError {
     fn from(e: SignError) -> Self {
         match e {
             SignError::BadSignature => Self::BadSignature,
+            SignError::StatementTooLarge => Self::TooLarge,
             other => Self::Invalid(other.to_string()),
         }
+    }
+}
+
+fn io_err(what: &str) -> impl FnOnce(io::Error) -> RevocationError + '_ {
+    move |source| RevocationError::Io {
+        what: what.to_owned(),
+        source,
     }
 }
 
@@ -171,6 +207,7 @@ struct ListDoc {
     #[serde(rename = "type")]
     kind: String,
     issued: String,
+    expires: String,
     keys: Vec<String>,
     digests: Vec<String>,
 }
@@ -180,6 +217,7 @@ struct ListDoc {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RevocationList {
     issued: Option<String>,
+    expires: Option<String>,
     keys: Vec<String>,
     digests: Vec<String>,
 }
@@ -193,9 +231,10 @@ impl RevocationList {
     ///
     /// # Errors
     /// [`RevocationError::NoRootKey`] with no roots,
+    /// [`RevocationError::TooLarge`] over [`MAX_LIST_BYTES`],
     /// [`RevocationError::BadSignature`] unless a root signed exactly these
     /// bytes (prehashed), [`RevocationError::Invalid`] for anything that is not
-    /// a canonical version 1 list.
+    /// a canonical version 1 list valid for at most [`STALE_AFTER_DAYS`] days.
     pub fn verify(
         statement: &[u8],
         minisig: &str,
@@ -205,9 +244,7 @@ impl RevocationList {
             return Err(RevocationError::NoRootKey);
         }
         if statement.len() > MAX_LIST_BYTES {
-            return Err(RevocationError::Invalid(format!(
-                "larger than {MAX_LIST_BYTES} bytes"
-            )));
+            return Err(RevocationError::TooLarge);
         }
         if !roots
             .iter()
@@ -220,8 +257,12 @@ impl RevocationList {
         if doc.schema_version != 1 || doc.kind != LIST_TYPE {
             return invalid("not a version 1 revocation list");
         }
-        if utc_seconds(&doc.issued).is_none() {
-            return invalid("issued is not a valid UTC time");
+        let (Some(issued), Some(expires)) = (utc_seconds(&doc.issued), utc_seconds(&doc.expires))
+        else {
+            return invalid("issued or expires is not a valid UTC time");
+        };
+        if expires <= issued || expires - issued > STALE_AFTER_DAYS * DAY {
+            return invalid("expires must be after issued by at most 30 days");
         }
         if !doc.keys.iter().all(|k| is_key_id(k)) {
             return invalid("a key id is not 16 uppercase hex digits");
@@ -234,6 +275,7 @@ impl RevocationList {
         }
         Ok(Self {
             issued: Some(doc.issued),
+            expires: Some(doc.expires),
             keys: doc.keys,
             digests: doc.digests,
         })
@@ -243,6 +285,19 @@ impl RevocationList {
     #[must_use]
     pub fn issued(&self) -> Option<&str> {
         self.issued.as_deref()
+    }
+
+    /// When the list stops being fresh; `None` for the empty default.
+    #[must_use]
+    pub fn expires(&self) -> Option<&str> {
+        self.expires.as_deref()
+    }
+
+    fn expired_at(&self, now: i64) -> bool {
+        self.expires
+            .as_deref()
+            .and_then(utc_seconds)
+            .is_some_and(|e| now > e)
     }
 
     /// Whether the key with this key id is revoked.
@@ -296,12 +351,12 @@ impl RevocationList {
 pub enum RevocationNotice {
     /// No list was ever fetched on this machine.
     Missing,
-    /// The cached list was fetched more than [`STALE_AFTER_DAYS`] days ago.
+    /// The cached list is past its signed `expires`.
     Stale {
-        /// When it was fetched.
-        fetched_at: String,
-        /// Whole days since then.
-        days: i64,
+        /// When the root issued it.
+        issued: String,
+        /// When it expired.
+        expires: String,
     },
 }
 
@@ -322,9 +377,9 @@ impl std::fmt::Display for RevocationNotice {
             Self::Missing => f.write_str(
                 "no revocation list has been fetched; run `slopvac plugins sync` online",
             ),
-            Self::Stale { fetched_at, days } => write!(
+            Self::Stale { issued, expires } => write!(
                 f,
-                "the revocation list was fetched {days} days ago ({fetched_at}); run `slopvac plugins sync` online"
+                "the cached revocation list (issued {issued}) expired at {expires}; run `slopvac plugins sync` online"
             ),
         }
     }
@@ -335,7 +390,7 @@ impl std::fmt::Display for RevocationNotice {
 pub struct Current {
     /// The verified list, or the empty list when none was ever fetched.
     pub list: RevocationList,
-    /// When the list was fetched, if ever.
+    /// When the list was fetched, if ever. Unsigned; for display only.
     pub fetched_at: Option<String>,
     /// Notices to print. They do not block.
     pub notices: Vec<RevocationNotice>,
@@ -348,6 +403,12 @@ struct CacheDoc {
     fetched_at: String,
     statement: String,
     minisig: String,
+}
+
+/// The exclusive cache lock. Dropping it releases the lock.
+#[derive(Debug)]
+pub struct CacheLock {
+    _file: File,
 }
 
 /// Where the list comes from, where it is cached, which keys verify it and
@@ -392,6 +453,24 @@ impl Revocations {
         self.dir.join(CACHE_FILE)
     }
 
+    /// Take the exclusive cache lock, waiting for another holder. A refresh
+    /// takes it itself; this is public for callers that need the cache to
+    /// stay put across several steps.
+    ///
+    /// # Errors
+    /// [`RevocationError::Io`] when the lock file cannot be created or locked.
+    pub fn lock(&self) -> Result<CacheLock, RevocationError> {
+        create_private_dir(&self.dir).map_err(io_err("creating the state directory"))?;
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(self.dir.join(LOCK_FILE))
+            .map_err(io_err("opening the cache lock"))?;
+        file.lock().map_err(io_err("locking the cache"))?;
+        Ok(CacheLock { _file: file })
+    }
+
     /// The cached list, for offline runs and every spawn. Never uses the network.
     ///
     /// # Errors
@@ -405,11 +484,10 @@ impl Revocations {
                 notices: vec![RevocationNotice::Missing],
             });
         };
-        let age = utc_seconds(&fetched_at).map_or(0, |at| self.now_at - at);
-        let notices = if age > STALE_AFTER_DAYS * 86_400 {
+        let notices = if list.expired_at(self.now_at) {
             vec![RevocationNotice::Stale {
-                fetched_at: fetched_at.clone(),
-                days: age / 86_400,
+                issued: list.issued().unwrap_or_default().to_owned(),
+                expires: list.expires().unwrap_or_default().to_owned(),
             }]
         } else {
             vec![]
@@ -425,12 +503,23 @@ impl Revocations {
     ///
     /// # Errors
     /// [`RevocationError::Fetch`] when the registry fails or withholds the
-    /// list, the verification errors of [`RevocationList::verify`],
+    /// list, [`RevocationError::Expired`] for a list past its signed
+    /// `expires`, the verification errors of [`RevocationList::verify`],
     /// [`RevocationError::Rollback`] for a list older than the cache, and
     /// cache write failures. The cache is unchanged on any error.
     pub fn refresh(&self, client: &Client) -> Result<Current, RevocationError> {
         let (statement, minisig) = self.fetch(client)?;
         let list = RevocationList::verify(&statement, &minisig, &self.roots)?;
+        if list.expired_at(self.now_at) {
+            return Err(RevocationError::Expired {
+                expires: list.expires().unwrap_or_default().to_owned(),
+            });
+        }
+        let statement = String::from_utf8(statement)
+            .map_err(|_| RevocationError::Invalid("the list is not UTF-8".into()))?;
+
+        // Re-read, compare and replace as one step under the lock.
+        let _lock = self.lock()?;
         if let Ok(Some((cached, _))) = self.read_cache()
             && let (Some(old), Some(new)) = (cached.issued(), list.issued())
             && utc_seconds(new) < utc_seconds(old)
@@ -440,8 +529,6 @@ impl Revocations {
                 fetched: new.to_owned(),
             });
         }
-        let statement = String::from_utf8(statement)
-            .map_err(|_| RevocationError::Invalid("the list is not UTF-8".into()))?;
         self.write_cache(&CacheDoc {
             schema_version: 1,
             fetched_at: self.now.clone(),
@@ -469,6 +556,9 @@ impl Revocations {
             (MEDIA_MINISIG, MEDIA_REVOCATIONS) => (b, a),
             _ => return Err(layout("the layers are not a list and its signature")),
         };
+        if list.size > MAX_LIST_BYTES as u64 {
+            return Err(RevocationError::TooLarge);
+        }
         let statement = client.fetch_blob_bytes(&self.source, list, MAX_LIST_BYTES as u64)?;
         let sig = client.fetch_blob_bytes(&self.source, sig, MAX_MINISIG_BYTES)?;
         let sig = String::from_utf8(sig).map_err(|_| RevocationError::BadSignature)?;
@@ -503,11 +593,7 @@ impl Revocations {
     }
 
     fn write_cache(&self, doc: &CacheDoc) -> Result<(), RevocationError> {
-        let io = |what: &str| {
-            let what = what.to_owned();
-            move |source| RevocationError::Io { what, source }
-        };
-        create_private_dir(&self.dir).map_err(io("creating the state directory"))?;
+        create_private_dir(&self.dir).map_err(io_err("creating the state directory"))?;
         let bytes = serde_json::to_vec(doc).map_err(|e| RevocationError::Io {
             what: "encoding the cache".into(),
             source: io::Error::other(e),
@@ -515,10 +601,12 @@ impl Revocations {
         let mut tmp = tempfile::Builder::new()
             .prefix(".revocations-")
             .tempfile_in(&self.dir)
-            .map_err(io("creating a temporary cache file"))?;
-        set_private_file(tmp.path()).map_err(io("securing the cache file"))?;
-        tmp.write_all(&bytes).map_err(io("writing the cache"))?;
-        tmp.as_file().sync_all().map_err(io("syncing the cache"))?;
+            .map_err(io_err("creating a temporary cache file"))?;
+        set_private_file(tmp.path()).map_err(io_err("securing the cache file"))?;
+        tmp.write_all(&bytes).map_err(io_err("writing the cache"))?;
+        tmp.as_file()
+            .sync_all()
+            .map_err(io_err("syncing the cache"))?;
         tmp.persist(self.cache_file())
             .map_err(|e| RevocationError::Io {
                 what: "replacing the cache".into(),

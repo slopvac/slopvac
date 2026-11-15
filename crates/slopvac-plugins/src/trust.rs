@@ -42,7 +42,7 @@ use crate::extract::{ExtractError, TreeHash, tree_hash, verify_tree};
 use crate::host::{PluginSpec, SpawnGate};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
-use crate::revoke::RevocationList;
+use crate::revoke::{RevocationError, RevocationList, Revocations};
 use crate::sign::{PublicKey, RotationProof, SignError, canonical_json, verify_rotation};
 
 const FILE_NAME: &str = "trust.json";
@@ -99,6 +99,9 @@ pub enum TrustError {
     /// A rotation names a namespace that has no pinned key to rotate from.
     #[error("namespace `{0}` has no pinned key to rotate; pin one first")]
     NotPinned(String),
+    /// The revocation cache could not be read or verified. Spawns are refused.
+    #[error(transparent)]
+    Revocation(RevocationError),
     /// The revocation list names a key the operation needs.
     #[error("{0} is on the revocation list")]
     Revoked(String),
@@ -768,6 +771,7 @@ pub struct TrustGate {
     revoked_manifests: HashSet<String>,
     revoked_keys: HashSet<String>,
     revoked_key_ids: HashSet<String>,
+    cache: Option<Revocations>,
     external: HashSet<PathBuf>,
     plugins: HashMap<String, VerifiedPlugin>,
 }
@@ -783,6 +787,7 @@ impl TrustGate {
             revoked_manifests: HashSet::new(),
             revoked_keys: HashSet::new(),
             revoked_key_ids: HashSet::new(),
+            cache: None,
             external: HashSet::new(),
             plugins: plugins.into_iter().map(|p| (p.name.clone(), p)).collect(),
         }
@@ -803,6 +808,18 @@ impl TrustGate {
         self
     }
 
+    /// Check every spawn against the signed revocation cache. The gate reads
+    /// and verifies the cache again at each [`SpawnGate::check`] and
+    /// [`Self::state`], so a list that a refresh caches after the gate was
+    /// built still stops the next spawn. A cache that fails verification
+    /// refuses every spawn ([`TrustError::Revocation`]). A missing cache
+    /// revokes nothing (residual risk R3).
+    #[must_use]
+    pub fn with_revocation_cache(mut self, cache: Revocations) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
     /// Allow programs outside the verified tree, by absolute path. Such a path
     /// goes into the trust hash as `external:<path>`. Nothing is allowed by
     /// default; a managed interpreter needs its own policy (not built yet).
@@ -812,8 +829,19 @@ impl TrustGate {
         self
     }
 
-    fn revoked(&self, vp: &VerifiedPlugin, hash: &Digest) -> bool {
-        self.revoked_hashes.contains(hash.as_str())
+    fn revoked(&self, vp: &VerifiedPlugin, hash: &Digest) -> Result<bool, TrustError> {
+        if let Some(cache) = &self.cache {
+            let list = cache.cached().map_err(TrustError::Revocation)?.list;
+            let by_digest = vp
+                .manifest_digest
+                .as_deref()
+                .is_some_and(|m| list.revokes_digest(m));
+            let by_key = vp.key_id.as_deref().is_some_and(|k| list.revokes_key(k));
+            if by_digest || by_key {
+                return Ok(true);
+            }
+        }
+        Ok(self.revoked_hashes.contains(hash.as_str())
             || vp
                 .manifest_digest
                 .as_ref()
@@ -825,21 +853,22 @@ impl TrustGate {
             || vp
                 .key_id
                 .as_ref()
-                .is_some_and(|k| self.revoked_key_ids.contains(&k.to_ascii_uppercase()))
+                .is_some_and(|k| self.revoked_key_ids.contains(&k.to_ascii_uppercase())))
     }
 
     /// The state of a plugin started as `spec`.
     ///
     /// # Errors
     /// [`TrustError::Program`] or [`TrustError::Environment`] for a spec that can
-    /// never be trusted, plus store failures.
+    /// never be trusted, [`TrustError::Revocation`] for a revocation cache that
+    /// fails verification, plus store failures.
     pub fn state(
         &self,
         vp: &VerifiedPlugin,
         spec: &PluginSpec,
     ) -> Result<(Digest, TrustState), TrustError> {
         let hash = hash_for(vp, spec, &self.external)?;
-        if self.revoked(vp, &hash) {
+        if self.revoked(vp, &hash)? {
             return Ok((hash, TrustState::Revoked));
         }
         if self.env.contains(&hash) {
