@@ -834,9 +834,26 @@ impl Run<'_> {
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
+        self.guarded_with(None, rule, detectors, text, range, span, covering)
+    }
+
+    /// [`Self::guarded`] for a match that sits in `extra` context, a tag the context index
+    /// does not hold, such as `diagram-label`.
+    #[allow(clippy::too_many_arguments)]
+    fn guarded_with(
+        &self,
+        extra: Option<&'static str>,
+        rule: &slopvac_rules::Rule,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+        covering: &[Range<usize>],
+    ) -> bool {
         self.guarded_in(
             self.tags,
             self.parsed,
+            extra,
             rule,
             detectors,
             text,
@@ -853,6 +870,7 @@ impl Run<'_> {
         &self,
         tags: &TagIndex,
         document: &Parsed,
+        extra: Option<&'static str>,
         rule: &slopvac_rules::Rule,
         detectors: &[&str],
         text: &str,
@@ -861,11 +879,12 @@ impl Run<'_> {
         covering: &[Range<usize>],
     ) -> bool {
         let gate = rule.contexts.as_ref();
-        let kinds = if gate.is_some() || !detectors.is_empty() {
+        let mut kinds = if gate.is_some() || !detectors.is_empty() {
             kinds_of(tags, span, covering)
         } else {
             Vec::new()
         };
+        kinds.extend(extra.filter(|e| !kinds.contains(e)));
         if let Some(gate) = gate {
             let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
                 tags.as_ref()
@@ -1193,7 +1212,8 @@ impl Run<'_> {
         });
         let matched = self.input.source[span.start()..span.end()].to_owned();
         if let Some(rule) = rule
-            && self.guarded(
+            && self.guarded_with(
+                Some(slopvac_diagrams::CONTEXT),
                 rule,
                 &detectors,
                 self.input.source,

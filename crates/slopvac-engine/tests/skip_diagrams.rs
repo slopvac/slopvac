@@ -542,3 +542,59 @@ fn a_finding_carries_the_message_of_the_loaded_rule() {
         "Shorten This label has far too many words in it."
     );
 }
+const LONG_LABEL_FILE: &str =
+    "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
+
+fn run_on_with(extra: &serde_json::Value) -> Engine {
+    let rule = signal_rule("label-run-on", "diagram-label-run-on", extra);
+    one_rule_engine(vec![("diagram", &rule)])
+}
+
+fn both_inputs(engine: &Engine) -> [Vec<String>; 2] {
+    [
+        found(
+            engine,
+            &Input::diagram("flow.mmd", LONG_LABEL_FILE, Format::Mermaid),
+        ),
+        found(engine, &Input::markdown("a.md", MERMAID)),
+    ]
+}
+
+#[test]
+fn a_gate_that_needs_the_diagram_label_context_keeps_the_hit() {
+    let engine = run_on_with(&serde_json::json!({"contexts": {"only": ["diagram-label"]}}));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, ["core:diagram.label-run-on"]);
+    }
+}
+
+#[test]
+fn a_gate_that_skips_the_diagram_label_context_drops_the_hit() {
+    let engine = run_on_with(&serde_json::json!({"contexts": {"skip": ["diagram-label"]}}));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn a_detector_named_for_the_diagram_label_context_drops_the_hit() {
+    let engine = run_on_with(&serde_json::json!({
+        "exceptions": [{"name": "labels", "detector": "diagram-label"}]
+    }));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn the_ai_signal_of_a_diagram_rule_reaches_the_finding_and_the_summary() {
+    let engine = run_on_with(&serde_json::json!({
+        "ai_signal": "strong", "ai_signal_source": "measured"
+    }));
+    let doc = engine.lint(&Input::markdown("a.md", MERMAID)).unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].ai_signal, slopvac_model::AiSignal::Strong);
+    assert_eq!(doc.ai_register.strong.findings, 1);
+    assert_eq!(doc.ai_register.strong.warnings, 1);
+    assert_eq!(doc.prose.findings, 0);
+}
