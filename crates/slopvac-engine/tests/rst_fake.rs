@@ -10,6 +10,8 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
@@ -53,8 +55,7 @@ fn script(path: &Path, body: &str) {
 fn fakes() -> &'static Fakes {
     static FAKES: OnceLock<Fakes> = OnceLock::new();
     FAKES.get_or_init(|| {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("rst-fakes");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = common::private_dir("rst-fakes");
         for entry in fs::read_dir(FIXTURES).unwrap().flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json") {
@@ -911,5 +912,34 @@ fn a_table_is_a_block_that_covers_its_cells_and_borders() {
 #[test]
 fn a_contents_directive_leaves_no_notice() {
     let (_, parsed) = parse_fixture("contents");
+    assert_eq!(parsed.notices, []);
+}
+
+#[test]
+fn table_cells_report_their_logical_columns_after_column_and_row_spans() {
+    let (source, parsed) = parse_fixture("table-span");
+    let cells: Vec<_> = parsed
+        .document
+        .blocks
+        .iter()
+        .filter_map(|b| match b.kind {
+            BlockKind::TableCell { row, column } => Some((row, column, slice(&source, b.span))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            (0, 0, "A"),
+            (0, 1, "B"),
+            (0, 2, "C"),
+            (1, 0, "Wide span"),
+            (1, 2, "D"),
+            (2, 0, "E"),
+            (2, 1, "F"),
+            (2, 2, "G"),
+            (3, 1, "H"),
+        ]
+    );
     assert_eq!(parsed.notices, []);
 }

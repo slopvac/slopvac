@@ -95,23 +95,39 @@ def main():
                 found.append({"t": "bq"})
         return found
 
+    cell_cache = {}
+
+    def table_cells(table):
+        """Row and logical column of every entry, after column and row spans."""
+        cells = {}
+        occupied = {}
+        row_number = 0
+        for group in table.children:
+            if not isinstance(group, (nodes.thead, nodes.tbody)):
+                continue
+            for row in group.children:
+                taken = occupied.setdefault(row_number, set())
+                column = 0
+                for entry in row.children:
+                    while column in taken:
+                        column += 1
+                    width = entry.get("morecols", 0) + 1
+                    cells[id(entry)] = (row_number, column, width)
+                    for below in range(row_number, row_number + entry.get("morerows", 0) + 1):
+                        occupied.setdefault(below, set()).update(range(column, column + width))
+                    column += width
+                row_number += 1
+        return cells
+
     def cell_of(node):
         entry = node.parent
         if not isinstance(entry, nodes.entry):
             return None
-        row = entry.parent
-        group = row.parent
-        before = 0
-        for sibling in group.parent.children:
-            if sibling is group:
-                break
-            if isinstance(sibling, (nodes.thead, nodes.tbody)):
-                before += len(sibling.children)
-        return [
-            before + group.index(row),
-            row.index(entry),
-            entry.get("morecols", 0) + 1,
-        ]
+        table = entry.parent.parent.parent  # The tgroup holds the rows.
+        if id(table) not in cell_cache:
+            cell_cache[id(table)] = table_cells(table)
+        found = cell_cache[id(table)].get(id(entry))
+        return list(found) if found else None
 
     def section_level(node):
         parent = node.parent

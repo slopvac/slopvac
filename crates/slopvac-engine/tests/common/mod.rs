@@ -80,3 +80,34 @@ pub fn matched(doc: &Document) -> Vec<&str> {
         .map(|f| f.matched_text.as_str())
         .collect()
 }
+
+/// A directory only this process uses, under the cargo test tmp directory.
+///
+/// `cargo nextest` runs every test in its own process, so two processes must never share
+/// (or clear) one directory. Directories left by finished runs are removed after an hour.
+pub fn private_dir(prefix: &str) -> PathBuf {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        let stale = std::time::Duration::from_secs(3600);
+        for entry in entries.flatten() {
+            let old = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > stale);
+            if old
+                && entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(&format!("{prefix}-"))
+            {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+    let dir = root.join(format!("{prefix}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}

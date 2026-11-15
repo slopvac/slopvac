@@ -28,8 +28,7 @@ const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rst"
 fn interpreter() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("rst-engine-fakes");
-        fs::create_dir_all(&dir).unwrap();
+        let dir = common::private_dir("rst-engine-fakes");
         let path = dir.join("fake-python");
         let write = |path: &Path, body: String| {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -40,6 +39,7 @@ fn interpreter() -> &'static Path {
             |name: &str| format!("#!/bin/sh\ncat >/dev/null\ncat '{FIXTURES}/{name}.json'\n");
         write(&path, json("sections"));
         write(&dir.join("tables-python"), json("table-repeat"));
+        write(&dir.join("wrap-python"), json("table-wrap"));
         write(
             &dir.join("planted/python3"),
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\nexit 0\n".to_owned(),
@@ -160,6 +160,17 @@ fn project_roots_given_to_the_engine_reach_the_search() {
             .any(|n| n.code.as_str() == "rst-converter-missing")
     );
     assert!(!planted.join("ran").exists());
+}
+
+#[test]
+fn a_wrapped_left_cell_does_not_hide_the_right_cell_from_document_rules() {
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("wrap-python"));
+    let e = engine(&[tokens("dull", "Rightonly", &json!({"scope": "document"}))]).with_rst(options);
+    let source = fs::read_to_string(format!("{FIXTURES}/table-wrap.rst")).unwrap();
+    let doc = e.lint(&Input::rst("t.rst", &source)).unwrap();
+    // "Rightonly" is on line 2 of the table, after "| Left wrap | ".
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 2, 15)]);
 }
 
 #[test]

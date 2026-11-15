@@ -64,7 +64,7 @@ struct Composite {
 pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
-    composite: OnceCell<Result<Composite, TextError>>,
+    composite: OnceCell<Result<Vec<Composite>, TextError>>,
 }
 
 impl<'a> Prepared<'a> {
@@ -116,10 +116,15 @@ impl<'a> Prepared<'a> {
             .count()
     }
 
-    /// The whole document as one projection, with a synthetic space between blocks.
-    fn composite(&self) -> Result<&Composite, TextError> {
+    /// The whole document as projections, with a synthetic space between blocks.
+    ///
+    /// A projection holds source ranges in ascending order. A block that starts before the
+    /// previous one ends, such as the right cell of a table beside a wrapped left cell, would
+    /// break that order, so it starts the next projection. No block is left out.
+    fn composites(&self) -> Result<&[Composite], TextError> {
         self.composite
             .get_or_init(|| {
+                let mut groups: Vec<Projection> = Vec::new();
                 let mut projection = Projection::new();
                 let mut end = 0;
                 let mut first = true;
@@ -127,7 +132,9 @@ impl<'a> Prepared<'a> {
                     let tokens = block.projection.tokens();
                     let Some(head) = tokens.first() else { continue };
                     if head.src.start() < end {
-                        continue; // Nested blocks cannot share a projection.
+                        groups.push(std::mem::take(&mut projection));
+                        end = 0;
+                        first = true;
                     }
                     if !first {
                         projection.push(TokenKind::Wrap, " ", Span::empty(end));
@@ -138,13 +145,20 @@ impl<'a> Prepared<'a> {
                         end = token.src.end();
                     }
                 }
-                let sentences = split_sentences(projection.text())?;
-                Ok(Composite {
-                    projection,
-                    sentences,
-                })
+                groups.push(projection);
+                groups
+                    .into_iter()
+                    .map(|projection| {
+                        let sentences = split_sentences(projection.text())?;
+                        Ok(Composite {
+                            projection,
+                            sentences,
+                        })
+                    })
+                    .collect()
             })
             .as_ref()
+            .map(Vec::as_slice)
             .map_err(Clone::clone)
     }
 
@@ -164,14 +178,15 @@ impl<'a> Prepared<'a> {
                 }
             }
             Scope::Document => {
-                let composite = self.composite()?;
-                if !composite.projection.text().is_empty() {
-                    units.push(Unit {
-                        text: composite.projection.text(),
-                        base: 0,
-                        map: Map::Projected(&composite.projection),
-                        sentences: Some(&composite.sentences),
-                    });
+                for composite in self.composites()? {
+                    if !composite.projection.text().is_empty() {
+                        units.push(Unit {
+                            text: composite.projection.text(),
+                            base: 0,
+                            map: Map::Projected(&composite.projection),
+                            sentences: Some(&composite.sentences),
+                        });
+                    }
                 }
             }
             Scope::Prose | Scope::Paragraph | Scope::Heading => {

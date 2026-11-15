@@ -25,6 +25,8 @@
 //! the size of the source and the text. Past it, nodes fall back to line precision without
 //! any more matching, so the cost stays linear.
 
+use std::collections::HashMap;
+
 use slopvac_model::Span;
 use slopvac_parse::{
     Admonition, AdmonitionSyntax, Block, BlockKind, Container as ParseContainer, Document,
@@ -62,14 +64,14 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
                     .sum::<usize>()
         })
         .sum();
-    let mut mapper = Mapper {
-        src: source,
-        starts: line_starts(source, bom),
-        work: 0,
-        budget: WORK_PER_BYTE
+    let mut mapper = Mapper::new(
+        source,
+        line_starts(source, bom),
+        0,
+        WORK_PER_BYTE
             .saturating_mul(source.len().saturating_add(text_bytes))
             .saturating_add(WORK_BASE),
-    };
+    );
     let mut blocks = Vec::new();
     let mut code_spans = Vec::new();
     let mut unplaced: Vec<&str> = Vec::new();
@@ -227,9 +229,26 @@ struct Mapper<'a> {
     starts: Vec<usize>,
     work: usize,
     budget: usize,
+    /// For a line, the nearest table border at or above it (`None`: there is none).
+    memo: HashMap<usize, Option<usize>>,
+    /// The table borders read so far, by line.
+    borders: HashMap<usize, Border>,
 }
 
-impl Mapper<'_> {
+impl<'a> Mapper<'a> {
+    fn new(src: &'a str, starts: Vec<usize>, work: usize, budget: usize) -> Self {
+        Self {
+            src,
+            starts,
+            work,
+            budget,
+            memo: HashMap::new(),
+            borders: HashMap::new(),
+        }
+    }
+}
+
+impl<'a> Mapper<'a> {
     /// The block for `node`.
     fn block(&mut self, node: &Node) -> Outcome {
         let Some((lo, hi)) = node
@@ -260,8 +279,8 @@ impl Mapper<'_> {
         if node.table {
             // The border lines above and below belong to the table.
             let (first, last) = (node.start.unwrap_or(1), node.end.unwrap_or(1));
-            let top = first > 1 && self.border(first - 1).is_some();
-            let bottom = last < self.starts.len() && self.border(last + 1).is_some();
+            let top = first > 1 && self.is_border(first - 1);
+            let bottom = last < self.starts.len() && self.is_border(last + 1);
             let (lo, hi) = self
                 .byte_range(first - usize::from(top), last + usize::from(bottom))
                 .unwrap_or((lo, hi));
@@ -336,8 +355,12 @@ impl Mapper<'_> {
         }
     }
 
-    /// Charge `units` of work. False once the budget is spent.
+    /// Charge `units` of work. False once the budget is spent. A spent budget takes no
+    /// more charges, so the count stops one step past it.
     fn charge(&mut self, units: usize) -> bool {
+        if self.work > self.budget {
+            return false;
+        }
         self.work = self.work.saturating_add(units);
         self.work <= self.budget
     }
@@ -372,16 +395,18 @@ impl Mapper<'_> {
     }
 
     /// The text of line `line` (1-based), without its terminator.
-    fn line_text(&self, line: usize) -> &str {
-        &self.src[self.starts[line - 1]..self.line_end(line)]
+    fn line_text(&self, line: usize) -> &'a str {
+        let src: &'a str = self.src;
+        &src[self.starts[line - 1]..self.line_end(line)]
     }
 
-    /// The columns of a table border on `line`, if the line is one.
-    fn border(&self, line: usize) -> Option<Border> {
-        parse_border(self.line_text(line))
+    /// Whether `line` is a table border. The line is charged before it is read.
+    fn is_border(&mut self, line: usize) -> bool {
+        let text = self.line_text(line);
+        self.charge(text.len().max(1)) && parse_border(text).is_some()
     }
 
-    /// The character columns `start..end` of the cell's column, read from the nearest
+    /// The character columns `start..end` of the cell's columns, read from the nearest
     /// border line above the node.
     fn column_window(
         &mut self,
@@ -389,24 +414,48 @@ impl Mapper<'_> {
         column: usize,
         columns: usize,
     ) -> Option<(usize, usize)> {
-        let first = node.start?;
-        for line in (1..first.min(self.starts.len() + 1)).rev() {
-            if !self.charge(1) {
-                return None;
-            }
-            let text = self.line_text(line);
-            if text.trim().is_empty() {
-                return None;
-            }
-            if let Some(border) = parse_border(text) {
-                return border.window(column, columns);
-            }
-        }
-        None
+        let line = self.nearest_border(node.start?)?;
+        self.borders.get(&line)?.window(column, columns)
     }
 
-    /// Place a table cell. Everything outside the cell's columns is blanked first, so the
-    /// words of the neighbouring cells on the same lines cannot match.
+    /// The nearest table border above `first`, stopping at a blank line. Every line is
+    /// read and charged once for the whole document: the answer for each line is kept, and
+    /// the parsed borders too.
+    fn nearest_border(&mut self, first: usize) -> Option<usize> {
+        let mut trail = Vec::new();
+        let mut line = first.min(self.starts.len() + 1);
+        let found = loop {
+            if line <= 1 {
+                break None;
+            }
+            line -= 1;
+            if let Some(&known) = self.memo.get(&line) {
+                break known;
+            }
+            let text = self.line_text(line);
+            if !self.charge(text.len().max(1)) {
+                return None;
+            }
+            if text.trim().is_empty() {
+                trail.push(line);
+                break None;
+            }
+            if let Some(border) = parse_border(text) {
+                self.borders.insert(line, border);
+                trail.push(line);
+                break Some(line);
+            }
+            trail.push(line);
+        };
+        for l in trail {
+            self.memo.insert(l, found);
+        }
+        found
+    }
+
+    /// Place a table cell. Only the cell's columns of each of its lines are read: they
+    /// are joined into a view, the words of neighbouring cells cannot match, and the
+    /// result is mapped back line by line.
     fn place_in_column(
         &mut self,
         node: &Node,
@@ -414,36 +463,63 @@ impl Mapper<'_> {
         hi: usize,
         (x0, x1): (usize, usize),
     ) -> Option<Placed> {
-        let mut masked = String::with_capacity(hi - lo);
-        let mut col = 0;
-        for ch in self.src[lo..hi].chars() {
-            if ch == '\n' || ch == '\r' {
-                masked.push(ch);
-                col = 0;
-            } else if (x0..x1).contains(&col) {
-                masked.push(ch);
-                col += 1;
-            } else {
-                masked.extend(std::iter::repeat_n(' ', ch.len_utf8()));
-                col += 1;
+        let (first, last) = (node.start?, node.end?.min(self.starts.len()));
+        let mut view = String::new();
+        // (start in the view, start in the source, length) of each line's piece.
+        let mut pieces: Vec<(usize, usize, usize)> = Vec::new();
+        for line in first..=last {
+            let text = self.line_text(line);
+            // Charge the scan before it happens.
+            if !self.charge(x1.min(text.len()).saturating_add(1)) {
+                return self.fallback(&node.pieces, lo, hi);
             }
+            let mut from = text.len();
+            let mut to = text.len();
+            for (i, (byte, _)) in text.char_indices().enumerate() {
+                if i == x0 {
+                    from = byte;
+                }
+                if i == x1 {
+                    to = byte;
+                    break;
+                }
+            }
+            let from = from.min(to);
+            pieces.push((view.len(), self.starts[line - 1] + from, to - from));
+            view.push_str(&text[from..to]);
+            view.push('\n');
         }
-        let mut inner = Mapper {
-            src: &masked,
-            starts: vec![0],
-            work: self.work,
-            budget: self.budget,
-        };
+        let mut inner = Mapper::new(&view, vec![0], self.work, self.budget);
         let placed = if inner.exhausted() {
             None
         } else {
             inner
-                .align(&node.pieces, 0, masked.len())
+                .align(&node.pieces, 0, view.len())
                 .and_then(Self::finish)
         }
-        .or_else(|| inner.fallback(&node.pieces, 0, masked.len()));
+        .or_else(|| inner.fallback(&node.pieces, 0, view.len()));
         self.work = inner.work;
-        let shift = |s: Span| span(s.start() + lo, s.end() + lo);
+        let start_of = |v: usize| {
+            let i = pieces
+                .partition_point(|&(at, _, _)| at <= v)
+                .saturating_sub(1);
+            let (at, src, len) = pieces[i];
+            src + (v - at).min(len)
+        };
+        let end_of = |e: usize| {
+            if e == 0 || view.as_bytes()[e - 1] == b'\n' {
+                start_of(e)
+            } else {
+                start_of(e - 1) + 1
+            }
+        };
+        let shift = |s: Span| {
+            if s.is_empty() {
+                span(start_of(s.start()), start_of(s.start()))
+            } else {
+                span(start_of(s.start()), end_of(s.end()))
+            }
+        };
         placed.map(|p| {
             let mut projection = Projection::new();
             for t in p.projection.tokens() {
@@ -1016,12 +1092,61 @@ mod tests {
     }
 
     #[test]
-    fn exhausting_the_budget_in_a_skip_stops_the_matching_at_once() {
-        // Skipped characters alone overrun the budget; the node falls back to its lines.
-        let pairs = (WORK_BASE / 2) + 10;
-        let source = format!("a{}b\n", "\\ ".repeat(pairs));
-        let mapped = project(&source, 0, &nodes(&format!("[{}]", paragraph(1, 1, "ab"))));
-        let budget = WORK_PER_BYTE * (source.len() + 2) + WORK_BASE;
-        assert!(mapped.work <= budget + 1, "{} over {budget}", mapped.work);
+    fn a_very_wide_table_exhausts_the_budget_and_keeps_every_cell() {
+        // Every cell scans its row up to its column, so the work grows with the square of the
+        // width. The budget stops it, and each cell keeps its prose at line precision.
+        let columns = 4_000;
+        let border = format!("{}+\n", "+-".repeat(columns));
+        let row = format!("{}|\n", "|a".repeat(columns));
+        let source = format!("{border}{row}{border}");
+        let cells: Vec<String> = (0..columns)
+            .map(|c| {
+                format!(
+                    r#"{{"tag":"paragraph","start":2,"end":2,"cell":[0,{c},1],"pieces":[{{"k":"t","t":"a"}}]}}"#
+                )
+            })
+            .collect();
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", cells.join(","))));
+        let budget = WORK_PER_BYTE * (source.len() + columns) + WORK_BASE;
+        assert!(
+            mapped.work > budget,
+            "the budget was not reached: {} of {budget}",
+            mapped.work
+        );
+        assert!(
+            mapped.work <= budget + 2 * source.len(),
+            "work {} ran far past {budget}",
+            mapped.work
+        );
+        assert_eq!(mapped.document.blocks.len(), columns);
+        assert!(mapped.notices.iter().any(|n| n.code == "rst-line-precise"));
+    }
+
+    #[test]
+    fn the_border_of_a_table_is_read_once_for_all_its_rows() {
+        let rows = 2_000;
+        let mut source = String::from("=====  =====\nHead   Head\n=====  =====\n");
+        let mut cells = Vec::new();
+        for r in 0..rows {
+            source.push_str("one    two\n");
+            let line = 4 + r;
+            for c in 0..2 {
+                cells.push(format!(
+                    r#"{{"tag":"paragraph","start":{line},"end":{line},"cell":[{},{c},1],"pieces":[{{"k":"t","t":"{}"}}]}}"#,
+                    r + 1,
+                    ["one", "two"][c]
+                ));
+            }
+        }
+        source.push_str("=====  =====\n");
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", cells.join(","))));
+        assert_eq!(mapped.document.blocks.len(), 2 * rows);
+        assert_eq!(mapped.notices, []);
+        assert!(
+            mapped.work <= 8 * source.len(),
+            "{} for {}",
+            mapped.work,
+            source.len()
+        );
     }
 }
