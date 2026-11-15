@@ -12,10 +12,14 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 frontmatter-spans = { workspace = true }
 globset.workspace = true
 ignore.workspace = true
+pulldown-cmark = { workspace = true }
 rayon = { workspace = true }
+similar.workspace = true
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
 slopvac-model = { workspace = true }
@@ -25,6 +29,10 @@ slopvac-rules = { workspace = true }
 slopvac-terms = { workspace = true }
 slopvac-text = { workspace = true }
 thiserror = { workspace = true }
+
+# O_NONBLOCK, the effective user id and ACL attributes for `fix_file`.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs", "process"] }
 
 [dev-dependencies]
 # The work-counter tests count the indexes a lint builds.
