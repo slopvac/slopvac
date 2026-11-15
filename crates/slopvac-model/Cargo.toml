@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the `SourceIndex` values built, for tests that check a caller indexes once. Off in
+# ordinary builds, which then carry no shared atomic.
+test-counters = []
+
 [lints]
 workspace = true
 

@@ -8,7 +8,7 @@ use slopvac_model::{SourceIndex, Span};
 use crate::align::{ProseBuilder, align};
 use crate::code::{code_kind, trim_terminator};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Container, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, HtmlBlock, ParseError, TokenKind};
 
 const BOM: &str = "\u{feff}";
 
@@ -30,7 +30,11 @@ pub(crate) fn resolve_body(source: &str, body: Span) -> Result<Span, ParseError>
 pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Document {
     blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     code_spans.sort_by_key(Span::start);
-    Document { blocks, code_spans }
+    Document {
+        blocks,
+        code_spans,
+        html_blocks: Vec::new(),
+    }
 }
 
 const OPTIONS: Options = Options::ENABLE_TABLES
@@ -72,10 +76,25 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
     let Collector {
         mut blocks,
         code_spans,
+        html_blocks,
         ..
     } = collector;
     blocks.extend(masked.admonitions.iter().cloned());
-    Ok(finish(blocks, code_spans))
+    let mut document = finish(blocks, code_spans);
+    document.html_blocks = html_blocks
+        .into_iter()
+        .filter_map(|mut block| {
+            // The last line's terminator is not part of the block.
+            let last = block.segments.pop()?;
+            let text = &source[last.start()..last.end()];
+            let kept = text.trim_end_matches(['\n', '\r']).len();
+            block
+                .segments
+                .push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
+            Some(block)
+        })
+        .collect();
+    Ok(document)
 }
 
 /// A prose block under construction.
@@ -104,6 +123,7 @@ struct Collector<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
+    html_blocks: Vec<HtmlBlock>,
     open: Option<Open>,
     code: Option<OpenCode>,
     image_depth: usize,
@@ -124,6 +144,7 @@ impl<'a> Collector<'a> {
             masked,
             blocks: Vec::new(),
             code_spans: Vec::new(),
+            html_blocks: Vec::new(),
             open: None,
             code: None,
             image_depth: 0,
@@ -259,6 +280,21 @@ impl<'a> Collector<'a> {
                     self.prose().prose.push(TokenKind::Masked, MASK, span);
                 }
             }
+            Event::Html(_) if self.image_depth == 0 => {
+                let span = self.masked.span(range.start, range.end);
+                // The lines of one block follow each other, line breaks included. A
+                // container prefix between two lines starts a new segment of the block.
+                if let Some(block) = self.html_blocks.last_mut() {
+                    let segments = &mut block.segments;
+                    match segments.last_mut() {
+                        Some(last) if last.end() == span.start() => {
+                            *last = Span::new(last.start(), span.end().max(last.end()))
+                                .expect("start does not exceed end");
+                        }
+                        _ => segments.push(span),
+                    }
+                }
+            }
             Event::InlineHtml(html) => {
                 if html.starts_with("<!--") && self.image_depth == 0 {
                     self.inline_range(&range);
@@ -340,6 +376,13 @@ impl<'a> Collector<'a> {
             Tag::BlockQuote(_) => {
                 self.flush();
                 self.containers.push(Container::BlockQuote);
+            }
+            Tag::HtmlBlock => {
+                self.flush();
+                self.html_blocks.push(HtmlBlock {
+                    segments: Vec::new(),
+                    containers: self.containers.clone(),
+                });
             }
             Tag::Image { .. } => {
                 self.inline_range(&range);

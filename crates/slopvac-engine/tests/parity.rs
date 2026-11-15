@@ -24,6 +24,7 @@ use slopvac_model::{
     Severity,
 };
 use slopvac_rules::{CompileOptions, RuleSet};
+use slopvac_terms::Blocklist;
 
 fn manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -114,7 +115,14 @@ fn engine(fixture: &Value) -> Engine {
     settings.thresholds.max_unicode_dashes = count("max_unicode_dashes");
     settings.thresholds.max_total_per_100_words = t["max_total_per_100_words"].as_f64();
     settings.thresholds.min_score = t["min_score"].as_f64();
-    Engine::new(vec![set], settings).unwrap()
+    // The blocklist 2.x ships as its example; `generate.py` runs Vale with the same file.
+    let blocklist =
+        Blocklist::load(&manifest().join("../../packages/slopvac-lint/examples/blocklist.toml"))
+            .unwrap();
+    Engine::new(vec![set], settings)
+        .unwrap()
+        .with_blocklist(&blocklist)
+        .unwrap()
 }
 
 type Row = (String, usize, usize, usize, String, String);
