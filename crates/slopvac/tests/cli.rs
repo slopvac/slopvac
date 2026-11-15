@@ -384,3 +384,106 @@ fn lsp_stops_on_a_fatal_error_while_stdin_stays_open() {
     let status = status.expect("the process exits while stdin is open");
     assert_eq!(status.code(), Some(2));
 }
+
+/// Read one framed LSP message body from `reader`.
+fn read_message(reader: &mut impl std::io::BufRead) -> String {
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        assert!(
+            reader.read_line(&mut line).expect("header") > 0,
+            "stdout closed"
+        );
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        if let Some(value) = line.strip_prefix("Content-Length: ") {
+            length = value.parse().expect("length");
+        }
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body).expect("body");
+    String::from_utf8(body).expect("utf-8")
+}
+
+#[test]
+fn lsp_exits_after_shutdown_although_the_client_stopped_reading_stdout() {
+    use std::io::Write as _;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
+        .arg("lsp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn slopvac");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
+    let child = Arc::new(std::sync::Mutex::new(child));
+    // A hung server must not hang the test run: kill it after a while.
+    let finished = Arc::new(AtomicBool::new(false));
+    let watchdog = {
+        let (child, finished) = (Arc::clone(&child), Arc::clone(&finished));
+        std::thread::spawn(move || {
+            for _ in 0..1200 {
+                if finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            let _ = child.lock().unwrap().kill();
+        })
+    };
+
+    // Each document gets one `publishDiagnostics` that repeats its long uri. Together they
+    // are far larger than an OS pipe buffer (64 KiB), so the stdout writer blocks once the
+    // client stops reading.
+    let mut input = String::new();
+    input.push_str(&frame(INITIALIZE));
+    input.push_str(&frame(
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+    ));
+    let padding = "a".repeat(2000);
+    for n in 0..1000 {
+        let open = format!(
+            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///{padding}{n}.md","languageId":"markdown","version":1,"text":"x"}}}}}}"#
+        );
+        input.push_str(&frame(&open));
+    }
+    input.push_str(&frame(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#));
+    stdin.write_all(input.as_bytes()).expect("write requests");
+    stdin.flush().expect("flush");
+
+    // Read up to the shutdown response, then stop reading but keep the pipe open.
+    loop {
+        let body = read_message(&mut stdout);
+        if body.contains(r#""id":2"#) && !body.contains("method") {
+            break;
+        }
+    }
+    stdin
+        .write_all(frame(r#"{"jsonrpc":"2.0","method":"exit"}"#).as_bytes())
+        .expect("write exit");
+    stdin.flush().expect("flush");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
+    let status = loop {
+        if let Some(status) = child.lock().unwrap().try_wait().expect("wait") {
+            break Some(status);
+        }
+        if std::time::Instant::now() > deadline {
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    finished.store(true, Ordering::SeqCst);
+    if status.is_none() {
+        let _ = child.lock().unwrap().kill();
+    }
+    watchdog.join().unwrap();
+    drop((stdin, stdout));
+    let status = status.expect("the process exits while stdout is unread");
+    assert_eq!(status.code(), Some(0));
+}

@@ -748,18 +748,27 @@ struct Stalled {
     to_server: crossbeam_channel::Sender<Message>,
     from_server: crossbeam_channel::Receiver<Message>,
     reached: crossbeam_channel::Receiver<()>,
+    /// Releases the publication held in the pre-publish hook (see `start_gated`).
+    release: crossbeam_channel::Sender<()>,
     done: crossbeam_channel::Receiver<Result<Exit, ServerError>>,
 }
 
 impl Stalled {
-    fn start() -> Self {
+    /// With `gate_second`, the second publication waits in the pre-publish hook, with the
+    /// document lock held, until `release` is signalled.
+    fn start(gate_second: bool) -> Self {
         let (to_client, from_server) = crossbeam_channel::bounded::<Message>(0);
         let (to_server, from_client) = crossbeam_channel::bounded::<Message>(0);
         let (reached_tx, reached) = crossbeam_channel::unbounded::<()>();
         let (done_tx, done) = crossbeam_channel::unbounded();
+        let (release, release_rx) = crossbeam_channel::unbounded::<()>();
+        let calls = AtomicUsize::new(0);
         let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(0)))))
             .with_pre_publish_hook(Arc::new(move |_uri| {
                 let _ = reached_tx.send(());
+                if gate_second && calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                    let _ = release_rx.recv_timeout(WAIT);
+                }
             }));
         let connection = Connection {
             sender: to_client,
@@ -772,6 +781,7 @@ impl Stalled {
             to_server,
             from_server,
             reached,
+            release,
             done,
         }
     }
@@ -797,25 +807,32 @@ impl Stalled {
         );
     }
 
-    /// Handshake, open a document and change it three times, waiting for the server to
-    /// queue each message. Then stop reading: the writer blocks on the transport with more
-    /// messages queued behind the one it holds.
-    fn start_and_stop_reading() -> Self {
-        let session = Self::start();
-        session.send(Message::Request(Request::new(
+    fn handshake(&self) {
+        self.send(Message::Request(Request::new(
             RequestId::from(1),
             "initialize".to_owned(),
             json!({"processId": null, "rootUri": null, "capabilities": {}}),
         )));
-        session
-            .from_server
+        self.from_server
             .recv_timeout(WAIT)
             .expect("initialize response");
-        session.note("initialized", &json!({}));
-        session.note(
+        self.note("initialized", &json!({}));
+    }
+
+    fn open_document(&self) {
+        self.note(
             "textDocument/didOpen",
             &json!({"textDocument": {"uri": URI, "languageId": "markdown", "version": 1, "text": "a"}}),
         );
+    }
+
+    /// Handshake, open a document and change it three times, waiting for the server to
+    /// queue each message. Then stop reading: the writer blocks on the transport with more
+    /// messages queued behind the one it holds.
+    fn start_and_stop_reading() -> Self {
+        let session = Self::start(false);
+        session.handshake();
+        session.open_document();
         session.reached.recv_timeout(WAIT).unwrap();
         for version in 2..=4 {
             session.change(version);
@@ -824,7 +841,26 @@ impl Stalled {
         session
     }
 
-    /// Send `shutdown` and read until its response. The writer still holds diagnostics.
+    /// Handshake and open a document, then change it. The worker finds the change's
+    /// diagnostics fresh and waits in the hook, so nothing is queued yet. Nothing is read
+    /// from the server after the handshake.
+    fn start_gated() -> Self {
+        let session = Self::start(true);
+        session.handshake();
+        session.open_document();
+        session.reached.recv_timeout(WAIT).unwrap();
+        session.change(2);
+        session.reached.recv_timeout(WAIT).unwrap();
+        session
+    }
+
+    /// Let the held publication go. The client reads nothing, so the writer blocks on the
+    /// transport with that message in hand.
+    fn release_the_held_publication(&self) {
+        self.release.send(()).unwrap();
+    }
+
+    /// Send `shutdown` and read until its response.
     fn shutdown_and_read_the_response(&self) {
         self.send(Message::Request(Request::new(
             RequestId::from(2),
@@ -877,21 +913,24 @@ fn a_client_that_stops_reading_does_not_stall_document_updates() {
 
 #[test]
 fn a_clean_exit_does_not_wait_for_a_client_that_stopped_reading() {
-    let session = Stalled::start_and_stop_reading();
+    let session = Stalled::start_gated();
     session.shutdown_and_read_the_response();
+    // A publication is queued only now, after the last message the client reads, so the
+    // writer is blocked on the transport with it.
+    session.release_the_held_publication();
     session.note("exit", &Value::Null);
-    // The client reads nothing more. The wait for queued diagnostics is bounded.
     let result = session
         .done
-        .recv_timeout(Duration::from_secs(15))
+        .recv_timeout(Duration::from_secs(20))
         .expect("serve returns although the transport is blocked");
     assert_eq!(result.unwrap(), Exit::AfterShutdown);
 }
 
 #[test]
 fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
-    let session = Stalled::start_and_stop_reading();
+    let session = Stalled::start_gated();
     session.shutdown_and_read_the_response();
+    session.release_the_held_publication();
     // Anything but `exit` after `shutdown` is a protocol error, which ends serve.
     session.send(Message::Request(Request::new(
         RequestId::from(3),
@@ -901,7 +940,7 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
     // Shorter than the bounded wait of a clean exit, so waiting for the writer fails it.
     let result = session
         .done
-        .recv_timeout(Duration::from_secs(3))
+        .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
     assert!(
         matches!(result, Err(ServerError::Protocol(_))),

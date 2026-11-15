@@ -25,6 +25,9 @@ use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString};
 pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem};
 pub use server::{Exit, Server, ServerError};
 
+/// How long a clean exit waits for the stdio threads to finish.
+const IO_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The `lsp` subcommand.
 #[must_use]
 pub fn command() -> Command {
@@ -55,8 +58,17 @@ pub fn run(_matches: &ArgMatches) -> Result<Exit, RunError> {
     drop(connection);
     match served {
         Ok(exit) => {
-            io_threads.join().map_err(|e| RunError::Io(e.to_string()))?;
-            Ok(exit)
+            // A reading client gets everything flushed. A client that stopped reading
+            // blocks the stdout writer for good, so the wait is bounded and the process
+            // exits with the threads still blocked.
+            let (joined_tx, joined) = crossbeam_channel::bounded(1);
+            std::thread::spawn(move || {
+                let _ = joined_tx.send(io_threads.join());
+            });
+            match joined.recv_timeout(IO_WAIT) {
+                Ok(Err(e)) => Err(RunError::Io(e.to_string())),
+                Ok(Ok(())) | Err(_) => Ok(exit),
+            }
         }
         Err(e) => {
             // The reader thread blocks on standard input, which the client may keep open.
