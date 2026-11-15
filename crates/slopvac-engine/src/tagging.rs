@@ -159,7 +159,7 @@ impl View<'_> {
         let owners = self.owners.borrow();
         let mut extents: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
         let mut tags = Vec::with_capacity(index.tags().len());
-        for tag in index.tags() {
+        for (group, tag) in index.tags().iter().enumerate() {
             self.visits.set(self.visits.get() + 1);
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
@@ -179,19 +179,22 @@ impl View<'_> {
                 let from = run.start.max(tag.span.start);
                 let to = run.end.min(tag.span.end);
                 if from < to {
-                    pieces.push(Tag {
-                        span: from..to,
-                        ..tag.clone()
-                    });
+                    pieces.push((
+                        Tag {
+                            span: from..to,
+                            ..tag.clone()
+                        },
+                        group,
+                    ));
                 }
             }
             if pieces.is_empty() {
-                tags.push(tag.clone());
+                tags.push((tag.clone(), group));
             } else {
                 tags.extend(pieces);
             }
         }
-        TagIndex::from_tags(tags)
+        TagIndex::from_pieces(tags)
     }
 }
 

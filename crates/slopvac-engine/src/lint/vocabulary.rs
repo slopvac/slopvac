@@ -264,7 +264,16 @@ impl Run<'_> {
                 let range: Range<usize> = token.span.clone();
                 let span = unit.span(&range);
                 if skip.hides(span)
-                    || self.guarded_in(tags, doc, rule, &sweep.detectors, unit.text, &range, span)
+                    || self.guarded_in(
+                        tags,
+                        doc,
+                        rule,
+                        &sweep.detectors,
+                        unit.text,
+                        &range,
+                        span,
+                        &[],
+                    )
                     || self.suppressed(sweep.loaded.id().as_str(), &sweep.exceptions, span)
                 {
                     continue;
@@ -293,6 +302,7 @@ impl Run<'_> {
                     ai_signal: rule.ai_signal,
                     fix: None,
                     extra_context: None,
+                    covering: Vec::new(),
                 })?);
             }
         }

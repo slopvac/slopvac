@@ -42,6 +42,7 @@ fn interpreter() -> &'static Path {
         write(&dir.join("wrap-python"), json("table-wrap"));
         write(&dir.join("normative-python"), json("table-normative"));
         write(&dir.join("list-python"), json("table-list"));
+        write(&dir.join("section-python"), json("table-section"));
         write(&dir.join("quote-python"), json("table-quote"));
         write(
             &dir.join("planted/python3"),
@@ -275,6 +276,53 @@ fn a_quote_in_a_wrapped_cell_does_not_hide_the_cell_beside_it() {
         excluded_findings("table-quote", "quote-python", "quote", "Rightonly"),
         1
     );
+}
+
+#[test]
+fn a_match_across_the_line_break_of_a_wrapped_requirement_keeps_its_context() {
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("normative-python"));
+    let e = engine(&[rule(
+        "pat",
+        &json!({"kind": "pattern", "pattern": "must continue"}),
+        &json!({"contexts": {"only": ["requirement"]}}),
+    )])
+    .with_rst(options);
+    let doc = e.lint(&Input::rst("t.rst", &source)).unwrap();
+    // "must" ends line 2 of the left cell and "continue" starts line 3. Each word sits in
+    // a different line piece of the same requirement sentence.
+    assert_eq!(doc.findings.len(), 1);
+    assert!(
+        doc.findings[0]
+            .contexts
+            .iter()
+            .any(|c| c.as_str() == "requirement"),
+        "{:?}",
+        doc.findings[0].contexts
+    );
+}
+
+#[test]
+fn a_section_context_reaches_the_continuation_lines_of_a_wrapped_cell() {
+    let source = fs::read_to_string(format!("{FIXTURES}/table-section.rst")).unwrap();
+    let run = |token: &str| {
+        let mut options = RstOptions::default();
+        options.interpreter = Some(interpreter().with_file_name("section-python"));
+        engine(&[tokens(
+            "dull",
+            token,
+            &json!({"contexts": {"only": ["procedure"]}}),
+        )])
+        .with_rst(options)
+        .lint(&Input::rst("t.rst", &source))
+        .unwrap()
+        .findings
+        .len()
+    };
+    // "continues" is on the last line of the table, after the right cell ends.
+    assert_eq!(run("continues"), 1);
+    assert_eq!(run("Rightonly"), 1);
 }
 
 #[test]

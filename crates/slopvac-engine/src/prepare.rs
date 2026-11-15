@@ -36,6 +36,25 @@ impl Unit<'_> {
         self.base
     }
 
+    /// The source ranges a match is made of, given in bytes of `text`: one for each run of
+    /// source text its tokens cover. Text that reads in the source order has one, the span.
+    #[allow(clippy::single_range_in_vec_init)]
+    pub(crate) fn ranges(&self, range: &Range<usize>) -> Vec<Range<usize>> {
+        let (start, end) = (self.base + range.start, self.base + range.end);
+        match self.map {
+            Map::Projected(p) => {
+                let extents = p.extents_in_bytes(start, end);
+                if extents.is_empty() {
+                    let span = self.span(range);
+                    vec![span.start()..span.end()]
+                } else {
+                    extents.iter().map(|s| s.start()..s.end()).collect()
+                }
+            }
+            Map::Source => vec![start..end],
+        }
+    }
+
     /// The source span of a match, given in bytes of `text`.
     pub(crate) fn span(&self, range: &Range<usize>) -> Span {
         let (start, end) = (self.base + range.start, self.base + range.end);
@@ -135,11 +154,16 @@ impl<'a> Prepared<'a> {
                         continue;
                     }
                     if !first {
-                        projection.push_unordered(TokenKind::Wrap, " ", Span::empty(end));
+                        // The space between blocks bridges the source between them.
+                        projection.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
                     }
                     first = false;
-                    for token in tokens {
-                        projection.push_unordered(token.kind, &token.text, token.src);
+                    for (i, token) in tokens.iter().enumerate() {
+                        if block.projection.is_bridge(i) {
+                            projection.push_bridge(token.kind, &token.text, token.src);
+                        } else {
+                            projection.push_unordered(token.kind, &token.text, token.src);
+                        }
                         end = token.src.end();
                     }
                 }

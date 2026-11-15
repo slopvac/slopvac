@@ -131,6 +131,47 @@ impl Projection {
             .collect()
     }
 
+    /// Whether token `index` bridges source text that is not part of the projection.
+    #[must_use]
+    pub fn is_bridge(&self, index: usize) -> bool {
+        self.bridges.binary_search(&index).is_ok()
+    }
+
+    /// Like [`Self::extents`], for the tokens that overlap the projected bytes `start..end`:
+    /// the source ranges a match over those bytes is made of. A match over one run of
+    /// ordinary text has one range, its hull. A match across the line break of a wrapped table
+    /// cell has one range for each line, and not the cells in between.
+    #[must_use]
+    pub fn extents_in_bytes(&self, start: usize, end: usize) -> Vec<Span> {
+        let mut extents = Vec::new();
+        let mut current: Option<(usize, usize)> = None;
+        let mut at = 0;
+        for (i, token) in self.tokens.iter().enumerate() {
+            let (from, to) = (at, at + token.text.len());
+            at = to;
+            if from >= end {
+                break;
+            }
+            if to <= start {
+                continue;
+            }
+            if self.is_bridge(i) {
+                extents.extend(current.take());
+                continue;
+            }
+            if !token.kind.is_real() {
+                continue;
+            }
+            let (a, b) = (token.src.start(), token.src.end());
+            current = Some(current.map_or((a, b), |(x, y)| (x.min(a), y.max(b))));
+        }
+        extents.extend(current);
+        extents
+            .into_iter()
+            .map(|(a, b)| Span::new(a, b).expect("start <= end"))
+            .collect()
+    }
+
     /// The projected text.
     #[must_use]
     pub fn text(&self) -> &str {
@@ -232,6 +273,19 @@ mod tests {
         p.push_bridge(TokenKind::Collapse, " ", at(4, 30));
         p.push_unordered(TokenKind::Identity, "cd", at(30, 32));
         assert_eq!(p.extents(), [at(2, 4), at(30, 32)]);
+    }
+
+    #[test]
+    fn a_match_across_a_bridge_has_one_range_for_each_side() {
+        let mut p = Projection::new();
+        p.push(TokenKind::Identity, "ab", at(2, 4));
+        p.push_bridge(TokenKind::Collapse, " ", at(4, 30));
+        p.push_unordered(TokenKind::Identity, "cd", at(30, 32));
+        // "b c": the last byte of the first word, the bridge, the first byte of the second.
+        assert_eq!(p.extents_in_bytes(1, 4), [at(2, 4), at(30, 32)]);
+        // Inside one word the range is exact to the token.
+        assert_eq!(p.extents_in_bytes(3, 5), [at(30, 32)]);
+        assert_eq!(p.extents_in_bytes(0, 2), [at(2, 4)]);
     }
 
     #[test]

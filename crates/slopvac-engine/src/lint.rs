@@ -605,6 +605,16 @@ impl Engine {
     }
 }
 
+/// The context kinds that hold at a match: those of the tags that cover every source range it
+/// is made of, or the tags around its span when it has one range.
+fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Vec<&'t str> {
+    if covering.len() > 1 {
+        tags.kinds_covering(covering)
+    } else {
+        tags.kinds_at(&(span.start()..span.end()))
+    }
+}
+
 fn category_of(id: &RuleId) -> CategoryId {
     let local = id.local();
     CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
@@ -663,13 +673,16 @@ struct Candidate<'r> {
     ai_signal: AiSignal,
     fix: Option<Fix>,
     extra_context: Option<&'static str>,
+    /// The source ranges the match is made of, when it reads out of source order. Empty
+    /// means the span.
+    covering: Vec<Range<usize>>,
 }
 
 impl Run<'_> {
     fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
         let start = self.index.line_col(c.span.start())?;
         let end = self.index.line_col(c.span.end())?;
-        let mut kinds = self.tags.kinds_at(&(c.span.start()..c.span.end()));
+        let mut kinds = kinds_of(self.tags, c.span, &c.covering);
         if let Some(extra) = c.extra_context
             && !kinds.contains(&extra)
         {
@@ -768,8 +781,18 @@ impl Run<'_> {
         text: &str,
         range: &Range<usize>,
         span: Span,
+        covering: &[Range<usize>],
     ) -> bool {
-        self.guarded_in(self.tags, self.parsed, rule, detectors, text, range, span)
+        self.guarded_in(
+            self.tags,
+            self.parsed,
+            rule,
+            detectors,
+            text,
+            range,
+            span,
+            covering,
+        )
     }
 
     /// [`Self::guarded`] for text of another parse of the file, with that parse's context
@@ -784,10 +807,11 @@ impl Run<'_> {
         text: &str,
         range: &Range<usize>,
         span: Span,
+        covering: &[Range<usize>],
     ) -> bool {
         let gate = rule.contexts.as_ref();
         let kinds = if gate.is_some() || !detectors.is_empty() {
-            tags.kinds_at(&(span.start()..span.end()))
+            kinds_of(tags, span, covering)
         } else {
             Vec::new()
         };
@@ -847,7 +871,7 @@ impl Run<'_> {
                 // measurement has no unit to guard.
                 if let Some(unit) = &hit.unit
                     && (skip.hides(unit.span)
-                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span))
+                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span, &[]))
                 {
                     continue;
                 }
@@ -921,7 +945,8 @@ impl Run<'_> {
         if skip.hides(span) {
             return Ok(None);
         }
-        if self.guarded(rule, detectors, unit.text, range, span) {
+        let covering = unit.ranges(range);
+        if self.guarded(rule, detectors, unit.text, range, span, &covering) {
             return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
@@ -964,6 +989,7 @@ impl Run<'_> {
             ai_signal: rule.ai_signal,
             fix,
             extra_context: None,
+            covering,
         }))
     }
 
@@ -1119,6 +1145,7 @@ impl Run<'_> {
             ai_signal: AiSignal::None,
             fix: None,
             extra_context: Some(slopvac_diagrams::CONTEXT),
+            covering: Vec::new(),
         })
         .map(Some)
     }
@@ -1145,6 +1172,7 @@ impl Run<'_> {
                     ai_signal: AiSignal::None,
                     fix: None,
                     extra_context: None,
+                    covering: Vec::new(),
                 })
             })
             .collect()
