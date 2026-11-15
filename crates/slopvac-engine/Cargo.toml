@@ -34,7 +34,8 @@ slopvac-text = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 
-# O_NONBLOCK, the effective user id and ACL attributes for `fix_file`.
+# O_NONBLOCK, the effective user id and ACL attributes for `fix_file`; the process group
+# kill and the no-follow open for the changed-line scope.
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs", "process"] }
 

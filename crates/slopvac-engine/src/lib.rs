@@ -33,11 +33,13 @@
 //! dry run.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
-//! [`discover`] finds the files to lint.
+//! [`discover`] finds the files to lint. [`diff_scope`] finds the lines a branch or the
+//! work tree changed, to scope findings and fixes to them.
 
 mod capitalization;
 mod commit;
 mod diagrams;
+pub mod diff_scope;
 mod directives;
 pub mod discover;
 mod exceptions;
