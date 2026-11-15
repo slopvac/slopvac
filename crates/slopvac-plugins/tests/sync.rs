@@ -1282,6 +1282,11 @@ mod io_boundary {
         // A regular file where the tree directory belongs: verification calls it
         // tampered, and removing it as a directory fails with ENOTDIR.
         let trees = i.tree.parent().unwrap().to_owned();
+        // The tree is installed sealed (read-only); some systems refuse to move a
+        // read-only directory, so unseal it and its parent first.
+        for dir in [&i.tree, &trees] {
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).unwrap();
+        }
         fs::rename(&i.tree, trees.join("moved")).unwrap();
         fs::write(&i.tree, b"x").unwrap();
         let msg = sync_offline(&i).to_string();
