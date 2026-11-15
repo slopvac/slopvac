@@ -50,3 +50,63 @@
   description: Security guidance, threat models and policies. Declared, never detected.
   contexts: [security]
   prime: Name the control that enforces each guarantee. A guarantee with no mechanism is a claim.
+
+- id: ui-copy
+  description: UI strings, error messages and CLI help.
+  profile: normal
+  detect:
+    - { path: '(?:^|/)(?:ui-copy|ux-writing|microcopy|strings|messages)(?:/|[-_.])', weight: 3 }
+    - { frontmatter: { key: type, matches: '^ui-copy$' }, weight: 3 }
+  prime: Write the shortest text that tells the reader what happened and what to do next. Keep terms consistent across screens.
+
+- id: agent-instructions
+  extends: reference
+  description: Instructions for coding agents. Normative MUST and NEVER are allowed.
+  detect:
+    - { path: '(?:^|/)(?:agents|claude|gemini)\.md$', weight: 3 }
+    - { path: '(?:^|/)copilot-instructions\.md$', weight: 3 }
+    - { path: '(?:^|/)(?:\.cursor/rules|\.github/instructions)/', weight: 3 }
+  tolerances:
+    prose-craft.negative-requirement: off
+  prime: Give each instruction as a command with its reason. MUST, NEVER and exact commands are fine here.
+
+# Diataxis content types. Each one is a consumer genre. Compass: does the reader act or
+# study, and does the page serve learning or work? Tutorial = act + learn, how-to = act +
+# work, reference = study + work, explanation = study + learn. A page that serves two
+# quadrants should be split.
+- id: tutorial
+  extends: consumer
+  description: Diataxis tutorial. A guided lesson that ends in something the reader built.
+  detect:
+    - { path: '(?:^|/)tutorials?/', weight: 3 }
+    - { heading: '^\W*(?:what you.ll (?:learn|build)|next steps|step \d+)\b', weight: 1.5 }
+  tolerances:
+    prose-craft.future-tense: off
+  prime: Lead the reader through one outcome. Say what they will see at each step. Skip options and background.
+
+- id: how-to
+  extends: consumer
+  description: Diataxis how-to guide. Steps that solve one task for a reader who knows the basics.
+  detect:
+    - { path: '(?:^|/)how-?tos?/', weight: 3 }
+    - { heading: '^\W*how to\b', weight: 3 }
+  prime: Title it with the task. Give the steps and nothing else. Link out for background.
+
+- id: reference-page
+  extends: consumer
+  description: Diataxis reference. Neutral, complete description of the machinery.
+  detect:
+    - { path: '(?:^|/)cli/', weight: 3 }
+    - { heading: '^\W*(?:options|parameters|configuration|settings|fields)\W*$', weight: 1.5 }
+  prime: Describe, do not instruct. Keep the structure the same as the thing described.
+
+- id: explanation
+  extends: consumer
+  description: Diataxis explanation. Background, reasons and trade-offs.
+  detect:
+    - { path: '(?:^|/)(?:explanation|concepts?|background|architecture)/', weight: 3 }
+    - { heading: '^\W*(?:background|why|design|how it works)\b', weight: 1.5 }
+  tolerances:
+    prose-scope.contrastive-inversion-frames: off
+    prose-scope.contrastive-inversion-remainder: off
+  prime: Explain why. Contrast with alternatives is fine here. Do not slip in steps.

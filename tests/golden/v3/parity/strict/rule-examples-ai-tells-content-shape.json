@@ -1,0 +1,652 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 12,
+        "findings": 12,
+        "per_100_words": 8.333,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 12,
+        "findings": 12,
+        "gating_per_100_words": 8.333,
+        "over_budget": true,
+        "per_100_words": 8.333,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.694,
+        "over_budget": false,
+        "per_100_words": 1.389,
+        "score": 74.0,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 2.083,
+        "over_budget": true,
+        "per_100_words": 2.083,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 15,
+    "findings": [
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 26,
+        "end_column": 37,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "utm_source=",
+        "message": "damaged citation: utm_source= -- verify the reference and strip the tracking junk",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.fabricated-citations-core",
+        "severity": "error",
+        "span": {
+          "end": 36,
+          "start": 25
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "over 100+",
+        "message": "fake specificity: over 100+ -- give the number or drop the quantifier",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.fake-specificity",
+        "severity": "error",
+        "span": {
+          "end": 84,
+          "start": 75
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 1,
+        "end_column": 16,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "a wide range of",
+        "message": "fake specificity: a wide range of -- give the number or drop the quantifier",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.fake-specificity",
+        "severity": "error",
+        "span": {
+          "end": 132,
+          "start": 117
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "500+ integrations",
+        "message": "fake specificity: 500+ integrations -- give the number or drop the quantifier",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.fake-specificity",
+        "severity": "error",
+        "span": {
+          "end": 196,
+          "start": 179
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 31,
+        "end_column": 41,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": ", ensuring",
+        "message": "superficial -ing analysis: , ensuring -- state it as a fact, or delete it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.superficial-ing-analysis",
+        "severity": "error",
+        "span": {
+          "end": 274,
+          "start": 264
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 47,
+        "end_column": 57,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "is ignored",
+        "message": "Passive voice \"is ignored\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 345,
+          "start": 335
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 12,
+        "end_column": 21,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "serves as",
+        "message": "indirect verb: use 'is' instead of 'serves as'",
+        "replacement": "is",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 368,
+          "start": 359
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 21,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "is designed",
+        "message": "Passive voice \"is designed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 427,
+          "start": 416
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 10,
+        "end_column": 24,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "is designed to",
+        "message": "indirect verb: use '(write what it does)' instead of 'is designed to'",
+        "replacement": "(write what it does)",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 430,
+          "start": 416
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 11,
+        "end_column": 19,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "features",
+        "message": "indirect verb: use 'has' instead of 'features'",
+        "replacement": "has",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 487,
+          "start": 479
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 9,
+        "end_column": 15,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "offers",
+        "message": "indirect verb: use 'has' instead of 'offers'",
+        "replacement": "has",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 564,
+          "start": 558
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 20,
+        "end_column": 30,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "are listed",
+        "message": "Passive voice \"are listed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 611,
+          "start": 601
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 24,
+        "end_column": 36,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "listed below",
+        "message": "directional reference: use 'in the following section' instead of 'listed below', or link the heading by name",
+        "replacement": "in the following section",
+        "rule_id": "core:prose-craft.directional-ref",
+        "severity": "warning",
+        "span": {
+          "end": 617,
+          "start": 605
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "This release",
+        "message": "relative date: This release -- give the absolute date or version",
+        "replacement": null,
+        "rule_id": "core:prose-craft.relative-date",
+        "severity": "warning",
+        "span": {
+          "end": 632,
+          "start": 620
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 14,
+        "end_column": 24,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "represents",
+        "message": "indirect verb: use 'is' instead of 'represents'",
+        "replacement": "is",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 643,
+          "start": 633
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 11,
+        "end_column": 18,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "acts as",
+        "message": "indirect verb: use 'is' instead of 'acts as'",
+        "replacement": "is",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 750,
+          "start": 743
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 13,
+        "end_column": 29,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "plays a key role",
+        "message": "indirect verb: use '(say what it does)' instead of 'plays a key role'",
+        "replacement": "(say what it does)",
+        "rule_id": "core:ai-tells-content-shape.durable-vocabulary-habits",
+        "severity": "error",
+        "span": {
+          "end": 841,
+          "start": 825
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "15 error(s), limit 0",
+        "11.11 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "ai-tells-content-shape at 8.33 severity-weighted findings per 100 words, budget 0.2",
+        "ste-verbs at 2.08 severity-weighted findings per 100 words, budget 0.4"
+      ]
+    },
+    "paragraphs": 24,
+    "path": "rule-examples-ai-tells-content-shape.md",
+    "per_100_words": 11.806,
+    "profile": "strict",
+    "prose": {
+      "errors": 3,
+      "findings": 5,
+      "per_100_words": 3.472,
+      "warnings": 2
+    },
+    "score": 0.0,
+    "sentences": 25,
+    "suggestions": 0,
+    "total_findings": 17,
+    "unchecked": [],
+    "warnings": 2,
+    "words": 144
+  },
+  "exit_code": 1
+}

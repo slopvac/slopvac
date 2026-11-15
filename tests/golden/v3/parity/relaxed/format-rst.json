@@ -1,0 +1,544 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 80.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 92.5,
+        "suggestions": 3,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 97.5,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 6,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 47.5,
+        "suggestions": 1,
+        "warnings": 5
+      },
+      {
+        "budget": 1.0,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 1,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "orwell",
+        "column": 3,
+        "end_column": 9,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "robust",
+        "message": "\"robust\" evaluates without evidence. Add the number, or cut the word.",
+        "replacement": null,
+        "rule_id": "core:orwell.unsupported-evaluative",
+        "severity": "suggestion",
+        "span": {
+          "end": 35,
+          "start": 29
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 3,
+        "end_column": 9,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "robust",
+        "message": "slop lexicon: robust -- delete it or replace it with a measurable claim",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.slop-lexicon",
+        "severity": "warning",
+        "span": {
+          "end": 35,
+          "start": 29
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "orwell",
+        "column": 11,
+        "end_column": 24,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "comprehensive",
+        "message": "\"comprehensive\" evaluates without evidence. Add the number, or cut the word.",
+        "replacement": null,
+        "rule_id": "core:orwell.unsupported-evaluative",
+        "severity": "suggestion",
+        "span": {
+          "end": 50,
+          "start": 37
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 11,
+        "end_column": 24,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "comprehensive",
+        "message": "slop lexicon: comprehensive -- delete it or replace it with a measurable claim",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.slop-lexicon",
+        "severity": "warning",
+        "span": {
+          "end": 50,
+          "start": 37
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 41,
+        "end_column": 52,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "circle back",
+        "message": "Use \"return to this\" rather than \"circle back\".",
+        "replacement": "return to this",
+        "rule_id": "core:prose-discipline.phrasal-verb",
+        "severity": "suggestion",
+        "span": {
+          "end": 78,
+          "start": 67
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 41,
+        "end_column": 52,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "circle back",
+        "message": "business jargon: circle back -- use the plain verb",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.business-jargon",
+        "severity": "warning",
+        "span": {
+          "end": 78,
+          "start": 67
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "orwell",
+        "column": 60,
+        "end_column": 77,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "low-hanging fruit",
+        "message": "\"low-hanging fruit\" is a worn figure. State the fact it stands in for.",
+        "replacement": null,
+        "rule_id": "core:orwell.stale-figure",
+        "severity": "suggestion",
+        "span": {
+          "end": 103,
+          "start": 86
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 60,
+        "end_column": 77,
+        "end_line": 4,
+        "line": 4,
+        "matched_text": "low-hanging fruit",
+        "message": "business jargon: low-hanging fruit -- use the plain verb",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.business-jargon",
+        "severity": "warning",
+        "span": {
+          "end": 103,
+          "start": 86
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ai-residue",
+        "column": 4,
+        "end_column": 24,
+        "end_line": 8,
+        "line": 8,
+        "matched_text": "As of my last update",
+        "message": "chat-session leakage: As of my last update -- delete it, then audit the surrounding prose",
+        "replacement": null,
+        "rule_id": "core:ai-residue.chat-leakage",
+        "severity": "error",
+        "span": {
+          "end": 140,
+          "start": 120
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 15,
+        "end_column": 20,
+        "end_line": 10,
+        "line": 10,
+        "matched_text": "very ",
+        "message": "intensifier: very  -- delete it, or replace the adjective with a number",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.intensifier",
+        "severity": "suggestion",
+        "span": {
+          "end": 188,
+          "start": 183
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 26,
+        "end_column": 48,
+        "end_line": 10,
+        "line": 10,
+        "matched_text": "Not only fast but also",
+        "message": "additive hedge: Not only fast but also -- keep the claim that carries load",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.additive-hedge",
+        "severity": "warning",
+        "span": {
+          "end": 216,
+          "start": 194
+        }
+      }
+    ],
+    "gate": {
+      "passed": true,
+      "reasons": []
+    },
+    "paragraphs": 6,
+    "path": "format-rst.rst",
+    "per_100_words": 0.0,
+    "profile": "relaxed",
+    "prose": {
+      "errors": 1,
+      "findings": 11,
+      "per_100_words": 0.0,
+      "warnings": 5
+    },
+    "score": 17.5,
+    "sentences": 8,
+    "suggestions": 5,
+    "total_findings": 11,
+    "unchecked": [],
+    "warnings": 5,
+    "words": 42
+  },
+  "exit_code": 0
+}

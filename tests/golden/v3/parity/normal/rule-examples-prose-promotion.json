@@ -1,0 +1,720 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.316,
+        "over_budget": false,
+        "per_100_words": 2.532,
+        "score": 88.9,
+        "suggestions": 3,
+        "warnings": 1
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 11,
+        "findings": 11,
+        "gating_per_100_words": 6.962,
+        "over_budget": true,
+        "per_100_words": 6.962,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.633,
+        "over_budget": true,
+        "per_100_words": 1.266,
+        "score": 68.7,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.633,
+        "score": 98.4,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.633,
+        "score": 98.4,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.266,
+        "score": 96.8,
+        "suggestions": 2,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 11,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 13,
+        "end_column": 24,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "has emerged",
+        "message": "Complex verb construction \"has emerged\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 23,
+          "start": 12
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 13,
+        "end_column": 29,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "has emerged as a",
+        "message": "puffery: has emerged as a -- replace with the fact that would justify it",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-puffery",
+        "severity": "error",
+        "span": {
+          "end": 28,
+          "start": 12
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 13,
+        "end_column": 34,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "left a lasting impact",
+        "message": "puffery: left a lasting impact -- replace with the fact that would justify it",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-puffery",
+        "severity": "error",
+        "span": {
+          "end": 135,
+          "start": 114
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 34,
+        "end_column": 40,
+        "end_line": 7,
+        "line": 7,
+        "matched_text": "800 ms",
+        "message": "implementation leak: 800 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "warning",
+        "span": {
+          "end": 188,
+          "start": 182
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 44,
+        "end_column": 50,
+        "end_line": 7,
+        "line": 7,
+        "matched_text": "120 ms",
+        "message": "implementation leak: 120 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "warning",
+        "span": {
+          "end": 198,
+          "start": 192
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 21,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "is renowned",
+        "message": "Passive voice \"is renowned\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 221,
+          "start": 210
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 13,
+        "end_column": 29,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "renowned for its",
+        "message": "puffery: renowned for its -- replace with the fact that would justify it",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-puffery",
+        "severity": "error",
+        "span": {
+          "end": 229,
+          "start": 213
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 17,
+        "end_column": 36,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "continues to thrive",
+        "message": "puffery: continues to thrive -- replace with the fact that would justify it",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-puffery",
+        "severity": "error",
+        "span": {
+          "end": 327,
+          "start": 308
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 36,
+        "end_column": 37,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 366,
+          "start": 365
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 18,
+        "end_column": 27,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "data moat",
+        "message": "strategy buzzword: data moat -- describe the actual mechanism or advantage",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.strategy-buzzwords",
+        "severity": "error",
+        "span": {
+          "end": 426,
+          "start": 417
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 438,
+          "start": 429
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 58,
+        "end_column": 62,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "our ",
+        "message": "first-person plural: our  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "suggestion",
+        "span": {
+          "end": 490,
+          "start": 486
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 20,
+        "end_column": 35,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "growth flywheel",
+        "message": "strategy buzzword: growth flywheel -- describe the actual mechanism or advantage",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.strategy-buzzwords",
+        "severity": "error",
+        "span": {
+          "end": 538,
+          "start": 523
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 4,
+        "end_column": 24,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "intricate dependency",
+        "message": "promotional adjective: intricate dependency -- delete it, or give the measurement",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-adjective-noun",
+        "severity": "error",
+        "span": {
+          "end": 630,
+          "start": 610
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 8,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "This is",
+        "message": "unclear antecedent: This is -- name the noun the demonstrative points at",
+        "replacement": null,
+        "rule_id": "core:prose-craft.unclear-antecedent",
+        "severity": "suggestion",
+        "span": {
+          "end": 682,
+          "start": 675
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 11,
+        "end_column": 26,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "pivotal release",
+        "message": "promotional adjective: pivotal release -- delete it, or give the measurement",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-adjective-noun",
+        "severity": "error",
+        "span": {
+          "end": 700,
+          "start": 685
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "This release",
+        "message": "relative date: This release -- give the absolute date or version",
+        "replacement": null,
+        "rule_id": "core:prose-craft.relative-date",
+        "severity": "warning",
+        "span": {
+          "end": 715,
+          "start": 703
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 10,
+        "end_column": 19,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "showcases",
+        "message": "promotional verb: showcases -- use the direct verb",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-verbs",
+        "severity": "error",
+        "span": {
+          "end": 775,
+          "start": 766
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "suggestion",
+        "span": {
+          "end": 842,
+          "start": 839
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 4,
+        "end_column": 10,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "embark",
+        "message": "promotional verb: embark -- use the direct verb",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-verbs",
+        "severity": "error",
+        "span": {
+          "end": 848,
+          "start": 842
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-promotion",
+        "column": 10,
+        "end_column": 20,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "spearheads",
+        "message": "promotional verb: spearheads -- use the direct verb",
+        "replacement": null,
+        "rule_id": "core:prose-promotion.promotional-verbs",
+        "severity": "error",
+        "span": {
+          "end": 919,
+          "start": 909
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "11 error(s), limit 0",
+        "7.91 severity-weighted findings per 100 words, budget 3.0",
+        "score 20.7, minimum 70.0",
+        "prose-promotion at 6.96 severity-weighted findings per 100 words, budget 0.4",
+        "prose-scope at 0.63 severity-weighted findings per 100 words, budget 0.6"
+      ]
+    },
+    "paragraphs": 22,
+    "path": "rule-examples-prose-promotion.md",
+    "per_100_words": 13.291,
+    "profile": "normal",
+    "prose": {
+      "errors": 11,
+      "findings": 21,
+      "per_100_words": 13.291,
+      "warnings": 3
+    },
+    "score": 20.7,
+    "sentences": 22,
+    "suggestions": 7,
+    "total_findings": 21,
+    "unchecked": [],
+    "warnings": 3,
+    "words": 158
+  },
+  "exit_code": 1
+}

@@ -1,0 +1,768 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.179,
+        "over_budget": false,
+        "per_100_words": 0.358,
+        "score": 96.4,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 18,
+        "gating_per_100_words": 1.613,
+        "over_budget": true,
+        "per_100_words": 6.452,
+        "score": 47.6,
+        "suggestions": 9,
+        "warnings": 9
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.179,
+        "over_budget": false,
+        "per_100_words": 1.075,
+        "score": 94.6,
+        "suggestions": 2,
+        "warnings": 1
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.358,
+        "score": 99.1,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.358,
+        "score": 99.1,
+        "suggestions": 1,
+        "warnings": 0
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "This instruction has 30 words. Use twenty or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.sentence-too-long-procedural",
+        "severity": "warning",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 94,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "Open the client config, set the retry limit to five, set the backoff to two seconds, and then",
+        "message": "This step carries more than one instruction (\"Open the client config, set the retry limit to five, set the backoff to two seconds, and then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 93,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 158,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "Open the client config, set the retry limit to five, set the backoff to two seconds, and then restart every worker in the pool before you run the smoke test.",
+        "message": "The condition follows the command (\"Open the client config, set the retry limit to five, set the backoff to two seconds, and then restart every worker in the pool before you run the smoke test.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 157,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 33,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Delete the stale branch and then",
+        "message": "This step carries more than one instruction (\"Delete the stale branch and then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 332,
+          "start": 300
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 30,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "Edit the manifest and restart",
+        "message": "This step carries more than one instruction (\"Edit the manifest and restart\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 430,
+          "start": 401
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "The operator must",
+        "message": "This step is not in the imperative (\"The operator must\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 501,
+          "start": 484
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 19,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "It is necessary to",
+        "message": "This step is not in the imperative (\"It is necessary to\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 596,
+          "start": 578
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 20,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "It is necessary to ",
+        "message": "dead opener: It is necessary to  -- start the sentence with its real subject",
+        "replacement": null,
+        "rule_id": "core:prose-craft.dead-opener",
+        "severity": "warning",
+        "span": {
+          "end": 597,
+          "start": 578
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 35,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "Clear the cache before the import.",
+        "message": "The condition follows the command (\"Clear the cache before the import.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 667,
+          "start": 633
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "The token",
+        "message": "Missing article before \"The token\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 678,
+          "start": 669
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 17,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "The token should",
+        "message": "This step is not in the imperative (\"The token should\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 685,
+          "start": 669
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 11,
+        "end_column": 17,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "suggestion",
+        "span": {
+          "end": 685,
+          "start": 679
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 18,
+        "end_column": 28,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "be revoked",
+        "message": "Passive voice \"be revoked\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 696,
+          "start": 686
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 34,
+        "end_line": 23,
+        "line": 23,
+        "matched_text": "Revoke the token after the audit.",
+        "message": "The condition follows the command (\"Revoke the token after the audit.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 748,
+          "start": 715
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 61,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "Restart the worker if the queue depth is above one thousand.",
+        "message": "The condition follows the command (\"Restart the worker if the queue depth is above one thousand.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 810,
+          "start": 750
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 43,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "Clear the cache when the import completes.",
+        "message": "The condition follows the command (\"Clear the cache when the import completes.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 917,
+          "start": 875
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 46,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "Drain the queue before the worker shuts down.",
+        "message": "The condition follows the command (\"Drain the queue before the worker shuts down.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1009,
+          "start": 964
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "The worker",
+        "message": "Missing article before \"The worker\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 1021,
+          "start": 1011
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 91,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "For headless servers, configure the permissions required by the workload before it starts.",
+        "message": "The condition follows the command (\"For headless servers, configure the permissions required by the workload before it starts.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1152,
+          "start": 1062
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 48,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "Reconcile the ledger when the import completes.",
+        "message": "The condition follows the command (\"Reconcile the ledger when the import completes.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1289,
+          "start": 1242
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "NOTE: Always",
+        "message": "This note gives an instruction (\"NOTE: Always\"). A note only gives information.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.note-gives-instruction",
+        "severity": "warning",
+        "span": {
+          "end": 1353,
+          "start": 1341
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 43,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "Clear the cache before you run the import.",
+        "message": "The condition follows the command (\"Clear the cache before you run the import.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1440,
+          "start": 1398
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "NOTE: Do not",
+        "message": "This note gives an instruction (\"NOTE: Do not\"). A note only gives information.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.note-gives-instruction",
+        "severity": "warning",
+        "span": {
+          "end": 1499,
+          "start": 1487
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "score 68.6, minimum 70.0",
+        "ste-procedural at 1.61 severity-weighted findings per 100 words, budget 1.0"
+      ]
+    },
+    "paragraphs": 26,
+    "path": "rule-examples-ste-procedural.md",
+    "per_100_words": 8.602,
+    "profile": "normal",
+    "prose": {
+      "errors": 0,
+      "findings": 24,
+      "per_100_words": 8.602,
+      "warnings": 11
+    },
+    "score": 68.6,
+    "sentences": 32,
+    "suggestions": 13,
+    "total_findings": 24,
+    "unchecked": [],
+    "warnings": 11,
+    "words": 279
+  },
+  "exit_code": 1
+}

@@ -317,6 +317,26 @@ impl GenreRegistry {
         })
     }
 
+    /// Genres that extend `parent` and reach their detection threshold on this document,
+    /// best first. Two or more entries mean the page mixes content types, which the
+    /// mixed-type judgement rule asks a reviewer to split.
+    pub fn mixed_types(
+        &self,
+        doc: &dyn DocumentView,
+        parent: &str,
+    ) -> Result<Vec<(String, f32)>, Error> {
+        let mut out = Vec::new();
+        for (g, score, _) in self.score(doc)? {
+            let below_parent =
+                g.spec.id != parent && self.chain(&g.spec.id)?.iter().any(|s| s.id == parent);
+            if below_parent && score >= g.spec.threshold {
+                out.push((g.spec.id.clone(), score));
+            }
+        }
+        out.sort_by(|a, b| b.1.total_cmp(&a.1));
+        Ok(out)
+    }
+
     fn score<'a>(&'a self, doc: &dyn DocumentView) -> Result<Vec<Candidate<'a>>, Error> {
         let blocks = doc.blocks();
         let headings: Vec<&str> = blocks

@@ -1,0 +1,705 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 6,
+        "per_100_words": 0.166,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 6,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.166,
+        "score": 99.6,
+        "suggestions": 6,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.028,
+        "score": 99.9,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.0,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 2.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 14,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.387,
+        "score": 99.0,
+        "suggestions": 14,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": null,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 32,
+        "line": 32,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 1285,
+          "start": 1285
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 42,
+        "line": 42,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 1646,
+          "start": 1646
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 52,
+        "end_column": null,
+        "end_line": null,
+        "line": 55,
+        "matched_text": "a permission mode never grants",
+        "message": "negative guarantee: a permission mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 59,
+        "line": 59,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 2513,
+          "start": 2513
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 65,
+        "line": 65,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 2986,
+          "start": 2986
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 24,
+        "end_line": 123,
+        "line": 123,
+        "matched_text": "The server also refuses",
+        "message": "anthropomorphism: The server also refuses -- name the mechanism, not a mind",
+        "replacement": null,
+        "rule_id": "core:prose-agency.anthropomorphism",
+        "severity": "suggestion",
+        "span": {
+          "end": 5389,
+          "start": 5366
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 20,
+        "end_column": 45,
+        "end_line": 128,
+        "line": 128,
+        "matched_text": "A mode change never stops",
+        "message": "negative guarantee: A mode change never stops -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 5780,
+          "start": 5755
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 142,
+        "line": 142,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 6633,
+          "start": 6633
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 176,
+        "line": 176,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 7969,
+          "start": 7969
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 278,
+        "line": 278,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 13883,
+          "start": 13883
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 5,
+        "end_column": 24,
+        "end_line": 282,
+        "line": 282,
+        "matched_text": "A mode never grants",
+        "message": "negative guarantee: A mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 14203,
+          "start": 14184
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 298,
+        "line": 298,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 15301,
+          "start": 15301
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 307,
+        "line": 307,
+        "matched_text": "",
+        "message": "This sentence carries 7 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 15577,
+          "start": 15577
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 307,
+        "line": 307,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 15577,
+          "start": 15577
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 41,
+        "end_line": 320,
+        "line": 320,
+        "matched_text": "An allow-always decision never overrides",
+        "message": "negative guarantee: An allow-always decision never overrides -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 16139,
+          "start": 16099
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": null,
+        "end_line": null,
+        "line": 333,
+        "matched_text": "Later chat assent never starts",
+        "message": "negative guarantee: Later chat assent never starts -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": null,
+        "end_line": null,
+        "line": 456,
+        "matched_text": "A permission mode never grants",
+        "message": "negative guarantee: A permission mode never grants -- state what the component does, or name the hook, test, gate, or permission that stops it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.negative-guarantee-core",
+        "severity": "suggestion",
+        "span": null
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 460,
+        "line": 460,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 22304,
+          "start": 22304
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 474,
+        "line": 474,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 22697,
+          "start": 22697
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 508,
+        "line": 508,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 24656,
+          "start": 24656
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 529,
+        "line": 529,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "suggestion",
+        "span": {
+          "end": 25846,
+          "start": 25846
+        }
+      }
+    ],
+    "gate": {
+      "passed": true,
+      "reasons": []
+    },
+    "paragraphs": 68,
+    "path": "stacklok-before.md",
+    "per_100_words": 0.58,
+    "profile": "relaxed",
+    "prose": {
+      "errors": 0,
+      "findings": 15,
+      "per_100_words": 0.414,
+      "warnings": 0
+    },
+    "score": 98.6,
+    "sentences": 302,
+    "suggestions": 21,
+    "total_findings": 21,
+    "unchecked": [],
+    "warnings": 0,
+    "words": 3621
+  },
+  "exit_code": 0
+}
