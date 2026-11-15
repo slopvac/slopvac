@@ -25,10 +25,20 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 TEST = yaml.load((WORKFLOWS / "test.yml").read_text(), Loader=yaml.BaseLoader)
 CLASSES = yaml.safe_load((ROOT / ".github" / "ci-paths.yml").read_text())
 JOBS = TEST["jobs"]
+GATE_NEEDS = JOBS["gate"]["needs"]
 
 
 def load(name: str) -> dict:
     return yaml.load((WORKFLOWS / name).read_text(), Loader=yaml.BaseLoader)
+
+
+def test_every_path_class_is_a_changes_output_and_vice_versa():
+    assert set(JOBS["changes"]["outputs"]) - {"force_all"} == set(CLASSES)
+
+
+def test_gate_needs_every_job_except_itself_and_its_compat_shims():
+    shims = {"lint-gate-compat", "security-gate-compat"}
+    assert set(GATE_NEEDS) == set(JOBS) - {"gate"} - shims
 
 
 # --- path classes -----------------------------------------------------------
@@ -236,6 +246,10 @@ def test_pages_permissions_exist_only_on_the_main_deploy_job():
     assert "github.ref == 'refs/heads/main'" in condition
 
 
+def test_docs_deploy_runs_on_pushes_to_main():
+    assert load("docs-deploy.yml")["on"]["push"]["branches"] == ["main"]
+
+
 def test_docs_deploy_never_runs_on_pull_requests():
     assert "pull_request" not in load("docs-deploy.yml")["on"]
 
@@ -246,7 +260,6 @@ GATE_STEP = JOBS["gate"]["steps"][0]
 GATE_SCRIPT = re.search(
     r"python3 - <<'PY'\n(.*?)\nPY\n", GATE_STEP["run"], re.DOTALL
 ).group(1)
-GATE_NEEDS = JOBS["gate"]["needs"]
 FLAG_ENV = {
     "FORCE_ALL": "force_all",
     "CODE": "code",
