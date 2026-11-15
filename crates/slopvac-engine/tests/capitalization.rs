@@ -1,7 +1,11 @@
 //! The `capitalization` rule kind, in the sentence-case style: the 2.x `title-case-heading`
 //! logic. Expected results come from the 2.x pattern rule run on the same headings.
 
-#![allow(missing_docs, clippy::assert_is_empty)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 mod common;
 

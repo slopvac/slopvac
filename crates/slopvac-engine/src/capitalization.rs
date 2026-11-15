@@ -43,7 +43,7 @@ impl SentenceCase {
         let own = rule
             .allowed_words
             .iter()
-            .flat_map(|words| words.iter().map(|w| w.as_str()));
+            .flat_map(|words| words.iter().map(slopvac_model::NonEmptyString::as_str));
         let allowed = own
             .chain(extra.iter().map(String::as_str))
             .map(str::to_lowercase)
@@ -64,7 +64,7 @@ impl SentenceCase {
             }
         }
         let plain_after_first = tokens.iter().skip(1).any(|t| self.is_plain(t));
-        (capitalised >= 2 && plain_after_first).then(|| 0..text.len())
+        (capitalised >= 2 && plain_after_first).then_some(0..text.len())
     }
 
     /// Whether the token is `Word` with optional trailing punctuation, and not allowed.
