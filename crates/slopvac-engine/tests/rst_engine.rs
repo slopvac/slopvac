@@ -351,7 +351,7 @@ fn a_section_context_reaches_the_continuation_lines_of_a_wrapped_cell() {
 }
 
 #[test]
-fn an_rst_fix_is_refused_as_protected_until_literals_are_known() {
+fn an_rst_fix_edits_prose_through_the_engine_adapter() {
     let mut options = RstOptions::default();
     options.interpreter = Some(interpreter().with_file_name("fake-python"));
     let e = engine(&[rule(
@@ -365,14 +365,10 @@ fn an_rst_fix_is_refused_as_protected_until_literals_are_known() {
     let doc = e.lint(&input).unwrap();
     assert_eq!(doc.findings.len(), 1);
     assert!(doc.findings[0].fix.is_some());
-    let report = slopvac_engine::fix_document(&input, &doc, None).unwrap();
-    assert_eq!(report.applied, 0);
-    assert_eq!(report.text, source);
-    assert_eq!(report.skipped.len(), 1);
-    assert_eq!(
-        report.skipped[0].reason,
-        slopvac_engine::SkipReason::Protected
-    );
+    let report = slopvac_engine::fix_document(&e, &input, &doc, None).unwrap();
+    assert_eq!(report.applied, 1);
+    assert_eq!(report.text, source.replacen("installer", "tool", 1));
+    assert!(report.skipped.is_empty());
 }
 
 #[test]

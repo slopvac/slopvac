@@ -7,11 +7,7 @@ use std::collections::HashMap;
 
 use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
-use crate::{Dropped, Error, Options, RenameTable};
-
-/// The style preset that `--preserve-behavior` adds.
-// STUB(slopvac-8l4.16.6): fakes the preset id; the real one comes from slopvac-8l4.7.2.
-pub const STE_STYLE: &str = "core:ste";
+use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
     "max_total_per_100_words",
@@ -89,6 +85,7 @@ pub fn migrate_config(
             file: file.to_owned(),
         });
     }
+    let original = doc.clone();
     let mut cx = Cx {
         file,
         lines: &lines,
@@ -97,14 +94,21 @@ pub fn migrate_config(
         notes: Vec::new(),
     };
     migrate_scope(doc.as_table_mut(), "", Scope::Project, &mut cx);
+    if cx.dropped.is_empty() && options.preserve_behavior {
+        preserve_doc::apply(
+            &original,
+            &mut doc,
+            &mut preserve_doc::Ctx {
+                file,
+                lines: &lines,
+                renames,
+                dropped: &mut cx.dropped,
+                notes: &mut cx.notes,
+            },
+        )?;
+    }
     if cx.dropped.is_empty() {
         doc.insert("schema_version", value(3));
-        if options.preserve_behavior {
-            add_ste_style(&mut doc);
-            cx.notes.push(format!(
-                "added styles = [\"{STE_STYLE}\"] to keep the 2.x vocabulary behavior"
-            ));
-        }
         Ok(Rewrite {
             text: doc.to_string(),
             notes: cx.notes,
@@ -112,12 +116,6 @@ pub fn migrate_config(
     } else {
         Err(Error::Dropped(cx.dropped))
     }
-}
-
-fn add_ste_style(doc: &mut DocumentMut) {
-    let mut styles = Array::new();
-    styles.push(STE_STYLE);
-    doc.insert("styles", value(styles));
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -600,7 +598,11 @@ fn walk(t: &dyn TableLike, prefix: &str, text: &str, out: &mut HashMap<String, u
             Item::Value(Value::Array(arr)) => {
                 for (i, v) in arr.iter().enumerate() {
                     if let Some(it) = v.as_inline_table() {
-                        walk(it, &format!("{path}[{i}]"), text, out);
+                        let p = format!("{path}[{i}]");
+                        if let Some(span) = v.span() {
+                            out.insert(p.clone(), line_of(text, span.start));
+                        }
+                        walk(it, &p, text, out);
                     }
                 }
             }
