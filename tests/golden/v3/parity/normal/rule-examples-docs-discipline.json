@@ -1,0 +1,599 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 10,
+        "gating_per_100_words": 4.386,
+        "over_budget": true,
+        "per_100_words": 8.772,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 10
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.877,
+        "score": 97.8,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 2.632,
+        "score": 93.4,
+        "suggestions": 3,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 19,
+        "end_column": 28,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "is coming",
+        "message": "Complex verb construction \"is coming\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 27,
+          "start": 18
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 22,
+        "end_column": 33,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "coming soon",
+        "message": "status language: coming soon -- state what the artifact does at HEAD",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.status-language",
+        "severity": "warning",
+        "span": {
+          "end": 32,
+          "start": 21
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 20,
+        "end_column": 39,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "not yet implemented",
+        "message": "status language: not yet implemented -- state what the artifact does at HEAD",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.status-language",
+        "severity": "warning",
+        "span": {
+          "end": 107,
+          "start": 88
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 16,
+        "end_column": 21,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "draft",
+        "message": "status language: draft -- state what the artifact does at HEAD",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.status-language",
+        "severity": "warning",
+        "span": {
+          "end": 158,
+          "start": 153
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 15,
+        "end_column": 20,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "draft",
+        "message": "status language: draft -- state what the artifact does at HEAD",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.status-language",
+        "severity": "warning",
+        "span": {
+          "end": 264,
+          "start": 259
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 12,
+        "end_column": 32,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "was previously named",
+        "message": "Passive voice \"was previously named\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 325,
+          "start": 305
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 16,
+        "end_column": 26,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "previously",
+        "message": "history narration: previously -- deltas belong in change comms, not a doc body",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-narration",
+        "severity": "warning",
+        "span": {
+          "end": 319,
+          "start": 309
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 12,
+        "end_column": 30,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "no longer resolves",
+        "message": "history narration: no longer resolves -- state what the artifact does now; the delta belongs in change comms",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.no-longer-change",
+        "severity": "warning",
+        "span": {
+          "end": 398,
+          "start": 380
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 10,
+        "end_column": 31,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "is no longer required",
+        "message": "history narration: is no longer required -- state what the artifact does now; the delta belongs in change comms",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.no-longer-change",
+        "severity": "warning",
+        "span": {
+          "end": 465,
+          "start": 444
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 14,
+        "end_column": 29,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "no longer reads",
+        "message": "history narration: no longer reads -- state what the artifact does now; the delta belongs in change comms",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.no-longer-change",
+        "severity": "warning",
+        "span": {
+          "end": 519,
+          "start": 504
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 45,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "Stop polling when the run is no longer live.",
+        "message": "The condition follows the command (\"Stop polling when the run is no longer live.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 576,
+          "start": 532
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 15,
+        "end_column": 21,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "is set",
+        "message": "Passive voice \"is set\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 598,
+          "start": 592
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 22,
+        "end_column": 34,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "per the spec",
+        "message": "internal reference: per the spec -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "warning",
+        "span": {
+          "end": 611,
+          "start": 599
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 38,
+        "end_column": 44,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "specs/",
+        "message": "internal reference: specs/ -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "warning",
+        "span": {
+          "end": 621,
+          "start": 615
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "4.39 severity-weighted findings per 100 words, budget 3.0",
+        "score 50.4, minimum 70.0",
+        "docs-discipline at 4.39 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 18,
+    "path": "rule-examples-docs-discipline.md",
+    "per_100_words": 12.281,
+    "profile": "normal",
+    "prose": {
+      "errors": 0,
+      "findings": 14,
+      "per_100_words": 12.281,
+      "warnings": 10
+    },
+    "score": 50.4,
+    "sentences": 18,
+    "suggestions": 4,
+    "total_findings": 14,
+    "unchecked": [],
+    "warnings": 10,
+    "words": 114
+  },
+  "exit_code": 1
+}

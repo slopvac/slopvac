@@ -1,0 +1,14 @@
+schema_version = 3
+extends = ["core:plain"]
+conflicts = ["marketing"]
+
+[categories]
+ste-words = "error"
+"core:ai-residue" = "off"
+
+[rules]
+"core:ste-words.approved-verb" = "warning"
+
+[terms]
+allow = ["slopvac"]
+blocklists = ["blocklist.toml"]

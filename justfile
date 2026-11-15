@@ -17,6 +17,10 @@ release VERSION:
     run_url="$(gh workflow run publish-lint.yml --ref "$tag" -f dry-run=false -f target=pypi)"
     printf '%s\nRun waits for the pypi environment approval.\n' "$run_url"
 
+# Rewrite the Cargo.lock extra-files in release-please-config.json for every workspace crate.
+sync-release-please:
+    python3 scripts/sync_release_please_crates.py
+
 # Wait for a normal system load before measuring.
 perf-wait-idle:
     uv run --group profile python scripts/perf/perf.py wait-idle
@@ -122,3 +126,10 @@ eval-baseline:
     uv run python -m evals.build_derived --materialise --cache "$cache"
     uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
     uv run python -m evals baseline "$out/results.json" --out evals/baselines/python.json
+
+# Build the Starlight site into site/dist, then copy rustdoc to dist/api.
+docs-site:
+    uv run python scripts/docs/build_site.py --starlight site
+    cd site && npm ci && npm run build
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    rm -rf site/dist/api && cp -R target/doc site/dist/api

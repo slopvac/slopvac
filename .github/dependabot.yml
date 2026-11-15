@@ -10,11 +10,28 @@ updates:
       python-dependencies:
         patterns: ["*"]
         update-types: [minor, patch]
+  # One entry covers the whole workspace (root Cargo.toml and Cargo.lock).
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      rust-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     groups:
       actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    groups:
+      docs-site:
         patterns: ["*"]
         update-types: [minor, patch]

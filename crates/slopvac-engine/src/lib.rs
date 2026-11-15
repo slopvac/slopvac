@@ -32,6 +32,8 @@
 //! found, atomically and never over code, links or front matter. [`unified_diff`] renders a
 //! dry run.
 //!
+//! [`locale`] builds the generated spelling rule for en-US, en-GB or `und`.
+//!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint. [`diff_scope`] finds the lines a branch or the
 //! work tree changed, to scope findings and fixes to them.
@@ -46,6 +48,7 @@ mod exceptions;
 mod file;
 mod fix;
 mod lint;
+pub mod locale;
 mod matching;
 mod metrics;
 mod prepare;

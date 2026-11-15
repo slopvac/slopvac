@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::extract::ExtractError;
 use crate::lock::{LockDiff, PackId};
 use crate::oci::OciError;
+use crate::revoke::RevocationError;
 use crate::sign::SignError;
 
 /// Why a sync, status or check failed. Every variant makes the command exit 2
@@ -110,6 +111,18 @@ pub enum SyncError {
     /// The data directory could not be prepared or written.
     #[error("data directory: {}", esc(.0))]
     Store(String),
+    /// The revocation list names the pack's artifact or its signing key
+    /// (threat model K5).
+    #[error("pack `{id}`: {what} is on the revocation list")]
+    Revoked {
+        /// Pack id.
+        id: PackId,
+        /// What is revoked.
+        what: String,
+    },
+    /// The revocation list could not be fetched, verified or read from the cache.
+    #[error(transparent)]
+    Revocation(#[from] RevocationError),
     /// The resolved packs differ from the lock.
     #[error("the lock does not match the resolved packs:\n{0}")]
     LockMismatch(LockDiff),
@@ -134,6 +147,8 @@ impl SyncError {
             Self::Sign { .. } | Self::Unsigned { .. } | Self::SignatureDiffersFromLock { .. } => {
                 "signature-invalid"
             }
+            Self::Revoked { .. } => "pack-revoked",
+            Self::Revocation(e) => e.code(),
             _ => "sync-failed",
         }
     }

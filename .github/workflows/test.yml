@@ -97,6 +97,9 @@ jobs:
         working-directory: packages/slopvac-lint
         run: uvx ruff@0.16.3 check .
 
+      - name: Release-please crate entries
+        run: python3 scripts/sync_release_please_crates.py --check
+
       - name: Validate hook JSON
         run: |
           set -euo pipefail
@@ -281,6 +284,16 @@ jobs:
         env:
           MSRV: ${{ steps.msrv.outputs.version }}
 
+  rust-supply-chain:
+    name: Rust supply chain
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-supply-chain.yml
+    permissions:
+      contents: read
+
   # Full repository test discovery on the newest supported Python. The root
   # pytest configuration includes both package tests and any repository-level
   # tests, so new test directories cannot silently sit outside CI.
@@ -315,7 +328,8 @@ jobs:
           ast-grep --version
 
       - name: Install package and test dependencies
-        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]"
+        # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
+        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
       - name: Run every discovered pytest suite
         run: python3 -m pytest
@@ -393,7 +407,7 @@ jobs:
           import json
           payload = json.load(open("/tmp/rules.json"))
           kinds = [rule["kind"] for rule in payload["rules"]]
-          assert len(kinds) == 236
+          assert len(kinds) == 237
           assert kinds.count("judgement") == 68
           assert all(
               rule["judgement_question"]
@@ -495,6 +509,7 @@ jobs:
       - rust-static
       - rust
       - rust-msrv
+      - rust-supply-chain
       - lint-package
       - cli-e2e
       - action-contract
@@ -548,6 +563,7 @@ jobs:
               "rust-static": force_all or rust,
               "rust": force_all or rust,
               "rust-msrv": force_all or rust,
+              "rust-supply-chain": force_all or rust,
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,

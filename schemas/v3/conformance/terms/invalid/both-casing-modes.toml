@@ -1,0 +1,6 @@
+schema_version = 3
+
+[[terms]]
+term = "Go"
+ignore_case = true
+case_sensitive = true
