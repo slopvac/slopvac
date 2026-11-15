@@ -2,6 +2,20 @@ use crate::span::{LineCol, PositionError, Span};
 
 const BOM: &str = "\u{feff}";
 
+/// How many indexes have been built in this process. An index scans every byte of its text,
+/// so a test that counts builds shows whether a caller builds one per document or one per
+/// fragment.
+#[cfg(feature = "test-counters")]
+static INDEXES_BUILT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The number of [`SourceIndex`] values built so far in this process.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn indexes_built() -> usize {
+    INDEXES_BUILT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Unit of a column number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnUnit {
@@ -98,6 +112,8 @@ impl<'a> SourceIndex<'a> {
     /// Index `text`. Offsets are byte offsets into this exact string.
     #[must_use]
     pub fn new(text: &'a str, mode: BomMode) -> Self {
+        #[cfg(feature = "test-counters")]
+        INDEXES_BUILT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let bom_len = if text.starts_with(BOM) { BOM.len() } else { 0 };
         let first = if mode == BomMode::Disk { bom_len } else { 0 };
         let bytes = text.as_bytes();

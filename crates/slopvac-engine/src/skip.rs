@@ -98,7 +98,10 @@ pub(crate) fn build(
                 blocks_found.extend(blocks(doc, |k| matches!(k, BlockKind::CodeBlock { .. })));
             }
             ExcludeKind::Table => {
-                blocks_found.extend(blocks(doc, |k| matches!(k, BlockKind::Table)));
+                // An HTML table has cells but no table block, so the cells count too.
+                blocks_found.extend(blocks(doc, |k| {
+                    matches!(k, BlockKind::Table | BlockKind::TableCell { .. })
+                }));
             }
             ExcludeKind::CodeSpan => blocks_found.extend(doc.code_spans.iter().copied()),
             ExcludeKind::FrontMatter => blocks_found.extend(front_matter),
