@@ -17,11 +17,12 @@
 //!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
 //! kinds the engine does not run yet (metrics, structure checks, vocabulary and
-//! capitalization) are skipped, and each document says so in an `info` notice.
+//! capitalization styles other than sentence) are skipped, and each document says so in an `info` notice.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.
 
+mod capitalization;
 mod diagrams;
 mod directives;
 pub mod discover;
