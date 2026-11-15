@@ -1,0 +1,19 @@
+schema_version = 3
+id = "acme-docs"
+version = "1.2.0"
+slopvac_api = 1
+kind = "data"
+description = "House style for Acme documentation."
+license = "MIT"
+
+[provides]
+categories = ["categories/*.yml"]
+styles = ["styles/acme.toml"]
+genres = ["genres/how-to.toml"]
+terms = ["terms.toml"]
+taggers = ["taggers/requirement.toml"]
+prime = ["prime/write.md"]
+
+[[requires]]
+id = "core"
+version = ">=3.0, <4"

@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/pack-manifest.schema.json",
+  "title": "slopvac v3 pack manifest",
+  "description": "The slopvac-pack.toml file at the root of a pack. A data pack holds rules, styles, genres, terms, taggers and prime snippets, and no code. A plugin pack adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "id": {
+      "description": "Pack id. It prefixes every rule id the pack provides.",
+      "$ref": "common.schema.json#/$defs/PackId"
+    },
+    "version": {
+      "$ref": "#/$defs/Semver"
+    },
+    "slopvac_api": {
+      "description": "Pack and plugin extension API the pack was written for. A host that implements a lower version refuses the pack.",
+      "$ref": "common.schema.json#/$defs/ApiVersion"
+    },
+    "kind": {
+      "description": "data holds declarative files only and forbids a plugin table. plugin requires the plugin table. Either kind may provide data files.",
+      "enum": [
+        "data",
+        "plugin"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "description": "SPDX license expression.",
+      "type": "string",
+      "minLength": 1
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "provides": {
+      "$ref": "#/$defs/Provides"
+    },
+    "requires": {
+      "description": "Packs this pack needs. The host resolves them before it loads this one.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Requirement"
+      }
+    },
+    "plugin": {
+      "$ref": "#/$defs/Plugin"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "slopvac_api",
+    "kind"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "plugin"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "plugin"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "plugin"
+          ]
+        }
+      }
+    }
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Semver": {
+      "description": "Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no leading zeros.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+    },
+    "VersionReq": {
+      "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts.",
+      "type": "string",
+      "pattern": "^\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?(\\s*,\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?)*\\s*$"
+    },
+    "PackPath": {
+      "description": "A path inside the pack: relative, with forward slashes, and no .. segment. A glob is allowed.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))"
+    },
+    "PathList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PackPath"
+      },
+      "uniqueItems": true
+    },
+    "Provides": {
+      "description": "Files the pack contributes, as paths or globs inside the pack. Each path holds one artifact of the named kind, and the host validates it against that schema.",
+      "type": "object",
+      "properties": {
+        "categories": {
+          "description": "Category files (category.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "styles": {
+          "description": "Style files (style.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "genres": {
+          "description": "Genre files (genre.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "terms": {
+          "description": "Terms files (terms.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "taggers": {
+          "description": "Declarative tagger files (tagger.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "configs": {
+          "description": "Config files that a project may extend as <pack>:<name> (config.schema.json).",
+          "$ref": "#/$defs/PathList"
+        },
+        "prime": {
+          "description": "Markdown snippets that `slopvac prime` appends to a topic.",
+          "$ref": "#/$defs/PathList"
+        },
+        "blocklists": {
+          "description": "Word blocklist files (blocklist.schema.json).",
+          "$ref": "#/$defs/PathList"
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Requirement": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "version": {
+          "$ref": "#/$defs/VersionReq"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "Plugin": {
+      "description": "How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network, hooks, features) sit flat in this table, so the host reads them from the same bytes that it hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the hook entries and the features table: they take only the declared keys and x- keys, so the hashed bytes carry no unreviewed data.",
+      "allOf": [
+        {
+          "$ref": "plugin-protocol.schema.json#/$defs/PluginDeclaration"
+        }
+      ],
+      "properties": {
+        "command": {
+          "description": "Executable inside the pack, or a bare name that the plugin's own environment provides.",
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Names of environment variables the plugin may receive when the user allows them. Nothing else passes through.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "plugin-protocol.schema.json#/$defs/HookDecl",
+            "patternProperties": {
+              "^x-": {}
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "features": {
+          "type": "object",
+          "properties": {
+            "required": true,
+            "optional": true
+          },
+          "patternProperties": {
+            "^x-": {}
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "unevaluatedProperties": false
+    }
+  }
+}

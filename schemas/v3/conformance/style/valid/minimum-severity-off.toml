@@ -1,0 +1,5 @@
+schema_version = 3
+description = "Off floor"
+
+[categories.prose-scope]
+minimum_severity = "off"

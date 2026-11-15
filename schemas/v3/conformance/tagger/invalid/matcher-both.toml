@@ -1,0 +1,7 @@
+schema_version = 3
+id = "t"
+tag = "safety"
+
+[[match]]
+pattern = "x"
+words = ["y"]

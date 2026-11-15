@@ -1,0 +1,31 @@
+schema_version = 3
+id = "how-to"
+title = "How-to guide"
+extends = ["consumer"]
+profile = "normal"
+styles = ["ste"]
+
+[categories]
+ste-procedural = "warning"
+
+[detect]
+min_score = 2
+
+[[detect.signals]]
+kind = "path"
+glob = "**/how-to/**"
+weight = 2
+
+[[detect.signals]]
+kind = "front-matter"
+key = "type"
+equals = "how-to"
+
+[[detect.signals]]
+kind = "heading"
+pattern = '^(How to|Steps)\b'
+
+[[detect.signals]]
+kind = "text"
+pattern = '(?m)^\d+\.\s'
+weight = 0.5

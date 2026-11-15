@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/blocklist.schema.json",
+  "title": "slopvac v3 word blocklist",
+  "description": "A list of words a project refuses, each with a part of speech and a reason. The opt-in vocabulary check reads it; it is off unless `terms.blocklists` or `[vocabulary] path` names a file. The file may be TOML or JSON. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "entries"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Entry": {
+      "description": "One refused word. The word is trimmed and lower-cased on load. A word and part of speech pair appears once.",
+      "type": "object",
+      "properties": {
+        "word": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "pos": {
+          "description": "Part of speech. Short forms and spaCy-style tags load as their long form.",
+          "enum": [
+            "noun",
+            "verb",
+            "adjective",
+            "adverb",
+            "preposition",
+            "conjunction",
+            "pronoun",
+            "article",
+            "n",
+            "v",
+            "adj",
+            "adv",
+            "prep",
+            "adp",
+            "conj",
+            "cconj",
+            "sconj",
+            "pron",
+            "art",
+            "det"
+          ]
+        },
+        "reason": {
+          "description": "Why the word is refused. Required: an entry with no reason cannot be reviewed.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "replacement": {
+          "description": "A note on what to write instead.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "word",
+        "pos",
+        "reason"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}
