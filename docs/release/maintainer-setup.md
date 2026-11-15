@@ -1,6 +1,6 @@
 # Maintainer setup for candidates
 
-The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and token, the release-please App, `RULESET_READ_TOKEN`, the `v*` tag ruleset and immutable releases. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
+The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and token, the minisign secret and public key, the release-please App, `RULESET_READ_TOKEN`, the `v*` tag ruleset and immutable releases. Candidates also publish only after the public key is on `main`. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
 
 ## PyPI Trusted Publishing for candidates
 

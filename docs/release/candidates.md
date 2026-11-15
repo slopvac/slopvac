@@ -13,11 +13,11 @@ git push origin rc/v3.0.0-rc.1
 
 The `Release candidate` workflow (`.github/workflows/candidate.yml`) then runs these jobs:
 
-1. `validate` parses the tag and derives the versions: Cargo `X.Y.Z-rc.N` and PyPI `X.Y.ZrcN`. The tag reaches every script through an environment variable. For a publishing run it also requires the commit to be on `main` or a `release-please--` branch.
+1. `validate` parses the tag and derives the versions: Cargo `X.Y.Z-rc.N` and PyPI `X.Y.ZrcN`. The tag reaches every script through an environment variable. For a publishing run it also requires the commit to be on `main` or a `release-please--` branch, and requires `keys/slopvac-release.pub`.
 2. `evals` sets the Cargo version for that CI checkout only, so no commit carries it. It then runs the offline accuracy gate (`accuracy::` tests) and the migration end-to-end tests (`migration_e2e::`). Both use `--no-tests=fail`, so a suite that does not exist blocks the candidate.
 3. `wheels` calls `wheels.yml` for the maturin wheels, and `archives` builds the cargo-dist archives and checksums for the six release targets. The SBOM is a global cargo-dist artifact, so candidates leave it out.
 4. `publish` waits for approval in the `pypi` environment, then uploads `X.Y.ZrcN` to PyPI by Trusted Publishing. It runs only after `evals`, `wheels` and `archives` pass.
-5. `prerelease` attests the build provenance of the archives and wheels. It then creates an unpublished GitHub prerelease named after the tag, attaches the archives, checksums and wheels, and publishes it. With immutable releases on, a published release takes no new assets, so the assets go on first. Candidates get no Homebrew formula and no installers.
+5. `prerelease` attests the build provenance of the archives and wheels. It then signs the archives, checksums and wheels with minisign, as [distribution](distribution.md#signatures) describes. It creates an unpublished GitHub prerelease named after the tag, attaches the archives, checksums, wheels and `.minisig` files, and publishes it. With immutable releases on, a published release takes no new assets, so the assets go on first. Candidates get no Homebrew formula and no installers.
 
 The Cargo workspace version, the wheel version and the PyPI version come from the one tag. cargo-dist reads `X.Y.Z-rc.N` as a prerelease, so `dist plan` marks the announcement as a prerelease.
 
@@ -31,7 +31,7 @@ uv tool install --prerelease allow slopvac
 pip install --pre slopvac
 ```
 
-The first command pins one candidate. The other two take the newest release, candidates included. The GitHub prerelease also carries the archives for manual download. The `slopvac` binary does not check for candidates on its own.
+The first command pins one candidate. The other two take the newest release, candidates included. The GitHub prerelease also carries the archives for manual download, each with a `.minisig` file that [verifies](distribution.md#signatures) the same way as a stable release. The `slopvac` binary does not check for candidates on its own.
 
 ## Check without publishing
 

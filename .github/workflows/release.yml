@@ -364,6 +364,13 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          python3 scripts/release_signing.py sign artifacts
       - name: Upload the artifacts to the draft release
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}

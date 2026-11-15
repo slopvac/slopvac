@@ -452,3 +452,54 @@ def test_matrix_commands_keep_a_justified_zizmor_ignore_on_their_run_line(
     assert key_line.strip().startswith("run:")
     assert "# zizmor: ignore[template-injection]" in key_line
     assert "dist-workspace.toml" in key_line
+
+
+# --- minisign signing before the draft is published ----------------------------
+
+
+def _host_step_index(workflow, name: str) -> int:
+    steps = workflow["jobs"]["host"]["steps"]
+    return next(i for i, s in enumerate(steps) if s.get("name") == name)
+
+
+def test_artifacts_are_signed_after_cleanup_and_before_the_upload(workflow):
+    names = [s.get("name") for s in workflow["jobs"]["host"]["steps"]]
+    order = [
+        names.index(n)
+        for n in (
+            "Cleanup",
+            "Install minisign",
+            "Sign the release artifacts",
+            "Upload the artifacts to the draft release",
+            "Publish the release",
+        )
+    ]
+    assert order == sorted(order)
+
+
+def test_the_signed_directory_is_the_one_uploaded_to_the_release(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    sign = steps[_host_step_index(workflow, "Sign the release artifacts")]
+    upload = steps[
+        _host_step_index(workflow, "Upload the artifacts to the draft release")
+    ]
+    assert sign["run"].strip() == "python3 scripts/release_signing.py sign artifacts"
+    # The glob also takes the .minisig files written next to the artifacts.
+    assert 'gh release upload "$RELEASE_TAG" artifacts/*' in upload["run"]
+
+
+def test_the_signing_secret_is_in_the_signing_step_env_only(workflow):
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert text.count("MINISIGN_SECRET_KEY") == 2  # the env name and its secret
+    assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
+    steps = workflow["jobs"]["host"]["steps"]
+    holders = [s["name"] for s in steps if "MINISIGN_SECRET_KEY" in str(s)]
+    assert holders == ["Sign the release artifacts"]
+    assert "MINISIGN_PASSWORD" not in text
+
+
+def test_minisign_is_installed_by_the_pinned_script(workflow):
+    step = workflow["jobs"]["host"]["steps"][
+        _host_step_index(workflow, "Install minisign")
+    ]
+    assert step["run"] == "bash scripts/install_minisign.sh"

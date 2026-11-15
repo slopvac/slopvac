@@ -435,3 +435,45 @@ def test_the_wheel_guard_rejects_a_missing_directory(tmp_path):
     done = run_wheel_guard(tmp_path, None)
     assert done.returncode == 1
     assert "no wheels downloaded" in done.stderr
+
+
+# --- minisign signing of the candidate assets -----------------------------------
+
+
+def prerelease_names() -> list[str]:
+    return [s.get("name", s.get("uses")) for s in JOBS["prerelease"]["steps"]]
+
+
+def test_candidate_assets_are_signed_before_the_prerelease_is_created():
+    names = prerelease_names()
+    order = [
+        names.index(n)
+        for n in (
+            "Download archives and wheels",
+            "Install minisign",
+            "Sign the release artifacts",
+            "Create the prerelease",
+        )
+    ]
+    assert order == sorted(order)
+    assert "artifacts/*" in step("prerelease", "Create the prerelease")["run"]
+    signing = step("prerelease", "Sign the release artifacts")
+    assert signing["run"] == "python3 scripts/release_signing.py sign artifacts"
+
+
+def test_the_signing_secret_is_in_the_candidate_signing_step_env_only():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
+    holders = [
+        s["name"]
+        for s in JOBS["prerelease"]["steps"]
+        if "MINISIGN_SECRET_KEY" in str(s)
+    ]
+    assert holders == ["Sign the release artifacts"]
+    assert "MINISIGN_PASSWORD" not in text
+
+
+def test_a_publishing_run_requires_the_public_key_before_anything_is_built():
+    guard = step("validate", "Require the release public key")
+    assert guard["if"] == "${{ steps.mode.outputs.publish == 'true' }}"
+    assert guard["run"] == "python3 scripts/release_signing.py require-key"

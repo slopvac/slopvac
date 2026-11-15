@@ -78,6 +78,7 @@ _RELEASE_OLD = """\
           gh release edit "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
 """
 _RELEASE_NEW = """\
+{sign}\
       - name: Upload the artifacts to the draft release
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
@@ -93,6 +94,17 @@ _RELEASE_NEW = """\
           gh release edit "$RELEASE_TAG" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
 """
 _JOB_ENV = "      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+# Every published file gets a minisign signature before the upload, so the draft
+# never holds an unsigned asset. The secret reaches only the signing step.
+_SIGN_STEPS = """\
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          python3 scripts/release_signing.py sign artifacts
+"""
 _HOST_ENV = (
     "    env:\n"
     + _JOB_ENV
@@ -115,7 +127,7 @@ def harden(text: str) -> str:
     text = _replace_once(
         text,
         _RELEASE_OLD,
-        _RELEASE_NEW.replace("{verify}", _VERIFY_STEP),
+        _RELEASE_NEW.replace("{verify}", _VERIFY_STEP).replace("{sign}", _SIGN_STEPS),
         "release step",
     )
     # Every remaining `needs.plan.outputs.tag-flag` is a shell word in `dist ...`.
