@@ -25,7 +25,8 @@
     {
      "k": "i",
      "t": "the guide",
-     "raw": "`the guide`_"
+     "raw": "`the guide`_",
+     "lock": true
     },
     {
      "k": "t",

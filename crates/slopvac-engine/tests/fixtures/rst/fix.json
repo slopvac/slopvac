@@ -1,0 +1,210 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Fix delta"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "field_name",
+   "mark": true,
+   "start": 4,
+   "end": 4,
+   "text": "delta"
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "delta field"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Plain delta prose with "
+    },
+    {
+     "k": "c",
+     "t": "delta literal",
+     "raw": "``delta literal``"
+    },
+    {
+     "k": "t",
+     "t": ", a "
+    },
+    {
+     "k": "i",
+     "t": "delta guide",
+     "raw": "`delta guide`_",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": ", a "
+    },
+    {
+     "k": "i",
+     "t": "delta text",
+     "raw": "`delta text <https://example.com/delta>`_"
+    },
+    {
+     "k": "t",
+     "t": "\nlink, "
+    },
+    {
+     "k": "i",
+     "t": "delta role",
+     "raw": ":emphasis:`delta role`"
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "o",
+     "raw": "|delta|"
+    },
+    {
+     "k": "t",
+     "t": "."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 9,
+   "end": 9,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "See "
+    },
+    {
+     "k": "i",
+     "t": "https://example.com/delta",
+     "raw": "https://example.com/delta",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " for delta."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Also "
+    },
+    {
+     "k": "i",
+     "t": "delta shared",
+     "raw": "`delta shared <https://example.com/s>`_",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "i",
+     "t": "delta shared",
+     "raw": "`delta shared`_",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " name one target."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "substitution_definition",
+   "start": 15,
+   "end": 15,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "delta substitution"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "admonition",
+   "adm": "note",
+   "start": 19,
+   "end": 22,
+   "title": null,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 22,
+   "end": 22,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Note delta text."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "literal_block",
+   "code": true,
+   "start": 27,
+   "end": 27,
+   "text": "delta = 1",
+   "lang": "python",
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 28,
+   "end": 28,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Literal delta:"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "literal_block",
+   "code": true,
+   "start": 30,
+   "end": 30,
+   "text": "delta literal block",
+   "lang": null,
+   "containers": []
+  }
+ ]
+}

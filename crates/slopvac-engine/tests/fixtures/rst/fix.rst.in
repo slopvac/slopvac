@@ -1,0 +1,30 @@
+Fix delta
+=========
+
+:delta: delta field
+
+Plain delta prose with ``delta literal``, a `delta guide`_, a `delta text <https://example.com/delta>`_
+link, :emphasis:`delta role` and |delta|.
+
+See https://example.com/delta for delta.
+
+Also `delta shared <https://example.com/s>`_ and `delta shared`_ name one target.
+
+.. _delta guide: https://example.com/delta
+
+.. |delta| replace:: delta substitution
+
+.. delta comment
+
+.. note::
+   :class: delta
+
+   Note delta text.
+
+.. code-block:: python
+
+   delta = 1
+
+Literal delta::
+
+    delta literal block

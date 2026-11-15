@@ -315,6 +315,11 @@ impl Engine {
         self
     }
 
+    /// The adapter that reads RST files.
+    pub(crate) const fn rst_adapter(&self) -> &RstAdapter {
+        &self.rst
+    }
+
     /// Tell the engine where the project is: the repository and the targets of the run.
     /// An RST interpreter is never taken from inside these directories. Until they are
     /// given, no interpreter is found on `PATH` and RST files are an incomplete check.

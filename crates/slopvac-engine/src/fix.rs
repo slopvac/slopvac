@@ -21,9 +21,18 @@
 //! edits stay as they were.
 //!
 //! Comments in source code are not fixed yet: the engine lints Markdown, MDX, RST and
-//! diagrams only (slopvac-8l4.3.14 adds code comments). RST findings are reported with their
-//! fixes, but no fix is applied: each is refused as protected until the RST adapter can tell
-//! code and literals apart for this step.
+//! diagrams only (slopvac-8l4.3.14 adds code comments).
+//!
+//! # RST
+//!
+//! 2.x never fixed RST (its `--fix` rewrote Markdown, MDX and text only), so this is a 3.0
+//! addition. Only prose that the RST adapter placed word by word is fixed. Everything else
+//! is protected, including the code and literal blocks, directive markup and options,
+//! comments, link targets and `_target:` definitions, substitution definitions, roles,
+//! footnote and substitution references, field names, and any block the adapter could place
+//! only by line. Link text stays fixable except where it names the link's target (see
+//! [`crate::rst`]). The spans come from a second run of the docutils driver on the current
+//! source, so a missing interpreter is a [`FixError::Rst`], never a silent skip.
 
 use std::ops::RangeInclusive;
 
@@ -36,8 +45,9 @@ use slopvac_parse::{
     BlockKind, Document as Parsed, ParseError, mdx_syntax_spans, parse_markdown, parse_mdx,
 };
 
-use crate::lint::{EngineError, Input, Kind};
+use crate::lint::{Engine, EngineError, Input, Kind};
 use crate::protect::destinations;
+use crate::rst::RstError;
 
 /// Why a finding that carries a fix was left alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +56,8 @@ pub enum SkipReason {
     /// The text at the edit is not the text the finding matched: the document changed
     /// since the lint run.
     Stale,
-    /// The edit touches front matter, inline code or a code block.
+    /// The edit touches front matter, inline code, a code block or, in RST, anything but
+    /// plain prose words.
     Protected,
     /// A fix accepted earlier overlaps the edit.
     Overlap,
@@ -86,6 +97,9 @@ pub enum FixError {
     /// The source did not parse.
     #[error(transparent)]
     Parse(#[from] ParseError),
+    /// An RST file could not be read, so its code and link targets are unknown.
+    #[error("cannot tell the code and links of an RST file apart: {0}")]
+    Rst(#[from] RstError),
     /// The accepted edits did not apply. This is a bug: they were checked first.
     #[error(transparent)]
     Edit(#[from] EditError),
@@ -102,22 +116,24 @@ pub enum FixError {
     NotUtf8(String),
 }
 
-/// Fix the findings of `doc`, which was linted from `input`.
+/// Fix the findings of `doc`, which was linted from `input` by `engine`.
+///
+/// `engine` reads RST: its adapter finds the protected spans of the current source.
 ///
 /// `changed_lines` limits fixes to edits whose every line is in one of the one-based
 /// inclusive ranges, the shape a diff scope produces. `None` fixes everywhere.
 pub fn fix_document(
+    engine: &Engine,
     input: &Input<'_>,
     doc: &Document,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FixReport, FixError> {
-    // RST is not fixed yet: its code and literals are known only to the docutils run that
-    // linted it, so every fix is refused as protected rather than guessed.
-    let rst = input.kind == Kind::Rst;
-    let protected = if rst {
-        Vec::new()
-    } else {
+    let protected = if input.kind != Kind::Rst {
         protected_spans(input)?
+    } else if doc.findings.iter().any(|f| f.fix.is_some()) {
+        engine.rst_adapter().parse(input.source)?.protected
+    } else {
+        Vec::new()
     };
     let index = SourceIndex::new(input.source, input.bom);
     let mut edits: Vec<Edit> = Vec::new();
@@ -125,19 +141,15 @@ pub fn fix_document(
     let mut skipped = Vec::new();
     for finding in &doc.findings {
         let Some(fix) = &finding.fix else { continue };
-        let reason = if rst {
-            Some(SkipReason::Protected)
-        } else {
-            refusal(
-                finding,
-                fix.edits(),
-                input.source,
-                &index,
-                &protected,
-                &edits,
-                changed_lines,
-            )
-        };
+        let reason = refusal(
+            finding,
+            fix.edits(),
+            input.source,
+            &index,
+            &protected,
+            &edits,
+            changed_lines,
+        );
         if let Some(reason) = reason {
             skipped.push(Skipped {
                 rule_id: finding.rule_id.clone(),

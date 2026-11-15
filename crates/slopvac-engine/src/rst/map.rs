@@ -57,6 +57,9 @@ pub(super) struct Mapped {
     /// Bytes examined by every read of the source and of the driver output, charged or not.
     /// The budget caps the charged part; the rest is a small multiple of the input.
     pub(super) scanned: usize,
+    /// Source spans a fix must not touch: everything but the words of prose that were
+    /// placed exactly, and the markup, link targets and code inside those words.
+    pub(super) protected: Vec<Span>,
 }
 
 /// Map `nodes` into `source`. `bom` is the byte length of a leading byte order mark.
@@ -85,16 +88,29 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
     let mut code_spans = Vec::new();
     let mut unplaced: Vec<&str> = Vec::new();
     let mut line_precise = 0_usize;
+    // Where a fix may write, and spans inside it that it may not touch.
+    let mut allowed: Vec<Span> = Vec::new();
+    let mut locked: Vec<Span> = Vec::new();
     for node in nodes {
+        if node.mark {
+            locked.extend(mapper.mark(node));
+            continue;
+        }
         match mapper.block(node) {
             Outcome::Unplaced => unplaced.push(&node.tag),
             Outcome::Empty => {}
             Outcome::Block {
                 block,
                 codes,
+                locks,
                 precise,
             } => {
                 line_precise += usize::from(precise);
+                if block.projection.is_some() && !precise {
+                    allowed.push(block.span);
+                }
+                locked.extend(locks);
+                locked.extend(codes.iter().copied());
                 code_spans.extend(codes);
                 blocks.push(block);
             }
@@ -134,7 +150,28 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
         notices,
         work: mapper.m.work(),
         scanned: mapper.m.scanned(),
+        protected: protected(allowed, locked, source.len()),
     }
+}
+
+/// The spans a fix must not touch: `locked`, and every part of the `len`-byte source that
+/// is outside `allowed`. Directive markup, options, literal blocks, comments, targets,
+/// substitution definitions and every block that could not be placed exactly are in the
+/// second part, because only exactly placed prose is allowed.
+fn protected(mut allowed: Vec<Span>, mut locked: Vec<Span>, len: usize) -> Vec<Span> {
+    allowed.sort_by_key(Span::start);
+    let mut reached = 0;
+    for a in allowed {
+        if a.start() > reached {
+            locked.push(span(reached, a.start()));
+        }
+        reached = reached.max(a.end());
+    }
+    if reached < len {
+        locked.push(span(reached, len));
+    }
+    locked.sort_by_key(Span::start);
+    locked
 }
 
 /// The columns of a table border line.
@@ -202,6 +239,8 @@ enum Outcome {
     Block {
         block: Block,
         codes: Vec<Span>,
+        /// Spans inside the block that a fix must not touch.
+        locks: Vec<Span>,
         precise: bool,
     },
 }
@@ -211,6 +250,7 @@ struct Placed {
     projection: Projection,
     span: Span,
     codes: Vec<Span>,
+    locks: Vec<Span>,
     line_precise: bool,
 }
 
@@ -218,6 +258,7 @@ struct Placed {
 struct Attempt {
     toks: Vec<Tok>,
     codes: Vec<Span>,
+    locks: Vec<Span>,
 }
 
 struct Mapper<'a> {
@@ -230,6 +271,8 @@ struct Mapper<'a> {
     trims: HashMap<usize, Option<(usize, usize)>>,
     /// The table borders read so far, by line.
     borders: HashMap<usize, Border>,
+    /// For a line that starts with a field name, where the name ends.
+    names: HashMap<usize, usize>,
 }
 
 impl<'a> Mapper<'a> {
@@ -241,6 +284,7 @@ impl<'a> Mapper<'a> {
             memo: HashMap::new(),
             trims: HashMap::new(),
             borders: HashMap::new(),
+            names: HashMap::new(),
         }
     }
 
@@ -269,6 +313,7 @@ impl<'a> Mapper<'a> {
                 containers: containers.clone(),
             },
             codes: Vec::new(),
+            locks: Vec::new(),
             precise: false,
         };
         if node.table {
@@ -287,6 +332,7 @@ impl<'a> Mapper<'a> {
                     containers,
                 },
                 codes: Vec::new(),
+                locks: Vec::new(),
                 precise: false,
             };
         }
@@ -306,9 +352,14 @@ impl<'a> Mapper<'a> {
                 syntax: AdmonitionSyntax::Directive,
             }));
         }
-        let Some(placed) = self.place(node, lo, hi) else {
+        let after_name = node
+            .start
+            .and_then(|s| self.names.get(&s).copied())
+            .filter(|&end| lo < end && end <= hi);
+        let Some(mut placed) = self.place(node, after_name.unwrap_or(lo), hi) else {
             return Outcome::Empty;
         };
+        self.lock_borders(&mut placed);
         let kind = match (node.level, node.cell) {
             (Some(level), _) => BlockKind::Heading { level },
             (None, Some((row, column, _))) => BlockKind::TableCell { row, column },
@@ -322,8 +373,48 @@ impl<'a> Mapper<'a> {
                 containers,
             },
             codes: placed.codes,
+            locks: placed.locks,
             precise: placed.line_precise,
         }
+    }
+
+    /// Lock the whitespace tokens that hold more than whitespace: the border of a table
+    /// between the lines of a cell.
+    fn lock_borders(&mut self, placed: &mut Placed) {
+        for t in placed.projection.tokens() {
+            if matches!(t.kind, TokenKind::Collapse) && !t.src.is_empty() {
+                let text = self.src.slice_free(&mut self.m, t.src.start(), t.src.end());
+                if text.chars().any(|c| !c.is_whitespace()) {
+                    placed.locks.push(t.src);
+                }
+            }
+        }
+    }
+
+    /// The part of a field's first line that is its name, `:name:`. When the name cannot
+    /// be found there, the whole line is locked, which also locks the start of the body.
+    fn mark(&mut self, node: &Node) -> Option<Span> {
+        let line = node.start?;
+        if line == 0 || line > self.starts.len() {
+            return None;
+        }
+        let (from, to) = self.line_content(line)?;
+        if !self.m.exhausted() {
+            let text = self.line_text(line);
+            let lead = text.len() - text.trim_start().len();
+            let rest = &text[lead..];
+            let named = rest
+                .strip_prefix(':')
+                .and_then(|r| r.strip_prefix(node.text.as_str()))
+                .is_some_and(|r| r.starts_with(':'));
+            if named {
+                let at = self.starts[line - 1] + lead;
+                let end = at + 1 + node.text.len() + 1;
+                self.names.insert(line, end);
+                return Some(span(at, end));
+            }
+        }
+        Some(span(from, to))
     }
 
     /// Byte range of lines `first..=last` (1-based), without the final terminator.
@@ -487,13 +578,18 @@ impl<'a> Mapper<'a> {
                 projection,
                 span: shift(p.span),
                 codes: p.codes.into_iter().map(shift).collect(),
+                locks: p.locks.into_iter().map(shift).collect(),
                 line_precise: p.line_precise,
             }
         })
     }
 
     fn finish(done: Attempt) -> Option<Placed> {
-        let Attempt { mut toks, codes } = done;
+        let Attempt {
+            mut toks,
+            codes,
+            locks,
+        } = done;
         while toks
             .last()
             .is_some_and(|t| t.1.ends_with(char::is_whitespace))
@@ -518,6 +614,7 @@ impl<'a> Mapper<'a> {
             projection,
             span: span(lo, hi),
             codes,
+            locks,
             line_precise: false,
         })
     }
@@ -545,6 +642,7 @@ impl<'a> Mapper<'a> {
             projection,
             span: at,
             codes: Vec::new(),
+            locks: Vec::new(),
             line_precise: true,
         }
     }
@@ -603,6 +701,7 @@ impl<'a> Mapper<'a> {
         let mut out = Attempt {
             toks: Vec::new(),
             codes: Vec::new(),
+            locks: Vec::new(),
         };
         let mut cursor = lo;
         let mut first = true;
@@ -632,7 +731,11 @@ impl<'a> Mapper<'a> {
                         if first {
                             cursor = self.find_word_start(cursor, hi, &piece.t)?;
                         }
+                        let begin = cursor;
                         cursor = self.text(&piece.t, cursor, hi, &mut out.toks)?;
+                        if piece.lock {
+                            out.locks.push(span(begin, cursor));
+                        }
                         first = false;
                         continue;
                     }
@@ -649,8 +752,20 @@ impl<'a> Mapper<'a> {
                             push(&mut out.toks, (TokenKind::Masked, "\0".to_owned(), at));
                             out.codes.push(at);
                         }
-                        "i" => self.inline(piece, begin, end, &mut out.toks),
-                        _ => {}
+                        "i" => {
+                            let words = self.inline(piece, begin, end, &mut out.toks);
+                            if piece.lock || is_role(&piece.raw) {
+                                // The words name the target or belong to the role.
+                                out.locks.push(span(begin, end));
+                            } else if let Some((from, to)) = words {
+                                // Only the markup around the words is locked.
+                                out.locks.push(span(begin, from));
+                                out.locks.push(span(to, end));
+                            } else {
+                                out.locks.push(span(begin, end));
+                            }
+                        }
+                        _ => out.locks.push(span(begin, end)),
                     }
                     cursor = end;
                 }
@@ -661,7 +776,16 @@ impl<'a> Mapper<'a> {
     }
 
     /// Place the words of inline markup inside its own source text.
-    fn inline(&mut self, piece: &Piece, begin: usize, end: usize, toks: &mut Vec<Tok>) {
+    ///
+    /// Returns the source range of the words, or `None` when they stayed one opaque token
+    /// over the whole construct.
+    fn inline(
+        &mut self,
+        piece: &Piece,
+        begin: usize,
+        end: usize,
+        toks: &mut Vec<Tok>,
+    ) -> Option<(usize, usize)> {
         let raw = self.src.slice(&mut self.m, begin, end);
         let mut skip = 0;
         if raw.starts_with(':')
@@ -672,11 +796,18 @@ impl<'a> Mapper<'a> {
         skip += raw[skip..].len() - raw[skip..].trim_start_matches(['*', '`', '_']).len();
         let mut inner = Vec::new();
         if self.text(&piece.t, begin + skip, end, &mut inner).is_some() {
-            for tok in inner {
+            let real = || inner.iter().filter(|t| t.0.is_real());
+            let words = real()
+                .map(|t| t.2.start())
+                .min()
+                .zip(real().map(|t| t.2.end()).max());
+            for tok in inner.iter().cloned() {
                 push(toks, tok);
             }
+            words
         } else {
             push(toks, (TokenKind::Opaque, piece.t.clone(), span(begin, end)));
+            None
         }
     }
 
@@ -873,6 +1004,11 @@ impl<'a> Mapper<'a> {
         flush(toks, &mut run, run_start, p);
         Some(p)
     }
+}
+
+/// Whether the inline construct is written with a role, before or after its text.
+fn is_role(raw: &str) -> bool {
+    raw.starts_with(':') || (raw.ends_with(':') && raw.contains('`'))
 }
 
 /// Push a token. Whitespace that follows whitespace, or opens the list, is dropped.
