@@ -79,7 +79,7 @@ fn base_topic_fits_its_word_budget_at_every_level() {
     let minimal = words(&render(None, Level::Minimal));
     let default = words(&render(None, Level::Default));
     let full = words(&render(None, Level::Full));
-    assert!(default <= 250, "default base is {default} words");
+    assert!(default <= 260, "default base is {default} words");
     assert!(
         minimal < default && default < full,
         "{minimal} {default} {full}"
@@ -224,5 +224,24 @@ fn prime_migrate_prints_the_migration_guide_from_its_one_source() {
             text,
             "the guide has one level"
         );
+    }
+}
+
+#[test]
+fn diagrams_topic_is_indexed_and_names_every_supported_format() {
+    assert!(render(None, Level::Default).contains("- `diagrams`: "));
+    let text = render(Some("diagrams"), Level::Default);
+    assert!(text.starts_with("# Prime: diagrams"));
+    for needle in [
+        "experimental",
+        "slopvac lint <paths>",
+        ".mmd",
+        ".puml",
+        ".drawio",
+        ".drawio.svg",
+        ".drawio.png",
+        ".excalidraw",
+    ] {
+        assert!(text.contains(needle), "{needle}");
     }
 }
