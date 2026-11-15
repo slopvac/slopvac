@@ -27,6 +27,16 @@ pub struct Globals {
 /// The flags are global, so they count before or after the subcommand.
 #[must_use]
 pub fn resolve_globals(matches: &ArgMatches, env: &dyn Env) -> Globals {
+    resolve_globals_with(matches, env, None)
+}
+
+/// Like [`resolve_globals`], with the project `[network] offline` value.
+#[must_use]
+pub fn resolve_globals_with(
+    matches: &ArgMatches,
+    env: &dyn Env,
+    config_offline: Option<bool>,
+) -> Globals {
     let flag = if matches.get_flag("no-color") {
         Some(ColorChoice::Never)
     } else {
@@ -35,7 +45,7 @@ pub fn resolve_globals(matches: &ArgMatches, env: &dyn Env) -> Globals {
             .and_then(|v| ColorChoice::parse(v))
     };
     Globals {
-        offline: offline::resolve(matches.get_flag("offline"), env, None),
+        offline: offline::resolve(matches.get_flag("offline"), env, config_offline),
         color: color::resolve(flag, env),
     }
 }
@@ -86,10 +96,17 @@ where
     T: Into<OsString>,
 {
     let tree = cli::command();
-    let args = cli::insert_default_command(args.into_iter().map(Into::into).collect(), &tree);
-    if is_version_json(&args) {
-        let flag = args.iter().any(|a| a == "--offline");
-        let rt = update_runtime(env, offline::resolve(flag, env, None));
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let policy =
+        slopvac_update::policy::network_policy(&std::env::current_dir().unwrap_or_default());
+    let config_offline = policy.offline.then_some(true);
+    // `--version --json` is read before the default `lint` command is inserted.
+    if let Some(flag) = version_json_offline_flag(&args) {
+        let rt = update_runtime(
+            env,
+            offline::resolve(flag, env, config_offline),
+            policy.update_check,
+        );
         return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
             Ok(code) => exit::code(code),
             Err(failure) => {
@@ -98,6 +115,7 @@ where
             }
         };
     }
+    let args = cli::insert_default_command(args, &tree);
     let early_color = color::resolve(scan_color_flag(&args), env);
     let tree = tree.color(if early_color {
         clap::ColorChoice::Always
@@ -132,14 +150,14 @@ where
             };
         }
     };
-    let globals = resolve_globals(&matches, env);
+    let globals = resolve_globals_with(&matches, env, config_offline);
     logging::init(env, globals.color);
     tracing::debug!(
         offline = globals.offline,
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, globals, env, out, err_out) {
+    match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -151,13 +169,14 @@ where
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
+    update_check: Option<bool>,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("self", m)) => {
-            let rt = update_runtime(env, globals.offline);
+            let rt = update_runtime(env, globals.offline, update_check);
             let text = slopvac_update::command::run(m, &rt)
                 .map_err(|f| CliError::new(f.code, f.message))?;
             write_stdout(out, text.as_bytes())
@@ -220,22 +239,36 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Whether the arguments ask for `--version --json` and nothing else but global flags.
-fn is_version_json(args: &[OsString]) -> bool {
-    let tokens: Vec<&str> = args.iter().skip(1).filter_map(|a| a.to_str()).collect();
-    tokens.len() + 1 == args.len()
-        && tokens.iter().any(|t| matches!(*t, "--version" | "-V"))
-        && tokens.contains(&"--json")
-        && tokens.iter().all(|t| {
-            matches!(
-                *t,
-                "--version" | "-V" | "--json" | "--offline" | "--no-color"
-            )
-        })
+/// For `--version --json` with only global flags around it, whether `--offline` was among them.
+///
+/// Returns `None` for any other invocation. The flags may come in any order.
+fn version_json_offline_flag(args: &[OsString]) -> Option<bool> {
+    let (mut version, mut json, mut offline) = (false, false, false);
+    let mut tokens = args.iter().skip(1).map(|a| a.to_str());
+    while let Some(token) = tokens.next() {
+        match token? {
+            "--version" | "-V" => version = true,
+            "--json" => json = true,
+            "--offline" => offline = true,
+            "--no-color" => {}
+            "--color" => {
+                ColorChoice::parse(tokens.next()??)?;
+            }
+            t if t
+                .strip_prefix("--color=")
+                .is_some_and(|v| ColorChoice::parse(v).is_some()) => {}
+            _ => return None,
+        }
+    }
+    (version && json).then_some(offline)
 }
 
 /// Build the update runtime from the injected environment.
-fn update_runtime(env: &dyn Env, offline: bool) -> slopvac_update::command::Runtime {
+fn update_runtime(
+    env: &dyn Env,
+    offline: bool,
+    update_check: Option<bool>,
+) -> slopvac_update::command::Runtime {
     let vars: std::collections::HashMap<&'static str, String> = slopvac_update::command::ENV_VARS
         .iter()
         .filter_map(|name| env.var(name).map(|v| (*name, v)))
@@ -243,7 +276,7 @@ fn update_runtime(env: &dyn Env, offline: bool) -> slopvac_update::command::Runt
     slopvac_update::command::Runtime::with_var(
         offline,
         env!("CARGO_PKG_VERSION"),
-        None,
+        update_check,
         Box::new(move |k| vars.get(k).cloned()),
     )
 }

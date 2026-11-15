@@ -145,15 +145,19 @@ impl Cache {
 
     /// Store an entry. The caller may ignore the error.
     pub fn write(&self, entry: &Entry) -> std::io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(
-            &tmp,
-            serde_json::to_vec(entry).map_err(std::io::Error::other)?,
+        let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(dir)?;
+        // A unique temp file per writer, renamed over the target: readers see the old or the new
+        // entry, never a mix, and writers never share a file.
+        let mut tmp = tempfile::Builder::new()
+            .prefix(".update-check-")
+            .tempfile_in(dir)?;
+        std::io::Write::write_all(
+            &mut tmp,
+            &serde_json::to_vec(entry).map_err(std::io::Error::other)?,
         )?;
-        std::fs::rename(&tmp, &self.path)
+        tmp.persist(&self.path).map_err(|e| e.error)?;
+        Ok(())
     }
 
     /// Path of the cache file.
@@ -542,6 +546,34 @@ mod tests {
         assert_eq!(keys, want);
         assert_eq!(v["code"], "update-available");
         assert_eq!(v["level"], "info");
+    }
+
+    #[test]
+    fn overlapping_writers_never_corrupt_or_leave_temp_files() {
+        let (dir, cache) = cache();
+        let cache = Arc::new(cache);
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let cache = cache.clone();
+                std::thread::spawn(move || {
+                    for round in 0..10 {
+                        cache
+                            .write(&entry(i * 100 + round, &format!("3.{i}.{round}")))
+                            .expect("write");
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let last = cache.read().expect("parsable after the race");
+        assert!(last.latest.starts_with("3."));
+        let files: Vec<_> = std::fs::read_dir(dir.path().join("c"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(files, ["update-check.json"]);
     }
 
     #[test]

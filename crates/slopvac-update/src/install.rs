@@ -132,6 +132,68 @@ fn has_pair(names: &[String], first: &str, second: &str) -> bool {
     names.windows(2).any(|w| w[0] == first && w[1] == second)
 }
 
+/// Resolve `.` and `..` without touching the file system.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Find the wheel that installed `exe` from its installation metadata.
+///
+/// A user (`~/.local`) or system (`/usr/local`) pip install puts the binary in a plain `bin`
+/// directory. The wheel's `slopvac-*.dist-info` under `<prefix>/lib*/python*/site-packages` names
+/// it in `RECORD` (paths relative to `site-packages`) and names the installer in `INSTALLER`.
+fn dist_info_tool(exe: &Path) -> Option<WheelTool> {
+    let prefix = exe.parent()?.parent()?;
+    let exe = lexical_normalize(exe);
+    for lib in ["lib", "lib64"] {
+        let Ok(pythons) = std::fs::read_dir(prefix.join(lib)) else {
+            continue;
+        };
+        for python in pythons.flatten() {
+            if !python.file_name().to_string_lossy().starts_with("python") {
+                continue;
+            }
+            let site = python.path().join("site-packages");
+            let Ok(entries) = std::fs::read_dir(&site) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !(name.starts_with("slopvac-") && name.ends_with(".dist-info")) {
+                    continue;
+                }
+                let record =
+                    std::fs::read_to_string(entry.path().join("RECORD")).unwrap_or_default();
+                let lists_exe = record.lines().any(|line| {
+                    let first = line.split(',').next().unwrap_or_default();
+                    lexical_normalize(&site.join(first)) == exe
+                });
+                if !lists_exe {
+                    continue;
+                }
+                let installer =
+                    std::fs::read_to_string(entry.path().join("INSTALLER")).unwrap_or_default();
+                return Some(if installer.trim() == "uv" {
+                    WheelTool::Uv
+                } else {
+                    WheelTool::Pip
+                });
+            }
+        }
+    }
+    None
+}
+
 fn wheel_tool(exe: &Path) -> Option<WheelTool> {
     let n = names(exe);
     if has_pair(&n, "uv", "tools") {
@@ -141,6 +203,9 @@ fn wheel_tool(exe: &Path) -> Option<WheelTool> {
         .any(|c| matches!(c.as_str(), "archive-v0" | "builds-v0" | "environments-v2"))
     {
         return Some(WheelTool::Uvx);
+    }
+    if let Some(tool) = dist_info_tool(exe) {
+        return Some(tool);
     }
     let venv = exe.parent().and_then(Path::parent);
     if venv.is_some_and(|v| v.join("pyvenv.cfg").is_file())
@@ -334,6 +399,50 @@ mod tests {
         assert_eq!(
             detect(&tmp.path().join("bin/slopvac"), &|_: &str| None),
             InstallMethod::Wheel(WheelTool::Pip)
+        );
+    }
+
+    #[test]
+    fn pip_user_and_system_installs_are_found_through_dist_info() {
+        // The scripts directory has no venv and no `site-packages` component, so only the wheel
+        // metadata ties the binary to pip. `.local` is a user install, `usr/local` a system one.
+        for (prefix, installer, want) in [
+            (".local", "pip\n", WheelTool::Pip),
+            ("usr/local", "pip\n", WheelTool::Pip),
+            (".local", "uv\n", WheelTool::Uv),
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path().join(prefix);
+            let info = root.join("lib/python3.13/site-packages/slopvac-3.0.0.dist-info");
+            std::fs::create_dir_all(&info).unwrap();
+            std::fs::write(info.join("INSTALLER"), installer).unwrap();
+            std::fs::write(
+                info.join("RECORD"),
+                "slopvac-3.0.0.dist-info/METADATA,sha256=x,10\n../../../bin/slopvac,sha256=y,99\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("bin")).unwrap();
+            let exe = root.join("bin/slopvac");
+            assert_eq!(
+                detect(&exe, &|_: &str| None),
+                InstallMethod::Wheel(want),
+                "{prefix} {installer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dist_info_that_does_not_list_the_binary_does_not_claim_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let info = tmp
+            .path()
+            .join("lib/python3.13/site-packages/slopvac-3.0.0.dist-info");
+        std::fs::create_dir_all(&info).unwrap();
+        std::fs::write(info.join("INSTALLER"), "pip\n").unwrap();
+        std::fs::write(info.join("RECORD"), "../../../bin/other,sha256=y,99\n").unwrap();
+        assert_eq!(
+            detect(&tmp.path().join("bin/slopvac"), &|_: &str| None),
+            InstallMethod::Unknown
         );
     }
 

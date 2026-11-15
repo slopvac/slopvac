@@ -5,6 +5,7 @@
 //! - [`notice`]: the 24-hour cache, the policy that decides whether a check may run, and the
 //!   [`Notice`](notice::Notice) that `prime`, JSON `notices` and `--version --json` show.
 //! - [`install`]: which channel installed this binary, and so which command upgrades it.
+//! - [`policy`]: the project `[network]` settings (a stub until the config layer lands).
 //! - [`pipeline`]: download, verify, extract, replace. Verification is its own step
 //!   ([`verify::ArtifactVerifier`]) and runs before anything touches the installed binary.
 //! - [`command`]: the clap subtree and the `self update` entry point.
@@ -18,6 +19,7 @@ pub mod fetch;
 pub mod install;
 pub mod notice;
 pub mod pipeline;
+pub mod policy;
 pub mod verify;
 
 /// GitHub repository that publishes releases.
