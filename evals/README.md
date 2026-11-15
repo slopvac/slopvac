@@ -61,3 +61,42 @@ uv run pytest tests/test_evals_manifest.py
 ```
 
 The tests need no network. They validate the schema, committed hashes, attribution, and the generator output.
+
+## Run the evals
+
+The harness lints the corpus with an engine, stores the findings, and scores them. An engine is any command that accepts `lint <paths> --format json`. `python` selects the Python reference. After cutover, pass the Rust binary.
+
+```sh
+just eval-run python evals/.cache/results/a.json        # tier 1: run an engine
+just eval-score evals/.cache/results/a.json holdout     # tier 2: offline re-score
+just eval-ab a.json b.json                              # paired A/B between two runs
+```
+
+The runner stages each document in a temporary directory with the right extension (`.md`, `.rst`, `.txt`, or a source suffix linted with `--mode code-comments`) and runs the engine from there. Committed `.corpus` files and the repository's own config therefore never reach the engine. A format the engine cannot read, such as diagrams in the Python reference, goes to `skipped` in the results with a reason. A run that exits 2 but prints a report keeps its findings, and the results count the unchecked rules per document.
+
+The runner reads committed documents first, then derived documents in `cache/docs`, then model twins in `cache/twins`. Run `python -m evals.fetch` and `python -m evals.build_derived --materialise` to fill the cache. Model twins with status `pending` are skipped.
+
+### Results
+
+A results file holds the engine name, command and version, the manifest hash, and the findings per document (rule, line, severity). The offline tier needs only that file and the manifest, so CI can re-score stored outputs without a Vale install or an engine build.
+
+### Scorecard
+
+`score` reports, for each rule and for a split (`all`, `tuning` or `holdout`):
+
+- `recall`: seeded defects and adjudicated true positives where the rule fires within one line. `seeded_recall` and `adjudicated_recall` show the two parts. An adjudicated positive that the engine does not report counts as a miss. Pass `--labels evals/labels/labels.jsonl` to include them.
+- `precision`: adjudicated findings labelled true over all labelled findings, with `--labels`.
+- `control_fpr`: clean-control sentences where the rule fires within one line.
+- `human_per_100_words`: findings on pre-2022 human text, a floor on false positives.
+
+Each rate carries a Wilson interval and a bootstrap interval that resamples whole documents. Findings in one document are correlated, so the document is the unit of resampling.
+
+`score` and `ab` refuse results recorded against a different manifest (exit 2), and `ab` refuses arms that cover different documents.
+
+### Splits
+
+A document lands in `holdout` or `tuning` by a hash of its root parent, about 20% holdout. Seeded documents, controls, rewrite pairs and twins follow their parent, so no held-out text reaches rule tuning.
+
+### A/B
+
+`ab` resamples documents once and scores both arms on each draw. The interval is for B minus A. It lists a rule as a regression when the interval for recall falls below zero, or the interval for control false positives or human findings rises above zero.

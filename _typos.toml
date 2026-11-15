@@ -30,6 +30,8 @@ extend-exclude = [
 #   (?:tion|sion|ment|ness|...)   nominalisation suffixes
 #   (?:ise|ize|yse|yze)           the -ise/-ize locale pair
 ment = "ment"
+# `control_fpr` is the false-positive-rate key in eval scorecards.
+fpr = "fpr"
 ness = "ness"
 ful = "ful"
 ist = "ist"
