@@ -85,6 +85,7 @@ impl Identity {
 }
 
 #[cfg(unix)]
+#[allow(clippy::unnecessary_wraps)]
 fn identity(_: &File, meta: &Metadata) -> std::io::Result<Identity> {
     use cap_std::fs::MetadataExt;
     Ok(Identity {
@@ -131,6 +132,7 @@ fn named_identity(meta: &Metadata) -> Identity {
 }
 
 #[cfg(unix)]
+#[allow(clippy::unnecessary_wraps)]
 fn link_count(_: &File, meta: &Metadata) -> std::io::Result<u64> {
     use cap_std::fs::MetadataExt;
     Ok(meta.nlink())
