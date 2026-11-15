@@ -2388,6 +2388,7 @@ dependencies = [
  "ignore",
  "insta",
  "saphyr",
+ "serde",
  "serde_json",
  "strsim",
  "tempfile",
