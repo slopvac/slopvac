@@ -11,7 +11,7 @@ expected value from Rust code. The fixture holds:
 
 * ``settings``: the levels, category weights and budgets and thresholds that 2.x resolved, so
   the Rust engine applies them as plain data. A rule of a kind the Rust engine does not run
-  yet (metric, structure, vocabulary) is ``off`` here and excluded from the
+  yet (structure, vocabulary, and the metrics in ``METRICS``) is ``off`` here and excluded from the
   Python run through ``Engine(only=...)``.
 * ``documents``: the frozen texts (categories without findings are left out), in the 3.0 directive form (``rule=core:<id>``), and the
   findings (rule, line, column, severity, matched text), counts and scores for each.
@@ -38,6 +38,28 @@ ROOT = HERE.parents[3]
 FIXTURE = HERE / "engine-parity.json"
 
 LEXICAL = {RuleKind.TOKENS, RuleKind.PATTERN, RuleKind.SUBSTITUTION}
+
+# The metrics the Rust engine measures (slopvac-8l4.3.9). A metric finding has a line and
+# no column or range, so the fixture records its end column as 0.
+METRICS = {
+    "sentence_words",
+    "clause_boundaries",
+    "lead_in_words",
+    "paragraph_sentences",
+    "enumerating_paragraph_words",
+    "multiword_noun_words",
+    "coordinated_items",
+    "adjectives_per_noun",
+    "consecutive_bold_colon_bullets",
+    "bold_spans_per_1000_words",
+    "dash_per_1000_words",
+}
+
+
+def runs_in_rust(rule) -> bool:
+    return rule.kind in LEXICAL or (
+        rule.kind is RuleKind.METRIC and rule.metric in METRICS
+    )
 
 PROSE_SOURCES = [
     "README.md",
@@ -96,6 +118,32 @@ SAMPLES = {
         "## **Bold** Getting Started\n\n## Install The Plugin, Then Run\n\n"
         "Setext Heading Wraps Over\nTwo Lines\n=====\n\nConfigure The Server\n"
     ),
+    "sample/metrics-sentences": (
+        "# Limits\n\n"
+        "Open the valve and check that the pressure gauge reads the value that the plan names, "
+        "then close the valve and record the reading in the log for the shift.\n\n"
+        "The container orchestration platform migration strategy covers every deployment, "
+        "and the monitoring plan, which the team wrote, lists all alerts; however, nobody "
+        "reviewed it, so the rollout waits, and the owners disagree on the schedule.\n\n"
+        "The plan names the valves, the gauges, the pumps, and the filters of the plant: "
+        "the shift lead checks them before each run on the line today.\n\n"
+        "We ship alpha, beta, gamma, and delta. We test red, green, blue, and amber. "
+        "We fix one, two, three, and four. We note a or b.\n"
+    ),
+    "sample/metrics-paragraphs": (
+        "One. Two. Three. Four. Five. Six. Seven.\n\n"
+        "- One. Two. Three. Four. Five. Six. Seven.\n\n"
+        "> One. Two. Three. Four. Five. Six. Seven.\n"
+    ),
+    "sample/metrics-markup": (
+        "---\ntitle: a — b — c\n---\n\n"
+        "# Dashes\n\n"
+        "This is useful — very useful — and so is this -- really -- and this — too — now.\n\n"
+        "**Bold one** and **bold two** and __bold three__ appear in a short text.\n\n"
+        "```text\n**code bold** — dash\n```\n\n"
+        "- **Speed:** fast.\n- **Cost**: low.\n- __Risk:__ small.\n\n- **Reach:** wide.\n"
+        "- **Plain** none.\n"
+    ),
     "sample/crlf": "# Title\r\n\r\nWe utilize the tool\r\nin order to leverage it.\r\n\r\nSecond utilize paragraph.\r\n",
     "sample/entities": (
         "We &amp; they utilize the tool; in&nbsp;order to win we leverage **bold utilize** "
@@ -112,7 +160,7 @@ def load():
 
 def in_scope(rules, config):
     engine = Engine(rules.rules, config)
-    return [r for r in engine.rules if r.kind in LEXICAL], engine
+    return [r for r in engine.rules if runs_in_rust(r)], engine
 
 
 def settings(rules, config):
@@ -202,7 +250,7 @@ def expect(rules, config, name: str, text: str) -> dict:
                 "rule": f"core:{f.rule_id}",
                 "line": f.line,
                 "column": f.column,
-                "end_column": end_column(f),
+                "end_column": end_column(f) or 0,
                 "severity": f.severity.value,
                 # The 3.0 form of a directive carries the pack, so the text a finding quotes does.
                 "matched": f.matched_text.replace("rule=", "rule=core:")
@@ -264,7 +312,7 @@ def main() -> None:
     scope, _ = in_scope(rules, config)
     docs = corpus(rules, scope)
     FIXTURE.write_text(render(rules, config, docs), encoding="utf-8")
-    print(f"{len(docs)} documents, {len(scope)} lexical rules")
+    print(f"{len(docs)} documents, {len(scope)} rules")
 
 
 if __name__ == "__main__":

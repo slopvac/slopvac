@@ -15,9 +15,13 @@
 //! [`Engine::lint_all`] runs many inputs with rayon and keeps their order. Output is
 //! deterministic: findings sort by position and rule id.
 //!
+//! Metric rules measure a sentence, a paragraph or the document and report a finding with a
+//! line and no source range, as 2.x did.
+//!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (metrics, structure checks, vocabulary and
-//! capitalization styles other than sentence) are skipped, and each document says so in an `info` notice.
+//! kinds the engine does not run yet (structure checks, vocabulary, capitalization styles
+//! other than sentence and the metrics it does not measure) are skipped, and each document
+//! says so in an `info` notice.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.
@@ -29,6 +33,7 @@ pub mod discover;
 mod exceptions;
 mod lint;
 mod matching;
+mod metrics;
 mod prepare;
 mod score;
 mod settings;

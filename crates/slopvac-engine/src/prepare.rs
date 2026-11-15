@@ -91,6 +91,11 @@ impl<'a> Prepared<'a> {
         })
     }
 
+    /// The blocks with prose, in document order.
+    pub(crate) fn blocks(&self) -> &[ProseBlock<'a>] {
+        &self.blocks
+    }
+
     /// Words in the sentences of every prose block.
     pub(crate) fn words(&self) -> usize {
         self.blocks
