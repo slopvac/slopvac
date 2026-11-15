@@ -205,9 +205,16 @@
             "$ref": "#/$defs/RuleLevel"
           },
           "max_per_100_words": {
-            "description": "Density budget; above it the category fails even with no error finding.",
-            "type": "number",
-            "minimum": 0
+            "description": "Density budget; above it the category fails even with no error finding. The string none clears a budget that a lower layer set, so the category has no budget.",
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "const": "none"
+              }
+            ]
           },
           "weight": {
             "description": "Multiplier on this category's share of the score. 0 makes it informational.",
