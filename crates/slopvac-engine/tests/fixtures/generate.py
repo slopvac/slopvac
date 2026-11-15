@@ -11,7 +11,7 @@ expected value from Rust code. The fixture holds:
 
 * ``settings``: the levels, category weights and budgets and thresholds that 2.x resolved, so
   the Rust engine applies them as plain data. A rule of a kind the Rust engine does not run
-  yet (structure, vocabulary, capitalization, and the metrics in ``METRICS``) is ``off`` here and excluded from the
+  yet (structure, vocabulary, and the metrics in ``METRICS``) is ``off`` here and excluded from the
   Python run through ``Engine(only=...)``.
 * ``documents``: the frozen texts (categories without findings are left out), in the 3.0 directive form (``rule=core:<id>``), and the
   findings (rule, line, column, severity, matched text), counts and scores for each.
@@ -105,6 +105,18 @@ SAMPLES = {
         "Shown utilize text.\n\n"
         "```md\n<!-- slopvac-disable -->\n```\n\nStill utilize here.\n\n"
         "Write `<!-- slopvac-disable -->` to stop.\n\nAnd utilize again.\n"
+    ),
+    # Title-case headings against the identifiers, code and small words that 2.x lets pass.
+    # The Rust engine runs `ai-tells-formatting.title-case-heading` as the native
+    # `capitalization` kind; this sample checks that kind against the 2.x pattern.
+    "sample/headings": (
+        "# Configure The Server\n\n## Getting started\n\n## Use the TypeScript SDK\n\n"
+        "## Implement EventLog\n\n## Getting Started With gRPC\n\n## Set Up macOS\n\n"
+        "## Using The `--json` Flag\n\n## Using The JSON Flag\n\n"
+        "## Step 1: Check Replication Lag\n\n## Hello World v2\n\n"
+        "## Hello World 2.0 Release\n\n## Foo-Bar Baz\n\n## Tips & Tricks For You\n\n"
+        "## **Bold** Getting Started\n\n## Install The Plugin, Then Run\n\n"
+        "Setext Heading Wraps Over\nTwo Lines\n=====\n\nConfigure The Server\n"
     ),
     "sample/metrics-sentences": (
         "# Limits\n\n"
