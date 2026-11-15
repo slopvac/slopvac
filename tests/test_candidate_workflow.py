@@ -89,6 +89,7 @@ def test_each_job_asks_for_the_least_it_needs():
         "evals": {"contents": "read"},
         "wheels": {"contents": "read"},
         "archives": {"contents": "read"},
+        "sign": {"contents": "read"},
         "publish": {"id-token": "write"},
         "prerelease": {
             "contents": "write",
@@ -101,7 +102,13 @@ def test_each_job_asks_for_the_least_it_needs():
 def test_publishing_waits_for_the_pypi_environment_and_every_build():
     publish = JOBS["publish"]
     assert publish["environment"]["name"] == "pypi"
-    assert set(publish["needs"]) == {"validate", "evals", "wheels", "archives"}
+    assert set(publish["needs"]) == {
+        "validate",
+        "evals",
+        "wheels",
+        "archives",
+        "sign",
+    }
     assert publish["if"] == "${{ needs.validate.outputs.publish == 'true' }}"
     assert set(JOBS["prerelease"]["needs"]) >= {"publish", "wheels", "archives"}
 
@@ -440,34 +447,38 @@ def test_the_wheel_guard_rejects_a_missing_directory(tmp_path):
 # --- minisign signing of the candidate assets -----------------------------------
 
 
-def prerelease_names() -> list[str]:
-    return [s.get("name", s.get("uses")) for s in JOBS["prerelease"]["steps"]]
-
-
-def test_candidate_assets_are_signed_before_the_prerelease_is_created():
-    names = prerelease_names()
+def test_candidate_assets_are_signed_in_a_job_that_gates_the_pypi_upload():
+    names = [s.get("name") for s in JOBS["sign"]["steps"]]
     order = [
         names.index(n)
         for n in (
             "Download archives and wheels",
             "Install minisign",
             "Sign the release artifacts",
-            "Create the prerelease",
+            "Upload signatures",
         )
     ]
     assert order == sorted(order)
-    assert "artifacts/*" in step("prerelease", "Create the prerelease")["run"]
-    signing = step("prerelease", "Sign the release artifacts")
+    signing = step("sign", "Sign the release artifacts")
     assert signing["run"] == "python3 scripts/release_signing.py sign artifacts"
+    # Signing must finish before the irreversible PyPI upload and the prerelease.
+    assert "sign" in JOBS["publish"]["needs"]
+    assert "sign" in JOBS["prerelease"]["needs"]
+    assert JOBS["sign"]["if"] == "${{ needs.validate.outputs.publish == 'true' }}"
+
+
+def test_the_prerelease_attaches_the_signatures_without_the_secret():
+    download = step("prerelease", "Download archives and wheels")
+    assert download["with"]["pattern"] == "{archive,wheels,signatures}-*"
+    assert "artifacts/*" in step("prerelease", "Create the prerelease")["run"]
+    assert "MINISIGN" not in str(JOBS["prerelease"])
 
 
 def test_the_signing_secret_is_in_the_candidate_signing_step_env_only():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
     holders = [
-        s["name"]
-        for s in JOBS["prerelease"]["steps"]
-        if "MINISIGN_SECRET_KEY" in str(s)
+        s["name"] for s in JOBS["sign"]["steps"] if "MINISIGN_SECRET_KEY" in str(s)
     ]
     assert holders == ["Sign the release artifacts"]
     assert "MINISIGN_PASSWORD" not in text

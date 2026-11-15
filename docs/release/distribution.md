@@ -41,8 +41,8 @@ How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
 - `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
-- The `host` job signs in `release.yml`, and the `prerelease` job signs in `candidate.yml`. Both sign before they upload to the unpublished release, so a published release holds no unsigned asset.
-- The step fails closed. Without the public key file or the secret, the job stops before it uploads. `candidate.yml` also checks for the key in `validate`, before the PyPI upload that cannot be undone. The wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub release.
+- The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
+- The step fails closed. Without the public key file or the secret, the job stops before it uploads. `candidate.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
 
 To rotate the key, generate a new pair, replace the `MINISIGN_SECRET_KEY` secret, and commit the new public key in the same change. Releases already published keep verifying against the key that signed them, so keep the old public key under `keys/` with its key id in the file name, and record the change in the release notes.
 

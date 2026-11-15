@@ -179,10 +179,6 @@ def test_require_key_exits_nonzero_without_the_public_key(tmp_path):
 # --- the real minisign binary ------------------------------------------------
 
 MINISIGN = shutil.which(os.environ.get("MINISIGN_REAL", "minisign"))
-needs_minisign = pytest.mark.skipif(
-    MINISIGN is None,
-    reason="minisign is not installed (mise install provides it)",
-)
 
 
 def generate_key(tmp_path: Path) -> tuple[Path, Path]:
@@ -195,11 +191,16 @@ def generate_key(tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.fixture
 def real(monkeypatch, tmp_path):
-    monkeypatch.setenv("MINISIGN", MINISIGN or "minisign")
+    if MINISIGN is None:
+        message = "minisign is not installed (mise install provides it)"
+        # CI installs the pinned binary, so a missing one is a broken install, not a skip.
+        if os.environ.get("CI"):
+            pytest.fail(message)
+        pytest.skip(message)
+    monkeypatch.setenv("MINISIGN", MINISIGN)
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
 
 
-@needs_minisign
 def test_signed_artifacts_verify_and_a_tampered_one_is_rejected(
     real, tmp_path, release
 ):
@@ -214,7 +215,6 @@ def test_signed_artifacts_verify_and_a_tampered_one_is_rejected(
         signing.verify(files, pub)
 
 
-@needs_minisign
 def test_a_signature_from_another_key_is_rejected(real, tmp_path, release):
     directory, _ = release
     pub, sec = generate_key(tmp_path)
@@ -227,7 +227,6 @@ def test_a_signature_from_another_key_is_rejected(real, tmp_path, release):
         signing.verify(files, other_pub)
 
 
-@needs_minisign
 def test_the_documented_user_command_verifies_a_signed_file(real, tmp_path, release):
     directory, _ = release
     pub, sec = generate_key(tmp_path)

@@ -530,6 +530,9 @@ def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workfl
     checkout = steps[1]
     assert checkout["with"]["repository"] == "srobroek/homebrew-tap"
     assert checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
+    # No stored secret feeds the tap push, in this or any other workflow.
+    for path in (ROOT / ".github" / "workflows").glob("*.yml"):
+        assert "HOMEBREW_TAP_TOKEN" not in path.read_text(encoding="utf-8"), path.name
 
 
 def test_the_app_action_matches_the_pin_release_please_uses():
@@ -541,11 +544,6 @@ def test_the_app_action_matches_the_pin_release_please_uses():
     assert pin in WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_no_repository_secret_named_homebrew_tap_token_is_read():
-    for path in (ROOT / ".github" / "workflows").glob("*.yml"):
-        assert "secrets.HOMEBREW_TAP_TOKEN" not in path.read_text(encoding="utf-8")
-
-
 def test_a_second_tap_token_in_the_template_fails_the_patch(raw):
     old = "          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}\n"
     assert old in raw
@@ -553,3 +551,28 @@ def test_a_second_tap_token_in_the_template_fails_the_patch(raw):
         patcher.harden(raw.replace(old, old + old))
     with pytest.raises(ValueError, match="expected exactly one Homebrew"):
         patcher.harden(raw.replace(old, ""))
+
+
+def _tap_checkout(raw: str) -> str:
+    match = patcher._TAP_CHECKOUT.search(raw)
+    assert match
+    return match.group(0)
+
+
+def test_a_missing_tap_checkout_in_the_homebrew_job_fails_the_patch(raw):
+    block = _tap_checkout(raw)
+    with pytest.raises(ValueError, match="expected exactly one Homebrew tap checkout"):
+        patcher.harden(raw.replace(block, ""))
+
+
+def test_a_duplicated_tap_checkout_in_the_homebrew_job_fails_the_patch(raw):
+    block = _tap_checkout(raw)
+    with pytest.raises(ValueError, match="expected"):
+        patcher.harden(raw.replace(block, block + block))
+
+
+def test_a_tap_checkout_outside_the_homebrew_job_is_not_rewritten(raw):
+    # Rename the job: the checkout then sits in no job the patcher recognises.
+    renamed = raw.replace(patcher._TAP_JOB, "  publish-formula-elsewhere:\n")
+    with pytest.raises(ValueError, match="expected exactly one Homebrew publish job"):
+        patcher.harden(renamed)

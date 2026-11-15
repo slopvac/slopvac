@@ -251,18 +251,41 @@ _TAP_MINT_STEP = """\
 """
 
 
+_TAP_JOB = "  publish-homebrew-formula:\n"
+# The one checkout of the tap, inside the Homebrew job; the token line is its last input.
+_TAP_CHECKOUT = re.compile(
+    r"      - uses: actions/checkout@\S+ # \S+\n"
+    r"        with:\n"
+    r"(?:          [^\n]*\n)*?"
+    r"          repository: \"srobroek/homebrew-tap\"\n"
+    r"(?:          [^\n]*\n)*?" + re.escape(_TAP_TOKEN_OLD)
+)
+
+
 def _mint_tap_token(text: str) -> str:
-    """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App."""
-    if text.count(_TAP_TOKEN_OLD) != 1:
+    """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App.
+
+    The rewrite is confined to the Homebrew job and needs exactly one tap checkout
+    there, so a reordered or renamed template fails here instead of moving the step.
+    """
+    chunks = _split_jobs(text)
+    jobs = [i for i, chunk in enumerate(chunks) if chunk.startswith(_TAP_JOB)]
+    if len(jobs) != 1:
         raise ValueError(
-            f"expected exactly one Homebrew tap token, found {text.count(_TAP_TOKEN_OLD)}"
+            f"expected exactly one Homebrew publish job, found {len(jobs)}"
         )
-    end = text.index(_TAP_TOKEN_OLD)
-    checkout = text.rfind("      - uses: actions/checkout@", 0, end)
-    if checkout < 0:
-        raise ValueError("expected a checkout step before the Homebrew tap token")
-    text = text.replace(_TAP_TOKEN_OLD, _TAP_TOKEN_NEW)
-    return text[:checkout] + _TAP_MINT_STEP + text[checkout:]
+    job = chunks[jobs[0]]
+    matches = list(_TAP_CHECKOUT.finditer(job))
+    if len(matches) != 1 or job.count(_TAP_TOKEN_OLD) != 1:
+        raise ValueError(
+            f"expected exactly one Homebrew tap checkout, found {len(matches)}"
+        )
+    start = matches[0].start()
+    job = job.replace(_TAP_TOKEN_OLD, _TAP_TOKEN_NEW)
+    chunks[jobs[0]] = job[:start] + _TAP_MINT_STEP + job[start:]
+    if "HOMEBREW_TAP_TOKEN" in "".join(chunks):
+        raise ValueError("a HOMEBREW_TAP_TOKEN reference remains after the rewrite")
+    return "".join(chunks)
 
 
 def _verify_tag_before_publishing(text: str) -> str:
