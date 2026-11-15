@@ -272,3 +272,26 @@ fn width_changing_fixes_in_a_table_are_refused_and_the_table_stays_intact_with_d
     let widths = |t: &str| t.lines().map(str::len).collect::<Vec<_>>();
     assert_eq!(widths(&same.text), widths(&source));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_non_ascii_replacement_of_equal_byte_length_is_refused_in_a_table() {
+    let dir = common::private_dir("rst-fix-table-wide");
+    let python = fake(
+        &dir,
+        "python",
+        &format!("cat >/dev/null\ncat '{FIXTURES}/table-wrap.json'"),
+    );
+    let source = std::fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap();
+    // "continues" and "résumés" are both nine bytes, but the second has seven columns.
+    let replacement = "résumés";
+    assert_eq!(replacement.len(), "continues".len());
+    let e = engine_for(python, &json!({"continues": replacement}));
+    let report = fixed(&e, &source);
+    assert_eq!(report.text, source);
+    assert_eq!(report.applied, 0);
+    assert_eq!(
+        report.skipped.iter().map(|s| s.reason).collect::<Vec<_>>(),
+        [SkipReason::Protected]
+    );
+}
