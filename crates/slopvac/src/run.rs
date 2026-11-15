@@ -210,6 +210,16 @@ fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
 }
 
 fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+    // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
+    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, err_out)
+}
+
+fn lint_with(
+    m: &ArgMatches,
+    stdin_source: &mut dyn std::io::Read,
+    linter: &dyn Linter,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
     for (name, message) in REMOVED_LINT_OPTIONS {
         if m.contains_id(name) {
             return Err(CliError::new("removed-option", message));
@@ -217,10 +227,14 @@ fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError
     }
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
-        tracing::debug!(language = plan.language, "stdin plan");
-        Some(stdin::read(&mut std::io::stdin().lock())?)
+        tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");
+        Some((plan, stdin::read(stdin_source)?))
     } else {
         None
+    };
+    let (plan, stdin) = match stdin {
+        Some((plan, bytes)) => (Some(plan), Some(bytes)),
+        None => (None, None),
     };
     let targets: Vec<PathBuf> = m
         .get_many::<PathBuf>("targets")
@@ -235,11 +249,11 @@ fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError
         "lint start"
     );
     let root = std::env::current_dir().unwrap_or_default();
-    // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
-    let outcome = StubLinter.lint(&LintRequest {
+    let outcome = linter.lint(&LintRequest {
         root,
         targets,
         stdin,
+        stdin_plan: plan,
     });
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
@@ -257,7 +271,76 @@ fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine_stub::RunOutcome;
     use crate::env::MapEnv;
+    use crate::stdin::StdinPlan;
+    use std::cell::RefCell;
+
+    /// Records what the CLI hands to the engine.
+    #[derive(Default)]
+    struct Recorder(RefCell<Vec<LintRequest>>);
+
+    impl Linter for Recorder {
+        fn lint(&self, request: &LintRequest) -> RunOutcome {
+            self.0.borrow_mut().push(request.clone());
+            RunOutcome::default()
+        }
+    }
+
+    fn requests_for(args: &[&str], input: &[u8]) -> Vec<LintRequest> {
+        let tree = cli::command();
+        let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+        let matches = tree.try_get_matches_from(args).expect("parses");
+        let (_, m) = matches.subcommand().expect("lint");
+        let recorder = Recorder::default();
+        let mut err = Vec::new();
+        lint_with(m, &mut &*input, &recorder, &mut err).expect("lint runs");
+        recorder.0.into_inner()
+    }
+
+    #[test]
+    fn stdin_language_and_mode_reach_the_linter() {
+        let cases: &[(&[&str], &str, &str)] = &[
+            (&["slopvac", "lint", "--stdin"], "markdown", "prose"),
+            (
+                &["slopvac", "lint", "--stdin", "--language", "html"],
+                "html",
+                "prose",
+            ),
+            (
+                &[
+                    "slopvac",
+                    "lint",
+                    "--stdin",
+                    "--mode",
+                    "code-comments",
+                    "--language",
+                    "python",
+                ],
+                "python",
+                "code-comments",
+            ),
+        ];
+        for (args, language, mode) in cases {
+            let got = requests_for(args, b"x\n");
+            assert_eq!(got.len(), 1, "{args:?}");
+            assert_eq!(
+                got[0].stdin_plan,
+                Some(StdinPlan {
+                    mode,
+                    language: (*language).to_owned()
+                }),
+                "{args:?}"
+            );
+            assert_eq!(got[0].stdin.as_deref(), Some(&b"x\n"[..]), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn file_runs_carry_no_stdin_plan() {
+        let got = requests_for(&["slopvac", "lint", "a.md"], b"");
+        assert_eq!(got[0].stdin_plan, None);
+    }
 
     fn globals_for(args: &[&str], vars: &[(&str, &str)], tty: bool) -> Globals {
         let tree = cli::command();

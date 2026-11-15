@@ -9,9 +9,15 @@ use predicates::prelude::*;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
-    for var in ["SLOPVAC_OFFLINE", "SLOPVAC_LOG", "NO_COLOR", "FORCE_COLOR"] {
+    for var in [
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
         cmd.env_remove(var);
     }
+    cmd.env("NO_COLOR", "1");
     cmd
 }
 
