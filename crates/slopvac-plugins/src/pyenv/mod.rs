@@ -5,6 +5,9 @@
 //! builds one environment per tree with uv and runs the plugin as
 //! `<env>/bin/python -I -B ...` ([`PYTHON_FLAGS`]).
 //!
+//! Windows is refused for now ([`PyEnvError::UnsupportedPlatform`]): the
+//! build, [`EnvStore::load`] and both checks return that error there.
+//!
 //! # Build
 //!
 //! [`EnvStore::build`] checks the lock first ([`PyLock`]): every package must
@@ -24,7 +27,9 @@
 //!
 //! The build then compiles bytecode and probes the interpreter, both with
 //! `-I -S`, so no `.pth` file or `sitecustomize` from a wheel runs before the
-//! user trusts the plugin. uv's own `--compile-bytecode` starts the
+//! user trusts the plugin. Before each of those runs it checks that the
+//! interpreter and `pyvenv.cfg` are still what `uv venv` made, so a wheel that
+//! overwrote them stops the build. uv's own `--compile-bytecode` starts the
 //! interpreter with `site` enabled, so the build does not use it. The build
 //! records the interpreter identity (version, build and the sha256 of each
 //! executable), makes the environment read-only, lists every entry with its
@@ -144,6 +149,11 @@ pub enum PyEnvError {
     /// The environment holds something it may not, or passes a bound.
     #[error("the Python environment is refused: {0}")]
     Refused(String),
+    /// Managed environments are not supported on this platform yet.
+    #[error(
+        "managed Python environments are not supported on Windows yet; slopvac refuses to build or run them"
+    )]
+    UnsupportedPlatform,
     /// The environment record is damaged.
     #[error("the environment record {path} is damaged: {why}")]
     Record {
@@ -171,6 +181,15 @@ impl PyEnvError {
         let what = what.into();
         move |source| Self::Io { what, source }
     }
+}
+
+/// Refuse on Windows: the `Scripts` layout, launcher and read-only handling
+/// there have no runtime tests yet (threat model section 6.6).
+fn supported_platform() -> Result<(), PyEnvError> {
+    if cfg!(windows) {
+        return Err(PyEnvError::UnsupportedPlatform);
+    }
+    Ok(())
 }
 
 /// Whether the build may download an interpreter. Wheels never download.
@@ -375,6 +394,7 @@ impl ManagedEnv {
     /// interpreter, [`PyEnvError::Refused`] or [`PyEnvError::Io`] when the
     /// environment cannot be read.
     pub fn check_quick(&self) -> Result<(), PyEnvError> {
+        supported_platform()?;
         self.check_interpreter(false)?;
         compare(&self.record.entries, &scan(&self.root, false)?, false)
     }
@@ -386,6 +406,7 @@ impl ManagedEnv {
     /// # Errors
     /// As [`Self::check_quick`].
     pub fn verify_full(&self) -> Result<(), PyEnvError> {
+        supported_platform()?;
         self.check_interpreter(true)?;
         compare(&self.record.entries, &scan(&self.root, true)?, true)
     }
@@ -439,13 +460,25 @@ pub struct EnvSummary {
 #[derive(Debug, Clone)]
 pub struct EnvStore {
     root: PathBuf,
+    fail_record_writes: bool,
 }
 
 impl EnvStore {
     /// A store in `root`. Nothing is created until a build.
     #[must_use]
     pub fn open(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            fail_record_writes: false,
+        }
+    }
+
+    /// Test seam: make every record write fail, as a full disk would.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn failing_record_writes(mut self) -> Self {
+        self.fail_record_writes = true;
+        self
     }
 
     /// The store key of the environment for `tree` and an interpreter request.
@@ -467,6 +500,7 @@ impl EnvStore {
     /// # Errors
     /// [`PyEnvError::Record`] for a damaged or mismatched record.
     pub fn load(&self, tree: &TreeHash, python: &str) -> Result<Option<ManagedEnv>, PyEnvError> {
+        supported_platform()?;
         let key = Self::key(tree, python);
         let path = self.record_path(&key);
         let Some(record) = read_record(&path)? else {
@@ -516,6 +550,7 @@ impl EnvStore {
         plugin_root: &Path,
         tree: &TreeHash,
     ) -> Result<ManagedEnv, PyEnvError> {
+        supported_platform()?;
         installer.check()?;
         verify_tree(plugin_root, tree)?;
         let lock = PyLock::read(&plugin_root.join(LOCK_FILE))?;
@@ -545,7 +580,8 @@ impl EnvStore {
         let env = staging.0.join("env");
 
         let final_root = self.root.join(&key);
-        let python = install(installer, plugin_root, &lock, &staging.0, &env, &final_root)?;
+        let (python, pin) = install(installer, plugin_root, &lock, &staging.0, &env, &final_root)?;
+        pin.verify(&env)?;
         let probe = probe(&python, &staging.0)?;
         make_read_only(&env)?;
         let entries = scan(&env, true)?;
@@ -569,6 +605,12 @@ impl EnvStore {
             interpreter,
             entries,
         };
+        if self.fail_record_writes {
+            return Err(PyEnvError::Io {
+                what: "writing the environment record".into(),
+                source: io::Error::other("injected failure"),
+            });
+        }
         write_record(&self.root, &record_path, &record)?;
         placed.1 = false;
         drop(staging);
@@ -638,7 +680,7 @@ fn install(
     scratch: &Path,
     env: &Path,
     final_root: &Path,
-) -> Result<PathBuf, PyEnvError> {
+) -> Result<(PathBuf, Pin), PyEnvError> {
     if installer.network == InstallNetwork::Offline {
         let mut find = installer.uv(scratch);
         find.args([
@@ -663,6 +705,8 @@ fn install(
     }
     venv.arg(env);
     run(venv, scratch, "uv venv")?;
+    // Taken before any wheel is installed: a wheel must not replace what the build runs.
+    let pin = Pin::take(env)?;
 
     let python = env_python(env);
     if !lock.packages.is_empty() {
@@ -696,8 +740,49 @@ fn install(
         .arg(final_root)
         .arg(env);
     windows_env(&mut compile);
+    pin.verify(env)?;
     run(compile, scratch, "bytecode compilation")?;
-    Ok(python)
+    Ok((python, pin))
+}
+
+/// The interpreter and its configuration as `uv venv` made them, before any
+/// wheel is installed. The build checks them before every interpreter run.
+struct Pin {
+    interpreter: PathBuf,
+    interpreter_sha256: String,
+    config_sha256: String,
+}
+
+impl Pin {
+    fn take(env: &Path) -> Result<Self, PyEnvError> {
+        let mut budget = u64::MAX - 1;
+        let interpreter = fs::canonicalize(env_python(env)).map_err(PyEnvError::io(
+            "resolving the new environment's interpreter",
+        ))?;
+        let (interpreter_sha256, _) = sha256_file(&interpreter, &mut budget)?;
+        let (config_sha256, _) = sha256_file(&env.join("pyvenv.cfg"), &mut budget)?;
+        Ok(Self {
+            interpreter,
+            interpreter_sha256,
+            config_sha256,
+        })
+    }
+
+    fn verify(&self, env: &Path) -> Result<(), PyEnvError> {
+        let now = Self::take(env)?;
+        let changed = |path: &Path, why: &str| PyEnvError::Changed {
+            path: path.display().to_string(),
+            why: format!("{why} during the build, before trust"),
+        };
+        if now.interpreter != self.interpreter || now.interpreter_sha256 != self.interpreter_sha256
+        {
+            return Err(changed(&env_python(env), "was replaced"));
+        }
+        if now.config_sha256 != self.config_sha256 {
+            return Err(changed(&env.join("pyvenv.cfg"), "was rewritten"));
+        }
+        Ok(())
+    }
 }
 
 /// Removes a directory on every exit path while armed.

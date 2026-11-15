@@ -330,6 +330,130 @@ fn a_wheel_that_is_not_a_file_in_the_tree_is_refused() {
     }
 }
 
+/// A lock over one wheel of `demo-pkg` 1.0 holding the entries `names`,
+/// installed as a plugin tree in `s`.
+fn lock_over_entries(s: &Scratch, names: &[&str]) -> (PyLock, VerifiedPlugin) {
+    let files: Vec<(&str, &[u8])> = names.iter().map(|n| (*n, b"x".as_slice())).collect();
+    let w = Wheel::new("demo-pkg", "1.0", zip_with(&files, None));
+    let text = lock_text(std::slice::from_ref(&w));
+    let vp = install(s, &text, std::slice::from_ref(&w));
+    (PyLock::parse(&text).unwrap(), vp)
+}
+
+#[test]
+fn tm49_tm53_a_wheel_entry_that_lands_on_the_interpreter_or_a_startup_hook_is_refused() {
+    let refused = [
+        "demo_pkg-1.0.data/scripts/python",
+        "demo_pkg-1.0.data/scripts/python3",
+        "demo_pkg-1.0.data/scripts/python3.12",
+        "demo_pkg-1.0.data/scripts/python.exe",
+        "demo_pkg-1.0.data/scripts/Python",
+        "demo_pkg-1.0.data/scripts/activate",
+        "demo_pkg-1.0.data/scripts/deactivate.bat",
+        "demo_pkg-1.0.data/scripts/pyvenv.cfg",
+        "demo_pkg-1.0.data/data/pyvenv.cfg",
+        "demo_pkg-1.0.data/data/bin/python",
+        "demo_pkg-1.0.data/data/BIN/python",
+        "demo_pkg-1.0.data/data/Scripts/python.exe",
+        "demo_pkg-1.0.data/data/lib/python3.12/site-packages/x.pth",
+        "demo_pkg-1.0.data/data/lib/python3.12/encodings/__init__.py",
+        "evil.pth",
+        "demo_pkg/nested.PTH",
+        "demo_pkg-1.0.data/purelib/evil.pth",
+        "demo_pkg-1.0.data/platlib/evil.pth",
+        "sitecustomize.py",
+        "usercustomize/__init__.py",
+        "demo_pkg-1.0.data/platlib/sitecustomize.cpython-312-x86_64-linux-gnu.so",
+        "demo_pkg-1.0.data/unknown/x",
+        "../escape.py",
+        "demo_pkg/./x.py",
+        "/abs.py",
+        "demo_pkg\\x.py",
+    ];
+    for (i, name) in refused.iter().enumerate() {
+        let s = Scratch::new(&format!("entry-{i}"));
+        let (lock, vp) = lock_over_entries(&s, &["demo_pkg/__init__.py", name]);
+        let err = lock.verify_wheels(&vp.root).unwrap_err();
+        assert!(
+            matches!(&err, PyEnvError::Wheel { why, .. } if why.contains(&name.escape_debug().to_string())),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn ordinary_wheel_entries_are_accepted() {
+    let s = Scratch::new("entries-ok");
+    let (lock, vp) = lock_over_entries(
+        &s,
+        &[
+            "demo_pkg/__init__.py",
+            "demo_pkg/sitecustomize.py",
+            "demo_pkg/notes.pth.txt",
+            "demo_pkg-1.0.dist-info/METADATA",
+            "demo_pkg-1.0.data/scripts/demo-cli",
+            "demo_pkg-1.0.data/data/share/demo/x.json",
+            "demo_pkg-1.0.data/headers/demo.h",
+            "demo_pkg-1.0.data/purelib/demo_extra/__init__.py",
+        ],
+    );
+    lock.verify_wheels(&vp.root).unwrap();
+}
+
+#[test]
+fn a_marker_with_a_hyphenated_quoted_value_is_accepted() {
+    let wheel = format!(
+        "wheels = [{{ path = \"wheels/demo_pkg-1.0-py3-none-any.whl\", hashes = {{ sha256 = \"{HASH}\" }} }}]"
+    );
+    for marker in [
+        "platform_release == '5.15.0-91-generic'",
+        "platform_version == \\\"#1 SMP\\\" or python_version >= '3.11'",
+        "sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')",
+    ] {
+        let text = one_package(&format!("marker = \"{marker}\"\n{wheel}"));
+        let parsed = PyLock::parse(&text);
+        if marker.contains('#') {
+            // `#` would start a comment in a requirements file, even in quotes.
+            assert!(parsed.is_err(), "{marker}");
+            continue;
+        }
+        let lock = parsed.unwrap_or_else(|e| panic!("{marker}: {e}"));
+        assert_eq!(
+            lock.requirements(),
+            format!("demo-pkg==1.0 ; {marker} --hash=sha256:{HASH}\n")
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn managed_python_environments_are_refused_on_windows() {
+    use slopvac_plugins::pyenv::{EnvStore, InstallNetwork, Installer};
+    let s = Scratch::new("windows");
+    let w = Wheel::new(
+        "demo-pkg",
+        "1.0",
+        zip_with(&[("demo_pkg/__init__.py", b"")], None),
+    );
+    let vp = install(
+        &s,
+        &lock_text(std::slice::from_ref(&w)),
+        std::slice::from_ref(&w),
+    );
+    let store = EnvStore::open(s.dir("envs"));
+    let installer = Installer {
+        uv: PathBuf::from(r"C:\\nonexistent\\uv.exe"),
+        python_install_dir: PathBuf::from(r"C:\\nonexistent\\python"),
+        python: "3.12".into(),
+        network: InstallNetwork::Offline,
+    };
+    let err = store.build(&installer, &vp.root, &vp.tree).unwrap_err();
+    assert!(matches!(err, PyEnvError::UnsupportedPlatform), "{err:?}");
+    let err = store.load(&vp.tree, "3.12").unwrap_err();
+    assert!(matches!(err, PyEnvError::UnsupportedPlatform), "{err:?}");
+    assert!(!s.dir("envs").exists(), "nothing was created");
+}
+
 #[test]
 fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
     let wheel = format!(
@@ -341,6 +465,11 @@ fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
         )),
         one_package(&format!("marker = \"python_version >= '3' # c\"\n{wheel}")),
         one_package(&format!("marker = \"x\\n--index-url http://x\"\n{wheel}")),
+        one_package(&format!("marker = \"os_name == 'a' -r x\"\n{wheel}")),
+        one_package(&format!("marker = \"os_name == 'a -r x'\"\n{wheel}")),
+        one_package(&format!("marker = \"os_name == 'a\"\n{wheel}")),
+        one_package(&format!("marker = \"os_name == 'a\\\\'\"\n{wheel}")),
+        one_package(&format!("marker = \"os_name == 'a'; x\"\n{wheel}")),
         format!(
             "lock-version = \"1.0\"\n\n[[packages]]\nname = \"demo-pkg --index-url=http://x\"\nversion = \"1.0\"\n{wheel}\n"
         ),
@@ -497,6 +626,16 @@ mod unix_only {
         find_exit: i32,
         /// When set, `pip install` also writes a `.pth` file that appends to this marker.
         hook: Option<PathBuf>,
+        /// When set, `pip install` acts like a wheel that overwrites the
+        /// interpreter (`Tamper::Python`, whose replacement touches the
+        /// marker) or `pyvenv.cfg` (`Tamper::Config`).
+        tamper: Option<Tamper>,
+    }
+
+    #[derive(Clone)]
+    enum Tamper {
+        Python(PathBuf),
+        Config,
     }
 
     impl Fake<'_> {
@@ -506,6 +645,7 @@ mod unix_only {
                 payload: "VALUE = 1",
                 find_exit: 0,
                 hook: None,
+                tamper: None,
             }
         }
     }
@@ -544,6 +684,10 @@ pip)
   cp "$req" "$site/installed.txt"
   printf '%s\n' '{payload}' > "$site/payload.py"
   {hook}
+  {tamper}
+  # Like uv: --compile-bytecode starts the environment's interpreter with site
+  # enabled, so a .pth file in it runs.
+  case " $* " in *" --compile-bytecode "*) "$py" -c pass ;; esac
   ;;
 esac
 "#,
@@ -556,6 +700,16 @@ esac
                     r#"printf '%s\n' "import os; open('{}', 'a').write('x')" > "$site/hook.pth""#,
                     m.display()
                 )),
+                tamper = match &fake.tamper {
+                    None => String::new(),
+                    Some(Tamper::Python(m)) => format!(
+                        "rm \"$py\"; printf '#!/bin/sh\\ntouch %s\\nexec %s \"$@\"\\n' '{}' '{}' > \"$py\"; chmod 755 \"$py\"",
+                        m.display(),
+                        fake.interpreter.display()
+                    ),
+                    Some(Tamper::Config) =>
+                        r#"printf 'home = /tmp\n' >> "${py%/bin/python}/pyvenv.cfg""#.to_owned(),
+                },
             ),
         );
         uv
@@ -720,6 +874,120 @@ esac
         let p = Plugin::start(&sp, &cfg(), &g).unwrap();
         assert!(p.shutdown().clean());
         assert!(marker.exists(), "the hook is not live in the environment");
+    }
+
+    #[test]
+    fn tm49_reintroducing_uv_bytecode_compilation_would_run_the_hook_and_is_caught() {
+        // Positive control for the fake: it runs the interpreter with site
+        // enabled when given --compile-bytecode, as uv does.
+        let s = Scratch::new("u-tm49-fake-compile");
+        let marker = s.dir("hook-ran");
+        let fake = Fake {
+            hook: Some(marker.clone()),
+            ..Fake::real()
+        };
+        let uv = fake_uv(&s.dir("bin"), &fake);
+        let env = s.dir("env");
+        let venv = Command::new(&uv).arg("venv").arg(&env).status().unwrap();
+        assert!(venv.success());
+        let req = s.dir("req.txt");
+        fs::write(&req, "").unwrap();
+        let pip = Command::new(&uv)
+            .args(["pip", "install", "--compile-bytecode", "--python"])
+            .arg(env.join("bin/python"))
+            .arg("-r")
+            .arg(&req)
+            .status()
+            .unwrap();
+        assert!(pip.success());
+        assert!(
+            marker.exists(),
+            "the fake does not simulate uv's site-enabled compile"
+        );
+    }
+
+    #[test]
+    fn tm49_tm53_a_wheel_that_replaces_the_interpreter_or_its_config_stops_the_build() {
+        for (what, tamper) in [
+            ("python", Tamper::Python(PathBuf::new())),
+            ("config", Tamper::Config),
+        ] {
+            let s = Scratch::new(&format!("u-pin-{what}"));
+            let marker = s.dir("replacement-ran");
+            let tamper = match tamper {
+                Tamper::Python(_) => Tamper::Python(marker.clone()),
+                Tamper::Config => Tamper::Config,
+            };
+            let wheels = demo();
+            let vp = install(&s, &lock_text(&wheels), &wheels);
+            let uv = fake_uv(
+                &s.dir("envs-bin"),
+                &Fake {
+                    tamper: Some(tamper),
+                    ..Fake::real()
+                },
+            );
+            let err = EnvStore::open(s.dir("envs"))
+                .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+                .unwrap_err();
+            assert!(
+                matches!(&err, PyEnvError::Changed { why, .. } if why.contains("before trust")),
+                "{what}: {err:?}"
+            );
+            assert!(!marker.exists(), "{what}: the replaced interpreter ran");
+            assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), [], "{what}");
+        }
+    }
+
+    #[test]
+    fn a_wheel_with_a_refused_entry_stops_the_build_before_uv_runs() {
+        let s = Scratch::new("u-entry");
+        let w = Wheel::new(
+            "demo-pkg",
+            "1.0",
+            zip_with(
+                &[("demo_pkg-1.0.data/scripts/python", b"#!/bin/sh\n")],
+                None,
+            ),
+        );
+        let vp = install(
+            &s,
+            &lock_text(std::slice::from_ref(&w)),
+            std::slice::from_ref(&w),
+        );
+        let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
+        let err = EnvStore::open(s.dir("envs"))
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(matches!(err, PyEnvError::Wheel { .. }), "{err:?}");
+        assert_eq!(log(&s, "envs"), "", "uv never ran");
+    }
+
+    #[test]
+    fn a_failed_record_write_removes_the_promoted_environment() {
+        let s = Scratch::new("u-record-fail");
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
+        let store = EnvStore::open(s.dir("envs")).failing_record_writes();
+        let err = store
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(matches!(err, PyEnvError::Io { .. }), "{err:?}");
+        let key = EnvStore::key(&vp.tree, "3.12");
+        assert!(
+            !s.dir("envs").join(&key).exists(),
+            "the promoted environment is left behind"
+        );
+        assert!(!s.dir("envs").join(format!("{key}.json")).exists());
+        let staging: Vec<_> = fs::read_dir(s.dir("envs/.staging")).unwrap().collect();
+        assert!(staging.is_empty(), "staging is left behind: {staging:?}");
+        assert!(
+            EnvStore::open(s.dir("envs"))
+                .load(&vp.tree, "3.12")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -1149,7 +1417,9 @@ mod live {
                 std::env::var_os("SLOPVAC_PYENV_LIVE").is_none(),
                 "SLOPVAC_PYENV_LIVE is set and no uv was found"
             );
-            eprintln!("skipped: no uv on PATH; set SLOPVAC_TEST_UV to run the live tests");
+            eprintln!(
+                "SKIPPED live pyenv test: no uv on PATH. Set SLOPVAC_TEST_UV=<path> to run it, or SLOPVAC_PYENV_LIVE=1 to make a missing uv fail."
+            );
             return None;
         };
         let ok = Command::new(&uv)
@@ -1273,7 +1543,7 @@ mod live {
     }
 
     #[test]
-    fn live_tm49_a_startup_hook_from_a_wheel_does_not_run_during_the_build() {
+    fn live_tm49_a_startup_hook_in_a_wheel_is_refused_and_never_runs() {
         let Some(uv) = uv() else { return };
         let s = Scratch::new("live-tm49-hook");
         let marker = s.dir("hook-ran");
@@ -1281,20 +1551,44 @@ mod live {
             "import os; open({:?}, 'a').write('x')\n",
             marker.display().to_string()
         );
-        let b = build(
+        let w = wheel("demo-pkg", "1.0", "one", &[("demo_hook.pth", &hook)]);
+        let vp = install(
             &s,
-            &uv,
-            &[wheel("demo-pkg", "1.0", "one", &[("demo_hook.pth", &hook)])],
+            &lock_text(std::slice::from_ref(&w)),
+            std::slice::from_ref(&w),
         );
-        assert!(!marker.exists(), "the hook ran before trust");
-        let g = gate(&s, &b);
-        let sp = spec(&b);
-        g.record_trust(&b.vp, &sp, NOW).unwrap();
-        assert!(!marker.exists(), "the hook ran while recording trust");
-        // Positive control: the trusted plugin's interpreter loads it.
-        let p = Plugin::start(&sp, &cfg(), &g).unwrap();
-        assert!(p.shutdown().clean());
-        assert!(marker.exists(), "the hook is not live in the environment");
+        let err = EnvStore::open(s.dir("envs"))
+            .build(&installer(uv), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(
+            matches!(&err, PyEnvError::Wheel { why, .. } if why.contains("startup hook")),
+            "{err:?}"
+        );
+        assert!(!marker.exists(), "the hook ran");
+    }
+
+    #[test]
+    fn live_tm53_a_wheel_script_named_python_never_reaches_uv() {
+        let Some(uv) = uv() else { return };
+        let s = Scratch::new("live-collision");
+        let marker = s.dir("collision-ran");
+        let script = format!("#!/bin/sh\ntouch '{}'\n", marker.display());
+        let w = wheel(
+            "demo-pkg",
+            "1.0",
+            "one",
+            &[("demo_pkg-1.0.data/scripts/python", &script)],
+        );
+        let vp = install(
+            &s,
+            &lock_text(std::slice::from_ref(&w)),
+            std::slice::from_ref(&w),
+        );
+        let err = EnvStore::open(s.dir("envs"))
+            .build(&installer(uv), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(matches!(err, PyEnvError::Wheel { .. }), "{err:?}");
+        assert!(!marker.exists());
     }
 
     #[test]

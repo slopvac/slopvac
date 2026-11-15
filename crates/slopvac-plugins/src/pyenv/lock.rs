@@ -117,6 +117,11 @@ impl PyLock {
     /// (not ZIP64) archive. Runs before the installer, which checks the hashes
     /// again.
     ///
+    /// No entry may land where the build or the interpreter runs it before
+    /// trust (Y1, Y4, Y6): an interpreter or activation script in `bin`, the
+    /// environment's `pyvenv.cfg`, or a startup hook (`.pth`, `sitecustomize`,
+    /// `usercustomize`), and data in the interpreter's own directories.
+    ///
     /// The sizes and entry counts the archives declare must fit the
     /// environment bounds (threat model section 5.5), counting the largest
     /// wheel of each package, so a decompression bomb is refused before it is
@@ -150,8 +155,17 @@ impl PyLock {
                         w.path, w.sha256
                     )));
                 }
-                let (n, size) =
-                    zip_extent(&file).map_err(|why| wrong(format!("`{}`: {why}", w.path)))?;
+                let (n, size, names) =
+                    zip_listing(&file).map_err(|why| wrong(format!("`{}`: {why}", w.path)))?;
+                if let Some((name, why)) =
+                    names.iter().find_map(|n| refused_entry(n).map(|w| (n, w)))
+                {
+                    return Err(wrong(format!(
+                        "`{}` holds `{}`, {why}",
+                        w.path,
+                        name.escape_debug()
+                    )));
+                }
                 pkg_entries = pkg_entries.max(n);
                 pkg_bytes = pkg_bytes.max(size);
             }
@@ -254,30 +268,11 @@ fn package(v: &toml::Value) -> Result<LockedPackage, PyEnvError> {
             let m = m
                 .as_str()
                 .ok_or_else(|| wrong("marker is not a string".into()))?;
-            // Marker grammar characters only: no comment, option or line break.
-            let ok = m.len() <= 1_000
-                && m.bytes().all(|b| {
-                    b.is_ascii_alphanumeric()
-                        || matches!(
-                            b,
-                            b' ' | b'_'
-                                | b'.'
-                                | b'\''
-                                | b'"'
-                                | b'<'
-                                | b'>'
-                                | b'='
-                                | b'!'
-                                | b'~'
-                                | b'('
-                                | b')'
-                                | b','
-                                | b'*'
-                                | b'+'
-                        )
-                });
-            if !ok {
-                return Err(wrong(format!("marker `{}` is refused", m.escape_debug())));
+            if let Err(why) = check_marker(m) {
+                return Err(wrong(format!(
+                    "marker `{}` is refused: {why}",
+                    m.escape_debug()
+                )));
             }
             Some(m.to_owned())
         }
@@ -360,10 +355,109 @@ fn normalise(name: &str) -> String {
     out
 }
 
-/// Entries and declared uncompressed bytes of a ZIP archive, read from its
-/// central directory. ZIP64 archives are refused: no wheel within the bounds
-/// needs one.
-fn zip_extent(path: &Path) -> Result<(u64, u64), String> {
+/// Check a PEP 508 environment marker as the requirements line will carry it.
+///
+/// Outside quotes only marker grammar is allowed: names, comparison
+/// operators, parentheses and spaces. Inside quotes any printable ASCII is
+/// allowed except the closing quote, a backslash and `#`, so a value such as
+/// `'5.15.0-91-generic'` passes. Nothing may start an option (a space then
+/// `-`), a comment or a new line, and every quote must close.
+fn check_marker(m: &str) -> Result<(), &'static str> {
+    if m.is_empty() || m.len() > 1_000 {
+        return Err("empty or longer than 1000 bytes");
+    }
+    let mut quote: Option<u8> = None;
+    let mut prev = b' ';
+    for b in m.bytes() {
+        if !(b == b' ' || b.is_ascii_graphic()) {
+            return Err("a control or non-ASCII character");
+        }
+        if matches!(b, b'#' | b'\\') {
+            return Err("a comment or escape character");
+        }
+        if b == b'-' && prev == b' ' {
+            return Err("a word that starts with `-`");
+        }
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if matches!(b, b'\'' | b'"') => quote = Some(b),
+            None if b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b' ' | b'_' | b'.' | b'<' | b'>' | b'=' | b'!' | b'~' | b'(' | b')'
+                ) => {}
+            None => return Err("a character outside the marker grammar"),
+        }
+        prev = b;
+    }
+    if quote.is_some() {
+        return Err("an unclosed quote");
+    }
+    Ok(())
+}
+
+/// Why a wheel entry may not be installed, if it may not.
+///
+/// The install schemes map `<name>.data/scripts` to the environment's `bin`,
+/// `<name>.data/data` to the environment root and `<name>.data/purelib` or
+/// `platlib`, like the wheel root, to `site-packages`. Refused:
+///
+/// - a script named `python*`, `activate*`, `deactivate*` or `pyvenv.cfg`,
+///   which would replace the interpreter or its configuration;
+/// - data under `bin`, `Scripts`, `lib`, `Lib`, `lib64` or `include`, or a
+///   root `pyvenv.cfg`;
+/// - in `site-packages`, any `.pth` file and any top-level `sitecustomize` or
+///   `usercustomize` module or package;
+/// - an unknown scheme, and any name that is absolute, has `..` or `.`
+///   segments, or uses a backslash.
+fn refused_entry(name: &str) -> Option<&'static str> {
+    if name.starts_with('/')
+        || name.contains('\\')
+        || name.split('/').any(|seg| seg == ".." || seg == ".")
+    {
+        return Some("a path outside the install scheme");
+    }
+    let mut parts = name.splitn(3, '/');
+    let first = parts.next().unwrap_or("");
+    let (scheme, rest) = if Path::new(first)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("data"))
+    {
+        let scheme = parts.next().unwrap_or("");
+        (scheme, parts.next().unwrap_or(""))
+    } else {
+        ("purelib", name)
+    };
+    let top = rest.split('/').next().unwrap_or("").to_ascii_lowercase();
+    let base = rest.rsplit('/').next().unwrap_or("").to_ascii_lowercase();
+    match scheme.to_ascii_lowercase().as_str() {
+        "scripts" => {
+            let interp = ["python", "activate", "deactivate"]
+                .iter()
+                .any(|p| base.starts_with(p))
+                || base == "pyvenv.cfg";
+            interp.then_some("which would replace the interpreter or its activation")
+        }
+        "data" => (["bin", "scripts", "lib", "lib64", "include", "pyvenv.cfg"]
+            .contains(&top.as_str()))
+        .then_some("which would write into the interpreter's own directories"),
+        "purelib" | "platlib" => {
+            let stem = top.split('.').next().unwrap_or("").to_ascii_lowercase();
+            (Path::new(&base).extension().is_some_and(|e| e == "pth")
+                || stem == "sitecustomize"
+                || stem == "usercustomize")
+                .then_some("a startup hook that would run before trust")
+        }
+        "headers" => None,
+        _ => Some("an unknown install scheme"),
+    }
+}
+
+/// Entries, declared uncompressed bytes and entry names of a ZIP archive,
+/// read from its central directory. ZIP64 archives are refused: no wheel
+/// within the bounds needs one.
+fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
     const EOCD: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
     const CDH: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
     const LOC64: [u8; 4] = [0x50, 0x4b, 0x06, 0x07];
@@ -396,6 +490,7 @@ fn zip_extent(path: &Path) -> Result<(u64, u64), String> {
     let mut cd = vec![0; usize::try_from(cd_size).map_err(|e| e.to_string())?];
     f.read_exact(&mut cd).map_err(|e| e.to_string())?;
     let (mut i, mut n, mut bytes) = (0usize, 0u64, 0u64);
+    let mut names = Vec::new();
     while n < count {
         if i + 46 > cd.len() || cd[i..i + 4] != CDH {
             return Err("a damaged central directory".into());
@@ -406,10 +501,16 @@ fn zip_extent(path: &Path) -> Result<(u64, u64), String> {
         }
         bytes += size;
         n += 1;
+        let name_len = usize::try_from(u16_at(&cd, i + 28)).map_err(|e| e.to_string())?;
+        let name = cd
+            .get(i + 46..i + 46 + name_len)
+            .ok_or("a damaged central directory")?;
+        names
+            .push(String::from_utf8(name.to_vec()).map_err(|_| "an entry name that is not UTF-8")?);
         let skip = 46 + u16_at(&cd, i + 28) + u16_at(&cd, i + 30) + u16_at(&cd, i + 32);
         i += usize::try_from(skip).map_err(|e| e.to_string())?;
     }
-    Ok((n, bytes))
+    Ok((n, bytes, names))
 }
 
 pub(super) fn hex(bytes: &[u8]) -> String {

@@ -320,7 +320,13 @@ The spawn check misses an edit that keeps the size and restores the modification
 - A plugin ships a PEP 751 `pylock.toml` and its wheels inside the signed tree.
 - Before any installer runs, slopvac refuses a package with an `sdist`, `vcs`, `directory` or `archive` source. It also refuses a wheel without a path in the tree and a wheel whose sha256 differs from the lock.
 - Before any installer runs, slopvac also reads each wheel's ZIP central directory. It refuses a ZIP64 archive and a lock whose wheels declare more entries or bytes than the environment bounds of section 5.5.
-- uv runs with an empty environment except for `UV_PYTHON_INSTALL_DIR`, plus `SystemRoot` on Windows. The flags `--no-config` and `--no-project` turn off configuration discovery.
+- The same check refuses a wheel entry that would land where the build or the interpreter runs it before trust:
+  - a script named `python*`, `activate*`, `deactivate*` or `pyvenv.cfg`;
+  - data under `bin`, `Scripts`, `lib`, `lib64` or `include`, or a root `pyvenv.cfg`;
+  - in `site-packages`, any `.pth` file and any top-level `sitecustomize` or `usercustomize` module;
+  - an unknown install scheme, and a path that is absolute, has `.` or `..` segments or uses a backslash.
+- After `uv venv`, the build records the interpreter it resolves to, that interpreter's sha256 and the sha256 of `pyvenv.cfg`. Before it compiles bytecode and before it probes the interpreter, it checks all three again and stops the build on any change.
+- uv runs with an empty environment except for `UV_PYTHON_INSTALL_DIR`. The flags `--no-config` and `--no-project` turn off configuration discovery.
 - `uv venv --managed-python` uses only a uv-managed interpreter, never one found on `PATH`. Offline mode adds `--offline --no-python-downloads`.
 - `uv pip install --offline --no-index --no-build --no-deps --require-hashes` installs from the tree's wheel directories only. Each package is pinned to its exact version and locked hashes.
 - No code from a wheel runs during the build. uv's `--compile-bytecode` starts the interpreter with `site` enabled, which runs any `.pth` file, so the build does not use it. The build compiles bytecode and probes the interpreter with `-I -S` instead.
@@ -329,8 +335,9 @@ The spawn check misses an edit that keeps the size and restores the modification
 **Residual gaps.**
 
 - The bounds check reads the sizes that a wheel declares. uv expands the wheel, and slopvac checks the bounds of the result only after the install.
-- The build and spawn tests with a fake uv and the tests with a real uv run on Unix only. Windows has the lock tests and a compile check of its code paths.
-
+- Slopvac refuses to build, load or check a managed environment on Windows (`UnsupportedPlatform`), so a Python plugin with a managed environment does not run there. Windows support is follow-up work in `slopvac-8l4.9.34`.
+- The startup-hook refusal also refuses packages that ship a `.pth` file for their own use, such as `setuptools`.
+- CI has no uv yet, so the `live_` tests skip there. Tests with a scripted fake uv cover the build controls without uv. The fake runs the interpreter with `site` enabled when it receives `--compile-bytecode`, as uv does. A request to `slopvac-8l4.14` asks for uv in the Rust CI job and `SLOPVAC_PYENV_LIVE=1`.
 - The interpreter identity covers the interpreter executables. The standard library of the uv-managed installation sits outside the environment, and a change there needs write access as the user (R6).
 - uv writes install times into the environment, so a rebuilt environment gets a new trust hash and the user must trust the plugin again.
 - The build passes no proxy variables to uv, so an interpreter download through a proxy fails. The user can then install the interpreter with `uv python install` and build offline.
