@@ -40,6 +40,7 @@ fn interpreter() -> &'static Path {
         write(&path, json("sections"));
         write(&dir.join("tables-python"), json("table-repeat"));
         write(&dir.join("wrap-python"), json("table-wrap"));
+        write(&dir.join("normative-python"), json("table-normative"));
         write(
             &dir.join("planted/python3"),
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\nexit 0\n".to_owned(),
@@ -215,6 +216,25 @@ fn a_match_across_interleaved_cells_maps_to_the_hull_of_its_tokens() {
     let start = source.find("Rightonly").unwrap();
     let end = source.find("here").unwrap() + "here".len();
     assert_eq!((span.start(), span.end()), (start, end));
+}
+
+#[test]
+fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let skip = json!({"contexts": {"skip": ["requirement"]}});
+    let run = |token: &str| {
+        let mut options = RstOptions::default();
+        options.interpreter = Some(interpreter().with_file_name("normative-python"));
+        engine(&[tokens("dull", token, &skip)])
+            .with_rst(options)
+            .lint(&Input::rst("t.rst", &source))
+            .unwrap()
+    };
+    // The left cell states a requirement, so a rule that skips requirements is silent there.
+    assert_eq!(run("continue").findings.len(), 0);
+    // The right cell states none. Its text sits inside the extent of the left cell, but the
+    // tag belongs to the left cell's own text, so the rule still fires.
+    assert_eq!(run("Rightonly").findings.len(), 1);
 }
 
 #[test]

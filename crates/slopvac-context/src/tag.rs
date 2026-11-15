@@ -60,11 +60,7 @@ impl TagRegistry {
         for t in &self.taggers {
             tags.extend(t.tag(doc)?);
         }
-        tags.sort_by(|a, b| {
-            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
-        });
-        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
-        Ok(TagIndex { tags })
+        Ok(TagIndex::from_tags(tags))
     }
 }
 
@@ -75,6 +71,16 @@ pub struct TagIndex {
 }
 
 impl TagIndex {
+    /// Index `tags`: sorted by span, with duplicates removed.
+    #[must_use]
+    pub fn from_tags(mut tags: Vec<Tag>) -> Self {
+        tags.sort_by(|a, b| {
+            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
+        });
+        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
+        Self { tags }
+    }
+
     /// All tags in span order.
     #[must_use]
     pub fn tags(&self) -> &[Tag] {

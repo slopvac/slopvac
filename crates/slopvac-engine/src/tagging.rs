@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 
 use frontmatter_spans::FrontMatter;
 use slopvac_context::{
-    BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, SentenceView, TagIndex,
-    TagRegistry,
+    BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, SentenceView, Tag,
+    TagIndex, TagRegistry,
 };
 use slopvac_parse::{BlockKind, Container, Document, Projection};
 
@@ -26,6 +26,8 @@ struct Entry<'a> {
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
+    /// Offsets of the line terminator bytes, to tell whether a source range crosses a line.
+    breaks: Vec<usize>,
     source_len: usize,
     title: Option<&'a str>,
     front_matter: Option<&'a FrontMatter<'a>>,
@@ -103,12 +105,109 @@ impl<'a> View<'a> {
             .collect();
         Self {
             path,
+            breaks: source
+                .bytes()
+                .enumerate()
+                .filter(|&(_, b)| b == b'\n' || b == b'\r')
+                .map(|(i, _)| i)
+                .collect(),
             source_len: source.len(),
             title,
             front_matter,
             entries,
             by_span,
         }
+    }
+}
+
+impl View<'_> {
+    /// Replace the tags that sit on interleaved text by tags on the text that contributed.
+    ///
+    /// The cells of a table whose left cell wraps over several lines read cell by cell, so
+    /// the extent of the left cell contains the right cell. A tag on a sentence or a block
+    /// of the left cell has that extent, and a match in the right cell would inherit the tag.
+    /// Such a tag becomes one tag for each line of the cell's own text. A tag that covers
+    /// several blocks is left alone.
+    fn split_interleaved(&self, index: TagIndex) -> TagIndex {
+        // Entries with prose whose extent overlaps another's.
+        let mut order: Vec<usize> = (0..self.entries.len())
+            .filter(|&i| self.entries[i].projection.is_some())
+            .collect();
+        order.sort_by_key(|&i| self.entries[i].span.start);
+        let mut marked = vec![false; self.entries.len()];
+        let mut active: Vec<usize> = Vec::new();
+        for &i in &order {
+            let start = self.entries[i].span.start;
+            active.retain(|&j| self.entries[j].span.end > start);
+            if !active.is_empty() {
+                marked[i] = true;
+                for &j in &active {
+                    marked[j] = true;
+                }
+            }
+            active.push(i);
+        }
+        let interleaved: Vec<usize> = order.into_iter().filter(|&i| marked[i]).collect();
+        let Some(longest) = interleaved
+            .iter()
+            .map(|&i| self.entries[i].span.end - self.entries[i].span.start)
+            .max()
+        else {
+            return index;
+        };
+        let mut tags = Vec::with_capacity(index.tags().len());
+        for tag in index.tags() {
+            // The smallest interleaved extent that holds the tag.
+            let after =
+                interleaved.partition_point(|&i| self.entries[i].span.start <= tag.span.start);
+            let owner = interleaved[..after]
+                .iter()
+                .rev()
+                .take_while(|&&i| {
+                    tag.span.end - self.entries[i].span.start.min(tag.span.end) <= longest
+                })
+                .filter(|&&i| tag.span.end <= self.entries[i].span.end)
+                .min_by_key(|&&i| self.entries[i].span.end - self.entries[i].span.start);
+            let runs = owner.map(|&i| self.runs(self.entries[i].projection.expect("prose")));
+            let mut pieces = Vec::new();
+            for run in runs.iter().flatten() {
+                let from = run.start.max(tag.span.start);
+                let to = run.end.min(tag.span.end);
+                if from < to {
+                    pieces.push(Tag {
+                        span: from..to,
+                        ..tag.clone()
+                    });
+                }
+            }
+            if pieces.is_empty() {
+                tags.push(tag.clone());
+            } else {
+                tags.extend(pieces);
+            }
+        }
+        TagIndex::from_tags(tags)
+    }
+
+    /// The source ranges of the text of a projection, one for each line it sits on. A token
+    /// that crosses a line ends a range and belongs to none.
+    fn runs(&self, projection: &Projection) -> Vec<std::ops::Range<usize>> {
+        let line_of = |at: usize| self.breaks.partition_point(|&b| b < at);
+        let mut runs = Vec::new();
+        let mut current: Option<(usize, usize)> = None;
+        for token in projection.tokens() {
+            if !token.kind.is_real() {
+                continue;
+            }
+            let (start, end) = (token.src.start(), token.src.end());
+            if line_of(start) != line_of(end) {
+                runs.extend(current.take().map(|(a, b)| a..b));
+                continue;
+            }
+            current = Some(current.map_or((start, end), |(a, b)| (a.min(start), b.max(end))));
+        }
+        runs.extend(current.map(|(a, b)| a..b));
+        runs
     }
 }
 
@@ -179,5 +278,7 @@ pub(crate) fn tag(
     doc: &Document,
     front_matter: Option<&FrontMatter<'_>>,
 ) -> Result<TagIndex, ContextError> {
-    registry.tag_document(&View::new(path, source, doc, front_matter))
+    let view = View::new(path, source, doc, front_matter);
+    let index = registry.tag_document(&view)?;
+    Ok(view.split_interleaved(index))
 }

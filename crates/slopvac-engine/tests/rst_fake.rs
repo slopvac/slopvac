@@ -943,3 +943,32 @@ fn table_cells_report_their_logical_columns_after_column_and_row_spans() {
     );
     assert_eq!(parsed.notices, []);
 }
+
+#[test]
+fn prose_nested_in_a_cell_keeps_the_cells_columns() {
+    let (source, parsed) = parse_fixture("table-nested");
+    let starts: Vec<_> = parsed
+        .document
+        .blocks
+        .iter()
+        .filter(|b| b.projection.is_some())
+        .map(|b| b.span.start())
+        .collect();
+    let first = source.find("- same").unwrap();
+    let second = first + source[first + 1..].find("- same").unwrap() + 1;
+    assert_eq!(starts, [first + 2, second + 2]);
+}
+
+#[test]
+fn the_decoded_driver_output_is_counted_as_scanned() {
+    let (source, parsed) = parse_fixture("sections");
+    let json = fs::metadata(format!("{FIXTURES}/sections.json"))
+        .unwrap()
+        .len();
+    assert!(
+        parsed.scanned >= usize::try_from(json).unwrap() + source.len(),
+        "scanned {} for {json} bytes of output and {} of source",
+        parsed.scanned,
+        source.len()
+    );
+}

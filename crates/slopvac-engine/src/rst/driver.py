@@ -120,8 +120,13 @@ def main():
         return cells
 
     def cell_of(node):
+        # Prose inside a list or a quote in a cell belongs to the enclosing entry.
         entry = node.parent
-        if not isinstance(entry, nodes.entry):
+        while entry is not None and not isinstance(entry, nodes.entry):
+            if isinstance(entry, (nodes.table, nodes.section, nodes.document)):
+                return None
+            entry = entry.parent
+        if entry is None:
             return None
         table = entry.parent.parent.parent  # The tgroup holds the rows.
         if id(table) not in cell_cache:
@@ -244,7 +249,7 @@ def main():
                 }
                 if tag == "title":
                     entry["level"] = section_level(node)
-                cell = cell_of(node) if tag == "paragraph" else None
+                cell = cell_of(node) if tag != "title" else None
                 if cell is not None:
                     entry["cell"] = cell
                 out.append(entry)
