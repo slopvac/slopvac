@@ -435,3 +435,158 @@ fn a_greek_final_sigma_does_not_defeat_an_allowlisted_phrase() {
     assert_eq!(doc.findings.len(), 1);
     assert_eq!(doc.findings[0].start.column(), 26);
 }
+
+#[test]
+fn a_rule_reads_the_prose_of_a_raw_html_block_at_its_exact_position() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "Intro.\n\n<table>\n<tr>\n<td>We leverage data</td>\n</tr>\n</table>\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 8)]);
+}
+
+#[test]
+fn a_raw_html_block_counts_in_words_sentences_and_paragraphs() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "One two.\n\n<p>Three four five.</p>\n");
+    // 2 + 3 words, a sentence in each block, and one paragraph for each block.
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (5, 2, 2));
+}
+
+#[test]
+fn a_raw_html_block_with_several_elements_is_one_paragraph() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<table>\n<tr><td>One two.</td><td>Three.</td></tr>\n</table>\n",
+    );
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (3, 2, 1));
+}
+
+#[test]
+fn a_raw_html_block_in_a_quote_is_a_plain_paragraph_as_in_2x() {
+    // 2.x records the prose of a raw HTML block as a paragraph whatever holds it, so a quote
+    // exclusion or context does not reach it.
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"contexts": {"skip": ["quote"]}, "exclude_blocks": ["quote"]}),
+    )]);
+    let doc = lint(
+        &e,
+        "> <td>Quoted leverage</td>\n\n<td>Outside leverage</td>\n",
+    );
+    assert_eq!(
+        places(&doc),
+        [
+            ("core:cat.dull".to_owned(), 1, 14),
+            ("core:cat.dull".to_owned(), 3, 13)
+        ]
+    );
+}
+
+#[test]
+fn raw_html_headings_and_list_items_are_paragraphs_for_exclude_blocks_as_in_2x() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"exclude_blocks": ["heading", "list-item", "table"]}),
+    )]);
+    let doc = lint(
+        &e,
+        "<h1>On leverage</h1>\n\n<ul><li>Some leverage.</li></ul>\n\n- item\n\n  <p>Inner leverage.</p>\n",
+    );
+    assert_eq!(
+        places(&doc),
+        [
+            ("core:cat.dull".to_owned(), 1, 8),
+            ("core:cat.dull".to_owned(), 3, 14),
+            ("core:cat.dull".to_owned(), 7, 12)
+        ]
+    );
+}
+
+#[test]
+fn a_cell_without_a_final_period_runs_into_the_next_cell_as_in_2x() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<table>\n<tr><td>No period</td><td>Next one.</td></tr>\n</table>\n",
+    );
+    // The Python reference reads 4 words in 1 sentence and 1 paragraph.
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (4, 1, 1));
+}
+
+#[test]
+fn a_markdown_fence_inside_a_raw_html_block_is_code_not_prose() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<div>\n```\nleverage code\n```\nSee leverage now.\n</div>\n",
+    );
+    // Only the line after the fence is prose: 3 words, one sentence.
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 5)]);
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (3, 1, 1));
+}
+
+#[test]
+fn an_unclosed_fence_inside_a_raw_html_block_runs_to_its_end() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "<div>\nSee leverage.\n~~~\nleverage code\n</div>\n");
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 2, 5)]);
+}
+
+/// Two cells whose text makes one sentence in 2.x: "Fast and slow".
+const SPLIT_SENTENCE: &str = "<table>\n<tr><td>Fast and</td><td>slow</td></tr>\n</table>\n";
+
+#[test]
+fn a_sentence_match_across_html_elements_maps_to_the_source_extent() {
+    for scope in ["sentence", "body-sentence"] {
+        let e = engine(&[rule(
+            "pair",
+            &json!({"kind": "pattern", "pattern": r"^Fast\b.*slow$"}),
+            &json!({"scope": scope}),
+        )]);
+        let doc = lint(&e, SPLIT_SENTENCE);
+        assert_eq!(doc.findings.len(), 1, "{scope}");
+        let span = doc.findings[0].extent.unwrap().span;
+        // "Fast" starts at byte 16 and "slow" ends at byte 37.
+        assert_eq!((span.start(), span.end()), (16, 37), "{scope}");
+    }
+}
+
+#[test]
+fn a_tab_indented_fence_inside_a_raw_html_block_is_code() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<div>\n\t```\nleverage code\n\t```\nSee leverage now.\n</div>\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 5)]);
+    assert_eq!((doc.words, doc.sentences), (3, 1));
+}
+
+#[test]
+fn a_fence_in_a_raw_html_block_is_code_with_every_line_ending() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    for eol in ["\n", "\r\n", "\r"] {
+        let text = [
+            "<div>",
+            "```",
+            "leverage code",
+            "```",
+            "See leverage now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        let doc = lint(&e, &text);
+        assert_eq!(
+            places(&doc),
+            [("core:cat.dull".to_owned(), 5, 5)],
+            "{eol:?}"
+        );
+        assert_eq!((doc.words, doc.sentences), (3, 1), "{eol:?}");
+    }
+}
