@@ -53,7 +53,7 @@ The command copies each file it replaces to `.slopvac-migrate-backup` and then r
 
 The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the ones you do not use and run again.
 
-To keep the 2.x vocabulary behavior, add `--preserve-behavior`. It adds the STE style to `styles`.
+To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
 
 ## 5. Verify and undo
 
