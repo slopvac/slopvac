@@ -26,10 +26,13 @@ import json
 import posixpath
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -41,6 +44,7 @@ RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 DEFAULT_OUT = ROOT / "build" / "site-src"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
+CARGO = "cargo"
 
 Pages = dict[str, str]  # path relative to the site root -> file text
 
@@ -264,9 +268,28 @@ def _placeholder(path: str, title: str, swap: str) -> Pages:
     }
 
 
+@cache
+def rust_reference(crate: str) -> Pages:
+    """Pages printed by a crate's ``reference`` example, keyed by site path."""
+    with tempfile.TemporaryDirectory() as tmp:
+        command = [CARGO, "run", "--quiet", "-p", crate, "--example", "reference"]
+        result = subprocess.run(
+            [*command, "--", tmp], cwd=ROOT, capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            raise SystemExit(f"{crate} reference example failed:\n{result.stderr}")
+        return {
+            path.relative_to(tmp).as_posix(): path.read_text()
+            for path in sorted(Path(tmp).rglob("*.md"))
+        }
+
+
 def generate_styles() -> Pages:
-    # STUB(slopvac-8l4.19.10): needs style preset resolution (slopvac-8l4.7.1).
-    return _placeholder("styles/index.md", "Styles", "slopvac-8l4.19.10")
+    return rust_reference("slopvac-styles")
+
+
+def generate_terms() -> Pages:
+    return rust_reference("slopvac-terms")
 
 
 def generate_genres() -> Pages:
@@ -283,6 +306,7 @@ SECTIONS = (
     ("Rules", "rules/index.md"),
     ("Styles", "styles/index.md"),
     ("Genres", "genres/index.md"),
+    ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
     ("Packs", "plugins/packs.md"),
     ("Schemas", "schemas/index.md"),
@@ -306,6 +330,7 @@ def build(
         generate_schemas(site, schemas_dir),
         generate_protocol(schemas_dir),
         generate_styles(),
+        generate_terms(),
         generate_genres(),
         generate_packs(),
         {"index.md": index_page()},

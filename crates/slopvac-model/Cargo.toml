@@ -13,12 +13,9 @@ publish.workspace = true
 # ordinary builds, which then carry no shared atomic.
 test-counters = []
 
-[lints]
-workspace = true
-
 [dependencies]
-serde = { workspace = true }
 schemars = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
@@ -27,3 +24,6 @@ jsonschema = { workspace = true }
 proptest = { workspace = true }
 serde_yaml_ng = "0.10.0"
 toml = "1.2.1"
+
+[lints]
+workspace = true

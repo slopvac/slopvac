@@ -1,0 +1,501 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.587,
+        "over_budget": true,
+        "per_100_words": 1.587,
+        "score": 0.7,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.794,
+        "over_budget": true,
+        "per_100_words": 0.794,
+        "score": 47.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.794,
+        "over_budget": true,
+        "per_100_words": 0.794,
+        "score": 56.3,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 4,
+        "findings": 4,
+        "gating_per_100_words": 3.175,
+        "over_budget": true,
+        "per_100_words": 3.175,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 8,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "This sentence has 30 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "This sentence carries 4 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "error",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 98,
+        "end_column": 106,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "forwards",
+        "message": "Use the en-US spelling \"forward\".",
+        "replacement": "forward",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 105,
+          "start": 97
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 100,
+        "end_column": 107,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "It then",
+        "message": "This step carries more than one instruction (\"It then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "error",
+        "span": {
+          "end": 290,
+          "start": 283
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 108,
+        "end_column": 116,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "forwards",
+        "message": "Use the en-US spelling \"forward\".",
+        "replacement": "forward",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 299,
+          "start": 291
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 27,
+        "end_column": 29,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": ". ",
+        "message": "This paragraph has 7 sentences. Use six or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.paragraph-too-many-sentences",
+        "severity": "error",
+        "span": {
+          "end": 406,
+          "start": 404
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 140,
+        "end_column": 148,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "forwards",
+        "message": "Use the en-US spelling \"forward\".",
+        "replacement": "forward",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 525,
+          "start": 517
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 62,
+        "end_column": 70,
+        "end_line": 8,
+        "line": 8,
+        "matched_text": "forwards",
+        "message": "Use the en-US spelling \"forward\".",
+        "replacement": "forward",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 720,
+          "start": 712
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "8 error(s), limit 0",
+        "6.35 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "ste-descriptive at 1.59 severity-weighted findings per 100 words, budget 0.4",
+        "ste-procedural at 0.79 severity-weighted findings per 100 words, budget 0.4",
+        "ste-sentences at 0.79 severity-weighted findings per 100 words, budget 0.5",
+        "ste-words at 3.17 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 4,
+    "path": "rule-examples-ste-descriptive.md",
+    "per_100_words": 6.349,
+    "profile": "strict",
+    "prose": {
+      "errors": 8,
+      "findings": 8,
+      "per_100_words": 6.349,
+      "warnings": 0
+    },
+    "score": 0.0,
+    "sentences": 16,
+    "suggestions": 0,
+    "total_findings": 8,
+    "unchecked": [],
+    "warnings": 0,
+    "words": 126
+  },
+  "exit_code": 1
+}
