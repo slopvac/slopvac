@@ -1,0 +1,19 @@
+Refs #28333 -- Added partial support for filtering against window functions.
+
+Adds support for joint predicates against window annotations through
+subquery wrapping while maintaining errors for disjointed filter
+attempts.
+
+The "qualify" wording was used to refer to predicates against window
+annotations as it's the name of a specialized Snowflake extension to
+SQL that is to window functions what HAVING is to aggregates.
+
+While not complete the implementation should cover most of the common
+use cases for filtering against window functions without requiring
+the complex subquery pushdown and predicate re-aliasing machinery to
+deal with disjointed predicates against columns, aggregates, and window
+functions.
+
+A complete disjointed filtering implementation should likely be
+deferred until proper QUALIFY support lands or the ORM gains a proper
+subquery pushdown interface.

@@ -216,6 +216,19 @@ jobs:
         with:
           tool: nextest@0.9.152
 
+      # The RST adapter runs docutils. With SLOPVAC_RST_LIVE set, its live tests fail
+      # instead of skipping when docutils is missing, and the recorded driver output in the
+      # fixtures must equal what the pinned docutils writes now.
+      - name: Install the pinned docutils for the RST tests
+        if: matrix.name == 'linux-x64'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rst-venv"
+          "$RUNNER_TEMP/rst-venv/bin/python" -m pip install --quiet --require-hashes \
+            -r crates/slopvac-engine/tests/fixtures/rst/requirements-docutils.pip
+          "$RUNNER_TEMP/rst-venv/bin/python" crates/slopvac-engine/tests/fixtures/rst/generate.py --check
+          echo "$RUNNER_TEMP/rst-venv/bin" >> "$GITHUB_PATH"
+          echo "SLOPVAC_RST_LIVE=1" >> "$GITHUB_ENV"
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
 

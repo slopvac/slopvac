@@ -1,0 +1,9 @@
+Include rustc version in `rustc_span::StableCrateId`
+
+`rustc_span::def_id::StableCrateId` is a hash of various data about a crate during compilation. This PR includes the version of `rustc` in the input when computing this hash. From a cursory reading of [RFC 2603](https://rust-lang.github.io/rfcs/2603-rust-symbol-name-mangling-v0.html), this appears to be acceptable within that design.
+
+In order to pass the `mir-opt` and `ui` test suites, this adds new [normalization for hashes and symbol names in `compiletest`](https://github.com/rust-lang/rust/pull/89836/files#diff-03a0567fa80ca04ed5a55f9ac5c711b4f84659be2d0ac4a984196d581c04f76b). These are enabled by default, but we might prefer it to be configurable.
+
+In the UI tests, I had to truncate a significant amount of error annotations in v0 symbols (and maybe some legacy) in order to get the normalization to work correctly. (See https://github.com/rust-lang/rust/issues/90116.)
+
+Closes #85142.

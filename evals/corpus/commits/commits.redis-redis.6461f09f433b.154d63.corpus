@@ -1,0 +1,9 @@
+Fix ZRANGESTORE crash when zset_max_listpack_entries is 0 (#10767)
+
+When `zrangestore` is called container destination object is created. 
+Before this PR we used to create a listpack based object even if `zset-max-ziplist-entries`
+or equivalent`zset-max-listpack-entries` was set to 0.
+This triggered immediate conversion of the listpack into a skiplist in `zrangestore`, which hits
+an assertion resulting in an engine crash.
+
+Added a TCL test that reproduces this issue.

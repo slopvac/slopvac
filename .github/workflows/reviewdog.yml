@@ -5,6 +5,12 @@ name: Reviewdog
 # request. That is what makes it safe for fork pull requests, where the pull_request
 # token is read-only. Artifact contents are untrusted input: names, sizes, archive
 # entries and the PR number are all checked before use.
+#
+# Two producers are served until the 3.0 cutover. Job `comment` takes the 2.x
+# artifacts (reviewdog-prose, reviewdog-shellcheck). Job `comment-v3` takes the
+# artifact of the 3.0 Action's fork template (slopvac-findings, see
+# docs/ci/github-action.md) and validates it with scripts/fork_review.py. Remove
+# `comment` and the skip in its fetch step when the 2.x lint jobs go.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] reads artifacts only; no PR code is checked out or run
     workflows: [CI]
@@ -13,7 +19,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: reviewdog-${{ github.event.workflow_run.head_sha }}
+  group: >-
+    reviewdog-${{ github.event.workflow_run.head_repository.full_name }}-${{
+    github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 env:
@@ -24,7 +32,10 @@ env:
 
 jobs:
   comment:
-    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    if: >-
+      ${{ github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion != 'cancelled'
+      && github.event.workflow_run.conclusion != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -75,6 +86,8 @@ jobs:
           seen = set()
           for art in listing["artifacts"]:
               name = art["name"]
+              if name == "slopvac-findings":
+                  continue  # the 3.0 artifact; job comment-v3 handles it
               if name not in allowed or name in seen:
                   reject(f"unexpected or duplicate artifact: {name!r}")
               seen.add(name)
@@ -105,6 +118,10 @@ jobs:
                   if "pr-number" not in names:
                       reject(f"artifact {name} has no pr-number")
                   for info in infos:
+                      # STORED and DEFLATE only: CPython decompresses BZIP2 and LZMA
+                      # members without an output bound (CWE-409).
+                      if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                          reject(f"artifact {name} entry {info.filename!r} uses compression {info.compress_type}")
                       mode = info.external_attr >> 16
                       if info.is_dir() or stat.S_IFMT(mode) not in (0, stat.S_IFREG):
                           reject(f"artifact {name} entry {info.filename!r} is not a regular file")
@@ -113,7 +130,13 @@ jobs:
                       reject(f"artifact {name} expands to {total} bytes, limit {limit}")
                   for info in infos:
                       # Fixed destination names; the archive's own paths are never used.
-                      data = zf.open(info).read(info.file_size + 1)
+                      # Chunked read under a running cap; header sizes are not trusted.
+                      data = b""
+                      with zf.open(info) as handle:
+                          while chunk := handle.read(8192):
+                              data += chunk
+                              if len(data) > min(info.file_size, limit):
+                                  reject(f"artifact {name} entry {info.filename!r} expands past its size")
                       if len(data) != info.file_size:
                           reject(f"artifact {name} entry {info.filename!r} size mismatch")
                       (destination / info.filename).write_bytes(data)
@@ -193,3 +216,122 @@ jobs:
             f="$root/reviewdog-shellcheck/findings.checkstyle"
             run_reviewdog -f=checkstyle -name=shellcheck < "$f"
           fi
+
+  comment-v3:
+    # The 3.0 Action's fork template. The artifact is untrusted: fork authors
+    # control every byte. The pull request and the head commit are resolved here
+    # from the event and the API, and the artifact must merely agree with them.
+    # Only this repository's default-branch copy of scripts/fork_review.py runs.
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # list and download artifacts of the triggering run
+      contents: read # check out the default branch for the validation script
+      pull-requests: write # review comments
+    steps:
+      - name: Check out the validation script
+        # workflow_run checks out the default branch, never the pull request.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/fork_review.py
+          sparse-checkout-cone-mode: false
+      - name: Install reviewdog
+        run: |
+          set -euo pipefail
+          name="reviewdog_${REVIEWDOG_VERSION}_Linux_x86_64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSfL --max-time 120 -o "$RUNNER_TEMP/$name" \
+            "https://github.com/reviewdog/reviewdog/releases/download/v${REVIEWDOG_VERSION}/${name}"
+          echo "${REVIEWDOG_SHA256}  $RUNNER_TEMP/$name" | sha256sum --check --strict -
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP/bin" reviewdog
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
+          # Open pull requests from the run's own head branch, kept when the head
+          # repository and commit are the ones the event names. Exactly one may match.
+          # Capture first so an API failure stops the job instead of reading as "no PR".
+          listing="$(gh api -X GET "repos/$REPO/pulls" --paginate \
+            -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
+            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .number')"
+          numbers=()
+          if [[ -n "$listing" ]]; then
+            mapfile -t numbers <<< "$listing"
+          fi
+          if (( ${#numbers[@]} == 0 )); then
+            echo "No open pull request at $HEAD_SHA; nothing to report."
+            echo "number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          (( ${#numbers[@]} == 1 )) || { echo "::error::ambiguous pull request for $HEAD_SHA"; exit 1; }
+          [[ "${numbers[0]}" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "::error::invalid PR number"; exit 1; }
+          echo "number=${numbers[0]}" >> "$GITHUB_OUTPUT"
+      - name: Fetch and validate the findings
+        if: ${{ steps.pr.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_PR: ${{ steps.pr.outputs.number }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          MAX_ARCHIVE_BYTES: "1000000"
+        run: |
+          set -euo pipefail
+          # Judge by metadata first so nothing oversized is downloaded. Exactly one
+          # live artifact with this name may exist on the run.
+          gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name == "slopvac-findings" and (.expired | not))
+              | [.id, .size_in_bytes] | @tsv' \
+            > "$RUNNER_TEMP/artifacts.tsv"
+          if [[ ! -s "$RUNNER_TEMP/artifacts.tsv" ]]; then
+            echo "No slopvac-findings artifact; nothing to report."
+            exit 0
+          fi
+          if (( $(wc -l < "$RUNNER_TEMP/artifacts.tsv") != 1 )); then
+            echo "::error::duplicate slopvac-findings artifacts"
+            exit 1
+          fi
+          IFS=$'\t' read -r id size < "$RUNNER_TEMP/artifacts.tsv"
+          [[ "$id" =~ ^[0-9]+$ && "$size" =~ ^[0-9]+$ ]] || { echo "::error::malformed artifact metadata"; exit 1; }
+          if (( size < 1 || size > MAX_ARCHIVE_BYTES )); then
+            echo "::error::artifact size $size is outside 1..$MAX_ARCHIVE_BYTES"
+            exit 1
+          fi
+          timeout 120 gh api "repos/$REPO/actions/artifacts/$id/zip" > "$RUNNER_TEMP/slopvac-findings.zip"
+          # System python3 is acceptable: the script is standard library only and
+          # runs on the hosted image, so there is no dependency to pin or install.
+          python3 scripts/fork_review.py extract "$RUNNER_TEMP/slopvac-findings.zip" "$RUNNER_TEMP/findings-v3"
+      - name: Post review comments
+        if: ${{ steps.pr.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
+          CI_REPO_OWNER: ${{ github.repository_owner }}
+          CI_REPO_NAME: ${{ github.event.repository.name }}
+          # Event and API values, never the artifact's claims (see job comment).
+          CI_COMMIT: ${{ github.event.workflow_run.head_sha }}
+          CI_PULL_REQUEST: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/findings-v3/findings.rdjsonl"
+          if [[ ! -f "$report" ]]; then
+            echo "No validated report; nothing to post."
+            exit 0
+          fi
+          git init -q "$RUNNER_TEMP/rd"
+          cd "$RUNNER_TEMP/rd"
+          head="$(gh api "repos/$REPO/pulls/$CI_PULL_REQUEST" --jq '.head.sha')"
+          [[ "$head" == "$CI_COMMIT" ]] || { echo "PR head moved to $head; skipping."; exit 0; }
+          env -u GITHUB_ACTIONS "$RUNNER_TEMP/bin/reviewdog" -f=rdjsonl -name=slopvac \
+            -reporter=github-pr-review -filter-mode=added -fail-level=none < "$report"

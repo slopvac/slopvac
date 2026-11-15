@@ -1,0 +1,24 @@
+Add initial wasm32-wasi support
+
+I'm currently experimenting whether it's feasible to make wasm32-wasi wheels. This is also the groundwork needed to make a web version of ruff, which might the more interesting use case.
+
+Debug fails in wasmtime with "too many locals: locals exceed maximum", so release only atm.
+
+Usage:
+
+Either
+
+```
+cargo build --target wasm32-wasi --release --no-default-features
+wasmtime run --dir . ~/ruff/target/wasm32-wasi/release/ruff.wasm .
+```
+
+or with latest main maturin
+
+```
+maturin build --target wasm32-wasi --release --strip --no-default-features
+pip install target/wheels/ruff-0.0.69-py3-none-any.whl
+ruff . # Currenly limit to . due to wasi isolation
+```
+
+I hope that https://github.com/magiclen/path-absolutize/pull/12 lands soon so i can switch back to crates.io path-absolutize before this gets merged

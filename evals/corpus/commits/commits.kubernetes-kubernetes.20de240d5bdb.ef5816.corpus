@@ -1,0 +1,20 @@
+Bump log level for health check warning for missing components
+
+Default api server manifest whose liveness check looks like:
+"/livez?exclude=etcd&exclude=kms-provider-0&exclude=kms-provider-1"
+
+Which causes spurious messages in apiserver logs every 10 mins:
+```
+W1017 00:03:39.938956       9 healthz.go:256] cannot exclude some health checks, no health checks are installed matching "kms-provider-0","kms-provider-1"
+```
+
+Let's not log excessive messages especially at warning level. We should
+do this at a higher level (6 instead of 4).
+
+NOTE: we don't change the message returned to the http request, we keep
+that as-is (does not change on log level)
+
+Also see:
+https://github.com/aws/eks-distro/blob/v1-19-eks-12/projects/kubernetes/kubernetes/1-19/patches/0016-EKS-PATCH-apiserver-healthz-upper-log-verbosity-for-.patch
+
+Signed-off-by: Davanum Srinivas <davanum@gmail.com>

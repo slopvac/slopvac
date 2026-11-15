@@ -1,0 +1,11 @@
+e2e storage: eliminate context.TODO and cleanup callbacks
+
+Tests should accept a context from Ginkgo and pass it through to all functions
+which may block for a longer period of time. In particular all Kubernetes API
+calls through client-go should use that context. Then if a timeout occurs,
+the test returns immediately because everything that it could block on will
+return.
+
+Cleanup code then needs to run in a separate Ginkgo node, typically
+DeferCleanup, which ensures that it gets a separate context which has not timed
+out yet.

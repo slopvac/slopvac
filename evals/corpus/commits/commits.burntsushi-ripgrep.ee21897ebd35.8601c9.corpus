@@ -1,0 +1,12 @@
+tests: make 'cross test' work
+
+The reason why it wasn't working was the integration tests. Namely, the
+integration tests attempted to execute the 'rg' binary directly from
+inside cross's docker container. But this obviously doesn't work when
+'rg' was compiled for a totally different architecture.
+
+Cross normally does this by hooking into the Rust test infrastructure
+and causing tests to run with 'qemu'. But our integration tests didn't
+do that. This commit fixes our test setup to check for cross's
+environment variable that points to the 'qemu' binary. Once we have
+that, we just use 'qemu-foo rg' instead of 'rg'. Piece of cake.

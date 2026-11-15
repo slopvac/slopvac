@@ -1,0 +1,21 @@
+{
+  "schema_version": 3,
+  "id": "earned-claim",
+  "name": "Back the claim",
+  "message": "does the text back this claim?",
+  "severity": "suggestion",
+  "scope": "paragraph",
+  "match": {
+    "kind": "judgement",
+    "question": "Does the paragraph show evidence for each claim it makes?"
+  },
+  "examples": [
+    {
+      "bad": "Our tool is the best.",
+      "good": "Our tool finished the suite in 4 s."
+    }
+  ],
+  "citation": {
+    "source": "s"
+  }
+}

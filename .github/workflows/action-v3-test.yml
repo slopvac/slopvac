@@ -1,0 +1,65 @@
+name: Action 3.0 contract
+
+# Runs the 3.0 composite action (action-v3/) against a stand-in binary. The real
+# binary replaces it under slopvac-8l4.13.12.
+
+on:
+  pull_request:
+    paths:
+      - "action-v3/**"
+      - "scripts/action_v3.py"
+      - ".github/action-fixtures/fake-slopvac.py"
+      - ".github/workflows/action-v3-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: blocking
+            fail-on-findings: "true"
+            expected-outcome: failure
+          - name: non-blocking
+            fail-on-findings: "false"
+            expected-outcome: success
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make the stand-in binary executable
+        run: chmod +x .github/action-fixtures/fake-slopvac.py
+
+      - name: Run the action
+        id: action
+        continue-on-error: true
+        uses: ./action-v3
+        with:
+          paths: .github/action-fixtures/slop-laden.md
+          binary: ${{ github.workspace }}/.github/action-fixtures/fake-slopvac.py
+          fail-on-findings: ${{ matrix.fail-on-findings }}
+          reporter: none
+          sarif: "false"
+
+      - name: Check the gate and the outputs
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          EXPECTED: ${{ matrix.expected-outcome }}
+          FINDINGS: ${{ steps.action.outputs.findings }}
+          PASSED: ${{ steps.action.outputs.passed }}
+          CODECLIMATE: ${{ steps.action.outputs.codeclimate }}
+        run: |
+          set -euo pipefail
+          [[ "$OUTCOME" == "$EXPECTED" ]] || { echo "expected $EXPECTED, got $OUTCOME" >&2; exit 1; }
+          if [[ "$FINDINGS" != "1" || "$PASSED" != "false" ]]; then
+            echo "bad outputs: findings=$FINDINGS passed=$PASSED" >&2
+            exit 1
+          fi
+          test -s "$CODECLIMATE"

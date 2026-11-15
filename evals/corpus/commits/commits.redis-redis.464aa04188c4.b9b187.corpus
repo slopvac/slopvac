@@ -1,0 +1,8 @@
+fix infinite sleep in performEvictions when have lazyfree jobs (#11237)
+
+This bug is introduced in #7653. (Redis 6.2.0)
+
+When `server.maxmemory_eviction_tenacity` is 100, `eviction_time_limit_us` is
+`ULONG_MAX`, and if we cannot find the best key to delete (e.g. maxmemory-policy
+is `volatile-lru` and all keys with ttl have been evicted), in `cant_free` redis will sleep
+forever if some items are being freed in the lazyfree thread.

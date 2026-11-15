@@ -1,0 +1,10 @@
+unit tests: Skip Windows-unrelated tests on Windows
+
+Some of the unit tests cannot pass on Windows due to various reasons:
+
+- fsnotify does not have a Windows implementation.
+- Proxy Mode IPVS not supported on Windows.
+- Seccomp not supported on Windows.
+- VolumeMode=Block is not supported on Windows.
+- iSCSI volumes are mounted differently on Windows, and iscsiadm is a
+  Linux utility.

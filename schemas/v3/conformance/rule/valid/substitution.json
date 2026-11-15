@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "id": "plain-verb",
+  "name": "Use the plain verb",
+  "message": "use \"{replacement}\" instead of \"{match}\"",
+  "scope": "sentence",
+  "match": {
+    "kind": "substitution",
+    "substitutions": {
+      "\\butili[sz]e\\b": "use",
+      "\\bleverage\\b": "use"
+    },
+    "match_all_caps": true
+  },
+  "citation": {
+    "source": "s",
+    "ste_ref": "9:1.2"
+  }
+}

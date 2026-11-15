@@ -7,7 +7,21 @@
 # often enough (`caf391e` -> `calf`) that the file is noise-only.
 extend-exclude = [
   "CHANGELOG.md",
+  # Third-party text kept verbatim as eval data, plus manifests of hashes.
+  "evals/corpus/",
+  "evals/manifest.json",
+  "evals/defect-bank.json",
+  "evals/candidates-diagrams.json",
   "packages/slopvac-lint/tests/fixtures/text_type/runbook-labels-v1.jsonl",
+  # Generated Unicode tables (tools/generate_unicode.py); code-point names are not words.
+  "crates/slopvac-text/src/unicode_data.rs",
+  # Generated corpus (tests/fixtures/generate.py); it holds upper-, swapped- and
+  # Kelvin-cased copies of rule examples on purpose.
+  "crates/slopvac-rules/tests/fixtures/pattern-parity.json",
+  # Generated parity fixture (tests/fixtures/generate.py): matched text is cut mid-word.
+  "crates/slopvac-engine/tests/fixtures/engine-parity.json",
+  # Generated patterns (tests/fixtures/generate_word_class.py) join random fragments.
+  "crates/slopvac-text/tests/fixtures/word_class_differential.json",
 ]
 
 [default.extend-words]
@@ -16,6 +30,8 @@ extend-exclude = [
 #   (?:tion|sion|ment|ness|...)   nominalisation suffixes
 #   (?:ise|ize|yse|yze)           the -ise/-ize locale pair
 ment = "ment"
+# `control_fpr` is the false-positive-rate key in eval scorecards.
+fpr = "fpr"
 ness = "ness"
 ful = "ful"
 ist = "ist"
@@ -28,6 +44,8 @@ fter = "fter"
 struc = "struc"
 utiliz = "utiliz"
 retrie = "retrie"
+validat = "validat"
+deprecat = "deprecat"
 
 # Crate name `flate2` (gzip/deflate) cited in the v3 design doc.
 flate = "flate"
@@ -41,6 +59,17 @@ unparseable = "unparseable"
 Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
+
+# Product name (Azure Kubernetes Service) in the bundled terms list,
+# crates/slopvac-terms/data/builtin.toml.
+AKS = "AKS"
+
+# `Caf\u{e9}` escapes in slopvac-pos test strings.
+Caf = "Caf"
+
+# Mixed-case YAML boolean probe in frontmatter-spans tests.
+[default.extend-identifiers]
+TrUe = "TrUe"
 
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).

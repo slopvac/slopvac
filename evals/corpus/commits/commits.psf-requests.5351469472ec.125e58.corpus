@@ -1,0 +1,15 @@
+Add support for brotli decoding (#5783)
+
+* Add support for Brotli decoding
+
+When the brotli or brotlicffi packages are installed,
+urllib3.util.make_headers() inserts ',br' in the Accept-Encoding header
+and decodes br from the answers.
+
+* Create the default Accept-Encoding header once
+
+* Preserve the previous delimiter behavior
+
+* Update prose in quickstart.rst
+
+Co-authored-by: Seth Michael Larson <sethmichaellarson@gmail.com>

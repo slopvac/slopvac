@@ -1,0 +1,308 @@
+//! The text units a rule reads, cut from a parsed document by the rule's `scope`.
+
+use std::cell::OnceCell;
+use std::ops::Range;
+
+use slopvac_model::Span;
+use slopvac_parse::{BlockKind, Document, Projection, TokenKind};
+use slopvac_rules::Scope;
+use slopvac_text::{Sentence, TextError, split_sentences};
+
+use crate::directives::Lines;
+
+/// How a unit's offsets map to source bytes.
+#[derive(Clone, Copy)]
+enum Map<'p> {
+    /// The unit is projected prose.
+    Projected(&'p Projection),
+    /// The unit is a slice of the source.
+    Source,
+}
+
+/// One text a lexical rule matches in.
+pub(crate) struct Unit<'p> {
+    /// The text to match.
+    pub(crate) text: &'p str,
+    /// Where `text` starts: in the projection, or in the source for a `raw` unit.
+    base: usize,
+    map: Map<'p>,
+    /// The sentences of the projection that holds `text`, in the projection's offsets.
+    pub(crate) sentences: Option<&'p [Sentence]>,
+}
+
+impl Unit<'_> {
+    /// Where `text` starts in the projection `sentences` was cut from.
+    pub(crate) const fn base(&self) -> usize {
+        self.base
+    }
+
+    /// The source ranges a match is made of, given in bytes of `text`: one for each run of
+    /// source text its tokens cover. Text that reads in the source order has one, the span.
+    #[allow(clippy::single_range_in_vec_init)]
+    pub(crate) fn ranges(&self, range: &Range<usize>) -> Vec<Range<usize>> {
+        let (start, end) = (self.base + range.start, self.base + range.end);
+        match self.map {
+            Map::Projected(p) => {
+                let extents = p.extents_in_bytes(start, end);
+                if extents.is_empty() {
+                    let span = self.span(range);
+                    vec![span.start()..span.end()]
+                } else {
+                    extents.iter().map(|s| s.start()..s.end()).collect()
+                }
+            }
+            Map::Source => vec![start..end],
+        }
+    }
+
+    /// The source span of a match, given in bytes of `text`.
+    pub(crate) fn span(&self, range: &Range<usize>) -> Span {
+        let (start, end) = (self.base + range.start, self.base + range.end);
+        match self.map {
+            Map::Projected(p) => p.span_for_bytes(start, end),
+            Map::Source => Span::new(start, end).expect("a match ends after it starts"),
+        }
+    }
+}
+
+/// A block with prose.
+pub(crate) struct ProseBlock<'a> {
+    pub(crate) kind: &'a BlockKind,
+    /// Whether a list item or a block quote holds the block.
+    pub(crate) contained: bool,
+    pub(crate) projection: &'a Projection,
+    pub(crate) sentences: Vec<Sentence>,
+}
+
+struct Composite {
+    projection: Projection,
+    sentences: Vec<Sentence>,
+}
+
+/// A parsed document with its sentences split.
+pub(crate) struct Prepared<'a> {
+    source: &'a str,
+    blocks: Vec<ProseBlock<'a>>,
+    composite: OnceCell<Result<Composite, TextError>>,
+}
+
+impl<'a> Prepared<'a> {
+    pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, TextError> {
+        let mut blocks = Vec::new();
+        for block in &doc.blocks {
+            let Some(projection) = &block.projection else {
+                continue;
+            };
+            if projection.text().is_empty() {
+                continue;
+            }
+            blocks.push(ProseBlock {
+                kind: &block.kind,
+                contained: !block.containers.is_empty(),
+                projection,
+                sentences: split_sentences(projection.text())?,
+            });
+        }
+        Ok(Self {
+            source,
+            blocks,
+            composite: OnceCell::new(),
+        })
+    }
+
+    /// The blocks with prose, in document order.
+    pub(crate) fn blocks(&self) -> &[ProseBlock<'a>] {
+        &self.blocks
+    }
+
+    /// Words in the sentences of every prose block.
+    pub(crate) fn words(&self) -> usize {
+        self.blocks
+            .iter()
+            .flat_map(|b| &b.sentences)
+            .map(|s| s.word_count)
+            .sum()
+    }
+
+    pub(crate) fn sentence_count(&self) -> usize {
+        self.blocks.iter().map(|b| b.sentences.len()).sum()
+    }
+
+    pub(crate) fn paragraph_count(&self) -> usize {
+        self.blocks
+            .iter()
+            .filter(|b| matches!(b.kind, BlockKind::Paragraph) && !b.contained)
+            .count()
+    }
+
+    /// The whole document as one projection, with a synthetic space between blocks.
+    ///
+    /// Blocks read in block order. That is not always source order: the right cell of a
+    /// table beside a wrapped left cell starts in the source before the left cell ends. Such
+    /// a block still joins the one text, so a document rule sees every block, anchors and
+    /// sentence splits work over all of it, and a match that crosses blocks maps to the hull
+    /// of the source spans of its tokens.
+    fn composite(&self) -> Result<&Composite, TextError> {
+        self.composite
+            .get_or_init(|| {
+                let mut projection = Projection::new();
+                let mut end = 0;
+                let mut first = true;
+                for block in &self.blocks {
+                    let tokens = block.projection.tokens();
+                    if tokens.is_empty() {
+                        continue;
+                    }
+                    if !first {
+                        // The space between blocks bridges the source between them.
+                        projection.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
+                    }
+                    first = false;
+                    for (i, token) in tokens.iter().enumerate() {
+                        if block.projection.is_bridge(i) {
+                            projection.push_bridge(token.kind, &token.text, token.src);
+                        } else {
+                            projection.push_unordered(token.kind, &token.text, token.src);
+                        }
+                        end = token.src.end();
+                    }
+                }
+                let sentences = split_sentences(projection.text())?;
+                Ok(Composite {
+                    projection,
+                    sentences,
+                })
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    /// The units a rule of `scope` matches in.
+    pub(crate) fn units(&self, scope: Scope) -> Result<Vec<Unit<'_>>, TextError> {
+        let mut units = Vec::new();
+        match scope {
+            Scope::Raw => {
+                let lines = Lines::new(self.source);
+                for (number, text) in lines.iter() {
+                    units.push(Unit {
+                        text,
+                        base: lines.start(number),
+                        map: Map::Source,
+                        sentences: None,
+                    });
+                }
+            }
+            Scope::Document => {
+                let composite = self.composite()?;
+                if !composite.projection.text().is_empty() {
+                    units.push(Unit {
+                        text: composite.projection.text(),
+                        base: 0,
+                        map: Map::Projected(&composite.projection),
+                        sentences: Some(&composite.sentences),
+                    });
+                }
+            }
+            Scope::Prose | Scope::Paragraph | Scope::Heading => {
+                for block in &self.blocks {
+                    if scope == Scope::Heading && !matches!(block.kind, BlockKind::Heading { .. }) {
+                        continue;
+                    }
+                    units.push(Unit {
+                        text: block.projection.text(),
+                        base: 0,
+                        map: Map::Projected(block.projection),
+                        sentences: Some(&block.sentences),
+                    });
+                }
+            }
+            Scope::Sentence | Scope::BodySentence => {
+                for block in &self.blocks {
+                    if scope == Scope::BodySentence
+                        && matches!(
+                            block.kind,
+                            BlockKind::Heading { .. } | BlockKind::TableCell { .. }
+                        )
+                    {
+                        continue;
+                    }
+                    for s in &block.sentences {
+                        units.push(Unit {
+                            text: &block.projection.text()[s.start..s.end],
+                            base: s.start,
+                            map: Map::Projected(block.projection),
+                            sentences: Some(&block.sentences),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(units)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_parse::{Block, Container};
+
+    use super::*;
+
+    fn block(tokens: &[(TokenKind, &str, usize, usize)]) -> Block {
+        let mut projection = Projection::new();
+        for &(kind, text, start, end) in tokens {
+            projection.push(kind, text, Span::new(start, end).unwrap());
+        }
+        let start = tokens.iter().map(|t| t.2).min().unwrap();
+        let end = tokens.iter().map(|t| t.3).max().unwrap();
+        Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(start, end).unwrap(),
+            projection: Some(projection),
+            containers: Vec::<Container>::new(),
+        }
+    }
+
+    /// A left cell that wraps (source 10..44) and a right cell inside its extent (20..25).
+    fn interleaved() -> Document {
+        Document {
+            blocks: vec![
+                block(&[
+                    (TokenKind::Identity, "Left", 10, 14),
+                    (TokenKind::Collapse, " ", 14, 15),
+                    (TokenKind::Identity, "tail.", 39, 44),
+                ]),
+                block(&[(TokenKind::Identity, "Right", 20, 25)]),
+            ],
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn interleaved_blocks_make_one_document_text_in_reading_order() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].text, "Left tail. Right");
+        // The sentence split sees the whole text: one full sentence, then the next one.
+        let sentences = units[0].sentences.unwrap();
+        assert_eq!(sentences.len(), 2);
+    }
+
+    #[test]
+    fn a_match_over_interleaved_tokens_maps_to_the_hull_of_their_spans() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        let from = units[0].text.find("tail").unwrap();
+        let to = units[0].text.len();
+        // "tail." is at 39..44 and "Right" at 20..25: the hull is 20..44.
+        let span = units[0].span(&(from..to));
+        assert_eq!((span.start(), span.end()), (20, 44));
+        // Inside one token the span stays exact.
+        let at = units[0].text.find("Right").unwrap();
+        let exact = units[0].span(&(at..at + 5));
+        assert_eq!((exact.start(), exact.end()), (20, 25));
+    }
+}

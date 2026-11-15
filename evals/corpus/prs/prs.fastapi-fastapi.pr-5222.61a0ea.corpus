@@ -1,0 +1,42 @@
+🐛 Fix FastAPI People GitHub Action: set HTTPX timeout for GraphQL query request
+
+Fixes an error that occurred in scheduled actions of FastAPI People. 
+
+I have tested using my token, and it works as expected. Results [here](https://pastebin.com/8rzKKwuy) (too big to paste 🥲)
+ 
+Reason for the fix:
+Since the query results are too big, `httpx` default timeout of 5 seconds is not enough, resulting in `ReadTimeout` exception. 
+
+```
+Traceback (most recent call last):
+  File "/app/main.py", line 427, in <module>
+    settings=settings
+  File "/app/main.py", line 309, in get_experts
+    issue_edges = get_graphql_issue_edges(settings=settings, after=last_edge.cursor)
+  File "/app/main.py", line 284, in get_graphql_issue_edges
+    data = get_graphql_response(settings=settings, query=issues_query, after=after)
+  File "/app/main.py", line 273, in get_graphql_response
+    json={"query": query, "variables": variables, "operationName": "Q"},
+  File "/usr/local/lib/python3.7/site-packages/httpx/_api.py", line 320, in post
+    trust_env=trust_env,
+  File "/usr/local/lib/python3.7/site-packages/httpx/_api.py", line 110, in request
+    follow_redirects=follow_redirects,
+  File "/usr/local/lib/python3.7/site-packages/httpx/_client.py", line 815, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "/usr/local/lib/python3.7/site-packages/httpx/_client.py", line 906, in send
+    history=[],
+  File "/usr/local/lib/python3.7/site-packages/httpx/_client.py", line 933, in _send_handling_auth
+    history=history,
+  File "/usr/local/lib/python3.7/site-packages/httpx/_client.py", line 967, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/usr/local/lib/python3.7/site-packages/httpx/_client.py", line 1003, in _send_single_request
+    response = transport.handle_request(request)
+  File "/usr/local/lib/python3.7/site-packages/httpx/_transports/default.py", line 218, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/usr/local/lib/python3.7/contextlib.py", line 130, in __exit__
+    self.gen.throw(type, value, traceback)
+  File "/usr/local/lib/python3.7/site-packages/httpx/_transports/default.py", line 77, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: The read operation timed out
+```
+This PR adds a configurable default timeout and read timeout. Even if its not set as environment variable, the `httpx_read_time_out` defaults to 30 seconds and `httpx_default_time_out` defaults to `httpx` default, which is 5 seconds.

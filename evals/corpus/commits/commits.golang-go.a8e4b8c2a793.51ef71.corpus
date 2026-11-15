@@ -1,0 +1,11 @@
+go/types: remove pkgForMode in favor of pkgFor (cleanup)
+
+The mode is always 0.
+
+Change-Id: I6566383c7724b26f070729041bce203a5afa0989
+Reviewed-on: https://go-review.googlesource.com/c/go/+/443776
+Reviewed-by: Robert Griesemer <gri@google.com>
+Auto-Submit: Robert Griesemer <gri@google.com>
+Run-TryBot: Robert Griesemer <gri@google.com>
+Reviewed-by: Robert Findley <rfindley@google.com>
+TryBot-Result: Gopher Robot <gobot@golang.org>

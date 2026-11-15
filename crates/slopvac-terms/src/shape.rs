@@ -43,6 +43,16 @@ pub struct TermsFile {
 }
 
 impl TermsFile {
+    /// The bundled terms file.
+    ///
+    /// # Panics
+    /// If the bundled data is malformed; the crate's tests prevent that.
+    #[must_use]
+    pub fn builtin() -> Self {
+        Self::parse("builtin terms", include_str!("../data/builtin.toml"))
+            .expect("bundled terms file is valid")
+    }
+
     /// Parse terms TOML. `path` is used in messages only.
     ///
     /// # Errors

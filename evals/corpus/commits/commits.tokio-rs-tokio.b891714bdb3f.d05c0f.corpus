@@ -1,0 +1,9 @@
+ci: use --feature-powerset --depth 2 in features check (#5007)
+
+As has been pointed out a few times in the past (e.g., #4036 (comment)), each-feature 
+is not sufficient for features check.
+
+Ideally, we'd like to check all combinations of features, but there are too many
+combinations. So limit the max number of simultaneous feature flags to 2 by --depth
+option. I think this should be sufficient in most cases as @carllerche said in
+taiki-e/cargo-hack#58.

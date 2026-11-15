@@ -1,0 +1,220 @@
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+sherlock
+For the Doctor Watsons of this world, as opposed to the Sherlock
+but Doctor Watson has to have it taken out for him and dusted,
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn no_heading() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer =
+            StandardBuilder::new().heading(false).build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+sherlock:For the Doctor Watsons of this world, as opposed to the Sherlock
+sherlock:but Doctor Watson has to have it taken out for him and dusted,
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn no_heading_multiple() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer =
+            StandardBuilder::new().heading(false).build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let matcher = RegexMatcher::new("Sherlock").unwrap();
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+sherlock:For the Doctor Watsons of this world, as opposed to the Sherlock
+sherlock:but Doctor Watson has to have it taken out for him and dusted,
+sherlock:For the Doctor Watsons of this world, as opposed to the Sherlock
+sherlock:be, to a very large extent, the result of luck. Sherlock Holmes
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn heading_multiple() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer =
+            StandardBuilder::new().heading(true).build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let matcher = RegexMatcher::new("Sherlock").unwrap();
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink_with_path(&matcher, "sherlock"),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+sherlock
+For the Doctor Watsons of this world, as opposed to the Sherlock
+but Doctor Watson has to have it taken out for him and dusted,
+sherlock
+For the Doctor Watsons of this world, as opposed to the Sherlock
+be, to a very large extent, the result of luck. Sherlock Holmes
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn trim_ascii() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer = StandardBuilder::new()
+            .trim_ascii(true)
+            .build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(false)
+            .build()
+            .search_reader(
+                &matcher,
+                "   Watson".as_bytes(),
+                printer.sink(&matcher),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+Watson
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn trim_ascii_multi_line() {
+        let matcher = RegexMatcher::new("(?s:.{0})Watson").unwrap();
+        let mut printer = StandardBuilder::new()
+            .trim_ascii(true)
+            .stats(true)
+            .build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(false)
+            .multi_line(true)
+            .build()
+            .search_reader(
+                &matcher,
+                "   Watson".as_bytes(),
+                printer.sink(&matcher),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+Watson
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn trim_ascii_with_line_term() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer = StandardBuilder::new()
+            .trim_ascii(true)
+            .build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(true)
+            .before_context(1)
+            .build()
+            .search_reader(
+                &matcher,
+                "\n   Watson".as_bytes(),
+                printer.sink(&matcher),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+1-
+2:Watson
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn line_number() {
+        let matcher = RegexMatcher::new("Watson").unwrap();
+        let mut printer = StandardBuilder::new().build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(true)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink(&matcher),
+            )
+            .unwrap();
+
+        let got = printer_contents(&mut printer);
+        let expected = "\
+1:For the Doctor Watsons of this world, as opposed to the Sherlock
+5:but Doctor Watson has to have it taken out for him and dusted,
+";
+        assert_eq_printed!(expected, got);
+    }
+
+    #[test]
+    fn line_number_multi_line() {
+        let matcher = RegexMatcher::new("(?s)Watson.+Watson").unwrap();
+        let mut printer = StandardBuilder::new().build(NoColor::new(vec![]));
+        SearcherBuilder::new()
+            .line_number(true)
+            .multi_line(true)
+            .build()
+            .search_reader(
+                &matcher,
+                SHERLOCK.as_bytes(),
+                printer.sink(&matcher),
+            )

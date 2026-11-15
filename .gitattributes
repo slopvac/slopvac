@@ -1,0 +1,4 @@
+crates/slopvac-agents/topics/*.j2 text eol=lf
+crates/slopvac-agents/data/*.json text eol=lf
+docs/model-recommendations.md text eol=lf
+crates/slopvac-engine/tests/fixtures/rst/** text eol=lf

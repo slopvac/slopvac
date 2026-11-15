@@ -1,0 +1,36 @@
+Do not allocate or unwind after fork
+
+<!-- homu-ignore:start -->
+*[View all comments](https://triagebot.infra.rust-lang.org/gh-comments/rust-lang/rust/pull/81858)*
+<!-- homu-ignore:end -->
+
+### Objective scenarios
+
+ * Make (simple) panics safe in `Command::pre_exec_hook`, including most `panic!` calls, `Option::unwrap`, and array bounds check failures.
+ * Make it possible to `libc::fork` and then safely panic in the child (needed for the above, but this requirement means exposing the new raw hook API which the `Command` implementation needs).
+ * In singlethreaded programs, where panic in `pre_exec_hook` is already memory-safe, prevent the double-unwinding malfunction rust-lang/rust#79740.
+
+I think we want to make panic after fork safe even though the post-fork child environment is only experienced by users of `unsafe`, beause the subset of Rust in which any panic is UB is really far too hazardous and unnatural.
+
+#### Approach
+
+ * Provide a way for a program to, at runtime, switch to having panics abort.  This makes it possible to panic without making *any* heap allocations, which is needed because on some platforms malloc is UB in a child forked from a multithreaded program (see https://github.com/rust-lang/rust/pull/80263#issuecomment-774272370, and maybe also the SuS [spec](https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html)).
+ * Make that change in the child spawned by `Command`.
+ * Document the rules comprehensively enough that a programmer has a fighting chance of writing correct code.
+ * Test that this all works as expected (and in particular, that there aren't any heap allocations we missed)
+
+Fixes rust-lang/rust#79740
+
+#### Rejected (or previously attempted) approaches
+
+ * Change the panic machinery to be able to unwind without allocating, at least when the payload and message are both `'static`.  This seems like it would be even more subtle.  Also that is a potentially-hot path which I don't want to mess with.
+ * Change the existing panic hook mechanism to not convert the message to a `String` before calling the hook.  This would be a surprising change for existing code and would not be detected by the type system.
+ * Provide a `raw_panic_hook` function to intercept panics in a way that doesn't allocate.  (That was an earlier version of this MR.)
+
+### History
+
+This MR could be considered a v2 of rust-lang/rust#80263.  Thanks to everyone who commented there.  In particular, thanks to @m-ou-se, @Mark-Simulacrum and @hyd-dev.  (Tagging you since I think you might be interested in this new MR.)  Compared to rust-lang/rust#80263, this MR has very substantial changes and additions.
+
+Additionally, I have recently (2021-04-20) completely revised this series following very helpful comments from @m-ou-se.
+
+r? @m-ou-se

@@ -1,0 +1,624 @@
+{
+  "schema_version": 3,
+  "id": "ai-tells-register",
+  "title": "AI tells -- the chat-assistant register",
+  "description": "The chat-assistant voice that survived lexical patching. Each entry is a voice, not a word: synonym-swapping does not remove it. Per-model fingerprints inside this register drift fast, so treat model attributions as snapshots.",
+  "weight": 1.5,
+  "recommended_for": [
+    "consumer",
+    "reference",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "faux-candor-core",
+      "name": "Cut the intimacy performance",
+      "message": "faux candor: {match} -- cut the intimacy performance; candor is the unhedged claim",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "let's be real",
+          "let's be honest",
+          "honestly?",
+          "to be honest",
+          "i'll be honest",
+          "real talk",
+          "if we're being honest",
+          "the truth is"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Let's be real: the gate is slow on a cold cache.",
+          "good": "The gate takes 12 s on a cold cache."
+        }
+      ],
+      "fix": "Delete the frame and make the claim it was protecting.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Faux-candor pivot\")",
+        "url": "https://tropes.fyi/",
+        "note": "Mechanizable core. tropes.fyi files this as \"False Vulnerability\". Judgement remainder in ai-tells-register.faux-candor-remainder, because the catalog's actual test is whether the vulnerability is risk-free, which no token carries. The structure catalog's \"Here's the thing\" overlaps -- that form is in ai-tells-structure.false-suspense-frames."
+      }
+    },
+    {
+      "id": "faux-candor-remainder",
+      "name": "Judge whether an admission carries risk",
+      "message": "faux candor: candor is the unhedged claim itself",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this admission cost the author anything -- a named mistake, a measured failure, a refused feature -- or is it performed vulnerability with no exposure?"
+      },
+      "examples": [
+        {
+          "bad": "We're not perfect, and we're always learning.",
+          "good": "The 3.0 release shipped with a broken lockfile path for six days."
+        }
+      ],
+      "fix": "Replace the performance with the specific admission and its cost.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Faux-candor pivot\")",
+        "note": "Judgement remainder of ai-tells-register.faux-candor-core. The counter-signal catalog names the positive form: \"a concrete anecdote or a mistake admitted with its cost\"."
+      }
+    },
+    {
+      "id": "intensifier-tics-core",
+      "name": "Drop the unearned intensifier",
+      "message": "intensifier tic: {match} -- drop it; add the specific claim that would justify it",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "genuinely",
+          "quietly excellent",
+          "deeply",
+          "fundamentally",
+          "remarkably",
+          "refreshingly",
+          "surprisingly good",
+          "genuinely useful",
+          "deeply satisfying"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The API is genuinely well designed.",
+          "good": "The API has four endpoints and one auth mode."
+        }
+      ],
+      "fix": "Delete the adverb and add the claim that would have justified it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Intensifier tics\")",
+        "url": "https://github.com/conorbronsdon/avoid-ai-writing",
+        "note": "Mechanizable core. tropes.fyi files these as \"magic adverbs\". `actually` is deliberately OMITTED from the token list despite the catalog naming it: it is a correct contrastive adverb in technical prose (\"the flag actually reads the parent\"), and prose-inflation.intensifier already owns the measured degree adverbs on the same reasoning. Judgement remainder in ai-tells-register.intensifier-tics-remainder."
+      }
+    },
+    {
+      "id": "intensifier-tics-remainder",
+      "name": "Judge whether emotion is announced or earned",
+      "message": "unearned emotion: add the specific claim, or drop the adverb",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Is the reaction this adverb announces supported anywhere in the passage by a measurement, an example, or a named consequence?"
+      },
+      "examples": [
+        {
+          "bad": "The rewrite is remarkably clean.",
+          "good": "The rewrite deletes 400 lines and adds one function."
+        }
+      ],
+      "fix": "Supply the support, or delete the adverb.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Intensifier tics\")",
+        "note": "Judgement remainder of ai-tells-register.intensifier-tics-core."
+      }
+    },
+    {
+      "id": "corporate-analytic-filler-core",
+      "name": "Delete the analysis wrapper and keep the noun",
+      "message": "analytic filler: {match} -- delete the wrapper; keep the noun",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "at its core",
+          "it's worth noting",
+          "it is worth noting",
+          "worth noting that",
+          "importantly",
+          "more importantly",
+          "nuanced",
+          "lean into",
+          "lean in",
+          "at a high level",
+          "the key insight is"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "It's worth noting that, at its core, the loader is a cache.",
+          "good": "The loader caches resolved paths."
+        }
+      ],
+      "fix": "Delete the wrapper and keep the noun it packaged.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Corporate-analytic filler\")",
+        "note": "Mechanizable core. `granular` is deliberately OMITTED even though the catalog names it: the immutable historical record at https://github.com/srobroek/slopvac/blob/18c37dcaf2d11ef43ab9cf4610cae0664e2644af/packages/slopvac-lint/docs/exclusions.md records that upstream ai-tells.OverusedVocabulary was disabled partly for flagging `granular`, which has an ordinary technical use. The remainder was retired 2026-09-22 after adjudication showed 16 percent precision. Overlaps upstream ai-tells.EmptyPadding, ai-tells.EmptyPaddingStacked, ai-tells.FillerPhrases, and ai-tells.LabelAndExplain, all of which stay enabled."
+      }
+    },
+    {
+      "id": "over-formatting-reflex",
+      "name": "Format only when the data has columns",
+      "message": "over-formatting: format only when the data has columns or the items are parallel and independent",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does each table, heading, and bold-colon bullet in this document carry data with real columns or items that are parallel AND independent, or would two sentences of prose say the same thing?"
+      },
+      "examples": [
+        {
+          "bad": "| Field | Value |\n|---|---|\n| Purpose | It loads things |",
+          "good": "The loader reads the lockfile."
+        }
+      ],
+      "fix": "Unwrap the structure into prose where the items are neither columnar nor independent.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Over-formatting reflex\")",
+        "url": "https://rlhfbook.com/c/18-style",
+        "note": "A direct reward-model artifact, with per-model formatting fingerprints measured in https://arxiv.org/abs/2502.12150. Judgement-only at document scope: a table is correct or not depending on whether the data has columns, which is exactly the thing a pattern cannot see. The mechanizable slice of this entry is ai-tells-formatting.inline-header-list, which counts the bullet SHAPE. prose-format.prose-block is the inverse metric -- prose that should have been a table."
+      }
+    },
+    {
+      "id": "hedged-symmetry",
+      "name": "Take the position the evidence supports",
+      "message": "hedged symmetry: take the position the evidence supports; cut the ballast",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Is each counter-claim in this passage one somebody actually makes, or was it added so the passage reads even-handed?"
+      },
+      "examples": [
+        {
+          "bad": "Lockfiles help reproducibility, though some argue they add friction.",
+          "good": "The lockfile pins every transitive dependency."
+        }
+      ],
+      "fix": "Delete the invented counter-claim and state the position the evidence supports.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Hedged symmetry\")",
+        "url": "https://rlhfbook.com/c/18-style",
+        "note": "Upstream ai-tells.FalseBalance attempts the phrase forms and stays enabled. The judgement is whether the counter-claim has a holder, which needs domain knowledge. Related to but distinct from prose-inflation.hedge-stack, which counts hedges on ONE claim; this counts claims balanced against each other."
+      }
+    },
+    {
+      "id": "sycophantic-meta-residue",
+      "name": "Delete the approval residue and audit the surrounding text",
+      "message": "sycophancy residue: {match} -- delete it, then audit the surrounding text",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "great question",
+          "you're absolutely right",
+          "you are absolutely right",
+          "that's a great point",
+          "excellent question",
+          "i'd be happy to",
+          "happy to help",
+          "certainly! here",
+          "absolutely! here"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Great question! The loader reads the lockfile.",
+          "good": "The loader reads the lockfile."
+        }
+      ],
+      "fix": "Delete the phrase, then re-read the surrounding prose, which came from the same session.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Sycophantic meta-residue\")",
+        "note": "Enforced at every tier for the same reason ai-residue.chat-leakage is: it is session residue, never a register choice. Fully mechanizable as a token list, so no judgement partner; the catalog's own fix names the audit step, which is carried in `fix`. Overlaps upstream ai-tells.SycophancyMarkers, ai-tells.AffirmativeFormulas (kept at error even for source comments in .vale.ini), and ai-tells.ClosingPleasantries."
+      }
+    },
+    {
+      "id": "figurative-verb-verdict-core",
+      "name": "State the judgement literally",
+      "message": "figurative verdict: {match} -- state the judgement literally, with the observation that supports it",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "the point lands",
+          "the argument holds",
+          "stays quiet about",
+          "punches above its weight",
+          "earns its keep",
+          "the criticism sticks",
+          "the analogy holds",
+          "carries the weight",
+          "does the heavy lifting",
+          "the claim survives"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The abstraction earns its keep.",
+          "good": "The abstraction removes three near-duplicate functions."
+        }
+      ],
+      "fix": "State the judgement as a claim, with the observation that supports it.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Figurative-verb verdict\")",
+        "note": "Mechanizable core, as a literal token list. Distinctly 2026 register: the catalog records that it SURVIVED the lexical patching that killed the 2023-24 adjective bands, which is why it is worth a token list even though token lists decay. Upstream ships one rule per figurative verb -- ai-tells.FigurativeLands, FigurativeHolds, FigurativeQuiet, FigurativeCarries and twelve more -- all of which stay enabled, so expect duplicates. Judgement remainder in ai-tells-register.figurative-verb-verdict-remainder."
+      }
+    },
+    {
+      "id": "figurative-verb-verdict-remainder",
+      "name": "Judge whether a metaphor carries a verdict with no evidence",
+      "message": "figurative verdict: the construction carries the verdict so no evidence has to",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this sentence deliver a judgement through a metaphor while stating no observation that would let a reader disagree?"
+      },
+      "examples": [
+        {
+          "bad": "The design pays for itself.",
+          "good": "The design removes the second config file, so there is one place to look."
+        }
+      ],
+      "fix": "Replace the metaphor with the observation and the judgement it supports.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Figurative-verb verdict\")",
+        "note": "Judgement remainder of ai-tells-register.figurative-verb-verdict-core, and the durable form: the catalog warns the specific verbs drift per model generation while the construction does not."
+      }
+    },
+    {
+      "id": "urgency-inflation-core",
+      "name": "Name what breaks, or drop the framing",
+      "message": "urgency inflation: {match} -- name what breaks if the reader ignores it, or drop the framing",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "cannot be overstated",
+          "can't be overstated",
+          "more important than ever",
+          "at an inflection point",
+          "in an increasingly complex world",
+          "in today's fast-paced",
+          "now more than ever",
+          "the stakes have never been higher",
+          "a critical juncture"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The importance of the lockfile cannot be overstated.",
+          "good": "Without the lockfile, a transitive minor bump breaks the build."
+        }
+      ],
+      "fix": "Name the consequence, or delete the framing.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Urgency inflation\")",
+        "note": "Mechanizable core, enforced at every tier: .vale.ini already keeps upstream ai-tells.UrgencyInflation at error even for source comments, so this port inherits that disposition. Stakes asserted to substitute for consequence. Judgement remainder in ai-tells-register.urgency-inflation-remainder."
+      }
+    },
+    {
+      "id": "urgency-inflation-remainder",
+      "name": "Judge whether stakes name a consequence",
+      "message": "urgency inflation: name what breaks if the reader ignores it",
+      "severity": "suggestion",
+      "scope": "paragraph",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this passage name what breaks if the reader ignores it, or only that the matter is urgent?"
+      },
+      "examples": [
+        {
+          "bad": "Getting this right is critical.",
+          "good": "A wrong value here silently skips every file."
+        }
+      ],
+      "fix": "State the failure mode, or delete the urgency.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Urgency inflation\")",
+        "note": "Judgement remainder of ai-tells-register.urgency-inflation-core."
+      }
+    },
+    {
+      "id": "organic-consequence-core",
+      "name": "Say the choice was made, and why",
+      "message": "organic-consequence framing: {match} -- say the choice was made, and who made it",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "falls out naturally",
+          "falls out of",
+          "emerges organically",
+          "emerges naturally",
+          "a natural consequence of",
+          "naturally follows from",
+          "comes for free",
+          "happens by itself"
+        ],
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "The single-config design falls out naturally.",
+          "good": "The maintainers chose one config file so there is one place to look."
+        }
+      ],
+      "fix": "Name the person who chose it and the constraint that drove the choice.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Organic-consequence framing\")",
+        "note": "Mechanizable core, enforced at every tier because it erases the agent who chose -- the same defect prose-agency.false-agency and prose-agency.agentless-passive gate at error in every register. Upstream ai-tells.OrganicConsequence covers this and stays enabled. Judgement remainder in ai-tells-register.organic-consequence-remainder."
+      }
+    },
+    {
+      "id": "organic-consequence-remainder",
+      "name": "Judge whether a design is presented as self-caused",
+      "message": "organic-consequence framing: a designed decision presented as something that happened",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Did a person choose the thing this sentence describes as arising on its own?"
+      },
+      "examples": [
+        {
+          "bad": "The threshold settles at 34 words.",
+          "good": "The maintainers set the threshold at 34 words after measuring 30 and 32."
+        }
+      ],
+      "fix": "Name the chooser and the reason.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Organic-consequence framing\")",
+        "note": "Judgement remainder of ai-tells-register.organic-consequence-core."
+      }
+    },
+    {
+      "id": "false-agency-remainder",
+      "name": "Judge whether an abstraction occupies the subject slot",
+      "message": "false agency: name the human, or use \"you\" and put the reader in the seat",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Is the subject performing deliberate intent or choice, or is it a checkable technical actor under a specification? If it is a MUST/MUST NOT/DEFAULT line, imperative steering, quoted text, or a component causally operating, PRESERVE; flag only unowned intent, merit, or self-causation."
+      },
+      "examples": [
+        {
+          "bad": "The complaint becomes a fix.",
+          "good": "The team fixed it that week."
+        },
+        {
+          "bad": "A bet lives or dies in days.",
+          "good": "You learn within a week whether the bet paid."
+        },
+        {
+          "bad": "The parser rejects malformed JSON.",
+          "note": "preserve: technical actor performing a checkable operation"
+        },
+        {
+          "bad": "The cache evicts entries.",
+          "note": "preserve: component performing a checkable operation"
+        },
+        {
+          "bad": "MUST reject invalid input.",
+          "note": "preserve: normative specification line"
+        },
+        {
+          "bad": "Run the migration.",
+          "note": "preserve: imperative steering"
+        },
+        {
+          "bad": "The cache wants to protect you.",
+          "good": "The cache evicts entries."
+        }
+      ],
+      "fix": "Name the human. Where no specific person fits, use \"you\" and put the reader in the seat.",
+      "ai_signal": "weak",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"False agency\")",
+        "note": "Judgement remainder of prose-agency.false-agency, which mechanises the seven named subject-verb bands. This rule carries the open case, because the catalog's own definition -- \"an abstraction promoted to actor\" -- is productive: any abstract noun can occupy the subject slot, so no closed list finishes the job. The catalog distinguishes it from the two entries around it: those grant a component desert (\"earns its keep\", ai-tells-register.anthropomorphised-justification-core) or self-causation (\"falls out naturally\", ai-tells-register.organic-consequence-core). An artifact that disclaims a claim (\"this change makes no claim about...\") is ai-tells-register.disclaimed-claim-core, not this rule."
+      }
+    },
+    {
+      "id": "anthropomorphised-justification-core",
+      "name": "State the measured property, not the desert",
+      "message": "anthropomorphised justification: {match} -- state the measured property",
+      "severity": "error",
+      "scope": "prose",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "earns its keep",
+          "pulls its weight",
+          "load-bearing",
+          "deserves a closer look",
+          "settles the debate",
+          "deserves better",
+          "has earned",
+          "proves its worth",
+          "justifies itself"
+        ],
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "The lookbehind is load-bearing.",
+          "good": "Removing the lookbehind adds five false positives per README."
+        }
+      ],
+      "fix": "State the measured property that would justify the claim.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Anthropomorphised justification\")",
+        "note": "Mechanizable core. Upstream ai-tells.AnthropomorphicJustification covers this and stays enabled. BROADER than the content-shape anthropomorphism entry, which covers subjects ACTING and is mechanised as prose-agency.anthropomorphism; this covers subjects DESERVING. Judgement remainder in ai-tells-register.anthropomorphised-justification-remainder."
+      }
+    },
+    {
+      "id": "anthropomorphised-justification-remainder",
+      "name": "Judge whether a component is granted intent",
+      "message": "anthropomorphised justification: a component granted intent so its value needs no argument",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this sentence assert a component's value by granting it merit rather than by naming a property a reader could check?"
+      },
+      "examples": [
+        {
+          "bad": "The cache more than repays its complexity.",
+          "good": "The cache removes one network round trip per run."
+        }
+      ],
+      "fix": "Replace the merit claim with the checkable property.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — register.md (\"Anthropomorphised justification\")",
+        "note": "Judgement remainder of ai-tells-register.anthropomorphised-justification-core."
+      }
+    },
+    {
+      "id": "disclaimed-claim-core",
+      "name": "Say what was checked, not what the artifact claims",
+      "message": "disclaimed claim: {match} -- say who checked what, or that nobody did",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\bmakes?\\s+no\\s+(?:claims?|representations?)\\b|\\b(?:does|do|did)\\s+not\\s+(?:establish|demonstrate)\\s+that\\b|\\bwithout\\s+(?:claiming|implying|asserting)\\b|\\bcannot\\s+independently\\s+(?:verify|confirm|substantiate)\\b",
+        "ignore_case": true
+      },
+      "exceptions": [
+        {
+          "name": "quotation",
+          "detector": "quotation"
+        },
+        {
+          "name": "legal-force"
+        }
+      ],
+      "examples": [
+        {
+          "bad": "This configuration change makes no claim about endpoint health.",
+          "good": "This branch does not check endpoint health."
+        },
+        {
+          "bad": "Publication does not establish that the server launches on every host.",
+          "good": "This branch does not test whether the server launches."
+        },
+        {
+          "bad": "Keep the IaC server configured without claiming it manages the same resources.",
+          "good": "Keep the IaC server configured. It cannot delete stacks directly."
+        },
+        {
+          "bad": "The brief has no links, so this description cannot independently verify the results.",
+          "good": "The brief has no links, and nobody reran these checks."
+        }
+      ],
+      "fix": "Name the check and its result, such as \"This branch does not test X\", or delete the sentence.",
+      "ai_signal": "weak",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Slopvac adversarial review of a change-communication draft (2026-10)",
+        "note": "Mechanizable core. An artifact -- a change, a publication, registry metadata, the description itself -- is made the subject of an epistemic verb in a negated disclaimer, so the sentence reports what the artifact does not claim instead of what anybody checked. All four bad examples come from one model-written merge-request draft and its blind rewrite; the review that missed them filed the first under ai-tells-register.false-agency-remainder. The verb list is the epistemic one only. `makes no guarantee` and `does not guarantee that` state a component contract (\"the queue does not guarantee that jobs run in order\"), and `does not prove that` and `does not imply that` state what a signal means (\"lint does not prove that a statement is correct\", \"a 200 response does not imply that the write committed\"); the remainder judges those. Judgement remainder in ai-tells-register.disclaimed-claim-remainder."
+      }
+    },
+    {
+      "id": "disclaimed-claim-remainder",
+      "name": "Judge whether an artifact disclaims instead of a check being named",
+      "message": "disclaimed claim: say who checked what, or that nobody did",
+      "severity": "suggestion",
+      "scope": "sentence",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this sentence make an artifact disclaim a claim or a proof, instead of naming who did or did not check what?"
+      },
+      "examples": [
+        {
+          "bad": "The registry metadata is not evidence that the package installs.",
+          "good": "Nobody has installed the package from the registry yet."
+        },
+        {
+          "bad": "These results should not be read as confirming browser support.",
+          "good": "This branch runs no browser tests."
+        },
+        {
+          "bad": "The queue does not guarantee that jobs run in order.",
+          "note": "preserve: a component contract, not an artifact disclaiming a claim"
+        }
+      ],
+      "fix": "Name the check and its result, such as \"This branch does not test X\", or delete the sentence.",
+      "ai_signal": "weak",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Slopvac adversarial review of a change-communication draft (2026-10)",
+        "note": "Judgement remainder of ai-tells-register.disclaimed-claim-core. It covers the paraphrases no fixed verb list reaches, such as \"is not evidence that\" or \"should not be read as confirming\"."
+      }
+    }
+  ]
+}

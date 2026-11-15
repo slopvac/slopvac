@@ -1,0 +1,10 @@
+Refs #32948 -- Added Node.__copy__().
+
+This allows the copy.copy() usage in the Q._combine() method to finish
+sooner, instead of having to fallback to using the __reduce_ex__(4)
+method.
+
+Thia also avoids having to fall into copy.copy() at in Q._combine(),
+when combining a Q() with another Q().
+
+Co-authored-by: Keryn Knight <keryn@kerynknight.com>

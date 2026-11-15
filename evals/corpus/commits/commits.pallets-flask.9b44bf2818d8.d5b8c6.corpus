@@ -1,0 +1,14 @@
+Improve decorator typing (#4676)
+
+* Add a missing setupmethod decorator
+
+* Improve the decorator typing
+
+This will allow type checkers to understand that the decorators return
+the same function signature as passed as an argument. This follows the
+guidelines from
+https://mypy.readthedocs.io/en/stable/generics.html#declaring-decorators.
+
+I've chosen to keep a TypeVar per module and usage as I think
+encouraged by PEP 695, which I hope is accepted as the syntax is much
+nicer.

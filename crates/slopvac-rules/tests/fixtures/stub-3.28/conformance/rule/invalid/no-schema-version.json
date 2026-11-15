@@ -1,0 +1,14 @@
+{
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "tokens",
+    "tokens": [
+      "x"
+    ]
+  },
+  "citation": {
+    "source": "s"
+  }
+}

@@ -1,0 +1,14 @@
+Avoid zip extract racing condition by using read+write instead extract (#5707)
+
+Extract also creates the folder hierarchy, however we do not need that,
+the file itself being extracted to a temporary folder is good enough.
+Instead we read the content of the zip and then write it. The write is
+not locked but it's OK to update the same file multiple times given the
+update operation will not alter the content of the file. By not creating
+the folder hierarchy (default via extract) we no longer can run into the
+problem of two parallel extracts both trying to create the folder
+hierarchy without exists ok flag, and one must fail.
+
+Resolves #5223.
+
+Signed-off-by: Bernát Gábor <bgabor8@bloomberg.net>

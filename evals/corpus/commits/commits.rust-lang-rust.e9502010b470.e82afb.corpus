@@ -1,0 +1,24 @@
+Remove #![allow(rustc::potential_query_instability)] from rustc_infer
+
+Change reported_violations to use IndexSet
+
+It is being used to iterate and to insert, without a lot of lookups
+so hopefully it won't be a perf hit
+
+Change MiniGraph.nodes to use IndexSet
+
+It is being used to iterate and to insert, without performing lookups
+so hopefully it won't be a perf hit
+
+Change RegionConstraintData.givens to a FxIndexSet
+
+This might result in a perf hit. Remove was being used in `givens`,
+and `FxIndexSet` doesn't allow calling remove without losing the
+fixed iteration order. So it was necessary to change remove to
+`shift_remove`, but this method is slower.
+
+Change OpaqueTypesVisitor to use stable sets and maps
+
+This could also be a perf hit.
+
+Make TraitObject visitor use a stable set
