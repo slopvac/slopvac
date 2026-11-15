@@ -369,6 +369,50 @@ fn dotted_tool_slopvac_keys_migrate() {
 }
 
 #[test]
+fn an_unmapped_directive_id_stops_the_command_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = "profile = \"strict\"\n";
+    let doc = "# Title\n\n<!-- slopvac-allow: rule=prose-craft.no-such-rule reason=x -->\nText\n";
+    write(dir.path(), "slopvac.toml", config);
+    write(dir.path(), "docs/a.md", doc);
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"], &NullLinter);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.starts_with("error[config-legacy-dropped]: "), "{err}");
+    assert!(
+        err.contains("docs/a.md:3: `slopvac-allow rule=prose-craft.no-such-rule`"),
+        "{err}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("slopvac.toml")).unwrap(),
+        config
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("docs/a.md")).unwrap(),
+        doc
+    );
+    assert!(!dir.path().join(slopvac_migrate::BACKUP_DIR).exists());
+}
+
+#[test]
+fn unmapped_directive_ids_and_dropped_settings_come_back_together() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", "[vale]\nenabled = true\n");
+    write(
+        dir.path(),
+        "a.md",
+        "<!-- slopvac-allow: rule=orwell.no-such-rule reason=x -->\n",
+    );
+    match plan_of(dir.path()) {
+        Err(Error::Dropped(d)) => {
+            let files: Vec<_> = d.iter().map(|x| x.file.as_str()).collect();
+            assert!(files.contains(&"slopvac.toml"), "{d:?}");
+            assert!(files.contains(&"a.md"), "{d:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn warnings_print_even_when_there_is_nothing_to_change() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.md", "<!-- slopvac:begin -->\nunterminated\n");

@@ -19,7 +19,8 @@ Every output comes from one snapshot of its source, so the crate cannot drift fr
   region cases of `tests/contract/test_profile_mapping.py`, plus the crate's own
   scenarios below, with 2.x names renamed through the table above.
 
-`--check` regenerates in memory and exits 1, naming each stale file, without writing.
+`--check` regenerates in memory and exits 1, naming each stale or missing file, without
+writing. `--out DIR` writes or checks a copy of the crate layout instead of the crate.
 """
 
 from __future__ import annotations
@@ -314,22 +315,21 @@ def vectors_json(ruleset, rules: dict[str, str], categories: dict[str, str]) -> 
     return json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def outputs() -> dict[Path, str]:
+def outputs() -> dict[str, str]:
+    """Each generated file, keyed by its path relative to the crate."""
     from slopvac.rules import load_ruleset
 
     ruleset = load_ruleset()
     rules, categories = renames()
     files = {
-        CRATE / "data" / "renames.toml": renames_toml(rules, categories),
-        CRATE / "data" / "legacy" / "catalogue.toml": catalogue_toml(ruleset),
-        CRATE / "tests" / "fixtures" / "preserve" / "vectors.json": vectors_json(
+        "data/renames.toml": renames_toml(rules, categories),
+        "data/legacy/catalogue.toml": catalogue_toml(ruleset),
+        "tests/fixtures/preserve/vectors.json": vectors_json(
             ruleset, rules, categories
         ),
     }
     for profile in PROFILES:
-        files[CRATE / "data" / "legacy" / f"legacy-{profile}.toml"] = style_toml(
-            profile
-        )
+        files[f"data/legacy/legacy-{profile}.toml"] = style_toml(profile)
     return files
 
 
@@ -338,17 +338,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check", action="store_true", help="exit 1 when a file is stale"
     )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=CRATE,
+        help="the crate directory to write or check (default: slopvac-migrate)",
+    )
     args = parser.parse_args(argv)
     stale = []
-    for path, text in outputs().items():
+    for name, text in outputs().items():
+        path = args.out / name
         current = path.read_text(encoding="utf-8") if path.exists() else None
         if current == text:
             continue
-        stale.append(path.relative_to(ROOT).as_posix())
+        stale.append(name)
         if not args.check:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
     if args.check and stale:
-        print(f"stale, rerun {GENERATOR}: {', '.join(stale)}", file=sys.stderr)
+        print(
+            f"stale or missing in {args.out.name}, rerun {GENERATOR}: {', '.join(stale)}",
+            file=sys.stderr,
+        )
         return 1
     return 0
 
