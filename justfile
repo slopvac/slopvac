@@ -17,6 +17,10 @@ release VERSION:
     run_url="$(gh workflow run publish-lint.yml --ref "$tag" -f dry-run=false -f target=pypi)"
     printf '%s\nRun waits for the pypi environment approval.\n' "$run_url"
 
+# Rewrite the Cargo.lock extra-files in release-please-config.json for every workspace crate.
+sync-release-please:
+    python3 scripts/sync_release_please_crates.py
+
 # Wait for a normal system load before measuring.
 perf-wait-idle:
     uv run --group profile python scripts/perf/perf.py wait-idle

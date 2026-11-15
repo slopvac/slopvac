@@ -1,0 +1,838 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 1,
+        "per_100_words": 0.351,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 18,
+        "per_100_words": 6.316,
+        "warnings": 18
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 18,
+        "gating_per_100_words": 3.158,
+        "over_budget": true,
+        "per_100_words": 6.316,
+        "score": 1.2,
+        "suggestions": 0,
+        "warnings": 18
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 99.1,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.351,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 82.5,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.175,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 91.2,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.175,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 94.7,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 99.1,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.404,
+        "score": 96.5,
+        "suggestions": 4,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.351,
+        "score": 99.1,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 1,
+    "findings": [
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 12,
+        "end_column": 39,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "sits at the intersection of",
+        "message": "figurative \"sits\": sits at the intersection of -- write the literal relation: is at, rests with, is unused",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-sits",
+        "severity": "warning",
+        "span": {
+          "end": 38,
+          "start": 11
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 33,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "The loader parses the file, then",
+        "message": "This step carries more than one instruction (\"The loader parses the file, then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 96,
+          "start": 64
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 16,
+        "end_column": 30,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "sit unresolved",
+        "message": "figurative \"sits\": sit unresolved -- write the literal relation: is at, rests with, is unused",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-sits",
+        "severity": "warning",
+        "span": {
+          "end": 141,
+          "start": 127
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 18,
+        "end_column": 29,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "runs deeper",
+        "message": "figurative \"runs\": runs deeper -- name the behaviour, not the motion",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-runs",
+        "severity": "warning",
+        "span": {
+          "end": 198,
+          "start": 187
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 6,
+        "end_column": 21,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "runs counter to",
+        "message": "figurative \"runs\": runs counter to -- name the behaviour, not the motion",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-runs",
+        "severity": "warning",
+        "span": {
+          "end": 290,
+          "start": 275
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 355,
+          "start": 346
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 11,
+        "end_column": 22,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "falls short",
+        "message": "figurative \"falls\": falls short -- name the shortfall, or say which set it belongs to",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-falls",
+        "severity": "warning",
+        "span": {
+          "end": 367,
+          "start": 356
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 393,
+          "start": 384
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 9,
+        "end_column": 30,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "fall within the scope",
+        "message": "figurative \"falls\": fall within the scope -- name the shortfall, or say which set it belongs to",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-falls",
+        "severity": "warning",
+        "span": {
+          "end": 455,
+          "start": 434
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 1,
+        "end_column": 21,
+        "end_line": 23,
+        "line": 23,
+        "matched_text": "This document covers",
+        "message": "preamble: This document covers -- the title already says this; start with the first fact",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.document-preamble",
+        "severity": "error",
+        "span": {
+          "end": 495,
+          "start": 475
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 12,
+        "end_column": 41,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "draws on years of operational",
+        "message": "figurative \"draws\": draws on years of operational -- name the source, or state the comparison directly",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-draws",
+        "severity": "warning",
+        "span": {
+          "end": 546,
+          "start": 517
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 6,
+        "end_column": 25,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "draws a distinction",
+        "message": "figurative \"draws\": draws a distinction -- name the source, or state the comparison directly",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-draws",
+        "severity": "warning",
+        "span": {
+          "end": 630,
+          "start": 611
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 25,
+        "end_column": 26,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 686,
+          "start": 685
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 15,
+        "end_column": 29,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "casts doubt on",
+        "message": "figurative \"casts\": casts doubt on -- state the doubt and what supports it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-casts",
+        "severity": "warning",
+        "span": {
+          "end": 756,
+          "start": 742
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 57,
+        "end_column": 70,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "is unverified",
+        "message": "Passive voice \"is unverified\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 846,
+          "start": 833
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 21,
+        "end_column": 43,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "strikes the right tone",
+        "message": "figurative \"strikes\": strikes the right tone -- state the effect or the tradeoff directly",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-strikes",
+        "severity": "warning",
+        "span": {
+          "end": 891,
+          "start": 869
+        }
+      },
+      {
+        "ai_signal": "strong",
+        "category": "ai-tells-structure",
+        "column": 53,
+        "end_column": 63,
+        "end_line": 39,
+        "line": 39,
+        "matched_text": "four steps",
+        "message": "cataphoric lead-in: four steps -- let the list carry its own length; cut the forecast",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.cataphoric-lead-in-core",
+        "severity": "suggestion",
+        "span": {
+          "end": 956,
+          "start": 946
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 9,
+        "end_column": 31,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "strikes at the core of",
+        "message": "figurative \"strikes\": strikes at the core of -- state the effect or the tradeoff directly",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-strikes",
+        "severity": "warning",
+        "span": {
+          "end": 989,
+          "start": 967
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 25,
+        "end_column": 36,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "an easy win",
+        "message": "figurative \"wins\": an easy win -- state the benefit and its size",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-wins",
+        "severity": "warning",
+        "span": {
+          "end": 1096,
+          "start": 1085
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 30,
+        "end_column": 36,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "300 ms",
+        "message": "implementation leak: 300 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "warning",
+        "span": {
+          "end": 1134,
+          "start": 1128
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "The schema",
+        "message": "Missing article before \"The schema\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 1169,
+          "start": 1159
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 12,
+        "end_column": 27,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "lends itself to",
+        "message": "figurative \"lends\": lends itself to -- say what it adds, or what it makes possible",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-lends",
+        "severity": "warning",
+        "span": {
+          "end": 1185,
+          "start": 1170
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 51,
+        "line": 51,
+        "matched_text": "The schema",
+        "message": "Missing article before \"The schema\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 1221,
+          "start": 1211
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 13,
+        "end_column": 29,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "rides on whether",
+        "message": "figurative \"rides\": rides on whether -- name what depends on what",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-rides",
+        "severity": "warning",
+        "span": {
+          "end": 1282,
+          "start": 1266
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 12,
+        "end_column": 24,
+        "end_line": 57,
+        "line": 57,
+        "matched_text": "fails loudly",
+        "message": "figurative \"loud\": fails loudly -- name what it actually does",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.figurative-loud",
+        "severity": "warning",
+        "span": {
+          "end": 1372,
+          "start": 1360
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 14,
+        "end_column": 23,
+        "end_line": 61,
+        "line": 61,
+        "matched_text": "resonates",
+        "message": "figurative \"resonate\": resonates -- name what connects, and with whom",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.resonate-overuse",
+        "severity": "warning",
+        "span": {
+          "end": 1474,
+          "start": 1465
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 21,
+        "end_column": 32,
+        "end_line": 65,
+        "line": 65,
+        "matched_text": "is the move",
+        "message": "colloquial assessment: is the move -- state the judgement and the evidence for it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.colloquial-assessment",
+        "severity": "warning",
+        "span": {
+          "end": 1588,
+          "start": 1577
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-figurative",
+        "column": 1,
+        "end_column": 20,
+        "end_line": 69,
+        "line": 69,
+        "matched_text": "What really matters",
+        "message": "colloquial assessment: What really matters -- state the judgement and the evidence for it",
+        "replacement": null,
+        "rule_id": "core:ai-tells-figurative.colloquial-assessment",
+        "severity": "warning",
+        "span": {
+          "end": 1678,
+          "start": 1659
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "1 error(s), limit 0",
+        "3.86 severity-weighted findings per 100 words, budget 3.0",
+        "score 57.2, minimum 70.0",
+        "ai-tells-figurative at 3.16 severity-weighted findings per 100 words, budget 0.8"
+      ]
+    },
+    "paragraphs": 36,
+    "path": "rule-examples-ai-tells-figurative.md",
+    "per_100_words": 9.825,
+    "profile": "normal",
+    "prose": {
+      "errors": 1,
+      "findings": 9,
+      "per_100_words": 3.158,
+      "warnings": 2
+    },
+    "score": 57.2,
+    "sentences": 36,
+    "suggestions": 7,
+    "total_findings": 28,
+    "unchecked": [],
+    "warnings": 20,
+    "words": 285
+  },
+  "exit_code": 1
+}

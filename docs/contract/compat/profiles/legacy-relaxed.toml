@@ -125,6 +125,7 @@ severity = "off"
 
 [rules]
 "ai-tells-structure.contrastive-inversion-frames" = "suggestion"
+"ai-tells-structure.contrastive-appositive" = "off"
 "ai-tells-structure.contrastive-inversion-remainder" = "off"
 "ai-tells-structure.definitional-negation-pair" = "suggestion"
 "ai-tells-structure.staccato-negative-parallel-frames" = "off"

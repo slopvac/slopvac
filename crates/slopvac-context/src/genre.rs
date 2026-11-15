@@ -1,65 +1,401 @@
-//! Genres as data: definitions, a registry with an `extends` chain, detection with
-//! reasons, and resolution of the genre for one document.
-//!
-//! STUB(slopvac-8l4.5.12): field names follow the bead text of slopvac-8l4.2.4 until the
-//! genre schema is published.
+//! Genres as data: the `genre` artifact of `schemas/v3/genre.schema.json`, specified in
+//! `docs/contract/packs.md`, section 4. This module holds the definitions, a registry with
+//! an `extends` chain, detection with reasons, and resolution of the genre for one document.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
+use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
+use serde::de::{self, Visitor};
 
-use crate::{BlockKind, DocumentView, Error, FrontmatterCondition, Pattern, normalize_path};
+use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key, present};
+use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
-const SEVERITIES: [&str; 4] = ["off", "suggestion", "warning", "error"];
+/// The level a rule or category reports at (`RuleLevel` in `config.schema.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RuleLevel {
+    /// Report as an error.
+    Error,
+    /// Report as a warning.
+    Warning,
+    /// Report as a suggestion.
+    Suggestion,
+    /// Disable.
+    Off,
+}
 
-/// One detection signal. Exactly one of `heading`, `path` or `frontmatter` is set.
+/// Strictness profile that a genre selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Profile {
+    /// Strict.
+    Strict,
+    /// Normal.
+    Normal,
+    /// Relaxed.
+    Relaxed,
+}
+
+impl Profile {
+    /// The profile name as written in data files.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "strict",
+            Self::Normal => "normal",
+            Self::Relaxed => "relaxed",
+        }
+    }
+}
+
+/// A density budget: a number, or `none` to clear a budget from a lower layer.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Budget {
+    /// Findings per 100 words, at least 0.
+    Limit(f64),
+    /// No budget.
+    None(NoBudget),
+}
+
+/// The string `none`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum NoBudget {
+    /// The only accepted string.
+    #[serde(rename = "none")]
+    None,
+}
+
+/// The table form of `CategorySettings`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CategoryTable {
+    /// Level of the category.
+    #[serde(default, deserialize_with = "present")]
+    pub severity: Option<RuleLevel>,
+    /// Lowest level that inherited rules may report at.
+    #[serde(default, deserialize_with = "present")]
+    pub minimum_severity: Option<RuleLevel>,
+    /// Density budget.
+    #[serde(default, deserialize_with = "present")]
+    pub max_per_100_words: Option<Budget>,
+    /// Multiplier on the category's share of the score.
+    #[serde(default, deserialize_with = "present")]
+    pub weight: Option<f64>,
+    #[serde(flatten)]
+    _extensions: Extensions,
+}
+
+/// Per-category dials. A bare level stands for `{ severity = <level> }`.
+#[derive(Debug, Clone)]
+pub enum CategorySettings {
+    /// A bare level.
+    Level(RuleLevel),
+    /// A table of dials.
+    Table(CategoryTable),
+}
+
+impl<'de> Deserialize<'de> for CategorySettings {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = CategorySettings;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a rule level or a table of category settings")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<CategorySettings, E> {
+                RuleLevel::deserialize(de::value::StrDeserializer::new(v))
+                    .map(CategorySettings::Level)
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<CategorySettings, A::Error> {
+                CategoryTable::deserialize(de::value::MapAccessDeserializer::new(map))
+                    .map(CategorySettings::Table)
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+impl CategorySettings {
+    fn as_table(&self) -> CategoryTable {
+        match self {
+            Self::Level(l) => CategoryTable {
+                severity: Some(*l),
+                ..CategoryTable::default()
+            },
+            Self::Table(t) => t.clone(),
+        }
+    }
+}
+
+impl CategoryTable {
+    /// Set every dial that `over` sets.
+    fn patch(&mut self, over: &CategoryTable) {
+        self.severity = over.severity.or(self.severity);
+        self.minimum_severity = over.minimum_severity.or(self.minimum_severity);
+        self.max_per_100_words = over.max_per_100_words.or(self.max_per_100_words);
+        self.weight = over.weight.or(self.weight);
+    }
+}
+
+/// Which text a detection signal reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignalKind {
+    /// A glob over the project-relative path.
+    Path,
+    /// A front matter key with an optional exact value.
+    FrontMatter,
+    /// A PCRE2 pattern over heading text.
+    Heading,
+    /// A PCRE2 pattern over the body.
+    Text,
+}
+
+impl SignalKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::FrontMatter => "front-matter",
+            Self::Heading => "heading",
+            Self::Text => "text",
+        }
+    }
+}
+
+/// A front matter value that a signal compares with.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Scalar {
+    /// A boolean.
+    Bool(bool),
+    /// A whole number.
+    Int(i64),
+    /// A fractional number.
+    Float(f64),
+    /// A string.
+    Str(String),
+}
+
+impl Scalar {
+    fn to_text(&self) -> String {
+        match self {
+            Self::Bool(b) => b.to_string(),
+            Self::Int(i) => i.to_string(),
+            Self::Float(f) => f.to_string(),
+            Self::Str(s) => s.clone(),
+        }
+    }
+}
+
+/// One detection signal. `kind` selects which other field applies.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DetectSignal {
-    /// Pattern for any heading in the document.
-    pub heading: Option<String>,
-    /// Pattern for the file path.
-    pub path: Option<String>,
-    /// Front matter key and value pattern.
-    pub frontmatter: Option<FrontmatterCondition>,
-    /// Score added when the signal matches.
+pub struct Signal {
+    /// Signal kind.
+    pub kind: SignalKind,
+    /// Score added when the signal matches. Defaults to 1.
+    #[serde(default = "default_weight")]
     pub weight: f32,
+    /// `path`: glob over the path.
+    #[serde(default, deserialize_with = "present")]
+    pub glob: Option<String>,
+    /// `front-matter`: key name.
+    #[serde(default, deserialize_with = "present")]
+    pub key: Option<String>,
+    /// `front-matter`: exact value; absent means the key only has to exist.
+    #[serde(default, deserialize_with = "present")]
+    pub equals: Option<Scalar>,
+    /// `heading` and `text`: PCRE2 pattern.
+    #[serde(default, deserialize_with = "present")]
+    pub pattern: Option<String>,
+    #[serde(flatten)]
+    _extensions: Extensions,
 }
 
-/// A genre definition as written in a pack.
+fn default_weight() -> f32 {
+    1.0
+}
+
+fn default_min_score() -> f32 {
+    1.0
+}
+
+/// Signals that suggest the genre. A document scores the sum of the weights of the signals
+/// that match. The genre is a candidate when the score reaches `min_score`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GenreSpec {
-    /// Genre id, kebab-case.
-    pub id: String,
-    /// Parent genre. Its tolerances and contexts apply first.
-    pub extends: Option<String>,
-    /// An abstract genre is never detected or chosen by default.
-    #[serde(default, rename = "abstract")]
-    pub is_abstract: bool,
-    /// One-line purpose.
-    #[serde(default)]
-    pub description: String,
-    /// Profile name the genre implies.
-    pub profile: Option<String>,
-    /// Score a genre needs to be detected.
-    #[serde(default = "default_threshold")]
-    pub threshold: f32,
-    /// Detection signals.
-    #[serde(default)]
-    pub detect: Vec<DetectSignal>,
-    /// Severity per rule id: `off`, `suggestion`, `warning` or `error`.
-    #[serde(default)]
-    pub tolerances: BTreeMap<String, String>,
-    /// Context tags the genre declares for the whole document, such as `security`.
-    #[serde(default)]
-    pub contexts: Vec<String>,
-    /// Snippet for `slopvac prime write`.
-    pub prime: Option<String>,
+pub struct Detect {
+    /// Score a genre needs to be a candidate. Defaults to 1.
+    #[serde(default = "default_min_score")]
+    pub min_score: f32,
+    /// Detection signals, at least one.
+    pub signals: Vec<Signal>,
+    #[serde(flatten)]
+    _extensions: Extensions,
 }
 
-fn default_threshold() -> f32 {
-    3.0
+/// A genre definition as written in a pack file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenreSpec {
+    /// Must be 3.
+    pub schema_version: u32,
+    /// Genre id, `^[a-z][a-z0-9-]*$`.
+    pub id: String,
+    /// Display title.
+    #[serde(default, deserialize_with = "present")]
+    pub title: Option<String>,
+    /// What the genre is for.
+    #[serde(default, deserialize_with = "present")]
+    pub description: Option<String>,
+    /// Typical documents, for people.
+    #[serde(default, deserialize_with = "present")]
+    pub surfaces: Option<String>,
+    /// Genres this one builds on, lowest first. Their settings apply below this genre's.
+    #[serde(default)]
+    pub extends: Vec<String>,
+    /// Strictness profile that the genre selects when no other layer sets one.
+    #[serde(default, deserialize_with = "present")]
+    pub profile: Option<Profile>,
+    /// Detection. A genre without it is never detected.
+    #[serde(default, deserialize_with = "present")]
+    pub detect: Option<Detect>,
+    /// Styles the genre activates, in order.
+    #[serde(default)]
+    pub styles: Vec<String>,
+    /// Settings per category name.
+    #[serde(default)]
+    pub categories: BTreeMap<String, CategorySettings>,
+    /// Level per rule name.
+    #[serde(default)]
+    pub rules: BTreeMap<String, RuleLevel>,
+    #[serde(flatten)]
+    _extensions: Extensions,
+}
+
+impl GenreSpec {
+    /// Parse one genre from YAML.
+    pub fn from_yaml(text: &str) -> Result<Self, Error> {
+        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+    }
+
+    /// Check the rules that the schema states beyond field types.
+    pub fn validate(&self) -> Result<(), Error> {
+        let id = &self.id;
+        let fail = |msg: String| Error::Parse(format!("genre `{id}`: {msg}"));
+        check_schema_version(&format!("genre `{id}`"), self.schema_version)?;
+        if !is_name(id) {
+            return Err(fail("id must be lowercase kebab-case".into()));
+        }
+        for (what, text) in [
+            ("title", &self.title),
+            ("description", &self.description),
+            ("surfaces", &self.surfaces),
+        ] {
+            if text.as_deref().is_some_and(str::is_empty) {
+                return Err(fail(format!("{what} needs at least one character")));
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for r in &self.extends {
+            if !is_ref(r) {
+                return Err(fail(format!("`extends` entry `{r}` is not a genre name")));
+            }
+            if !seen.insert(r) {
+                return Err(fail(format!("`extends` repeats `{r}`")));
+            }
+        }
+        if let Some(r) = self.styles.iter().find(|r| !is_ref(r)) {
+            return Err(fail(format!("`styles` entry `{r}` is not a style name")));
+        }
+        let mut keys = self.categories.keys().chain(self.rules.keys());
+        if let Some(k) = keys.find(|k| !is_rule_key(k)) {
+            return Err(fail(format!("`{k}` is not a rule or category name")));
+        }
+        for c in self.categories.values() {
+            if let CategorySettings::Table(t) = c
+                && (matches!(t.max_per_100_words, Some(Budget::Limit(n)) if n < 0.0)
+                    || t.weight.is_some_and(|w| w < 0.0))
+            {
+                return Err(fail("budgets and weights are at least 0".into()));
+            }
+        }
+        if let Some(d) = &self.detect {
+            d.validate(id)?;
+        }
+        Ok(())
+    }
+}
+
+impl Detect {
+    fn validate(&self, genre: &str) -> Result<(), Error> {
+        let fail = |msg: &str| Error::Parse(format!("genre `{genre}`: {msg}"));
+        if self.min_score <= 0.0 || self.min_score.is_nan() {
+            return Err(fail("`min_score` must be greater than 0"));
+        }
+        if self.signals.is_empty() {
+            return Err(fail("`detect.signals` needs at least one signal"));
+        }
+        for s in &self.signals {
+            if s.weight <= 0.0 || s.weight.is_nan() {
+                return Err(fail("signal weight must be greater than 0"));
+            }
+            let (own, others) = s.fields();
+            if !own {
+                return Err(fail(&format!(
+                    "a `{}` signal is missing its field",
+                    s.kind.as_str()
+                )));
+            }
+            if let Some(name) = others {
+                return Err(fail(&format!(
+                    "a `{}` signal does not take `{name}`",
+                    s.kind.as_str()
+                )));
+            }
+            if [&s.glob, &s.key, &s.pattern]
+                .into_iter()
+                .flatten()
+                .any(String::is_empty)
+            {
+                return Err(fail("signal fields need at least one character"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Signal {
+    /// Whether the field that the kind needs is set, and the first field it does not take.
+    fn fields(&self) -> (bool, Option<&'static str>) {
+        let set = [
+            ("glob", self.glob.is_some()),
+            ("key", self.key.is_some()),
+            ("equals", self.equals.is_some()),
+            ("pattern", self.pattern.is_some()),
+        ];
+        let takes: &[&str] = match self.kind {
+            SignalKind::Path => &["glob"],
+            SignalKind::FrontMatter => &["key", "equals"],
+            SignalKind::Heading | SignalKind::Text => &["pattern"],
+        };
+        let required = match self.kind {
+            SignalKind::Path => "glob",
+            SignalKind::FrontMatter => "key",
+            SignalKind::Heading | SignalKind::Text => "pattern",
+        };
+        let has_required = set.iter().any(|(n, on)| *n == required && *on);
+        let stray = set
+            .iter()
+            .find(|(n, on)| *on && !takes.contains(n))
+            .map(|(n, _)| *n);
+        (has_required, stray)
+    }
 }
 
 /// Parse a YAML list of genre definitions.
@@ -68,18 +404,20 @@ pub fn parse_genres(yaml: &str) -> Result<Vec<GenreSpec>, Error> {
 }
 
 struct CompiledSignal {
-    kind: SignalKind,
+    matcher: Matcher,
     weight: f32,
 }
 
-enum SignalKind {
+enum Matcher {
     Heading(Pattern),
-    Path(Pattern),
-    Frontmatter(String, Option<Pattern>),
+    Text(Pattern),
+    Path(GlobMatcher),
+    FrontMatter(String, Option<String>),
 }
 
 struct Genre {
     spec: GenreSpec,
+    min_score: f32,
     signals: Vec<CompiledSignal>,
 }
 
@@ -138,6 +476,9 @@ pub struct ResolveOptions<'a> {
 pub struct GenreRegistry {
     genres: Vec<Genre>,
     default: String,
+    /// Context tags a genre declares for the whole document. Genre files have no field for
+    /// them, so the host sets them in code, see [`GenreRegistry::with_contexts`].
+    contexts: BTreeMap<String, Vec<String>>,
 }
 
 impl GenreRegistry {
@@ -145,22 +486,13 @@ impl GenreRegistry {
     pub fn new(specs: Vec<GenreSpec>, default: &str) -> Result<Self, Error> {
         let mut seen = BTreeSet::new();
         for s in &specs {
+            s.validate()?;
             if !seen.insert(s.id.clone()) {
                 return Err(Error::Parse(format!("genre `{}` is defined twice", s.id)));
             }
-            for (rule, sev) in &s.tolerances {
-                if !SEVERITIES.contains(&sev.as_str()) {
-                    return Err(Error::Parse(format!(
-                        "genre `{}`: tolerance for `{rule}` is `{sev}`, not one of {SEVERITIES:?}",
-                        s.id
-                    )));
-                }
-            }
         }
         for s in &specs {
-            if let Some(p) = &s.extends
-                && !seen.contains(p)
-            {
+            if let Some(p) = s.extends.iter().find(|r| !seen.contains(ref_name(r))) {
                 return Err(Error::Parse(format!(
                     "genre `{}` extends unknown genre `{p}`",
                     s.id
@@ -174,14 +506,32 @@ impl GenreRegistry {
         let reg = Self {
             genres,
             default: default.to_string(),
+            contexts: BTreeMap::new(),
         };
         for g in &reg.genres {
             reg.chain(&g.spec.id)?;
         }
         match reg.get(default) {
-            Some(g) if !g.spec.is_abstract => Ok(reg),
-            _ => Err(Error::UnknownGenre(default.to_string())),
+            Some(_) => Ok(reg),
+            None => Err(Error::UnknownGenre(default.to_string())),
         }
+    }
+
+    /// Declare context tags for a genre. Documents of the genre, and of genres that extend
+    /// it, carry the tags for the whole document (see `DeclaredContextTagger`).
+    pub fn with_contexts(mut self, genre: &str, tags: &[&str]) -> Result<Self, Error> {
+        self.get(genre)
+            .ok_or_else(|| Error::UnknownGenre(genre.to_string()))?;
+        if let Some(t) = tags.iter().find(|t| !is_name(t)) {
+            return Err(Error::Parse(format!(
+                "genre `{genre}`: `{t}` is not a context tag (lowercase kebab-case)"
+            )));
+        }
+        self.contexts.insert(
+            genre.to_string(),
+            tags.iter().map(|t| (*t).to_string()).collect(),
+        );
+        Ok(self)
     }
 
     fn get(&self, id: &str) -> Option<&Genre> {
@@ -200,38 +550,68 @@ impl GenreRegistry {
         self.get(id).map(|g| &g.spec)
     }
 
-    /// The genre and its ancestors, root first.
+    /// The genre and everything it extends, lowest first and the genre itself last. A
+    /// genre that several paths reach appears once, at its first position.
     pub fn chain(&self, id: &str) -> Result<Vec<&GenreSpec>, Error> {
         let mut out = Vec::new();
-        let mut cur: Option<&str> = Some(id);
-        while let Some(c) = cur {
-            let g = self
-                .get(c)
-                .ok_or_else(|| Error::UnknownGenre(c.to_string()))?;
-            if out.iter().any(|s: &&GenreSpec| s.id == g.spec.id) {
-                return Err(Error::Parse(format!("genre `{id}` has an `extends` cycle")));
-            }
-            out.push(&g.spec);
-            cur = g.spec.extends.as_deref();
-        }
-        out.reverse();
+        self.visit(id, &mut Vec::new(), &mut out)?;
         Ok(out)
     }
 
-    /// Severity per rule for a genre, with child values over parent values.
-    pub fn tolerances(&self, id: &str) -> Result<BTreeMap<String, String>, Error> {
+    fn visit<'a>(
+        &'a self,
+        id: &str,
+        path: &mut Vec<String>,
+        out: &mut Vec<&'a GenreSpec>,
+    ) -> Result<(), Error> {
+        let g = self
+            .get(ref_name(id))
+            .ok_or_else(|| Error::UnknownGenre(id.to_string()))?;
+        if path.contains(&g.spec.id) {
+            return Err(Error::Parse(format!(
+                "genre `{}` has an `extends` cycle",
+                g.spec.id
+            )));
+        }
+        if out.iter().any(|s| s.id == g.spec.id) {
+            return Ok(());
+        }
+        path.push(g.spec.id.clone());
+        for parent in &g.spec.extends {
+            self.visit(parent, path, out)?;
+        }
+        path.pop();
+        out.push(&g.spec);
+        Ok(())
+    }
+
+    /// Level per rule for a genre. Later genres in the chain win over earlier ones.
+    pub fn rules(&self, id: &str) -> Result<BTreeMap<String, RuleLevel>, Error> {
         let mut out = BTreeMap::new();
         for s in self.chain(id)? {
-            out.extend(s.tolerances.clone());
+            out.extend(s.rules.iter().map(|(k, v)| (k.clone(), *v)));
         }
         Ok(out)
     }
 
-    /// Declared context tags for a genre, parent first, without duplicates.
+    /// Settings per category for a genre. A map merges by key, and a later genre in the
+    /// chain patches an earlier one's entry dial by dial (`docs/contract/config.md`,
+    /// section 1.2). A bare level counts as `severity`.
+    pub fn categories(&self, id: &str) -> Result<BTreeMap<String, CategoryTable>, Error> {
+        let mut out: BTreeMap<String, CategoryTable> = BTreeMap::new();
+        for s in self.chain(id)? {
+            for (k, v) in &s.categories {
+                out.entry(k.clone()).or_default().patch(&v.as_table());
+            }
+        }
+        Ok(out)
+    }
+
+    /// Declared context tags for a genre, lowest first, without duplicates.
     pub fn contexts(&self, id: &str) -> Result<Vec<String>, Error> {
         let mut out: Vec<String> = Vec::new();
         for s in self.chain(id)? {
-            for c in &s.contexts {
+            for c in self.contexts.get(&s.id).into_iter().flatten() {
                 if !out.contains(c) {
                     out.push(c.clone());
                 }
@@ -240,9 +620,9 @@ impl GenreRegistry {
         Ok(out)
     }
 
-    /// Profile name from the nearest genre in the chain that sets one.
-    pub fn profile(&self, id: &str) -> Result<Option<String>, Error> {
-        Ok(self.chain(id)?.iter().rev().find_map(|s| s.profile.clone()))
+    /// Profile from the nearest genre in the chain that sets one.
+    pub fn profile(&self, id: &str) -> Result<Option<Profile>, Error> {
+        Ok(self.chain(id)?.iter().rev().find_map(|s| s.profile))
     }
 
     /// Choose the genre for a document: front matter, then a config assignment, then
@@ -252,7 +632,9 @@ impl GenreRegistry {
         doc: &dyn DocumentView,
         opts: &ResolveOptions<'_>,
     ) -> Result<GenreResult, Error> {
-        let candidates = self.score(doc)?;
+        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
+        let rel = rel.as_str();
+        let candidates = self.score(doc, rel)?;
         let mut scores: Vec<(String, f32)> = candidates
             .iter()
             .map(|(g, s, _)| (g.spec.id.clone(), *s))
@@ -274,8 +656,6 @@ impl GenreRegistry {
         if let Some(id) = doc.front_matter("genre") {
             return explicit(id, "front-matter", format!("`genre: {id}`"));
         }
-        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
-        let rel = rel.as_str();
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
             if files_match(&a.files, rel)? {
@@ -290,10 +670,7 @@ impl GenreRegistry {
             );
         }
         let mut best: Option<&(&Genre, f32, Vec<Reason>)> = None;
-        for c in candidates
-            .iter()
-            .filter(|(g, s, _)| !g.spec.is_abstract && *s >= g.spec.threshold)
-        {
+        for c in candidates.iter().filter(|(g, s, _)| g.is_candidate(*s)) {
             if best.is_none_or(|b| c.1 > b.1) {
                 best = Some(c);
             }
@@ -317,20 +694,44 @@ impl GenreRegistry {
         })
     }
 
-    fn score<'a>(&'a self, doc: &dyn DocumentView) -> Result<Vec<Candidate<'a>>, Error> {
+    /// Genres that extend `parent` and reach their detection threshold on this document,
+    /// best first. Two or more entries mean the page mixes content types, which the
+    /// mixed-type judgement rule asks a reviewer to split.
+    pub fn mixed_types(
+        &self,
+        doc: &dyn DocumentView,
+        parent: &str,
+    ) -> Result<Vec<(String, f32)>, Error> {
+        let mut out = Vec::new();
+        let rel = normalize_path(doc.path());
+        for (g, score, _) in self.score(doc, &rel)? {
+            let below_parent =
+                g.spec.id != parent && self.chain(&g.spec.id)?.iter().any(|s| s.id == parent);
+            if below_parent && g.is_candidate(score) {
+                out.push((g.spec.id.clone(), score));
+            }
+        }
+        out.sort_by(|a, b| b.1.total_cmp(&a.1));
+        Ok(out)
+    }
+
+    /// Score every genre that has detection signals. `rel` is the normalized path that
+    /// `path` signals match.
+    fn score<'a>(&'a self, doc: &dyn DocumentView, rel: &str) -> Result<Vec<Candidate<'a>>, Error> {
         let blocks = doc.blocks();
         let headings: Vec<&str> = blocks
             .iter()
             .filter(|b| b.kind == BlockKind::Heading)
             .map(|b| b.text)
             .collect();
+        let body = blocks.iter().map(|b| b.text).collect::<Vec<_>>().join("\n");
         let mut out = Vec::new();
-        for g in self.genres.iter().filter(|g| !g.spec.is_abstract) {
+        for g in self.genres.iter().filter(|g| !g.signals.is_empty()) {
             let mut total = 0.0;
             let mut reasons = Vec::new();
             for s in &g.signals {
-                let hit = match &s.kind {
-                    SignalKind::Heading(p) => {
+                let hit = match &s.matcher {
+                    Matcher::Heading(p) => {
                         let mut found = None;
                         for h in &headings {
                             if p.is_match(h)? {
@@ -340,11 +741,14 @@ impl GenreRegistry {
                         }
                         found
                     }
-                    SignalKind::Path(p) => p
-                        .is_match(&normalize_path(doc.path()))?
+                    Matcher::Text(p) => p
+                        .find(&body)?
+                        .map(|m| ("text", format!("text `{}`", lossy(&body, m)))),
+                    Matcher::Path(glob) => glob
+                        .is_match(rel)
                         .then(|| ("path", format!("path `{}`", doc.path()))),
-                    SignalKind::Frontmatter(k, p) => match doc.front_matter(k) {
-                        Some(v) if p.as_ref().map_or(Ok(true), |p| p.is_match(v))? => {
+                    Matcher::FrontMatter(k, want) => match doc.front_matter(k) {
+                        Some(v) if want.as_deref().is_none_or(|w| w == v) => {
                             Some(("front-matter", format!("`{k}: {v}`")))
                         }
                         _ => None,
@@ -362,6 +766,24 @@ impl GenreRegistry {
         }
         Ok(out)
     }
+}
+
+impl Genre {
+    /// A genre with detection signals is a candidate when its score reaches `min_score`.
+    fn is_candidate(&self, score: f32) -> bool {
+        !self.signals.is_empty() && score >= self.min_score
+    }
+}
+
+/// The matched bytes as text. A pattern such as `\C` can end a match inside a character.
+fn lossy(text: &str, range: std::ops::Range<usize>) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(text.as_bytes().get(range).unwrap_or_default())
+}
+
+/// The genre name in a `Ref`. A registry holds one set of genres, so the pack prefix of a
+/// qualified `<pack>:<name>` only names where the genre came from.
+fn ref_name(r: &str) -> &str {
+    r.rsplit_once(':').map_or(r, |(_, name)| name)
 }
 
 type Candidate<'a> = (&'a Genre, f32, Vec<Reason>);
@@ -386,40 +808,38 @@ pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {
     let mut signals = Vec::new();
-    for d in &spec.detect {
-        let set = usize::from(d.heading.is_some())
-            + usize::from(d.path.is_some())
-            + usize::from(d.frontmatter.is_some());
-        if set != 1 {
-            return Err(Error::Parse(format!(
-                "genre `{}`: each detect signal needs exactly one of heading, path, frontmatter",
-                spec.id
-            )));
+    let mut min_score = 0.0;
+    if let Some(d) = &spec.detect {
+        min_score = d.min_score;
+        for s in &d.signals {
+            let field = |v: &Option<String>| v.clone().unwrap_or_default();
+            let matcher = match s.kind {
+                SignalKind::Heading => Matcher::Heading(Pattern::new_caseless(&field(&s.pattern))?),
+                SignalKind::Text => Matcher::Text(Pattern::new_caseless(&field(&s.pattern))?),
+                SignalKind::Path => {
+                    let glob = field(&s.glob);
+                    let g = GlobBuilder::new(&glob)
+                        .case_insensitive(true)
+                        .literal_separator(true)
+                        .build()
+                        .map_err(|e| {
+                            Error::Parse(format!("genre `{}`: glob `{glob}`: {e}", spec.id))
+                        })?;
+                    Matcher::Path(g.compile_matcher())
+                }
+                SignalKind::FrontMatter => {
+                    Matcher::FrontMatter(field(&s.key), s.equals.as_ref().map(Scalar::to_text))
+                }
+            };
+            signals.push(CompiledSignal {
+                matcher,
+                weight: s.weight,
+            });
         }
-        if d.weight <= 0.0 {
-            return Err(Error::Parse(format!(
-                "genre `{}`: signal weight must be positive",
-                spec.id
-            )));
-        }
-        let kind = if let Some(h) = &d.heading {
-            SignalKind::Heading(Pattern::new_caseless(h)?)
-        } else if let Some(p) = &d.path {
-            SignalKind::Path(Pattern::new_caseless(p)?)
-        } else {
-            let f = d.frontmatter.as_ref().expect("checked above");
-            SignalKind::Frontmatter(
-                f.key.clone(),
-                f.matches
-                    .as_deref()
-                    .map(Pattern::new_caseless)
-                    .transpose()?,
-            )
-        };
-        signals.push(CompiledSignal {
-            kind,
-            weight: d.weight,
-        });
     }
-    Ok(Genre { spec, signals })
+    Ok(Genre {
+        spec,
+        min_score,
+        signals,
+    })
 }

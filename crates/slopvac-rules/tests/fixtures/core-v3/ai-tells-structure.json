@@ -19,7 +19,7 @@
       "scope": "prose",
       "match": {
         "kind": "pattern",
-        "pattern": "\\b(?:it's|it is|this isn't|this is not|that's not|it's not|it isn't)\\s+(?:not|less about)\\b[^.!?]{1,80}\\b(?:it's|it is|and more about|but rather)\\b|(?:^|[.!?][ \\t]+)(?:the|a|an|this|that|these|those|our|your|my|his|her|its|their)\\s+[\\w-]+(?:\\s+[\\w-]+){0,3}\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must|[a-z][\\w-]*(?:s|ed))\\b(?:\\s+[\\w-]+){0,6}\\s*[,;]\\s+(?:(?:it|this|that|they|these|those)\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must)\\s+not|not)\\s+[^.!?\\n]{1,50}",
+        "pattern": "\\b(?:it's|it is|this isn't|this is not|that's not|it's not|it isn't)\\s+(?:not|less about)\\b[^.!?]{1,80}\\b(?:it's|it is|and more about|but rather)\\b",
         "ignore_case": true
       },
       "examples": [
@@ -30,7 +30,29 @@
         {
           "bad": "It's less about speed and more about determinism.",
           "good": "The gate produces the same findings on every run."
-        },
+        }
+      ],
+      "fix": "Delete the negated half and state what the thing is.",
+      "ai_signal": "strong",
+      "ai_signal_source": "measured",
+      "citation": {
+        "source": "AI tells catalog — structure.md (\"Contrastive inversion\")",
+        "url": "https://gc.ai/blog/ai-writing-pattern-to-know-contrastive-negation",
+        "note": "The mechanizable core of the single most-cited current tell. The appositive form lives in ai-tells-structure.contrastive-appositive. Judgement remainder in ai-tells-structure.contrastive-inversion-remainder, which covers the forms that carry no fixed frame. Upstream Vale ai-tells.ContrastiveNegation and ai-tells.ContrastiveFormulas cover overlapping ground and stay enabled, so expect duplicate findings until one side is disabled."
+      }
+    },
+    {
+      "id": "contrastive-appositive",
+      "name": "Check the negated half of an appositive contrast",
+      "message": "appositive contrast: {match} -- state what the thing does; keep the negation only if it limits what the reader can do",
+      "severity": "warning",
+      "scope": "prose",
+      "match": {
+        "kind": "pattern",
+        "pattern": "(?:^|[.!?][ \\t]+)(?:the|a|an|this|that|these|those|our|your|my|his|her|its|their)\\s+[\\w-]+(?:\\s+[\\w-]+){0,3}\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must|[a-z][\\w-]*(?:s|ed))\\b(?:\\s+[\\w-]+){0,6}\\s*[,;]\\s+(?![^.!?\\n]{0,60}(?:\\b(?:need|needs|require|requires|required|must|should)\\b|[`\\x00]))(?:(?:it|this|that|they|these|those)\\s+(?:is|are|was|were|does|do|did|has|have|had|can|cannot|will|would|should|must)\\s+not|not)\\s+[^.!?\\n]{1,50}",
+        "ignore_case": true
+      },
+      "examples": [
         {
           "bad": "The Harness Measures, It Does Not Judge",
           "good": "The Harness Measures."
@@ -42,15 +64,18 @@
         {
           "bad": "The client supports HTTP; it does not support FTP.",
           "good": "The client supports HTTP."
+        },
+        {
+          "bad": "The control acknowledges the run; it does not confirm that it started.",
+          "good": "The control acknowledges the run."
         }
       ],
-      "fix": "Delete the negated half and state what the thing is.",
-      "ai_signal": "strong",
+      "fix": "Delete the negated half unless it records a limit the reader needs.",
+      "ai_signal": "weak",
       "ai_signal_source": "measured",
       "citation": {
         "source": "AI tells catalog — structure.md (\"Contrastive inversion\")",
-        "url": "https://gc.ai/blog/ai-writing-pattern-to-know-contrastive-negation",
-        "note": "The mechanizable core of the single most-cited current tell. Judgement remainder in ai-tells-structure.contrastive-inversion-remainder, which covers the forms that carry no fixed frame. Upstream Vale ai-tells.ContrastiveNegation and ai-tells.ContrastiveFormulas cover overlapping ground and stay enabled, so expect duplicate findings until one side is disabled."
+        "note": "Appositive half of the former contrastive-inversion-frames rule. On 92 public docs the former rule fired five times, all on this form, and none was slop: each stated a real scope or limit. The rule therefore reports a warning, and only at the strict tier. The pattern skips a negated clause that contains a requirement word (need, require, must, should) or a backticked literal. STUB(slopvac-8l4.6.6) -- the requirement and literal skips approximate the 3.0 requirement context in the regex."
       }
     },
     {

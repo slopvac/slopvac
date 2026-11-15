@@ -14,6 +14,7 @@ pub mod logging;
 pub mod offline;
 pub mod redact;
 mod run;
+pub mod stdin;
 
 pub use env::{Env, SystemEnv};
 pub use run::{Globals, main_with, main_with_io, main_with_stdout, resolve_globals};

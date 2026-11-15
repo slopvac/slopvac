@@ -1,23 +1,31 @@
 //! Context taggers, the tag registry and genres.
 
 mod builtin;
+mod checklist;
 mod cli;
 mod declarative;
+mod declared;
 mod genre;
 mod pattern;
+mod schema;
+mod structural;
 mod tag;
 mod view;
 
 pub use builtin::{
     EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_genres, builtin_registry,
 };
+pub use checklist::{ChecklistEntry, ChecklistRule, checklist, effective_gates, rule_allows};
 pub use cli::{command, render, run};
-pub use declarative::{DeclarativeTagger, FrontmatterCondition, Scope, TaggerSpec, When};
+pub use declarative::{DeclarativeTagger, Matcher, TaggerSpec, Unit};
+pub use declared::{DeclaredContextTagger, context_hint};
 pub use genre::{
-    DetectSignal, GenreAssignment, GenreRegistry, GenreResult, GenreSource, GenreSpec, Reason,
-    ResolveOptions, files_match, parse_genres,
+    Budget, CategorySettings, CategoryTable, Detect, GenreAssignment, GenreRegistry, GenreResult,
+    GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
+    SignalKind, files_match, parse_genres,
 };
 pub use pattern::{Pattern, normalize_path};
+pub use structural::{FrontmatterCondition, Scope, StructuralSpec, StructuralTagger, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,

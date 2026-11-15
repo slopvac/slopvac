@@ -226,6 +226,7 @@ fn install(s: &Scratch, lock: &str, wheels: &[Wheel<'_>]) -> VerifiedPlugin {
         tree: out.hash,
         manifest_digest: Some(Digest::of(b"fake").to_string()),
         key_fingerprint: Some("f".repeat(64)),
+        key_id: None,
     }
 }
 

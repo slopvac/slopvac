@@ -21,7 +21,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 119,
+      "rule_entries": 120,
       "severity_shift": 0,
       "style": "core:legacy-normal",
       "thresholds": {
@@ -42,7 +42,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 155,
+      "rule_entries": 156,
       "severity_shift": 0,
       "style": "core:legacy-relaxed",
       "thresholds": {
@@ -53,6 +53,7 @@
     "strict": {
       "categories": 30,
       "rule_defaults": {
+        "ai-tells-structure.contrastive-appositive": "warning",
         "ai-tells-structure.definitional-negation-pair": "warning",
         "ai-tells-structure.negative-guarantee-core": "warning",
         "prose-craft.latinisms": "off",
@@ -63,7 +64,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 83,
+      "rule_entries": 84,
       "severity_shift": 0,
       "style": "core:legacy-strict",
       "thresholds": {

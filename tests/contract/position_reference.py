@@ -145,7 +145,6 @@ def formats(doc: Doc, start: int, end: int) -> dict[str, object]:
         "rdjsonl": {"start": _lc(*s["utf8"]), "end": _lc(*e["utf8"])},
         "codeclimate": {
             "lines": {"begin": s["utf32"][0], "end": last_cp[0]},
-            "positions": {"begin": _lc(*s["utf32"]), "end": _lc(*last_cp)},
         },
         "checkstyle": _lc(*s["utf32"]),
         "junit": f"{s['utf32'][0]}:{s['utf32'][1]}",

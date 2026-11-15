@@ -8,16 +8,16 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-[lints]
-workspace = true
-
 [dependencies]
 pcre2 = { workspace = true }
 # Direct dependency only to pin the vendored PCRE2 (see the workspace Cargo.toml).
 pcre2-sys = { workspace = true }
-thiserror = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

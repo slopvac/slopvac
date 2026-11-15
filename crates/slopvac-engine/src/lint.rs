@@ -315,6 +315,11 @@ impl Engine {
         self
     }
 
+    /// The adapter that reads RST files.
+    pub(crate) const fn rst_adapter(&self) -> &RstAdapter {
+        &self.rst
+    }
+
     /// Tell the engine where the project is: the repository and the targets of the run.
     /// An RST interpreter is never taken from inside these directories. Until they are
     /// given, no interpreter is found on `PATH` and RST files are an incomplete check.
@@ -345,6 +350,14 @@ impl Engine {
     fn resolve(&mut self) -> Result<(), EngineError> {
         let mut unrun: std::collections::BTreeMap<&'static str, usize> =
             std::collections::BTreeMap::new();
+        // A rule id defined by several sets belongs to the last one: a set added later, such as
+        // the generated locale rule, replaces the same id in an earlier set.
+        let mut owner: HashMap<&RuleId, usize> = HashMap::new();
+        for (s, set) in self.sets.iter().enumerate() {
+            for rule in set.rules() {
+                owner.insert(rule.id(), s);
+            }
+        }
         for (s, set) in self.sets.iter().enumerate() {
             for (c, category) in set.categories().iter().enumerate() {
                 let meta = self.settings.categories.get(category.id());
@@ -367,6 +380,9 @@ impl Engine {
                 };
                 self.categories.insert(category.id().clone(), info);
                 for (r, loaded) in category.rules().iter().enumerate() {
+                    if owner.get(loaded.id()) != Some(&s) {
+                        continue;
+                    }
                     let rule = loaded.rule();
                     let Level::On(severity) = level_of(
                         &self.settings,

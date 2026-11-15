@@ -1,0 +1,620 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 2,
+        "findings": 2,
+        "per_100_words": 1.887,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 1,
+        "per_100_words": 0.943,
+        "warnings": 1
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.472,
+        "over_budget": false,
+        "per_100_words": 0.943,
+        "score": 71.7,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.887,
+        "over_budget": true,
+        "per_100_words": 1.887,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.943,
+        "over_budget": true,
+        "per_100_words": 0.943,
+        "score": 20.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 9,
+        "findings": 9,
+        "gating_per_100_words": 8.491,
+        "over_budget": true,
+        "per_100_words": 8.491,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.943,
+        "over_budget": true,
+        "per_100_words": 1.887,
+        "score": 49.3,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 12,
+    "findings": [
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "dash density: 8.47 dashes per 1000 words -- most become commas, colons, or two sentences",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.em-dash-density",
+        "severity": "warning",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 28,
+        "end_column": 58,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "rather than a resolver because",
+        "message": "rejected alternative: rather than a resolver because -- state what it does; the decision belongs in an ADR, spec, or commit",
+        "replacement": null,
+        "rule_id": "core:prose-scope.rejected-alternative",
+        "severity": "error",
+        "span": {
+          "end": 57,
+          "start": 27
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 58,
+        "end_column": 64,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "0.4 ms",
+        "message": "implementation leak: 0.4 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "error",
+        "span": {
+          "end": 174,
+          "start": 168
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 1,
+        "end_column": 26,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "No configuration required",
+        "message": "unrequested reassurance: No configuration required -- state what it does, or say nothing",
+        "replacement": null,
+        "rule_id": "core:prose-scope.unrequested-reassurance",
+        "severity": "error",
+        "span": {
+          "end": 249,
+          "start": 224
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 30,
+        "end_column": 43,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "it just works",
+        "message": "unrequested reassurance: it just works -- state what it does, or say nothing",
+        "replacement": null,
+        "rule_id": "core:prose-scope.unrequested-reassurance",
+        "severity": "error",
+        "span": {
+          "end": 266,
+          "start": 253
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 33,
+        "end_column": 43,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "just works",
+        "message": "borderline hype: just works -- keep it only if a number or example backs it",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.borderline-hype",
+        "severity": "error",
+        "span": {
+          "end": 266,
+          "start": 256
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 1,
+        "end_column": 48,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "The gate finds tokens. The catalog finds voice.",
+        "message": "epigram: The gate finds tokens. The catalog finds voice. -- the section already made this point; cut the flourish",
+        "replacement": null,
+        "rule_id": "core:prose-scope.epigram",
+        "severity": "error",
+        "span": {
+          "end": 371,
+          "start": 324
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 24,
+        "end_column": 25,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "warning",
+        "span": {
+          "end": 397,
+          "start": 396
+        }
+      },
+      {
+        "ai_signal": "strong",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 37,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "The scripts are its tools, not yours",
+        "message": "contrastive inversion: The scripts are its tools, not yours -- state what the thing is; cut the strawman",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
+        "severity": "error",
+        "span": {
+          "end": 466,
+          "start": 430
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 26,
+        "end_column": 38,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": ", not yours.",
+        "message": "epigram: , not yours. -- the section already made this point; cut the flourish",
+        "replacement": null,
+        "rule_id": "core:prose-scope.epigram",
+        "severity": "error",
+        "span": {
+          "end": 467,
+          "start": 455
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 1,
+        "end_column": 42,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "The Harness Reports, The Customer Decides",
+        "message": "formulaic slogan: The Harness Reports, The Customer Decides -- title it with a noun phrase, or state one scoped fact",
+        "replacement": null,
+        "rule_id": "core:prose-scope.formulaic-subject-verb-slogan",
+        "severity": "error",
+        "span": {
+          "end": 542,
+          "start": 501
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 1,
+        "end_column": 40,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "The Boundary Protects, The Audit Proves",
+        "message": "formulaic slogan: The Boundary Protects, The Audit Proves -- title it with a noun phrase, or state one scoped fact",
+        "replacement": null,
+        "rule_id": "core:prose-scope.formulaic-subject-verb-slogan",
+        "severity": "error",
+        "span": {
+          "end": 624,
+          "start": 585
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 39,
+        "end_column": 40,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "warning",
+        "span": {
+          "end": 665,
+          "start": 664
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 1,
+        "end_column": 37,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "The Parser Reads, The Loader Rejects",
+        "message": "formulaic slogan: The Parser Reads, The Loader Rejects -- title it with a noun phrase, or state one scoped fact",
+        "replacement": null,
+        "rule_id": "core:prose-scope.formulaic-subject-verb-slogan",
+        "severity": "error",
+        "span": {
+          "end": 741,
+          "start": 705
+        }
+      },
+      {
+        "ai_signal": "strong",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 32,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "The parser reads JSON, not YAML",
+        "message": "contrastive inversion: The parser reads JSON, not YAML -- state what the thing is; cut the strawman",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
+        "severity": "error",
+        "span": {
+          "end": 774,
+          "start": 743
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "12 error(s), limit 0",
+        "12.74 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "ai-tells-structure at 1.89 severity-weighted findings per 100 words, budget 0.3",
+        "prose-inflation at 0.94 severity-weighted findings per 100 words, budget 0.3",
+        "prose-scope at 8.49 severity-weighted findings per 100 words, budget 0.3",
+        "ste-punctuation at 0.94 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 16,
+    "path": "rule-examples-prose-scope.md",
+    "per_100_words": 14.151,
+    "profile": "strict",
+    "prose": {
+      "errors": 10,
+      "findings": 12,
+      "per_100_words": 11.321,
+      "warnings": 2
+    },
+    "score": 0.0,
+    "sentences": 17,
+    "suggestions": 0,
+    "total_findings": 15,
+    "unchecked": [],
+    "warnings": 3,
+    "words": 106
+  },
+  "exit_code": 1
+}

@@ -17,6 +17,11 @@
 //!    fails closed until `slopvac-8l4.9.16` lands them (TM-22);
 //! 4. extracts the layer into the store by tree hash ([`crate::extract`]).
 //!
+//! Before any pack, sync gets the revocation list ([`crate::revoke`]): online
+//! it fetches and caches it, offline it reads the cache. A locked digest or a
+//! signing key on the list fails with [`SyncError::Revoked`] before anything
+//! is extracted. A stale or missing cache only adds a notice to the report.
+//!
 //! Every pack is resolved and verified before the first one is extracted, so a
 //! bad pack leaves the store unchanged (all-or-nothing for verification). The
 //! lock file is never written here.
@@ -25,7 +30,8 @@
 //!
 //! Content is cached under its own sha256 (see [`Store`]). A cached blob is
 //! hashed again on every use, so the network is only needed for content the
-//! cache lacks; a repeat sync runs with no request. Offline mode
+//! cache lacks; a repeat sync makes no request for pack content (it still
+//! fetches the revocation list). Offline mode
 //! ([`Network::Offline`]) uses nothing else and fails with
 //! [`SyncError::OfflinePackMissing`] (`offline-pack-missing`), naming the pack
 //! and the digest. A cached tree that no longer matches its record is removed
@@ -59,6 +65,7 @@ use crate::oci::{
     Client, Descriptor, Digest, MAX_MANIFEST_BYTES, MEDIA_MANIFEST, Manifest, OciError, Reference,
     Target,
 };
+use crate::revoke::{RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
     Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, signature_layers,
     verify,
@@ -113,6 +120,8 @@ pub struct PackOutcome {
 pub struct SyncReport {
     /// One entry per locked pack.
     pub packs: Vec<PackOutcome>,
+    /// Revocation-list notices (stale or missing cache). They do not fail the sync.
+    pub notices: Vec<RevocationNotice>,
 }
 
 enum Acquired {
@@ -128,25 +137,29 @@ pub struct Syncer<'a> {
     network: Network<'a>,
     policy: &'a KeyPolicy,
     project_root: &'a Path,
+    revocations: &'a Revocations,
     limits: Limits,
     executables: BTreeMap<PackId, HashSet<String>>,
 }
 
 impl<'a> Syncer<'a> {
     /// `project_root` anchors `path` sources. `policy` carries the keys: the
-    /// compiled first-party keys and the keys the user pinned.
+    /// compiled first-party keys and the keys the user pinned. `revocations`
+    /// says where the revocation list comes from and is cached.
     #[must_use]
     pub fn new(
         store: &'a Store,
         network: Network<'a>,
         policy: &'a KeyPolicy,
         project_root: &'a Path,
+        revocations: &'a Revocations,
     ) -> Self {
         Self {
             store,
             network,
             policy,
             project_root,
+            revocations,
             limits: Limits::default(),
             executables: BTreeMap::new(),
         }
@@ -175,10 +188,23 @@ impl<'a> Syncer<'a> {
     /// The first [`SyncError`]. Verification failures leave the store without
     /// new trees; see the module documentation.
     pub fn sync(&self, lock: &Lockfile) -> Result<SyncReport, SyncError> {
+        let current = match self.network {
+            Network::Online(client) => self.revocations.refresh(client)?,
+            Network::Offline => self.revocations.cached()?,
+        };
+        let revoked = &current.list;
+        for pack in lock.packs() {
+            if revoked.revokes_digest(pack.digest.as_str()) {
+                return Err(SyncError::Revoked {
+                    id: pack.id.clone(),
+                    what: format!("artifact {}", pack.digest),
+                });
+            }
+        }
         let _lock = self.store.lock()?;
         let mut acquired = Vec::with_capacity(lock.packs().len());
         for pack in lock.packs() {
-            acquired.push((pack, self.acquire(pack)?));
+            acquired.push((pack, self.acquire(pack, revoked)?));
         }
 
         let mut states = Vec::with_capacity(acquired.len());
@@ -202,7 +228,10 @@ impl<'a> Syncer<'a> {
             }
         }
 
-        let mut report = SyncReport::default();
+        let mut report = SyncReport {
+            notices: current.notices,
+            ..SyncReport::default()
+        };
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
             let mut outcome = self.install(pack, &how, &before)?;
             // A modified tree too large to delete was moved aside; keep reporting it.
@@ -250,9 +279,9 @@ impl<'a> Syncer<'a> {
         Ok(outcome(change, done.root, done.quarantined))
     }
 
-    fn acquire(&self, pack: &LockedPack) -> Result<Acquired, SyncError> {
+    fn acquire(&self, pack: &LockedPack, revoked: &RevocationList) -> Result<Acquired, SyncError> {
         match pack.source.kind() {
-            SourceKind::Oci(text) => self.acquire_oci(pack, text),
+            SourceKind::Oci(text) => self.acquire_oci(pack, text, revoked),
             SourceKind::Archive(url) => self.acquire_archive(pack, url),
             SourceKind::Path(rel) => self.acquire_path(pack, rel),
             // STUB(slopvac-8l4.9.27): a pinned-commit clone needs a git subprocess or a
@@ -282,7 +311,12 @@ impl<'a> Syncer<'a> {
         })
     }
 
-    fn acquire_oci(&self, pack: &LockedPack, text: &str) -> Result<Acquired, SyncError> {
+    fn acquire_oci(
+        &self,
+        pack: &LockedPack,
+        text: &str,
+        revoked: &RevocationList,
+    ) -> Result<Acquired, SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
             id: id.clone(),
@@ -327,7 +361,13 @@ impl<'a> Syncer<'a> {
             return Err(layout("the manifest is not an image manifest"));
         }
 
-        self.verify_signature(pack, &reference, &manifest, &namespace)?;
+        let key_id = self.verify_signature(pack, &reference, &manifest, &namespace)?;
+        if revoked.revokes_key(&key_id) {
+            return Err(SyncError::Revoked {
+                id: id.clone(),
+                what: format!("publisher key {key_id}"),
+            });
+        }
 
         let mut payload = manifest
             .layers
@@ -356,14 +396,14 @@ impl<'a> Syncer<'a> {
     }
 
     /// The signature gate: the statement is signed by a policy key, names this
-    /// artifact and is the one the lock records.
+    /// artifact and is the one the lock records. Returns the signing key id.
     fn verify_signature(
         &self,
         pack: &LockedPack,
         reference: &Reference,
         manifest: &Manifest,
         namespace: &str,
-    ) -> Result<(), SyncError> {
+    ) -> Result<String, SyncError> {
         let id = &pack.id;
         let layout = |why: &str| SyncError::Layout {
             id: id.clone(),
@@ -428,7 +468,7 @@ impl<'a> Syncer<'a> {
             )));
         }
 
-        Ok(())
+        Ok(verified.key().key_id())
     }
 
     fn manifest_bytes(

@@ -1,73 +1,103 @@
-//! Declarative taggers from data packs.
+//! Declarative taggers from data packs: the `tagger` artifact of
+//! `schemas/v3/tagger.schema.json`, specified in `docs/contract/packs.md`, section 5.
 //!
-//! STUB(slopvac-8l4.5.12): field names follow the bead text of slopvac-8l4.2.4
-//! until the pack schema is published.
+//! A tagger sets one context tag on each text unit where a `match` entry matches and no
+//! `unless` entry matches. It reads the text of the unit and nothing else, so its tag span
+//! is the whole unit.
 
 use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger, normalize_path};
+use crate::schema::{Extensions, check_schema_version, is_name, present};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
 
-/// How far a matching condition spreads its tag.
+/// The text unit that receives the tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Scope {
-    /// The matching sentence.
+pub enum Unit {
+    /// One sentence of any block except a code block.
     #[default]
     Sentence,
-    /// The matching block.
+    /// A paragraph block.
     Paragraph,
-    /// The enclosing heading section.
-    Section,
-    /// The whole document.
-    Document,
+    /// A heading block.
+    Heading,
+    /// A list item block.
+    ListItem,
+    /// A table cell block.
+    TableCell,
 }
 
-/// Conditions of a declarative tagger. All given conditions must hold.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct When {
-    /// Any enclosing heading text matches.
-    pub heading_path: Option<String>,
-    /// The enclosing admonition title matches.
-    pub admonition_title: Option<String>,
-    /// Front matter key and a pattern for its value.
-    pub frontmatter: Option<FrontmatterCondition>,
-    /// The file path matches.
-    pub path: Option<String>,
-    /// The sentence matches.
-    pub sentence: Option<String>,
-    /// The block has this kind. Code blocks are skipped unless named here.
-    pub block_kind: Option<BlockKind>,
+impl Unit {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sentence => "sentence",
+            Self::Paragraph => "paragraph",
+            Self::Heading => "heading",
+            Self::ListItem => "list-item",
+            Self::TableCell => "table-cell",
+        }
+    }
+
+    /// The block kind that holds this unit, or `None` for sentences, which any prose
+    /// block holds.
+    fn block_kind(self) -> Option<BlockKind> {
+        match self {
+            Self::Sentence => None,
+            Self::Paragraph => Some(BlockKind::Paragraph),
+            Self::Heading => Some(BlockKind::Heading),
+            Self::ListItem => Some(BlockKind::ListItem),
+            Self::TableCell => Some(BlockKind::TableRow),
+        }
+    }
 }
 
-/// Front matter condition.
+/// One condition on a text unit: a PCRE2 pattern, or a list of words and phrases.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FrontmatterCondition {
-    /// Key name.
-    pub key: String,
-    /// Pattern for the value; absent means the key only has to exist.
-    pub matches: Option<String>,
-}
-
-/// A tagger definition as written in a pack.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TaggerSpec {
-    /// Tagger id.
-    pub id: String,
-    /// Tag kind produced.
-    pub kind: String,
-    /// Tag scope.
+pub struct Matcher {
+    /// PCRE2 pattern. Exactly one of `pattern` and `words` is set.
+    #[serde(default, deserialize_with = "present")]
+    pub pattern: Option<String>,
+    /// Words and phrases, matched as whole words.
+    #[serde(default, deserialize_with = "present")]
+    pub words: Option<Vec<String>>,
+    /// Match case. Matching ignores case when false.
     #[serde(default)]
-    pub scope: Scope,
+    pub case_sensitive: bool,
+    #[serde(flatten)]
+    _extensions: Extensions,
+}
+
+/// A declarative tagger as written in a pack file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaggerSpec {
+    /// Must be 3.
+    pub schema_version: u32,
+    /// Tagger id, `^[a-z][a-z0-9-]*$`.
+    pub id: String,
+    /// What the tagger does, for people.
+    #[serde(default, deserialize_with = "present")]
+    pub description: Option<String>,
+    /// The context tag the tagger sets.
+    pub tag: String,
+    /// The unit that receives the tag.
+    #[serde(default)]
+    pub unit: Unit,
+    /// The tagger fires when at least one entry matches the unit.
+    #[serde(rename = "match")]
+    pub matches: Vec<Matcher>,
+    /// The tagger stays silent for a unit where any of these entries matches.
+    #[serde(default)]
+    pub unless: Vec<Matcher>,
     /// Confidence in 0..=1.
     #[serde(default = "one")]
     pub confidence: f32,
-    /// Conditions.
-    pub when: When,
+    /// Short text that explains the tag in reports.
+    #[serde(default, deserialize_with = "present")]
+    pub evidence: Option<String>,
+    #[serde(flatten)]
+    _extensions: Extensions,
 }
 
 fn one() -> f32 {
@@ -75,145 +105,158 @@ fn one() -> f32 {
 }
 
 impl TaggerSpec {
-    /// Parse one spec from YAML.
+    /// Parse one tagger from YAML.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
         serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
     }
 
-    /// Compile into a tagger.
+    /// Parse a YAML list of taggers.
+    pub fn list_from_yaml(text: &str) -> Result<Vec<Self>, Error> {
+        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+    }
+
+    /// Check the rules that the schema states and compile the patterns.
     pub fn compile(self) -> Result<DeclarativeTagger, Error> {
-        if !is_context_tag(&self.kind) {
-            return Err(Error::Parse(format!(
-                "tagger {}: kind `{}` is not a context tag (lowercase kebab-case)",
-                self.id, self.kind
-            )));
+        let id = self.id.clone();
+        let fail = |msg: &str| Error::Parse(format!("tagger `{id}`: {msg}"));
+        check_schema_version(&format!("tagger `{id}`"), self.schema_version)?;
+        if !is_name(&self.id) {
+            return Err(fail("id must be lowercase kebab-case"));
+        }
+        if !is_name(&self.tag) {
+            return Err(fail("tag must be a context tag (lowercase kebab-case)"));
         }
         if !(0.0..=1.0).contains(&self.confidence) {
-            return Err(Error::Parse(format!(
-                "tagger {}: confidence outside 0..=1",
-                self.id
-            )));
+            return Err(fail("confidence is outside 0..=1"));
         }
-        let w = &self.when;
-        if w.heading_path.is_none()
-            && w.admonition_title.is_none()
-            && w.frontmatter.is_none()
-            && w.path.is_none()
-            && w.sentence.is_none()
-            && w.block_kind.is_none()
+        if self.evidence.as_deref().is_some_and(str::is_empty)
+            || self.description.as_deref().is_some_and(str::is_empty)
         {
-            return Err(Error::Parse(format!(
-                "tagger {}: `when` has no condition",
-                self.id
-            )));
+            return Err(fail("evidence and description need at least one character"));
         }
-        let c = |o: &Option<String>| o.as_deref().map(Pattern::new_caseless).transpose();
-        let fm = match &w.frontmatter {
-            Some(f) => Some((
-                f.key.clone(),
-                f.matches
-                    .as_deref()
-                    .map(Pattern::new_caseless)
-                    .transpose()?,
-            )),
-            None => None,
-        };
+        if self.matches.is_empty() {
+            return Err(fail("`match` needs at least one entry"));
+        }
+        let matching = self
+            .matches
+            .iter()
+            .map(|m| m.compile(&id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let unless = self
+            .unless
+            .iter()
+            .map(|m| m.compile(&id))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(DeclarativeTagger {
-            heading: c(&w.heading_path)?,
-            admonition: c(&w.admonition_title)?,
-            path: c(&w.path)?,
-            sentence: c(&w.sentence)?,
-            fm,
             spec: self,
+            matching,
+            unless,
         })
     }
 }
 
-/// `ContextTag` in `common.schema.json`: `^[a-z][a-z0-9-]*$`.
-fn is_context_tag(s: &str) -> bool {
-    let mut chars = s.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+impl Matcher {
+    fn compile(&self, tagger: &str) -> Result<Pattern, Error> {
+        let fail = |msg: &str| Error::Parse(format!("tagger `{tagger}`: {msg}"));
+        let source = match (&self.pattern, &self.words) {
+            (Some(p), None) if p.is_empty() => return Err(fail("pattern is empty")),
+            (Some(p), None) => p.clone(),
+            (None, Some(w)) => words_pattern(w)
+                .ok_or_else(|| fail("`words` needs at least one distinct, non-empty entry"))?,
+            _ => return Err(fail("a matcher takes exactly one of `pattern` and `words`")),
+        };
+        if self.case_sensitive {
+            Pattern::new(&source)
+        } else {
+            Pattern::new_caseless(&source)
+        }
+    }
+}
+
+/// A PCRE2 pattern for whole words and phrases, with Unicode-aware word boundaries. `None` for an empty list, an empty entry
+/// or a repeated entry.
+fn words_pattern(words: &[String]) -> Option<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    if words.is_empty() || words.iter().any(|w| w.is_empty() || !seen.insert(w)) {
+        return None;
+    }
+    let alternatives: Vec<String> = words.iter().map(|w| escape(w)).collect();
+    Some(format!(
+        r"(*UCP)(?<![\w\p{{M}}])(?:{})(?![\w\p{{M}}])",
+        alternatives.join("|")
+    ))
+}
+
+fn escape(word: &str) -> String {
+    let mut out = String::with_capacity(word.len());
+    for c in word.chars() {
+        if !c.is_alphanumeric() && c != '_' && c.is_ascii() {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// A compiled declarative tagger.
-///
-/// Conditions combine with AND at three levels. Path and front matter are document
-/// conditions. Heading path, admonition title and block kind are block conditions. The
-/// sentence pattern is a sentence condition. Every given condition must hold for a tag.
 pub struct DeclarativeTagger {
     spec: TaggerSpec,
-    heading: Option<Pattern>,
-    admonition: Option<Pattern>,
-    path: Option<Pattern>,
-    sentence: Option<Pattern>,
-    fm: Option<(String, Option<Pattern>)>,
+    matching: Vec<Pattern>,
+    unless: Vec<Pattern>,
 }
 
 impl DeclarativeTagger {
-    fn document_level_ok(&self, doc: &dyn DocumentView) -> Result<bool, Error> {
-        if let Some(p) = &self.path
-            && !p.is_match(&normalize_path(doc.path()))?
-        {
+    fn fires(&self, text: &str) -> Result<bool, Error> {
+        let mut any = false;
+        for p in &self.matching {
+            if p.is_match(text)? {
+                any = true;
+                break;
+            }
+        }
+        if !any {
             return Ok(false);
         }
-        if let Some((key, pat)) = &self.fm {
-            let Some(v) = doc.front_matter(key) else {
-                return Ok(false);
-            };
-            if let Some(p) = pat
-                && !p.is_match(v)?
-            {
+        for p in &self.unless {
+            if p.is_match(text)? {
                 return Ok(false);
             }
         }
         Ok(true)
     }
 
-    fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
-        let kind_ok = match self.spec.when.block_kind {
-            Some(k) => b.kind == k,
-            None => b.kind != BlockKind::CodeBlock,
-        };
-        if !kind_ok {
-            return Ok(false);
-        }
-        if let Some(p) = &self.heading {
-            let mut any = false;
-            for h in &b.heading_path {
-                if p.is_match(h)? {
-                    any = true;
-                    break;
-                }
-            }
-            if !any {
-                return Ok(false);
-            }
-        }
-        if let Some(p) = &self.admonition {
-            match b.admonition_title {
-                Some(t) if p.is_match(t)? => {}
-                _ => return Ok(false),
-            }
-        }
-        Ok(true)
-    }
-
-    fn has_block_conditions(&self) -> bool {
-        let w = &self.spec.when;
-        w.heading_path.is_some()
-            || w.admonition_title.is_some()
-            || w.sentence.is_some()
-            || w.block_kind.is_some()
-    }
-
-    fn tag_for(&self, span: Range<usize>, evidence: &str) -> Tag {
+    fn tag_for(&self, span: Range<usize>) -> Tag {
         Tag {
-            kind: self.spec.kind.clone(),
+            kind: self.spec.tag.clone(),
             span,
             confidence: self.spec.confidence,
-            evidence: format!("{}: {evidence}", self.spec.id),
+            evidence: self
+                .spec
+                .evidence
+                .clone()
+                .unwrap_or_else(|| format!("{}: {}", self.spec.id, self.spec.unit.as_str())),
         }
+    }
+
+    fn tag_block(&self, doc: &dyn DocumentView, b: &BlockView<'_>) -> Result<Vec<Tag>, Error> {
+        let mut out = Vec::new();
+        match self.spec.unit.block_kind() {
+            Some(kind) if b.kind == kind => {
+                if self.fires(b.text)? {
+                    out.push(self.tag_for(b.span.clone()));
+                }
+            }
+            Some(_) => {}
+            None if b.kind == BlockKind::CodeBlock => {}
+            None => {
+                for s in doc.sentences(b) {
+                    if self.fires(s.text)? {
+                        out.push(self.tag_for(s.span));
+                    }
+                }
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -223,69 +266,10 @@ impl Tagger for DeclarativeTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
-        if !self.document_level_ok(doc)? {
-            return Ok(Vec::new());
-        }
-        let whole = 0..doc.source_len();
-        if self.spec.scope == Scope::Document && !self.has_block_conditions() {
-            return Ok(vec![self.tag_for(whole, "document")]);
-        }
-        let blocks = doc.blocks();
         let mut out = Vec::new();
-        for (i, b) in blocks.iter().enumerate() {
-            if !self.block_ok(b)? {
-                continue;
-            }
-            let hits: Vec<Range<usize>> = match &self.sentence {
-                None => vec![b.span.clone()],
-                Some(p) => {
-                    let mut v = Vec::new();
-                    for s in doc.sentences(b) {
-                        if p.is_match(s.text)? {
-                            v.push(s.span);
-                        }
-                    }
-                    v
-                }
-            };
-            if hits.is_empty() {
-                continue;
-            }
-            match self.spec.scope {
-                Scope::Sentence => {
-                    out.extend(hits.into_iter().map(|s| self.tag_for(s, "sentence")));
-                }
-                Scope::Paragraph => out.push(self.tag_for(b.span.clone(), "block")),
-                Scope::Section => out.push(self.tag_for(section_span(&blocks, i), "section")),
-                Scope::Document => return Ok(vec![self.tag_for(whole, "document")]),
-            }
+        for b in doc.blocks() {
+            out.extend(self.tag_block(doc, &b)?);
         }
         Ok(out)
     }
-}
-
-fn level(b: &BlockView<'_>) -> u8 {
-    b.heading_level
-        .unwrap_or_else(|| u8::try_from(b.heading_path.len()).unwrap_or(u8::MAX))
-}
-
-/// The section of block `i`: from its nearest heading up to the next heading of the same
-/// or a shallower level. Text before the first heading forms a section of its own.
-fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
-    let owner = (0..=i)
-        .rev()
-        .find(|&j| blocks[j].kind == BlockKind::Heading);
-    let (first, own_level) = match owner {
-        Some(j) => (j, level(&blocks[j])),
-        None => (0, 0),
-    };
-    let last = (i + 1..blocks.len())
-        .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
-        .map_or(blocks.len() - 1, |k| k - 1);
-    // Blocks that read out of source order (the cells of a wrapped table) can end after
-    // the last block does, so the section runs to the furthest end among its blocks.
-    let members = &blocks[first..=last];
-    let start = members.iter().map(|b| b.span.start).min().unwrap_or(0);
-    let end = members.iter().map(|b| b.span.end).max().unwrap_or(0);
-    start..end
 }
