@@ -1199,3 +1199,95 @@ fn k6_an_online_sync_fails_when_the_served_list_has_expired() {
     assert_eq!(err.exit_code(), 2);
     env.assert_no_trees();
 }
+/// Failures at the I/O boundary of a store whose path holds a soft hyphen, a
+/// literal backslash and a legacy runner command. The message must show each of
+/// them escaped once: a second escape would turn `\u{ad}` into `\\u{ad}`.
+#[cfg(unix)]
+mod io_boundary {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    /// The store root's last component, and how a message shows it.
+    const ROOT_NAME: &str = "s\u{ad}\\n##[e]";
+    const ROOT_SHOWN: &str = "s\\u{ad}\\\\n\\u{23}#[e]";
+
+    struct Installed {
+        env: Env,
+        store: Store,
+        lock: Lockfile,
+        pol: KeyPolicy,
+        tree: PathBuf,
+        _server: Server,
+    }
+
+    fn installed() -> Installed {
+        let key = Key::new();
+        let p = publish(&key, "acme", FILES);
+        let server = registry(&[&p]);
+        let env = Env::new();
+        let store = Store::new(env.data.path().join(ROOT_NAME));
+        let c = client();
+        let pol = policy("acme", &[&key]);
+        let lock = oci_lock(&server.registry(), &p);
+        let revs = env.revocations(NOW);
+        let report = Syncer::new(&store, Network::Online(&c), &pol, env.project.path(), &revs)
+            .sync(&lock)
+            .unwrap();
+        let tree = report.packs[0].tree.clone();
+        Installed {
+            env,
+            store,
+            lock,
+            pol,
+            tree,
+            _server: server,
+        }
+    }
+
+    fn sync_offline(i: &Installed) -> SyncError {
+        let revs = i.env.revocations(NOW);
+        Syncer::new(
+            &i.store,
+            Network::Offline,
+            &i.pol,
+            i.env.project.path(),
+            &revs,
+        )
+        .sync(&i.lock)
+        .unwrap_err()
+    }
+
+    #[test]
+    fn an_unreadable_file_with_a_hostile_name_is_escaped_once_by_inspect_and_sync() {
+        let i = installed();
+        fs::set_permissions(&i.tree, fs::Permissions::from_mode(0o755)).unwrap();
+        // The soft hyphen and `##[` pass the name check; the open fails.
+        let planted = i.tree.join("a\u{ad}b##[x]");
+        fs::write(&planted, b"x").unwrap();
+        fs::set_permissions(&planted, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::File::open(&planted).is_ok() {
+            return; // running as root: mode 000 does not stop the read
+        }
+        let want =
+            "data directory: reading `a\\u{ad}b\\u{23}#[x]`: Permission denied (os error 13)";
+        let direct = i.store.inspect(&i.lock.packs()[0].digest).unwrap_err();
+        assert_eq!(direct.to_string(), want);
+        assert_eq!(sync_offline(&i).to_string(), want);
+    }
+
+    #[test]
+    fn a_tree_that_cannot_be_removed_names_its_hostile_path_escaped_once() {
+        let i = installed();
+        // A regular file where the tree directory belongs: verification calls it
+        // tampered, and removing it as a directory fails with ENOTDIR.
+        let trees = i.tree.parent().unwrap().to_owned();
+        fs::rename(&i.tree, trees.join("moved")).unwrap();
+        fs::write(&i.tree, b"x").unwrap();
+        let msg = sync_offline(&i).to_string();
+        let name = i.tree.file_name().unwrap().to_string_lossy().into_owned();
+        let tail = format!("/{ROOT_SHOWN}/trees/{name}: Not a directory (os error 20)");
+        assert!(msg.starts_with("data directory: removing "), "{msg}");
+        assert!(msg.ends_with(&tail), "{msg}");
+    }
+}
