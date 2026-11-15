@@ -1,0 +1,46 @@
+# Built-in genres. Detection patterns are PCRE2 and case-insensitive.
+# STUB(slopvac-8l4.5.12): field names follow the pack genre schema once published.
+
+- id: consumer
+  description: Shipped behavior and reader use. README, docs, guides.
+  profile: normal
+  detect:
+    - { path: '(?:^|/)readme[^/]*$', weight: 2 }
+    - { path: '(?:^|/)(?:docs?|guides?|manual)/', weight: 1.5 }
+    - { heading: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
+  prime: Describe what the product does now and how the reader uses it. Skip its history.
+
+- id: reference
+  description: Exact operations and dated facts for use or verification. API docs, runbooks, procedures, safety text.
+  profile: strict
+  detect:
+    - { path: '(?:^|/)(?:reference|api|runbooks?|procedures?|man)/', weight: 3 }
+    - { heading: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
+    - { heading: '\b(?:runbook|procedure|safety)\b', weight: 2 }
+  prime: State exact values, limits and steps. Prefer tables and numbered steps to prose.
+
+- id: change-comms
+  description: Change, rationale, verification. PR and MR text, commits, release notes, migration guides.
+  profile: normal
+  detect:
+    - { path: '(?:^|/)(?:changelog|changes|history|news|releases?|upgrading|migration)[^/]*$', weight: 3 }
+    - { heading: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
+    - { heading: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
+  prime: Say what changed, why, and how it was checked. History is the point here.
+
+- id: internal
+  description: Requirements and decision rationale. Specifications, decision records, contributor docs.
+  profile: normal
+  detect:
+    - { path: '(?:^|/)(?:adr|decisions?|rfcs?|specs?|design)(?:/|[-_])', weight: 3 }
+    - { path: '(?:^|/)(?:contributing|development)[^/]*$', weight: 3 }
+    - { heading: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
+  prime: Record the requirement or decision, the reasons, and what was rejected.
+
+- id: informal
+  description: Immediate context. Issue comments, discussions, blogs, drafts.
+  profile: relaxed
+  detect:
+    - { path: '(?:^|/)(?:blog|posts?|drafts?|notes?|discussions?)/', weight: 3 }
+    - { frontmatter: { key: status, matches: '^draft$' }, weight: 3 }
+  prime: Keep it short and direct. Context matters more than polish.

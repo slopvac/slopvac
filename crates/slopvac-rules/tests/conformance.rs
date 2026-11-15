@@ -1,5 +1,5 @@
 //! The Rust types agree with the published rule and category schemas, judged by the
-//! conformance corpus (vendored under `STUB(slopvac-8l4.3.28)`):
+//! conformance corpus (`schemas/v3/conformance`):
 //!
 //! * the published schema accepts every valid instance and rejects every invalid one;
 //! * the schema generated from the Rust types does the same;
@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{file_name, generated, instances, load, published, stub};
+use common::{file_name, generated, instances, load, published, schemas};
 use serde_json::{Value, json};
 use slopvac_rules::{Category, Rule, RuleFile, category_schema, rule_file_schema, rule_schema};
 
@@ -49,11 +49,11 @@ const WHY_CATEGORY: &[(&str, &str)] = &[
 ];
 
 fn rule_dir(sub: &str) -> std::path::PathBuf {
-    stub().join("conformance/rule").join(sub)
+    schemas().join("conformance/rule").join(sub)
 }
 
 fn category_dir(sub: &str) -> std::path::PathBuf {
-    stub().join("conformance/category").join(sub)
+    schemas().join("conformance/category").join(sub)
 }
 
 /// `Rule--embedded.json` is the embedded shape; every other rule instance is a standalone

@@ -32,3 +32,23 @@ No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain
 ## Check the setup
 
 Run the `Release candidate` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` tag and approves the `pypi` environment.
+
+## Release signing key
+
+Release artifacts are signed with minisign. The public key is committed at `keys/slopvac-release.pub`.
+
+- Key id: `D9914BDB4570AC6D`
+- Public key:
+
+  ```text
+  untrusted comment: minisign public key D9914BDB4570AC6D
+  RWRtrHBF20uR2Ul9P3Ppdw/e62xuebTxakJxrRL1eyclNXsCQvwoCqzN
+  ```
+
+- The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
+
+To verify a release file against the committed key:
+
+```sh
+minisign -Vm <file> -p keys/slopvac-release.pub
+```

@@ -1,0 +1,38 @@
+schema_version = 3
+
+[[packs]]
+id = "acme-docs"
+kind = "data"
+version = "1.2.0"
+slopvac_api = 1
+source = "oci://ghcr.io/acme/slopvac-docs:1.2.0"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+requires = ["core"]
+
+[packs.signature]
+key_id = "A1B2C3D4E5F60718"
+not_before = "2026-11-01T00:00:00Z"
+
+[[packs]]
+id = "acme-tagger"
+kind = "plugin"
+version = "0.3.1"
+slopvac_api = 1
+source = "git+https://github.com/acme/tagger@0123456789abcdef0123456789abcdef01234567"
+digest = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+[[packs]]
+id = "local"
+kind = "data"
+version = "0.0.1"
+slopvac_api = 1
+source = "packs/local"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[packs]]
+id = "archive"
+kind = "data"
+version = "2.0.0"
+slopvac_api = 1
+source = "https://example.org/packs/archive-2.0.0.tar.gz"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
