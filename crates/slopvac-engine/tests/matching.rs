@@ -435,3 +435,54 @@ fn a_greek_final_sigma_does_not_defeat_an_allowlisted_phrase() {
     assert_eq!(doc.findings.len(), 1);
     assert_eq!(doc.findings[0].start.column(), 26);
 }
+
+#[test]
+fn a_pack_rule_that_matches_one_byte_is_refused_when_the_pack_loads() {
+    // `\C\K\C` on "é" would give a span that starts inside the character. The pattern layer
+    // refuses `\C`, so the pack fails to load with the file and rule named, and no span can
+    // reach the code that slices the document.
+    let r = rule(
+        "bytes",
+        &json!({"kind": "pattern", "pattern": r"\C\K\C"}),
+        &json!({}),
+    );
+    let (path, source) = common::category("cat", &[r]);
+    let err = slopvac_rules::RuleSet::from_sources(
+        &slopvac_model::PackId::new("core").unwrap(),
+        vec![(path, source)],
+        &slopvac_rules::CompileOptions::default(),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("not allowed"), "{text}");
+    assert!(text.contains("cat.json"), "{text}");
+}
+
+#[test]
+fn a_match_reset_reports_spans_that_are_safe_to_slice() {
+    let e = engine(&[rule(
+        "reset",
+        &json!({"kind": "pattern", "pattern": r"caf\K."}),
+        &json!({}),
+    )]);
+    let doc = lint(&e, "Order a café now.\n");
+    assert_eq!(matched(&doc), ["é"]);
+}
+
+#[test]
+fn a_match_reset_inside_a_lookahead_is_refused_when_the_pack_loads() {
+    // PCRE2 10.46 rejects `\K` in a lookaround, the only way to leave a start after the end.
+    let r = rule(
+        "odd",
+        &json!({"kind": "pattern", "pattern": r"(?=é\K)"}),
+        &json!({}),
+    );
+    let (path, source) = common::category("cat", &[r]);
+    let err = slopvac_rules::RuleSet::from_sources(
+        &slopvac_model::PackId::new("core").unwrap(),
+        vec![(path, source)],
+        &slopvac_rules::CompileOptions::default(),
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("lookarounds"), "{err}");
+}

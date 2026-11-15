@@ -119,16 +119,30 @@ fn a_regex_is_usable_from_many_threads_at_once() {
     });
 }
 
-#[test]
-fn a_one_byte_match_may_end_inside_a_character_and_find_all_then_errors() {
-    // `\C` takes one byte of "é" (two bytes). `find` reports it; slicing needs `str::get`.
-    let re = regex(r"\C");
-    let found = re.find("é").unwrap().unwrap();
-    assert_eq!(found, 0..1);
-    assert_eq!("é".get(found), None);
-    // The next search would start inside the character.
-    assert_eq!(
-        re.find_all("é"),
-        Err(slopvac_pcre2::MatchError::InvalidOffsets)
+#[rstest]
+#[case(r"\C")]
+#[case(r"\C\K\C")]
+#[case(r"a(?:\C|b)")]
+#[case(r"(?=\C)x")]
+fn one_byte_matching_is_refused_at_compile_time(#[case] pattern: &str) {
+    // `\C` takes one byte of a multi-byte character, so a span could end inside it.
+    let err = Regex::new(pattern, Options::new()).unwrap_err();
+    assert!(
+        matches!(err, CompileError::BackslashC { .. }),
+        "{pattern}: {err:?}"
     );
+}
+
+#[test]
+fn a_quoted_backslash_c_is_a_literal_and_still_compiles() {
+    assert_eq!(regex(r"\Q\C\E").find(r"a\Cb").unwrap(), Some(1..3));
+}
+
+#[test]
+fn k_resets_the_start_on_a_character_boundary() {
+    // `\K` moves the reported start; with whole-character matching it lands between
+    // characters, so the span is safe to slice.
+    let found = regex(r"caf\K.").find("café!").unwrap().unwrap();
+    assert_eq!(found, 3..5);
+    assert_eq!(&"café!"[found], "é");
 }

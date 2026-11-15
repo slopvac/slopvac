@@ -42,6 +42,7 @@ fn pattern() -> impl Strategy<Value = String> {
             Just("\\b"),
             Just("\\w"),
             Just("\\K"),
+            Just("\\C"),
             Just("\\1"),
             Just("a"),
             Just("b"),

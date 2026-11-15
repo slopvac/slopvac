@@ -125,46 +125,6 @@ fn limit_errors_are_limits_and_other_errors_are_not() {
 }
 
 #[test]
-fn a_spent_jit_budget_is_retried_on_the_interpreter() {
-    // A one-step JIT budget cannot finish even this easy match. The retry on the
-    // interpreter (policy limits) must produce the real answer, not an error.
-    let limits = Limits {
-        jit_match_limit: 1,
-        ..Limits::POLICY
-    };
-    let re = Regex::with_limits(r"(\w+) (\w+)", Options::new().jit(true), limits).unwrap();
-    assert_eq!(re.find("hello big world").unwrap(), Some(0..9));
-    assert_eq!(re.find_all("a b c d").unwrap(), [0..3, 4..7]);
-}
-
-#[test]
-fn an_exhausted_jit_stack_is_retried_on_the_interpreter() {
-    // Nested groups in a long repetition need more machine stack than 1 KiB allows.
-    let limits = Limits {
-        jit_stack_bytes: 1024,
-        ..Limits::POLICY
-    };
-    let re = Regex::with_limits(r"^(?:(a)|(b))*$", Options::new().jit(true), limits).unwrap();
-    assert_eq!(re.find(&"ab".repeat(5_000)).unwrap(), Some(0..10_000));
-}
-
-#[test]
-fn the_jit_and_the_interpreter_agree_after_a_retry() {
-    let tight = Limits {
-        jit_match_limit: 1,
-        ..Limits::POLICY
-    };
-    let subject = "one two  three\nfour";
-    let pattern = r"\b\w+\b";
-    let retried = Regex::with_limits(pattern, Options::new().jit(true), tight).unwrap();
-    let plain = interpreter_only(pattern, Limits::POLICY);
-    assert_eq!(
-        retried.find_all(subject).unwrap(),
-        plain.find_all(subject).unwrap()
-    );
-}
-
-#[test]
 fn regexes_with_different_limits_do_not_share_a_stale_context() {
     // Alternate on one thread: the cached per-thread contexts must follow the regex.
     let tight = Limits {

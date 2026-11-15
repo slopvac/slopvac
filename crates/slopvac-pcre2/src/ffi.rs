@@ -244,7 +244,7 @@ impl JitParts {
         }
         // SAFETY: a null general context selects the default allocator.
         let context = NonNull::new(unsafe { pcre2_match_context_create_8(ptr::null_mut()) })?;
-        set_limits(context, limits);
+        set_limits(context, limits, limits.jit_match_limit);
         // SAFETY: a null general context selects the default allocator; the sizes are
         // plain numbers (PCRE2 returns null if they are inconsistent).
         let raw = unsafe {
@@ -279,12 +279,13 @@ impl Drop for JitParts {
     }
 }
 
-/// Apply the match, depth and heap limits to a match context. The JIT ignores the depth
-/// and heap limits for patterns it compiled, but PCRE2 runs the interpreter under the same
-/// context when it declines to JIT a call, so both contexts carry all three.
-fn set_limits(context: NonNull<pcre2_match_context_8>, limits: Limits) {
+/// Apply a match limit plus the depth and heap limits to a match context. The interpreter
+/// context gets the interpreter's match limit and the JIT context the JIT's, which counts
+/// differently. Depth and heap go on both: they matter to the interpreter, and the JIT
+/// context carries them so no context is left on PCRE2's much larger defaults.
+fn set_limits(context: NonNull<pcre2_match_context_8>, limits: Limits, match_limit: u32) {
     // SAFETY: `context` is a live match context owned by the caller.
-    unsafe { pcre2_set_match_limit_8(context.as_ptr(), limits.match_limit) };
+    unsafe { pcre2_set_match_limit_8(context.as_ptr(), match_limit) };
     // SAFETY: as above.
     unsafe { pcre2_set_depth_limit_8(context.as_ptr(), limits.depth_limit) };
     // SAFETY: as above.
@@ -308,7 +309,7 @@ impl Contexts {
     fn new(limits: Limits) -> Option<Self> {
         // SAFETY: a null general context selects the default allocator.
         let interpreter = NonNull::new(unsafe { pcre2_match_context_create_8(ptr::null_mut()) })?;
-        set_limits(interpreter, limits);
+        set_limits(interpreter, limits, limits.match_limit);
         Some(Self {
             limits,
             interpreter,

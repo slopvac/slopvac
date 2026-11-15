@@ -11,7 +11,7 @@
 //!   workspace pins `pcre2-sys` and `.cargo/config.toml` forces its vendored build;
 //!   [`ensure_supported_version`] fails at compile time of the first pattern if a system
 //!   library was linked anyway.
-//! * Patterns compile in UTF mode, optionally with Unicode properties ([`Options`]), under
+//! * Patterns compile in UTF mode with `\C` refused ([`CompileError::BackslashC`]), optionally with Unicode properties ([`Options`]), under
 //!   a compile context that caps the pattern at [`MAX_PATTERN_BYTES`], the parenthesis
 //!   nesting at [`PARENS_NEST_LIMIT`] and variable-length lookbehind at
 //!   [`MAX_VAR_LOOKBEHIND`]. PCRE2's compiler memory is bounded by those caps; there is no
@@ -38,9 +38,10 @@ use std::sync::Arc;
 pub use version::{VersionError, ensure_supported_version, linked_version};
 
 use pcre2_sys::{
-    PCRE2_CASELESS, PCRE2_ERROR_DEPTHLIMIT, PCRE2_ERROR_HEAP_FAILED, PCRE2_ERROR_HEAPLIMIT,
-    PCRE2_ERROR_JIT_STACKLIMIT, PCRE2_ERROR_MATCHLIMIT, PCRE2_ERROR_NOMATCH, PCRE2_ERROR_NOMEMORY,
-    PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP, PCRE2_UCP, PCRE2_UTF,
+    PCRE2_CASELESS, PCRE2_ERROR_BACKSLASH_C_CALLER_DISABLED, PCRE2_ERROR_DEPTHLIMIT,
+    PCRE2_ERROR_HEAP_FAILED, PCRE2_ERROR_HEAPLIMIT, PCRE2_ERROR_JIT_STACKLIMIT,
+    PCRE2_ERROR_MATCHLIMIT, PCRE2_ERROR_NOMATCH, PCRE2_ERROR_NOMEMORY,
+    PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP, PCRE2_NEVER_BACKSLASH_C, PCRE2_UCP, PCRE2_UTF,
 };
 
 use ffi::{Code, Contexts, Engine, ExecError, MatchData};
@@ -148,7 +149,9 @@ impl Options {
     }
 
     fn bits(self) -> u32 {
-        let mut bits = PCRE2_UTF;
+        // `\C` matches one byte, so in UTF mode a match could start or end inside a
+        // character and break every caller that slices a `&str`. Never allow it.
+        let mut bits = PCRE2_UTF | PCRE2_NEVER_BACKSLASH_C;
         if self.caseless {
             bits |= PCRE2_CASELESS;
         }
@@ -185,6 +188,12 @@ pub enum CompileError {
         /// The limit, [`PARENS_NEST_LIMIT`].
         limit: u32,
         /// Byte offset in the pattern where PCRE2 gave up.
+        offset: usize,
+    },
+    /// The pattern uses `\C`, which matches a single byte and so can split a character.
+    #[error("`\\C` (match one byte) is not allowed (at pattern offset {offset})")]
+    BackslashC {
+        /// Byte offset in the pattern where PCRE2 found it.
         offset: usize,
     },
     /// PCRE2 could not allocate memory to compile the pattern.
@@ -433,12 +442,12 @@ impl Regex {
     }
 }
 
-/// Turn PCRE2 byte offsets into a range, checking they are ordered and inside the subject.
+/// Turn PCRE2 byte offsets into a range, checking they are ordered, inside the subject and
+/// both on character boundaries, so callers can slice with them without panicking.
 ///
-/// Boundaries are not checked: `\C` matches one byte in UTF mode, so a span may end inside
-/// a character, and callers that slice must use `str::get`. [`Regex::find_all`] still
-/// cannot continue from such a span, because the next search must start on a boundary; it
-/// returns [`MatchError::InvalidOffsets`] then.
+/// With `\C` refused at compile time, PCRE2 consumes whole characters and every offset is
+/// on a boundary. The check stays as defence in depth against a PCRE2 construct that would
+/// break that, and reports [`MatchError::InvalidOffsets`] instead of letting a caller panic.
 fn span(
     subject: &str,
     offsets: Option<(usize, usize)>,
@@ -446,7 +455,7 @@ fn span(
     let Some((start, end)) = offsets else {
         return Ok(None);
     };
-    if start <= end && end <= subject.len() {
+    if start <= end && subject.is_char_boundary(start) && subject.is_char_boundary(end) {
         Ok(Some(start..end))
     } else {
         Err(MatchError::InvalidOffsets)
@@ -461,6 +470,10 @@ fn compile_error(failure: &ffi::CompileFailure) -> CompileError {
     } else if code == PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP.cast_signed() {
         CompileError::TooDeeplyNested {
             limit: PARENS_NEST_LIMIT,
+            offset: failure.offset,
+        }
+    } else if code == PCRE2_ERROR_BACKSLASH_C_CALLER_DISABLED.cast_signed() {
+        CompileError::BackslashC {
             offset: failure.offset,
         }
     } else {
