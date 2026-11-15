@@ -91,6 +91,70 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
     Ok(finish(blocks, code_spans))
 }
 
+/// The source ranges of MDX syntax that is code, not prose: `{expressions}`, `import` and
+/// `export` blocks, and the opening and closing tags of JSX elements with their attributes.
+/// The text between the tags is not included.
+///
+/// `body` is read as in [`parse_mdx`]. Every position is a byte offset into `source`.
+///
+/// # Errors
+/// Returns [`ParseError::Body`] or [`ParseError::Mdx`] in the cases of [`parse_mdx`].
+pub fn mdx_syntax_spans(source: &str, body: Span) -> Result<Vec<Span>, ParseError> {
+    let body = resolve_body(source, body)?;
+    let text = &source[body.start()..body.end()];
+    let regions = code_regions(&parse(text)?);
+    let masked = scan(text, body.start(), &regions, false);
+    let tree = parse(&masked.text)?;
+    let mut spans = Vec::new();
+    collect_syntax(&tree, &masked, &mut spans);
+    Ok(spans)
+}
+
+fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>) {
+    match node {
+        Node::MdxFlowExpression(_) | Node::MdxTextExpression(_) | Node::MdxjsEsm(_) => {
+            if let Some((s, e)) = range(node) {
+                out.push(masked.span(s, e));
+            }
+        }
+        Node::MdxJsxFlowElement(_) | Node::MdxJsxTextElement(_) => {
+            if let Some((s, e)) = range(node) {
+                let open_end = jsx_tag_end(&masked.text, s).min(e);
+                out.push(masked.span(s, open_end));
+                // A closing tag is the last `</` in the node when the opening tag did not
+                // end the node.
+                if open_end < e
+                    && let Some(close) = masked.text[open_end..e].rfind("</")
+                {
+                    out.push(masked.span(open_end + close, e));
+                }
+            }
+        }
+        _ => {}
+    }
+    for child in node.children().into_iter().flatten() {
+        collect_syntax(child, masked, out);
+    }
+}
+
+/// The end of the JSX tag that starts at `start`: its closing `>`, found outside quotes and
+/// `{}` expressions.
+fn jsx_tag_end(text: &str, start: usize) -> usize {
+    let mut quote = None;
+    let mut depth = 0usize;
+    for (i, c) in text[start..].char_indices() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '{') => depth += 1,
+            (None, '}') => depth = depth.saturating_sub(1),
+            (None, '>') if depth == 0 => return start + i + 1,
+            _ => {}
+        }
+    }
+    text.len()
+}
+
 struct Walker<'a> {
     source: &'a str,
     masked: &'a Masked,

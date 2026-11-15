@@ -35,18 +35,19 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
         let shift = |r: &Range<usize>| r.start + body_start..r.end + body_start;
         match &event {
             Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. }) => {
-                match link_type {
-                    LinkType::Autolink | LinkType::Email => push(shift(&range)),
-                    _ => open.push((*link_type, range.start)),
-                }
+                open.push((*link_type, range.start));
             }
             Event::End(TagEnd::Link | TagEnd::Image) => {
                 if let Some((link_type, text_end)) = open.pop() {
                     let whole = range.clone();
                     let target = text_end..whole.end;
                     match link_type {
+                        // An address is all target.
                         // `[text]` and `[text][]` are named by the label, which is the text.
-                        LinkType::Collapsed | LinkType::Shortcut => push(shift(&whole)),
+                        LinkType::Autolink
+                        | LinkType::Email
+                        | LinkType::Collapsed
+                        | LinkType::Shortcut => push(shift(&whole)),
                         _ => push(shift(&target)),
                     }
                 }

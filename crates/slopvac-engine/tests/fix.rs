@@ -277,3 +277,42 @@ fn a_definition_inside_a_quote_keeps_its_references_resolving() {
         assert!(!fix(&e, text, None).text.contains("[d]"), "{text:?}");
     }
 }
+
+fn fix_mdx(engine: &Engine, text: &str) -> String {
+    let input = Input::mdx("doc.mdx", text);
+    let doc = engine.lint(&input).unwrap();
+    fix_document(&input, &doc, None).unwrap().text
+}
+
+#[test]
+fn mdx_syntax_is_never_rewritten_but_its_prose_is() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    for (text, want) in [
+        (
+            "<Comp title=\"delta\" {...delta} />\n\ndelta\n",
+            "<Comp title=\"delta\" {...delta} />\n\nd\n",
+        ),
+        ("{delta}\n\ndelta\n", "{delta}\n\nd\n"),
+        (
+            "export const delta = 1\n\ndelta\n",
+            "export const delta = 1\n\nd\n",
+        ),
+        (
+            "<A b={delta > 1} c='delta'>delta</A>\n",
+            "<A b={delta > 1} c='delta'>d</A>\n",
+        ),
+        ("text {delta} and delta\n", "text {delta} and d\n"),
+    ] {
+        assert_eq!(fix_mdx(&raw, text), want, "{text:?}");
+    }
+}
+
+#[test]
+fn an_autolink_inside_an_image_does_not_unprotect_the_image_destination() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    let text = "![see <https://example.com> now](img/delta.png) delta\n";
+    assert_eq!(
+        fix(&raw, text, None).text,
+        "![see <https://example.com> now](img/delta.png) d\n"
+    );
+}

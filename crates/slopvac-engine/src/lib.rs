@@ -32,6 +32,7 @@
 //! [`discover`] finds the files to lint.
 
 mod capitalization;
+mod commit;
 mod diagrams;
 mod directives;
 pub mod discover;
@@ -48,9 +49,10 @@ mod settings;
 mod skip;
 mod tagging;
 
+pub use commit::{MAX_FILE_BYTES, Refusal, Step};
 pub use diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite};
-pub use file::{FileFix, FileResult, MAX_FILE_BYTES, Refusal, Step, fix_file, fix_file_hooked};
+pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
 pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
 pub use lint::{Engine, EngineError, Input, Kind};
 pub use score::{CategoryInfo, Scoring, score_document};

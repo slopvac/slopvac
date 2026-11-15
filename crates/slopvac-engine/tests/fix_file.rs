@@ -142,6 +142,22 @@ fn a_file_that_is_not_utf8_is_an_error_and_stays_as_it_was() {
 }
 
 #[test]
+fn a_file_over_the_size_cap_is_refused_unread_and_unchanged() {
+    let root = project();
+    let path = root.path().join("big.md");
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(slopvac_engine::MAX_FILE_BYTES + 1).unwrap();
+    drop(file);
+    let out = run(root.path(), "big.md", false);
+    assert_eq!(refused(&out), Refusal::TooLarge);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        slopvac_engine::MAX_FILE_BYTES + 1
+    );
+    assert_eq!(names(root.path()), ["big.md", "doc.md"]);
+}
+
+#[test]
 fn a_path_outside_the_root_is_refused() {
     let root = project();
     let outside = project();
@@ -289,6 +305,31 @@ mod unix {
         );
         assert_eq!(read(root.path().join("doc.md")), DOC);
         assert_eq!(names(root.path()), ["doc.md"]);
+    }
+
+    /// A group other than the primary one that the current user belongs to, if any.
+    fn other_group(primary: u32) -> Option<u32> {
+        let out = std::process::Command::new("id").arg("-G").output().ok()?;
+        String::from_utf8(out.stdout)
+            .ok()?
+            .split_whitespace()
+            .filter_map(|g| g.parse::<u32>().ok())
+            .find(|g| *g != primary)
+    }
+
+    #[test]
+    fn a_write_keeps_the_group_of_the_file() {
+        use std::os::unix::fs::{MetadataExt, chown};
+        let root = project();
+        let path = root.path().join("doc.md");
+        let Some(group) = other_group(std::fs::metadata(&path).unwrap().gid()) else {
+            return;
+        };
+        if chown(&path, None, Some(group)).is_err() {
+            return;
+        }
+        assert!(done(run(root.path(), "doc.md", false)).written);
+        assert_eq!(std::fs::metadata(&path).unwrap().gid(), group);
     }
 
     #[test]

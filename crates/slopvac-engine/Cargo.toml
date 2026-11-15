@@ -12,6 +12,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 frontmatter-spans = { workspace = true }
 globset.workspace = true
 ignore.workspace = true
@@ -26,7 +28,7 @@ slopvac-rules = { workspace = true }
 slopvac-text = { workspace = true }
 thiserror = { workspace = true }
 
-# Descriptor-anchored opens, renames and the effective user id for `fix_file`.
+# O_NONBLOCK and the effective user id for `fix_file`.
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs", "process"] }
 
@@ -35,3 +37,7 @@ proptest.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile.workspace = true
+
+# File index and hard-link count, which std has no stable call for.
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"

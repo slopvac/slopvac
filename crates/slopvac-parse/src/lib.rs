@@ -30,5 +30,5 @@ pub use html::{
     MAX_HTML_BYTES, Stats, WORK_BASE, WORK_PER_BYTE, parse_html_budget, parse_html_stats,
 };
 pub use markdown::parse_markdown;
-pub use mdx::parse_mdx;
+pub use mdx::{mdx_syntax_spans, parse_mdx};
 pub use projection::{Projection, Token, TokenKind};

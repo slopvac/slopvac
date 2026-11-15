@@ -30,7 +30,9 @@ use similar::TextDiff;
 use slopvac_model::{
     Document, Edit, EditError, Finding, LineCol, RuleId, SourceIndex, Span, apply_edits,
 };
-use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
+use slopvac_parse::{
+    BlockKind, Document as Parsed, ParseError, mdx_syntax_spans, parse_markdown, parse_mdx,
+};
 
 use crate::lint::{EngineError, Input, Kind};
 use crate::protect::destinations;
@@ -219,6 +221,9 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     };
     spans.extend(parsed.code_spans.iter().copied());
     spans.extend(destinations(input.source, body_start));
+    if input.kind == Kind::Mdx {
+        spans.extend(mdx_syntax_spans(input.source, body)?);
+    }
     spans.extend(
         parsed
             .blocks
