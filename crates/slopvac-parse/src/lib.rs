@@ -24,11 +24,11 @@ mod work;
 pub use document::{
     Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, ParseError,
 };
-pub use html::parse_html;
 #[doc(hidden)]
 pub use html::{
     MAX_HTML_BYTES, Stats, WORK_BASE, WORK_PER_BYTE, parse_html_budget, parse_html_stats,
 };
+pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
 pub use mdx::parse_mdx;
 pub use projection::{Projection, Token, TokenKind};

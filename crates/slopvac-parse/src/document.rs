@@ -107,10 +107,12 @@ pub struct Document {
     pub blocks: Vec<Block>,
     /// Inline code spans, backticks included, in source order. Rules skip these ranges.
     pub code_spans: Vec<Span>,
-    /// Raw HTML blocks, in source order. Consecutive lines of one block are one range. A
-    /// block inside a block quote or list item is one range per line, because the container
-    /// prefix sits between the lines. Only the Markdown parser fills this.
-    pub html_blocks: Vec<Span>,
+    /// Raw HTML blocks, in source order. Each block lists the source ranges that hold its
+    /// text: consecutive lines are one range, and a block inside a block quote or list item
+    /// has one range per line, because the container prefix sits between the lines. Read the
+    /// ranges as one stream with [`crate::parse_html_segments`]. Only the Markdown parser
+    /// fills this.
+    pub html_blocks: Vec<Vec<Span>>,
 }
 
 /// Why a document did not parse.
@@ -125,6 +127,9 @@ pub enum ParseError {
     /// The document needs more work than the parse budget allows. The check is incomplete.
     #[error("the document needs more work than the parse budget allows")]
     Budget,
+    /// The segments of an HTML stream do not ascend, or they overlap.
+    #[error("the HTML segments must ascend and not overlap")]
+    Segments,
     /// The document is longer than the parser accepts. The check is incomplete.
     #[error("the document is longer than the parser accepts")]
     TooLarge,

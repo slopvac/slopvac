@@ -153,6 +153,60 @@ pub fn parse_html_budget(
         body.start()
     };
     let text = &source[base..body.end()];
+    parse_stream(text, Mapper::new(&[(base, text.len())]), per_byte, extra)
+}
+
+/// Parse the `segments` of `source` as one HTML stream.
+///
+/// The text of the segments is joined in order, and the HTML parser reads the result, so
+/// an element or a comment can open in one segment and close in another. The caller drops
+/// what sits between the segments, such as the `> ` of a block quote. Every position in
+/// the result is a byte offset into `source`, and a projection token that covers the end
+/// of one segment and the start of the next maps to both. `index` is the caller's index of
+/// `source`, built once for many calls.
+///
+/// The size and work limits of [`parse_html`] apply to the joined stream.
+///
+/// # Errors
+/// Returns [`ParseError::Body`] when a segment is not a valid span of `source`, and
+/// [`ParseError::Segments`] when the segments do not ascend or overlap.
+pub fn parse_html_segments(
+    source: &str,
+    index: &SourceIndex<'_>,
+    segments: &[Span],
+) -> Result<Document, ParseError> {
+    let mut previous_end = 0;
+    for segment in segments {
+        index.check_span(*segment)?;
+        if segment.start() < previous_end {
+            return Err(ParseError::Segments);
+        }
+        previous_end = segment.end();
+    }
+    let pieces: Vec<(usize, usize)> = segments
+        .iter()
+        .map(|s| (s.start(), s.end() - s.start()))
+        .collect();
+    let map = Mapper::new(&pieces);
+    let joined: String;
+    let text = if let [only] = segments {
+        &source[only.start()..only.end()]
+    } else {
+        joined = segments
+            .iter()
+            .map(|s| &source[s.start()..s.end()])
+            .collect();
+        &joined
+    };
+    parse_stream(text, map, WORK_PER_BYTE, WORK_BASE).map(|(document, _)| document)
+}
+
+fn parse_stream(
+    text: &str,
+    map: Mapper,
+    per_byte: usize,
+    extra: usize,
+) -> Result<(Document, Stats), ParseError> {
     if text.len() > MAX_HTML_BYTES {
         return Err(ParseError::TooLarge);
     }
@@ -160,7 +214,7 @@ pub fn parse_html_budget(
         text,
         per_byte.saturating_mul(text.len()).saturating_add(extra),
     );
-    let document = Walker::new(base, text).walk(&dom);
+    let document = Walker::new(Rc::new(map), text).walk(&dom);
     if dom.exhausted.get() {
         return Err(ParseError::Budget);
     }
@@ -168,6 +222,65 @@ pub fn parse_html_budget(
     stats.nodes = dom.nodes.borrow().len();
     stats.work = dom.work_done();
     Ok((document, stats))
+}
+
+/// Where each byte of the parsed stream came from in the source.
+struct Mapper {
+    /// `(stream start, source start, length)` of each segment, ascending.
+    pieces: Vec<(usize, usize, usize)>,
+    total: usize,
+}
+
+impl Mapper {
+    fn new(segments: &[(usize, usize)]) -> Self {
+        let mut pieces = Vec::with_capacity(segments.len());
+        let mut at = 0;
+        for &(source, len) in segments {
+            if len > 0 {
+                pieces.push((at, source, len));
+                at += len;
+            }
+        }
+        Self { pieces, total: at }
+    }
+
+    /// The source offset of the stream byte at `offset`. At or past the end of the stream it
+    /// is the end of the last segment.
+    fn start(&self, offset: usize) -> usize {
+        let Some(last) = self.pieces.last() else {
+            return 0;
+        };
+        if offset >= self.total {
+            return last.1 + last.2;
+        }
+        let i = self.pieces.partition_point(|p| p.0 <= offset) - 1;
+        let (stream, source, _) = self.pieces[i];
+        source + (offset - stream)
+    }
+
+    /// The source offset just past the stream byte before `offset`.
+    fn end(&self, offset: usize) -> usize {
+        if offset == 0 {
+            self.start(0)
+        } else {
+            self.start(offset.min(self.total) - 1) + 1
+        }
+    }
+
+    /// The source span of the stream range `start..end`.
+    fn span(&self, start: usize, end: usize) -> Span {
+        let from = self.start(start);
+        let to = if end > start { self.end(end) } else { from };
+        Span::new(from, to).expect("a stream range maps to an ascending source range")
+    }
+
+    /// The end offsets, in the stream, of the segments that end inside `start..end`.
+    fn cuts(&self, start: usize, end: usize) -> impl Iterator<Item = usize> + '_ {
+        self.pieces
+            .iter()
+            .map(|p| p.0 + p.2)
+            .filter(move |&e| e > start && e < end)
+    }
 }
 
 /// Row and column counters of one `<table>`.
@@ -187,7 +300,7 @@ enum Step {
 
 /// Walks the tree in document order.
 struct Walker<'a> {
-    base: usize,
+    map: Rc<Mapper>,
     text: &'a str,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
@@ -197,21 +310,21 @@ struct Walker<'a> {
 }
 
 impl<'a> Walker<'a> {
-    fn new(base: usize, text: &'a str) -> Self {
+    fn new(map: Rc<Mapper>, text: &'a str) -> Self {
         Self {
-            base,
             text,
             blocks: Vec::new(),
             code_spans: Vec::new(),
-            prose: Prose::new(base),
+            prose: Prose::new(Rc::clone(&map)),
             headings: Vec::new(),
             tables: Vec::new(),
+            map,
         }
     }
 
     /// Span of a range of the body text.
     fn span(&self, start: usize, end: usize) -> Span {
-        Span::new(self.base + start, self.base + end.max(start)).expect("start <= end")
+        self.map.span(start, end)
     }
 
     fn walk(mut self, dom: &Rc<Dom>) -> Document {
@@ -518,7 +631,7 @@ const fn is_space(c: char) -> bool {
 
 /// A block of prose under construction.
 struct Prose {
-    base: usize,
+    map: Rc<Mapper>,
     projection: Projection,
     /// An identity run not yet pushed, so adjacent text becomes one token.
     run: Option<(String, usize, usize)>,
@@ -533,9 +646,9 @@ struct Prose {
 }
 
 impl Prose {
-    fn new(base: usize) -> Self {
+    fn new(map: Rc<Mapper>) -> Self {
         Self {
-            base,
+            map,
             projection: Projection::new(),
             run: None,
             space: None,
@@ -604,9 +717,21 @@ impl Prose {
     }
 
     fn push(&mut self, kind: TokenKind, text: &str, start: usize, end: usize) {
-        let src =
-            Span::new(self.base + start, self.base + end).expect("start <= end by construction");
-        self.projection.push(kind, text, src);
+        if kind == TokenKind::Identity {
+            // The text is the source itself, so it splits where the source does.
+            let mut from = start;
+            let mut offset = 0;
+            let cuts: Vec<usize> = self.map.cuts(start, end).collect();
+            for cut in cuts.into_iter().chain(std::iter::once(end)) {
+                let src = self.map.span(from, cut);
+                self.projection
+                    .push(kind, &text[offset..offset + (cut - from)], src);
+                offset += cut - from;
+                from = cut;
+            }
+        } else {
+            self.projection.push(kind, text, self.map.span(start, end));
+        }
         self.last = end;
     }
 
@@ -614,7 +739,7 @@ impl Prose {
     /// readable text came in. Trailing whitespace is dropped.
     fn take(&mut self) -> Option<(Projection, usize, usize)> {
         self.flush_run();
-        let this = std::mem::replace(self, Self::new(self.base));
+        let this = std::mem::replace(self, Self::new(Rc::clone(&self.map)));
         let first = this.first?;
         this.readable.then_some((this.projection, first, this.last))
     }

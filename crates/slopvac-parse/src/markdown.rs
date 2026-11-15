@@ -83,10 +83,13 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
     let mut document = finish(blocks, code_spans);
     document.html_blocks = html_blocks
         .into_iter()
-        .map(|span| {
-            let text = &source[span.start()..span.end()];
+        .filter_map(|mut segments| {
+            // The last line's terminator is not part of the block.
+            let last = segments.pop()?;
+            let text = &source[last.start()..last.end()];
             let kept = text.trim_end_matches(['\n', '\r']).len();
-            Span::new(span.start(), span.start() + kept).expect("a prefix of a span")
+            segments.push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
+            Some(segments)
         })
         .collect();
     Ok(document)
@@ -118,7 +121,7 @@ struct Collector<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
-    html_blocks: Vec<Span>,
+    html_blocks: Vec<Vec<Span>>,
     open: Option<Open>,
     code: Option<OpenCode>,
     image_depth: usize,
@@ -278,22 +281,15 @@ impl<'a> Collector<'a> {
             Event::Html(_) if self.image_depth == 0 => {
                 let span = self.masked.span(range.start, range.end);
                 // The lines of one block follow each other, line breaks included. A
-                // container prefix between two lines starts a new range.
-                let joined = self
-                    .html_blocks
-                    .last()
-                    .is_some_and(|last| last.end() == span.start());
-                if joined {
-                    let last = self
-                        .html_blocks
-                        .pop()
-                        .expect("joined needs a previous block");
-                    self.html_blocks.push(
-                        Span::new(last.start(), span.end().max(last.end()))
-                            .expect("start does not exceed end"),
-                    );
-                } else {
-                    self.html_blocks.push(span);
+                // container prefix between two lines starts a new segment of the block.
+                if let Some(segments) = self.html_blocks.last_mut() {
+                    match segments.last_mut() {
+                        Some(last) if last.end() == span.start() => {
+                            *last = Span::new(last.start(), span.end().max(last.end()))
+                                .expect("start does not exceed end");
+                        }
+                        _ => segments.push(span),
+                    }
                 }
             }
             Event::InlineHtml(html) => {
@@ -377,6 +373,10 @@ impl<'a> Collector<'a> {
             Tag::BlockQuote(_) => {
                 self.flush();
                 self.containers.push(Container::BlockQuote);
+            }
+            Tag::HtmlBlock => {
+                self.flush();
+                self.html_blocks.push(Vec::new());
             }
             Tag::Image { .. } => {
                 self.inline_range(&range);

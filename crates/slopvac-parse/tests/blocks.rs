@@ -616,27 +616,39 @@ fn blocks_come_in_source_order_with_containers_first() {
     assert_eq!(starts, sorted);
 }
 
+fn html_segments<'a>(source: &'a str, doc: &Document) -> Vec<Vec<&'a str>> {
+    doc.html_blocks
+        .iter()
+        .map(|block| block.iter().map(|s| slice(source, *s)).collect())
+        .collect()
+}
+
 #[test]
 fn raw_html_blocks_are_listed_by_source_range() {
     let source = "Intro.\n\n<table>\n<tr><td>a</td></tr>\n</table>\n\nText.\n\n<div>b</div>\n";
-    let got: Vec<&str> = md(source)
-        .html_blocks
-        .iter()
-        .map(|s| slice(source, *s))
-        .collect();
     assert_eq!(
-        got,
-        ["<table>\n<tr><td>a</td></tr>\n</table>", "<div>b</div>"]
+        html_segments(source, &md(source)),
+        [
+            vec!["<table>\n<tr><td>a</td></tr>\n</table>"],
+            vec!["<div>b</div>"]
+        ]
     );
 }
 
 #[test]
-fn a_raw_html_block_in_a_block_quote_is_one_range_per_line() {
-    let source = "> <p>\n> text</p>\n";
-    let got: Vec<&str> = md(source)
-        .html_blocks
-        .iter()
-        .map(|s| slice(source, *s))
-        .collect();
-    assert_eq!(got, ["<p>", "text</p>"]);
+fn a_raw_html_block_in_a_block_quote_is_one_block_with_a_segment_per_line() {
+    let source = "> <pre>\n> one\n> two</pre>\n";
+    assert_eq!(
+        html_segments(source, &md(source)),
+        [vec!["<pre>\n", "one\n", "two</pre>"]]
+    );
+}
+
+#[test]
+fn two_raw_html_blocks_stay_two_blocks() {
+    let source = "> <p>a</p>\n\n> <p>b</p>\n";
+    assert_eq!(
+        html_segments(source, &md(source)),
+        [vec!["<p>a</p>"], vec!["<p>b</p>"]]
+    );
 }
