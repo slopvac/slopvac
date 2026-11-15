@@ -2426,6 +2426,7 @@ version = "0.0.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
+ "clap",
  "crossbeam-channel",
  "frontmatter-spans",
  "globset",

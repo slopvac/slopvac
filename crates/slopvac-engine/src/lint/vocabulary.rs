@@ -50,7 +50,7 @@ pub(super) struct Vocabulary {
     /// Listed words, lower case, with the parts of speech they are refused as.
     words: HashMap<String, Vec<Pos>>,
     /// The vocabulary rule that owns the sweep, as an index into `vocabulary_rules`.
-    owner: Option<usize>,
+    pub(super) owner: Option<usize>,
     notices: Vec<Notice>,
 }
 
