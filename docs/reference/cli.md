@@ -119,7 +119,7 @@ Migrate a 2.x project to 3.0: config, inline directives and steering blocks
 | --- | --- |
 | `<PATH>` | Project root |
 | `--write` | Apply the changes instead of previewing them |
-| `--preserve-behavior` | Keep the 2.x vocabulary behavior by adding the STE style |
+| `--preserve-behavior` | Reproduce the 2.x profile gates with the core:legacy-<profile> style |
 | `--restore` | Undo the last --write from the backup |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
