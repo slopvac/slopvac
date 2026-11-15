@@ -85,8 +85,12 @@ def _one_line(text: object) -> str:
 
 
 def _text(value: object) -> str:
-    """Catalogue prose as one Markdown line, with HTML specials escaped."""
-    return html.escape(_one_line(value), quote=False)
+    """Catalogue prose as one Markdown line, with HTML specials escaped.
+
+    Unicode dashes become the ASCII ``--`` that the prose rules ask for.
+    """
+    one_line = _one_line(value).replace("\u2014", "--").replace("\u2013", "--")
+    return html.escape(one_line, quote=False)
 
 
 def _cell(value: object) -> str:
@@ -149,7 +153,7 @@ def _rule_page(category: dict, rule: dict) -> str:
         f"| Severity | {_cell(rule.get('severity', 'warning'))} |",
         f"| Scope | {_cell(rule.get('scope', 'prose'))} |",
     ]
-    lines += [f"| Profile `{name}` | {_cell(tier)} |" for name, tier in tiers.items()]
+    lines += [f"| Profile `{name}` | `{_cell(tier)}` |" for name, tier in tiers.items()]
     lines += ["", "## Message", "", _message(rule["message"])]
     if rule.get("fix"):
         lines += ["", "## Fix", "", _text(rule["fix"])]
