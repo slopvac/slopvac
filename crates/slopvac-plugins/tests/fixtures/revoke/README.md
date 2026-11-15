@@ -19,3 +19,7 @@ Fixed vectors for `tests/revoke.rs`. Nothing in them comes from the code under t
 - `rotation.old.minisig` and `rotation.new.minisig` are `minisign -S` by `old` and `new` over
   `rotation.json`.
 - `minisign -V` verifies every signature except the forged one with the matching public key.
+- `equivocation.a.json` and `equivocation.b.json` are two lists with the same `issued` and
+  `expires`. `a` revokes the digest above and `b` revokes nothing. A separate key
+  (`equivocation.root.pub`, also from `minisign -G -W`) signs both with `minisign -S`, so both
+  are authentic, and `minisign -V` verifies both.

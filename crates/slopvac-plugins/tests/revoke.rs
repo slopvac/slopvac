@@ -485,6 +485,61 @@ fn edit_cache(path: &Path, from: &str, to: &str) {
     fs::write(path, text.replace(from, to)).unwrap();
 }
 
+const EQ_ROOT_PUB: &str = include_str!("fixtures/revoke/equivocation.root.pub");
+const EQ_A: &[u8] = include_bytes!("fixtures/revoke/equivocation.a.json");
+const EQ_A_SIG: &str = include_str!("fixtures/revoke/equivocation.a.minisig");
+const EQ_B: &[u8] = include_bytes!("fixtures/revoke/equivocation.b.json");
+const EQ_B_SIG: &str = include_str!("fixtures/revoke/equivocation.b.minisig");
+
+#[test]
+fn k6_a_different_list_with_the_same_issued_time_is_refused_and_the_cache_kept() {
+    // Two authentic root-signed lists with one `issued` time: `a` revokes a
+    // digest, `b` revokes nothing. `b` must not undo `a`.
+    let state = tempfile::tempdir().unwrap();
+    let server = ListServer::start(Some(Signed {
+        statement: EQ_A.to_vec(),
+        minisig: EQ_A_SIG.into(),
+    }));
+    let at = |source: Reference, now: &str| {
+        Revocations::new(state.path(), vec![key(EQ_ROOT_PUB)], source, now).unwrap()
+    };
+    at(server.source(), "2026-11-13T00:00:00Z")
+        .refresh(&client())
+        .unwrap();
+
+    server.serve(Some(Signed {
+        statement: EQ_B.to_vec(),
+        minisig: EQ_B_SIG.into(),
+    }));
+    let err = at(server.source(), "2026-11-14T00:00:00Z")
+        .refresh(&client())
+        .unwrap_err();
+    assert!(
+        matches!(err, RevocationError::Equivocation { .. }),
+        "{err:?}"
+    );
+    assert_eq!(err.code(), "revocation-list-equivocation");
+    let current = at(offline_source(), "2026-11-14T00:00:00Z")
+        .cached()
+        .unwrap();
+    assert!(current.list.revokes_digest(REVOKED_DIGEST));
+    assert_eq!(current.fetched_at.as_deref(), Some("2026-11-13T00:00:00Z"));
+
+    // The identical list again is a plain refresh.
+    server.serve(Some(Signed {
+        statement: EQ_A.to_vec(),
+        minisig: EQ_A_SIG.into(),
+    }));
+    at(server.source(), "2026-11-15T00:00:00Z")
+        .refresh(&client())
+        .unwrap();
+    let current = at(offline_source(), "2026-11-15T00:00:00Z")
+        .cached()
+        .unwrap();
+    assert!(current.list.revokes_digest(REVOKED_DIGEST));
+    assert_eq!(current.fetched_at.as_deref(), Some("2026-11-15T00:00:00Z"));
+}
+
 #[test]
 fn a_tampered_cache_fails_closed_and_a_refresh_repairs_it() {
     let env = Env::new();

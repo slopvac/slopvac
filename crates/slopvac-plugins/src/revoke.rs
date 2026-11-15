@@ -18,7 +18,8 @@
 //! `keys` holds 16-digit uppercase key ids and `digests` holds manifest
 //! digests, each sorted and without repeats, so one list has one encoding.
 //! `issued` orders lists: a fetched list older than the cached one is a
-//! rollback and is refused. `expires` is later than `issued` by at most
+//! rollback and is refused, and so is a different list with the same
+//! `issued` (equivocation). `expires` is later than `issued` by at most
 //! [`STALE_AFTER_DAYS`] days, so the root must sign a new list at least that
 //! often.
 //!
@@ -124,6 +125,15 @@ pub enum RevocationError {
         /// `issued` of the fetched list.
         fetched: String,
     },
+    /// The fetched list has the cached list's `issued` time but other
+    /// content: two signed lists claim one moment, and the cache is kept.
+    #[error(
+        "the fetched revocation list differs from the cached one with the same issued time ({issued})"
+    )]
+    Equivocation {
+        /// The shared `issued` time.
+        issued: String,
+    },
     /// The cache file does not hold a list the root signed.
     #[error("the revocation cache {path} is damaged: {why}; run an online sync to replace it", path = path.display())]
     CacheInvalid {
@@ -159,6 +169,7 @@ impl RevocationError {
             Self::Fetch(_) => "revocation-list-unavailable",
             Self::Expired { .. } => "revocation-list-expired",
             Self::Rollback { .. } => "revocation-list-rollback",
+            Self::Equivocation { .. } => "revocation-list-equivocation",
             Self::CacheInvalid { .. } | Self::Io { .. } => "revocation-cache-invalid",
             Self::Clock(_) => "revocation-clock-invalid",
         }
@@ -505,7 +516,9 @@ impl Revocations {
     /// [`RevocationError::Fetch`] when the registry fails or withholds the
     /// list, [`RevocationError::Expired`] for a list past its signed
     /// `expires`, the verification errors of [`RevocationList::verify`],
-    /// [`RevocationError::Rollback`] for a list older than the cache, and
+    /// [`RevocationError::Rollback`] for a list older than the cache,
+    /// [`RevocationError::Equivocation`] for a different list with the
+    /// cache's `issued` time, and
     /// cache write failures. The cache is unchanged on any error.
     pub fn refresh(&self, client: &Client) -> Result<Current, RevocationError> {
         let (statement, minisig) = self.fetch(client)?;
@@ -522,12 +535,20 @@ impl Revocations {
         let _lock = self.lock()?;
         if let Ok(Some((cached, _))) = self.read_cache()
             && let (Some(old), Some(new)) = (cached.issued(), list.issued())
-            && utc_seconds(new) < utc_seconds(old)
         {
-            return Err(RevocationError::Rollback {
-                cached: old.to_owned(),
-                fetched: new.to_owned(),
-            });
+            let (old_at, new_at) = (utc_seconds(old), utc_seconds(new));
+            if new_at < old_at {
+                return Err(RevocationError::Rollback {
+                    cached: old.to_owned(),
+                    fetched: new.to_owned(),
+                });
+            }
+            // One canonical encoding per list, so equal fields mean equal bytes.
+            if new_at == old_at && cached != list {
+                return Err(RevocationError::Equivocation {
+                    issued: new.to_owned(),
+                });
+            }
         }
         self.write_cache(&CacheDoc {
             schema_version: 1,
