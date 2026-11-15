@@ -1,6 +1,6 @@
 //! Finding output formats.
 //!
-//! One [`Report`](slopvac_model::Report) renders to every format. A format that needs a
+//! One [`Report`] renders to every format. A format that needs a
 //! column in another unit than code points reads the original text through [`Sources`].
 
 mod checkstyle;
