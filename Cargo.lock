@@ -2386,7 +2386,6 @@ dependencies = [
  "annotate-snippets",
  "insta",
  "saphyr",
- "serde",
  "serde_json",
  "strsim",
  "thiserror",
