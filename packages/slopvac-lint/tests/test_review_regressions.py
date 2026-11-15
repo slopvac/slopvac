@@ -158,21 +158,32 @@ def test_punctuation_comment_is_next_block():
 
 
 @pytest.mark.parametrize("filename,marker", [("sample.py", "#"), ("sample.rs", "//")])
-def test_quoted_source_directive_does_not_disable_later_comment(tmp_path, filename, marker):
+def test_quoted_source_directive_does_not_disable_later_comment(
+    tmp_path, filename, marker
+):
     source = tmp_path / filename
     source.write_text(
-        "\n".join(f"{marker} {line}" for line in [
-            "```html", "<!-- slopvac-disable -->", "```", "",
-            "Testing is not a phase. It is a habit.",
-        ]),
+        "\n".join(
+            f"{marker} {line}"
+            for line in [
+                "```html",
+                "<!-- slopvac-disable -->",
+                "```",
+                "",
+                "Testing is not a phase. It is a habit.",
+            ]
+        ),
         encoding="utf-8",
     )
     result = CliRunner().invoke(
-        main, ["lint", str(source), "--mode", "code-comments", "--no-vale", "--format", "json"]
+        main,
+        ["lint", str(source), "--mode", "code-comments", "--no-vale", "--format", "json"],
     )
     assert result.exit_code in (1, 2), result.output
     findings = json.loads(result.output)["documents"][0]["findings"]
-    assert any(f["rule_id"] == "ai-tells-structure.definitional-negation-pair" for f in findings)
+    assert any(
+        f["rule_id"] == "ai-tells-structure.definitional-negation-pair" for f in findings
+    )
 
 
 def test_explicit_inspection_profile_ignores_file_overrides(tmp_path):
@@ -236,16 +247,26 @@ def test_negative_guarantee_review_examples(text, expected):
 
 @pytest.mark.parametrize("marker", ["#", "//"])
 def test_indented_comment_example_is_inert(marker):
-    document = parse("comments.md", f"{marker}     <!-- slopvac-disable -->\n{marker}\n{marker} Later prose.\n")
+    document = parse(
+        "comments.md",
+        f"{marker}     <!-- slopvac-disable -->\n{marker}\n{marker} Later prose.\n",
+    )
     assert scan_suppressions(document, {}, comments=True) == ({}, set(), [])
 
 
 def test_inline_code_subject_preserves_reported_source():
     text = "The `deploy` helper never writes a file."
     engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
-    findings = [f for f in engine.run(parse("note.md", text)) if f.rule_id.endswith(".negative-guarantee-core")]
+    findings = [
+        f
+        for f in engine.run(parse("note.md", text))
+        if f.rule_id.endswith(".negative-guarantee-core")
+    ]
     assert findings
-    assert all("deploy" in f.matched_text and "\x00" not in f.message + f.matched_text for f in findings)
+    assert all(
+        "deploy" in f.matched_text and "\x00" not in f.message + f.matched_text
+        for f in findings
+    )
     assert all(f.matched_text in text for f in findings)
 
 
@@ -270,14 +291,42 @@ def test_packaged_cache_identity_ignores_cwd_collisions(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "text,rule,expected",
     [
-        ("It's not a linter, it's a review partner.", "contrastive-inversion-frames", True),
-        ("The parser reads JSON; it does not read YAML.", "contrastive-inversion-frames", False),
+        (
+            "It's not a linter, it's a review partner.",
+            "contrastive-inversion-frames",
+            True,
+        ),
+        (
+            "The parser reads JSON; it does not read YAML.",
+            "contrastive-inversion-frames",
+            False,
+        ),
         ("The parser reads JSON; it does not read YAML.", "contrastive-appositive", True),
-        ("The client takes a model ID; it does not need to appear in the list.", "contrastive-appositive", False),
-        ("The server stores a token; it does not require a refresh.", "contrastive-appositive", False),
-        ("The server stores a token; it must not log the value.", "contrastive-appositive", False),
-        ("The server stores a token; it should not log the value.", "contrastive-appositive", False),
-        ("The parser reads JSON; it does not read `yaml` files.", "contrastive-appositive", False),
+        (
+            "The client takes a model ID; it does not need to appear in the list.",
+            "contrastive-appositive",
+            False,
+        ),
+        (
+            "The server stores a token; it does not require a refresh.",
+            "contrastive-appositive",
+            False,
+        ),
+        (
+            "The server stores a token; it must not log the value.",
+            "contrastive-appositive",
+            False,
+        ),
+        (
+            "The server stores a token; it should not log the value.",
+            "contrastive-appositive",
+            False,
+        ),
+        (
+            "The parser reads JSON; it does not read `yaml` files.",
+            "contrastive-appositive",
+            False,
+        ),
     ],
 )
 def test_contrastive_forms_report_under_their_own_rule(text, rule, expected):
@@ -298,7 +347,9 @@ def test_contrastive_appositive_severity_by_profile(profile, expected):
     engine = Engine(
         load_ruleset().rules, resolve_for(Config(profile=profile), Path("note.md"))
     )
-    findings = engine.run(parse("note.md", "The parser reads JSON; it does not read YAML."))
+    findings = engine.run(
+        parse("note.md", "The parser reads JSON; it does not read YAML.")
+    )
     severities = [
         f.severity for f in findings if f.rule_id.endswith(".contrastive-appositive")
     ]
@@ -311,6 +362,7 @@ def test_contrastive_appositive_severity_by_profile(profile, expected):
         ("The retry loop landed in commit 3f9a2c1 after the outage.", True),
         ("Timeouts apply to every call, see PR 482.", True),
         ("The importer skips rows, see issue #596.", True),
+        ("See issue 1234.", True),
         ("Timeouts apply to every call (#2102).", True),
         ("The cache key changed because of PLAT-1042.", True),
         ("We refactored the loader to read from the config table.", True),
@@ -329,26 +381,34 @@ def test_contrastive_appositive_severity_by_profile(profile, expected):
 def test_history_internal_reference(text, expected):
     engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
     findings = engine.run(parse("note.md", text))
-    assert any(f.rule_id.endswith(".history-internal-reference") for f in findings) == expected
+    assert (
+        any(f.rule_id.endswith(".history-internal-reference") for f in findings)
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
     "profile,expected",
     [
-        (Profile.STRICT, Severity.WARNING),
+        # Category severity from the profile table: docs-discipline is ERROR at
+        # strict and WARNING at normal. The rule is `relaxed: excluded`.
+        (Profile.STRICT, Severity.ERROR),
         (Profile.NORMAL, Severity.WARNING),
         (Profile.RELAXED, None),
     ],
 )
 def test_history_internal_reference_severity_by_profile(profile, expected):
-    from slopvac.config import RuleSettings
+    from slopvac.config import CategorySettings
 
     rule_id = "docs-discipline.history-internal-reference"
-    # Opt the rule in so only the tier can silence it.
-    config = Config(
-        profile=profile,
-        rules={rule_id: RuleSettings(severity=Severity.WARNING)},
+    # No rule override. The relaxed profile switches the category off, so turn it
+    # back on there; the tier alone must then still exclude the rule.
+    categories = (
+        {"docs-discipline": CategorySettings(severity=Severity.WARNING)}
+        if profile is Profile.RELAXED
+        else {}
     )
+    config = Config(profile=profile, categories=categories)
     engine = Engine(load_ruleset().rules, resolve_for(config, Path("note.md")))
     findings = engine.run(parse("note.md", "Timeouts apply to every call, see PR 482."))
     severities = [f.severity for f in findings if f.rule_id == rule_id]
