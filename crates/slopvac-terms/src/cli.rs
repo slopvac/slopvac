@@ -85,6 +85,30 @@ pub fn command() -> Command {
                 .arg(files_arg()),
         )
         .subcommand(
+            Command::new("suggest")
+                .about(
+                    "List inferred proper nouns and acronyms that are not terms yet; \
+                     nothing is written unless you name a term with --accept",
+                )
+                .arg(Arg::new("paths").required(true).num_args(1..))
+                .arg(
+                    Arg::new("min")
+                        .long("min")
+                        .value_name("N")
+                        .default_value("2")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("Only candidates seen at least N times"),
+                )
+                .arg(
+                    Arg::new("accept")
+                        .long("accept")
+                        .value_name("TERM")
+                        .action(ArgAction::Append)
+                        .help("Add this suggested spelling to the terms file"),
+                )
+                .arg(files_arg()),
+        )
+        .subcommand(
             Command::new("import")
                 .about(
                     "Import words from another tool: a Vale accept.txt, a cspell JSON config \
@@ -327,6 +351,72 @@ fn cmd_check(
     Ok(i32::from(found > 0))
 }
 
+fn cmd_suggest(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
+    let project = load_project(paths)?;
+    let known: std::collections::BTreeSet<String> = TermsFile::builtin()
+        .terms
+        .iter()
+        .chain(&project)
+        .flat_map(|t| std::iter::once(&t.term).chain(&t.variants))
+        .map(|s| s.to_lowercase())
+        .collect();
+    let mut texts = Vec::new();
+    for p in m.get_many::<String>("paths").expect("required") {
+        let text = std::fs::read_to_string(cwd.join(p)).map_err(|e| TermsError::Io {
+            path: p.clone(),
+            message: e.to_string(),
+        })?;
+        texts.push((p.clone(), text));
+    }
+    let inputs: Vec<_> = texts
+        .iter()
+        .map(|(n, t)| (n.as_str(), t.as_str(), markdown_code_ranges(t)))
+        .collect();
+    let min = *m.get_one::<usize>("min").expect("has a default");
+    let found = crate::suggest::suggest(&inputs, &known, min);
+    let accept: Vec<&String> = m
+        .get_many::<String>("accept")
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    if accept.is_empty() {
+        for s in &found {
+            writeln!(out, "{}\t{}\t{}\t{}", s.term, s.count, s.files, s.first)
+                .map_err(|e| io_err(&e))?;
+        }
+        return Ok(0);
+    }
+    if let Some(bad) = accept
+        .iter()
+        .find(|a| !found.iter().any(|s| &s.term == **a))
+    {
+        return Err(TermsError::Entry {
+            path: "suggest".to_owned(),
+            message: format!("`{bad}` is not a suggestion; run without --accept to see them"),
+        });
+    }
+    let target = &paths[0];
+    let mut doc = TermsDoc::open(target)?;
+    for term in &accept {
+        doc.add(&TermEntry {
+            term: (*term).clone(),
+            variants: vec![],
+            kind: None,
+            ignore_case: infer_ignore_case(term),
+            case_sensitive: false,
+        })?;
+    }
+    doc.save(target)?;
+    for term in accept {
+        writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
+    }
+    Ok(0)
+}
+
 fn cmd_import(
     m: &ArgMatches,
     cwd: &Path,
@@ -387,6 +477,7 @@ pub fn run(matches: &ArgMatches, cwd: &Path, out: &mut dyn Write) -> Result<i32,
         "remove" => cmd_remove(m, &paths, out),
         "check" => cmd_check(m, cwd, &paths, out),
         "import" => cmd_import(m, cwd, &paths, out),
+        "suggest" => cmd_suggest(m, cwd, &paths, out),
         _ => Ok(2),
     }
 }

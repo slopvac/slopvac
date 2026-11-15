@@ -14,6 +14,7 @@ mod error;
 pub mod import;
 mod reference;
 mod shape;
+pub mod suggest;
 
 pub use blocklist::{Blocklist, BlocklistEntry, Pos};
 pub use casing::{CasingFinding, TermSet};
