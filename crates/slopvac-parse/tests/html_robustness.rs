@@ -723,3 +723,30 @@ proptest! {
         prop_assert!(texts.contains(&"SENTINEL"), "{source:?}: {texts:?}");
     }
 }
+
+#[test]
+fn copying_containers_onto_blocks_counts_against_the_work_budget() {
+    // `<blockquote>` and `<figcaption>` are both block elements with names of one length, so
+    // the two documents differ only in whether the blocks inside have containers to copy.
+    let paragraphs = "<p>x</p>".repeat(400);
+    let wrap =
+        |tag: &str| format!("<{tag}>").repeat(100) + &paragraphs + &format!("</{tag}>").repeat(100);
+    let (quoted, plain) = (wrap("blockquote"), wrap("figcaption"));
+    let (_, flat) = parse_html_budget(&plain, whole(&plain), 0, UNLIMITED).unwrap();
+    // Every one of the 400 paragraphs copies 100 containers.
+    let copies = 400 * 100;
+
+    // The plain document fits a budget of exactly its own work. The quoted one costs the
+    // same plus the copies, so that budget is too small for it.
+    assert!(parse_html_budget(&plain, whole(&plain), 0, flat.work).is_ok());
+    assert!(matches!(
+        parse_html_budget(&quoted, whole(&quoted), 0, flat.work),
+        Err(ParseError::Budget)
+    ));
+    let (doc, stats) = parse_html_budget(&quoted, whole(&quoted), 0, UNLIMITED).unwrap();
+    assert!(stats.work >= flat.work + copies, "{stats:?} {flat:?}");
+    assert_eq!(doc.blocks.len(), 400);
+    assert!(doc.blocks.iter().all(|b| b.containers.len() == 100));
+    // The default budget still accepts it.
+    assert!(parse_html_budget(&quoted, whole(&quoted), WORK_PER_BYTE, WORK_BASE).is_ok());
+}

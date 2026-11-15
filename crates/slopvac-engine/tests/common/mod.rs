@@ -80,3 +80,46 @@ pub fn matched(doc: &Document) -> Vec<&str> {
         .map(|f| f.matched_text.as_str())
         .collect()
 }
+
+/// The engine the 2.x parity fixtures were generated for: the core rules with the levels
+/// and category dials that `engine-parity.json` records.
+pub fn parity_engine() -> Engine {
+    use slopvac_engine::{CategoryDials, Level};
+    use slopvac_model::{CategoryId, Severity};
+
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fixture: Value = serde_json::from_str(
+        &std::fs::read_to_string(manifest.join("tests/fixtures/engine-parity.json")).unwrap(),
+    )
+    .unwrap();
+    let core = manifest.join("../slopvac-rules/tests/fixtures/core-v3");
+    let set = RuleSet::load_dir(
+        &PackId::new("core").unwrap(),
+        &core,
+        &CompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = &fixture["settings"];
+    let mut settings = settings();
+    for (id, level) in s["rule_levels"].as_object().unwrap() {
+        let level = match level.as_str().unwrap() {
+            "error" => Level::On(Severity::Error),
+            "warning" => Level::On(Severity::Warning),
+            "suggestion" => Level::On(Severity::Suggestion),
+            "off" => Level::Off,
+            other => panic!("unknown level {other}"),
+        };
+        settings.rule_levels.insert(RuleId::new(id).unwrap(), level);
+    }
+    for (name, dials) in s["categories"].as_object().unwrap() {
+        settings.categories.insert(
+            CategoryId::new(name).unwrap(),
+            CategoryDials {
+                level: None,
+                weight: dials["weight"].as_f64(),
+                max_per_100_words: dials["budget"].as_f64(),
+            },
+        );
+    }
+    Engine::new(vec![set], settings).unwrap()
+}
