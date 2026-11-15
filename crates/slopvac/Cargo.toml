@@ -25,6 +25,7 @@ clap.workspace = true
 clap_complete = "4"
 clap_mangen = "0.3.3"
 slopvac-agents.workspace = true
+tempfile = "3.27.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "ansi",
@@ -40,7 +41,6 @@ proptest.workspace = true
 rstest.workspace = true
 serde_json.workspace = true
 snapbox.workspace = true
-tempfile = "3.27.0"
 toml.workspace = true
 
 [lints]

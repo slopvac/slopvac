@@ -39,6 +39,80 @@ fn shown(path: &Path) -> String {
     }
 }
 
+/// Replace the project root in `text` so no absolute path leaves the process.
+///
+/// A root under the working directory becomes a relative path. Any other absolute root
+/// becomes `<external>`, and the part below the root stays (policies.md, 1.7).
+fn redact_root(text: &str, root: &Path) -> String {
+    if !root.is_absolute() {
+        return text.to_owned();
+    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let shown = match root.strip_prefix(&cwd) {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
+        Ok(rel) => rel.display().to_string(),
+        Err(_) => "<external>".to_owned(),
+    };
+    text.replace(&root.display().to_string(), &shown)
+}
+
+/// What publishing the config did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Published {
+    /// The file was written.
+    Wrote,
+    /// A file was already there and `--force` was not set.
+    Kept,
+}
+
+/// Write `text` to `path` through a temporary sibling, so a failed write leaves any
+/// existing file as it was.
+///
+/// With `force` the sibling replaces the file in one step. Without it the sibling is
+/// published only if no file exists by then; a file that appeared in between is kept.
+///
+/// # Errors
+/// An I/O error from creating, writing or publishing the file.
+pub fn publish(path: &Path, text: &str, force: bool) -> std::io::Result<Published> {
+    publish_with(path, text, force, &|| {})
+}
+
+/// [`publish`] with a hook that runs after the sibling is written, for tests.
+fn publish_with(
+    path: &Path,
+    text: &str,
+    force: bool,
+    before_publish: &dyn Fn(),
+) -> std::io::Result<Published> {
+    if !force && path.exists() {
+        return Ok(Published::Kept);
+    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::Write::write_all(&mut temp, text.as_bytes())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        temp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o644))?;
+    }
+    temp.as_file().sync_all()?;
+    before_publish();
+    if force {
+        temp.persist(path).map_err(|e| e.error)?;
+        return Ok(Published::Wrote);
+    }
+    match temp.persist_noclobber(path) {
+        Ok(_) => Ok(Published::Wrote),
+        Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(Published::Kept),
+        Err(e) => Err(e.error),
+    }
+}
+
 fn io_error(path: &Path, err: &std::io::Error) -> CliError {
     CliError::new(
         "output-failed",
@@ -90,14 +164,9 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
             format!("--path {} is a directory.", shown(&path)),
         ));
     }
-    if path.exists() && !m.get_flag("force") {
-        say(out, format!("{} exists; keeping it.", shown(&path)))?;
-    } else {
-        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent).map_err(|e| io_error(&path, &e))?;
-        }
-        std::fs::write(&path, TEMPLATE).map_err(|e| io_error(&path, &e))?;
-        say(out, format!("wrote {}", shown(&path)))?;
+    match publish(&path, TEMPLATE, m.get_flag("force")).map_err(|e| io_error(&path, &e))? {
+        Published::Wrote => say(out, format!("wrote {}", shown(&path)))?,
+        Published::Kept => say(out, format!("{} exists; keeping it.", shown(&path)))?,
     }
     if !skip_agents {
         let mut chosen: Vec<String> = Vec::new();
@@ -115,7 +184,7 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
             .filter(|p| !p.as_os_str().is_empty())
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         for name in chosen {
-            let outcome = setup::execute(&setup::Options {
+            let outcome = setup::install_keeping_unrequested(&setup::Options {
                 harness: Some(name),
                 list: false,
                 remove: false,
@@ -126,12 +195,73 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
                 agent: false,
                 reviewer_model: None,
             })
-            .map_err(|err| CliError::new(err.code(), err.to_string()))?;
+            .map_err(|err| CliError::new(err.code(), redact_root(&err.to_string(), &root)))?;
             for line in outcome.lines {
-                say(out, line)?;
+                say(out, redact_root(&line, &root))?;
             }
         }
     }
     say(out, "next: slopvac prime".to_owned())?;
     Ok(exit::PASS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_appears_before_publishing_is_kept_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("slopvac.toml");
+        let racer = file.clone();
+        let result = publish_with(&file, "ours\n", false, &|| {
+            std::fs::write(&racer, "theirs\n").unwrap();
+        })
+        .unwrap();
+        assert_eq!(result, Published::Kept);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "theirs\n");
+    }
+
+    #[test]
+    fn force_replaces_a_file_that_appeared_before_publishing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("slopvac.toml");
+        let racer = file.clone();
+        let result = publish_with(&file, "ours\n", true, &|| {
+            std::fs::write(&racer, "theirs\n").unwrap();
+        })
+        .unwrap();
+        assert_eq!(result, Published::Wrote);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ours\n");
+    }
+
+    #[test]
+    fn no_temporary_file_is_left_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("slopvac.toml");
+        publish(&file, "x\n", false).unwrap();
+        publish(&file, "y\n", false).unwrap();
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["slopvac.toml"]);
+    }
+
+    #[test]
+    fn an_external_root_is_redacted_but_keeps_the_part_below_it() {
+        let text = "updated /srv/secret/proj/.claude/skills/x/SKILL.md";
+        assert_eq!(
+            redact_root(text, Path::new("/srv/secret/proj")),
+            "updated <external>/.claude/skills/x/SKILL.md"
+        );
+    }
+
+    #[test]
+    fn a_relative_root_is_left_alone() {
+        assert_eq!(
+            redact_root("updated conf/AGENTS.md", Path::new("conf")),
+            "updated conf/AGENTS.md"
+        );
+    }
 }

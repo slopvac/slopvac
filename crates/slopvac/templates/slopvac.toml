@@ -38,11 +38,11 @@ profile = "normal"
 # min_score = 0
 
 # [categories]
-# "<name>" = "error"
+# "example" = "error"
 
 # Rule levels by rule name.
 # [rules]
-# "<name>" = "error"
+# "example" = "error"
 
 # Project vocabulary.
 # [terms]
@@ -80,11 +80,12 @@ profile = "normal"
 # Model name the reviewer must report.
 # model = "<model>"
 # Plugin id of the model provider.
-# provider = "<provider>"
+# provider = "example"
 
 # A pack or plugin the project depends on.
 # [[packs]]
-# id = "<id>"
+# Pack identifier: the namespace of a rule.
+# id = "example"
 # An `oci://` reference, a `git+https://` URL with a commit, or a path
 # relative to the config file.
 # source = "<source>"
@@ -92,7 +93,8 @@ profile = "normal"
 
 # A pack or plugin the project depends on.
 # [[plugins]]
-# id = "<id>"
+# Pack identifier: the namespace of a rule.
+# id = "example"
 # An `oci://` reference, a `git+https://` URL with a commit, or a path
 # relative to the config file.
 # source = "<source>"
@@ -100,10 +102,10 @@ profile = "normal"
 
 # Assigns a genre to the files it matches and patches their settings.
 # [[genres]]
-# files = []
+# files = ["<files>"]
 # A style or genre name.
-# genre = "<genre>"
+# genre = "example"
 
 # A glob-scoped patch.
 # [[overrides]]
-# files = []
+# files = ["<files>"]

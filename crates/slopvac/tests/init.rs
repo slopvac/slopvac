@@ -296,3 +296,136 @@ fn a_write_failure_is_an_incomplete_run_that_hides_the_path() {
         "{stderr}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_failed_write_leaves_the_existing_config_untouched() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    fs::write(&file, "schema_version = 3\n# mine\n").unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    // A read-only directory refuses the temporary sibling; skip when the user can write anyway.
+    let probe = dir.path().join("probe");
+    let writable = fs::write(&probe, "").is_ok();
+    let result = slopvac(dir.path())
+        .args(["init", "--skip-agents", "--force"])
+        .output()
+        .expect("run");
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    if writable {
+        return;
+    }
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).starts_with("error[output-failed]: "));
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "schema_version = 3\n# mine\n"
+    );
+}
+
+#[test]
+fn init_leaves_no_temporary_files_next_to_the_config() {
+    let dir = tempfile::tempdir().unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0);
+    let names: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names, ["slopvac.toml"]);
+}
+
+#[test]
+fn init_without_a_reviewer_keeps_an_installed_reviewer_and_skill() {
+    use slopvac_agents::{content::BlockKind, harness, setup};
+    let dir = tempfile::tempdir().unwrap();
+    setup::execute(&setup::Options {
+        harness: Some("claude".into()),
+        list: false,
+        remove: false,
+        check: false,
+        root: dir.path().into(),
+        block: BlockKind::Standard,
+        no_skill: false,
+        agent: true,
+        reviewer_model: None,
+    })
+    .unwrap();
+    let h = harness::find("claude").unwrap();
+    let skill = dir.path().join(h.skill_path().unwrap().unwrap());
+    let reviewer = dir.path().join(h.agent_path().unwrap().unwrap());
+    assert!(skill.is_file() && reviewer.is_file());
+    slopvac(dir.path())
+        .args(["init", "--harness", "claude", "--no-skills"])
+        .assert()
+        .code(0);
+    assert!(reviewer.is_file(), "init removed the reviewer file");
+    assert!(skill.is_file(), "init --no-skills removed the skill");
+}
+
+#[test]
+fn nested_path_puts_steering_and_skills_beside_the_config() {
+    let work = tempfile::tempdir().unwrap();
+    slopvac(work.path())
+        .args([
+            "init",
+            "--path",
+            "conf/sub/slopvac.toml",
+            "--harness",
+            "claude",
+        ])
+        .assert()
+        .code(0);
+    let nested = work.path().join("conf/sub");
+    assert!(nested.join("CLAUDE.md").is_file());
+    assert!(nested.join(".claude/skills").is_dir());
+    assert!(
+        !work.path().join("CLAUDE.md").exists(),
+        "steering landed in the cwd"
+    );
+    assert!(
+        !work.path().join(".claude").exists(),
+        "skills landed in the cwd"
+    );
+}
+
+#[test]
+fn external_path_with_agents_enabled_prints_no_absolute_path() {
+    let work = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let out = slopvac(work.path())
+        .args(["init", "--harness", "claude", "--path"])
+        .arg(target.path().join("slopvac.toml"))
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0));
+    let all = [out.stdout, out.stderr].concat();
+    let all = String::from_utf8_lossy(&all);
+    assert!(all.contains("<external>/CLAUDE.md"), "{all}");
+    assert!(!all.contains(&target.path().display().to_string()), "{all}");
+    assert!(target.path().join("CLAUDE.md").is_file());
+}
+
+#[test]
+fn a_setup_error_under_an_external_path_prints_no_absolute_path() {
+    let work = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    // A lone begin marker makes the steering file malformed, so setup fails.
+    fs::write(target.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(work.path())
+        .args(["init", "--path"])
+        .arg(target.path().join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.starts_with("error["), "{stderr}");
+    assert!(
+        !stderr.contains(&target.path().display().to_string()),
+        "{stderr}"
+    );
+    assert!(stderr.contains("<external>"), "{stderr}");
+}
