@@ -75,9 +75,14 @@ pub struct TagIndex {
 }
 
 impl TagIndex {
-    /// Index `tags`: sorted by span, with duplicates removed.
+    /// Index `tags`: sorted by span, with duplicates removed. Equal tags are not told apart.
     #[must_use]
-    pub fn from_tags(tags: Vec<Tag>) -> Self {
+    pub fn from_tags(mut tags: Vec<Tag>) -> Self {
+        // Equal tags are one tag, whoever produced them.
+        tags.sort_by(|a, b| {
+            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
+        });
+        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
         Self::from_pieces(tags.into_iter().enumerate().map(|(i, t)| (t, i)).collect())
     }
 
@@ -87,10 +92,12 @@ impl TagIndex {
     /// of them is covered by the tag as a whole ([`Self::kinds_covering`]).
     #[must_use]
     pub fn from_pieces(mut pieces: Vec<(Tag, usize)>) -> Self {
-        pieces.sort_by(|(a, _), (b, _)| {
-            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
+        pieces.sort_by(|(a, ga), (b, gb)| {
+            (a.span.start, a.span.end, &a.kind, ga).cmp(&(b.span.start, b.span.end, &b.kind, gb))
         });
-        pieces.dedup_by(|(a, _), (b, _)| a.kind == b.kind && a.span == b.span);
+        // Equal pieces of one group are one piece. Pieces of different groups stay, so every
+        // group keeps all its members.
+        pieces.dedup_by(|(a, ga), (b, gb)| a.kind == b.kind && a.span == b.span && ga == gb);
         let (tags, groups): (Vec<Tag>, Vec<usize>) = pieces.into_iter().unzip();
         let mut members: std::collections::HashMap<usize, Vec<usize>> =
             std::collections::HashMap::new();

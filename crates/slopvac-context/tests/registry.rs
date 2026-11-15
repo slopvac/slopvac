@@ -317,3 +317,23 @@ fn a_section_runs_to_the_furthest_end_of_its_blocks() {
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].span, 0..120);
 }
+
+#[test]
+#[allow(clippy::single_range_in_vec_init)]
+fn overlapping_groups_keep_every_piece_they_share() {
+    // Group 0 is one piece. Group 1 has the same first piece and a second one.
+    let idx = TagIndex::from_pieces(vec![
+        piece("requirement", 2..14, 0),
+        piece("requirement", 2..14, 1),
+        piece("requirement", 40..57, 1),
+    ]);
+    assert_eq!(idx.kinds_covering(&[10..14, 40..46]), ["requirement"]);
+    // Group 0 alone does not reach the second range.
+    assert!(idx.kinds_covering(&[10..14, 60..65]).is_empty());
+    // Equal pieces of one group are still one piece.
+    let same = TagIndex::from_pieces(vec![
+        piece("requirement", 2..14, 0),
+        piece("requirement", 2..14, 0),
+    ]);
+    assert_eq!(same.tags().len(), 1);
+}

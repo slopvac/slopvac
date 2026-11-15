@@ -304,6 +304,31 @@ fn a_match_across_the_line_break_of_a_wrapped_requirement_keeps_its_context() {
 }
 
 #[test]
+fn a_document_scope_match_across_a_wrapped_cell_break_keeps_its_requirement_context() {
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("normative-python"));
+    let e = engine(&[rule(
+        "pat",
+        &json!({"kind": "pattern", "pattern": "must continue"}),
+        &json!({"scope": "document", "contexts": {"only": ["requirement"]}}),
+    )])
+    .with_rst(options);
+    let doc = e.lint(&Input::rst("t.rst", &source)).unwrap();
+    // The document text joins the cells in reading order. The match still has one range
+    // for each line of the left cell, because the line break is a bridge in that text too.
+    assert_eq!(doc.findings.len(), 1);
+    assert!(
+        doc.findings[0]
+            .contexts
+            .iter()
+            .any(|c| c.as_str() == "requirement"),
+        "{:?}",
+        doc.findings[0].contexts
+    );
+}
+
+#[test]
 fn a_section_context_reaches_the_continuation_lines_of_a_wrapped_cell() {
     let source = fs::read_to_string(format!("{FIXTURES}/table-section.rst")).unwrap();
     let run = |token: &str| {
