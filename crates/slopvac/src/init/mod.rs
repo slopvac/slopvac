@@ -56,6 +56,19 @@ fn redact_root(text: &str, root: &Path) -> String {
     text.replace(&root.display().to_string(), &shown)
 }
 
+/// A temporary sibling that gets the mode a new file gets: `0666` less the umask.
+///
+/// The mode is applied when the file is created, so no umask is read or changed.
+fn temp_sibling(parent: &Path) -> std::io::Result<tempfile::NamedTempFile> {
+    let mut builder = tempfile::Builder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    builder.tempfile_in(parent)
+}
+
 /// What publishing the config did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Published {
@@ -92,13 +105,11 @@ fn publish_with(
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent)?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut temp = temp_sibling(parent)?;
     std::io::Write::write_all(&mut temp, text.as_bytes())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        temp.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o644))?;
+    if force && let Ok(existing) = std::fs::metadata(path) {
+        // Replacing a file keeps its mode, as an in-place edit would.
+        temp.as_file().set_permissions(existing.permissions())?;
     }
     temp.as_file().sync_all()?;
     before_publish();

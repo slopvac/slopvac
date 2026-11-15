@@ -429,3 +429,54 @@ fn a_setup_error_under_an_external_path_prints_no_absolute_path() {
     );
     assert!(stderr.contains("<external>"), "{stderr}");
 }
+
+/// Run `slopvac init --skip-agents [extra]` in `dir` under the given umask.
+#[cfg(unix)]
+fn init_with_umask(dir: &Path, umask: &str, extra: &[&str]) {
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("umask {umask}; exec \"$0\" \"$@\""))
+        .arg(env!("CARGO_BIN_EXE_slopvac"))
+        .args(["init", "--skip-agents"])
+        .args(extra)
+        .current_dir(dir)
+        .env("NO_COLOR", "1")
+        .status()
+        .expect("run");
+    assert!(status.success());
+}
+
+#[cfg(unix)]
+fn mode_of(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[cfg(unix)]
+#[test]
+fn a_new_config_gets_the_mode_the_umask_allows() {
+    for (umask, want) in [("022", 0o644), ("077", 0o600), ("002", 0o664)] {
+        let dir = tempfile::tempdir().unwrap();
+        init_with_umask(dir.path(), umask, &[]);
+        assert_eq!(
+            mode_of(&dir.path().join("slopvac.toml")),
+            want,
+            "umask {umask}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn force_keeps_the_mode_of_the_file_it_replaces() {
+    use std::os::unix::fs::PermissionsExt;
+    for mode in [0o600, 0o660, 0o640] {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("slopvac.toml");
+        fs::write(&file, "old\n").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+        init_with_umask(dir.path(), "022", &["--force"]);
+        assert!(fs::read_to_string(&file).unwrap().starts_with("# slopvac"));
+        assert_eq!(mode_of(&file), mode, "was {mode:o}");
+    }
+}

@@ -395,3 +395,28 @@ fn execute_still_removes_what_the_options_leave_out() {
     let (skill, reviewer) = managed_files(dir.path());
     assert!(!skill.exists() && !reviewer.exists());
 }
+
+#[test]
+fn keeping_install_refuses_list_remove_and_check_and_changes_nothing() {
+    let flags: [fn(&mut Options); 3] = [|o| o.list = true, |o| o.remove = true, |o| o.check = true];
+    for set in flags {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("CLAUDE.md"), "mine\n").unwrap();
+        let mut o = opts(dir.path(), "claude");
+        set(&mut o);
+        let err = install_keeping_unrequested(&o).unwrap_err();
+        assert!(
+            matches!(err, slopvac_agents::AgentsError::Usage(_)),
+            "{err:?}"
+        );
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["CLAUDE.md"], "the project changed");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
+            "mine\n"
+        );
+    }
+}
