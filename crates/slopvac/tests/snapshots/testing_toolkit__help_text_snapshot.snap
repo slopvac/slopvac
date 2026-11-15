@@ -1,0 +1,50 @@
+---
+source: crates/slopvac/tests/testing_toolkit.rs
+expression: "help.replace(\"\\r\\n\", \"\\n\").replace(\"slopvac.exe\", \"slopvac\")"
+---
+Lint prose and source comments. `slopvac PATH...` lints, as does `slopvac lint PATH...`.
+
+Exit codes: 0 pass, 1 a gate failed, 2 the run was incomplete or the invocation was invalid.
+
+Usage: slopvac [OPTIONS] [COMMAND]
+
+Commands:
+  lint         Lint prose and source comments. Bare paths run this command.
+  explain      Explain a rule.
+  rules        List rules.
+  doctor       Check the binary, configuration and pack health.
+  self         Manage this installation.
+  lsp          Run the language server on standard input and output.
+  completions  Print a shell completion script.
+  man          Write man pages.
+  terms        Check and list the project terms.
+  genre        Show or detect the document genre.
+  validate     Validate configuration, packs and front matter.
+  plugins      Manage plugins and packs: sync, trust, update.
+  packs        List installed rule packs.
+  migrate      Rewrite a 2.x configuration for 3.0.
+  setup        Install slopvac guidance into agent harnesses.
+  prime        Print guidance for agents, by topic.
+  init         Write 3.0 configuration templates.
+  onboard      Print the agent onboarding text.
+  reference    Generate or check the rules reference.
+  report       Preview or submit an issue report.
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --offline
+          Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off.
+
+      --color <WHEN>
+          Colour output. NO_COLOR is honoured.
+          
+          [possible values: auto, always, never]
+
+      --no-color
+          Alias for --color never.
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
