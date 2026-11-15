@@ -63,7 +63,7 @@ The lockfile is `.slopvac/packs.lock` in the directory of the configuration file
 
 Each entry in `packs.items` has the pack `id`, `version` and `kind`, and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered pack.
 
-Doctor reads the trust file like every other project file: without blocking, only as a regular file, and under the 8 MiB limit of the store. A missing file is `absent`. A permission error, a non-regular file, an oversize file or a damaged file is `unreadable`. `trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints fingerprints only.
+Doctor reads the trust file like every other project file: without blocking, only as a regular file, and under the 8 MiB limit of the store. A missing file is `absent`. A permission error, a non-regular file, an oversize file or a damaged file is `unreadable`. `trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints no stored text as it stands. It parses each stored key and derives the fingerprint itself, so a stored fingerprint that disagrees fails. The namespace must match `^[a-z][a-z0-9-]{0,63}$`. A store with an invalid pin is `unreadable` with the fixed error `the trust store holds an invalid pinned key`, and `pinned_keys` is empty.
 
 `ok` is false when `config.ok` is false, the lockfile status is `invalid` or `unreadable`, any pack is `tampered`, or the trust store is `unreadable`.
 
@@ -71,11 +71,19 @@ Doctor reads the trust file like every other project file: without blocking, onl
 
 `directories` has `cache`, `data` and `state`. Each entry gives the `path`, the `source` of the choice (an environment variable name, `default` or `unresolved`), whether it exists, and the total size of the regular files below it. The size walk stops after 10000 entries. It then sets `truncated`, so `bytes` is a lower bound. Links are not followed. The working directory itself shows as `.`. A directory shows `<unresolved>` when the environment has no home to derive it from.
 
-The cache directory is `SLOPVAC_CACHE_DIR` when set. Otherwise all three follow the XDG layout on Unix (`XDG_CACHE_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME`, falling back to `~/.cache`, `~/.local/share` and `~/.local/state`, each with a `slopvac` subdirectory) and `%LOCALAPPDATA%\slopvac` on Windows. The data directory is the pack store, and the state directory holds the trust store.
+The cache directory is `SLOPVAC_CACHE_DIR` when set, on every platform. Otherwise the locations are:
+
+| Directory | Unix | Windows |
+|---|---|---|
+| cache | `$XDG_CACHE_HOME/slopvac`, else `~/.cache/slopvac` | `%LOCALAPPDATA%\slopvac\cache` |
+| data | `$XDG_DATA_HOME/slopvac`, else `~/.local/share/slopvac` | `%LOCALAPPDATA%\slopvac\data` |
+| state | `$XDG_STATE_HOME/slopvac`, else `~/.local/state/slopvac` | `%LOCALAPPDATA%\slopvac\state` |
+
+The data directory is the pack store, and the state directory holds the trust store.
 
 ## 3. Redaction
 
-A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). Messages hold no absolute path and no file content. Directory entries therefore show `<external>/slopvac` for a per-user directory, and `source` says how the location was chosen.
+A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac` on Unix and `<external>/cache`, `<external>/data` or `<external>/state` on Windows, and `source` says how the location was chosen.
 
 ## 4. Build status
 

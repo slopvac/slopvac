@@ -201,6 +201,7 @@ fn doctor(
         update: &LocalUpdateProbe,
         config: &LocalConfigSources,
         dirs: &EnvDirs,
+        walk_limit: crate::doctor::WALK_LIMIT,
     });
     let text = if m.get_one::<String>("format").is_some_and(|f| f == "json") {
         report.to_json()

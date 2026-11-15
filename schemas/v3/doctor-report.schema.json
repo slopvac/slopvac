@@ -277,11 +277,12 @@
       "type": "object",
       "properties": {
         "namespace": {
+          "description": "The pinned namespace, in the pack id pattern. Doctor reports a store that holds any other text as unreadable.",
           "type": "string",
-          "minLength": 1
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
         },
         "fingerprint": {
-          "description": "SHA-256 of the public key, 64 lowercase hex digits. The key itself is never printed.",
+          "description": "SHA-256 of the public key, 64 lowercase hex digits, derived by doctor from the stored key. The key itself is never printed.",
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }

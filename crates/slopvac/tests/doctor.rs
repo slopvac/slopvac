@@ -43,6 +43,33 @@ impl World {
         self.root.path().join("cache")
     }
 
+    /// The pack store root (`data` directory) the binary derives in this world.
+    fn data_root(&self) -> PathBuf {
+        if cfg!(windows) {
+            self.home().join("slopvac").join("data")
+        } else {
+            self.root.path().join("xdg-data").join("slopvac")
+        }
+    }
+
+    /// The directory that holds `trust.json` in this world.
+    fn state_root(&self) -> PathBuf {
+        if cfg!(windows) {
+            self.home().join("slopvac").join("state")
+        } else {
+            self.root.path().join("xdg-state").join("slopvac")
+        }
+    }
+
+    /// Point the data and state directories where `data_root` and `state_root` say. On Windows
+    /// the binary derives them from `LOCALAPPDATA`, which `doctor()` already sets to the home.
+    fn place_dirs(&self, cmd: &mut Command) {
+        if !cfg!(windows) {
+            cmd.env("XDG_DATA_HOME", self.root.path().join("xdg-data"))
+                .env("XDG_STATE_HOME", self.root.path().join("xdg-state"));
+        }
+    }
+
     fn sentinel(&self) -> String {
         self.root
             .path()
@@ -363,10 +390,7 @@ fn update_checks_report_why_they_are_off() {
 fn the_lockfile_lists_each_pack_with_its_state() {
     let w = World::new();
     w.write(".slopvac/packs.lock", LOCK);
-    let (code, doc) = w.json(&[], |c| {
-        c.env("XDG_DATA_HOME", w.root.path().join("data"));
-        c.env("XDG_STATE_HOME", w.root.path().join("state"));
-    });
+    let (code, doc) = w.json(&[], |c| w.place_dirs(c));
     assert_eq!(code, 0);
     assert_eq!(
         doc["packs"]["lockfile"],
@@ -404,8 +428,7 @@ fn an_invalid_lockfile_fails_the_check() {
 fn trust_reports_counts_and_fingerprints_but_never_keys() {
     use slopvac_plugins::trust::{DeclSummary, TrustRecord, TrustStore};
     let w = World::new();
-    let state = w.root.path().join("state");
-    let store = TrustStore::open(state.join("slopvac"));
+    let store = TrustStore::open(w.state_root());
     let key = minisign::KeyPair::generate_unencrypted_keypair()
         .unwrap()
         .pk
@@ -429,9 +452,7 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
             recorded_at: "2026-11-15T00:00:00Z".into(),
         })
         .unwrap();
-    let (code, doc) = w.json(&[], |c| {
-        c.env("XDG_STATE_HOME", &state);
-    });
+    let (code, doc) = w.json(&[], |c| w.place_dirs(c));
     assert_eq!(code, 0);
     assert_eq!(doc["trust"]["status"], "ok");
     assert_eq!(doc["trust"]["trusted_plugins"], 1);
@@ -447,12 +468,9 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
 #[test]
 fn a_damaged_trust_store_fails_the_check() {
     let w = World::new();
-    let state = w.root.path().join("state");
-    fs::create_dir_all(state.join("slopvac")).unwrap();
-    fs::write(state.join("slopvac/trust.json"), "{broken").unwrap();
-    let (code, doc) = w.json(&[], |c| {
-        c.env("XDG_STATE_HOME", &state);
-    });
+    fs::create_dir_all(w.state_root()).unwrap();
+    fs::write(w.state_root().join("trust.json"), "{broken").unwrap();
+    let (code, doc) = w.json(&[], |c| w.place_dirs(c));
     assert_eq!(code, 2);
     assert_eq!(doc["trust"]["status"], "unreadable");
     assert_eq!(doc["ok"], false);
@@ -587,11 +605,8 @@ const ACME_DOCS_DIGEST_HEX: &str =
 fn an_intact_installed_pack_is_recorded_and_a_tampered_one_fails_the_check() {
     let w = World::new();
     w.write(".slopvac/packs.lock", LOCK);
-    let data = w.root.path().join("data");
-    let tree = install_pack(&data.join("slopvac"), ACME_DOCS_DIGEST_HEX);
-    let with_data = |c: &mut Command| {
-        c.env("XDG_DATA_HOME", &data);
-    };
+    let tree = install_pack(&w.data_root(), ACME_DOCS_DIGEST_HEX);
+    let with_data = |c: &mut Command| w.place_dirs(c);
     let state_of = |doc: &Value, id: &str| -> String {
         doc["packs"]["items"]
             .as_array()
@@ -635,14 +650,11 @@ fn an_unreadable_trust_store_is_reported_not_called_absent() {
         return; // root ignores permission bits
     }
     let w = World::new();
-    let state = w.root.path().join("state");
-    let dir = state.join("slopvac");
+    let dir = w.state_root();
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("trust.json"), "{}").unwrap();
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o000)).unwrap();
-    let result = w.json(&[], |c| {
-        c.env("XDG_STATE_HOME", &state);
-    });
+    let result = w.json(&[], |c| w.place_dirs(c));
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
     let (code, doc) = result;
     assert_eq!(code, 2);
@@ -654,21 +666,106 @@ fn an_unreadable_trust_store_is_reported_not_called_absent() {
 #[test]
 fn a_fifo_trust_file_does_not_hang_doctor() {
     let w = World::new();
-    let state = w.root.path().join("state");
-    fs::create_dir_all(state.join("slopvac")).unwrap();
+    fs::create_dir_all(w.state_root()).unwrap();
     assert!(
         std::process::Command::new("mkfifo")
-            .arg(state.join("slopvac/trust.json"))
+            .arg(w.state_root().join("trust.json"))
             .status()
             .unwrap()
             .success()
     );
     let (code, doc) = w.json(&[], |c| {
-        c.env("XDG_STATE_HOME", &state)
-            .timeout(std::time::Duration::from_secs(20));
+        w.place_dirs(c);
+        c.timeout(std::time::Duration::from_secs(20));
     });
     assert_eq!(code, 2);
     assert_eq!(doc["trust"]["status"], "unreadable");
+}
+
+/// Write a hand-made `trust.json` whose single pin is `pin`.
+fn write_trust(w: &World, pin: &Value) {
+    fs::create_dir_all(w.state_root()).unwrap();
+    let doc = json!({"schema_version": 1, "records": [], "pins": [pin]});
+    fs::write(w.state_root().join("trust.json"), doc.to_string()).unwrap();
+}
+
+fn pin(namespace: &str, fingerprint: &str, key: &str) -> Value {
+    json!({
+        "namespace": namespace,
+        "fingerprint": fingerprint,
+        "key": key,
+        "pinned_at": "2026-11-15T00:00:00Z",
+    })
+}
+
+#[test]
+fn stored_trust_text_is_validated_before_it_is_printed() {
+    const LEAK: &str = "LEAKME-9191";
+    let good = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk;
+    let good_key = good.to_base64();
+    let other = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk;
+    // The fingerprint of `good`, as the trust store derives it.
+    let real = slopvac_plugins::sign::PublicKey::from_base64(&good_key)
+        .unwrap()
+        .fingerprint();
+    let wrong = slopvac_plugins::sign::PublicKey::from_base64(&other.to_base64())
+        .unwrap()
+        .fingerprint();
+    let cases = [
+        ("an unparsable key", pin("acme", &real, LEAK)),
+        ("an altered fingerprint", pin("acme", &wrong, &good_key)),
+        (
+            "a fingerprint that is not hex",
+            pin("acme", LEAK, &good_key),
+        ),
+        (
+            "a namespace with a path",
+            pin(&format!("../../{LEAK}"), &real, &good_key),
+        ),
+        (
+            "an uppercase namespace",
+            pin(&format!("Acme-{LEAK}"), &real, &good_key),
+        ),
+        (
+            "an overlong namespace",
+            pin(&"a".repeat(65), &real, &good_key),
+        ),
+    ];
+    for (what, bad) in cases {
+        let w = World::new();
+        write_trust(&w, &bad);
+        let (code, doc) = w.json(&[], |c| w.place_dirs(c));
+        assert_eq!(code, 2, "{what}");
+        assert_eq!(doc["ok"], false, "{what}");
+        assert_eq!(doc["trust"]["status"], "unreadable", "{what}");
+        assert_eq!(
+            doc["trust"]["error"], "the trust store holds an invalid pinned key",
+            "{what}"
+        );
+        assert_eq!(doc["trust"]["pinned_keys"], json!([]), "{what}");
+        let text = String::from_utf8({
+            let mut cmd = w.doctor();
+            w.place_dirs(&mut cmd);
+            cmd.output().unwrap().stdout
+        })
+        .unwrap();
+        assert!(!doc.to_string().contains(LEAK), "{what}: json leaked");
+        assert!(!text.contains(LEAK), "{what}: text leaked");
+    }
+
+    // The same store with a valid pin is accepted, and the printed fingerprint is the derived one.
+    let w = World::new();
+    write_trust(&w, &pin("acme", &real, &good_key));
+    let (code, doc) = w.json(&[], |c| w.place_dirs(c));
+    assert_eq!(code, 0);
+    assert_eq!(
+        doc["trust"]["pinned_keys"],
+        json!([{"namespace": "acme", "fingerprint": real}])
+    );
 }
 
 #[test]

@@ -875,6 +875,50 @@ fn is_executable(_: &Path) -> bool {
     false
 }
 
+/// Open `path` for reading and require that the opened handle is a regular file.
+///
+/// A path checked a moment ago may have been swapped for a FIFO or a link to a device. The open
+/// does not block (a FIFO with no writer would hang an ordinary open), and the check runs on the
+/// handle, not the name, so a swap cannot slip between check and read. Regular files ignore the
+/// non-blocking flag.
+///
+/// # Errors
+/// An [`io::ErrorKind::InvalidInput`] error when the handle is not a regular file, or the open's
+/// own error.
+pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
+    let mut opts = OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
+    }
+    let file = opts.open(path)?;
+    if file.metadata()?.is_file() {
+        Ok(file)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ))
+    }
+}
+
+/// A reader that keeps a copy of what it reads, so a file hashed in one pass is parsed from the
+/// same bytes instead of being opened a second time.
+struct Capture<'a> {
+    inner: &'a mut File,
+    kept: Vec<u8>,
+}
+
+impl Read for Capture<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.kept.extend_from_slice(&buf[..n]);
+        Ok(n)
+    }
+}
+
 /// Recompute the hash of a stored tree.
 ///
 /// Refuses anything but regular files and directories, a root that is a link,
@@ -898,7 +942,7 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
     let mut stack = vec![(dir.to_owned(), String::new())];
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     let mut budget = MAX_TREE_BYTES;
-    let mut sidecar: Option<PathBuf> = None;
+    let mut sidecar: Option<Vec<u8>> = None;
     let mut on_disk_exec: HashSet<String> = HashSet::new();
     while let Some((path, prefix)) = stack.pop() {
         for entry in fs::read_dir(&path).map_err(io_err("reading a directory"))? {
@@ -927,12 +971,25 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
                 if is_executable(&child) {
                     on_disk_exec.insert(rel.clone());
                 }
-                let mut f = File::open(&child).map_err(io_err(format!("reading `{rel}`")))?;
-                let (sha, len) = hash_stream(&mut f, None, &rel, Some(budget))?;
+                let mut f = open_regular(&child).map_err(|e| {
+                    if e.kind() == io::ErrorKind::InvalidInput {
+                        refused(format!("`{rel}` is not a regular file"))
+                    } else {
+                        io_err(format!("reading `{rel}`"))(e)
+                    }
+                })?;
+                let (sha, len) = if rel == EXEC_SIDECAR {
+                    let mut tee = Capture {
+                        inner: &mut f,
+                        kept: Vec::new(),
+                    };
+                    let hashed = hash_stream(&mut tee, None, &rel, Some(budget))?;
+                    sidecar = Some(tee.kept);
+                    hashed
+                } else {
+                    hash_stream(&mut f, None, &rel, Some(budget))?
+                };
                 budget -= len;
-                if rel == EXEC_SIDECAR {
-                    sidecar = Some(child.clone());
-                }
                 files.push(FileRecord {
                     path: rel,
                     executable: false,
@@ -945,8 +1002,8 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
         }
     }
     files.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
-    if let Some(path) = sidecar {
-        mark_executables(&path, &mut files)?;
+    if let Some(bytes) = sidecar {
+        mark_executables(&bytes, &mut files)?;
     }
     if cfg!(unix) {
         for f in &files {
@@ -962,16 +1019,15 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
     Ok(tree_hash_of(files))
 }
 
-/// Stream the sidecar and flag the files it lists.
+/// Parse the sidecar bytes (read once while the tree was hashed) and flag the files it lists.
 ///
 /// The format is canonical: one path per line, each ending in a newline, in
 /// strictly ascending byte order, each naming a file in the tree other than the
 /// sidecar. Each line is read under a length cap and checked as it is parsed, so
 /// the work and memory are bounded by the (already bounded) set of files.
 /// `files` must be sorted by path.
-fn mark_executables(path: &Path, files: &mut [FileRecord]) -> Result<(), ExtractError> {
-    let f = File::open(path).map_err(io_err("reading the executable list"))?;
-    let mut reader = io::BufReader::new(f);
+fn mark_executables(bytes: &[u8], files: &mut [FileRecord]) -> Result<(), ExtractError> {
+    let mut reader = io::BufReader::new(bytes);
     let mut previous: Vec<u8> = Vec::new();
     let mut line: Vec<u8> = Vec::new();
     loop {
@@ -1139,4 +1195,69 @@ pub fn clean_staging(store: &Path, max_age: Duration) -> Result<StagingReport, E
         }
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod open_regular_tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// Run `f` on a thread and fail the test if it does not return in ten seconds, which is what
+    /// a blocking open of a FIFO with no writer would do.
+    fn within_ten_seconds<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("the open blocked")
+    }
+
+    #[test]
+    fn a_regular_file_opens_and_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f");
+        fs::write(&path, b"hello").unwrap();
+        let mut text = String::new();
+        open_regular(&path)
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+        assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn a_missing_file_keeps_its_own_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_regular(&dir.path().join("nope")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn a_directory_is_not_a_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_owned();
+        let err = within_ten_seconds(move || open_regular(&path).unwrap_err());
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_and_a_link_to_one_are_refused_without_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("fifo");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&fifo, &link).unwrap();
+        for path in [fifo, link] {
+            let err = within_ten_seconds(move || open_regular(&path).unwrap_err());
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        }
+    }
 }

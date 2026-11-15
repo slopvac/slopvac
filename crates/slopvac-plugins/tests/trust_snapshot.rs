@@ -50,8 +50,29 @@ fn another_schema_version_and_bad_json_are_corrupt() {
     }
 }
 
+/// Valid store JSON of exactly `len` bytes, padded inside an ignored `x-` key.
+fn store_of_len(len: usize) -> Vec<u8> {
+    let head = br#"{"schema_version":1,"x-pad":""#;
+    let tail = br#""}"#;
+    let pad = len - head.len() - tail.len();
+    let mut raw = head.to_vec();
+    raw.extend(std::iter::repeat_n(b'a', pad));
+    raw.extend_from_slice(tail);
+    assert_eq!(raw.len(), len);
+    raw
+}
+
 #[test]
-fn bytes_over_the_store_limit_are_refused() {
-    let raw = vec![b' '; usize::try_from(MAX_STORE_FILE_BYTES).unwrap() + 1];
-    assert!(matches!(parse(&raw), Err(TrustError::Corrupt { .. })));
+fn a_valid_store_exactly_at_the_limit_is_accepted() {
+    let len = usize::try_from(MAX_STORE_FILE_BYTES).unwrap();
+    assert_eq!(parse(&store_of_len(len)).unwrap(), 0);
+}
+
+#[test]
+fn a_valid_store_one_byte_over_the_limit_is_refused_for_its_size() {
+    let len = usize::try_from(MAX_STORE_FILE_BYTES).unwrap() + 1;
+    match parse(&store_of_len(len)) {
+        Err(TrustError::Corrupt { why, .. }) => assert!(why.contains("larger than"), "{why}"),
+        other => panic!("expected a size refusal, got {other:?}"),
+    }
 }

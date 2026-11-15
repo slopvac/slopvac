@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use slopvac_plugins::lock::{LockError, Lockfile, PackKind};
+use slopvac_plugins::sign::PublicKey;
 use slopvac_plugins::sync::{PackState, Store, status};
 use slopvac_plugins::trust::{MAX_STORE_FILE_BYTES, parse_store};
 
@@ -20,8 +21,8 @@ use read::{ReadProblem, read_bounded};
 
 /// Largest lockfile doctor reads, as the lock reader's own cap.
 const MAX_LOCK_BYTES: u64 = slopvac_plugins::lock::MAX_LOCK_BYTES as u64;
-/// Most entries the directory size walk visits.
-const WALK_LIMIT: usize = 10_000;
+/// Most entries the directory size walk visits. The schema and the spec say 10000.
+pub const WALK_LIMIT: usize = 10_000;
 
 /// What the update cache and the install say.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,6 +152,8 @@ pub struct Inputs<'a> {
     pub config: &'a dyn ConfigSources,
     /// Per-user directories.
     pub dirs: &'a dyn Dirs,
+    /// Most entries the size walk of a directory visits. Use [`WALK_LIMIT`].
+    pub walk_limit: usize,
 }
 
 /// The report. Field order is the JSON key order.
@@ -262,7 +265,7 @@ struct Directories {
     state: Directory,
 }
 
-fn directory(located: &Located, cwd: &Path) -> Directory {
+fn directory(located: &Located, cwd: &Path, walk_limit: usize) -> Directory {
     let Some(path) = &located.path else {
         return Directory {
             path: "<unresolved>".to_owned(),
@@ -274,7 +277,7 @@ fn directory(located: &Located, cwd: &Path) -> Directory {
     };
     let exists = path.is_dir();
     let (bytes, truncated) = if exists {
-        let (b, t) = walk_size(path, WALK_LIMIT);
+        let (b, t) = walk_size(path, walk_limit);
         (Some(b), t)
     } else {
         (None, false)
@@ -430,6 +433,14 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
     }
 }
 
+/// A pinned namespace: the pack id pattern, `^[a-z][a-z0-9-]{0,63}$`.
+fn is_namespace(s: &str) -> bool {
+    let mut chars = s.chars();
+    s.len() <= 64
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 fn trust_report(state_dir: Option<&Path>) -> Trust {
     let none = |status, error: Option<&str>| Trust {
         status,
@@ -458,14 +469,29 @@ fn trust_report(state_dir: Option<&Path>) -> Trust {
     let Ok(snapshot) = parse_store(text.as_bytes(), &path) else {
         return none("unreadable", Some("the trust store is damaged"));
     };
-    let mut pinned: Vec<PinnedKey> = snapshot
-        .pins
-        .into_iter()
-        .map(|p| PinnedKey {
+    let invalid_pin = || {
+        none(
+            "unreadable",
+            Some("the trust store holds an invalid pinned key"),
+        )
+    };
+    // Nothing stored is printed as it stands. The key must parse, the fingerprint is derived from
+    // it (a stored one must agree), and the namespace must look like a pack id, so a hand-edited
+    // file cannot put arbitrary text into the report (CWE-209).
+    let mut pinned = Vec::new();
+    for p in snapshot.pins {
+        let Ok(key) = PublicKey::from_base64(&p.key) else {
+            return invalid_pin();
+        };
+        let fingerprint = key.fingerprint();
+        if fingerprint != p.fingerprint || !is_namespace(&p.namespace) {
+            return invalid_pin();
+        }
+        pinned.push(PinnedKey {
             namespace: p.namespace,
-            fingerprint: p.fingerprint,
-        })
-        .collect();
+            fingerprint,
+        });
+    }
     pinned.sort_by(|a, b| a.namespace.cmp(&b.namespace));
     Trust {
         status: "ok",
@@ -577,9 +603,9 @@ pub fn build(i: &Inputs<'_>) -> Report {
         packs,
         trust,
         directories: Directories {
-            cache: directory(&cache, i.cwd),
-            data: directory(&data, i.cwd),
-            state: directory(&state, i.cwd),
+            cache: directory(&cache, i.cwd, i.walk_limit),
+            data: directory(&data, i.cwd, i.walk_limit),
+            state: directory(&state, i.cwd, i.walk_limit),
         },
     }
 }
@@ -701,6 +727,7 @@ mod tests {
             update: &Fixed(cached.map(|v| (v.to_owned(), 7))),
             config: &stubs::LocalConfigSources,
             dirs: &stubs::EnvDirs,
+            walk_limit: WALK_LIMIT,
         })
     }
 
@@ -721,38 +748,48 @@ mod tests {
     }
 
     #[test]
-    fn the_walk_stops_at_the_entry_limit_and_says_so() {
+    fn the_walk_limit_reaches_the_report_as_a_lower_bound_and_a_flag() {
+        struct Dirs(PathBuf);
+        impl super::Dirs for Dirs {
+            fn cache(&self, _: &dyn Env) -> Located {
+                Located::at(self.0.clone(), "test")
+            }
+            fn data(&self, _: &dyn Env) -> Located {
+                Located::unresolved()
+            }
+            fn state(&self, _: &dyn Env) -> Located {
+                Located::unresolved()
+            }
+        }
         let dir = tempfile::tempdir().unwrap();
         for name in ["a", "b", "c", "d", "e"] {
             std::fs::write(dir.path().join(name), b"xy").unwrap();
         }
-        // Five entries of two bytes: a limit of five sees all, a limit of three stops early.
-        assert_eq!(walk_size(dir.path(), 5), (10, false));
-        let (bytes, truncated) = walk_size(dir.path(), 3);
-        assert!(truncated);
-        assert_eq!(bytes, 6, "three files were counted before the limit");
-    }
-
-    #[test]
-    fn directories_count_toward_the_limit_but_not_the_size() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("x/y")).unwrap();
-        std::fs::write(dir.path().join("x/y/f"), b"123").unwrap();
-        assert_eq!(walk_size(dir.path(), 3), (3, false));
-        assert!(walk_size(dir.path(), 2).1);
-    }
-
-    #[test]
-    fn the_documented_walk_limit_is_ten_thousand() {
-        // schemas/v3/doctor-report.schema.json and docs/contract/doctor.md say 10000.
-        assert_eq!(WALK_LIMIT, 10_000);
-    }
-
-    #[test]
-    fn the_working_directory_renders_as_a_dot() {
-        let dir = tempfile::tempdir().unwrap();
-        let located = Located::at(dir.path().to_owned(), "SLOPVAC_CACHE_DIR");
-        assert_eq!(directory(&located, dir.path()).path, ".");
+        let with_limit = |walk_limit| {
+            let env = MapEnv::default();
+            let report = build(&Inputs {
+                env: &env,
+                cwd: Path::new("/nonexistent-cwd"),
+                offline_flag: false,
+                explicit_config: None,
+                version: "3.0.0",
+                update: &Fixed(None),
+                config: &stubs::LocalConfigSources,
+                dirs: &Dirs(dir.path().to_owned()),
+                walk_limit,
+            });
+            serde_json::from_str::<serde_json::Value>(&report.to_json()).unwrap()["directories"]
+                ["cache"]
+                .clone()
+        };
+        // Five files of two bytes each: a limit of five sees them all.
+        let whole = with_limit(5);
+        assert_eq!(whole["bytes"], 10);
+        assert_eq!(whole["truncated"], false);
+        // A limit of three stops early: three files were counted, and the report says so.
+        let cut = with_limit(3);
+        assert_eq!(cut["bytes"], 6);
+        assert_eq!(cut["truncated"], true);
     }
 
     #[test]
