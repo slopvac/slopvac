@@ -9,10 +9,34 @@ use std::time::Duration;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use slopvac_plugins::extract::{
-    Evicted, ExtractError, Limits, clean_staging, evict, extract_targz, tree_hash, verify_tree,
+    Evicted, ExtractError, Limits, TreeHash, clean_staging, evict, extract_targz, tree_hash,
+    verify_tree,
 };
 
 const GOLDEN: &str = "sha256:649fc82b4e4db008e801244b088e12aa52921acb707eb30efdc6d60930ecdefa";
+
+#[test]
+fn a_tree_hash_parses_only_sha256_and_64_lowercase_hex() {
+    assert_eq!(TreeHash::parse(GOLDEN).unwrap().as_str(), GOLDEN);
+    let hex = &GOLDEN[7..];
+    let bad = [
+        format!("sha512:{hex}"),
+        hex.to_owned(),
+        format!("sha256:{}", &hex[..63]),
+        format!("sha256:{hex}0"),
+        format!("sha256:{}", hex.to_uppercase()),
+        format!("sha256:{}g", &hex[..63]),
+        format!("sha256:{} ", &hex[..63]),
+        "sha256:".to_owned(),
+        String::new(),
+    ];
+    for s in bad {
+        assert!(
+            matches!(TreeHash::parse(&s), Err(ExtractError::Refused(_))),
+            "{s:?}"
+        );
+    }
+}
 
 struct Entry<'a> {
     name: &'a str,
