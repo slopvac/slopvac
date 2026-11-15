@@ -15,6 +15,7 @@ workspace = true
 frontmatter-spans = { workspace = true }
 globset.workspace = true
 ignore.workspace = true
+pulldown-cmark = { workspace = true }
 rayon = { workspace = true }
 similar.workspace = true
 slopvac-context = { workspace = true }

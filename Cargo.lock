@@ -2445,6 +2445,7 @@ dependencies = [
  "globset",
  "ignore",
  "proptest",
+ "pulldown-cmark",
  "rayon",
  "rustix",
  "serde",

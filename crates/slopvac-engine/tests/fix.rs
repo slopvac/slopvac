@@ -15,10 +15,7 @@ use common::parity_engine;
 use common::{engine, rule};
 use serde_json::Value;
 use serde_json::json;
-use slopvac_engine::{
-    Engine, FixReport, Input, Kind, Refusal, SkipReason, fix_document, fix_file, fix_file_hooked,
-    unified_diff,
-};
+use slopvac_engine::{Engine, FixReport, Input, SkipReason, fix_document, unified_diff};
 
 fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -168,93 +165,6 @@ fn unified_diff_of_equal_texts_is_empty() {
     assert_eq!(unified_diff("doc.md", "a\n", "a\n"), "");
 }
 
-fn dir() -> tempfile::TempDir {
-    tempfile::tempdir().unwrap()
-}
-
-#[test]
-fn a_dry_run_reports_the_diff_and_leaves_the_file_alone() {
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, "Use delta here.\n").unwrap();
-    let out = fix_file(&swaps(), &path, Kind::Markdown, true, None).unwrap();
-    assert!(!out.written);
-    assert_eq!(out.report.text, "Use d here.\n");
-    assert!(
-        out.diff.contains("-Use delta here.\n+Use d here.\n"),
-        "{}",
-        out.diff
-    );
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "Use delta here.\n");
-}
-
-#[test]
-fn a_write_fixes_the_file_and_lints_the_fixed_text_again() {
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, "Use delta here, delta there.\n").unwrap();
-    let out = fix_file(&swaps(), &path, Kind::Markdown, false, None).unwrap();
-    assert!(out.written);
-    assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        "Use d here, d there.\n"
-    );
-    assert!(out.document.findings.is_empty());
-}
-
-#[test]
-fn a_file_with_nothing_to_fix_is_not_written() {
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, "Clean text.\n").unwrap();
-    let out = fix_file(&swaps(), &path, Kind::Markdown, false, None).unwrap();
-    assert!(!out.written);
-    assert_eq!(out.diff, "");
-}
-
-#[test]
-fn a_file_that_is_not_utf8_is_an_error_and_stays_as_it_was() {
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, b"delta \xff\n").unwrap();
-    let err = fix_file(&swaps(), &path, Kind::Markdown, false, None).unwrap_err();
-    assert!(matches!(err, slopvac_engine::FixError::NotUtf8(_)), "{err}");
-    assert_eq!(std::fs::read(&path).unwrap(), b"delta \xff\n");
-}
-
-#[cfg(unix)]
-#[test]
-fn a_symlink_is_refused_and_its_target_is_unchanged() {
-    let d = dir();
-    let target = d.path().join("real.md");
-    let link = d.path().join("link.md");
-    std::fs::write(&target, "Use delta here.\n").unwrap();
-    std::os::unix::fs::symlink(&target, &link).unwrap();
-    let out = fix_file(&swaps(), &link, Kind::Markdown, false, None).unwrap();
-    assert_eq!(out.refused, Some(Refusal::Symlink));
-    assert!(!out.written);
-    assert_eq!(
-        std::fs::read_to_string(&target).unwrap(),
-        "Use delta here.\n"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn a_hard_linked_file_is_refused_and_both_names_are_unchanged() {
-    let d = dir();
-    let first = d.path().join("a.md");
-    let second = d.path().join("b.md");
-    std::fs::write(&first, "Use delta here.\n").unwrap();
-    std::fs::hard_link(&first, &second).unwrap();
-    let out = fix_file(&swaps(), &first, Kind::Markdown, false, None).unwrap();
-    assert_eq!(out.refused, Some(Refusal::Hardlinked));
-    assert_eq!(
-        std::fs::read_to_string(&second).unwrap(),
-        "Use delta here.\n"
-    );
-}
-
 fn single(key: &str, to: &str, extra: &serde_json::Value) -> Engine {
     engine(&[rule(
         "one",
@@ -331,99 +241,39 @@ fn the_replacement_takes_the_case_of_the_match() {
     }
 }
 
-fn names(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
-}
-
-/// Run `fix_file` on a file holding `Use delta here.`, with `tamper` run just before the commit.
-fn raced(tamper: impl FnOnce(&Path)) -> (tempfile::TempDir, slopvac_engine::FileFix) {
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, "Use delta here.\n").unwrap();
-    let mut tamper = Some(tamper);
-    let out = fix_file_hooked(&swaps(), &path, Kind::Markdown, false, None, &mut || {
-        tamper.take().unwrap()(&path);
-    })
-    .unwrap();
-    (d, out)
+#[test]
+fn a_raw_scope_rule_cannot_rewrite_a_destination_or_an_attribute() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    for (text, want) in [
+        ("[x](docs/delta.md) delta\n", "[x](docs/delta.md) d\n"),
+        (
+            "![x](img/delta.png \"delta\") delta\n",
+            "![x](img/delta.png \"delta\") d\n",
+        ),
+        (
+            "<a href=\"docs/delta.md\">delta</a>\n",
+            "<a href=\"docs/delta.md\">d</a>\n",
+        ),
+        (
+            "<img src='delta.png' alt=delta />\n",
+            "<img src='delta.png' alt=delta />\n",
+        ),
+        (
+            "[x][delta]\n\n[delta]: docs/delta.md\n",
+            "[x][delta]\n\n[delta]: docs/delta.md\n",
+        ),
+    ] {
+        assert_eq!(fix(&raw, text, None).text, want, "{text:?}");
+    }
 }
 
 #[test]
-fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
-    // Same length, so only the bytes tell.
-    let (d, out) = raced(|p| std::fs::write(p, "Use gamma here.\n").unwrap());
-    assert_eq!(out.refused, Some(Refusal::Changed));
-    assert!(!out.written);
-    assert_eq!(
-        std::fs::read_to_string(d.path().join("doc.md")).unwrap(),
-        "Use gamma here.\n"
-    );
-    assert_eq!(names(d.path()), ["doc.md"], "no temporary file is left");
-}
-
-#[cfg(unix)]
-#[test]
-fn a_path_swapped_for_a_symlink_before_the_commit_is_not_written_through() {
-    let outside = dir();
-    let secret = outside.path().join("secret.md");
-    std::fs::write(&secret, "Use delta here.\n").unwrap();
-    let (d, out) = raced(|p| {
-        std::fs::remove_file(p).unwrap();
-        std::os::unix::fs::symlink(&secret, p).unwrap();
-    });
-    assert_eq!(out.refused, Some(Refusal::Changed));
-    assert_eq!(
-        std::fs::read_to_string(&secret).unwrap(),
-        "Use delta here.\n"
-    );
-    assert!(
-        std::fs::symlink_metadata(d.path().join("doc.md"))
-            .unwrap()
-            .is_symlink()
-    );
-    assert_eq!(names(d.path()), ["doc.md"]);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_path_swapped_for_another_file_before_the_commit_is_left_alone() {
-    let (d, out) = raced(|p| {
-        let other = p.with_file_name("other.md");
-        std::fs::write(&other, "Use delta here.\n").unwrap();
-        std::fs::rename(&other, p).unwrap();
-    });
-    assert_eq!(out.refused, Some(Refusal::Changed));
-    assert_eq!(names(d.path()), ["doc.md"]);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_hard_link_added_before_the_commit_stops_the_write() {
-    let (d, out) = raced(|p| std::fs::hard_link(p, p.with_file_name("alias.md")).unwrap());
-    assert_eq!(out.refused, Some(Refusal::Changed));
-    assert_eq!(
-        std::fs::read_to_string(d.path().join("alias.md")).unwrap(),
-        "Use delta here.\n"
-    );
-    assert_eq!(names(d.path()), ["alias.md", "doc.md"]);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_write_keeps_the_mode_and_leaves_no_temporary_file() {
-    use std::os::unix::fs::PermissionsExt;
-    let d = dir();
-    let path = d.path().join("doc.md");
-    std::fs::write(&path, "Use delta here.\n").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
-    let out = fix_file(&swaps(), &path, Kind::Markdown, false, None).unwrap();
-    assert!(out.written);
-    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
-    assert_eq!(mode, 0o640);
-    assert_eq!(names(d.path()), ["doc.md"]);
+fn a_definition_inside_a_quote_keeps_its_references_resolving() {
+    let e = single("delta", "d", &json!({}));
+    for text in [
+        "see [delta] now\n\n> [delta]: /x\n",
+        "see [delta][] now\n\n- item\n\n  [delta]: /x\n",
+    ] {
+        assert!(!fix(&e, text, None).text.contains("[d]"), "{text:?}");
+    }
 }

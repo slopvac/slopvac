@@ -1,0 +1,376 @@
+//! Fixing files on disk: what is refused, how the write is committed, and what survives a
+//! failure.
+
+#![allow(missing_docs, clippy::assert_is_empty)]
+
+mod common;
+
+use std::io::Error;
+use std::path::Path;
+
+use common::{engine, rule};
+use serde_json::json;
+use slopvac_engine::{Engine, FileFix, FileResult, Kind, Refusal, Step, fix_file, fix_file_hooked};
+
+const DOC: &str = "Use delta here.\n";
+const FIXED: &str = "Use d here.\n";
+
+fn swaps() -> Engine {
+    engine(&[rule(
+        "swap",
+        &json!({"kind": "substitution", "substitutions": {"delta": "d"}}),
+        &json!({}),
+    )])
+}
+
+/// A project root holding `doc.md`.
+fn project() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("doc.md"), DOC).unwrap();
+    root
+}
+
+fn run(root: &Path, rel: &str, dry_run: bool) -> FileFix {
+    fix_file(
+        &swaps(),
+        root,
+        Path::new(rel),
+        Kind::Markdown,
+        dry_run,
+        None,
+    )
+    .unwrap()
+}
+
+fn done(out: FileFix) -> Box<FileResult> {
+    match out {
+        FileFix::Done(result) => result,
+        FileFix::Refused(why) => panic!("refused: {why:?}"),
+    }
+}
+
+fn refused(out: &FileFix) -> Refusal {
+    match out {
+        FileFix::Refused(why) => *why,
+        FileFix::Done(_) => panic!("not refused"),
+    }
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn read(path: impl AsRef<Path>) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn a_dry_run_reports_the_diff_and_leaves_the_file_alone() {
+    let root = project();
+    let out = done(run(root.path(), "doc.md", true));
+    assert!(!out.written);
+    assert_eq!(out.report.text, FIXED);
+    assert!(
+        out.diff.contains("-Use delta here.\n+Use d here.\n"),
+        "{}",
+        out.diff
+    );
+    assert_eq!(read(root.path().join("doc.md")), DOC);
+}
+
+#[test]
+fn a_write_fixes_the_file_and_lints_the_fixed_text_again() {
+    let root = project();
+    std::fs::write(root.path().join("doc.md"), "Use delta here, delta there.\n").unwrap();
+    let out = done(run(root.path(), "doc.md", false));
+    assert!(out.written);
+    assert_eq!(read(root.path().join("doc.md")), "Use d here, d there.\n");
+    assert!(out.document.findings.is_empty());
+}
+
+#[test]
+fn an_absolute_path_inside_the_root_works_and_a_nested_one_too() {
+    let root = project();
+    std::fs::create_dir(root.path().join("sub")).unwrap();
+    std::fs::write(root.path().join("sub/n.md"), DOC).unwrap();
+    assert!(done(run(root.path(), "sub/n.md", false)).written);
+    let absolute = root.path().join("doc.md");
+    let out = fix_file(
+        &swaps(),
+        root.path(),
+        &absolute,
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap();
+    assert!(done(out).written);
+}
+
+#[test]
+fn a_file_with_nothing_to_fix_is_not_written() {
+    let root = project();
+    std::fs::write(root.path().join("doc.md"), "Clean text.\n").unwrap();
+    let out = done(run(root.path(), "doc.md", false));
+    assert!(!out.written);
+    assert_eq!(out.diff, "");
+}
+
+#[test]
+fn a_file_that_is_not_utf8_is_an_error_and_stays_as_it_was() {
+    let root = project();
+    std::fs::write(root.path().join("doc.md"), b"delta \xff\n").unwrap();
+    let err = fix_file(
+        &swaps(),
+        root.path(),
+        Path::new("doc.md"),
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(err, slopvac_engine::FixError::NotUtf8(_)), "{err}");
+    assert_eq!(
+        std::fs::read(root.path().join("doc.md")).unwrap(),
+        b"delta \xff\n"
+    );
+}
+
+#[test]
+fn a_path_outside_the_root_is_refused() {
+    let root = project();
+    let outside = project();
+    for path in [
+        outside.path().join("doc.md").to_string_lossy().into_owned(),
+        "../doc.md".to_owned(),
+        "sub/../../doc.md".to_owned(),
+    ] {
+        let out = fix_file(
+            &swaps(),
+            root.path(),
+            Path::new(&path),
+            Kind::Markdown,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(refused(&out), Refusal::OutsideRoot, "{path}");
+    }
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+}
+
+/// Run `tamper` at `step` of a write to `doc.md`, with `swaps()`.
+fn at(
+    root: &Path,
+    step: Step,
+    mut tamper: impl FnMut() -> std::io::Result<()>,
+) -> Result<FileFix, slopvac_engine::FixError> {
+    fix_file_hooked(
+        &swaps(),
+        root,
+        Path::new("doc.md"),
+        Kind::Markdown,
+        false,
+        None,
+        &mut |now| if now == step { tamper() } else { Ok(()) },
+    )
+}
+
+#[test]
+fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
+    let root = project();
+    let path = root.path().join("doc.md");
+    // Same length, so only the bytes tell.
+    let out = at(root.path(), Step::Verify, || {
+        std::fs::write(&path, "Use gamma here.\n")
+    })
+    .unwrap();
+    assert_eq!(refused(&out), Refusal::Changed);
+    assert_eq!(read(&path), "Use gamma here.\n");
+    assert_eq!(names(root.path()), ["doc.md"], "no temporary file is left");
+}
+
+#[test]
+fn a_write_keeps_the_original_when_any_step_fails() {
+    for step in [
+        Step::Create,
+        Step::Write,
+        Step::Flush,
+        Step::Verify,
+        Step::Rename,
+    ] {
+        let root = project();
+        let out = at(root.path(), step, || Err(Error::other("injected")));
+        assert!(
+            matches!(out, Err(slopvac_engine::FixError::Io { .. })),
+            "{step:?}"
+        );
+        assert_eq!(read(root.path().join("doc.md")), DOC, "{step:?}");
+        assert_eq!(
+            names(root.path()),
+            ["doc.md"],
+            "{step:?} left a temporary file"
+        );
+    }
+}
+
+#[cfg(unix)]
+mod unix {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    use super::*;
+
+    fn fifo(path: &Path) {
+        let status = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    #[test]
+    fn a_symlink_is_refused_without_being_read() {
+        let root = project();
+        let outside = project();
+        symlink(outside.path().join("doc.md"), root.path().join("link.md")).unwrap();
+        let out = run(root.path(), "link.md", false);
+        assert_eq!(refused(&out), Refusal::Symlink);
+        assert_eq!(read(outside.path().join("doc.md")), DOC);
+    }
+
+    #[test]
+    fn a_symlinked_directory_above_the_file_is_refused() {
+        let root = project();
+        let outside = project();
+        symlink(outside.path(), root.path().join("linked")).unwrap();
+        let out = run(root.path(), "linked/doc.md", false);
+        assert_eq!(refused(&out), Refusal::Symlink);
+        assert_eq!(read(outside.path().join("doc.md")), DOC);
+        assert_eq!(names(outside.path()), ["doc.md"]);
+    }
+
+    #[test]
+    fn a_fifo_and_a_symlink_to_one_return_at_once_with_a_refusal() {
+        let root = project();
+        fifo(&root.path().join("pipe.md"));
+        symlink(root.path().join("pipe.md"), root.path().join("viapipe.md")).unwrap();
+        assert_eq!(
+            refused(&run(root.path(), "pipe.md", false)),
+            Refusal::NotRegular
+        );
+        assert_eq!(
+            refused(&run(root.path(), "viapipe.md", false)),
+            Refusal::Symlink
+        );
+    }
+
+    #[test]
+    fn a_hard_linked_file_is_refused_and_both_names_are_unchanged() {
+        let root = project();
+        std::fs::hard_link(root.path().join("doc.md"), root.path().join("b.md")).unwrap();
+        let out = run(root.path(), "doc.md", false);
+        assert_eq!(refused(&out), Refusal::Hardlinked);
+        assert_eq!(read(root.path().join("b.md")), DOC);
+    }
+
+    #[test]
+    fn a_directory_others_can_write_to_is_refused_for_a_write_but_not_a_dry_run() {
+        let root = project();
+        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(!done(run(root.path(), "doc.md", true)).written);
+        assert_eq!(
+            refused(&run(root.path(), "doc.md", false)),
+            Refusal::UnsafeDirectory
+        );
+        assert_eq!(read(root.path().join("doc.md")), DOC);
+        assert_eq!(names(root.path()), ["doc.md"]);
+    }
+
+    #[test]
+    fn a_write_keeps_the_mode() {
+        let root = project();
+        let path = root.path().join("doc.md");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(done(run(root.path(), "doc.md", false)).written);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o640
+        );
+        assert_eq!(read(&path), FIXED);
+        assert_eq!(names(root.path()), ["doc.md"]);
+    }
+
+    #[test]
+    fn a_path_swapped_for_a_symlink_before_the_commit_is_not_written_through() {
+        let root = project();
+        let outside = project();
+        let secret = outside.path().join("doc.md");
+        let path = root.path().join("doc.md");
+        let out = at(root.path(), Step::Verify, || {
+            std::fs::remove_file(&path)?;
+            symlink(&secret, &path)
+        })
+        .unwrap();
+        assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(read(&secret), DOC);
+        assert_eq!(names(root.path()), ["doc.md"]);
+    }
+
+    #[test]
+    fn a_path_swapped_for_another_file_before_the_commit_is_left_alone() {
+        let root = project();
+        let path = root.path().join("doc.md");
+        let other = root.path().join("other.md");
+        let out = at(root.path(), Step::Verify, || {
+            std::fs::write(&other, "Use delta here.\n")?;
+            std::fs::rename(&other, &path)
+        })
+        .unwrap();
+        assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(read(&path), DOC);
+        assert_eq!(names(root.path()), ["doc.md"]);
+    }
+
+    #[test]
+    fn a_hard_link_added_before_the_commit_stops_the_write() {
+        let root = project();
+        let path = root.path().join("doc.md");
+        let out = at(root.path(), Step::Verify, || {
+            std::fs::hard_link(&path, path.with_file_name("alias.md"))
+        })
+        .unwrap();
+        assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(read(root.path().join("alias.md")), DOC);
+        assert_eq!(names(root.path()), ["alias.md", "doc.md"]);
+    }
+
+    #[test]
+    fn a_temporary_name_taken_over_before_the_rename_is_never_moved_over_the_file() {
+        let root = project();
+        let dir = root.path().to_path_buf();
+        let outside = project();
+        let secret = outside.path().join("doc.md");
+        let out = at(root.path(), Step::Rename, || {
+            let temp = std::fs::read_dir(&dir)?
+                .map(|e| e.unwrap().path())
+                .find(|p| {
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".slopvac-")
+                })
+                .unwrap();
+            std::fs::remove_file(&temp)?;
+            symlink(&secret, &temp)
+        })
+        .unwrap();
+        assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(read(dir.join("doc.md")), DOC);
+        assert_eq!(read(&secret), DOC);
+    }
+}

@@ -1,110 +1,154 @@
-//! Fixing a file on disk: open it safely, lint it, fix it, commit the result atomically.
+//! Fixing a file on disk without trusting the path it was found under.
 //!
-//! [`fix_file`] never writes through the path it was given. It opens the file without
-//! following a symbolic link, reads through that handle, and records the file's identity
-//! (device, inode, length, modification time). To write it puts the fixed text in a
-//! temporary file in the same directory, copies the mode, flushes it, and then checks
-//! again, immediately before the rename, that the path still names the same single-linked
-//! file with the same bytes. Only then does it rename the temporary file over the path. A
-//! check that fails leaves the file untouched and reports [`Refusal::Changed`].
+//! [`fix_file`] takes the project root the caller trusts and a path inside it. It never
+//! hands the path to the system whole. On unix it opens the root directory and walks to the
+//! file one component at a time with `openat` and `O_NOFOLLOW`, so a symbolic link in any
+//! component ends the walk with [`Refusal::Symlink`]. It opens the file the same way, checks
+//! with `fstat` on the open descriptor that it is a regular file with one link that the
+//! current user owns, and reads through that descriptor only. Nothing that is refused is
+//! read.
 //!
-//! A check followed by a rename cannot be one atomic step with the standard library, so a
-//! swap in the instant between them still gets through. The window is a few
-//! system calls wide and the worst result is that a file the user could write is replaced
-//! by a fixed copy of the text that was linted.
+//! To write, it requires that the parent directory is not writable by group or others
+//! (a sticky directory owned by the current user passes), creates a temporary file in that
+//! directory with `O_EXCL`, writes and flushes it, sets the original mode with `fchmod` on
+//! the descriptor, and checks again that the file is the one it read and that the temporary
+//! name still holds the temporary file. It renames over the target with `renameat` in the
+//! same directory and flushes the directory. It never changes ownership. Any failure removes
+//! the temporary file and leaves the original as it was.
 //!
-//! Windows has no stable safe call for a file's hard-link count or its file id, so there
-//! the checks use the length, the modification time and the bytes, and hard links are not
-//! detected.
+//! The re-check and the rename cannot be one system call, so a change inside that gap is
+//! not caught. With the directory restricted to its owner, only the owner or root can make
+//! one.
+//!
+//! On other platforms the walk canonicalises the parent, requires it inside the canonical
+//! root, and rejects any component that is a reparse point or symbolic link. Windows has no
+//! stable safe call for a file id or a hard-link count, so there the checks use the length,
+//! the modification time and the bytes, and hard links are not detected.
 
-use std::fs::{File, Metadata, OpenOptions};
-use std::io::{Read, Seek, Write};
 use std::ops::RangeInclusive;
-use std::path::Path;
-use std::time::SystemTime;
+use std::path::{Component, Path, PathBuf};
 
 use slopvac_model::Document;
 
 use crate::fix::{FixError, FixReport, fix_document, unified_diff};
 use crate::lint::{Engine, Input, Kind};
 
-/// Why [`fix_file`] left a file unchanged.
+/// The largest file [`fix_file`] reads.
+pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Why [`fix_file`] left a file alone. A refused file is never read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Refusal {
-    /// The path is a symbolic link. Writing would change the target.
+    /// The path is outside the project root.
+    OutsideRoot,
+    /// The file or a directory above it is a symbolic link.
     Symlink,
+    /// The file is not a regular file: a FIFO, a device or a directory.
+    NotRegular,
     /// The file has more than one hard link. Writing would change every name.
     Hardlinked,
-    /// The file changed, or the path was swapped, between the read and the commit.
+    /// Another user owns the file.
+    NotOwner,
+    /// The file is larger than [`MAX_FILE_BYTES`].
+    TooLarge,
+    /// The parent directory is writable by group or others, so a name in it could be
+    /// swapped under the write.
+    UnsafeDirectory,
+    /// The file changed, or its name was swapped, between the read and the commit.
     Changed,
 }
 
-/// What [`fix_file`] did to one file.
+/// Where in a write a [`fix_file_hooked`] callback runs, before the step it names.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// Creating the temporary file.
+    Create,
+    /// Writing the fixed text to it.
+    Write,
+    /// Setting its mode and flushing it.
+    Flush,
+    /// Re-checking the original. Tests change the file here.
+    Verify,
+    /// Renaming over the original. Tests change the temporary name here.
+    Rename,
+}
+
+/// What [`fix_file`] did.
 #[derive(Debug, Clone)]
-pub struct FileFix {
+pub enum FileFix {
+    /// The file was not read or not changed, and why.
+    Refused(Refusal),
+    /// The file was linted and fixed.
+    Done(Box<FileResult>),
+}
+
+/// The outcome for a file that was not refused.
+#[derive(Debug, Clone)]
+pub struct FileResult {
     /// The lint report: of the fixed text when the file was written, else of the file as
     /// it was.
     pub document: Document,
-    /// The fix result. Empty and unchanged when the file was refused.
+    /// The fix result.
     pub report: FixReport,
-    /// The unified diff of the change, empty when nothing changed or the file was refused.
+    /// The unified diff of the change, empty when nothing changed.
     pub diff: String,
     /// Whether the file was written.
     pub written: bool,
-    /// Why the file was left alone, if it was.
-    pub refused: Option<Refusal>,
 }
 
-/// Lint `path`, fix it and, unless `dry_run`, write the result atomically.
+/// Lint the file at `path`, fix it and, unless `dry_run`, write the result.
 ///
-/// A symbolic link or a file with several hard links is refused and left unchanged, and so
-/// is a file that changes while the fix runs. The lint report of a written file is rerun on
-/// the fixed text, so a caller scores what is on disk. A dry run changes nothing and
-/// reports the diff the write would make. See the module notes for the write protocol.
+/// `root` is the project root the caller trusts; `path` is absolute inside it or relative
+/// to it, with no `..`. See the module notes for what is refused and how the write is
+/// made. The lint report of a written file is rerun on the fixed text. A dry run changes
+/// nothing and reports the diff the write would make.
 pub fn fix_file(
     engine: &Engine,
+    root: &Path,
     path: &Path,
     kind: Kind,
     dry_run: bool,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FileFix, FixError> {
-    fix_file_hooked(engine, path, kind, dry_run, changed_lines, &mut || {})
+    fix_file_hooked(
+        engine,
+        root,
+        path,
+        kind,
+        dry_run,
+        changed_lines,
+        &mut |_| Ok(()),
+    )
 }
 
-/// [`fix_file`] with a callback that runs after the fixed copy is written and before the
-/// commit checks. Tests use it to change the file at the worst moment.
+/// [`fix_file`] with a callback that runs before each [`Step`] of the write. An error from
+/// it fails that step. Tests use it to inject failures and to change files at the worst
+/// moment.
 #[doc(hidden)]
 pub fn fix_file_hooked(
     engine: &Engine,
+    root: &Path,
     path: &Path,
     kind: Kind,
     dry_run: bool,
     changed_lines: Option<&[RangeInclusive<usize>]>,
-    before_commit: &mut dyn FnMut(),
+    hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
 ) -> Result<FileFix, FixError> {
     let shown = path.to_string_lossy().into_owned();
     let io = |source| FixError::Io {
         path: shown.clone(),
         source,
     };
-    let (mut file, before, bytes) = match open_checked(path).map_err(io)? {
-        Opened::Refused(refusal) => {
-            let bytes = std::fs::read(path).map_err(io)?;
-            let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
-            let document = engine.lint(&Input {
-                kind,
-                ..Input::markdown(&shown, &source)
-            })?;
-            return Ok(unchanged(document, source, Some(refusal)));
-        }
-        Opened::File(mut file, meta) => {
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes).map_err(io)?;
-            (file, meta, bytes)
-        }
+    let Some(relative) = relative_to(root, path) else {
+        return Ok(FileFix::Refused(Refusal::OutsideRoot));
     };
-    let source = String::from_utf8(bytes.clone()).map_err(|_| FixError::NotUtf8(shown.clone()))?;
+    let (mut handle, bytes) = match sys::open(root, &relative).map_err(io)? {
+        Ok(opened) => opened,
+        Err(refusal) => return Ok(FileFix::Refused(refusal)),
+    };
+    let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
     let input = Input {
         kind,
         ..Input::markdown(&shown, &source)
@@ -113,223 +157,517 @@ pub fn fix_file_hooked(
     let report = fix_document(&input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);
     if dry_run || report.text == source {
-        return Ok(FileFix {
+        return Ok(FileFix::Done(Box::new(FileResult {
             document,
             report,
             diff,
             written: false,
-            refused: None,
-        });
+        })));
     }
-    let temp = write_temp(path, &report.text, &before).map_err(io)?;
-    before_commit();
-    if !unchanged_since(path, &mut file, &before, &bytes).map_err(io)? {
-        return Ok(unchanged(document, source, Some(Refusal::Changed)));
+    if let Some(refusal) = handle
+        .commit(&report.text, source.as_bytes(), hook)
+        .map_err(io)?
+    {
+        return Ok(FileFix::Refused(refusal));
     }
-    drop(file);
-    temp.persist(path).map_err(|e| io(e.error))?;
-    sync_directory(path);
     let document = engine.lint(&Input {
         source: &report.text,
         ..input
     })?;
-    Ok(FileFix {
+    Ok(FileFix::Done(Box::new(FileResult {
         document,
         report,
         diff,
         written: true,
-        refused: None,
-    })
+    })))
 }
 
-fn unchanged(document: Document, source: String, refused: Option<Refusal>) -> FileFix {
-    FileFix {
-        document,
-        report: FixReport {
-            text: source,
-            applied: 0,
-            skipped: Vec::new(),
-        },
-        diff: String::new(),
-        written: false,
-        refused,
-    }
-}
-
-enum Opened {
-    File(File, Metadata),
-    Refused(Refusal),
-}
-
-/// Open `path` for reading without following a link, and refuse what must not be written.
-fn open_checked(path: &Path) -> std::io::Result<Opened> {
-    let named = std::fs::symlink_metadata(path)?;
-    if is_link(&named) {
-        return Ok(Opened::Refused(Refusal::Symlink));
-    }
-    if !named.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "not a regular file",
-        ));
-    }
-    let file = match open_no_follow(path) {
-        Ok(file) => file,
-        Err(e) if is_loop(&e) => return Ok(Opened::Refused(Refusal::Symlink)),
-        Err(e) => return Err(e),
+/// `path` below `root` as plain names, or `None` when it is outside or climbs with `..`.
+fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
+    let relative = if path.is_absolute() {
+        path.strip_prefix(root)
+            .ok()
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                let canonical = root.canonicalize().ok()?;
+                path.strip_prefix(canonical).ok().map(Path::to_path_buf)
+            })?
+    } else {
+        path.to_path_buf()
     };
-    let held = file.metadata()?;
-    if !held.is_file() || identity(&held) != identity(&named) {
-        return Ok(Opened::Refused(Refusal::Changed));
-    }
-    if linked(&held) {
-        return Ok(Opened::Refused(Refusal::Hardlinked));
-    }
-    Ok(Opened::File(file, held))
-}
-
-/// Write the fixed text to a temporary file next to `path` with the mode of `original`.
-fn write_temp(
-    path: &Path,
-    text: &str,
-    original: &Metadata,
-) -> std::io::Result<tempfile::NamedTempFile> {
-    let dir = match path.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => Path::new("."),
-    };
-    let mut temp = tempfile::Builder::new()
-        .prefix(".slopvac-fix-")
-        .tempfile_in(dir)?;
-    temp.write_all(text.as_bytes())?;
-    temp.as_file().set_permissions(original.permissions())?;
-    keep_owner(temp.path(), original);
-    temp.as_file().sync_all()?;
-    Ok(temp)
-}
-
-/// Whether `path` still names the file that was read, unchanged and singly linked.
-fn unchanged_since(
-    path: &Path,
-    held: &mut File,
-    before: &Metadata,
-    bytes: &[u8],
-) -> std::io::Result<bool> {
-    let named = match std::fs::symlink_metadata(path) {
-        Ok(meta) => meta,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e),
-    };
-    if is_link(&named) || !named.is_file() || linked(&named) {
-        return Ok(false);
-    }
-    let open = held.metadata()?;
-    if identity(&named) != identity(before) || identity(&open) != identity(before) {
-        return Ok(false);
-    }
-    held.rewind()?;
-    let mut now = Vec::with_capacity(bytes.len());
-    held.read_to_end(&mut now)?;
-    Ok(now == bytes)
-}
-
-/// What names a file: where it lives, how long it is and when it changed.
-#[derive(Debug, PartialEq, Eq)]
-struct Identity {
-    #[cfg(unix)]
-    device: u64,
-    #[cfg(unix)]
-    inode: u64,
-    len: u64,
-    modified: Option<SystemTime>,
-}
-
-fn identity(meta: &Metadata) -> Identity {
-    #[cfg(unix)]
-    use std::os::unix::fs::MetadataExt;
-    Identity {
-        #[cfg(unix)]
-        device: meta.dev(),
-        #[cfg(unix)]
-        inode: meta.ino(),
-        len: meta.len(),
-        modified: meta.modified().ok(),
-    }
-}
-
-#[cfg(unix)]
-fn linked(meta: &Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    meta.nlink() > 1
-}
-
-#[cfg(not(unix))]
-fn linked(_: &Metadata) -> bool {
-    false
-}
-
-fn is_link(meta: &Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        // FILE_ATTRIBUTE_REPARSE_POINT: symbolic links and junctions.
-        if meta.file_attributes() & 0x400 != 0 {
-            return true;
+    let mut clean = PathBuf::new();
+    for part in relative.components() {
+        match part {
+            Component::Normal(name) => clean.push(name),
+            Component::CurDir => {}
+            _ => return None,
         }
     }
-    meta.file_type().is_symlink()
+    (clean.components().count() > 0).then_some(clean)
+}
+
+/// Whether a directory with this mode may hold a file we replace: nobody but the owner can
+/// write to it, or it is sticky and ours.
+#[cfg(unix)]
+fn directory_trusted(mode: u32, owner: u32, effective_user: u32) -> bool {
+    mode & 0o022 == 0 || (mode & 0o1000 != 0 && owner == effective_user)
+}
+
+/// Whether the current user may fix a file this user owns. Root does not fix other users'
+/// files.
+#[cfg(unix)]
+fn owner_trusted(owner: u32, effective_user: u32) -> bool {
+    owner == effective_user
 }
 
 #[cfg(unix)]
-fn open_no_follow(path: &Path) -> std::io::Result<File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    // NONBLOCK so a FIFO swapped in after the check cannot block the open.
-    let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
-    let flags = i32::try_from(flags.bits()).map_err(|_| std::io::Error::other("flags"))?;
-    OpenOptions::new().read(true).custom_flags(flags).open(path)
-}
+mod sys {
+    use std::ffi::{OsStr, OsString};
+    use std::fs::File;
+    use std::hash::{BuildHasher, Hasher};
+    use std::io::{Read, Seek, Write};
+    use std::os::fd::OwnedFd;
+    use std::path::Path;
 
-#[cfg(not(unix))]
-fn open_no_follow(path: &Path) -> std::io::Result<File> {
-    OpenOptions::new().read(true).open(path)
-}
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat};
+    use rustix::io::Errno;
 
-#[cfg(unix)]
-fn is_loop(error: &std::io::Error) -> bool {
-    error.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error())
-}
+    use super::{MAX_FILE_BYTES, Refusal, Step, directory_trusted, owner_trusted};
 
-#[cfg(not(unix))]
-fn is_loop(_: &std::io::Error) -> bool {
-    false
-}
+    type Hook<'a> = &'a mut dyn FnMut(Step) -> std::io::Result<()>;
 
-/// Give the temporary file the owner and group of the original where the system allows it.
-#[cfg(unix)]
-fn keep_owner(temp: &Path, original: &Metadata) {
-    use std::os::unix::fs::{MetadataExt, chown};
-    let me = rustix::process::getuid().as_raw();
-    let owner = (original.uid() != me).then_some(original.uid());
-    // Best effort: only root can give a file away.
-    let _ = chown(temp, owner, Some(original.gid()));
-}
+    /// What names a file: device, inode, size and modification time, and its link count.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Identity {
+        device: i128,
+        inode: i128,
+        size: i128,
+        modified: (i128, i128),
+    }
 
-#[cfg(not(unix))]
-fn keep_owner(_: &Path, _: &Metadata) {}
+    fn identity(st: &Stat) -> Identity {
+        Identity {
+            device: i128::from(st.st_dev),
+            inode: i128::from(st.st_ino),
+            size: i128::from(st.st_size),
+            modified: (i128::from(st.st_mtime), i128::from(st.st_mtime_nsec)),
+        }
+    }
 
-/// Flush the directory entry of the renamed file.
-fn sync_directory(path: &Path) {
-    #[cfg(unix)]
-    if let Some(dir) = path.parent() {
-        let dir = if dir.as_os_str().is_empty() {
-            Path::new(".")
+    fn is_regular(st: &Stat) -> bool {
+        FileType::from_raw_mode(st.st_mode) == FileType::RegularFile
+    }
+
+    fn links(st: &Stat) -> i128 {
+        i128::from(st.st_nlink)
+    }
+
+    /// An open file with the directory it was found in.
+    pub(super) struct Handle {
+        parent: OwnedFd,
+        name: OsString,
+        file: File,
+        before: Identity,
+        mode: Mode,
+    }
+
+    const DIR_FLAGS: OFlags = OFlags::RDONLY
+        .union(OFlags::DIRECTORY)
+        .union(OFlags::NOFOLLOW)
+        .union(OFlags::CLOEXEC);
+
+    /// A component that is a link fails `O_NOFOLLOW` with `ELOOP`, or with `ENOTDIR` when
+    /// `O_DIRECTORY` is also set.
+    fn refusal_for(error: Errno) -> Result<Refusal, std::io::Error> {
+        if error == Errno::LOOP || error == Errno::NOTDIR {
+            Ok(Refusal::Symlink)
         } else {
-            dir
-        };
-        if let Ok(dir) = File::open(dir) {
-            let _ = dir.sync_all();
+            Err(error.into())
         }
     }
-    #[cfg(not(unix))]
-    let _ = path;
+
+    pub(super) fn open(
+        root: &Path,
+        relative: &Path,
+    ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
+        let mut parent = rustix::fs::open(
+            root,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?;
+        let mut names: Vec<&OsStr> = relative.iter().collect();
+        let Some(name) = names.pop() else {
+            return Ok(Err(Refusal::OutsideRoot));
+        };
+        for directory in names {
+            match rustix::fs::openat(&parent, directory, DIR_FLAGS, Mode::empty()) {
+                Ok(next) => parent = next,
+                Err(e) => return refusal_for(e).map(Err),
+            }
+        }
+        let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+        let fd = match rustix::fs::openat(&parent, name, flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(e) => return refusal_for(e).map(Err),
+        };
+        let st = rustix::fs::fstat(&fd)?;
+        let me = rustix::process::geteuid().as_raw();
+        if !is_regular(&st) {
+            return Ok(Err(Refusal::NotRegular));
+        }
+        if links(&st) > 1 {
+            return Ok(Err(Refusal::Hardlinked));
+        }
+        if !owner_trusted(st.st_uid, me) {
+            return Ok(Err(Refusal::NotOwner));
+        }
+        if u64::try_from(st.st_size).map_or(true, |size| size > MAX_FILE_BYTES) {
+            return Ok(Err(Refusal::TooLarge));
+        }
+        let mut file = File::from(fd);
+        let bytes = read_all(&mut file)?;
+        Ok(Ok((
+            Handle {
+                parent,
+                name: name.to_owned(),
+                file,
+                before: identity(&st),
+                mode: Mode::from_raw_mode(st.st_mode & 0o7777),
+            },
+            bytes,
+        )))
+    }
+
+    fn read_all(file: &mut File) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        Read::take(file, MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// A temporary entry that is unlinked on drop unless it was handed over.
+    struct Temp {
+        parent: OwnedFd,
+        name: OsString,
+        armed: bool,
+    }
+
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            if self.armed {
+                let _ = rustix::fs::unlinkat(&self.parent, self.name.as_os_str(), AtFlags::empty());
+            }
+        }
+    }
+
+    fn temp_name(name: &OsStr) -> OsString {
+        let random = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish();
+        let mut out = OsString::from(".");
+        if name.len() <= 200 {
+            out.push(name);
+        }
+        out.push(format!(".slopvac-{random:016x}"));
+        out
+    }
+
+    impl Handle {
+        /// Replace the file with `text`, or say why not. `original` is what was read.
+        pub(super) fn commit(
+            &mut self,
+            text: &str,
+            original: &[u8],
+            hook: Hook<'_>,
+        ) -> std::io::Result<Option<Refusal>> {
+            let me = rustix::process::geteuid().as_raw();
+            let dir = rustix::fs::fstat(&self.parent)?;
+            if !directory_trusted(u32::from(dir.st_mode) & 0o7777, dir.st_uid, me) {
+                return Ok(Some(Refusal::UnsafeDirectory));
+            }
+            hook(Step::Create)?;
+            let (mut temp_file, mut temp) = self.create_temp()?;
+            hook(Step::Write)?;
+            temp_file.write_all(text.as_bytes())?;
+            hook(Step::Flush)?;
+            rustix::fs::fchmod(&temp_file, self.mode)?;
+            temp_file.sync_all()?;
+            hook(Step::Verify)?;
+            if !self.unchanged(original)? {
+                return Ok(Some(Refusal::Changed));
+            }
+            hook(Step::Rename)?;
+            let ours = rustix::fs::fstat(&temp_file)?;
+            let named = rustix::fs::statat(
+                &self.parent,
+                temp.name.as_os_str(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            );
+            if !named.is_ok_and(|n| n.st_dev == ours.st_dev && n.st_ino == ours.st_ino) {
+                // Someone put something else under our name: leave it, and write nothing.
+                temp.armed = false;
+                return Ok(Some(Refusal::Changed));
+            }
+            rustix::fs::renameat(
+                &self.parent,
+                temp.name.as_os_str(),
+                &self.parent,
+                self.name.as_os_str(),
+            )?;
+            temp.armed = false;
+            let _ = rustix::fs::fsync(&self.parent);
+            Ok(None)
+        }
+
+        fn create_temp(&self) -> std::io::Result<(File, Temp)> {
+            let flags =
+                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+            for _ in 0..16 {
+                let name = temp_name(&self.name);
+                match rustix::fs::openat(
+                    &self.parent,
+                    name.as_os_str(),
+                    flags,
+                    Mode::RUSR | Mode::WUSR,
+                ) {
+                    Ok(fd) => {
+                        let temp = Temp {
+                            parent: self.parent.try_clone()?,
+                            name,
+                            armed: true,
+                        };
+                        return Ok((File::from(fd), temp));
+                    }
+                    Err(Errno::EXIST) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(std::io::Error::other("no free temporary name"))
+        }
+
+        /// Whether the name still leads to the file we read, unchanged and singly linked.
+        fn unchanged(&mut self, original: &[u8]) -> std::io::Result<bool> {
+            let held = rustix::fs::fstat(&self.file)?;
+            if identity(&held) != self.before || links(&held) > 1 {
+                return Ok(false);
+            }
+            let named = match rustix::fs::statat(
+                &self.parent,
+                self.name.as_os_str(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            ) {
+                Ok(named) => named,
+                Err(Errno::NOENT) => return Ok(false),
+                Err(e) => return Err(e.into()),
+            };
+            if !is_regular(&named) || identity(&named) != self.before {
+                return Ok(false);
+            }
+            self.file.rewind()?;
+            Ok(read_all(&mut self.file)? == original)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+mod sys {
+    use std::fs::{File, Metadata, OpenOptions, Permissions};
+    use std::io::{Read, Seek, Write};
+    use std::path::{Path, PathBuf};
+    use std::time::SystemTime;
+
+    use super::{MAX_FILE_BYTES, Refusal, Step};
+
+    type Hook<'a> = &'a mut dyn FnMut(Step) -> std::io::Result<()>;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Identity {
+        len: u64,
+        modified: Option<SystemTime>,
+    }
+
+    fn identity(meta: &Metadata) -> Identity {
+        Identity {
+            len: meta.len(),
+            modified: meta.modified().ok(),
+        }
+    }
+
+    /// Symbolic links and other reparse points.
+    fn is_link(meta: &Metadata) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes() & 0x400 != 0 {
+                return true;
+            }
+        }
+        meta.file_type().is_symlink()
+    }
+
+    pub(super) struct Handle {
+        path: PathBuf,
+        file: File,
+        before: Identity,
+        permissions: Permissions,
+    }
+
+    pub(super) fn open(
+        root: &Path,
+        relative: &Path,
+    ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
+        let canonical_root = root.canonicalize()?;
+        let mut current = canonical_root.clone();
+        let mut names: Vec<_> = relative.iter().collect();
+        let Some(name) = names.pop() else {
+            return Ok(Err(Refusal::OutsideRoot));
+        };
+        for directory in names {
+            current.push(directory);
+            let meta = std::fs::symlink_metadata(&current)?;
+            if is_link(&meta) || !meta.is_dir() {
+                return Ok(Err(Refusal::Symlink));
+            }
+        }
+        if !current.canonicalize()?.starts_with(&canonical_root) {
+            return Ok(Err(Refusal::OutsideRoot));
+        }
+        let path = current.join(name);
+        let named = std::fs::symlink_metadata(&path)?;
+        if is_link(&named) {
+            return Ok(Err(Refusal::Symlink));
+        }
+        if !named.is_file() {
+            return Ok(Err(Refusal::NotRegular));
+        }
+        if named.len() > MAX_FILE_BYTES {
+            return Ok(Err(Refusal::TooLarge));
+        }
+        let mut file = OpenOptions::new().read(true).open(&path)?;
+        let held = file.metadata()?;
+        if identity(&held) != identity(&named) {
+            return Ok(Err(Refusal::Changed));
+        }
+        let mut bytes = Vec::new();
+        Read::take(&mut file, MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
+        Ok(Ok((
+            Handle {
+                path,
+                file,
+                before: identity(&held),
+                permissions: held.permissions(),
+            },
+            bytes,
+        )))
+    }
+
+    struct Temp {
+        path: PathBuf,
+        armed: bool,
+    }
+
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            if self.armed {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
+
+    impl Handle {
+        pub(super) fn commit(
+            &mut self,
+            text: &str,
+            original: &[u8],
+            hook: Hook<'_>,
+        ) -> std::io::Result<Option<Refusal>> {
+            hook(Step::Create)?;
+            let dir = self
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            let mut created = None;
+            for attempt in 0..16u32 {
+                let candidate = dir.join(format!(".slopvac-fix-{}-{attempt}", std::process::id()));
+                match OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&candidate)
+                {
+                    Ok(file) => {
+                        created = Some((file, candidate));
+                        break;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            let Some((mut temp_file, path)) = created else {
+                return Err(std::io::Error::other("no free temporary name"));
+            };
+            let mut temp = Temp { path, armed: true };
+            hook(Step::Write)?;
+            temp_file.write_all(text.as_bytes())?;
+            hook(Step::Flush)?;
+            temp_file.set_permissions(self.permissions.clone())?;
+            temp_file.sync_all()?;
+            hook(Step::Verify)?;
+            if !self.unchanged(original)? {
+                return Ok(Some(Refusal::Changed));
+            }
+            hook(Step::Rename)?;
+            drop(temp_file);
+            std::fs::rename(&temp.path, &self.path)?;
+            temp.armed = false;
+            Ok(None)
+        }
+
+        fn unchanged(&mut self, original: &[u8]) -> std::io::Result<bool> {
+            let named = match std::fs::symlink_metadata(&self.path) {
+                Ok(meta) => meta,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(e) => return Err(e),
+            };
+            if is_link(&named) || !named.is_file() {
+                return Ok(false);
+            }
+            if identity(&named) != self.before || identity(&self.file.metadata()?) != self.before {
+                return Ok(false);
+            }
+            self.file.rewind()?;
+            let mut now = Vec::with_capacity(original.len());
+            Read::take(&mut self.file, MAX_FILE_BYTES + 1).read_to_end(&mut now)?;
+            Ok(now == original)
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{directory_trusted, owner_trusted};
+
+    #[test]
+    fn a_directory_is_trusted_when_only_its_owner_can_write() {
+        for (mode, owner, me, want) in [
+            (0o755, 1000, 1000, true),
+            (0o700, 1000, 1000, true),
+            (0o775, 1000, 1000, false),
+            (0o757, 1000, 1000, false),
+            (0o1777, 1000, 1000, true),
+            (0o1777, 0, 1000, false),
+            (0o1775, 1000, 1000, true),
+        ] {
+            assert_eq!(directory_trusted(mode, owner, me), want, "{mode:o}");
+        }
+    }
+
+    #[test]
+    fn only_the_current_user_s_files_are_fixed() {
+        assert!(owner_trusted(1000, 1000));
+        assert!(
+            !owner_trusted(1000, 0),
+            "root does not fix another user's file"
+        );
+        assert!(!owner_trusted(0, 1000));
+    }
 }

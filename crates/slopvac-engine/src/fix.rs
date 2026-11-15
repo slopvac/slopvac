@@ -33,6 +33,7 @@ use slopvac_model::{
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 
 use crate::lint::{EngineError, Input, Kind};
+use crate::protect::destinations;
 
 /// Why a finding that carries a fix was left alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,7 +218,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         Kind::Diagram(_) => Parsed::default(),
     };
     spans.extend(parsed.code_spans.iter().copied());
-    spans.extend(destination_spans(input.source));
+    spans.extend(destinations(input.source, body_start));
     spans.extend(
         parsed
             .blocks
@@ -226,126 +227,6 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
             .map(|b| b.span),
     );
     Ok(spans)
-}
-
-/// Link targets that the parser shows as prose, and the labels that name a definition.
-///
-/// A fix inside one of these changes where a link goes, so it is refused. This reads the
-/// source directly and errs towards protecting too much:
-///
-/// - a URL, `www.` host, email address or angle-bracket autolink (`<https://...>`,
-///   `<mailto:...>`) in the text;
-/// - a reference definition line (`[label]: target`);
-/// - a bracket group whose label equals a definition's label, in any of the forms
-///   `[label]`, `[label][]` and `[text][label]`.
-///
-/// Link text such as the `delta` in `[delta](https://example.com)` stays fixable. Link
-/// destinations in `[text](dest)` and HTML attributes are already absent from the prose.
-fn destination_spans(source: &str) -> Vec<Span> {
-    let mut spans = Vec::new();
-    let mut push = |start: usize, end: usize| {
-        if let Ok(span) = Span::new(start, end) {
-            spans.push(span);
-        }
-    };
-    let mut run_start = None;
-    for (at, c) in source
-        .char_indices()
-        .chain(std::iter::once((source.len(), ' ')))
-    {
-        match (c.is_whitespace(), run_start) {
-            (false, None) => run_start = Some(at),
-            (true, Some(start)) => {
-                for (from, to) in addresses(&source[start..at]) {
-                    push(start + from, start + to);
-                }
-                run_start = None;
-            }
-            _ => {}
-        }
-    }
-    let mut labels: Vec<String> = Vec::new();
-    let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let trimmed = line.trim_start_matches(' ');
-        let indent = line.len() - trimmed.len();
-        if indent <= 3
-            && let Some(rest) = trimmed.strip_prefix('[')
-            && let Some(close) = rest.find("]:")
-            && !rest[..close].contains(['[', ']'])
-        {
-            labels.push(normal_label(&rest[..close]));
-            push(offset, offset + line.trim_end_matches(['\r', '\n']).len());
-        }
-        offset += line.len();
-    }
-    if !labels.is_empty() {
-        for (i, _) in source.match_indices('[') {
-            if source[..i].ends_with('\\') {
-                continue;
-            }
-            let inner = &source[i + 1..];
-            if let Some(len) = inner.find([']', '[', '\n'])
-                && inner[len..].starts_with(']')
-                && labels.contains(&normal_label(&inner[..len]))
-            {
-                push(i, i + len + 2);
-            }
-        }
-    }
-    spans
-}
-
-/// Byte ranges in one run of non-space text that are an address: a URL from its scheme to
-/// the end of the run, a `www.` host from its start to the end of the run, an email address,
-/// or an angle-bracket autolink such as `<tel:123>`.
-fn addresses(run: &str) -> Vec<(usize, usize)> {
-    const STOP: &[char] = &['[', ']', '(', ')', '<', '>', '"', '\'', ',', ';'];
-    let mut found = Vec::new();
-    for (at, _) in run.match_indices("://") {
-        let scheme = run[..at]
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+.-".contains(c)))
-            .map_or(0, |i| i + 1);
-        found.push((scheme, run.len()));
-    }
-    for (at, _) in run.match_indices("www.") {
-        if run[..at]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !c.is_alphanumeric())
-        {
-            found.push((at, run.len()));
-        }
-    }
-    for (at, _) in run.match_indices('@') {
-        let start = run[..at].rfind(STOP).map_or(0, |i| i + 1);
-        let end = run[at..].find(STOP).map_or(run.len(), |i| at + i);
-        found.push((start, end));
-    }
-    for (at, _) in run.match_indices('<') {
-        let rest = &run[at + 1..];
-        let scheme = rest.find(':').filter(|&i| {
-            i > 1
-                && rest[..i].starts_with(|c: char| c.is_ascii_alphabetic())
-                && rest[..i]
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
-        });
-        if let (Some(_), Some(close)) = (scheme, rest.find('>')) {
-            found.push((at, at + 1 + close + 1));
-        }
-    }
-    found
-}
-
-/// A reference label as `CommonMark` compares it: case-folded, with runs of white space
-/// collapsed.
-fn normal_label(label: &str) -> String {
-    label
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
 }
 
 /// `replacement` in the case of `original`: upper case after an upper-case match, a
