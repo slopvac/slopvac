@@ -107,6 +107,10 @@ pub struct Document {
     pub blocks: Vec<Block>,
     /// Inline code spans, backticks included, in source order. Rules skip these ranges.
     pub code_spans: Vec<Span>,
+    /// Raw HTML blocks, in source order. Consecutive lines of one block are one range. A
+    /// block inside a block quote or list item is one range per line, because the container
+    /// prefix sits between the lines. Only the Markdown parser fills this.
+    pub html_blocks: Vec<Span>,
 }
 
 /// Why a document did not parse.

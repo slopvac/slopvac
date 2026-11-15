@@ -112,7 +112,8 @@ SAMPLES = {
         "The `deploy` flag sets deploy-time mode.\n\nPlease request the data.\n\n"
         "This is <em>easy</em> to do, and the <b>request</b> works.\n\n"
         "| Step | Action |\n| --- | --- |\n| 1 | Please <b>request</b> the data quickly |\n\n"
-        "- Execute the plan correctly\n- Added the key\n"
+        "- Execute the plan correctly\n- Added the key\n\n"
+        "<table>\n<tr><td>request</td></tr>\n</table>\n"
     ),
     "sample/entities": (
         "We &amp; they utilize the tool; in&nbsp;order to win we leverage **bold utilize** "

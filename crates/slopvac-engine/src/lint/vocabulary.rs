@@ -13,12 +13,14 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use slopvac_model::{Finding, Notice, NoticeLevel};
+use slopvac_parse::{Document as Parsed, parse_html};
 use slopvac_pos::Tagger;
-use slopvac_rules::Scope;
+use slopvac_rules::{LoadedRule, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
 
-use super::{Candidate, Engine, EngineError, Kind, Run, notice};
+use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
 use crate::matching::format_message;
+use crate::prepare::Prepared;
 use crate::skip;
 
 /// The rules that may own the sweep, most preferred first. STE 1.1 is the clause that a
@@ -151,6 +153,11 @@ impl TaggerText {
                 text.push('`');
                 text.extend(std::iter::repeat_n('x', width));
                 text.push('`');
+            } else if c == '`' {
+                // A literal backtick (the parser decoded an escape) is prose. The tagger
+                // would pair it with a stand-in and drop the words between them. The
+                // replacement has the same width, so offsets still line up.
+                text.push('\'');
             } else {
                 text.push(c);
             }
@@ -171,9 +178,19 @@ impl TaggerText {
     }
 }
 
+/// What one sweep needs from the owner rule.
+struct Sweep<'a> {
+    active: &'a Active,
+    set: &'a RuleSet,
+    loaded: &'a LoadedRule,
+    exceptions: Vec<&'a str>,
+    detectors: Vec<&'a str>,
+}
+
 impl Run<'_> {
     /// Findings of the vocabulary sweep: tokens that are a listed word in a refused part of
-    /// speech.
+    /// speech. The sweep reads the Markdown prose and the prose of raw HTML blocks, which
+    /// Vale lints too (`<td>`, `<em>`).
     pub(super) fn vocabulary(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
         let Some(owner) = engine.vocabulary.owner else {
@@ -186,21 +203,44 @@ impl Run<'_> {
         let set = &engine.sets[active.set];
         let loaded = &set.categories()[active.category].rules()[active.rule];
         let rule = loaded.rule();
+        let sweep = Sweep {
+            active,
+            set,
+            loaded,
+            exceptions: rule.exceptions().iter().map(|e| e.name.as_str()).collect(),
+            detectors: rule
+                .exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect(),
+        };
+        let mut out = Vec::new();
+        self.sweep_document(&sweep, self.parsed, self.prepared, &mut out)?;
+        for block in &self.parsed.html_blocks {
+            let html = parse_html(self.input.source, *block)?;
+            let prepared = Prepared::new(self.input.source, &html)?;
+            self.sweep_document(&sweep, &html, &prepared, &mut out)?;
+        }
+        Ok(out)
+    }
+
+    fn sweep_document(
+        &self,
+        sweep: &Sweep<'_>,
+        doc: &Parsed,
+        prepared: &Prepared<'_>,
+        out: &mut Vec<Finding>,
+    ) -> Result<(), EngineError> {
+        let engine = self.engine;
+        let rule = sweep.loaded.rule();
         let skip = skip::build(
-            self.parsed,
+            doc,
             rule.exclude_blocks.as_deref().unwrap_or(&[]),
             self.front_matter,
             true,
         );
-        let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
-        let detectors: Vec<&str> = rule
-            .exceptions()
-            .iter()
-            .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
-            .collect();
         let tagger = Tagger::english();
-        let mut out = Vec::new();
-        for unit in self.prepared.units(Scope::Prose)? {
+        for unit in prepared.units(Scope::Prose)? {
             let prose = TaggerText::new(unit.text, |at| {
                 let span = unit.span(&(at..at + 1));
                 self.input.source[span.start()..span.end()]
@@ -209,31 +249,43 @@ impl Run<'_> {
                     .count()
             });
             for token in tagger.tag_text(&prose.text) {
-                if !refused(&engine.vocabulary.words, token.text, token.tag) {
+                let Some(pos) = refused(&engine.vocabulary.words, token.text, token.tag) else {
                     continue;
-                }
+                };
                 let range: Range<usize> =
                     prose.to_prose(token.span.start)..prose.to_prose(token.span.end);
                 let span = unit.span(&range);
                 if skip.hides(span)
                     || !self.passes_context(
                         rule.contexts.as_ref(),
-                        &detectors,
+                        &sweep.detectors,
                         unit.text,
                         &range,
                         span,
                     )
-                    || self.suppressed(loaded.id().as_str(), &exceptions, span)
+                    || self.suppressed(sweep.loaded.id().as_str(), &sweep.exceptions, span)
                 {
                     continue;
                 }
                 let matched = &self.input.source[span.start()..span.end()];
+                // The preferred owner's message is written for a blocklist. The other
+                // vocabulary rules word clauses a blocklist cannot answer (allowed form,
+                // lemma), so when one of them owns the sweep it says what is known.
+                let message = if sweep.loaded.id().local() == OWNER_PREFERENCE[0] {
+                    format_message(rule.message.as_str(), matched, "")
+                } else {
+                    format!(
+                        "\"{matched}\" is on this project's word blocklist as {} {}.",
+                        article(pos),
+                        pos_name(pos)
+                    )
+                };
                 out.push(self.finding(Candidate {
-                    rule_id: loaded.id(),
-                    pack: set.pack(),
-                    category: loaded.category().clone(),
-                    severity: active.severity,
-                    message: format_message(rule.message.as_str(), matched, ""),
+                    rule_id: sweep.loaded.id(),
+                    pack: sweep.set.pack(),
+                    category: sweep.loaded.category().clone(),
+                    severity: sweep.active.severity,
+                    message,
                     span,
                     matched_text: matched.to_owned(),
                     ai_signal: rule.ai_signal,
@@ -242,16 +294,35 @@ impl Run<'_> {
                 })?);
             }
         }
-        Ok(out)
+        Ok(())
     }
 }
 
-/// Whether `word`, tagged `tag`, is refused as the part of speech it is used as.
-fn refused(words: &HashMap<String, Vec<Pos>>, word: &str, tag: &str) -> bool {
-    words.get(&word.to_lowercase()).is_some_and(|poses| {
-        poses
-            .iter()
-            .filter_map(|&p| penn(p))
-            .any(|fragments| fragments.iter().any(|f| tag.contains(f)))
-    })
+const fn pos_name(pos: Pos) -> &'static str {
+    match pos {
+        Pos::Noun => "noun",
+        Pos::Verb => "verb",
+        Pos::Adjective => "adjective",
+        Pos::Adverb => "adverb",
+        Pos::Preposition => "preposition",
+        Pos::Conjunction => "conjunction",
+        Pos::Pronoun => "pronoun",
+        Pos::Article => "article",
+    }
+}
+
+const fn article(pos: Pos) -> &'static str {
+    match pos {
+        Pos::Adjective | Pos::Adverb | Pos::Article => "an",
+        _ => "a",
+    }
+}
+
+/// The part of speech `word`, tagged `tag`, is refused as, if any.
+fn refused(words: &HashMap<String, Vec<Pos>>, word: &str, tag: &str) -> Option<Pos> {
+    words
+        .get(&word.to_lowercase())?
+        .iter()
+        .copied()
+        .find(|&p| penn(p).is_some_and(|fragments| fragments.iter().any(|f| tag.contains(f))))
 }

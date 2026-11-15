@@ -30,7 +30,11 @@ pub(crate) fn resolve_body(source: &str, body: Span) -> Result<Span, ParseError>
 pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Document {
     blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     code_spans.sort_by_key(Span::start);
-    Document { blocks, code_spans }
+    Document {
+        blocks,
+        code_spans,
+        html_blocks: Vec::new(),
+    }
 }
 
 const OPTIONS: Options = Options::ENABLE_TABLES
@@ -72,10 +76,20 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
     let Collector {
         mut blocks,
         code_spans,
+        html_blocks,
         ..
     } = collector;
     blocks.extend(masked.admonitions.iter().cloned());
-    Ok(finish(blocks, code_spans))
+    let mut document = finish(blocks, code_spans);
+    document.html_blocks = html_blocks
+        .into_iter()
+        .map(|span| {
+            let text = &source[span.start()..span.end()];
+            let kept = text.trim_end_matches(['\n', '\r']).len();
+            Span::new(span.start(), span.start() + kept).expect("a prefix of a span")
+        })
+        .collect();
+    Ok(document)
 }
 
 /// A prose block under construction.
@@ -104,6 +118,7 @@ struct Collector<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
+    html_blocks: Vec<Span>,
     open: Option<Open>,
     code: Option<OpenCode>,
     image_depth: usize,
@@ -124,6 +139,7 @@ impl<'a> Collector<'a> {
             masked,
             blocks: Vec::new(),
             code_spans: Vec::new(),
+            html_blocks: Vec::new(),
             open: None,
             code: None,
             image_depth: 0,
@@ -257,6 +273,27 @@ impl<'a> Collector<'a> {
                     let span = self.masked.span(range.start, range.end);
                     self.code_spans.push(span);
                     self.prose().prose.push(TokenKind::Masked, MASK, span);
+                }
+            }
+            Event::Html(_) if self.image_depth == 0 => {
+                let span = self.masked.span(range.start, range.end);
+                // The lines of one block follow each other, line breaks included. A
+                // container prefix between two lines starts a new range.
+                let joined = self
+                    .html_blocks
+                    .last()
+                    .is_some_and(|last| last.end() == span.start());
+                if joined {
+                    let last = self
+                        .html_blocks
+                        .pop()
+                        .expect("joined needs a previous block");
+                    self.html_blocks.push(
+                        Span::new(last.start(), span.end().max(last.end()))
+                            .expect("start does not exceed end"),
+                    );
+                } else {
+                    self.html_blocks.push(span);
                 }
             }
             Event::InlineHtml(html) => {

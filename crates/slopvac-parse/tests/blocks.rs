@@ -615,3 +615,28 @@ fn blocks_come_in_source_order_with_containers_first() {
     sorted.sort_unstable();
     assert_eq!(starts, sorted);
 }
+
+#[test]
+fn raw_html_blocks_are_listed_by_source_range() {
+    let source = "Intro.\n\n<table>\n<tr><td>a</td></tr>\n</table>\n\nText.\n\n<div>b</div>\n";
+    let got: Vec<&str> = md(source)
+        .html_blocks
+        .iter()
+        .map(|s| slice(source, *s))
+        .collect();
+    assert_eq!(
+        got,
+        ["<table>\n<tr><td>a</td></tr>\n</table>", "<div>b</div>"]
+    );
+}
+
+#[test]
+fn a_raw_html_block_in_a_block_quote_is_one_range_per_line() {
+    let source = "> <p>\n> text</p>\n";
+    let got: Vec<&str> = md(source)
+        .html_blocks
+        .iter()
+        .map(|s| slice(source, *s))
+        .collect();
+    assert_eq!(got, ["<p>", "text</p>"]);
+}

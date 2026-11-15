@@ -234,7 +234,11 @@ impl<'a> Walker<'a> {
         } = self;
         blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
         code_spans.sort_by_key(Span::start);
-        Document { blocks, code_spans }
+        Document {
+            blocks,
+            code_spans,
+            html_blocks: Vec::new(),
+        }
     }
 
     /// Push the children of `id` so the first comes off the stack first.

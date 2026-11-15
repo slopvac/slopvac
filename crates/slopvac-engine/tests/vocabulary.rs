@@ -289,3 +289,130 @@ fn another_vocabulary_rule_owns_the_sweep_when_the_preferred_one_is_absent() {
         "core:ste-words.word-used-in-wrong-part-of-speech"
     );
 }
+#[test]
+fn an_adverb_entry_matches_a_wh_adverb_because_the_tag_pattern_is_unanchored() {
+    // Vale's `RB|RBR|RBS` pattern is unanchored, so it also matches `WRB`, the tag of
+    // "how" in this sentence. 2.x flagged it, and so must we.
+    let doc = lint(&[("how", "adverb")], "Explain how the job fails.\n");
+    assert_eq!(matched(&doc), ["how"]);
+}
+
+fn lint_with(extra: &Value, entries: &[(&str, &str)], text: &str) -> Document {
+    engine_with(&[vocabulary_rule(OWNER, extra)], &list(entries))
+        .lint(&Input::markdown("a.md", text))
+        .unwrap()
+}
+
+#[test]
+fn excluded_blocks_are_not_swept() {
+    let text = "# The deploy\n\nThe deploy failed.\n\n| a |\n| - |\n| The deploy |\n";
+    let all = lint_with(&json!({}), &[("deploy", "noun")], text);
+    assert_eq!(
+        all.findings.len(),
+        3,
+        "without exclusions every block is swept"
+    );
+    for (kind, kept_lines) in [("heading", vec![3, 7]), ("table", vec![1, 3])] {
+        let doc = lint_with(
+            &json!({"exclude_blocks": [kind]}),
+            &[("deploy", "noun")],
+            text,
+        );
+        let lines: Vec<usize> = doc.findings.iter().map(|f| f.start.line()).collect();
+        assert_eq!(lines, kept_lines, "exclude_blocks {kind}");
+    }
+}
+
+#[test]
+fn context_gates_apply_to_the_sweep() {
+    let text = "> The deploy failed.\n\nThe deploy failed.\n";
+    let skip = lint_with(
+        &json!({"contexts": {"skip": ["quote"]}}),
+        &[("deploy", "noun")],
+        text,
+    );
+    assert_eq!(places(&skip).iter().map(|p| p.1).collect::<Vec<_>>(), [3]);
+    let only = lint_with(
+        &json!({"contexts": {"only": ["quote"]}}),
+        &[("deploy", "noun")],
+        text,
+    );
+    assert_eq!(places(&only).iter().map(|p| p.1).collect::<Vec<_>>(), [1]);
+}
+
+#[test]
+fn an_escaped_backtick_does_not_pair_with_a_code_span() {
+    // The parser decodes \` to a literal backtick. It must not open a code span in the
+    // tagger text that swallows "the deploy" up to the real code span.
+    let doc = lint(
+        &[("deploy", "noun")],
+        "A \\` mark, the deploy and `x` failed.\n",
+    );
+    assert_eq!(matched(&doc), ["deploy"]);
+}
+
+#[test]
+fn raw_html_blocks_in_markdown_are_swept() {
+    let source = "Intro.\n\n<table>\n<tr>\n<td>We request data</td>\n</tr>\n</table>\n\n\
+                  <p align=\"center\">\n    <em>It is easy to learn</em>\n</p>\n";
+    let doc = lint(&[("request", "verb"), ("easy", "adjective")], source);
+    let at: Vec<(usize, usize, &str)> = doc
+        .findings
+        .iter()
+        .map(|f| (f.start.line(), f.start.column(), f.matched_text.as_str()))
+        .collect();
+    assert_eq!(at, [(5, 8, "request"), (10, 15, "easy")]);
+}
+
+#[test]
+fn a_raw_html_block_in_a_block_quote_keeps_exact_positions() {
+    let source = "> <td>We request data</td>\n";
+    let doc = lint(&[("request", "verb")], source);
+    assert_eq!(doc.findings.len(), 1);
+    let span = doc.findings[0].extent.unwrap().span;
+    assert_eq!(&source[span.start()..span.end()], "request");
+}
+
+#[test]
+fn fallback_owners_report_a_blocklist_message_without_open_placeholders() {
+    // The shipped vocabulary rules, with the preferred owner and then the next ones off.
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-rules/tests/fixtures/core-v3");
+    let owner = "ste-words.word-outside-controlled-vocabulary";
+    let wrong = "ste-words.word-used-in-wrong-part-of-speech";
+    let forms = "ste-words.verb-or-adjective-form-not-permitted";
+    let off_sets: [&[&str]; 3] = [&[owner], &[owner, wrong], &[owner, wrong, forms]];
+    for off in off_sets {
+        let set = slopvac_rules::RuleSet::load_dir(
+            &slopvac_model::PackId::new("core").unwrap(),
+            &core,
+            &slopvac_rules::CompileOptions::default(),
+        )
+        .unwrap();
+        let mut s = settings();
+        for name in off {
+            s.rule_levels.insert(
+                common::id(&format!("core:{name}")),
+                slopvac_engine::Level::Off,
+            );
+        }
+        let engine = Engine::new(vec![set], s)
+            .unwrap()
+            .with_blocklist(&list(&[("deploy", "noun")]))
+            .unwrap();
+        let doc = engine
+            .lint(&Input::markdown("a.md", "The deploy failed.\n"))
+            .unwrap();
+        let sweep: Vec<_> = doc
+            .findings
+            .iter()
+            .filter(|f| f.matched_text == "deploy" && f.message.as_str().contains("blocklist"))
+            .collect();
+        assert_eq!(sweep.len(), 1, "off: {off:?}");
+        assert_eq!(
+            sweep[0].message.as_str(),
+            "\"deploy\" is on this project's word blocklist as a noun.",
+            "off: {off:?}"
+        );
+    }
+}
