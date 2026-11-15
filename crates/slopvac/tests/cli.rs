@@ -309,3 +309,27 @@ fn usage_errors_keep_clap_styling_when_colour_is_forced() {
         .stderr(predicate::str::contains("\u{1b}[").not())
         .stderr(predicate::str::starts_with("error[usage]:"));
 }
+
+fn frame(body: &str) -> String {
+    format!("Content-Length: {}\r\n\r\n{body}", body.len())
+}
+
+#[test]
+fn lsp_answers_initialize_over_stdio_and_exits_0_after_shutdown() {
+    let input = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(r#""positionEncoding":"utf-16""#))
+        .stdout(predicate::str::contains(r#""name":"slopvac""#));
+}
