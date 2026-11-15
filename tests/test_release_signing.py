@@ -246,3 +246,11 @@ def test_the_documented_user_command_verifies_a_signed_file(real, tmp_path, rele
         check=False,
     )
     assert bad.returncode != 0
+
+
+def test_the_committed_public_key_satisfies_the_release_gate():
+    # The default path is the file the workflows check, so a rename breaks releases.
+    assert signing.PUBKEY == ROOT / "keys" / "slopvac-release.pub"
+    signing.require_key(signing.PUBKEY)
+    first = signing.PUBKEY.read_text(encoding="utf-8").splitlines()[0]
+    assert first == "untrusted comment: minisign public key D9914BDB4570AC6D"

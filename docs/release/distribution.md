@@ -17,7 +17,7 @@ Release-please owns the version, the tag, and the release notes. dist owns the a
 2. The tag push starts `release.yml`. The `route` job reads the major version. From major 3 on, the dist pipeline runs; earlier tags take the 2.x path below.
 3. The pipeline builds the artifacts and, in parallel, runs the provenance gate and the tag ruleset check (`release-provenance.yml`).
 4. The `host` job signs every artifact with minisign and checks each signature. It then uploads the artifacts and signatures to the unpublished release. Right before it publishes, it checks again that the tag still points at the workflow commit. Then it publishes the release (`create-release = false` in `dist-workspace.toml`, so dist edits the existing release instead of creating one).
-5. Last, the Homebrew job pushes the formula to the tap, and the smoke test installs the result.
+5. Last, the Homebrew job mints a short-lived token from the release App, pushes the formula to the tap with it, and the smoke test installs the result.
 
 The release-please token matters. A tag that the default `GITHUB_TOKEN` creates does not start `release.yml`, because GitHub runs no workflow for events that token causes. The release-please workflow uses the GitHub App token when `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY` are set, and falls back to `GITHUB_TOKEN` otherwise. With the fallback, the release stays unpublished: nothing runs to publish it. Configure the App before relying on this flow.
 
@@ -60,8 +60,8 @@ dist build --artifacts=local --tag v<version>
 
 A maintainer must do these once. No workflow does them.
 
-- Create the `MINISIGN_SECRET_KEY` repository secret: the contents of a minisign secret key file made without a password (`minisign -G -W`). Merge the pull request that adds the public key as `keys/slopvac-release.pub` first. Release and candidate jobs stop without it.
-- Create the `srobroek/homebrew-tap` repository and the `HOMEBREW_TAP_TOKEN` repository secret, a token with write access to the tap.
+- Create the `MINISIGN_SECRET_KEY` repository secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key). Release and candidate jobs stop without the secret or the committed public key.
+- Create the `srobroek/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
 - Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
 - Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
 - Create the tag ruleset described next.

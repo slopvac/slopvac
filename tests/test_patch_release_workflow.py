@@ -516,8 +516,9 @@ def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workfl
     steps = _homebrew_steps(workflow)
     mint = steps[0]
     assert mint["id"] == "tap-token"
-    assert mint["uses"].startswith(
-        "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 "
+    assert (
+        mint["uses"]
+        == "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
     )
     assert mint["with"] == {
         "client-id": "${{ vars.RELEASE_APP_CLIENT_ID }}",
