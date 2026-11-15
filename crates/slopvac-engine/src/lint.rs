@@ -439,6 +439,7 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
+            front: front_matter.as_ref(),
             subject: &subject,
             index: SourceIndex::new(input.source, input.bom),
         };
@@ -521,6 +522,8 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
+    /// The parsed front matter, for context tags.
+    front: Option<&'a FrontMatter<'a>>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }

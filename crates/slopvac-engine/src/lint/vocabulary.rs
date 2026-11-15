@@ -189,6 +189,7 @@ impl Run<'_> {
         };
         let mut out = Vec::new();
         self.sweep_document(&sweep, self.parsed, self.tags, self.prepared, &mut out)?;
+        let mut extracted = Vec::with_capacity(self.parsed.html_blocks.len());
         for block in &self.parsed.html_blocks {
             let mut html = parse_html_segments(self.input.source, &self.index, &block.segments)?;
             // The block's prose sits in the containers of the Markdown block it came from,
@@ -198,16 +199,38 @@ impl Run<'_> {
                     .containers
                     .splice(0..0, block.containers.iter().copied());
             }
-            let tags = tagging::tag(
-                &self.engine.tagger,
-                self.input.path,
-                self.input.source,
-                &html,
-                None,
-            )
-            .map_err(|e| EngineError::Context(e.to_string()))?;
-            let prepared = Prepared::new(self.input.source, &html)?;
-            self.sweep_document(&sweep, &html, &tags, &prepared, &mut out)?;
+            extracted.push(html);
+        }
+        if extracted.is_empty() {
+            return Ok(out);
+        }
+        // The Markdown parse has no blocks for the HTML, so its tags stop short of it: the
+        // section of an "Examples" heading ends at the heading when only HTML follows. Tag
+        // the Markdown blocks and the extracted ones together, so the HTML prose has the
+        // tags of its section, its containers and the front matter.
+        let mut blocks = self.parsed.blocks.clone();
+        blocks.extend(
+            extracted
+                .iter()
+                .flat_map(|html| html.blocks.iter().cloned()),
+        );
+        blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+        let merged = Parsed {
+            blocks,
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        };
+        let tags = tagging::tag(
+            &self.engine.tagger,
+            self.input.path,
+            self.input.source,
+            &merged,
+            self.front,
+        )
+        .map_err(|e| EngineError::Context(e.to_string()))?;
+        for html in &extracted {
+            let prepared = Prepared::new(self.input.source, html)?;
+            self.sweep_document(&sweep, html, &tags, &prepared, &mut out)?;
         }
         Ok(out)
     }

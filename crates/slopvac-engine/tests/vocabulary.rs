@@ -529,3 +529,44 @@ fn a_tag_exception_detector_suppresses_raw_html_in_a_block_quote() {
     );
     assert_eq!(lines(&doc), [3]);
 }
+const SECTIONS: &str =
+    "## Examples\n\n<p>Please request data</p>\n\n## Other\n\n<p>Please request data</p>\n";
+
+#[test]
+fn a_section_tag_covers_raw_html_that_ends_its_section() {
+    // The Markdown parser has no block for the HTML, so the section "Examples" ends at its
+    // heading. The tag still applies to the HTML under it.
+    let skip = lint_with(
+        &json!({"contexts": {"skip": ["example"]}}),
+        &[("request", "verb")],
+        SECTIONS,
+    );
+    assert_eq!(lines(&skip), [7]);
+    let only = lint_with(
+        &json!({"contexts": {"only": ["example"]}}),
+        &[("request", "verb")],
+        SECTIONS,
+    );
+    assert_eq!(lines(&only), [3]);
+}
+
+#[test]
+fn a_tag_detector_sees_the_section_tag_of_raw_html() {
+    let doc = lint_with(
+        &json!({"exceptions": [{"name": "example", "detector": "example"}]}),
+        &[("request", "verb")],
+        SECTIONS,
+    );
+    assert_eq!(lines(&doc), [7]);
+}
+
+#[test]
+fn a_document_tag_from_front_matter_covers_raw_html() {
+    let generated = "---\ngenerated: \"true\"\n---\n\n<p>Please request data</p>\n";
+    let plain = "---\ntitle: x\n---\n\n<p>Please request data</p>\n";
+    let gate = json!({"contexts": {"skip": ["generated"]}});
+    let none = lint_with(&gate, &[("request", "verb")], generated);
+    assert!(none.findings.is_empty(), "{:?}", lines(&none));
+    let some = lint_with(&gate, &[("request", "verb")], plain);
+    assert_eq!(lines(&some), [5]);
+}
