@@ -19,9 +19,10 @@
 //! line and no source range, as 2.x did.
 //!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (structure checks, vocabulary, capitalization styles
-//! other than sentence and the metrics it does not measure) are skipped, and each document
-//! says so in an `info` notice.
+//! kinds the engine does not run yet (structure checks, vocabulary and the metrics it does
+//! not measure) are skipped, and each document says so in an `info` notice. A capitalization
+//! rule in a style other than sentence is skipped with a `warning` notice, which makes the
+//! check incomplete.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.

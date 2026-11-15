@@ -141,8 +141,90 @@ fn one_allowed_word_leaves_the_other_plain_words_counting() {
     );
 }
 
+/// A rule that reads each source line as one text, so backticks reach the matcher as written.
+fn raw_rule(allowed: &[&str]) -> Value {
+    rule(
+        "title-case",
+        &json!({"kind": "capitalization", "style": "sentence", "allowed_words": allowed}),
+        &json!({"scope": "raw"}),
+    )
+}
+
+fn raw_flagged(engine: &Engine, lines: &[&str]) -> Vec<String> {
+    let source = lines.join("\n") + "\n";
+    flagged(engine, &source)
+}
+
 #[test]
-fn styles_other_than_sentence_are_reported_as_not_run() {
+fn backtick_spans_with_spaces_are_one_word() {
+    // Expected from the 2.x regex: both lines match.
+    let e = engine_with(&raw_rule(&[]), &[]);
+    let lines = ["`Alpha Beta` Gamma", "`x` Server Beta"];
+    assert_eq!(raw_flagged(&e, &lines), lines);
+}
+
+#[test]
+fn an_unclosed_or_glued_backtick_is_not_a_code_span() {
+    // Expected from the 2.x regex: neither line matches.
+    let e = engine_with(&raw_rule(&[]), &[]);
+    assert!(raw_flagged(&e, &["Foo Bar `Baz", "Foo Bar `a`b"]).is_empty());
+}
+
+#[test]
+fn a_code_span_may_carry_trailing_punctuation() {
+    let e = engine_with(&raw_rule(&[]), &[]);
+    assert_eq!(raw_flagged(&e, &["Foo Bar `a`,"]), ["Foo Bar `a`,"]);
+}
+
+#[test]
+fn decimal_digits_of_any_script_are_numbers() {
+    // Expected from the 2.x regex, whose `\d` is Unicode: both lines match.
+    let e = engine_with(&raw_rule(&[]), &[]);
+    let lines = ["Release Notes \u{662}", "Release Notes \u{663}.\u{664}"];
+    assert_eq!(raw_flagged(&e, &lines), lines);
+}
+
+/// The 2.x `title-case-heading` regex decided each case of the fixture, with the same allowed
+/// words injected (`fixtures/generate_title_case.py`).
+#[test]
+fn capitalization_matches_the_2x_regex_on_generated_headings() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/title-case-differential.json");
+    let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let allowed: Vec<&str> = fixture["allowed_words"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_str().unwrap())
+        .collect();
+    let cases: Vec<(&str, bool)> = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c[0].as_str().unwrap(), c[1].as_bool().unwrap()))
+        .collect();
+    assert!(cases.iter().filter(|(_, m)| *m).count() > 100);
+    let e = engine_with(&raw_rule(&allowed), &[]);
+    let source = cases.iter().map(|(t, _)| *t).collect::<Vec<_>>().join("\n") + "\n";
+    let doc = e.lint(&Input::markdown("a.md", &source)).unwrap();
+    let got: std::collections::BTreeSet<usize> =
+        doc.findings.iter().map(|f| f.start.line() - 1).collect();
+    let wrong: Vec<String> = cases
+        .iter()
+        .enumerate()
+        .filter(|(i, (_, want))| got.contains(i) != *want)
+        .map(|(_, (t, want))| format!("{t:?}: 2.x says {want}"))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "{} differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+#[test]
+fn styles_other_than_sentence_leave_the_check_incomplete() {
     let title = rule(
         "title",
         &json!({"kind": "capitalization", "style": "title"}),
@@ -154,11 +236,14 @@ fn styles_other_than_sentence_are_reported_as_not_run() {
     assert!(doc.findings.is_empty());
     assert_eq!(doc.unchecked.len(), 1);
     let n = &doc.unchecked[0];
-    assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
-    assert_eq!(n.level, NoticeLevel::Info);
+    assert_eq!(n.code.as_str(), "rule-style-not-implemented");
+    assert_eq!(n.level, NoticeLevel::Warning);
     assert!(
         n.message
             .as_str()
-            .starts_with("1 active capitalization (title style) rule(s) did not run")
+            .starts_with("1 active capitalization rule(s) did not run")
     );
+    assert!(!doc.gate.is_passed());
+    assert_eq!(doc.gate.reasons().len(), 1);
+    assert!(doc.gate.reasons()[0].starts_with("incomplete check:"));
 }

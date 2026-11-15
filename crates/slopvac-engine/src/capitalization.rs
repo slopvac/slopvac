@@ -11,8 +11,10 @@
 
 use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::LazyLock;
 
 use slopvac_rules::{CapitalizationMatch, CapitalizationStyle};
+use slopvac_text::{Pattern, TextError};
 
 /// Words a title leaves in lower case.
 const SMALL_WORDS: &[&str] = &[
@@ -52,19 +54,31 @@ impl SentenceCase {
     }
 
     /// The range of `text` to report: all of it when it is a title-case run.
-    pub(crate) fn find(&self, text: &str) -> Option<Range<usize>> {
-        if text.starts_with([' ', '\t']) {
-            return None;
+    ///
+    /// # Errors
+    /// A pattern exhausted its match limit.
+    pub(crate) fn find(&self, text: &str) -> Result<Option<Range<usize>>, TextError> {
+        if text.starts_with([' ', '\t']) || text.contains('\n') {
+            return Ok(None);
         }
-        let tokens: Vec<&str> = text.split([' ', '\t']).filter(|t| !t.is_empty()).collect();
-        let mut capitalised = 0;
-        for token in &tokens {
-            if shape(token)? == Shape::Capitalised {
-                capitalised += 1;
+        for token in grammar_tokens(text) {
+            let Some(token) = token else {
+                return Ok(None);
+            };
+            if !is_run_token(token)? {
+                return Ok(None);
             }
         }
-        let plain_after_first = tokens.iter().skip(1).any(|t| self.is_plain(t));
-        (capitalised >= 2 && plain_after_first).then_some(0..text.len())
+        // The regex counts capitalised words anywhere in the text, code spans included.
+        if NAME.find_all(text)?.len() < 2 {
+            return Ok(None);
+        }
+        let plain_after_first = text
+            .split([' ', '\t'])
+            .filter(|t| !t.is_empty())
+            .skip(1)
+            .any(|t| self.is_plain(t));
+        Ok(plain_after_first.then_some(0..text.len()))
     }
 
     /// Whether the token is `Word` with optional trailing punctuation, and not allowed.
@@ -78,35 +92,62 @@ impl SentenceCase {
     }
 }
 
-#[derive(PartialEq, Eq)]
-enum Shape {
-    /// Starts with a capital letter: a word, an acronym or an identifier.
-    Capitalised,
-    /// A small word, a number, code or punctuation.
-    Other,
+/// `[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*` as a word.
+static NAME: LazyLock<Pattern> = LazyLock::new(|| {
+    Pattern::new(r"\b[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*\b", false)
+        .expect("the name pattern compiles")
+});
+/// A number, with Unicode decimal digits as in the 2.x regex.
+static NUMBER: LazyLock<Pattern> = LazyLock::new(|| {
+    Pattern::new(r"\A\d+(?:\.\d+)*\z", false).expect("the number pattern compiles")
+});
+
+/// The tokens of the run, split at spaces and tabs except inside a backtick span. A token
+/// that cannot be cut, such as an unclosed span, comes out as `None`.
+fn grammar_tokens(text: &str) -> impl Iterator<Item = Option<&str>> {
+    let mut rest = text;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start_matches([' ', '\t']);
+        if rest.is_empty() {
+            return None;
+        }
+        let mut end = if let Some(inner) = rest.strip_prefix('`') {
+            // The span ends at the next backtick and holds at least one character.
+            match inner.find('`') {
+                Some(close) if close > 0 => close + 2,
+                _ => {
+                    rest = "";
+                    return Some(None);
+                }
+            }
+        } else {
+            0
+        };
+        end += rest[end..].find([' ', '\t']).unwrap_or(rest.len() - end);
+        let (token, tail) = rest.split_at(end);
+        rest = tail;
+        Some(Some(token))
+    })
 }
 
-/// The shape of a token, or `None` when it is not part of a title-case run.
-fn shape(token: &str) -> Option<Shape> {
+/// Whether the token is a word, small word, number, code span or punctuation mark, with
+/// optional trailing punctuation.
+fn is_run_token(token: &str) -> Result<bool, TextError> {
     // The word may be followed by punctuation, so every split of the token is a candidate.
-    (1..=token.len())
-        .filter(|&at| token.is_char_boundary(at))
-        .filter(|&at| token[at..].chars().all(|c| TRAILING.contains(&c)))
-        .find_map(|at| body(&token[..at]))
+    for at in (1..=token.len()).filter(|&at| token.is_char_boundary(at)) {
+        if token[at..].chars().all(|c| TRAILING.contains(&c)) && is_body(&token[..at])? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn body(word: &str) -> Option<Shape> {
-    if is_name(word) {
-        Some(Shape::Capitalised)
-    } else if is_number(word)
+fn is_body(word: &str) -> Result<bool, TextError> {
+    Ok(is_name(word)
         || SMALL_WORDS.contains(&word)
         || is_code(word)
         || (word.len() == 1 && word.starts_with(LONE))
-    {
-        Some(Shape::Other)
-    } else {
-        None
-    }
+        || NUMBER.is_match(word)?)
 }
 
 /// `[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*`
@@ -128,16 +169,10 @@ fn is_name(word: &str) -> bool {
     !after_joiner
 }
 
-/// `\d+(?:\.\d+)*`
-fn is_number(word: &str) -> bool {
-    word.split('.')
-        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
-}
-
-/// A code span that kept its backticks.
+/// A code span: backticks around at least one character that is not a backtick.
 fn is_code(word: &str) -> bool {
     word.len() > 2
         && word.starts_with('`')
         && word.ends_with('`')
-        && !word[1..word.len() - 1].contains(['`', '\n'])
+        && !word[1..word.len() - 1].contains('`')
 }

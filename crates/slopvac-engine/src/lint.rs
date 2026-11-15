@@ -174,7 +174,21 @@ fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
     }
 }
 
+/// The `unrun` key of capitalization rules in a style the engine does not run.
+const CAPITALIZATION: &str = "capitalization";
+
 fn not_run_notice(kind: &str, count: usize) -> Result<Notice, EngineError> {
+    if kind == CAPITALIZATION {
+        // A style that cannot run would otherwise pass in silence, so the check is incomplete.
+        return notice(
+            "rule-style-not-implemented",
+            NoticeLevel::Warning,
+            format!(
+                "{count} active {kind} rule(s) did not run: the engine runs only the sentence \
+                 style"
+            ),
+        );
+    }
     notice(
         "rule-kind-not-implemented",
         NoticeLevel::Info,
@@ -341,7 +355,7 @@ impl Engine {
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
                         MatchKind::Capitalization => {
-                            *unrun.entry("capitalization (title style)").or_default() += 1;
+                            *unrun.entry(CAPITALIZATION).or_default() += 1;
                         }
                     }
                 }
@@ -625,7 +639,7 @@ impl Run<'_> {
             };
             for unit in self.prepared.units(rule.scope)? {
                 let ranges = match &sentence_case {
-                    Some(check) => check.find(unit.text).into_iter().collect(),
+                    Some(check) => check.find(unit.text)?.into_iter().collect(),
                     None => loaded.find_all(unit.text)?,
                 };
                 for range in ranges {
