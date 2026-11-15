@@ -47,6 +47,19 @@ pub struct TaggedToken<'a> {
     pub tag: &'a str,
 }
 
+/// A stretch of text to present to the tagger as an inline code span.
+///
+/// For text that is already prose, where the caller knows what is code. A code span
+/// shows as a run of `*`, as in Vale, and produces no token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mask {
+    /// UTF-8 byte offsets of the span in the text.
+    pub range: Range<usize>,
+    /// How many `*` stand in for the span. Vale uses the number of characters between the
+    /// backticks. Zero counts as one.
+    pub stars: usize,
+}
+
 /// A part-of-speech tagger.
 #[derive(Debug)]
 pub struct Tagger {
@@ -100,11 +113,60 @@ impl Tagger {
         text: &'a str,
         blocks: &[Range<usize>],
     ) -> Vec<TaggedToken<'a>> {
+        self.tag_with(text, blocks, None)
+    }
+
+    /// Like [`Tagger::tag_blocks`], for text whose code spans the caller knows.
+    ///
+    /// Nothing in `text` is read as Markdown: a backtick is an ordinary character, and
+    /// each [`Mask`] is a code span. Masks must ascend, not overlap, and each must lie
+    /// inside one block.
+    ///
+    /// # Panics
+    ///
+    /// If a block or mask is out of bounds, splits a UTF-8 sequence, or a mask overlaps
+    /// another or crosses the edge of a block.
+    #[must_use]
+    pub fn tag_blocks_masked<'a>(
+        &'a self,
+        text: &'a str,
+        blocks: &[Range<usize>],
+        masks: &[Mask],
+    ) -> Vec<TaggedToken<'a>> {
+        self.tag_with(text, blocks, Some(masks))
+    }
+
+    fn tag_with<'a>(
+        &'a self,
+        text: &'a str,
+        blocks: &[Range<usize>],
+        masks: Option<&[Mask]>,
+    ) -> Vec<TaggedToken<'a>> {
         let mut out = Vec::new();
         for block in blocks {
             let base = block.start;
             let slice = &text[block.clone()];
-            let tokens = tokenize::tokenize(slice);
+            let tokens = match masks {
+                None => tokenize::tokenize(slice),
+                Some(masks) => {
+                    let local: Vec<(Range<usize>, usize)> = masks
+                        .iter()
+                        .filter(|m| m.range.start < block.end && m.range.end > block.start)
+                        .map(|m| {
+                            assert!(
+                                m.range.start >= block.start && m.range.end <= block.end,
+                                "a mask crosses the edge of a block"
+                            );
+                            (m.range.start - base..m.range.end - base, m.stars)
+                        })
+                        .collect();
+                    assert!(
+                        local.windows(2).all(|w| w[0].0.end <= w[1].0.start),
+                        "masks must ascend and not overlap"
+                    );
+                    tokenize::tokenize_masked(slice, &local)
+                }
+            };
             for sentence in tokenize::sentences(slice, &tokens) {
                 let words: Vec<&str> = tokens[sentence.clone()]
                     .iter()
@@ -203,5 +265,65 @@ mod tests {
     #[test]
     fn an_empty_input_has_no_tokens() {
         assert!(matches!(Tagger::english().tag_text("").as_slice(), []));
+    }
+
+    fn pairs<'a>(tokens: &[TaggedToken<'a>]) -> Vec<(&'a str, std::ops::Range<usize>, &'a str)> {
+        tokens
+            .iter()
+            .map(|t| (t.text, t.span.clone(), t.tag))
+            .collect()
+    }
+
+    #[test]
+    fn a_mask_over_a_code_span_tags_like_the_backtick_form() {
+        let text = "Run `kubectl get` now, then wait.";
+        let tagger = Tagger::english();
+        let found = tagger.tag_blocks(text, std::slice::from_ref(&(0..text.len())));
+        // The span `kubectl get` is 13 bytes at 4..17, with 11 characters inside.
+        let masks = [Mask {
+            range: 4..17,
+            stars: 11,
+        }];
+        let given = tagger.tag_blocks_masked(text, std::slice::from_ref(&(0..text.len())), &masks);
+        assert_eq!(pairs(&given), pairs(&found));
+    }
+
+    #[test]
+    fn backticks_are_ordinary_text_when_masks_are_given() {
+        // Found as Markdown, the two backticks would open and close a code span that
+        // hides "the deploy". With explicit masks they are punctuation.
+        let text = "A ` mark, the deploy and ` end.";
+        let tagger = Tagger::english();
+        let words = |tokens: Vec<TaggedToken<'_>>| -> Vec<String> {
+            tokens.iter().map(|t| t.text.to_owned()).collect()
+        };
+        assert!(!words(tagger.tag_text(text)).contains(&"deploy".to_owned()));
+        let masked = tagger.tag_blocks_masked(text, std::slice::from_ref(&(0..text.len())), &[]);
+        assert!(words(masked).contains(&"deploy".to_owned()));
+    }
+
+    #[test]
+    fn a_mask_drops_its_own_token_and_keeps_spans_in_the_whole_text() {
+        let text = "ab\n\nXX the deploy";
+        let tagger = Tagger::english();
+        let masks = [Mask {
+            range: 4..6,
+            stars: 2,
+        }];
+        let got = tagger.tag_blocks_masked(text, &[0..2, 4..text.len()], &masks);
+        let words: Vec<(&str, std::ops::Range<usize>)> =
+            got.iter().map(|t| (t.text, t.span.clone())).collect();
+        assert_eq!(words, [("ab", 0..2), ("the", 7..10), ("deploy", 11..17)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "crosses the edge of a block")]
+    fn a_mask_across_a_block_edge_is_refused() {
+        let text = "abcdef";
+        let masks = [Mask {
+            range: 1..4,
+            stars: 1,
+        }];
+        let _ = Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks);
     }
 }

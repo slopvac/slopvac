@@ -54,11 +54,13 @@ struct Segment {
 }
 
 /// An inline code span: where its opening run starts, the text between the
-/// runs, and the offset just past its closing run.
+/// runs, the offset just past its closing run, and how many `*` stand in for it.
 struct CodeSpan {
     open: usize,
+    #[cfg_attr(not(test), allow(dead_code))] // only the reference implementation in tests reads it
     inner: Range<usize>,
     end: usize,
+    stars: usize,
 }
 
 /// Splits one whitespace-free chunk (starting at byte `base` of the working
@@ -76,6 +78,23 @@ type SplitFn = fn(&str, usize, &mut Vec<Range<usize>>);
 /// Every pass is linear in the length of `text`.
 pub(crate) fn tokenize(text: &str) -> Vec<Token> {
     assemble(text, &find_code_spans(text), split_span)
+}
+
+/// Like [`tokenize`], with the code spans given instead of found: each
+/// `(range, stars)` stands for a code span that covers `range` of `text` and
+/// shows as `stars` asterisks. Backticks in `text` are ordinary characters.
+/// The ranges must ascend, not overlap, and sit on character boundaries.
+pub(crate) fn tokenize_masked(text: &str, masks: &[(Range<usize>, usize)]) -> Vec<Token> {
+    let spans: Vec<CodeSpan> = masks
+        .iter()
+        .map(|(range, stars)| CodeSpan {
+            open: range.start,
+            inner: range.clone(),
+            end: range.end,
+            stars: (*stars).max(1),
+        })
+        .collect();
+    assemble(text, &spans, split_span)
 }
 
 /// Finds the inline code spans of `text`, left to right.
@@ -114,6 +133,7 @@ fn find_code_spans(text: &str) -> Vec<CodeSpan> {
                 open: runs[idx].start,
                 inner: runs[idx].end..runs[close].start,
                 end: runs[close].end,
+                stars: text[runs[idx].end..runs[close].start].chars().count(),
             });
             idx = close + 1;
         } else {
@@ -132,8 +152,8 @@ fn assemble(text: &str, code_spans: &[CodeSpan], split: SplitFn) -> Vec<Token> {
     for span in code_spans {
         push_plain(text, plain_start..span.open, &mut work, &mut segments);
         let start = work.len();
-        self::work::tick(span.inner.len());
-        work.extend(text[span.inner.clone()].chars().map(|_| '*'));
+        self::work::tick(span.stars);
+        work.extend(std::iter::repeat_n('*', span.stars));
         segments.push(Segment {
             work: start..work.len(),
             orig: span.open..span.end,
@@ -585,6 +605,7 @@ mod oracle {
             } else if let Some((inner, end)) = code_span(text, i) {
                 spans.push(CodeSpan {
                     open: i,
+                    stars: text[inner.clone()].chars().count(),
                     inner,
                     end,
                 });
