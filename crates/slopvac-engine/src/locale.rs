@@ -10,7 +10,7 @@
 //! generated from each base word, and an identifier allowlist. This module keeps those
 //! semantics, so the data comes from `data/locale-variants.json`, which
 //! `tests/fixtures/generate_locale.py` generates from the 2.x table. It carries no SCOWL or
-//! VarCon data and no Hunspell dictionary.
+//! `VarCon` data and no Hunspell dictionary.
 //!
 //! The locales are `en-US`, `en-GB` and `und`. `und` turns the check off without turning off
 //! the rest of the category. Words the project spells its own way (`terms.allow`, and the
@@ -198,12 +198,11 @@ pub fn spelling(locale: Locale, allow: &[String]) -> Option<Spelling> {
             {
                 continue;
             }
-            match index.get(&from) {
-                Some(&at) => substitutions[at].1 = to,
-                None => {
-                    index.insert(from.clone(), substitutions.len());
-                    substitutions.push((from, to));
-                }
+            if let Some(&at) = index.get(&from) {
+                substitutions[at].1 = to;
+            } else {
+                index.insert(from.clone(), substitutions.len());
+                substitutions.push((from, to));
             }
         }
     }

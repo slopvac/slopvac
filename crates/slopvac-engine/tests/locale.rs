@@ -6,7 +6,7 @@
 //! with the reason; every other fact is still compared, and a listed difference must still
 //! exist.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, clippy::assert_is_empty)]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
