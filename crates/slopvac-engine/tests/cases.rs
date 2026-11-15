@@ -706,18 +706,16 @@ fn eval_corpus() -> Vec<(String, String)> {
     docs
 }
 
-#[test]
-fn coverage_report_over_the_eval_corpus() {
-    let docs = eval_corpus();
-    assert!(docs.len() > 100, "the committed eval corpus is missing");
+/// Lint `docs` with the core rules and write the coverage report to `file` in the target
+/// directory, so CI and a reader find it next to the test log.
+fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     let inputs: Vec<Input<'_>> = docs
         .iter()
         .map(|(path, text)| Input::markdown(path, text))
         .collect();
     let cov = coverage(&core_engine(), &inputs).unwrap();
-    // CI reads the report from the test log and from this file.
     let report = cov.to_string();
-    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("core-rule-coverage.txt");
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(file);
     std::fs::write(&out, format!("{report}\n")).unwrap();
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
@@ -727,4 +725,24 @@ fn coverage_report_over_the_eval_corpus() {
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"
     );
+}
+
+/// Every 12th committed eval document by path: about 40 documents, which a debug build
+/// lints in seconds. Rules without a match are reported, not failures.
+#[test]
+fn coverage_report_over_a_sample_of_the_eval_corpus() {
+    let docs = eval_corpus();
+    assert!(docs.len() > 100, "the committed eval corpus is missing");
+    let sample: Vec<_> = docs.iter().step_by(12).collect();
+    core_coverage_report(&sample, "core-rule-coverage-sample.txt");
+}
+
+/// The full report over all committed eval documents. It takes minutes in a debug build:
+/// `cargo test -p slopvac-engine --test cases -- --ignored coverage_report`.
+#[test]
+#[ignore = "lints the whole eval corpus; run it for the full coverage report"]
+fn coverage_report_over_the_eval_corpus() {
+    let docs = eval_corpus();
+    assert!(docs.len() > 100, "the committed eval corpus is missing");
+    core_coverage_report(&docs.iter().collect::<Vec<_>>(), "core-rule-coverage.txt");
 }
