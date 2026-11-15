@@ -346,3 +346,12 @@ fn windows_style_paths_match_path_conditions_like_unix_paths() {
     assert_eq!(idx.tags()[0].kind, "change-note");
     assert_eq!(idx.tags()[0].span, 0..DOC.len());
 }
+
+#[test]
+fn dot_components_are_dropped_before_an_anchored_path_condition() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let idx = run(y, "./docs/./CHANGELOG.md", DOC);
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].kind, "change-note");
+    assert_eq!(idx.tags()[0].span, 0..DOC.len());
+}
