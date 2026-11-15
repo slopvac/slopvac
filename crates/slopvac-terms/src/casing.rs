@@ -94,6 +94,13 @@ impl TermSet {
         self.terms.is_empty()
     }
 
+    /// Every accepted spelling: each canonical term followed by its variants, in file order.
+    pub fn spellings(&self) -> impl Iterator<Item = &str> {
+        self.terms.iter().flat_map(|t| {
+            std::iter::once(t.term.as_str()).chain(t.variants.iter().map(String::as_str))
+        })
+    }
+
     /// Find case mismatches in `text`, in text order. Matches that overlap a
     /// range in `skip` are ignored.
     #[must_use]

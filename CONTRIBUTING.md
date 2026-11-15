@@ -51,6 +51,12 @@ That workflow treats the artifacts as untrusted. It accepts a pull request numbe
 
 Rust test conventions are in [`docs/testing-rust.md`](docs/testing-rust.md). Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot.
 
+## Rust checks
+
+Rust CI runs rustfmt, clippy, rustdoc, nextest and doctests. A supply-chain job runs `cargo deny` for licences, bans and sources, `cargo shear` for unused dependencies, `cargo sort` for manifest order and `typos`. Advisories run nightly and report on pull requests without blocking them. `mise install` pins the tools. `prek run --all-files` runs the same checks locally.
+
+Licences: `deny.toml` allows permissive licences only. The CC BY-SA 4.0 part-of-speech model covers the model file, so add a per-crate exception for the crate that embeds it. Never add CC BY-SA to the global allow list.
+
 ## Rules
 
 Rule definitions live in [`packages/slopvac-lint/src/slopvac/rules/`](packages/slopvac-lint/src/slopvac/rules/). Each YAML file defines a category and its rules. Add examples of text the rule should flag and text it should leave alone.

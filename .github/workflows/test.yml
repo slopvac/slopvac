@@ -284,6 +284,16 @@ jobs:
         env:
           MSRV: ${{ steps.msrv.outputs.version }}
 
+  rust-supply-chain:
+    name: Rust supply chain
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-supply-chain.yml
+    permissions:
+      contents: read
+
   # Full repository test discovery on the newest supported Python. The root
   # pytest configuration includes both package tests and any repository-level
   # tests, so new test directories cannot silently sit outside CI.
@@ -499,6 +509,7 @@ jobs:
       - rust-static
       - rust
       - rust-msrv
+      - rust-supply-chain
       - lint-package
       - cli-e2e
       - action-contract
@@ -552,6 +563,7 @@ jobs:
               "rust-static": force_all or rust,
               "rust": force_all or rust,
               "rust-msrv": force_all or rust,
+              "rust-supply-chain": force_all or rust,
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,
