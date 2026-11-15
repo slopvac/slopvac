@@ -97,6 +97,9 @@ jobs:
         working-directory: packages/slopvac-lint
         run: uvx ruff@0.16.3 check .
 
+      - name: Release-please crate entries
+        run: python3 scripts/sync_release_please_crates.py --check
+
       - name: Validate hook JSON
         run: |
           set -euo pipefail

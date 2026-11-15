@@ -31,7 +31,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace --no-tests=pass
 ```
 
-A new crate needs a `Cargo.lock` entry in `extra-files` in `release-please-config.json`, or the release PR does not bump its version.
+A new crate needs a `Cargo.lock` entry in `extra-files` in `release-please-config.json`, or the release PR does not bump its version. After you add or remove a crate, run `just sync-release-please` (or `python3 scripts/sync_release_please_crates.py`) to rewrite those entries. The quick-lint CI job runs the same script with `--check` and fails on drift.
 
 ## Prose checks
 
