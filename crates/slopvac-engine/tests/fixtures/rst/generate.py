@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Regenerate the driver output for each fixture `*.rst`.
+"""Regenerate the driver output for each fixture `*.rst.in`.
+
+The sources end in `.in` so that tools which lint `*.rst` as prose (the 2.x action selects
+changed files by suffix) do not pick them up.
 
 The Rust tests feed this JSON to the position mapper through a fake interpreter, so the
 mapping runs on real docutils output without docutils on the test machine.
@@ -47,8 +50,8 @@ def convert(source: Path) -> str:
 def main() -> int:
     check = "--check" in sys.argv[1:]
     stale = []
-    for source in sorted(HERE.glob("*.rst")):
-        target = source.with_suffix(".json")
+    for source in sorted(HERE.glob("*.rst.in")):
+        target = source.with_name(source.name.removesuffix(".rst.in") + ".json")
         text = convert(source)
         if check:
             if not target.exists() or target.read_text(encoding="utf-8") != text:

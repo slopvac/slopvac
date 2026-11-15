@@ -1,7 +1,7 @@
 //! `Engine::lint` on an RST file goes through the docutils adapter.
 //!
 //! The interpreter is a shell script that prints the driver output that real docutils wrote
-//! for `tests/fixtures/rst/sections.rst`, so the test runs without Python.
+//! for `tests/fixtures/rst/sections.rst.in`, so the test runs without Python.
 #![cfg(unix)]
 #![allow(
     missing_docs,
@@ -57,7 +57,7 @@ fn with_rst(engine: Engine, options: RstOptions) -> Engine {
 }
 
 fn sections() -> String {
-    fs::read_to_string(format!("{FIXTURES}/sections.rst")).unwrap()
+    fs::read_to_string(format!("{FIXTURES}/sections.rst.in")).unwrap()
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn tables_engine(rules: &[serde_json::Value]) -> Engine {
 }
 
 fn tables() -> String {
-    fs::read_to_string(format!("{FIXTURES}/table-repeat.rst")).unwrap()
+    fs::read_to_string(format!("{FIXTURES}/table-repeat.rst.in")).unwrap()
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn a_wrapped_left_cell_does_not_hide_the_right_cell_from_document_rules() {
     let mut options = RstOptions::default();
     options.interpreter = Some(interpreter().with_file_name("wrap-python"));
     let e = engine(&[tokens("dull", "Rightonly", &json!({"scope": "document"}))]).with_rst(options);
-    let source = fs::read_to_string(format!("{FIXTURES}/table-wrap.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap();
     let doc = e.lint(&Input::rst("t.rst", &source)).unwrap();
     // "Rightonly" is on line 2 of the table, after "| Left wrap | ".
     assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 2, 15)]);
@@ -189,7 +189,7 @@ fn wrap_engine(pattern: &str) -> Engine {
 }
 
 fn wrap_source() -> String {
-    fs::read_to_string(format!("{FIXTURES}/table-wrap.rst")).unwrap()
+    fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap()
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn a_match_across_interleaved_cells_maps_to_the_hull_of_its_tokens() {
 
 #[test]
 fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
-    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst.in")).unwrap();
     let skip = json!({"contexts": {"skip": ["requirement"]}});
     let run = |token: &str| {
         let mut options = RstOptions::default();
@@ -242,7 +242,7 @@ fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
 
 /// Findings of `token` in the fixture `name` when the rule excludes `block`.
 fn excluded_findings(name: &str, python: &str, block: &str, token: &str) -> usize {
-    let source = fs::read_to_string(format!("{FIXTURES}/{name}.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap();
     let mut options = RstOptions::default();
     options.interpreter = Some(interpreter().with_file_name(python));
     engine(&[tokens("dull", token, &json!({"exclude_blocks": [block]}))])
@@ -280,7 +280,7 @@ fn a_quote_in_a_wrapped_cell_does_not_hide_the_cell_beside_it() {
 
 #[test]
 fn a_match_across_the_line_break_of_a_wrapped_requirement_keeps_its_context() {
-    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst.in")).unwrap();
     let mut options = RstOptions::default();
     options.interpreter = Some(interpreter().with_file_name("normative-python"));
     let e = engine(&[rule(
@@ -305,7 +305,7 @@ fn a_match_across_the_line_break_of_a_wrapped_requirement_keeps_its_context() {
 
 #[test]
 fn a_document_scope_match_across_a_wrapped_cell_break_keeps_its_requirement_context() {
-    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/table-normative.rst.in")).unwrap();
     let mut options = RstOptions::default();
     options.interpreter = Some(interpreter().with_file_name("normative-python"));
     let e = engine(&[rule(
@@ -330,7 +330,7 @@ fn a_document_scope_match_across_a_wrapped_cell_break_keeps_its_requirement_cont
 
 #[test]
 fn a_section_context_reaches_the_continuation_lines_of_a_wrapped_cell() {
-    let source = fs::read_to_string(format!("{FIXTURES}/table-section.rst")).unwrap();
+    let source = fs::read_to_string(format!("{FIXTURES}/table-section.rst.in")).unwrap();
     let run = |token: &str| {
         let mut options = RstOptions::default();
         options.interpreter = Some(interpreter().with_file_name("section-python"));

@@ -142,7 +142,7 @@ fn using(interpreter: &Path) -> RstOptions {
 }
 
 fn read_source(name: &str) -> String {
-    fs::read_to_string(format!("{FIXTURES}/{name}.rst")).unwrap()
+    fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap()
 }
 
 /// Parse the fixture `name` through its recorded driver output.
