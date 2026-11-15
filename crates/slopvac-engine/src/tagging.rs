@@ -4,7 +4,9 @@
 //! a `slopvac-parse` document to it. Block text is the projected prose and block spans are
 //! source bytes, so a tag span is a source range that a finding span can sit inside.
 
-use std::collections::BTreeMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 
 use frontmatter_spans::FrontMatter;
 use slopvac_context::{
@@ -26,8 +28,10 @@ struct Entry<'a> {
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
-    /// Offsets of the line terminator bytes, to tell whether a source range crosses a line.
-    breaks: Vec<usize>,
+    /// Steps taken by `split_interleaved`, for the tests that bound its work.
+    visits: Cell<usize>,
+    /// The entry that produced each span handed to a tagger as a block or a sentence.
+    owners: RefCell<HashMap<(usize, usize), usize>>,
     source_len: usize,
     title: Option<&'a str>,
     front_matter: Option<&'a FrontMatter<'a>>,
@@ -105,12 +109,8 @@ impl<'a> View<'a> {
             .collect();
         Self {
             path,
-            breaks: source
-                .bytes()
-                .enumerate()
-                .filter(|&(_, b)| b == b'\n' || b == b'\r')
-                .map(|(i, _)| i)
-                .collect(),
+            visits: Cell::new(0),
+            owners: RefCell::new(HashMap::new()),
             source_len: source.len(),
             title,
             front_matter,
@@ -127,50 +127,55 @@ impl View<'_> {
     /// the extent of the left cell contains the right cell. A tag on a sentence or a block
     /// of the left cell has that extent, and a match in the right cell would inherit the tag.
     /// Such a tag becomes one tag for each line of the cell's own text. A tag that covers
-    /// several blocks is left alone.
+    /// several blocks, or that no sentence or block of an entry produced, is left alone.
+    ///
+    /// The work is `O(n log n)` in the number of entries and `O(1)` for each tag: a sweep
+    /// over the entries sorted by start finds those that overlap another, and the owner of a
+    /// tag is the entry whose sentence or block produced its span.
     fn split_interleaved(&self, index: TagIndex) -> TagIndex {
-        // Entries with prose whose extent overlaps another's.
         let mut order: Vec<usize> = (0..self.entries.len())
             .filter(|&i| self.entries[i].projection.is_some())
             .collect();
         order.sort_by_key(|&i| self.entries[i].span.start);
+        // An entry overlaps another when an earlier one ends after it starts, or the next
+        // one starts before it ends. Sorted by start, those two checks see every overlap.
         let mut marked = vec![false; self.entries.len()];
-        let mut active: Vec<usize> = Vec::new();
-        for &i in &order {
-            let start = self.entries[i].span.start;
-            active.retain(|&j| self.entries[j].span.end > start);
-            if !active.is_empty() {
-                marked[i] = true;
-                for &j in &active {
-                    marked[j] = true;
-                }
+        let mut latest_end = 0;
+        for (k, &i) in order.iter().enumerate() {
+            self.visits.set(self.visits.get() + 1);
+            let span = &self.entries[i].span;
+            if span.start < span.end {
+                let earlier = latest_end > span.start;
+                let later = order
+                    .get(k + 1)
+                    .is_some_and(|&n| self.entries[n].span.start < span.end);
+                marked[i] = earlier || later;
             }
-            active.push(i);
+            latest_end = latest_end.max(span.end);
         }
-        let interleaved: Vec<usize> = order.into_iter().filter(|&i| marked[i]).collect();
-        let Some(longest) = interleaved
-            .iter()
-            .map(|&i| self.entries[i].span.end - self.entries[i].span.start)
-            .max()
-        else {
+        if !marked.contains(&true) {
             return index;
-        };
+        }
+        let owners = self.owners.borrow();
+        let mut extents: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
         let mut tags = Vec::with_capacity(index.tags().len());
         for tag in index.tags() {
-            // The smallest interleaved extent that holds the tag.
-            let after =
-                interleaved.partition_point(|&i| self.entries[i].span.start <= tag.span.start);
-            let owner = interleaved[..after]
-                .iter()
-                .rev()
-                .take_while(|&&i| {
-                    tag.span.end - self.entries[i].span.start.min(tag.span.end) <= longest
+            self.visits.set(self.visits.get() + 1);
+            let owner = owners
+                .get(&(tag.span.start, tag.span.end))
+                .copied()
+                .filter(|&i| marked[i]);
+            let runs = owner.map(|i| {
+                extents.entry(i).or_insert_with(|| {
+                    self.entries[i]
+                        .projection
+                        .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
+                        .unwrap_or_default()
                 })
-                .filter(|&&i| tag.span.end <= self.entries[i].span.end)
-                .min_by_key(|&&i| self.entries[i].span.end - self.entries[i].span.start);
-            let runs = owner.map(|&i| self.runs(self.entries[i].projection.expect("prose")));
+            });
             let mut pieces = Vec::new();
-            for run in runs.iter().flatten() {
+            for run in runs.into_iter().flatten() {
+                self.visits.set(self.visits.get() + 1);
                 let from = run.start.max(tag.span.start);
                 let to = run.end.min(tag.span.end);
                 if from < to {
@@ -187,27 +192,6 @@ impl View<'_> {
             }
         }
         TagIndex::from_tags(tags)
-    }
-
-    /// The source ranges of the text of a projection, one for each line it sits on. A token
-    /// that crosses a line ends a range and belongs to none.
-    fn runs(&self, projection: &Projection) -> Vec<std::ops::Range<usize>> {
-        let line_of = |at: usize| self.breaks.partition_point(|&b| b < at);
-        let mut runs = Vec::new();
-        let mut current: Option<(usize, usize)> = None;
-        for token in projection.tokens() {
-            if !token.kind.is_real() {
-                continue;
-            }
-            let (start, end) = (token.src.start(), token.src.end());
-            if line_of(start) != line_of(end) {
-                runs.extend(current.take().map(|(a, b)| a..b));
-                continue;
-            }
-            current = Some(current.map_or((start, end), |(a, b)| (a.min(start), b.max(end))));
-        }
-        runs.extend(current.map(|(a, b)| a..b));
-        runs
     }
 }
 
@@ -232,8 +216,14 @@ impl DocumentView for View<'_> {
     }
 
     fn blocks(&self) -> Vec<BlockView<'_>> {
+        let mut owners = self.owners.borrow_mut();
         self.entries
             .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                owners.insert((e.span.start, e.span.end), i);
+                e
+            })
             .map(|e| BlockView {
                 kind: e.kind,
                 span: e.span.clone(),
@@ -247,13 +237,14 @@ impl DocumentView for View<'_> {
 
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
         let split = slopvac_context::split_sentences(block);
-        let Some(projection) = self
+        let Some((owner, projection)) = self
             .by_span
             .get(&(block.span.start, block.span.end))
-            .and_then(|&i| self.entries[i].projection)
+            .and_then(|&i| self.entries[i].projection.map(|p| (i, p)))
         else {
             return split;
         };
+        let mut owners = self.owners.borrow_mut();
         // The splitter assumes the text sits at the block span. Map each sentence through
         // the projection so its span is a source range.
         split
@@ -261,6 +252,7 @@ impl DocumentView for View<'_> {
             .map(|s| {
                 let from = s.span.start - block.span.start;
                 let span = projection.span_for_bytes(from, from + s.text.len());
+                owners.insert((span.start(), span.end()), owner);
                 SentenceView {
                     span: span.start()..span.end(),
                     text: s.text,
@@ -281,4 +273,57 @@ pub(crate) fn tag(
     let view = View::new(path, source, doc, front_matter);
     let index = registry.tag_document(&view)?;
     Ok(view.split_interleaved(index))
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_parse::{Block, TokenKind};
+
+    use super::*;
+
+    /// `count` cells that fell back to line precision, so each has the span of the whole row.
+    fn row_of_fallback_cells(count: usize) -> Document {
+        let row = slopvac_model::Span::new(0, 1000).unwrap();
+        let blocks = (0..count)
+            .map(|_| {
+                let mut projection = Projection::new();
+                projection.push(TokenKind::Opaque, "cell", row);
+                Block {
+                    kind: BlockKind::TableCell { row: 0, column: 0 },
+                    span: row,
+                    projection: Some(projection),
+                    containers: Vec::new(),
+                }
+            })
+            .collect();
+        Document {
+            blocks,
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn splitting_interleaved_tags_takes_a_fixed_number_of_steps_for_each_entry() {
+        let count = 20_000;
+        let doc = row_of_fallback_cells(count);
+        let view = View::new("t.rst", "", &doc, None);
+        // One tag on every cell, as a block tagger would produce.
+        let tags = (0..count)
+            .map(|_| Tag {
+                kind: "requirement".to_owned(),
+                span: 0..1000,
+                confidence: 1.0,
+                evidence: String::new(),
+            })
+            .collect();
+        view.blocks();
+        let _ = view.split_interleaved(TagIndex::from_tags(tags));
+        // The sweep visits each entry once, and each tag its owner and its extents.
+        assert!(
+            view.visits.get() <= 8 * count,
+            "{} steps for {count} entries",
+            view.visits.get()
+        );
+    }
 }

@@ -41,6 +41,8 @@ fn interpreter() -> &'static Path {
         write(&dir.join("tables-python"), json("table-repeat"));
         write(&dir.join("wrap-python"), json("table-wrap"));
         write(&dir.join("normative-python"), json("table-normative"));
+        write(&dir.join("list-python"), json("table-list"));
+        write(&dir.join("quote-python"), json("table-quote"));
         write(
             &dir.join("planted/python3"),
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\nexit 0\n".to_owned(),
@@ -235,6 +237,44 @@ fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
     // The right cell states none. Its text sits inside the extent of the left cell, but the
     // tag belongs to the left cell's own text, so the rule still fires.
     assert_eq!(run("Rightonly").findings.len(), 1);
+}
+
+/// Findings of `token` in the fixture `name` when the rule excludes `block`.
+fn excluded_findings(name: &str, python: &str, block: &str, token: &str) -> usize {
+    let source = fs::read_to_string(format!("{FIXTURES}/{name}.rst")).unwrap();
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name(python));
+    engine(&[tokens("dull", token, &json!({"exclude_blocks": [block]}))])
+        .with_rst(options)
+        .lint(&Input::rst("t.rst", &source))
+        .unwrap()
+        .findings
+        .len()
+}
+
+#[test]
+fn a_list_item_in_a_wrapped_cell_does_not_hide_the_cell_beside_it() {
+    // The item's lines enclose the right cell's text, but the item is not the right cell.
+    assert_eq!(
+        excluded_findings("table-list", "list-python", "list-item", "Item"),
+        0
+    );
+    assert_eq!(
+        excluded_findings("table-list", "list-python", "list-item", "Rightonly"),
+        1
+    );
+}
+
+#[test]
+fn a_quote_in_a_wrapped_cell_does_not_hide_the_cell_beside_it() {
+    assert_eq!(
+        excluded_findings("table-quote", "quote-python", "quote", "Quoted"),
+        0
+    );
+    assert_eq!(
+        excluded_findings("table-quote", "quote-python", "quote", "Rightonly"),
+        1
+    );
 }
 
 #[test]

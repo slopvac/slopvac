@@ -250,6 +250,7 @@ mod tests {
                 block(&[(TokenKind::Identity, "Right", 20, 25)]),
             ],
             code_spans: Vec::new(),
+            html_blocks: Vec::new(),
         }
     }
 

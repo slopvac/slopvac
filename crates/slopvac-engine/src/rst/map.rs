@@ -126,7 +126,11 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
         });
     }
     Mapped {
-        document: Document { blocks, code_spans },
+        document: Document {
+            blocks,
+            code_spans,
+            html_blocks: Vec::new(),
+        },
         notices,
         work: mapper.m.work(),
         scanned: mapper.m.scanned(),
@@ -186,7 +190,9 @@ fn parse_border(line: &str) -> Option<Border> {
     None
 }
 
-/// What became of a node.
+/// What became of a node. One value is alive at a time, so the size of the variants does not
+/// matter.
+#[allow(clippy::large_enum_variant)]
 enum Outcome {
     /// Its lines are missing or outside the file.
     Unplaced,
@@ -469,7 +475,13 @@ impl<'a> Mapper<'a> {
         placed.map(|p| {
             let mut projection = Projection::new();
             for t in p.projection.tokens() {
-                projection.push(t.kind, &t.text, shift(t.src));
+                // A token over a line break of the view covers the cells beside this one.
+                let bridges = view.as_bytes()[t.src.start()..t.src.end()].contains(&b'\n');
+                if bridges {
+                    projection.push_bridge(t.kind, &t.text, shift(t.src));
+                } else {
+                    projection.push(t.kind, &t.text, shift(t.src));
+                }
             }
             Placed {
                 projection,

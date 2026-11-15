@@ -49,6 +49,8 @@ pub struct Token {
 pub struct Projection {
     tokens: Vec<Token>,
     text: String,
+    /// Indexes of the tokens that bridge a gap in the source, in order.
+    bridges: Vec<usize>,
 }
 
 impl Projection {
@@ -92,6 +94,41 @@ impl Projection {
             text: text.to_owned(),
             src,
         });
+    }
+
+    /// Append a token that bridges source text that is not part of this projection, such as
+    /// the whitespace between two lines of a table cell, which covers the cells beside it.
+    /// The token joins the text like any other, but it belongs to no extent.
+    pub fn push_bridge(&mut self, kind: TokenKind, text: &str, src: Span) {
+        self.bridges.push(self.tokens.len());
+        self.push_unordered(kind, text, src);
+    }
+
+    /// The source ranges the text sits on: the hull of each run of tokens between bridges.
+    /// Without bridges that is one range, the hull of all real tokens, or none when there
+    /// is no real token. A caller that turns a block into a source range for tags or
+    /// exclusions uses these, so that text between the ranges is not taken for the block's.
+    #[must_use]
+    pub fn extents(&self) -> Vec<Span> {
+        let mut extents = Vec::new();
+        let mut current: Option<(usize, usize)> = None;
+        let mut next_bridge = self.bridges.iter().peekable();
+        for (i, token) in self.tokens.iter().enumerate() {
+            if next_bridge.next_if(|&&b| b == i).is_some() {
+                extents.extend(current.take());
+                continue;
+            }
+            if !token.kind.is_real() {
+                continue;
+            }
+            let (start, end) = (token.src.start(), token.src.end());
+            current = Some(current.map_or((start, end), |(a, b)| (a.min(start), b.max(end))));
+        }
+        extents.extend(current);
+        extents
+            .into_iter()
+            .map(|(a, b)| Span::new(a, b).expect("start <= end"))
+            .collect()
     }
 
     /// The projected text.
@@ -168,4 +205,39 @@ impl Projection {
 /// Byte offset of the `n`th character of `text`, or its length.
 fn char_byte(text: &str, n: usize) -> usize {
     text.char_indices().nth(n).map_or(text.len(), |(i, _)| i)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(a: usize, b: usize) -> Span {
+        Span::new(a, b).unwrap()
+    }
+
+    #[test]
+    fn extents_of_ordered_text_are_the_one_hull() {
+        let mut p = Projection::new();
+        p.push(TokenKind::Identity, "ab", at(2, 4));
+        p.push(TokenKind::Collapse, " ", at(4, 5));
+        p.push(TokenKind::Identity, "cd", at(5, 7));
+        assert_eq!(p.extents(), [at(2, 7)]);
+    }
+
+    #[test]
+    fn a_bridge_token_ends_an_extent_and_belongs_to_none() {
+        // A cell on two lines: its second line starts after the text of the cell beside it.
+        let mut p = Projection::new();
+        p.push(TokenKind::Identity, "ab", at(2, 4));
+        p.push_bridge(TokenKind::Collapse, " ", at(4, 30));
+        p.push_unordered(TokenKind::Identity, "cd", at(30, 32));
+        assert_eq!(p.extents(), [at(2, 4), at(30, 32)]);
+    }
+
+    #[test]
+    fn a_projection_with_no_real_token_has_no_extent() {
+        let mut p = Projection::new();
+        p.push(TokenKind::Wrap, " ", Span::empty(3));
+        assert_eq!(p.extents(), []);
+    }
 }
