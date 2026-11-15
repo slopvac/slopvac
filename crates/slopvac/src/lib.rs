@@ -10,6 +10,7 @@ pub mod env;
 pub mod errors;
 pub mod exit;
 pub mod generate;
+pub mod init;
 pub mod logging;
 pub mod offline;
 pub mod redact;

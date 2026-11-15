@@ -12,6 +12,7 @@ Commands:
   lint         Lint prose and source comments. Bare paths run this command.
   explain      Explain a rule.
   rules        List rules.
+  init         Write a commented slopvac.toml and set up agent steering.
   doctor       Check the binary, configuration and pack health.
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
@@ -25,7 +26,6 @@ Commands:
   migrate      Rewrite a 2.x configuration for 3.0.
   setup        Install slopvac guidance into agent harnesses.
   prime        Print guidance for agents, by topic.
-  init         Write 3.0 configuration templates.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
   report       Preview or submit an issue report.

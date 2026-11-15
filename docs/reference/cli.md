@@ -69,6 +69,21 @@ List rules.
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac init`
+
+Write a commented slopvac.toml and set up agent steering.
+
+| Argument | Description |
+| --- | --- |
+| `--force` | Overwrite an existing config file. |
+| `--path` | Config file to write. |
+| `--skip-agents` | Write the config only: no steering block and no skill. |
+| `--harness` | Set up steering for this harness. Repeatable. Default: agents. |
+| `--no-skills` | Write the steering blocks but no slopvac-prose skill. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac doctor`
 
 Check the binary, configuration and pack health.
@@ -206,16 +221,6 @@ Install slopvac guidance into agent harnesses.
 ### `slopvac prime`
 
 Print guidance for agents, by topic.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac init`
-
-Write 3.0 configuration templates.
 
 | Argument | Description |
 | --- | --- |

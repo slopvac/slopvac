@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, logging, offline, stdin};
+use crate::{exit, generate, init, logging, offline, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +150,7 @@ fn dispatch(
                 .expect("required");
             write_stdout(out, &generate::completions(shell))
         }
+        Some(("init", m)) => init::run(m, out),
         Some(("man", m)) => man(m, out),
         Some(("cli-reference", _)) => write_stdout(
             out,

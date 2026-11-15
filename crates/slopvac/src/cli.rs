@@ -44,7 +44,7 @@ pub const REMOVED_LINT_OPTIONS: [(&str, &str); 4] = [
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
+pub const PLACEHOLDERS: [(&str, &str, &str); 11] = [
     (
         "terms",
         "Check and list the project terms.",
@@ -80,11 +80,6 @@ pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
         "prime",
         "Print guidance for agents, by topic.",
         "slopvac-8l4.11",
-    ),
-    (
-        "init",
-        "Write 3.0 configuration templates.",
-        "slopvac-8l4.12.8",
     ),
     (
         "onboard",
@@ -284,6 +279,52 @@ fn rules() -> Command {
         .arg(config_arg())
 }
 
+fn init() -> Command {
+    let cmd = Command::new("init")
+        .about("Write a commented slopvac.toml and set up agent steering.")
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(ArgAction::SetTrue)
+                .help("Overwrite an existing config file."),
+        )
+        .arg(
+            Arg::new("path")
+                .long("path")
+                .value_name("FILE")
+                .value_parser(value_parser!(std::path::PathBuf))
+                .default_value("slopvac.toml")
+                .help("Config file to write."),
+        )
+        .arg(
+            Arg::new("skip-agents")
+                .long("skip-agents")
+                .action(ArgAction::SetTrue)
+                .help("Write the config only: no steering block and no skill."),
+        )
+        .arg(
+            Arg::new("harness")
+                .long("harness")
+                .value_name("HARNESS")
+                .action(ArgAction::Append)
+                .value_parser(crate::init::harness_names())
+                .help("Set up steering for this harness. Repeatable. Default: agents."),
+        )
+        .arg(
+            Arg::new("no-skills")
+                .long("no-skills")
+                .action(ArgAction::SetTrue)
+                .help("Write the steering blocks but no slopvac-prose skill."),
+        );
+    // Removed in 3.0, and declared hidden so using it gets the pointer (see `init::run`).
+    cmd.arg(
+        Arg::new("profile")
+            .long("profile")
+            .num_args(0..=1)
+            .hide(true),
+    )
+}
+
 fn doctor() -> Command {
     Command::new("doctor")
         .about("Check the binary, configuration and pack health.")
@@ -359,6 +400,7 @@ pub fn command() -> Command {
         .subcommand(lint())
         .subcommand(explain())
         .subcommand(rules())
+        .subcommand(init())
         .subcommand(doctor())
         .subcommand(self_cmd())
         .subcommand(lsp())
