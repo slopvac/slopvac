@@ -1,0 +1,55 @@
+name: Docs deploy
+# Publishes the docs site to GitHub Pages from main. Pull requests build the site
+# through test.yml (docs-site.yml, no upload) and deploy nothing. The Pages and
+# OIDC permissions exist only on the deploy job here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs-site.yml"
+      - ".github/workflows/docs-deploy.yml"
+      - "site/**"
+      - "docs/site.toml"
+      - "docs/site-lint.toml"
+      - "scripts/docs/**"
+      - "tests/docs/**"
+      - "schemas/**"
+      - "packages/slopvac-lint/src/slopvac/rules/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "mise.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the docs site
+    uses: ./.github/workflows/docs-site.yml
+    permissions:
+      contents: read
+    with:
+      upload: true
+
+  deploy:
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
