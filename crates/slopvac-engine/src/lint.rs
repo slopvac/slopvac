@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
@@ -139,9 +140,9 @@ pub enum EngineError {
 
 /// A rule that runs.
 struct Active {
-    set: usize,
-    category: usize,
-    rule: usize,
+    pub(crate) set: usize,
+    pub(crate) category: usize,
+    pub(crate) rule: usize,
     severity: Severity,
     replacements: LazyReplacements,
 }
@@ -171,8 +172,10 @@ enum Catalog {
 
 /// The engine.
 pub struct Engine {
-    pub(crate) sets: Vec<RuleSet>,
-    settings: Settings,
+    pub(crate) sets: Vec<Arc<RuleSet>>,
+    /// The blocklist the vocabulary rules enforce, kept to rebuild a restricted engine.
+    pub(crate) blocklist: Blocklist,
+    pub(crate) settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
     checkers: Vec<Box<dyn DiagramChecker>>,
@@ -260,10 +263,16 @@ impl Engine {
     /// capitalization, and metrics it does not measure) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
+        Self::new_shared(sets.into_iter().map(Arc::new).collect(), settings)
+    }
+
+    /// Like [`Engine::new`], over rule sets that other engines share.
+    pub fn new_shared(sets: Vec<Arc<RuleSet>>, settings: Settings) -> Result<Self, EngineError> {
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
             sets,
+            blocklist: Blocklist::default(),
             settings,
             detectors: Detectors::builtin(),
             tagger,
@@ -289,6 +298,7 @@ impl Engine {
     /// empty one, they have nothing to check and each document says so in an `info` notice.
     pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
         self.plan_vocabulary(blocklist)?;
+        self.blocklist = blocklist.clone();
         Ok(self)
     }
 
@@ -439,6 +449,33 @@ impl Engine {
             self.notices.push(not_run_notice(kind, count)?);
         }
         Ok(())
+    }
+
+    /// Why the engine does not execute `rule`, or `None` when it does.
+    ///
+    /// A rule that is switched off, limited by `applies_to` to another genre or mode, of a
+    /// kind the engine does not implement, or of a capitalization style or metric it does
+    /// not run is not executed. A vocabulary rule runs only with a blocklist it can use.
+    #[must_use]
+    pub fn unexecuted(&self, rule: &LoadedRule) -> Option<&'static str> {
+        let id = rule.id();
+        let at = |a: &&crate::lint::Active| {
+            self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id
+        };
+        if !self.running.contains(id.as_str()) {
+            return Some("the rule is switched off or does not apply under the engine settings");
+        }
+        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let executes = self.active.iter().any(|a| at(&a))
+            || self.metrics.iter().any(|a| at(&a))
+            || owner.is_some_and(|a| at(&a));
+        if executes {
+            None
+        } else if rule.kind() == MatchKind::Vocabulary {
+            Some("a vocabulary rule needs a usable word blocklist")
+        } else {
+            Some("the engine does not run this kind, style or metric of rule")
+        }
     }
 
     /// The loaded rule for a qualified id.

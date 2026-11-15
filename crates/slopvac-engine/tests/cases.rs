@@ -78,7 +78,7 @@ fn a_failure_says_what_was_expected_and_found() {
     let report = run(&json!({"cases": [{"input": "foo", "want": 2}]}));
     assert_eq!(
         report.to_string(),
-        "core:cat.r cases[0]: want 2 finding(s), got 1\n0 passed, 1 failed, 0 skipped"
+        "core:cat.r cases[0]: want 2 finding(s), got 1\n0 passed, 1 failed, 0 incomplete"
     );
     assert_eq!(report.failing_rules(), [&id("core:cat.r")]);
 }
@@ -110,6 +110,25 @@ fn a_bad_example_the_engine_does_not_flag_fails() {
 }
 
 #[test]
+fn a_good_example_the_engine_flags_fails() {
+    // Raw text "foo **bar**" does not match `foo bar`, so the loader accepts it as a good
+    // example. The prose projection drops the emphasis marks and the rule fires.
+    let rule = common::rule(
+        "p",
+        &json!({"kind": "pattern", "pattern": "foo bar"}),
+        &json!({"examples": [{"bad": "foo bar", "good": "foo **bar**"}]}),
+    );
+    let report = run_cases(&engine(&[rule]), None).unwrap();
+    assert_eq!(
+        outcomes(&report),
+        [
+            (Origin::ExampleBad(0), true),
+            (Origin::ExampleGood(0), false)
+        ]
+    );
+}
+
+#[test]
 fn a_heading_scoped_example_is_linted_as_a_heading() {
     let heading = common::rule(
         "h",
@@ -138,15 +157,25 @@ fn only_the_findings_of_the_rule_under_test_count() {
             foo_rule(&json!({"cases": [{"input": "foo bar", "want": 1}]})),
             tokens("other", "bar", &json!({})),
         ]),
-        None,
+        Some(&id("core:cat.r")),
     )
     .unwrap();
     assert!(report.is_clean(), "{report}");
     assert_eq!(report.passed(), 1);
 }
 
+fn reasons(report: &CaseReport) -> Vec<(Origin, String)> {
+    report
+        .incomplete()
+        .map(|r| match &r.outcome {
+            Outcome::Incomplete(why) => (r.origin, why.clone()),
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
 #[test]
-fn a_rule_the_engine_does_not_run_is_skipped_not_passed() {
+fn a_rule_that_is_switched_off_is_incomplete_not_passed() {
     let set = ruleset(vec![common::category(
         "cat",
         &[foo_rule(&json!({"cases": [{"input": "foo", "want": 1}]}))],
@@ -154,8 +183,102 @@ fn a_rule_the_engine_does_not_run_is_skipped_not_passed() {
     let mut s = settings();
     s.rule_levels.insert(id("core:cat.r"), Level::Off);
     let report = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap();
-    assert_eq!((report.passed(), report.skipped()), (0, 1));
-    assert!(report.is_clean());
+    assert_eq!(report.passed(), 0);
+    assert_eq!(
+        reasons(&report),
+        [(
+            Origin::Case(0),
+            "the rule is switched off or does not apply under the engine settings".to_owned()
+        )]
+    );
+    assert_eq!(report.exit_code(), 2);
+}
+
+#[test]
+fn a_rule_the_engine_cannot_execute_never_passes_a_zero_count_case() {
+    let structure = common::rule(
+        "s",
+        &json!({"kind": "structure", "check": "heading-hierarchy"}),
+        &json!({"cases": [{"input": "nothing to see", "want": 0}]}),
+    );
+    let report = run_cases(&engine(&[structure]), None).unwrap();
+    assert_eq!(report.passed(), 0);
+    assert_eq!(
+        reasons(&report),
+        [(
+            Origin::Case(0),
+            "the engine does not run this kind, style or metric of rule".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_testable_rule_without_cases_or_examples_is_incomplete() {
+    let report = run_cases(&engine(&[tokens("bare", "foo", &json!({}))]), None).unwrap();
+    assert_eq!(
+        reasons(&report),
+        [(
+            Origin::Missing,
+            "the rule has no cases or checkable examples".to_owned()
+        )]
+    );
+    assert_eq!(report.exit_code(), 2);
+}
+
+#[test]
+fn a_selected_judgement_rule_is_incomplete() {
+    let judgement = common::rule(
+        "j",
+        &json!({"kind": "judgement", "question": "Is it vague?"}),
+        &json!({"severity": "suggestion"}),
+    );
+    let report = run_cases(&engine(&[judgement]), Some(&id("core:cat.j"))).unwrap();
+    assert_eq!(report.exit_code(), 2);
+}
+
+#[test]
+fn an_unknown_selected_rule_is_an_error() {
+    let e = engine(&[foo_rule(&json!({}))]);
+    let err = run_cases(&e, Some(&id("core:cat.nope"))).unwrap_err();
+    assert_eq!(err.to_string(), "no rule core:cat.nope");
+}
+
+#[test]
+fn a_failed_case_outranks_an_incomplete_one_in_the_exit_code() {
+    let report = run_cases(
+        &engine(&[
+            foo_rule(&json!({"cases": [{"input": "foo", "want": 2}]})),
+            tokens("bare", "bar", &json!({})),
+        ]),
+        None,
+    )
+    .unwrap();
+    assert_eq!(report.exit_code(), 1);
+}
+
+#[test]
+fn a_rule_that_exhausts_the_match_limit_cannot_abort_another_rules_cases() {
+    // `^(a|aa)+$` on 64 a's and a b exhausts the PCRE2 match limit (slopvac-text pattern.rs).
+    let bomb = common::rule(
+        "bomb",
+        &json!({"kind": "pattern", "pattern": "^(a|aa)+$"}),
+        &json!({"cases": [{"input": format!("{}b", "a".repeat(64)), "want": 0}]}),
+    );
+    let ok = foo_rule(&json!({"cases": [
+        {"input": format!("{}b", "a".repeat(64)), "want": 0},
+        {"input": "foo", "want": 1},
+    ]}));
+    let report = run_cases(&engine(&[bomb, ok]), None).unwrap();
+    let by_rule = |rule: &str| {
+        report
+            .results
+            .iter()
+            .filter(|r| r.rule == id(rule))
+            .map(|r| matches!(r.outcome, Outcome::Passed))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(by_rule("core:cat.r"), [true, true]);
+    assert_eq!(report.failing_rules(), [&id("core:cat.bomb")], "{report}");
 }
 
 #[test]
@@ -226,20 +349,98 @@ fn core_engine() -> Engine {
 /// starts to pass must leave the list.
 const KNOWN_FAILURES: &[(&str, &str)] = &[];
 
+const METRIC: &str = "metric rule: no cases, and examples do not run for non-lexical rules";
+const STRUCTURE: &str = "structure rule: no cases, and the engine does not run structure checks";
+const VOCABULARY: &str = "vocabulary rule: no cases, and it needs a word blocklist to run";
+
+/// Core rules with no executable check, with the reason. They report `Incomplete`, so the
+/// suite lists them instead of passing them. Authoring cases (and for structure and
+/// vocabulary rules, engine support) clears an entry; the test fails if an entry is stale.
+const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
+    (
+        "core:ai-tells-content-shape.adjective-per-noun-spray",
+        METRIC,
+    ),
+    ("core:ai-tells-formatting.em-dash-density", METRIC),
+    ("core:ai-tells-formatting.bold-spray", METRIC),
+    ("core:ai-tells-formatting.inline-header-list", METRIC),
+    ("core:ai-tells-formatting.heading-hierarchy", STRUCTURE),
+    ("core:prose-craft.sentence-length", METRIC),
+    ("core:prose-discipline.run-on", METRIC),
+    ("core:prose-format.prose-block", METRIC),
+    ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
+    ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
+    ("core:ste-nouns.multiword-noun-too-long", METRIC),
+    (
+        "core:ste-practices.inconsistent-wording-for-same-step",
+        STRUCTURE,
+    ),
+    ("core:ste-procedural.sentence-too-long-procedural", METRIC),
+    (
+        "core:ste-punctuation.colon-terminates-sentence-for-count",
+        METRIC,
+    ),
+    (
+        "core:ste-safety.safety-block-missing-consequence",
+        STRUCTURE,
+    ),
+    (
+        "core:ste-sentences.complex-text-not-in-vertical-list",
+        METRIC,
+    ),
+    (
+        "core:ste-sentences.vertical-list-lead-in-missing-colon",
+        STRUCTURE,
+    ),
+    (
+        "core:ste-sentences.vertical-list-item-punctuation",
+        STRUCTURE,
+    ),
+    ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
+    (
+        "core:ste-words.word-outside-controlled-vocabulary",
+        VOCABULARY,
+    ),
+    (
+        "core:ste-words.word-used-in-wrong-part-of-speech",
+        VOCABULARY,
+    ),
+    (
+        "core:ste-words.verb-or-adjective-form-not-permitted",
+        VOCABULARY,
+    ),
+    ("core:ste-words.inconsistent-term-for-same-thing", STRUCTURE),
+];
+
+fn names(list: &[(&str, &str)]) -> Vec<String> {
+    let mut names: Vec<String> = list.iter().map(|(r, _)| (*r).to_owned()).collect();
+    names.sort();
+    names
+}
+
+fn strings(rules: &[&slopvac_model::RuleId]) -> Vec<String> {
+    rules.iter().map(ToString::to_string).collect()
+}
+
 #[test]
 fn every_core_case_and_example_passes_but_the_known_failures() {
     let report = run_cases(&core_engine(), None).unwrap();
-    let known: Vec<&str> = KNOWN_FAILURES.iter().map(|(r, _)| *r).collect();
-    let unknown = report.without(&known);
-    assert!(unknown.is_clean(), "{unknown}");
-    let listed: Vec<&str> = report.failing_rules().iter().map(|r| r.as_str()).collect();
-    for rule in &known {
-        assert!(
-            listed.contains(rule),
-            "{rule} passes now: remove it from KNOWN_FAILURES"
-        );
-    }
-    assert!(report.passed() > 0, "{report}");
+    assert_eq!(
+        strings(&report.failing_rules()),
+        names(KNOWN_FAILURES),
+        "{report}"
+    );
+    assert!(report.passed() > 500, "{report}");
+}
+
+#[test]
+fn the_core_rules_without_an_executable_check_are_listed() {
+    let report = run_cases(&core_engine(), None).unwrap();
+    assert_eq!(
+        strings(&report.incomplete_rules()),
+        names(NO_EXECUTABLE_CHECK),
+        "{report}"
+    );
 }
 
 fn pack_dir(want: u32) -> tempfile::TempDir {
@@ -267,7 +468,39 @@ fn cli(args: &[&str]) -> (i32, String) {
 fn the_command_exits_0_when_every_case_passes() {
     let dir = pack_dir(1);
     let (code, out) = cli(&[dir.path().to_str().unwrap()]);
-    assert_eq!((code, out.as_str()), (0, "1 passed, 0 failed, 0 skipped\n"));
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "1 passed, 0 failed, 0 incomplete\n")
+    );
+}
+
+#[test]
+fn the_command_exits_2_on_an_incomplete_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let (name, text) = common::category("cat", &[tokens("bare", "foo", &json!({}))]);
+    std::fs::write(dir.path().join(name), text).unwrap();
+    let (code, out) = cli(&[dir.path().to_str().unwrap()]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        out,
+        "core:cat.bare cases: incomplete: the rule has no cases or checkable examples\n\
+         0 passed, 0 failed, 1 incomplete\n"
+    );
+}
+
+#[test]
+fn the_command_rejects_an_unknown_rule() {
+    let dir = pack_dir(1);
+    let m = slopvac_engine::cases::cli::command()
+        .try_get_matches_from([
+            "cases",
+            dir.path().to_str().unwrap(),
+            "--rule",
+            "core:cat.nope",
+        ])
+        .unwrap();
+    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    assert_eq!(err.to_string(), "no rule core:cat.nope");
 }
 
 #[test]
@@ -283,7 +516,7 @@ fn the_command_exits_1_on_a_failed_case_and_prints_the_coverage_of_a_corpus() {
     assert_eq!(code, 1);
     assert_eq!(
         out,
-        "core:cat.r cases[0]: want 2 finding(s), got 1\n0 passed, 1 failed, 0 skipped\n\
+        "core:cat.r cases[0]: want 2 finding(s), got 1\n0 passed, 1 failed, 0 incomplete\n\
          core:cat.r: matched nothing\n0 of 1 rules matched in 1 document(s); 1 matched nothing\n"
     );
 }
@@ -328,8 +561,8 @@ fn coverage_report_over_the_eval_corpus() {
     std::fs::write(&out, format!("{report}\n")).unwrap();
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
-    // 17 tokens, 18 substitution and 109 pattern rules are mechanical.
-    assert_eq!(cov.findings.len(), 144);
+    // The lexical rules: tokens, substitution and pattern.
+    assert_eq!(cov.findings.len(), 145);
     assert!(
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"
