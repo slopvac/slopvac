@@ -202,14 +202,14 @@ fn relative_display(file: &Path, root: &Path) -> String {
     if common == 0 {
         return file.display().to_string();
     }
-    let mut out = PathBuf::new();
-    for _ in common..r.len() {
-        out.push("..");
-    }
-    for c in &f[common..] {
-        out.push(c);
-    }
-    out.display().to_string()
+    // `/` on every platform, so provenance reads the same in reports on Windows.
+    let mut parts: Vec<String> = vec!["..".to_owned(); r.len() - common];
+    parts.extend(
+        f[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    parts.join("/")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
