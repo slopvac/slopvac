@@ -163,6 +163,27 @@ pub struct Engine {
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
 }
 
+/// Whether the engine matches rules of this kind in the text of a unit.
+fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
+    match kind {
+        MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => true,
+        MatchKind::Capitalization => {
+            matches!(m, Match::Capitalization(c) if capitalization::runs(c.style))
+        }
+        _ => false,
+    }
+}
+
+fn not_run_notice(kind: &str, count: usize) -> Result<Notice, EngineError> {
+    notice(
+        "rule-kind-not-implemented",
+        NoticeLevel::Info,
+        format!(
+            "{count} active {kind} rule(s) did not run: the engine does not run {kind} rules yet"
+        ),
+    )
+}
+
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
     settings
         .rule_levels
@@ -287,7 +308,7 @@ impl Engine {
                     }
                     self.running.insert(loaded.id().as_str().to_owned());
                     match loaded.kind() {
-                        MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => {
+                        kind if runs_lexically(kind, &rule.match_) => {
                             self.active.push(Active {
                                 set: s,
                                 category: c,
@@ -296,7 +317,10 @@ impl Engine {
                                 replacements: LazyReplacements::default(),
                             });
                         }
-                        MatchKind::Judgement => {}
+                        MatchKind::Judgement
+                        | MatchKind::Tokens
+                        | MatchKind::Pattern
+                        | MatchKind::Substitution => {}
                         MatchKind::Metric => {
                             let supported = matches!(
                                 &rule.match_,
@@ -316,20 +340,9 @@ impl Engine {
                         }
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
-                        MatchKind::Capitalization => match &rule.match_ {
-                            Match::Capitalization(m) if capitalization::runs(m.style) => {
-                                self.active.push(Active {
-                                    set: s,
-                                    category: c,
-                                    rule: r,
-                                    severity,
-                                    replacements: LazyReplacements::default(),
-                                });
-                            }
-                            _ => {
-                                *unrun.entry("capitalization (title style)").or_default() += 1;
-                            }
-                        },
+                        MatchKind::Capitalization => {
+                            *unrun.entry("capitalization (title style)").or_default() += 1;
+                        }
                     }
                 }
             }
@@ -341,14 +354,7 @@ impl Engine {
             }
         }
         for (kind, count) in unrun {
-            self.notices.push(notice(
-                "rule-kind-not-implemented",
-                NoticeLevel::Info,
-                format!(
-                    "{count} active {kind} rule(s) did not run: the engine does not run {kind} \
-                     rules yet"
-                ),
-            )?);
+            self.notices.push(not_run_notice(kind, count)?);
         }
         Ok(())
     }
