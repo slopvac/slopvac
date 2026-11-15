@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-use slopvac_model::{Edit, Finding, RuleId, Severity, Span};
+use slopvac_model::{Edit, Finding, Notice, NoticeLevel, RuleId, Severity, Span};
 
 use crate::linter::{Check, Linter, Problem};
 
@@ -28,6 +28,9 @@ pub(crate) struct Item {
 /// Items for one version of one buffer.
 #[derive(Debug)]
 pub(crate) struct Analysis {
+    /// The generation of the document text that was linted.
+    pub(crate) generation: u64,
+    /// The client's version of that text.
     pub(crate) version: i32,
     pub(crate) items: Vec<Item>,
 }
@@ -75,6 +78,25 @@ impl Item {
         }
     }
 
+    /// A part of the check did not run, such as a skipped rule kind or a missing RST
+    /// converter. The buffer must not look fully checked.
+    fn from_notice(n: &Notice) -> Self {
+        let message = format!("slopvac did not fully check this document: {}", n.message);
+        Self {
+            span: None,
+            line: 0,
+            severity: match n.level {
+                NoticeLevel::Info => Severity::Suggestion,
+                NoticeLevel::Warning => Severity::Warning,
+            },
+            code: n.code.to_string(),
+            hover: message.clone(),
+            message,
+            fix: None,
+            rule: None,
+        }
+    }
+
     /// The check could not finish. An unlinted buffer must not look clean (exit 2 semantics).
     fn incomplete(reason: &str) -> Self {
         let message = format!("slopvac could not lint this document: {reason}");
@@ -96,15 +118,25 @@ pub(crate) fn analyze(
     linter: &dyn Linter,
     checks: &[Arc<dyn Check>],
     path: &str,
+    generation: u64,
     version: i32,
     text: &str,
 ) -> Analysis {
     let mut items: Vec<Item> = match linter.lint(path, text) {
-        Ok(findings) => findings.into_iter().map(Item::from_finding).collect(),
+        Ok(linted) => linted
+            .findings
+            .into_iter()
+            .map(Item::from_finding)
+            .chain(linted.unchecked.into_iter().map(|n| Item::from_notice(&n)))
+            .collect(),
         Err(e) => vec![Item::incomplete(&e.0)],
     };
     for check in checks {
         items.extend(check.check(path, text).into_iter().map(Item::from_problem));
     }
-    Analysis { version, items }
+    Analysis {
+        generation,
+        version,
+        items,
+    }
 }

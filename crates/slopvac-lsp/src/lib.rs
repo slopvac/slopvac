@@ -22,8 +22,8 @@ use clap::{ArgMatches, Command};
 use slopvac_engine::Settings;
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString};
 
-pub use linter::{Check, EngineLinter, LintError, Linter, Problem};
-pub use server::{Server, ServerError};
+pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem};
+pub use server::{Exit, Server, ServerError};
 
 /// The `lsp` subcommand.
 #[must_use]
@@ -32,7 +32,10 @@ pub fn command() -> Command {
 }
 
 /// Run the language server on standard input and output until the client exits.
-pub fn run(_matches: &ArgMatches) -> Result<(), RunError> {
+///
+/// The exit status follows the protocol: 0 after `shutdown` and `exit`, 1 for an `exit`
+/// with no `shutdown` ([`Exit::WithoutShutdown`]).
+pub fn run(_matches: &ArgMatches) -> Result<Exit, RunError> {
     // STUB(slopvac-8l4.12.15): no rules are loaded. The server needs the resolved rule sets
     // and settings from the config layer; until then it reports no findings.
     let settings = Settings::new(
@@ -50,8 +53,18 @@ pub fn run(_matches: &ArgMatches) -> Result<(), RunError> {
     // (slopvac-8l4.4.6) and the terms check plug in through `Server::with_check`.
     let served = Server::new(std::sync::Arc::new(linter)).serve(&connection);
     drop(connection);
-    io_threads.join().map_err(|e| RunError::Io(e.to_string()))?;
-    served.map_err(RunError::Server)
+    match served {
+        Ok(exit) => {
+            io_threads.join().map_err(|e| RunError::Io(e.to_string()))?;
+            Ok(exit)
+        }
+        Err(e) => {
+            // The reader thread blocks on standard input, which the client may keep open.
+            // Joining it would hang the process, so let it go: the process exits anyway.
+            drop(io_threads);
+            Err(RunError::Server(e))
+        }
+    }
 }
 
 /// Why `slopvac lsp` stopped with an error.

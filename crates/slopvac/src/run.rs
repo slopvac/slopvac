@@ -147,7 +147,11 @@ fn dispatch(
     match matches.subcommand() {
         Some(("lint", m)) => lint(m, err_out),
         Some(("lsp", m)) => slopvac_lsp::run(m)
-            .map(|()| exit::PASS)
+            .map(|exit| match exit {
+                slopvac_lsp::Exit::AfterShutdown => exit::PASS,
+                // LSP says `exit` without `shutdown` ends the process with status 1.
+                slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
+            })
             .map_err(|e| CliError::new("lsp-failed", e.to_string())),
         Some(("completions", m)) => {
             let shell = *m

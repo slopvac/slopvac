@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use slopvac_engine::{Engine, EngineError, Input, Kind, Settings};
-use slopvac_model::{BomMode, Finding, RuleId, Span};
+use slopvac_model::{BomMode, Finding, Notice, RuleId, Span};
 use slopvac_rules::RuleSet;
 
 /// Why a buffer could not be linted.
@@ -11,17 +11,29 @@ use slopvac_rules::RuleSet;
 #[error("{0}")]
 pub struct LintError(pub String);
 
+/// What linting a buffer produced.
+#[derive(Debug, Clone, Default)]
+pub struct Linted {
+    /// Findings, with spans and fixes.
+    pub findings: Vec<Finding>,
+    /// What did not run, and why (`Document.unchecked`). An editor must not show a buffer
+    /// as clean when part of the check was skipped.
+    pub unchecked: Vec<Notice>,
+}
+
 /// Lints the text of one editor buffer.
 ///
 /// `path` is the document path for the report and picks the file kind. `text` is the buffer
 /// exactly as the client sent it, so every span is a byte offset into that string, with a
 /// leading U+FEFF counted (`docs/contract/positions.md`, LSP section).
 pub trait Linter: Send + Sync {
-    /// Findings for `text`, with spans and fixes.
-    fn lint(&self, path: &str, text: &str) -> Result<Vec<Finding>, LintError>;
+    /// Findings for `text`, with spans and fixes, and the notices about what did not run.
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError>;
 
-    /// The exception names `rule` lists, which `reason=` in an allow directive may use.
-    fn allow_reasons(&self, rule: &RuleId) -> Vec<String>;
+    /// The exception names `rule` lists, which `reason=` in an allow directive may use, for
+    /// a document at `path`. Empty when the document's format has no directive syntax the
+    /// engine reads: only Markdown files do.
+    fn allow_reasons(&self, path: &str, rule: &RuleId) -> Vec<String>;
 }
 
 /// A problem found by a [`Check`], shown as a diagnostic.
@@ -74,26 +86,38 @@ impl EngineLinter {
     }
 }
 
+/// The kind of file at `path`.
+fn kind_of(path: &str) -> Kind {
+    match path.rsplit('.').next() {
+        Some("mdx") => Kind::Mdx,
+        Some("rst") => Kind::Rst,
+        _ => Kind::Markdown,
+    }
+}
+
 impl Linter for EngineLinter {
-    fn lint(&self, path: &str, text: &str) -> Result<Vec<Finding>, LintError> {
-        let kind = match path.rsplit('.').next() {
-            Some("mdx") => Kind::Mdx,
-            Some("rst") => Kind::Rst,
-            _ => Kind::Markdown,
-        };
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
         let input = Input {
             path,
             source: text,
-            kind,
+            kind: kind_of(path),
             bom: BomMode::Buffer,
         };
         self.engine
             .lint(&input)
-            .map(|document| document.findings)
+            .map(|document| Linted {
+                findings: document.findings,
+                unchecked: document.unchecked,
+            })
             .map_err(|e| LintError(e.to_string()))
     }
 
-    fn allow_reasons(&self, rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, path: &str, rule: &RuleId) -> Vec<String> {
+        // The engine's directive scanner reads `<!-- slopvac-allow: ... -->` only. MDX
+        // rejects that comment and RST has no equivalent, so no action is offered there.
+        if kind_of(path) != Kind::Markdown {
+            return Vec::new();
+        }
         self.reasons.get(rule).cloned().unwrap_or_default()
     }
 }

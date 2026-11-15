@@ -333,3 +333,54 @@ fn lsp_answers_initialize_over_stdio_and_exits_0_after_shutdown() {
         .stdout(predicate::str::contains(r#""positionEncoding":"utf-16""#))
         .stdout(predicate::str::contains(r#""name":"slopvac""#));
 }
+
+const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#;
+
+#[test]
+fn lsp_exit_without_shutdown_exits_1() {
+    let input = [
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .code(1);
+}
+
+#[test]
+fn lsp_stops_on_a_fatal_error_while_stdin_stays_open() {
+    use std::io::Write as _;
+    // `params` is a number, so the server cannot read the initialize request and ends in
+    // error. The client keeps its end of stdin open, so the reader thread never sees EOF.
+    let bad = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":5}"#;
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
+        .arg("lsp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn slopvac");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    stdin.write_all(frame(bad).as_bytes()).expect("write");
+    stdin.flush().expect("flush");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait") {
+            break Some(status);
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().expect("kill");
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    drop(stdin);
+    let status = status.expect("the process exits while stdin is open");
+    assert_eq!(status.code(), Some(2));
+}

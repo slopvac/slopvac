@@ -10,6 +10,7 @@
 //! are needed and are never stored across versions (`docs/contract/positions.md`).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -46,6 +47,16 @@ pub enum ServerError {
     WorkerPanicked,
 }
 
+/// How a served session ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    /// The client sent `shutdown`, then `exit`. The process exits with status 0.
+    AfterShutdown,
+    /// The client sent `exit` with no `shutdown`, or went away. The process exits with
+    /// status 1, as the protocol says.
+    WithoutShutdown,
+}
+
 /// The language server.
 pub struct Server {
     linter: Arc<dyn Linter>,
@@ -71,7 +82,7 @@ impl Server {
     }
 
     /// Serve one client until it sends `shutdown` and `exit`.
-    pub fn serve(self, connection: &Connection) -> Result<(), ServerError> {
+    pub fn serve(self, connection: &Connection) -> Result<Exit, ServerError> {
         let (id, params) = connection.initialize_start()?;
         let params: InitializeParams = serde_json::from_value(params)?;
         let encoding = negotiate(&params);
@@ -87,6 +98,7 @@ impl Server {
             checks: self.checks,
             encoding,
             docs: Mutex::new(HashMap::new()),
+            next_generation: AtomicU64::new(1),
         });
         let (jobs_tx, jobs_rx) = crossbeam_channel::unbounded::<String>();
         let worker = {
@@ -134,6 +146,10 @@ fn capabilities(encoding: PositionEncoding) -> ServerCapabilities {
 }
 
 struct Doc {
+    /// Identifies this text of this open document. Every open, change and save takes a new
+    /// one, so a close and reopen at the same client version is told apart from the old
+    /// document. Results are cached and published only for the generation they linted.
+    generation: u64,
     version: i32,
     text: Arc<str>,
     analysis: Option<Arc<Analysis>>,
@@ -143,7 +159,10 @@ struct Shared {
     linter: Arc<dyn Linter>,
     checks: Vec<Arc<dyn Check>>,
     encoding: PositionEncoding,
+    /// Held while a diagnostics message is sent, so a document cannot close between the
+    /// freshness check and the publish.
     docs: Mutex<HashMap<String, Doc>>,
+    next_generation: AtomicU64,
 }
 
 impl Shared {
@@ -155,6 +174,7 @@ impl Shared {
         self.docs().insert(
             uri.to_owned(),
             Doc {
+                generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
                 version,
                 text: text.into(),
                 analysis: None,
@@ -162,26 +182,36 @@ impl Shared {
         );
     }
 
+    /// Drop the cached result of `uri` and start a new generation, so a lint that is still
+    /// running for the old one is discarded.
+    fn invalidate(&self, uri: &str) {
+        if let Some(doc) = self.docs().get_mut(uri) {
+            doc.generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+            doc.analysis = None;
+        }
+    }
+
     /// The analysis of the current version of `uri`, linting if none is cached. The lock is
     /// not held while linting.
     fn analysis(&self, uri: &str) -> Option<(Arc<str>, Arc<Analysis>)> {
-        let (version, text) = {
+        let (generation, version, text) = {
             let docs = self.docs();
             let doc = docs.get(uri)?;
             if let Some(done) = &doc.analysis {
                 return Some((Arc::clone(&doc.text), Arc::clone(done)));
             }
-            (doc.version, Arc::clone(&doc.text))
+            (doc.generation, doc.version, Arc::clone(&doc.text))
         };
         let done = Arc::new(analyze(
             self.linter.as_ref(),
             &self.checks,
             &path_of(uri),
+            generation,
             version,
             &text,
         ));
         if let Some(doc) = self.docs().get_mut(uri)
-            && doc.version == version
+            && doc.generation == generation
         {
             doc.analysis = Some(Arc::clone(&done));
         }
@@ -234,15 +264,15 @@ fn worker(shared: &Shared, jobs: &Receiver<String>, out: &Sender<Message>) {
             let Some((text, analysis)) = shared.analysis(&uri) else {
                 continue;
             };
-            // A newer version arrived while linting; its own job is queued.
-            let current = shared.docs().get(&uri).map(|d| d.version);
-            if current == Some(analysis.version) {
-                publish(
-                    out,
-                    &uri,
-                    Some(analysis.version),
-                    shared.diagnostics(&text, &analysis),
-                );
+            let diagnostics = shared.diagnostics(&text, &analysis);
+            // Check and send under one lock: a close that follows waits for the send, and a
+            // close that came first has removed the document.
+            let docs = shared.docs();
+            if docs
+                .get(&uri)
+                .is_some_and(|d| d.generation == analysis.generation)
+            {
+                publish(out, &uri, Some(analysis.version), diagnostics);
             }
         }
     }
@@ -252,12 +282,12 @@ fn main_loop(
     shared: &Shared,
     connection: &Connection,
     jobs: &Sender<String>,
-) -> Result<(), ServerError> {
+) -> Result<Exit, ServerError> {
     for message in &connection.receiver {
         match message {
             Message::Request(req) => {
                 if connection.handle_shutdown(&req)? {
-                    return Ok(());
+                    return Ok(Exit::AfterShutdown);
                 }
                 let response = handle_request(shared, req);
                 connection
@@ -265,13 +295,16 @@ fn main_loop(
                     .send(Message::Response(response))
                     .map_err(|_| ServerError::Closed)?;
             }
+            Message::Notification(note) if note.method == "exit" => {
+                return Ok(Exit::WithoutShutdown);
+            }
             Message::Notification(note) => {
                 handle_notification(shared, note, jobs, &connection.sender);
             }
             Message::Response(_) => {}
         }
     }
-    Ok(())
+    Ok(Exit::WithoutShutdown)
 }
 
 fn handle_notification(
@@ -303,16 +336,15 @@ fn handle_notification(
                 let uri = p.text_document.uri.as_str().to_owned();
                 // Saving relints even when the text did not change, so a changed config or
                 // rule set shows up.
-                if let Some(doc) = shared.docs().get_mut(&uri) {
-                    doc.analysis = None;
-                }
+                shared.invalidate(&uri);
                 let _ = jobs.send(uri);
             }
         }
         "textDocument/didClose" => {
             if let Ok(p) = serde_json::from_value::<DidCloseTextDocumentParams>(note.params) {
                 let uri = p.text_document.uri.as_str().to_owned();
-                shared.docs().remove(&uri);
+                let mut docs = shared.docs();
+                docs.remove(&uri);
                 publish(out, &uri, None, Vec::new());
             }
         }
@@ -409,7 +441,10 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
             ));
         }
         if let Some(rule) = &item.rule {
-            for reason in shared.linter.allow_reasons(rule) {
+            for reason in shared
+                .linter
+                .allow_reasons(&path_of(p.text_document.uri.as_str()), rule)
+            {
                 let line = range.start.line;
                 let at = Position::new(line, 0);
                 let directive =
