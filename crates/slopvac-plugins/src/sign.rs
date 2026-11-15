@@ -157,7 +157,7 @@ impl PublicKey {
 
 /// The first-party release public key, compiled in from `keys/slopvac-release.pub`.
 /// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
-const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
+pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
 
 /// Namespaces that only the first-party release key may sign.
 pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
@@ -169,7 +169,11 @@ pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
 /// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
 /// then have no first-party key, so first-party verification refuses.
 pub fn release_key() -> Result<PublicKey, SignError> {
-    PublicKey::from_pub_file(RELEASE_KEY_FILE)
+    release_key_from(RELEASE_KEY_FILE)
+}
+
+pub(crate) fn release_key_from(text: &str) -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(text)
 }
 
 /// Which keys may sign which namespaces.
@@ -192,18 +196,18 @@ impl KeyPolicy {
     /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
     /// no policy, so nothing verifies as first-party.
     pub fn compiled() -> Result<Self, SignError> {
-        Ok(Self::with_first_party_key(release_key()?))
+        Self::compiled_from(RELEASE_KEY_FILE)
     }
 
-    fn with_first_party_key(key: PublicKey) -> Self {
-        Self {
-            first_party: vec![key],
+    fn compiled_from(key_file: &str) -> Result<Self, SignError> {
+        Ok(Self {
+            first_party: vec![release_key_from(key_file)?],
             first_party_namespaces: FIRST_PARTY_NAMESPACES
                 .iter()
                 .map(|n| (*n).to_owned())
                 .collect(),
             pinned: BTreeMap::new(),
-        }
+        })
     }
 
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
@@ -739,16 +743,28 @@ pub fn verify_rotation(
 mod tests {
     use super::*;
 
+    const MALFORMED: [&str; 3] = [
+        "",
+        "untrusted comment: x\n",
+        "untrusted comment: x\nnot-a-key\n",
+    ];
+
     #[test]
-    fn a_malformed_key_file_is_a_typed_error_not_a_panic() {
-        for text in [
-            "",
-            "untrusted comment: x\n",
-            "untrusted comment: x\nnot-a-key\n",
-        ] {
+    fn a_malformed_compiled_key_is_a_typed_error_not_a_panic() {
+        for text in MALFORMED {
+            assert!(
+                matches!(release_key_from(text), Err(SignError::InvalidKey(_))),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_compiled_key_builds_no_policy() {
+        for text in MALFORMED {
             assert!(
                 matches!(
-                    PublicKey::from_pub_file(text),
+                    KeyPolicy::compiled_from(text),
                     Err(SignError::InvalidKey(_))
                 ),
                 "{text:?}"

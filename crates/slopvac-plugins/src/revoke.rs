@@ -60,8 +60,8 @@ use thiserror::Error;
 
 use crate::oci::{Client, Digest, OciError, Reference};
 use crate::sign::{
-    MEDIA_MINISIG, PublicKey, SignError, is_key_id, parse_canonical, release_key, utc_seconds,
-    verify_bytes,
+    MEDIA_MINISIG, PublicKey, RELEASE_KEY_FILE, SignError, is_key_id, parse_canonical,
+    release_key_from, utc_seconds, verify_bytes,
 };
 use crate::trust::{Revocation, TrustRecord};
 
@@ -472,7 +472,17 @@ impl Revocations {
         source: Reference,
         now: &str,
     ) -> Result<Self, RevocationError> {
-        let root = release_key().map_err(|e| RevocationError::RootKey(e.to_string()))?;
+        Self::with_root_text(RELEASE_KEY_FILE, dir, source, now)
+    }
+
+    fn with_root_text(
+        key_file: &str,
+        dir: impl Into<PathBuf>,
+        source: Reference,
+        now: &str,
+    ) -> Result<Self, RevocationError> {
+        let root =
+            release_key_from(key_file).map_err(|e| RevocationError::RootKey(e.to_string()))?;
         Self::new(dir, vec![root], source, now)
     }
 
@@ -686,4 +696,23 @@ fn set_private_file(path: &Path) -> io::Result<()> {
 #[allow(clippy::unnecessary_wraps)]
 fn set_private_file(_: &Path) -> io::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_malformed_compiled_root_builds_no_revocations() {
+        let source = Reference::parse("127.0.0.1:9/slopvac/revocations:latest").unwrap();
+        for text in [
+            "",
+            "untrusted comment: x\n",
+            "untrusted comment: x\nnot-a-key\n",
+        ] {
+            let r =
+                Revocations::with_root_text(text, "unused", source.clone(), "2026-11-01T00:00:00Z");
+            assert!(matches!(r, Err(RevocationError::RootKey(_))), "{text:?}");
+        }
+    }
 }
