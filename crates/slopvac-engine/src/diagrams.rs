@@ -128,13 +128,18 @@ impl DiagramChecker for SignalChecker {
         ));
         found
             .into_iter()
-            .filter_map(|hit: SignalHit| {
-                let (_, rule) = self.rules.iter().find(|(s, _)| *s == hit.signal)?;
-                Some(DiagramHit {
-                    rule: rule.id.clone(),
-                    span: hit.span,
-                    message: hit.message,
-                })
+            .flat_map(|hit: SignalHit| {
+                // Every rule that names the signal gets the hit. The engine drops it for a rule
+                // that is off or does not apply, so an inactive rule never hides an active one.
+                self.rules
+                    .iter()
+                    .filter(move |(s, _)| *s == hit.signal)
+                    .map(|(_, rule)| DiagramHit {
+                        rule: rule.id.clone(),
+                        span: hit.span.clone(),
+                        message: hit.message.clone(),
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect()
     }

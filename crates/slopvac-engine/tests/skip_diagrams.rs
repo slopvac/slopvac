@@ -347,3 +347,99 @@ fn a_checker_range_that_is_reversed_or_out_of_bounds_is_an_error_with_no_finding
         assert!(result.is_err(), "{name}: {result:?}");
     }
 }
+fn signal_rule(id: &str, check: &str, extra: &serde_json::Value) -> serde_json::Value {
+    common::rule(
+        id,
+        &serde_json::json!({"kind": "structure", "check": check}),
+        extra,
+    )
+}
+
+fn found(engine: &Engine, input: &Input<'_>) -> Vec<String> {
+    engine
+        .lint(input)
+        .unwrap()
+        .findings
+        .iter()
+        .map(|f| f.rule_id.to_string())
+        .collect()
+}
+
+#[test]
+fn an_allow_with_a_listed_exception_suppresses_a_dispatched_diagram_rule() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"exceptions": [{"name": "figure-caption"}]}),
+    );
+    let engine = Engine::new(
+        vec![ruleset(vec![category("diagram", &[rule])])],
+        settings(),
+    )
+    .unwrap();
+    let allow = "<!-- slopvac-allow: rule=core:diagram.meta-reference reason=figure-caption -->\n";
+    let text = format!("See the diagram below for details.\n\n{DIAGRAM}");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &text)),
+        ["core:diagram.meta-reference"]
+    );
+    let allowed = format!("{allow}{text}");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &allowed)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn note_long_flags_a_six_word_note_and_not_a_five_word_one() {
+    let note = |n: &str| format!("sequenceDiagram\n  participant A\n  Note right of A: {n}\n");
+    let engine = diagram_engine(settings());
+    let flag = |n: &str| found(&engine, &Input::diagram("s.mmd", &note(n), Format::Mermaid));
+    assert_eq!(
+        flag("keys rotate every night at midnight"),
+        ["diagrams:diagram.note-long"]
+    );
+    assert_eq!(flag("keys rotate every night here"), Vec::<String>::new());
+}
+
+#[test]
+fn prose_that_restates_the_labels_is_flagged_and_prose_that_adds_a_reason_is_not() {
+    let labels = "flowchart TD\n  A[Load Balancer] --> B[API Gateway]\n  B --> C[Auth Service]\n  C --> D[User Database]\n";
+    let restating = "Requests reach the load balancer first. The balancer forwards each request to the API gateway. The gateway asks the auth service to check the token, and then the user database returns the account record for that user. Responses travel back through the same path to the client over the network connection.";
+    let adding = "We cap each tenant at 200 requests per second because the shared cache saturates beyond that point. When the cache fails, reads fall back to the primary at a latency cost of roughly 40 milliseconds, so alerts fire on the hit ratio instead of errors.";
+    let engine = diagram_engine(settings());
+    let doc = |prose: &str| format!("{prose}\n\n```mermaid\n{labels}```\n");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &doc(restating))),
+        ["diagrams:diagram.prose-restates-labels"]
+    );
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &doc(adding))),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_inactive_rule_does_not_hide_a_later_rule_with_the_same_check() {
+    let first = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let second = signal_rule("long-label", "diagram-label-run-on", &serde_json::json!({}));
+    let mut s = settings();
+    s.rule_levels
+        .insert(id("core:diagram.label-run-on"), Level::Off);
+    let engine = Engine::new(
+        vec![ruleset(vec![
+            category("diagram", &[first]),
+            category("extra", &[second]),
+        ])],
+        s,
+    )
+    .unwrap();
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        ["core:extra.long-label"]
+    );
+}

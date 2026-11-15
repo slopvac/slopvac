@@ -161,6 +161,8 @@ impl Active {
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
+    /// The names a `slopvac-allow` may cite for the rule.
+    exceptions: Vec<String>,
 }
 
 /// Where a rule id points.
@@ -334,11 +336,42 @@ impl Engine {
             self.catalog.insert(key.clone(), Catalog::Diagram);
             if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
                 self.running.insert(key);
-                self.diagram_rules.insert(id, ActiveDiagram { severity });
+                self.diagram_rules.insert(
+                    id,
+                    ActiveDiagram {
+                        severity,
+                        exceptions: Vec::new(),
+                    },
+                );
             }
         }
         self.checkers.push(checker);
         self
+    }
+
+    /// Run `loaded` as a diagram rule when it names a signal of `slopvac-diagrams`.
+    fn add_signal_rule(
+        rules: &mut HashMap<RuleId, ActiveDiagram>,
+        loaded: &LoadedRule,
+        severity: Severity,
+    ) -> bool {
+        let rule = loaded.rule();
+        if !matches!(&rule.match_, Match::Structure(m) if diagrams::signal_of(m).is_some()) {
+            return false;
+        }
+        let exceptions = rule
+            .exceptions()
+            .iter()
+            .map(|e| e.name.to_string())
+            .collect();
+        rules.insert(
+            loaded.id().clone(),
+            ActiveDiagram {
+                severity,
+                exceptions,
+            },
+        );
+        true
     }
 
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
@@ -421,10 +454,7 @@ impl Engine {
                             }
                         }
                         MatchKind::Structure => {
-                            let signal = matches!(&rule.match_, Match::Structure(m) if diagrams::signal_of(m).is_some());
-                            if signal {
-                                self.diagram_rules
-                                    .insert(loaded.id().clone(), ActiveDiagram { severity });
+                            if Self::add_signal_rule(&mut self.diagram_rules, loaded, severity) {
                                 signal_sets.insert(s);
                             } else {
                                 *unrun.entry("structure").or_default() += 1;
@@ -1154,7 +1184,8 @@ impl Run<'_> {
             return Ok(None);
         };
         let span = self.source_span(&hit.span, nearby)?;
-        if self.suppressed(hit.rule.as_str(), &[], span) {
+        let exceptions: Vec<&str> = active.exceptions.iter().map(String::as_str).collect();
+        if self.suppressed(hit.rule.as_str(), &exceptions, span) {
             return Ok(None);
         }
         let pack =
