@@ -314,7 +314,12 @@ def test_contrastive_appositive_severity_by_profile(profile, expected):
         ("Timeouts apply to every call (#2102).", True),
         ("The cache key changed because of PLAT-1042.", True),
         ("We refactored the loader to read from the config table.", True),
+        ("Clients issue 100 requests per second.", False),
         ("The device list shows GPU-0 and GPU-3.", False),
+        ("The device list shows GPU-12 and GPU-345.", False),
+        ("The format is UTF-16 and ISO-8601.", False),
+        ("The digest uses SHA3-256 or BLAKE2-256.", False),
+        ("Run `git show commit 3f9a2c1` to inspect it.", False),
         ("The weakness is tracked as CWE-77 in the catalog.", False),
         ("The digest uses SHA-256 and UTF-8 text.", False),
         ("The loader reads the config table.", False),
@@ -325,3 +330,26 @@ def test_history_internal_reference(text, expected):
     engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
     findings = engine.run(parse("note.md", text))
     assert any(f.rule_id.endswith(".history-internal-reference") for f in findings) == expected
+
+
+@pytest.mark.parametrize(
+    "profile,expected",
+    [
+        (Profile.STRICT, Severity.WARNING),
+        (Profile.NORMAL, Severity.WARNING),
+        (Profile.RELAXED, None),
+    ],
+)
+def test_history_internal_reference_severity_by_profile(profile, expected):
+    from slopvac.config import RuleSettings
+
+    rule_id = "docs-discipline.history-internal-reference"
+    # Opt the rule in so only the tier can silence it.
+    config = Config(
+        profile=profile,
+        rules={rule_id: RuleSettings(severity=Severity.WARNING)},
+    )
+    engine = Engine(load_ruleset().rules, resolve_for(config, Path("note.md")))
+    findings = engine.run(parse("note.md", "Timeouts apply to every call, see PR 482."))
+    severities = [f.severity for f in findings if f.rule_id == rule_id]
+    assert severities == ([] if expected is None else [expected])

@@ -172,7 +172,7 @@
       "scope": "prose",
       "match": {
         "kind": "pattern",
-        "pattern": "\\b(?:commit|cherry-picked from|reverted in|fixed in|introduced in)\\s+[0-9a-f]{7,40}\\b|\\b(?:PRs?|MRs?|pull requests?|issues?)\\s+#?\\d+\\b|\\(#\\d+\\)|\\b(?!(?:UTF|SHA|ISO|AES|RSA|MD|RFC|CVE|CWE|GPU|GPT|TLS|SSL|HTTP|IPV|ECDSA|CRC|BLAKE|OWASP|NIST|ASVS)-)[A-Z][A-Z0-9]{1,9}-\\d{2,6}\\b|\\b[Ww]e (?:refactored|reworked|rewrote|cleaned up|reorgani[sz]ed)\\b",
+        "pattern": "\\b(?:commit|cherry-picked from|reverted in|fixed in|introduced in)\\s+[0-9a-f]{7,40}\\b|\\b(?:PRs?|MRs?|pull requests?)\\s+#?\\d+\\b|\\bissues?\\s+#\\d+\\b|\\b(?:see|per|closes|closed|fixes|fixed|resolves|resolved|in)\\s+issues?\\s+\\d+\\b|\\(#\\d+\\)|\\b(?!(?:UTF|SHA|ISO|AES|RSA|MD|RFC|CVE|CWE|GPU|GPT|TLS|SSL|HTTP|IPV|ECDSA|CRC|BLAKE|OWASP|NIST|ASVS)[0-9]*-)[A-Z][A-Z0-9]{1,9}-\\d{2,6}\\b|\\b[Ww]e (?:refactored|reworked|rewrote|cleaned up|reorgani[sz]ed)\\b",
         "ignore_case": false,
         "match_all_caps": true
       },
@@ -194,6 +194,10 @@
         {
           "bad": "The cache key changed because of PLAT-1042.",
           "good": "The cache key includes the tenant ID."
+        },
+        {
+          "bad": "The importer skips bad rows, see issue #596.",
+          "good": "Clients issue 100 requests per second."
         },
         {
           "bad": "We refactored the loader to read from the config table.",
