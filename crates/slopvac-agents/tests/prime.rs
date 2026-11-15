@@ -226,3 +226,21 @@ fn prime_migrate_prints_the_migration_guide_from_its_one_source() {
         );
     }
 }
+
+#[test]
+fn diagrams_topic_is_indexed_and_names_every_supported_format() {
+    assert!(render(None, Level::Default).contains("- `diagrams`: "));
+    let text = render(Some("diagrams"), Level::Default);
+    assert!(text.starts_with("# Prime: diagrams"));
+    for needle in [
+        "experimental",
+        "slopvac lint <paths>",
+        ".mmd",
+        ".puml",
+        ".drawio",
+        ".drawio.svg",
+        ".excalidraw",
+    ] {
+        assert!(text.contains(needle), "{needle}");
+    }
+}

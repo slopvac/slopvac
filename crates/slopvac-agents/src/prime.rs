@@ -25,10 +25,11 @@ pub const SCHEMA_VERSION: u8 = 3;
 const BASE: &str = include_str!("../topics/base.md.j2");
 
 /// Topics in index order: name and source.
-const TOPICS: [(&str, &str); 7] = [
+const TOPICS: [(&str, &str); 8] = [
     ("write", include_str!("../topics/write.md.j2")),
     ("review", include_str!("../topics/review.md.j2")),
     ("report", include_str!("../topics/report.md.j2")),
+    ("diagrams", include_str!("../topics/diagrams.md.j2")),
     ("configure", include_str!("../topics/configure.md.j2")),
     ("migrate", include_str!("../topics/migrate.md.j2")),
     ("setup", include_str!("../topics/setup.md.j2")),
