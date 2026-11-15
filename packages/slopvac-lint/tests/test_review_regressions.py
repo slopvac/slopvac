@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from slopvac import ruleset_cache, vale_cache
 from slopvac.analyze import parse
 from slopvac.cli import main
-from slopvac.config import Config, resolve_for
+from slopvac.config import Config, Profile, Severity, resolve_for
 from slopvac.engine import Engine
 from slopvac.rules import load_ruleset
 from slopvac.suppression import scan_suppressions
@@ -199,7 +199,7 @@ def test_explicit_inspection_profile_ignores_file_overrides(tmp_path):
 @pytest.mark.parametrize(
     "text,rule",
     [
-        ("The Harness Measures, It Does Not Judge", "contrastive-inversion-frames"),
+        ("The Harness Measures, It Does Not Judge", "contrastive-appositive"),
         ("Slopvac never writes the config.", "negative-guarantee-core"),
     ],
 )
@@ -265,3 +265,41 @@ def test_packaged_cache_identity_ignores_cwd_collisions(tmp_path, monkeypatch):
     before = ruleset_cache.content_key(sources)
     (tmp_path / sources[0][0]).write_text("unrelated local content")
     assert ruleset_cache.content_key(_read_sources([])) == before
+
+
+@pytest.mark.parametrize(
+    "text,rule,expected",
+    [
+        ("It's not a linter, it's a review partner.", "contrastive-inversion-frames", True),
+        ("The parser reads JSON; it does not read YAML.", "contrastive-inversion-frames", False),
+        ("The parser reads JSON; it does not read YAML.", "contrastive-appositive", True),
+        ("The client takes a model ID; it does not need to appear in the list.", "contrastive-appositive", False),
+        ("The server stores a token; it does not require a refresh.", "contrastive-appositive", False),
+        ("The server stores a token; it must not log the value.", "contrastive-appositive", False),
+        ("The server stores a token; it should not log the value.", "contrastive-appositive", False),
+        ("The parser reads JSON; it does not read `yaml` files.", "contrastive-appositive", False),
+    ],
+)
+def test_contrastive_forms_report_under_their_own_rule(text, rule, expected):
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert any(f.rule_id.endswith("." + rule) for f in findings) == expected
+
+
+@pytest.mark.parametrize(
+    "profile,expected",
+    [
+        (Profile.STRICT, Severity.WARNING),
+        (Profile.NORMAL, Severity.SUGGESTION),
+        (Profile.RELAXED, None),
+    ],
+)
+def test_contrastive_appositive_severity_by_profile(profile, expected):
+    engine = Engine(
+        load_ruleset().rules, resolve_for(Config(profile=profile), Path("note.md"))
+    )
+    findings = engine.run(parse("note.md", "The parser reads JSON; it does not read YAML."))
+    severities = [
+        f.severity for f in findings if f.rule_id.endswith(".contrastive-appositive")
+    ]
+    assert severities == ([] if expected is None else [expected])

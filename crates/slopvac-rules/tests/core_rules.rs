@@ -55,16 +55,16 @@ fn every_core_category_file_validates_against_both_schemas() {
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
     assert_eq!(set.categories().len(), 26);
-    assert_eq!(set.len(), 235);
-    assert_eq!(set.rules().count(), 235);
+    assert_eq!(set.len(), 236);
+    assert_eq!(set.rules().count(), 236);
 }
 
 #[test]
 fn rules_are_counted_by_kind() {
     let set = core();
     let count = |k| set.rules_of_kind(k).count();
-    // 109 + 18 + 17 lexical rules; the rest carry no pattern.
-    assert_eq!(count(MatchKind::Pattern), 109);
+    // 110 + 18 + 17 lexical rules; the rest carry no pattern.
+    assert_eq!(count(MatchKind::Pattern), 110);
     assert_eq!(count(MatchKind::Substitution), 18);
     assert_eq!(count(MatchKind::Tokens), 17);
     assert_eq!(count(MatchKind::Judgement), 68);
@@ -234,8 +234,8 @@ fn every_lexical_pattern_matches_python_on_the_corpus() {
             .all(|hits| !hits.as_object().unwrap().is_empty()),
         "every rule must match at least one corpus text"
     );
-    assert_eq!(rules, 144);
-    assert_eq!(compared, 144 * texts.len());
+    assert_eq!(rules, 145);
+    assert_eq!(compared, 145 * texts.len());
     assert!(
         differing.is_empty(),
         "{} differing (rule, text) pairs, first: {:#?}",

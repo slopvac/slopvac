@@ -155,6 +155,7 @@ max_per_100_words = 0.5
 weight = 1.2
 
 [rules]
+"ai-tells-structure.contrastive-appositive" = "warning"
 "ai-tells-structure.contrastive-inversion-remainder" = "error"
 "ai-tells-structure.definitional-negation-pair" = "warning"
 "ai-tells-structure.staccato-negative-parallel-remainder" = "error"
