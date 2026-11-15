@@ -3,6 +3,7 @@
 mod builtin;
 mod cli;
 mod declarative;
+mod declared;
 mod genre;
 mod pattern;
 mod tag;
@@ -13,6 +14,7 @@ pub use builtin::{
 };
 pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, FrontmatterCondition, Scope, TaggerSpec, When};
+pub use declared::{DeclaredContextTagger, context_hint};
 pub use genre::{
     DetectSignal, GenreAssignment, GenreRegistry, GenreResult, GenreSource, GenreSpec, Reason,
     ResolveOptions, files_match, parse_genres,
