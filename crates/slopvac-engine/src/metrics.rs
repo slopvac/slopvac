@@ -229,7 +229,7 @@ impl<'a> Subject<'a> {
             "paragraph_sentences" => self.paragraphs(cmp, limit, |b| Ok(Some(b.sentences.len()))),
             "enumerating_paragraph_words" => self.paragraphs(cmp, limit, |b| {
                 let mut lists = 0;
-                for s in &b.sentences {
+                for s in b.sentences {
                     if coordinated_items(&s.text)? >= 3 {
                         lists += 1;
                     }
@@ -311,14 +311,11 @@ impl<'a> Subject<'a> {
         &self,
         cmp: Comparison,
         limit: f64,
-        count: impl Fn(&crate::prepare::ProseBlock<'_>) -> Result<Option<usize>, TextError>,
+        count: impl Fn(&crate::prepare::Paragraph<'_>) -> Result<Option<usize>, TextError>,
     ) -> Result<Vec<Hit<'a>>, TextError> {
         let mut hits = Vec::new();
-        for block in self.prepared.blocks() {
-            if !matches!(block.kind, BlockKind::Paragraph) || block.contained {
-                continue;
-            }
-            let Some(n) = count(block)? else { continue };
+        for block in self.prepared.paragraphs() {
+            let Some(n) = count(&block)? else { continue };
             if exceeds(float(n), cmp, limit) {
                 let span = block
                     .projection

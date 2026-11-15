@@ -123,6 +123,48 @@ pub(crate) struct ProseBlock<'a> {
     pub(crate) contained: bool,
     pub(crate) projection: &'a Projection,
     pub(crate) sentences: Vec<Sentence>,
+    /// The raw HTML block that holds the block, as an index into `Prepared::html`.
+    html: Option<usize>,
+}
+
+/// A paragraph for the paragraph metrics: a Markdown paragraph, or all the prose of one
+/// raw HTML block.
+pub(crate) struct Paragraph<'p> {
+    pub(crate) projection: &'p Projection,
+    pub(crate) sentences: &'p [Sentence],
+}
+
+/// The prose of one raw HTML block, joined as one paragraph as 2.x reads it.
+struct HtmlParagraph {
+    projection: Projection,
+    sentences: Vec<Sentence>,
+}
+
+/// `projections` as one text, with a synthetic space between them.
+fn join<'p>(projections: impl Iterator<Item = &'p Projection>) -> Projection {
+    let mut joined = Projection::new();
+    let mut end = 0;
+    let mut first = true;
+    for projection in projections {
+        let tokens = projection.tokens();
+        if tokens.is_empty() {
+            continue;
+        }
+        if !first {
+            // The space between blocks bridges the source between them.
+            joined.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
+        }
+        first = false;
+        for (i, token) in tokens.iter().enumerate() {
+            if projection.is_bridge(i) {
+                joined.push_bridge(token.kind, &token.text, token.src);
+            } else {
+                joined.push_unordered(token.kind, &token.text, token.src);
+            }
+            end = token.src.end();
+        }
+    }
+    joined
 }
 
 struct Composite {
@@ -135,12 +177,17 @@ pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
     composite: OnceCell<Result<Composite, TextError>>,
-    /// The source extent of each raw HTML block with prose, in source order: a paragraph each.
-    html_extents: Vec<Range<usize>>,
+    /// The raw HTML blocks with prose, in source order: a paragraph each.
+    html: Vec<HtmlParagraph>,
 }
 
 impl<'a> Prepared<'a> {
     pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, TextError> {
+        let extents: Vec<Range<usize>> = doc
+            .html_blocks
+            .iter()
+            .filter_map(|b| Some(b.segments.first()?.start()..b.segments.last()?.end()))
+            .collect();
         let mut blocks = Vec::new();
         for block in &doc.blocks {
             let Some(projection) = &block.projection else {
@@ -149,22 +196,35 @@ impl<'a> Prepared<'a> {
             if projection.text().is_empty() {
                 continue;
             }
+            let at = projection.tokens().first().map_or(0, |t| t.src.start());
+            let next = extents.partition_point(|e| e.end <= at);
             blocks.push(ProseBlock {
                 kind: &block.kind,
                 contained: !block.containers.is_empty(),
                 projection,
                 sentences: split_sentences(projection.text())?,
+                html: extents.get(next).filter(|e| e.start <= at).map(|_| next),
+            });
+        }
+        let mut html = Vec::with_capacity(extents.len());
+        for index in 0..extents.len() {
+            let projection = join(
+                blocks
+                    .iter()
+                    .filter(|b| b.html == Some(index))
+                    .map(|b| b.projection),
+            );
+            let sentences = split_sentences(projection.text())?;
+            html.push(HtmlParagraph {
+                projection,
+                sentences,
             });
         }
         Ok(Self {
             source,
             blocks,
             composite: OnceCell::new(),
-            html_extents: doc
-                .html_blocks
-                .iter()
-                .filter_map(|b| Some(b.segments.first()?.start()..b.segments.last()?.end()))
-                .collect(),
+            html,
         })
     }
 
@@ -187,19 +247,31 @@ impl<'a> Prepared<'a> {
     }
 
     pub(crate) fn paragraph_count(&self) -> usize {
-        // A raw HTML block is one paragraph in 2.x, however many elements it holds, so
-        // the paragraphs read out of it are not counted one by one.
-        let inside_html = |b: &ProseBlock<'_>| {
-            let at = b.projection.tokens().first().map_or(0, |t| t.src.start());
-            let next = self.html_extents.partition_point(|e| e.end <= at);
-            self.html_extents.get(next).is_some_and(|e| e.start <= at)
-        };
-        let markdown = self
-            .blocks
-            .iter()
-            .filter(|b| matches!(b.kind, BlockKind::Paragraph) && !b.contained && !inside_html(b))
-            .count();
-        markdown + self.html_extents.len()
+        self.paragraphs().len()
+    }
+
+    /// The paragraphs, in the order of their first block. A raw HTML block is one paragraph
+    /// in 2.x, however many elements it holds, so the paragraphs read out of it are not
+    /// counted one by one.
+    pub(crate) fn paragraphs(&self) -> Vec<Paragraph<'_>> {
+        let mut seen = vec![false; self.html.len()];
+        let mut out = Vec::new();
+        for block in &self.blocks {
+            if let Some(i) = block.html {
+                if !std::mem::replace(&mut seen[i], true) {
+                    out.push(Paragraph {
+                        projection: &self.html[i].projection,
+                        sentences: &self.html[i].sentences,
+                    });
+                }
+            } else if matches!(block.kind, BlockKind::Paragraph) && !block.contained {
+                out.push(Paragraph {
+                    projection: block.projection,
+                    sentences: &block.sentences,
+                });
+            }
+        }
+        out
     }
 
     /// The whole document as one projection, with a synthetic space between blocks.
@@ -212,28 +284,7 @@ impl<'a> Prepared<'a> {
     fn composite(&self) -> Result<&Composite, TextError> {
         self.composite
             .get_or_init(|| {
-                let mut projection = Projection::new();
-                let mut end = 0;
-                let mut first = true;
-                for block in &self.blocks {
-                    let tokens = block.projection.tokens();
-                    if tokens.is_empty() {
-                        continue;
-                    }
-                    if !first {
-                        // The space between blocks bridges the source between them.
-                        projection.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
-                    }
-                    first = false;
-                    for (i, token) in tokens.iter().enumerate() {
-                        if block.projection.is_bridge(i) {
-                            projection.push_bridge(token.kind, &token.text, token.src);
-                        } else {
-                            projection.push_unordered(token.kind, &token.text, token.src);
-                        }
-                        end = token.src.end();
-                    }
-                }
+                let projection = join(self.blocks.iter().map(|b| b.projection));
                 let sentences = split_sentences(projection.text())?;
                 Ok(Composite {
                     projection,
