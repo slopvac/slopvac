@@ -155,7 +155,7 @@ fn logging_emits_on_stderr_when_enabled() {
         .arg(&path)
         .assert()
         .code(0)
-        .stdout(predicate::str::is_empty())
+        .stdout(predicate::str::contains("lint start").not())
         .stderr(predicate::str::contains("lint start"));
 }
 

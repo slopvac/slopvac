@@ -12,6 +12,7 @@ pub mod exit;
 pub mod generate;
 pub mod logging;
 pub mod offline;
+pub mod output;
 pub mod redact;
 mod run;
 pub mod stdin;
