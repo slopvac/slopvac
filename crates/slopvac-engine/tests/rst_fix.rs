@@ -152,16 +152,24 @@ fn words_in_two_cells_of_a_wrapped_row_are_both_fixed_but_a_phrase_across_the_wr
     let source = std::fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap();
     let e = engine_for(
         python.clone(),
-        &json!({"continues": "goes", "Rightonly": "solo"}),
+        &json!({"continues": "extending", "Rightonly": "singleton"}),
     );
     let report = fixed(&e, &source);
     assert_eq!(
         report.text,
         source
-            .replacen("continues", "goes", 1)
-            .replacen("Rightonly", "Solo", 1)
+            .replacen("continues", "extending", 1)
+            .replacen("Rightonly", "Singleton", 1)
     );
     assert_eq!(report.applied, 2);
+    // A shorter word would leave the borders out of line: refused, nothing written.
+    let e = engine_for(python.clone(), &json!({"continues": "goes"}));
+    let report = fixed(&e, &source);
+    assert_eq!(report.text, source);
+    assert_eq!(
+        report.skipped.iter().map(|s| s.reason).collect::<Vec<_>>(),
+        [SkipReason::Protected]
+    );
     // "wrap continues" runs over the line break, which also crosses the cell beside it, so
     // the text must not change whether the finding is dropped or refused.
     let e = engine_for(python, &json!({"wrap continues": "x"}));
@@ -208,4 +216,59 @@ fn a_converter_that_disappears_after_the_lint_fails_the_fix_and_writes_nothing()
         std::fs::read_to_string(root.join("doc.rst")).unwrap(),
         source
     );
+}
+
+/// The table of `table-wrap.rst.in` after a fix is still one table of the same cells.
+#[test]
+fn width_changing_fixes_in_a_table_are_refused_and_the_table_stays_intact_with_docutils() {
+    use slopvac_parse::BlockKind;
+    let mut options = RstOptions::default();
+    options.project_roots = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR"))];
+    let adapter = slopvac_engine::rst::RstAdapter::new(options.clone());
+    if let Err(error) = adapter.interpreter() {
+        assert!(
+            std::env::var_os("SLOPVAC_RST_LIVE").is_none(),
+            "SLOPVAC_RST_LIVE is set but there is no usable docutils: {error}"
+        );
+        return;
+    }
+    let source = std::fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap();
+    let shape = |text: &str| {
+        let parsed = adapter.parse(text).unwrap();
+        let count = |want: fn(&BlockKind) -> bool| {
+            parsed
+                .document
+                .blocks
+                .iter()
+                .filter(|b| want(&b.kind))
+                .count()
+        };
+        (
+            count(|k| matches!(k, BlockKind::Table)),
+            count(|k| matches!(k, BlockKind::TableCell { .. })),
+        )
+    };
+    let before = shape(&source);
+    assert_eq!(before.0, 1);
+    assert!(before.1 >= 2, "{before:?}");
+
+    let fix_with = |words: serde_json::Value| {
+        let e = engine(&[rule(
+            "swap",
+            &json!({"kind": "substitution", "substitutions": words}),
+            &json!({}),
+        )])
+        .with_rst(options.clone());
+        fixed(&e, &source)
+    };
+    let shorter = fix_with(json!({"continues": "goes", "Rightonly": "solo"}));
+    assert_eq!(shorter.text, source);
+    assert_eq!(shorter.applied, 0);
+    assert_eq!(shorter.skipped.len(), 2);
+    let same = fix_with(json!({"continues": "extending", "Rightonly": "singleton"}));
+    assert_eq!(same.applied, 2);
+    assert_eq!(shape(&same.text), before);
+    // Every line is as wide as it was, so the borders still line up.
+    let widths = |t: &str| t.lines().map(str::len).collect::<Vec<_>>();
+    assert_eq!(widths(&same.text), widths(&source));
 }

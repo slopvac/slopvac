@@ -32,7 +32,9 @@
 //! footnote and substitution references, field names, and any block the adapter could place
 //! only by line. Link text stays fixable except where it names the link's target (see
 //! [`crate::rst`]). The spans come from a second run of the docutils driver on the current
-//! source, so a missing interpreter is a [`FixError::Rst`], never a silent skip.
+//! source, so a missing interpreter is a [`FixError::Rst`], never a silent skip. Inside a
+//! table a fix must keep the width of the text (ASCII of equal length), because the cells
+//! are not re-padded; any other edit there is refused as protected.
 
 use std::ops::RangeInclusive;
 
@@ -57,7 +59,7 @@ pub enum SkipReason {
     /// since the lint run.
     Stale,
     /// The edit touches front matter, inline code, a code block or, in RST, anything but
-    /// plain prose words.
+    /// plain prose words, or it changes the width of text in an RST table.
     Protected,
     /// A fix accepted earlier overlaps the edit.
     Overlap,
@@ -128,10 +130,19 @@ pub fn fix_document(
     doc: &Document,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FixReport, FixError> {
+    let mut tables = Vec::new();
     let protected = if input.kind != Kind::Rst {
         protected_spans(input)?
     } else if doc.findings.iter().any(|f| f.fix.is_some()) {
-        engine.rst_adapter().parse(input.source)?.protected
+        let parsed = engine.rst_adapter().parse(input.source)?;
+        tables = parsed
+            .document
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::Table)
+            .map(|b| b.span)
+            .collect();
+        parsed.protected
     } else {
         Vec::new()
     };
@@ -141,7 +152,18 @@ pub fn fix_document(
     let mut skipped = Vec::new();
     for finding in &doc.findings {
         let Some(fix) = &finding.fix else { continue };
-        let reason = refusal(
+        let cased: Vec<Edit> = fix
+            .edits()
+            .iter()
+            .map(|e| Edit {
+                span: e.span,
+                text: preserve_case(
+                    input.source.get(e.span.start()..e.span.end()).unwrap_or(""),
+                    &e.text,
+                ),
+            })
+            .collect();
+        let mut reason = refusal(
             finding,
             fix.edits(),
             input.source,
@@ -150,6 +172,15 @@ pub fn fix_document(
             &edits,
             changed_lines,
         );
+        // A table cell keeps the width of its text, or the borders no longer line up.
+        if reason.is_none()
+            && cased.iter().any(|e| {
+                overlaps_any(e.span, &tables)
+                    && !same_width(&input.source[e.span.start()..e.span.end()], &e.text)
+            })
+        {
+            reason = Some(SkipReason::Protected);
+        }
         if let Some(reason) = reason {
             skipped.push(Skipped {
                 rule_id: finding.rule_id.clone(),
@@ -158,10 +189,7 @@ pub fn fix_document(
             });
             continue;
         }
-        edits.extend(fix.edits().iter().map(|e| Edit {
-            span: e.span,
-            text: preserve_case(&input.source[e.span.start()..e.span.end()], &e.text),
-        }));
+        edits.extend(cased);
         applied += 1;
     }
     let text = apply_edits(input.source, &edits)?;
@@ -170,6 +198,12 @@ pub fn fix_document(
         applied,
         skipped,
     })
+}
+
+/// Whether `new` takes the same columns as `old`. Only ASCII text is known to: another
+/// character may be wide or combining, and width tables are not worth a dependency here.
+fn same_width(old: &str, new: &str) -> bool {
+    old == new || (old.is_ascii() && new.is_ascii() && old.len() == new.len())
 }
 
 fn refusal(
