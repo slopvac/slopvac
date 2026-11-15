@@ -2458,9 +2458,12 @@ name = "slopvac-migrate"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "jsonschema",
+ "serde_json",
  "similar 3.2.1",
  "tempfile",
  "thiserror",
+ "toml",
  "toml_edit",
 ]
 

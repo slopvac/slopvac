@@ -10,7 +10,11 @@ mod cli;
 mod config;
 mod directives;
 mod guide;
+mod legacy;
+pub mod overlap;
 mod plan;
+mod preserve;
+mod preserve_doc;
 mod renames;
 mod report;
 mod steering;
@@ -18,7 +22,7 @@ mod steering;
 use std::fmt;
 
 pub use cli::{command, execute, run};
-pub use config::{Rewrite, STE_STYLE, migrate_config};
+pub use config::{Rewrite, migrate_config};
 pub use directives::rewrite_directives;
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
@@ -29,7 +33,8 @@ pub use steering::rewrite_steering;
 /// Switches for a migration run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Options {
-    /// Keep the 2.x vocabulary behavior by adding the STE style.
+    /// Reproduce the 2.x profile gates: select the `core:legacy-<profile>` style and
+    /// expand the config (docs/contract/profiles.md, section 4).
     pub preserve_behavior: bool,
 }
 
@@ -82,6 +87,23 @@ pub enum Error {
     /// A path would leave the project or cross a symbolic link, or a backup is in the way.
     #[error("unsafe: {0}")]
     Unsafe(String),
+    /// `--preserve-behavior` cannot decide how an override block overlaps the
+    /// others, because its `files` pattern is outside the supported grammar.
+    #[error(
+        "{file}:{line}: `overrides[{block}]`: cannot decide how this block overlaps the others: {reason}. \
+         --preserve-behavior accepts one pattern per block: an anchored path such as `docs/api` \
+         or a tree such as `docs/**`"
+    )]
+    OverrideOverlap {
+        /// The file.
+        file: String,
+        /// One-based line of the block.
+        line: usize,
+        /// Index of the block in `overrides`.
+        block: usize,
+        /// What is wrong with the pattern.
+        reason: String,
+    },
     /// The rename table is malformed.
     #[error("rename table: {0}")]
     RenameTable(String),
@@ -106,6 +128,7 @@ impl Error {
             Self::AlreadyMigrated { .. } => "config-already-migrated",
             Self::Conflict(_) => "migrate-config-conflict",
             Self::Unsafe(_) => "migrate-unsafe-path",
+            Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
             Self::Io { .. } => "migrate-io-failed",
         }

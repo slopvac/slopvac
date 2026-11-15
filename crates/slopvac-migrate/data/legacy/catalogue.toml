@@ -1,0 +1,273 @@
+# STUB(slopvac-8l4.16.11): data from PR #296 b138f5888a; re-verify when it lands.
+# The 2.x rule catalogue that `migrate --preserve-behavior` needs: each rule's kind
+# (checked or judgement) and tier per profile, taken from the 2.x rule YAML at that
+# commit, and each profile's per-rule defaults (docs/contract/compat/profiles/mapping.json).
+
+[defaults.strict]
+"ai-tells-structure.definitional-negation-pair" = "warning"
+"ai-tells-structure.negative-guarantee-core" = "warning"
+"prose-craft.latinisms" = "off"
+"prose-inclusive.ableist" = "off"
+"prose-inclusive.device-assumption" = "off"
+"prose-inclusive.exclusive" = "off"
+"ste-practices.gendered-or-exclusionary-language" = "off"
+"ste-practices.latin-abbreviation" = "off"
+"ste-practices.unclear-pronoun" = "off"
+
+[defaults.normal]
+"ai-tells-structure.definitional-negation-pair" = "warning"
+"ai-tells-structure.negative-guarantee-core" = "warning"
+"orwell.compound-preposition" = "warning"
+"prose-craft.latinisms" = "off"
+"prose-inclusive.ableist" = "off"
+"prose-inclusive.device-assumption" = "off"
+"prose-inclusive.exclusive" = "off"
+"ste-practices.gendered-or-exclusionary-language" = "off"
+"ste-practices.latin-abbreviation" = "off"
+"ste-practices.unclear-pronoun" = "off"
+
+[defaults.relaxed]
+"prose-craft.latinisms" = "off"
+"prose-inclusive.ableist" = "off"
+"prose-inclusive.device-assumption" = "off"
+"prose-inclusive.exclusive" = "off"
+"ste-practices.gendered-or-exclusionary-language" = "off"
+"ste-practices.latin-abbreviation" = "off"
+"ste-practices.unclear-pronoun" = "off"
+
+[rules]
+"ai-residue.chat-leakage" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-agentic.formulaic-universal-heading" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-content-shape.adjective-per-noun-spray" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-content-shape.durable-vocabulary-habits" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-content-shape.elegant-variation" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-content-shape.epigram-closer-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-content-shape.fabricated-citations-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-content-shape.fabricated-citations-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-content-shape.fake-specificity" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-content-shape.one-point-dilution" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-content-shape.over-writing-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-content-shape.padded-symmetry" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-content-shape.superficial-ing-analysis" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-content-shape.textbook-connector-runs" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-content-shape.unasked-for-rationale" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-content-shape.vaporware-description" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-figurative.colloquial-assessment" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-casts" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-draws" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-falls" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-lends" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-loud" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-rides" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-runs" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-sits" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-strikes" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.figurative-wins" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-figurative.resonate-overuse" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"ai-tells-formatting.bold-spray" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-formatting.cross-reference-signposting" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-formatting.em-dash-density" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-formatting.emoji-list-markers" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-formatting.heading-hierarchy" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-formatting.inline-header-list" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-formatting.italicised-copula" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-formatting.table-wrapping-one-sentence" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-formatting.title-case-heading" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ai-tells-register.anthropomorphised-justification-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.anthropomorphised-justification-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-register.corporate-analytic-filler-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.disclaimed-claim-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.disclaimed-claim-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-register.false-agency-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-register.faux-candor-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.faux-candor-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-register.figurative-verb-verdict-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.figurative-verb-verdict-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.hedged-symmetry" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.intensifier-tics-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.intensifier-tics-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-register.organic-consequence-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-register.organic-consequence-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.over-formatting-reflex" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-register.sycophantic-meta-residue" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-register.urgency-inflation-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-register.urgency-inflation-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.absolute-assertion-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.absolute-assertion-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.analogy-stack-authority" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.anaphora-abuse" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.audience-straddle-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.audience-straddle-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.cataphoric-lead-in-core" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.cataphoric-lead-in-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.contrastive-inversion-frames" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.contrastive-inversion-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.definitional-negation-pair" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.false-range" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.false-suspense-frames" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.false-suspense-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.fragment-question-pivot" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.heading-echo" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.hollow-acknowledgment" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.invented-concept-label" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.listicle-in-a-trench-coat" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.meta-narration-frames" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.meta-narration-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.negative-guarantee-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.negative-inventory-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.negative-inventory-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.rhetorical-question-transition" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.staccato-negative-parallel-frames" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.staccato-negative-parallel-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.summary-closer-frames" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ai-tells-structure.summary-closer-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.think-of-it-as-core" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.think-of-it-as-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.tricolon-abuse-core" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.tricolon-abuse-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ai-tells-structure.vague-attribution-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ai-tells-structure.vague-attribution-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"docs-discipline.history-narration" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"docs-discipline.internal-refs" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"docs-discipline.no-longer-change" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"docs-discipline.status-language" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"orwell.compound-preposition" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"orwell.concrete-floor" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"orwell.not-un" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"orwell.stale-figure" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"orwell.unsupported-evaluative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-agency.agentless-passive" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-agency.anthropomorphism" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-agency.false-agency" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-agency.narrator-distance" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-agency.unattributed-recommendation" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-craft.acronym-periods" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.ambiguity" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.articles" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.command-prompt" = { kind = "checked", strict = "advisory", normal = "excluded", relaxed = "excluded" }
+"prose-craft.conflict-markers" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.dead-opener" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-craft.directional-ref" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.first-person-plural" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-craft.future-tense" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-craft.gerund-heading" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-craft.hyphens" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.latinisms" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.link-text" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.misnomer" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.negative-requirement" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-craft.optional-plural" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.ordinals" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-craft.plural-abbreviation" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "advisory" }
+"prose-craft.politeness" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-craft.redundancy" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.relative-date" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-craft.self-reference" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.sentence-length" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-craft.spacing" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.unclear-antecedent" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.versions" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-craft.wordiness" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.bare-quantifier-with-figure-available" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.bidirectional-hedge" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.competing-actor-terms" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.frozen-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.hedged-hedge" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.hedged-into-uselessness" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.marketing-lexicon" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.marketing-register" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.negative-guarantee-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-discipline.no-longer-change-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-discipline.overloaded-sentence" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.phrasal-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-discipline.run-on" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-format.emoji-heading" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-format.no-unicode-dash" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-format.prose-block" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-inclusive.ableist" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inclusive.device-assumption" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inclusive.exclusive" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"prose-inflation.additive-hedge" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.apologizing" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-inflation.borderline-hype" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-inflation.business-jargon" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.document-preamble" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.hedge-stack" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-inflation.intensifier" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-inflation.nominalized-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-inflation.slop-lexicon" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.uncomparables" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.vague-declarative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-inflation.vague-quantifier" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-promotion.promotional-adjective-noun" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-promotion.promotional-puffery" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-promotion.promotional-verbs" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-promotion.strategy-buzzwords" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"prose-scope.code-change-prose-scope" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"prose-scope.epigram" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"prose-scope.formulaic-subject-verb-slogan" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-scope.implementation-leak" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-scope.rejected-alternative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-scope.unrequested-reassurance" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-descriptive.information-not-gradual" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-descriptive.missing-key-word-structure" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-descriptive.paragraph-has-multiple-topics" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-descriptive.paragraph-too-many-sentences" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-descriptive.paragraph-without-related-information" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ste-descriptive.sentence-too-long-descriptive" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-nouns.long-domain-term-without-short-form" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-nouns.multiword-noun-too-long" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-practices.ambiguous-preposition-with" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ste-practices.false-friend-term" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-practices.gendered-or-exclusionary-language" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-practices.inconsistent-wording-for-same-step" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-practices.latin-abbreviation" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-practices.omitted-conjunction-that" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-practices.phrasal-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-practices.possessive-form-unclear" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ste-practices.unclear-demonstrative-this" = { kind = "checked", strict = "advisory", normal = "excluded", relaxed = "excluded" }
+"ste-practices.unclear-pronoun" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "advisory" }
+"ste-practices.word-sense-incorrect" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-practices.word-swap-insufficient" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-procedural.condition-after-command" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-procedural.instruction-not-imperative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-procedural.multiple-instructions-per-sentence" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-procedural.note-gives-instruction" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-procedural.sentence-too-long-procedural" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-punctuation.colon-terminates-sentence-for-count" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-punctuation.hyphen-group-too-long" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-punctuation.hyphen-missing-in-compound-modifier" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-punctuation.parentheses-misuse" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ste-punctuation.semicolon-used" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-safety.risk-level-word-missing-or-wrong" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-safety.safety-block-does-not-start-with-command" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-safety.safety-block-missing-consequence" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
+"ste-sentences.complex-text-not-in-vertical-list" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-sentences.missing-article-or-determiner" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-sentences.missing-connector-between-related-sentences" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-sentences.omitted-subject" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-sentences.sentence-not-short-or-clear" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-sentences.vertical-list-item-punctuation" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-sentences.vertical-list-lead-in-missing-colon" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-verbs.auxiliary-stacking" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-verbs.complex-tense" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-verbs.gerund-outside-noun-use" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-verbs.nominalized-action" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-verbs.passive-voice" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-verbs.past-participle-not-adjectival" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-verbs.verb-form-not-listed" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.approved-word-substitution" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.domain-noun-category-membership" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.domain-noun-not-organization-approved" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.domain-noun-too-long-or-unclear" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
+"ste-words.domain-verb-category-membership" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.inconsistent-term-for-same-thing" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.noun-used-as-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.obligation-word-substitution" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.slang-or-jargon-term" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.unapproved-word-not-a-domain-noun" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.verb-or-adjective-form-not-permitted" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.verb-used-as-noun" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.word-outside-controlled-vocabulary" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.word-used-in-wrong-part-of-speech" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
+"ste-words.word-used-outside-permitted-sense" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
