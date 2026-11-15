@@ -22,7 +22,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-slopvac-update.workspace = true
 clap_complete = "4"
 clap_mangen = "0.3.3"
 serde.workspace = true
@@ -30,6 +29,7 @@ serde_json.workspace = true
 slopvac-model.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
+slopvac-update.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "ansi",
@@ -42,9 +42,9 @@ insta.workspace = true
 predicates = "3.1.4"
 proptest.workspace = true
 rstest.workspace = true
+serde_json.workspace = true
 snapbox.workspace = true
 tempfile = "3.27.0"
-serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -94,7 +94,7 @@ mod tests {
         let (pk, sig) = signed(b"artifact");
         let v = MinisignVerifier::from_base64(&pk).unwrap();
         assert_eq!(
-            v.verify(b"artifacT", sig.as_bytes()),
+            v.verify(b"tampered bytes", sig.as_bytes()),
             Err(VerifyError::Rejected)
         );
     }
