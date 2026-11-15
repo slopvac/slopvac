@@ -1,0 +1,680 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 2.667,
+        "score": 93.3,
+        "suggestions": 4,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.667,
+        "score": 98.3,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 12,
+        "gating_per_100_words": 0.333,
+        "over_budget": false,
+        "per_100_words": 8.0,
+        "score": 78.3,
+        "suggestions": 11,
+        "warnings": 1
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.333,
+        "score": 96.7,
+        "suggestions": 2,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 15,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "If configured,",
+        "message": "Omitted subject \"If configured,\". Name what is installed, configured, or ready.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.omitted-subject",
+        "severity": "suggestion",
+        "span": {
+          "end": 14,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 14,
+        "end_column": 27,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "is configured",
+        "message": "Passive voice \"is configured\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 78,
+          "start": 65
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Once enabled,",
+        "message": "Omitted subject \"Once enabled,\". Name what is installed, configured, or ready.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.omitted-subject",
+        "severity": "suggestion",
+        "span": {
+          "end": 123,
+          "start": 110
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 16,
+        "end_column": 26,
+        "end_line": 7,
+        "line": 7,
+        "matched_text": "is enabled",
+        "message": "Passive voice \"is enabled\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 180,
+          "start": 170
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "warning",
+        "span": {
+          "end": 206,
+          "start": 206
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 218,
+          "start": 206
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 337,
+          "start": 325
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 3,
+        "end_column": 14,
+        "end_line": 16,
+        "line": 16,
+        "matched_text": "The service",
+        "message": "Missing article before \"The service\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 449,
+          "start": 438
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 18,
+        "line": 18,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 471,
+          "start": 459
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 22,
+        "line": 22,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 540,
+          "start": 528
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 26,
+        "line": 26,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 609,
+          "start": 597
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 20,
+        "end_column": 21,
+        "end_line": 28,
+        "line": 28,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 666,
+          "start": 665
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "The manifest",
+        "message": "Missing article before \"The manifest\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 702,
+          "start": 690
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 15,
+        "end_line": 36,
+        "line": 36,
+        "matched_text": "Restart worker",
+        "message": "Missing article before \"Restart worker\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 796,
+          "start": 782
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 38,
+        "end_line": 36,
+        "line": 36,
+        "matched_text": "Restart worker after you edit config.",
+        "message": "The condition follows the command (\"Restart worker after you edit config.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 819,
+          "start": 782
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 46,
+        "end_line": 38,
+        "line": 38,
+        "matched_text": "Restart the worker after you edit the config.",
+        "message": "The condition follows the command (\"Restart the worker after you edit the config.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 866,
+          "start": 821
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 40,
+        "line": 40,
+        "matched_text": "Delete branch",
+        "message": "Missing article before \"Delete branch\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 881,
+          "start": 868
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 40,
+        "end_line": 40,
+        "line": 40,
+        "matched_text": "Delete branch when the merge completes.",
+        "message": "The condition follows the command (\"Delete branch when the merge completes.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 907,
+          "start": 868
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 44,
+        "end_line": 42,
+        "line": 42,
+        "matched_text": "Delete the branch when the merge completes.",
+        "message": "The condition follows the command (\"Delete the branch when the merge completes.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 952,
+          "start": 909
+        }
+      }
+    ],
+    "gate": {
+      "passed": true,
+      "reasons": []
+    },
+    "paragraphs": 14,
+    "path": "rule-examples-ste-sentences.md",
+    "per_100_words": 12.667,
+    "profile": "normal",
+    "prose": {
+      "errors": 0,
+      "findings": 19,
+      "per_100_words": 12.667,
+      "warnings": 1
+    },
+    "score": 81.7,
+    "sentences": 29,
+    "suggestions": 18,
+    "total_findings": 19,
+    "unchecked": [],
+    "warnings": 1,
+    "words": 150
+  },
+  "exit_code": 0
+}

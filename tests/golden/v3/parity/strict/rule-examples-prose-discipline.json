@@ -1,0 +1,1115 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.743,
+        "over_budget": false,
+        "per_100_words": 1.487,
+        "score": 72.1,
+        "suggestions": 0,
+        "warnings": 4
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 16,
+        "findings": 16,
+        "gating_per_100_words": 5.948,
+        "over_budget": true,
+        "per_100_words": 5.948,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 1.115,
+        "over_budget": true,
+        "per_100_words": 1.115,
+        "score": 6.6,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.372,
+        "over_budget": true,
+        "per_100_words": 0.372,
+        "score": 64.4,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.372,
+        "over_budget": false,
+        "per_100_words": 0.372,
+        "score": 72.1,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.186,
+        "over_budget": false,
+        "per_100_words": 0.743,
+        "score": 87.9,
+        "suggestions": 1,
+        "warnings": 1
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 4,
+        "findings": 4,
+        "gating_per_100_words": 1.487,
+        "over_budget": true,
+        "per_100_words": 1.487,
+        "score": 6.6,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.372,
+        "over_budget": false,
+        "per_100_words": 0.743,
+        "score": 77.7,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 4,
+        "findings": 4,
+        "gating_per_100_words": 1.487,
+        "over_budget": true,
+        "per_100_words": 1.487,
+        "score": 23.9,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 7,
+        "findings": 7,
+        "gating_per_100_words": 2.602,
+        "over_budget": true,
+        "per_100_words": 2.602,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 36,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 10,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 12,
+        "end_column": 32,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "performs an analysis",
+        "message": "\"performs an analysis\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 31,
+          "start": 11
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 12,
+        "end_column": 32,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "performs an analysis",
+        "message": "nominalisation: performs an analysis -- use the verb ('validate', not 'perform validation')",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.nominalized-verb",
+        "severity": "error",
+        "span": {
+          "end": 31,
+          "start": 11
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 67,
+          "start": 57
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 1,
+        "end_column": 25,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Conduct an investigation",
+        "message": "\"Conduct an investigation\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 123,
+          "start": 99
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 1,
+        "end_column": 25,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Conduct an investigation",
+        "message": "nominalisation: Conduct an investigation -- use the verb ('validate', not 'perform validation')",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.nominalized-verb",
+        "severity": "error",
+        "span": {
+          "end": 123,
+          "start": 99
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 1,
+        "end_column": 25,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Conduct an investigation",
+        "message": "Nominalized action \"Conduct an investigation\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 123,
+          "start": 99
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 10,
+        "end_column": 29,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "provides validation",
+        "message": "\"provides validation\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 207,
+          "start": 188
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 29,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "provides validation",
+        "message": "Nominalized action \"provides validation\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 207,
+          "start": 188
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 10,
+        "end_column": 32,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "provide an explanation",
+        "message": "\"provide an explanation\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 289,
+          "start": 267
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 32,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "provide an explanation",
+        "message": "Nominalized action \"provide an explanation\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 289,
+          "start": 267
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 32,
+        "end_column": 49,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "provide migration",
+        "message": "Nominalized action \"provide migration\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 375,
+          "start": 358
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 38,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "Reviewers make a recommendation, then",
+        "message": "This step carries more than one instruction (\"Reviewers make a recommendation, then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "error",
+        "span": {
+          "end": 421,
+          "start": 384
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 11,
+        "end_column": 32,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "make a recommendation",
+        "message": "\"make a recommendation\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 415,
+          "start": 394
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 32,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "make a recommendation",
+        "message": "Nominalized action \"make a recommendation\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 415,
+          "start": 394
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 39,
+        "end_column": 55,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "provide guidance",
+        "message": "Nominalized action \"provide guidance\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 438,
+          "start": 422
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 35,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "Reviewers recommend a change, then",
+        "message": "This step carries more than one instruction (\"Reviewers recommend a change, then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "error",
+        "span": {
+          "end": 486,
+          "start": 452
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 36,
+        "end_column": 52,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "provide guidance",
+        "message": "Nominalized action \"provide guidance\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 503,
+          "start": 487
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "",
+        "message": "This sentence has 29 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 517,
+          "start": 517
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 61,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "The parser reads the file, and it normalizes the paths; then",
+        "message": "This step carries more than one instruction (\"The parser reads the file, and it normalizes the paths; then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "error",
+        "span": {
+          "end": 577,
+          "start": 517
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 26,
+        "end_column": 32,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": ", and ",
+        "message": "This sentence stitches 4 independent ideas together; the limit is 3. Split it.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.run-on",
+        "severity": "error",
+        "span": {
+          "end": 548,
+          "start": 542
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 55,
+        "end_column": 56,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "warning",
+        "span": {
+          "end": 572,
+          "start": 571
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 1,
+        "end_column": 8,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "Spin up",
+        "message": "Use \"start\" rather than \"Spin up\".",
+        "replacement": "start",
+        "rule_id": "core:prose-discipline.phrasal-verb",
+        "severity": "error",
+        "span": {
+          "end": 847,
+          "start": 840
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 1,
+        "end_column": 8,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "Spin up",
+        "message": "Phrasal verb \"Spin up\". Use \"start\".",
+        "replacement": "start",
+        "rule_id": "core:ste-practices.phrasal-verb",
+        "severity": "warning",
+        "span": {
+          "end": 847,
+          "start": 840
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 36,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "Start a replica before you migrate.",
+        "message": "The condition follows the command (\"Start a replica before you migrate.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "error",
+        "span": {
+          "end": 914,
+          "start": 879
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 919,
+          "start": 916
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 4,
+        "end_column": 15,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "reached out",
+        "message": "Use \"asked\" rather than \"reached out\".",
+        "replacement": "asked",
+        "rule_id": "core:prose-discipline.phrasal-verb",
+        "severity": "error",
+        "span": {
+          "end": 930,
+          "start": 919
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 955,
+          "start": 952
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "This section",
+        "message": "self-reference: This section -- the heading already says this; start with the first new fact",
+        "replacement": null,
+        "rule_id": "core:prose-craft.self-reference",
+        "severity": "warning",
+        "span": {
+          "end": 991,
+          "start": 979
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 14,
+        "end_column": 21,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "unpacks",
+        "message": "Use \"explain\" rather than \"unpacks\".",
+        "replacement": "explain",
+        "rule_id": "core:prose-discipline.phrasal-verb",
+        "severity": "error",
+        "span": {
+          "end": 999,
+          "start": 992
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "This section",
+        "message": "self-reference: This section -- the heading already says this; start with the first new fact",
+        "replacement": null,
+        "rule_id": "core:prose-craft.self-reference",
+        "severity": "warning",
+        "span": {
+          "end": 1030,
+          "start": 1018
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 3,
+        "end_column": 10,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "turnkey",
+        "message": "\"turnkey\" is sales register. State the measurable fact instead.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.marketing-lexicon",
+        "severity": "error",
+        "span": {
+          "end": 1067,
+          "start": 1060
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 12,
+        "end_column": 24,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "future-proof",
+        "message": "\"future-proof\" is sales register. State the measurable fact instead.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.marketing-lexicon",
+        "severity": "error",
+        "span": {
+          "end": 1081,
+          "start": 1069
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 25,
+        "end_column": 26,
+        "end_line": 39,
+        "line": 39,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "warning",
+        "span": {
+          "end": 1126,
+          "start": 1125
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 1177,
+          "start": 1168
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 11,
+        "end_column": 53,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "may improve response time, though it might",
+        "message": "\"may improve response time, though it might\" hedges in both directions, so the two halves cancel. State which one the evidence supports.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.bidirectional-hedge",
+        "severity": "error",
+        "span": {
+          "end": 1220,
+          "start": 1178
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 43,
+        "line": 43,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 1257,
+          "start": 1248
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 10,
+        "end_column": 37,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "can reduce cost, but it may",
+        "message": "\"can reduce cost, but it may\" hedges in both directions, so the two halves cancel. State which one the evidence supports.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.bidirectional-hedge",
+        "severity": "error",
+        "span": {
+          "end": 1365,
+          "start": 1338
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 36,
+        "end_column": 41,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "15 ms",
+        "message": "implementation leak: 15 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "error",
+        "span": {
+          "end": 1428,
+          "start": 1423
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "This could",
+        "message": "Bare demonstrative \"This could\". Name the thing it refers to.",
+        "replacement": null,
+        "rule_id": "core:ste-practices.unclear-demonstrative-this",
+        "severity": "suggestion",
+        "span": {
+          "end": 1452,
+          "start": 1442
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 6,
+        "end_column": 23,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "could potentially",
+        "message": "stacked hedge: could potentially -- one hedge or none; commit to the claim or cut it",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.hedge-stack",
+        "severity": "error",
+        "span": {
+          "end": 1464,
+          "start": 1447
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 6,
+        "end_column": 53,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "could potentially help reduce some of the noise",
+        "message": "\"could potentially help reduce some of the noise\" hedges a hedge. Keep at most one, or state the claim plainly.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.hedged-hedge",
+        "severity": "error",
+        "span": {
+          "end": 1494,
+          "start": 1447
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 54,
+        "end_column": 70,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "in certain cases",
+        "message": "\"in certain cases\" hedges a hedge. Keep at most one, or state the claim plainly.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.hedged-hedge",
+        "severity": "error",
+        "span": {
+          "end": 1511,
+          "start": 1495
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 10,
+        "end_column": 41,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "may help avoid certain failures",
+        "message": "\"may help avoid certain failures\" hedges a hedge. Keep at most one, or state the claim plainly.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.hedged-hedge",
+        "severity": "error",
+        "span": {
+          "end": 1613,
+          "start": 1582
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "36 error(s), limit 0",
+        "14.68 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "prose-discipline at 5.95 severity-weighted findings per 100 words, budget 0.4",
+        "prose-inflation at 1.11 severity-weighted findings per 100 words, budget 0.3",
+        "prose-scope at 0.37 severity-weighted findings per 100 words, budget 0.3",
+        "ste-procedural at 1.49 severity-weighted findings per 100 words, budget 0.4",
+        "ste-sentences at 1.49 severity-weighted findings per 100 words, budget 0.5",
+        "ste-verbs at 2.60 severity-weighted findings per 100 words, budget 0.4"
+      ]
+    },
+    "paragraphs": 28,
+    "path": "rule-examples-prose-discipline.md",
+    "per_100_words": 16.357,
+    "profile": "strict",
+    "prose": {
+      "errors": 36,
+      "findings": 44,
+      "per_100_words": 16.357,
+      "warnings": 7
+    },
+    "score": 0.0,
+    "sentences": 30,
+    "suggestions": 1,
+    "total_findings": 44,
+    "unchecked": [],
+    "warnings": 7,
+    "words": 269
+  },
+  "exit_code": 1
+}

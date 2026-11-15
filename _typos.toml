@@ -22,6 +22,9 @@ extend-exclude = [
   "crates/slopvac-engine/tests/fixtures/engine-parity.json",
   # Generated patterns (tests/fixtures/generate_word_class.py) join random fragments.
   "crates/slopvac-text/tests/fixtures/word_class_differential.json",
+  # Golden suite: inputs hold the misspellings and defects that rules report, and the
+  # recorded parity output quotes them.
+  "tests/golden/v3/",
 ]
 
 [default.extend-words]

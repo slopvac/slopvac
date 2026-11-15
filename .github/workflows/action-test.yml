@@ -68,6 +68,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Install docutils for changed RST files
+        # A changed .rst file (the golden suite's RST sample) needs rst2html on PATH;
+        # without it the run is incomplete (exit 2).
+        if: matrix.name == 'changed-files' && github.event_name == 'pull_request'
+        run: pipx install "docutils==0.23"
+
       - name: Run slopvac action
         if: matrix.name != 'changed-files' || github.event_name == 'pull_request'
         id: slopvac

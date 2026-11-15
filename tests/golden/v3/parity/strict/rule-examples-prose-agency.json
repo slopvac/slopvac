@@ -1,0 +1,805 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 14,
+        "findings": 14,
+        "gating_per_100_words": 8.187,
+        "over_budget": true,
+        "per_100_words": 8.187,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.585,
+        "over_budget": false,
+        "per_100_words": 1.17,
+        "score": 78.1,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.585,
+        "score": 98.5,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 9,
+        "findings": 9,
+        "gating_per_100_words": 5.263,
+        "over_budget": true,
+        "per_100_words": 5.263,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 23,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 24,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "The complaint becomes a",
+        "message": "false agency: The complaint becomes a -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.false-agency",
+        "severity": "error",
+        "span": {
+          "end": 23,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 26,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "The suggestion turns into",
+        "message": "false agency: The suggestion turns into -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.false-agency",
+        "severity": "error",
+        "span": {
+          "end": 85,
+          "start": 60
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "The data tells us",
+        "message": "false agency: The data tells us -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.false-agency",
+        "severity": "error",
+        "span": {
+          "end": 167,
+          "start": 150
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 19,
+        "end_column": 37,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "the market rewards",
+        "message": "false agency: the market rewards -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.false-agency",
+        "severity": "error",
+        "span": {
+          "end": 186,
+          "start": 168
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 15,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "It was decided",
+        "message": "agentless passive: It was decided -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.agentless-passive",
+        "severity": "error",
+        "span": {
+          "end": 260,
+          "start": 246
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 4,
+        "end_column": 15,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "was decided",
+        "message": "Passive voice \"was decided\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 260,
+          "start": 249
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 19,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "Mistakes were made",
+        "message": "agentless passive: Mistakes were made -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.agentless-passive",
+        "severity": "error",
+        "span": {
+          "end": 349,
+          "start": 331
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 19,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "were made",
+        "message": "Passive voice \"were made\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 349,
+          "start": 340
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 19,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "It is assumed that",
+        "message": "agentless passive: It is assumed that -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.agentless-passive",
+        "severity": "error",
+        "span": {
+          "end": 427,
+          "start": 409
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 4,
+        "end_column": 14,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "is assumed",
+        "message": "Passive voice \"is assumed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 422,
+          "start": 412
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 4,
+        "end_column": 14,
+        "end_line": 23,
+        "line": 23,
+        "matched_text": "is assumed",
+        "message": "Passive voice \"is assumed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 464,
+          "start": 454
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 9,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "This was",
+        "message": "unclear antecedent: This was -- name the noun the demonstrative points at",
+        "replacement": null,
+        "rule_id": "core:prose-craft.unclear-antecedent",
+        "severity": "warning",
+        "span": {
+          "end": 501,
+          "start": 493
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 1,
+        "end_column": 9,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "This was",
+        "message": "Bare demonstrative \"This was\". Name the thing it refers to.",
+        "replacement": null,
+        "rule_id": "core:ste-practices.unclear-demonstrative-this",
+        "severity": "suggestion",
+        "span": {
+          "end": 501,
+          "start": 493
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 16,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "This was agreed",
+        "message": "agentless passive: This was agreed -- name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.agentless-passive",
+        "severity": "error",
+        "span": {
+          "end": 508,
+          "start": 493
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 6,
+        "end_column": 16,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "was agreed",
+        "message": "Passive voice \"was agreed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 508,
+          "start": 498
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 19,
+        "end_column": 31,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "was rejected",
+        "message": "Passive voice \"was rejected\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 562,
+          "start": 550
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 39,
+        "end_column": 53,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "was determined",
+        "message": "Passive voice \"was determined\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 584,
+          "start": 570
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 17,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "The parser knows",
+        "message": "anthropomorphism: The parser knows -- name the mechanism, not a mind",
+        "replacement": null,
+        "rule_id": "core:prose-agency.anthropomorphism",
+        "severity": "error",
+        "span": {
+          "end": 620,
+          "start": 604
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 20,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "The app understands",
+        "message": "anthropomorphism: The app understands -- name the mechanism, not a mind",
+        "replacement": null,
+        "rule_id": "core:prose-agency.anthropomorphism",
+        "severity": "error",
+        "span": {
+          "end": 695,
+          "start": 676
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 7,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "Look, ",
+        "message": "narrator-from-a-distance: Look,  -- put the reader in the scene, or name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.narrator-distance",
+        "severity": "error",
+        "span": {
+          "end": 754,
+          "start": 748
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 7,
+        "end_column": 25,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "developers tend to",
+        "message": "narrator-from-a-distance: developers tend to -- put the reader in the scene, or name who acted",
+        "replacement": null,
+        "rule_id": "core:prose-agency.narrator-distance",
+        "severity": "error",
+        "span": {
+          "end": 772,
+          "start": 754
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "It is recommended",
+        "message": "unattributed recommendation: It is recommended -- name who recommends it, or give the instruction",
+        "replacement": null,
+        "rule_id": "core:prose-agency.unattributed-recommendation",
+        "severity": "error",
+        "span": {
+          "end": 876,
+          "start": 859
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 19,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "It is recommended ",
+        "message": "dead opener: It is recommended  -- start the sentence with its real subject",
+        "replacement": null,
+        "rule_id": "core:prose-craft.dead-opener",
+        "severity": "warning",
+        "span": {
+          "end": 877,
+          "start": 859
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 4,
+        "end_column": 18,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "is recommended",
+        "message": "Passive voice \"is recommended\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 876,
+          "start": 862
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-agency",
+        "column": 1,
+        "end_column": 28,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "The recommended approach is",
+        "message": "unattributed recommendation: The recommended approach is -- name who recommends it, or give the instruction",
+        "replacement": null,
+        "rule_id": "core:prose-agency.unattributed-recommendation",
+        "severity": "error",
+        "span": {
+          "end": 955,
+          "start": 928
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 24,
+        "end_column": 39,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "are recommended",
+        "message": "Passive voice \"are recommended\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 1017,
+          "start": 1002
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "23 error(s), limit 0",
+        "14.04 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "prose-agency at 8.19 severity-weighted findings per 100 words, budget 0.4",
+        "ste-verbs at 5.26 severity-weighted findings per 100 words, budget 0.4"
+      ]
+    },
+    "paragraphs": 24,
+    "path": "rule-examples-prose-agency.md",
+    "per_100_words": 15.205,
+    "profile": "strict",
+    "prose": {
+      "errors": 23,
+      "findings": 26,
+      "per_100_words": 15.205,
+      "warnings": 2
+    },
+    "score": 0.0,
+    "sentences": 24,
+    "suggestions": 1,
+    "total_findings": 26,
+    "unchecked": [],
+    "warnings": 2,
+    "words": 171
+  },
+  "exit_code": 1
+}
