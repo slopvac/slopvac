@@ -50,6 +50,9 @@ pub(super) struct Mapped {
     pub(super) notices: Vec<RstNotice>,
     /// Characters charged to the budget.
     pub(super) work: usize,
+    /// Source bytes looked at by every loop in this module, charged or not. The budget caps
+    /// the charged part; the rest is a small multiple of the input.
+    pub(super) scanned: usize,
 }
 
 /// Map `nodes` into `source`. `bom` is the byte length of a leading byte order mark.
@@ -120,6 +123,7 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
         document: Document { blocks, code_spans },
         notices,
         work: mapper.work,
+        scanned: mapper.scanned,
     }
 }
 
@@ -228,9 +232,13 @@ struct Mapper<'a> {
     src: &'a str,
     starts: Vec<usize>,
     work: usize,
+    /// Bytes looked at, charged to the budget or not.
+    scanned: usize,
     budget: usize,
     /// For a line, the nearest table border at or above it (`None`: there is none).
     memo: HashMap<usize, Option<usize>>,
+    /// For a line, where its text starts and ends without the whitespace around it.
+    trims: HashMap<usize, Option<(usize, usize)>>,
     /// The table borders read so far, by line.
     borders: HashMap<usize, Border>,
 }
@@ -241,8 +249,10 @@ impl<'a> Mapper<'a> {
             src,
             starts,
             work,
+            scanned: src.len(),
             budget,
             memo: HashMap::new(),
+            trims: HashMap::new(),
             borders: HashMap::new(),
         }
     }
@@ -361,8 +371,14 @@ impl<'a> Mapper<'a> {
         if self.work > self.budget {
             return false;
         }
+        self.scanned = self.scanned.saturating_add(units);
         self.work = self.work.saturating_add(units);
         self.work <= self.budget
+    }
+
+    /// Count `units` bytes looked at by a loop that is not charged to the budget.
+    fn scan(&mut self, units: usize) {
+        self.scanned = self.scanned.saturating_add(units);
     }
 
     /// Charge `units`; `None` once the budget is spent.
@@ -379,7 +395,7 @@ impl<'a> Mapper<'a> {
         if let Some((_, column, columns)) = node.cell
             && let Some(window) = self.column_window(node, column, columns)
         {
-            return self.place_in_column(node, lo, hi, window);
+            return self.place_in_column(node, window);
         }
         if !self.exhausted() {
             let (first, last) = (node.start?, node.end?);
@@ -391,7 +407,7 @@ impl<'a> Mapper<'a> {
                 }
             }
         }
-        self.fallback(&node.pieces, lo, hi)
+        self.fallback_lines(&node.pieces, node.start?, node.end?)
     }
 
     /// The text of line `line` (1-based), without its terminator.
@@ -456,13 +472,7 @@ impl<'a> Mapper<'a> {
     /// Place a table cell. Only the cell's columns of each of its lines are read: they
     /// are joined into a view, the words of neighbouring cells cannot match, and the
     /// result is mapped back line by line.
-    fn place_in_column(
-        &mut self,
-        node: &Node,
-        lo: usize,
-        hi: usize,
-        (x0, x1): (usize, usize),
-    ) -> Option<Placed> {
+    fn place_in_column(&mut self, node: &Node, (x0, x1): (usize, usize)) -> Option<Placed> {
         let (first, last) = (node.start?, node.end?.min(self.starts.len()));
         let mut view = String::new();
         // (start in the view, start in the source, length) of each line's piece.
@@ -471,7 +481,7 @@ impl<'a> Mapper<'a> {
             let text = self.line_text(line);
             // Charge the scan before it happens.
             if !self.charge(x1.min(text.len()).saturating_add(1)) {
-                return self.fallback(&node.pieces, lo, hi);
+                return self.fallback_lines(&node.pieces, first, last);
             }
             let mut from = text.len();
             let mut to = text.len();
@@ -564,8 +574,8 @@ impl<'a> Mapper<'a> {
         })
     }
 
-    /// The prose of the node as one token over its lines.
-    fn fallback(&self, pieces: &[Piece], lo: usize, hi: usize) -> Option<Placed> {
+    /// The prose of a node as plain text with its inline code as `\0`, whitespace collapsed.
+    fn fallback_text(pieces: &[Piece]) -> Option<String> {
         let mut text = String::new();
         for piece in pieces {
             match piece.k.as_str() {
@@ -575,21 +585,76 @@ impl<'a> Mapper<'a> {
             }
         }
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        if text.is_empty() {
-            return None;
-        }
-        let slice = &self.src[lo..hi];
-        let start = lo + (slice.len() - slice.trim_start().len());
-        let end = (lo + slice.trim_end().len()).max(start);
-        let at = span(start, end);
+        (!text.is_empty()).then_some(text)
+    }
+
+    fn fallback_at(text: &str, start: usize, end: usize) -> Placed {
+        let at = span(start, end.max(start));
         let mut projection = Projection::new();
-        projection.push(TokenKind::Opaque, &text, at);
-        Some(Placed {
+        projection.push(TokenKind::Opaque, text, at);
+        Placed {
             projection,
             span: at,
             codes: Vec::new(),
             line_precise: true,
-        })
+        }
+    }
+
+    /// The prose of the node as one token over `lo..hi`, trimmed. The range is the node's
+    /// own text (a view), so trimming it is bounded by that text.
+    fn fallback(&mut self, pieces: &[Piece], lo: usize, hi: usize) -> Option<Placed> {
+        let text = Self::fallback_text(pieces)?;
+        let slice = &self.src[lo..hi];
+        let start = lo + (slice.len() - slice.trim_start().len());
+        let end = (lo + slice.trim_end().len()).max(start);
+        self.scan((start - lo) + (lo + slice.len() - end));
+        Some(Self::fallback_at(&text, start, end))
+    }
+
+    /// The prose of the node as one token over its lines `first..=last`, without the
+    /// whitespace at the ends. Cells of one row share lines, so each line is trimmed once.
+    fn fallback_lines(&mut self, pieces: &[Piece], first: usize, last: usize) -> Option<Placed> {
+        let text = Self::fallback_text(pieces)?;
+        let last = last.min(self.starts.len());
+        let mut start = None;
+        for line in first..=last {
+            self.scan(1);
+            if let Some((from, _)) = self.line_content(line) {
+                start = Some(from);
+                break;
+            }
+        }
+        let mut end = None;
+        for line in (first..=last).rev() {
+            self.scan(1);
+            if let Some((_, to)) = self.line_content(line) {
+                end = Some(to);
+                break;
+            }
+        }
+        let (start, end) = start.zip(end).unwrap_or_else(|| {
+            let at = self.starts[first.min(self.starts.len()).max(1) - 1];
+            (at, at)
+        });
+        Some(Self::fallback_at(&text, start, end))
+    }
+
+    /// The part of line `line` between its first and last non-whitespace character, as source
+    /// offsets, or `None` for a blank line. Each line is read once.
+    fn line_content(&mut self, line: usize) -> Option<(usize, usize)> {
+        if let Some(known) = self.trims.get(&line) {
+            return *known;
+        }
+        let text = self.line_text(line);
+        self.scan(text.len());
+        let base = self.starts[line - 1];
+        let body = text.trim_start();
+        let found = (!body.is_empty()).then(|| {
+            let from = base + (text.len() - body.len());
+            (from, base + text.trim_end().len())
+        });
+        self.trims.insert(line, found);
+        found
     }
 
     /// Match all pieces of a node inside `lo..hi`.
@@ -692,7 +757,11 @@ impl<'a> Mapper<'a> {
         let first = raw.chars().next()?;
         let mut at = from;
         while at < hi {
-            let off = self.src[at..hi].find(first)?;
+            let Some(off) = self.src[at..hi].find(first) else {
+                // The search read to the end of the range.
+                self.charge(hi - at);
+                return None;
+            };
             if !self.charge(off + 1) {
                 return None;
             }
@@ -740,9 +809,14 @@ impl<'a> Mapper<'a> {
         let first = word.chars().next()?;
         let mut at = from;
         while at < hi {
-            let (off, ch) = self.src[at..hi]
+            let Some((off, ch)) = self.src[at..hi]
                 .char_indices()
-                .find(|&(_, c)| c == first || c == '\\')?;
+                .find(|&(_, c)| c == first || c == '\\')
+            else {
+                // The search read to the end of the range.
+                self.charge(hi - at);
+                return None;
+            };
             if !self.charge(off + 1) {
                 return None;
             }
@@ -1148,5 +1222,165 @@ mod tests {
             mapped.work,
             source.len()
         );
+    }
+
+    #[test]
+    fn an_indented_wide_table_costs_no_rescan_after_the_budget_is_spent() {
+        // Every line is indented, so the trimming of a shared row would cost the indent
+        // again for each cell.
+        let indent = " ".repeat(30_000);
+        let columns = 1_500;
+        let border = format!("{indent}{}+\n", "+-".repeat(columns));
+        let row = format!("{indent}{}|\n", "|a".repeat(columns));
+        let source = format!("{border}{row}{border}");
+        let cells: Vec<String> = (0..columns)
+            .map(|c| {
+                format!(
+                    r#"{{"tag":"paragraph","start":2,"end":2,"cell":[0,{c},1],"pieces":[{{"k":"t","t":"a"}}]}}"#
+                )
+            })
+            .collect();
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", cells.join(","))));
+        let size = source.len() + columns;
+        let budget = WORK_PER_BYTE * size + WORK_BASE;
+        assert!(mapped.work > budget, "the budget was not reached");
+        assert!(
+            mapped.scanned <= budget + 16 * size,
+            "scanned {} bytes for an input of {size}",
+            mapped.scanned
+        );
+        assert_eq!(mapped.document.blocks.len(), columns);
+    }
+
+    mod bounded {
+        //! Hostile RST shapes: wide, indented and nested tables, comments, escapes and long
+        //! prefixes. Whatever the input, the bytes the module looks at stay within a fixed
+        //! multiple of the input, charged to the budget or not.
+
+        use proptest::prelude::*;
+
+        use super::*;
+
+        /// The most uncharged bytes a run may look at, per byte of input. The charged part is
+        /// capped by the budget itself.
+        const UNCHARGED_PER_BYTE: usize = 16;
+
+        fn line() -> impl Strategy<Value = String> {
+            let words = prop::collection::vec("[a-z]{1,8}", 0..12).prop_map(|w| w.join(" "));
+            prop_oneof![
+                (0..300usize, words.clone())
+                    .prop_map(|(indent, text)| format!("{}{text}", " ".repeat(indent))),
+                (0..200usize, 1..120usize).prop_map(|(indent, k)| format!(
+                    "{}+{}",
+                    " ".repeat(indent),
+                    "-+".repeat(k)
+                )),
+                (0..200usize, 1..120usize).prop_map(|(indent, k)| format!(
+                    "{}|{}",
+                    " ".repeat(indent),
+                    "a|".repeat(k)
+                )),
+                (0..200usize, 1..60usize).prop_map(|(indent, k)| format!(
+                    "{}{}",
+                    " ".repeat(indent),
+                    "====  ".repeat(k)
+                )),
+                words.prop_map(|w| format!(".. {w}")),
+                (1..400usize).prop_map(|n| format!("{}x", "\\ ".repeat(n))),
+                (1..2000usize).prop_map(|n| format!("{}b", "a".repeat(n))),
+                Just(String::new()),
+            ]
+        }
+
+        fn piece(words: Vec<String>) -> impl Strategy<Value = String> {
+            let word = prop::sample::select(words);
+            prop_oneof![
+                prop::collection::vec(word.clone(), 1..6).prop_map(|w| {
+                    format!(
+                        r#"{{"k":"t","t":{}}}"#,
+                        serde_json::to_string(&w.join(" ")).unwrap()
+                    )
+                }),
+                word.clone().prop_map(|w| {
+                    let raw = serde_json::to_string(&format!("*{w}*")).unwrap();
+                    format!(
+                        r#"{{"k":"i","t":{},"raw":{raw}}}"#,
+                        serde_json::to_string(&w).unwrap()
+                    )
+                }),
+                word.prop_map(|w| {
+                    let raw = serde_json::to_string(&format!("``{w}``")).unwrap();
+                    format!(
+                        r#"{{"k":"c","t":{},"raw":{raw}}}"#,
+                        serde_json::to_string(&w).unwrap()
+                    )
+                }),
+                Just(r#"{"k":"o","raw":"[1]_"}"#.to_owned()),
+            ]
+        }
+
+        fn node(lines: usize, words: Vec<String>) -> impl Strategy<Value = String> {
+            let top = lines + 2; // Sometimes past the end.
+            (
+                1..top,
+                0..4usize,
+                prop::option::of((0..4usize, 0..60usize, 1..4usize)),
+                prop::bool::weighted(0.1),
+                prop::collection::vec(piece(words), 1..5),
+            )
+                .prop_map(|(start, extra, cell, table, pieces)| {
+                    let end = start + extra;
+                    let cell = cell
+                        .map(|(r, c, n)| format!(r#","cell":[{r},{c},{n}]"#))
+                        .unwrap_or_default();
+                    if table {
+                        format!(r#"{{"tag":"table","table":true,"start":{start},"end":{end}}}"#)
+                    } else {
+                        format!(
+                            r#"{{"tag":"paragraph","start":{start},"end":{end}{cell},"pieces":[{}]}}"#,
+                            pieces.join(",")
+                        )
+                    }
+                })
+        }
+
+        fn case() -> impl Strategy<Value = (String, String)> {
+            prop::collection::vec(line(), 1..40).prop_flat_map(|lines| {
+                let eol = prop::sample::select(vec!["\n", "\r\n", "\r"]);
+                let words: Vec<String> = lines
+                    .iter()
+                    .flat_map(|l| l.split_whitespace().map(str::to_owned))
+                    .chain(["alpha".to_owned()])
+                    .map(|w| w.chars().take(40).collect())
+                    .collect();
+                let count = lines.len();
+                (
+                    Just(lines),
+                    eol,
+                    prop::collection::vec(node(count, words), 1..60),
+                )
+                    .prop_map(|(lines, eol, nodes)| {
+                        (lines.join(eol) + eol, format!("[{}]", nodes.join(",")))
+                    })
+            })
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(48))]
+
+            #[test]
+            fn the_bytes_looked_at_stay_a_fixed_multiple_of_the_input((source, json) in case()) {
+                let parsed = nodes(&json);
+                let mapped = project(&source, 0, &parsed);
+                let text: usize = parsed.iter().map(|n| n.pieces.iter().map(|p| p.t.len() + p.raw.len()).sum::<usize>()).sum();
+                let size = source.len() + text;
+                let budget = WORK_PER_BYTE * size + WORK_BASE;
+                prop_assert!(
+                    mapped.scanned <= budget + UNCHARGED_PER_BYTE * (size + 1),
+                    "scanned {} for an input of {size} (budget {budget})",
+                    mapped.scanned
+                );
+            }
+        }
     }
 }

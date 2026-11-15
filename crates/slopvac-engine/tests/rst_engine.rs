@@ -16,7 +16,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use common::{engine, places, tokens};
+use common::{engine, places, rule, tokens};
 use serde_json::json;
 use slopvac_engine::rst::RstOptions;
 use slopvac_engine::{Engine, Input, Kind};
@@ -171,6 +171,50 @@ fn a_wrapped_left_cell_does_not_hide_the_right_cell_from_document_rules() {
     let doc = e.lint(&Input::rst("t.rst", &source)).unwrap();
     // "Rightonly" is on line 2 of the table, after "| Left wrap | ".
     assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 2, 15)]);
+}
+
+fn wrap_engine(pattern: &str) -> Engine {
+    let mut options = RstOptions::default();
+    options.interpreter = Some(interpreter().with_file_name("wrap-python"));
+    engine(&[rule(
+        "pat",
+        &json!({"kind": "pattern", "pattern": pattern}),
+        &json!({"scope": "document"}),
+    )])
+    .with_rst(options)
+}
+
+fn wrap_source() -> String {
+    fs::read_to_string(format!("{FIXTURES}/table-wrap.rst")).unwrap()
+}
+
+#[test]
+fn a_document_start_anchor_matches_only_the_first_cell_of_an_interleaved_table() {
+    let source = wrap_source();
+    let first = wrap_engine("^Left")
+        .lint(&Input::rst("t.rst", &source))
+        .unwrap();
+    assert_eq!(first.findings.len(), 1);
+    // "Rightonly" is not at the start of the document, whatever its position in the file.
+    let right = wrap_engine("^Rightonly")
+        .lint(&Input::rst("t.rst", &source))
+        .unwrap();
+    assert_eq!(right.findings.len(), 0);
+}
+
+#[test]
+fn a_match_across_interleaved_cells_maps_to_the_hull_of_its_tokens() {
+    let source = wrap_source();
+    let doc = wrap_engine(r"here Rightonly")
+        .lint(&Input::rst("t.rst", &source))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    let span = doc.findings[0].extent.unwrap().span;
+    // "Rightonly" comes first in the file, "here" ends the match in reading order but sits on
+    // the last line: the span runs from the smallest start to the largest end.
+    let start = source.find("Rightonly").unwrap();
+    let end = source.find("here").unwrap() + "here".len();
+    assert_eq!((span.start(), span.end()), (start, end));
 }
 
 #[test]

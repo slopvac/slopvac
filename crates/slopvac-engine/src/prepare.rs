@@ -64,7 +64,7 @@ struct Composite {
 pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
-    composite: OnceCell<Result<Vec<Composite>, TextError>>,
+    composite: OnceCell<Result<Composite, TextError>>,
 }
 
 impl<'a> Prepared<'a> {
@@ -116,49 +116,40 @@ impl<'a> Prepared<'a> {
             .count()
     }
 
-    /// The whole document as projections, with a synthetic space between blocks.
+    /// The whole document as one projection, with a synthetic space between blocks.
     ///
-    /// A projection holds source ranges in ascending order. A block that starts before the
-    /// previous one ends, such as the right cell of a table beside a wrapped left cell, would
-    /// break that order, so it starts the next projection. No block is left out.
-    fn composites(&self) -> Result<&[Composite], TextError> {
+    /// Blocks read in block order. That is not always source order: the right cell of a
+    /// table beside a wrapped left cell starts in the source before the left cell ends. Such
+    /// a block still joins the one text, so a document rule sees every block, anchors and
+    /// sentence splits work over all of it, and a match that crosses blocks maps to the hull
+    /// of the source spans of its tokens.
+    fn composite(&self) -> Result<&Composite, TextError> {
         self.composite
             .get_or_init(|| {
-                let mut groups: Vec<Projection> = Vec::new();
                 let mut projection = Projection::new();
                 let mut end = 0;
                 let mut first = true;
                 for block in &self.blocks {
                     let tokens = block.projection.tokens();
-                    let Some(head) = tokens.first() else { continue };
-                    if head.src.start() < end {
-                        groups.push(std::mem::take(&mut projection));
-                        end = 0;
-                        first = true;
+                    if tokens.is_empty() {
+                        continue;
                     }
                     if !first {
-                        projection.push(TokenKind::Wrap, " ", Span::empty(end));
+                        projection.push_unordered(TokenKind::Wrap, " ", Span::empty(end));
                     }
                     first = false;
                     for token in tokens {
-                        projection.push(token.kind, &token.text, token.src);
+                        projection.push_unordered(token.kind, &token.text, token.src);
                         end = token.src.end();
                     }
                 }
-                groups.push(projection);
-                groups
-                    .into_iter()
-                    .map(|projection| {
-                        let sentences = split_sentences(projection.text())?;
-                        Ok(Composite {
-                            projection,
-                            sentences,
-                        })
-                    })
-                    .collect()
+                let sentences = split_sentences(projection.text())?;
+                Ok(Composite {
+                    projection,
+                    sentences,
+                })
             })
             .as_ref()
-            .map(Vec::as_slice)
             .map_err(Clone::clone)
     }
 
@@ -178,15 +169,14 @@ impl<'a> Prepared<'a> {
                 }
             }
             Scope::Document => {
-                for composite in self.composites()? {
-                    if !composite.projection.text().is_empty() {
-                        units.push(Unit {
-                            text: composite.projection.text(),
-                            base: 0,
-                            map: Map::Projected(&composite.projection),
-                            sentences: Some(&composite.sentences),
-                        });
-                    }
+                let composite = self.composite()?;
+                if !composite.projection.text().is_empty() {
+                    units.push(Unit {
+                        text: composite.projection.text(),
+                        base: 0,
+                        map: Map::Projected(&composite.projection),
+                        sentences: Some(&composite.sentences),
+                    });
                 }
             }
             Scope::Prose | Scope::Paragraph | Scope::Heading => {
@@ -224,5 +214,70 @@ impl<'a> Prepared<'a> {
             }
         }
         Ok(units)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_parse::{Block, Container};
+
+    use super::*;
+
+    fn block(tokens: &[(TokenKind, &str, usize, usize)]) -> Block {
+        let mut projection = Projection::new();
+        for &(kind, text, start, end) in tokens {
+            projection.push(kind, text, Span::new(start, end).unwrap());
+        }
+        let start = tokens.iter().map(|t| t.2).min().unwrap();
+        let end = tokens.iter().map(|t| t.3).max().unwrap();
+        Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(start, end).unwrap(),
+            projection: Some(projection),
+            containers: Vec::<Container>::new(),
+        }
+    }
+
+    /// A left cell that wraps (source 10..44) and a right cell inside its extent (20..25).
+    fn interleaved() -> Document {
+        Document {
+            blocks: vec![
+                block(&[
+                    (TokenKind::Identity, "Left", 10, 14),
+                    (TokenKind::Collapse, " ", 14, 15),
+                    (TokenKind::Identity, "tail.", 39, 44),
+                ]),
+                block(&[(TokenKind::Identity, "Right", 20, 25)]),
+            ],
+            code_spans: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn interleaved_blocks_make_one_document_text_in_reading_order() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].text, "Left tail. Right");
+        // The sentence split sees the whole text: one full sentence, then the next one.
+        let sentences = units[0].sentences.unwrap();
+        assert_eq!(sentences.len(), 2);
+    }
+
+    #[test]
+    fn a_match_over_interleaved_tokens_maps_to_the_hull_of_their_spans() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        let from = units[0].text.find("tail").unwrap();
+        let to = units[0].text.len();
+        // "tail." is at 39..44 and "Right" at 20..25: the hull is 20..44.
+        let span = units[0].span(&(from..to));
+        assert_eq!((span.start(), span.end()), (20, 44));
+        // Inside one token the span stays exact.
+        let at = units[0].text.find("Right").unwrap();
+        let exact = units[0].span(&(at..at + 5));
+        assert_eq!((exact.start(), exact.end()), (20, 25));
     }
 }

@@ -122,6 +122,9 @@ pub struct RstParse {
     /// Characters the position mapper looked at. It stays under a budget that grows
     /// linearly with the size of the document.
     pub work: usize,
+    /// Source bytes the mapper looked at, charged to the budget or not. The uncharged part
+    /// stays a small multiple of the input.
+    pub scanned: usize,
 }
 
 /// Why an RST file was not parsed. Every variant makes the check incomplete (exit 2).
@@ -303,6 +306,7 @@ impl RstAdapter {
             docutils: output.docutils,
             notices: mapped.notices,
             work: mapped.work,
+            scanned: mapped.scanned,
         })
     }
 }

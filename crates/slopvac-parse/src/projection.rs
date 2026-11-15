@@ -78,6 +78,22 @@ impl Projection {
         });
     }
 
+    /// Append a token whose source range may lie before the previous token's.
+    ///
+    /// A document that reads in an order other than the source order needs this: the cells of
+    /// a table whose left cell wraps over several lines read cell by cell, so the right cell
+    /// starts in the source before the left cell ends. [`Self::span_for_range`] maps a
+    /// range over such tokens to the hull of their source ranges: the smallest start and the
+    /// largest end, so the span never inverts.
+    pub fn push_unordered(&mut self, kind: TokenKind, text: &str, src: Span) {
+        self.text.push_str(text);
+        self.tokens.push(Token {
+            kind,
+            text: text.to_owned(),
+            src,
+        });
+    }
+
     /// The projected text.
     #[must_use]
     pub fn text(&self) -> &str {
