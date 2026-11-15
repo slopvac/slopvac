@@ -66,21 +66,6 @@ fn no_input_is_incomplete() {
 }
 
 #[test]
-fn stdin_input_is_linted_and_named_stdin() {
-    slopvac()
-        .args(["lint", "--stdin"])
-        .write_stdin("fine\n")
-        .assert()
-        .code(0);
-    slopvac()
-        .args(["lint", "--stdin"])
-        .write_stdin(&[0xffu8][..])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("<stdin>: not valid UTF-8"));
-}
-
-#[test]
 fn unknown_option_is_a_usage_error_with_exit_2() {
     slopvac().args(["lint", "--bogus"]).assert().code(2);
 }

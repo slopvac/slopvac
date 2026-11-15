@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, logging, offline};
+use crate::{exit, generate, logging, offline, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,11 +216,9 @@ fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError
         }
     }
     let stdin = if m.get_flag("stdin") {
-        let mut buf = Vec::new();
-        std::io::Read::read_to_end(&mut std::io::stdin(), &mut buf).map_err(|_| {
-            CliError::new("input-unreadable", "<stdin>: cannot read standard input")
-        })?;
-        Some(buf)
+        let plan = stdin::plan(m)?;
+        tracing::debug!(language = plan.language, "stdin plan");
+        Some(stdin::read(&mut std::io::stdin().lock())?)
     } else {
         None
     };
