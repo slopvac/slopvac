@@ -66,9 +66,40 @@ fn locale_of(tag: &str) -> Locale {
     Locale::parse(tag).unwrap()
 }
 
+/// A `ste-words` category with a non-default weight and budget and one rule `id` that
+/// replaces `flavor` by `flavour`.
+fn custom_base(id: &str) -> RuleSet {
+    let doc = serde_json::json!({
+        "schema_version": 3,
+        "id": "ste-words",
+        "title": "Custom title",
+        "description": "Custom description.",
+        "weight": 2.5,
+        "max_per_100_words": {"normal": 0.7},
+        "recommended_for": ["reference"],
+        "rules": [{
+            "id": id,
+            "name": "Other",
+            "message": "Other rule {match}.",
+            "severity": "error",
+            "match": {"kind": "substitution", "substitutions": {"flavor": "flavour"}},
+            "citation": {"source": "test"}
+        }]
+    });
+    RuleSet::from_sources(
+        &pack(),
+        [(PathBuf::from("custom.json"), doc.to_string())],
+        &CompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"))
+}
+
 /// An engine with the base rules off, so only the generated rule reports.
 fn engine(tag: &str, allow: &[String]) -> Engine {
-    let base = base();
+    engine_over(base(), tag, allow, true)
+}
+
+fn engine_over(base: RuleSet, tag: &str, allow: &[String], base_off: bool) -> Engine {
     let generated = locale::spelling_rules(&pack(), &base, tag, allow, &CompileOptions::default())
         .unwrap()
         .unwrap();
@@ -80,8 +111,10 @@ fn engine(tag: &str, allow: &[String]) -> Engine {
             reasons: Vec::new(),
         },
     );
-    for rule in base.rules() {
-        settings.rule_levels.insert(rule.id().clone(), Level::Off);
+    if base_off {
+        for rule in base.rules() {
+            settings.rule_levels.insert(rule.id().clone(), Level::Off);
+        }
     }
     Engine::new(vec![base, generated], settings).unwrap()
 }
@@ -274,4 +307,60 @@ fn the_builtin_terms_hide_no_variant() {
         let with_terms = locale::spelling(tag, &allow).unwrap();
         assert_eq!(plain.substitutions, with_terms.substitutions);
     }
+}
+
+#[test]
+fn a_term_variant_is_exempt_from_the_spelling_check() {
+    // The variant `colour` of the term `Chroma` is an accepted spelling in an en-US project.
+    let mut chroma = term("Chroma");
+    chroma.variants = vec!["colour".to_owned()];
+    let allow = locale::term_words(&TermSet::new([chroma]));
+    let matched = |rows: Vec<Row>| rows.into_iter().map(|r| r.5).collect::<Vec<_>>();
+    let text = "Use the colour here.\n";
+    assert_eq!(
+        matched(rows_actual(&engine("en-US", &[]), "a.md", text)),
+        ["colour"]
+    );
+    assert_eq!(
+        matched(rows_actual(&engine("en-US", &allow), "a.md", text)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn the_locale_set_keeps_the_scoring_metadata_of_the_category() {
+    let set = locale::spelling_rules(
+        &pack(),
+        &custom_base("other"),
+        "en-GB",
+        &[],
+        &CompileOptions::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let category = &set.categories()[0];
+    assert_eq!(category.id().as_str(), "ste-words");
+    assert_eq!(category.title().as_str(), "Custom title");
+    assert_eq!(category.description().as_str(), "Custom description.");
+    assert!((category.weight().get() - 2.5).abs() < f64::EPSILON);
+    let budget = category.max_per_100_words().unwrap();
+    assert_eq!(budget.len(), 1);
+    assert!((budget.values().next().unwrap().get() - 0.7).abs() < f64::EPSILON);
+    assert_eq!(category.recommended_for().len(), 1);
+}
+
+#[test]
+fn the_generated_rule_replaces_a_spelling_rule_of_the_base() {
+    // The base defines `ste-words.spelling` too, with an error severity and a different
+    // pair. Only the generated rule may report.
+    let e = engine_over(custom_base("spelling"), "en-US", &[], false);
+    let doc = e
+        .lint(&Input::markdown("a.md", "The colour and the flavor.\n"))
+        .unwrap();
+    let got: Vec<(String, String)> = doc
+        .findings
+        .iter()
+        .map(|f| (f.matched_text.clone(), format!("{:?}", f.severity)))
+        .collect();
+    assert_eq!(got, [("colour".to_owned(), "Warning".to_owned())]);
 }
