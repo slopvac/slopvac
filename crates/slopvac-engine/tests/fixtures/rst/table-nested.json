@@ -1,0 +1,58 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "table",
+   "table": true,
+   "start": 2,
+   "end": 3,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 3,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "same\nwords"
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": false,
+     "depth": 1
+    }
+   ],
+   "cell": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 3,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "same\nwords"
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": false,
+     "depth": 1
+    }
+   ],
+   "cell": [
+    0,
+    1,
+    1
+   ]
+  }
+ ]
+}

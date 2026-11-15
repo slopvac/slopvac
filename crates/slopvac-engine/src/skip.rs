@@ -8,7 +8,7 @@
 use std::ops::Range;
 
 use slopvac_model::Span;
-use slopvac_parse::{BlockKind, Container, Document};
+use slopvac_parse::{Block, BlockKind, Container, Document};
 use slopvac_rules::BlockKind as ExcludeKind;
 
 /// Sorted, merged source ranges.
@@ -126,8 +126,25 @@ fn in_container(doc: &Document, wanted: impl Fn(&Container) -> bool) -> Vec<Span
     doc.blocks
         .iter()
         .filter(|b| b.containers.iter().any(&wanted))
-        .map(|b| b.span)
+        .flat_map(block_ranges)
         .collect()
+}
+
+/// The source ranges of a block. Text that reads in another order than the source, such as a
+/// wrapped table cell, has one range for each run of its own text, so that the cells beside
+/// it are not taken for part of it.
+fn block_ranges(block: &Block) -> Vec<Span> {
+    match &block.projection {
+        Some(p) => {
+            let extents = p.extents();
+            if extents.is_empty() {
+                vec![block.span]
+            } else {
+                extents
+            }
+        }
+        None => vec![block.span],
+    }
 }
 
 fn blocks(doc: &Document, wanted: impl Fn(&BlockKind) -> bool) -> Vec<Span> {

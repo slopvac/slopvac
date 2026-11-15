@@ -36,6 +36,25 @@ impl Unit<'_> {
         self.base
     }
 
+    /// The source ranges a match is made of, given in bytes of `text`: one for each run of
+    /// source text its tokens cover. Text that reads in the source order has one, the span.
+    #[allow(clippy::single_range_in_vec_init)]
+    pub(crate) fn ranges(&self, range: &Range<usize>) -> Vec<Range<usize>> {
+        let (start, end) = (self.base + range.start, self.base + range.end);
+        match self.map {
+            Map::Projected(p) => {
+                let extents = p.extents_in_bytes(start, end);
+                if extents.is_empty() {
+                    let span = self.span(range);
+                    vec![span.start()..span.end()]
+                } else {
+                    extents.iter().map(|s| s.start()..s.end()).collect()
+                }
+            }
+            Map::Source => vec![start..end],
+        }
+    }
+
     /// The source span of a match, given in bytes of `text`.
     pub(crate) fn span(&self, range: &Range<usize>) -> Span {
         let (start, end) = (self.base + range.start, self.base + range.end);
@@ -117,6 +136,12 @@ impl<'a> Prepared<'a> {
     }
 
     /// The whole document as one projection, with a synthetic space between blocks.
+    ///
+    /// Blocks read in block order. That is not always source order: the right cell of a
+    /// table beside a wrapped left cell starts in the source before the left cell ends. Such
+    /// a block still joins the one text, so a document rule sees every block, anchors and
+    /// sentence splits work over all of it, and a match that crosses blocks maps to the hull
+    /// of the source spans of its tokens.
     fn composite(&self) -> Result<&Composite, TextError> {
         self.composite
             .get_or_init(|| {
@@ -125,16 +150,20 @@ impl<'a> Prepared<'a> {
                 let mut first = true;
                 for block in &self.blocks {
                     let tokens = block.projection.tokens();
-                    let Some(head) = tokens.first() else { continue };
-                    if head.src.start() < end {
-                        continue; // Nested blocks cannot share a projection.
+                    if tokens.is_empty() {
+                        continue;
                     }
                     if !first {
-                        projection.push(TokenKind::Wrap, " ", Span::empty(end));
+                        // The space between blocks bridges the source between them.
+                        projection.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
                     }
                     first = false;
-                    for token in tokens {
-                        projection.push(token.kind, &token.text, token.src);
+                    for (i, token) in tokens.iter().enumerate() {
+                        if block.projection.is_bridge(i) {
+                            projection.push_bridge(token.kind, &token.text, token.src);
+                        } else {
+                            projection.push_unordered(token.kind, &token.text, token.src);
+                        }
                         end = token.src.end();
                     }
                 }
@@ -209,5 +238,71 @@ impl<'a> Prepared<'a> {
             }
         }
         Ok(units)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_parse::{Block, Container};
+
+    use super::*;
+
+    fn block(tokens: &[(TokenKind, &str, usize, usize)]) -> Block {
+        let mut projection = Projection::new();
+        for &(kind, text, start, end) in tokens {
+            projection.push(kind, text, Span::new(start, end).unwrap());
+        }
+        let start = tokens.iter().map(|t| t.2).min().unwrap();
+        let end = tokens.iter().map(|t| t.3).max().unwrap();
+        Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(start, end).unwrap(),
+            projection: Some(projection),
+            containers: Vec::<Container>::new(),
+        }
+    }
+
+    /// A left cell that wraps (source 10..44) and a right cell inside its extent (20..25).
+    fn interleaved() -> Document {
+        Document {
+            blocks: vec![
+                block(&[
+                    (TokenKind::Identity, "Left", 10, 14),
+                    (TokenKind::Collapse, " ", 14, 15),
+                    (TokenKind::Identity, "tail.", 39, 44),
+                ]),
+                block(&[(TokenKind::Identity, "Right", 20, 25)]),
+            ],
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn interleaved_blocks_make_one_document_text_in_reading_order() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].text, "Left tail. Right");
+        // The sentence split sees the whole text: one full sentence, then the next one.
+        let sentences = units[0].sentences.unwrap();
+        assert_eq!(sentences.len(), 2);
+    }
+
+    #[test]
+    fn a_match_over_interleaved_tokens_maps_to_the_hull_of_their_spans() {
+        let doc = interleaved();
+        let prepared = Prepared::new("", &doc).unwrap();
+        let units = prepared.units(Scope::Document).unwrap();
+        let from = units[0].text.find("tail").unwrap();
+        let to = units[0].text.len();
+        // "tail." is at 39..44 and "Right" at 20..25: the hull is 20..44.
+        let span = units[0].span(&(from..to));
+        assert_eq!((span.start(), span.end()), (20, 44));
+        // Inside one token the span stays exact.
+        let at = units[0].text.find("Right").unwrap();
+        let exact = units[0].span(&(at..at + 5));
+        assert_eq!((exact.start(), exact.end()), (20, 25));
     }
 }

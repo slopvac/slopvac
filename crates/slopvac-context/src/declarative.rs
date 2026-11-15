@@ -282,5 +282,10 @@ fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
     let last = (i + 1..blocks.len())
         .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
         .map_or(blocks.len() - 1, |k| k - 1);
-    blocks[first].span.start..blocks[last].span.end
+    // Blocks that read out of source order (the cells of a wrapped table) can end after
+    // the last block does, so the section runs to the furthest end among its blocks.
+    let members = &blocks[first..=last];
+    let start = members.iter().map(|b| b.span.start).min().unwrap_or(0);
+    let end = members.iter().map(|b| b.span.end).max().unwrap_or(0);
+    start..end
 }

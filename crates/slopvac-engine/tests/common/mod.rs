@@ -81,6 +81,21 @@ pub fn matched(doc: &Document) -> Vec<&str> {
         .collect()
 }
 
+/// A directory allocated for this caller alone, under the cargo test tmp directory.
+///
+/// `cargo nextest` runs every test in its own process, so two processes must never share
+/// a directory, and nothing here deletes a directory it did not create. The name is unique
+/// (`tempfile` picks it), and the directory stays until `cargo clean`: a test process has
+/// no hook that runs after its last test, and its helper cannot be dropped earlier because
+/// other tests of the same process still use the scripts in it.
+pub fn private_dir(prefix: &str) -> PathBuf {
+    tempfile::Builder::new()
+        .prefix(&format!("{prefix}-"))
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .unwrap()
+        .keep()
+}
+
 /// The engine the 2.x parity fixtures were generated for: the core rules with the levels
 /// and category dials that `engine-parity.json` records.
 pub fn parity_engine() -> Engine {

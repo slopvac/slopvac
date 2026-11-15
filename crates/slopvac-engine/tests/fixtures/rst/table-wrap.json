@@ -1,0 +1,46 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "table",
+   "table": true,
+   "start": 2,
+   "end": 4,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Left wrap\ncontinues\nhere"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 2,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Rightonly"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    1,
+    1
+   ]
+  }
+ ]
+}

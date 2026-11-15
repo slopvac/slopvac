@@ -20,6 +20,8 @@ globset.workspace = true
 ignore.workspace = true
 pulldown-cmark = { workspace = true }
 rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 similar.workspace = true
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
@@ -29,6 +31,7 @@ slopvac-pos = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-terms = { workspace = true }
 slopvac-text = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 # O_NONBLOCK, the effective user id and ACL attributes for `fix_file`; the process group
@@ -40,6 +43,3 @@ rustix = { workspace = true, features = ["fs", "process"] }
 # The work-counter tests count the indexes a lint builds.
 slopvac-model = { workspace = true, features = ["test-counters"] }
 proptest.workspace = true
-serde = { workspace = true }
-serde_json = { workspace = true }
-tempfile.workspace = true

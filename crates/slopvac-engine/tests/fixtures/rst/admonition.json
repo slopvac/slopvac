@@ -1,0 +1,57 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "paragraph",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Admonitions"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "admonition",
+   "adm": "admonition",
+   "start": 3,
+   "end": 5,
+   "title": "Read this first",
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 5,
+   "end": 5,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Read this first, then continue with the guide."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "admonition",
+   "adm": "note",
+   "start": 7,
+   "end": 7,
+   "title": null,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 7,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "The note body says read this first too."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}
