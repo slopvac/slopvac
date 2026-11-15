@@ -83,6 +83,7 @@ fn install(s: &Scratch, version: &str, extra: &str) -> VerifiedPlugin {
         tree: out.hash,
         manifest_digest: Some(Digest::of(version.as_bytes()).to_string()),
         key_fingerprint: Some("f".repeat(64)),
+        key_id: Some("ABCDEF0123456789".into()),
     }
 }
 
@@ -121,6 +122,8 @@ fn record(hash: &str, name: &str) -> TrustRecord {
         version: None,
         source: "test".into(),
         key_fingerprint: None,
+        manifest_digest: None,
+        key_id: None,
         declaration: DeclSummary::of(&decl()),
         recorded_at: NOW.into(),
     }
@@ -1154,6 +1157,7 @@ mod unix_only {
             tree: out.hash,
             manifest_digest: Some(Digest::of(b"fence-tagger").to_string()),
             key_fingerprint: Some("e".repeat(64)),
+            key_id: None,
         }
     }
 
