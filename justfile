@@ -149,5 +149,6 @@ docs-site:
 
 # Measure Rust line coverage (needs cargo-llvm-cov and the llvm-tools-preview component); writes target/llvm-cov/lcov.info and prints a summary.
 coverage:
+    mkdir -p target/llvm-cov
     cargo llvm-cov nextest --workspace --locked --no-fail-fast --no-tests=pass --lcov --output-path target/llvm-cov/lcov.info
     cargo llvm-cov report --summary-only
