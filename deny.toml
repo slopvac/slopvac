@@ -38,9 +38,7 @@ allow = [
 # fail on an exception for a crate that is absent, so this sits here ahead of
 # the crate. Never add CC-BY-SA-4.0 to `allow`: it would admit it for every
 # dependency. The crate name is the working name; rename it with the crate.
-exceptions = [
-  { crate = "slopvac-pos-model", allow = ["CC-BY-SA-4.0"] },
-]
+exceptions = [{ crate = "slopvac-pos-model", allow = ["CC-BY-SA-4.0"] }]
 
 [advisories]
 version = 2

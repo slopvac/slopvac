@@ -10,12 +10,12 @@ repository.workspace = true
 publish.workspace = true
 # The model notice must ship with the model.
 include = [
-    "src/**",
-    "model/en.bin",
-    "model/LICENSE-MODEL.md",
-    "LICENSE-prose",
-    "Cargo.toml",
-    "README.md",
+  "src/**",
+  "model/en.bin",
+  "model/LICENSE-MODEL.md",
+  "LICENSE-prose",
+  "Cargo.toml",
+  "README.md",
 ]
 
 [dependencies]
