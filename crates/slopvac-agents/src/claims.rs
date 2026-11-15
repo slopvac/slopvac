@@ -1,7 +1,7 @@
 //! Changed-claim candidates for review: what a revision added, changed or dropped.
 //!
 //! Lexical only (decision: lexical TF-IDF beat model2vec in the A/B). The steps are
-//! deterministic: segment both texts into sentences, align original to revised by
+//! deterministic: segment both texts into blocks (Markdown here) and sentences (`slopvac-text`), align original to revised by
 //! TF-IDF cosine similarity, then diff the literals of each aligned pair (numbers,
 //! code spans, flags, identifiers, names) and their negation. Local files only.
 
@@ -12,9 +12,9 @@ use std::path::PathBuf;
 use clap::{Arg, ArgMatches, Command};
 use serde::Serialize;
 
-use crate::error::AgentsError;
+use slopvac_text::TextError;
 
-// STUB(slopvac-8l4.11.7): segmenter and tokenizer below stand in for slopvac-text.
+use crate::error::AgentsError;
 
 /// Pairs below this similarity are not aligned.
 const MIN_ALIGN: f64 = 0.35;
@@ -137,67 +137,7 @@ fn starts_block(line: &str) -> bool {
         || ordered
 }
 
-fn mask_code_spans(text: &str) -> String {
-    let mut inside = false;
-    text.chars()
-        .map(|c| {
-            if c == '`' {
-                inside = !inside;
-                c
-            } else if inside {
-                'x'
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
-const ABBREVIATIONS: [&str; 10] = [
-    "e.g", "i.e", "vs", "etc", "approx", "cf", "no", "fig", "eg", "ie",
-];
-
-fn split_sentences(paragraph: &str) -> Vec<String> {
-    let masked: Vec<char> = mask_code_spans(paragraph).chars().collect();
-    let chars: Vec<char> = paragraph.chars().collect();
-    let mut out = Vec::new();
-    let mut start = 0;
-    for i in 0..chars.len() {
-        if !matches!(masked[i], '.' | '!' | '?') {
-            continue;
-        }
-        let at_end = i + 1 == chars.len();
-        let gap = !at_end && masked[i + 1].is_whitespace();
-        if !at_end && !gap {
-            continue;
-        }
-        let next = masked[i + 1..].iter().find(|c| !c.is_whitespace());
-        let opens = next.is_none_or(|c| c.is_uppercase() || "\"'([*_`<".contains(*c));
-        let word: String = masked[start..i]
-            .iter()
-            .rev()
-            .take_while(|c| !c.is_whitespace())
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        let abbreviation = ABBREVIATIONS.contains(&word.to_lowercase().trim_start_matches('('))
-            || (word.chars().count() == 1 && word.chars().all(char::is_uppercase));
-        if opens && !abbreviation {
-            out.push(chars[start..=i].iter().collect::<String>());
-            start = i + 1;
-        }
-    }
-    if start < chars.len() {
-        out.push(chars[start..].iter().collect());
-    }
-    out.into_iter()
-        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-fn segments(text: &str) -> Vec<Segment> {
+fn segments(text: &str) -> Result<Vec<Segment>, TextError> {
     let mut out = Vec::new();
     let mut lines = text.lines().enumerate().peekable();
     if lines.peek().is_some_and(|(_, l)| l.trim() == "---") {
@@ -210,21 +150,23 @@ fn segments(text: &str) -> Vec<Segment> {
     }
     let mut para: Vec<String> = Vec::new();
     let mut para_line = 0;
-    let flush = |para: &mut Vec<String>, line: usize, out: &mut Vec<Segment>| {
-        if !para.is_empty() {
-            for s in split_sentences(&para.join(" ")) {
-                out.push(Segment {
-                    text: s,
-                    line,
-                    kind: Kind::Prose,
-                });
+    let flush =
+        |para: &mut Vec<String>, line: usize, out: &mut Vec<Segment>| -> Result<(), TextError> {
+            if !para.is_empty() {
+                for s in slopvac_text::split_sentences(&para.join(" "))? {
+                    out.push(Segment {
+                        text: s.text,
+                        line,
+                        kind: Kind::Prose,
+                    });
+                }
+                para.clear();
             }
-            para.clear();
-        }
-    };
+            Ok(())
+        };
     while let Some((n, line)) = lines.next() {
         if let Some(marker) = fence(line) {
-            flush(&mut para, para_line, &mut out);
+            flush(&mut para, para_line, &mut out)?;
             let mut body = vec![line.to_owned()];
             for (_, l) in lines.by_ref() {
                 body.push(l.to_owned());
@@ -238,10 +180,10 @@ fn segments(text: &str) -> Vec<Segment> {
                 kind: Kind::Code,
             });
         } else if line.trim().is_empty() {
-            flush(&mut para, para_line, &mut out);
+            flush(&mut para, para_line, &mut out)?;
         } else {
             if starts_block(line) {
-                flush(&mut para, para_line, &mut out);
+                flush(&mut para, para_line, &mut out)?;
             }
             if para.is_empty() {
                 para_line = n + 1;
@@ -249,8 +191,8 @@ fn segments(text: &str) -> Vec<Segment> {
             para.push(line.trim().to_owned());
         }
     }
-    flush(&mut para, para_line, &mut out);
-    out
+    flush(&mut para, para_line, &mut out)?;
+    Ok(out)
 }
 
 const STOPWORDS: [&str; 34] = [
@@ -259,31 +201,34 @@ const STOPWORDS: [&str; 34] = [
     "if", "then", "so", "do", "does", "has",
 ];
 
-fn tokens(text: &str) -> Vec<String> {
-    text.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty() && !STOPWORDS.contains(t))
+/// Content tokens for alignment: `slopvac-text` word tokens, lowercased, without
+/// stopwords, with a plural `s` removed. Placeholders for collapsed spans are dropped.
+fn tokens(text: &str) -> Result<Vec<String>, TextError> {
+    Ok(slopvac_text::tokens(text)?
+        .into_iter()
+        .map(|t| t.to_lowercase())
+        .filter(|t| t.chars().any(char::is_alphanumeric) && !STOPWORDS.contains(&t.as_str()))
         .map(|t| {
             if t.len() > 3 && t.ends_with('s') && !t.ends_with("ss") {
                 t[..t.len() - 1].to_owned()
             } else {
-                t.to_owned()
+                t
             }
         })
-        .collect()
+        .collect())
 }
 
 type Vector = HashMap<String, f64>;
 
-fn vectorize(text: &str, idf: &HashMap<String, f64>) -> Vector {
+fn vectorize(text: &str, idf: &HashMap<String, f64>) -> Result<Vector, TextError> {
     let mut v = Vector::new();
-    for t in tokens(text) {
+    for t in tokens(text)? {
         *v.entry(t).or_insert(0.0) += 1.0;
     }
     for (t, w) in &mut v {
         *w *= idf.get(t).copied().unwrap_or(1.0);
     }
-    v
+    Ok(v)
 }
 
 fn cosine(a: &Vector, b: &Vector) -> f64 {
@@ -376,27 +321,38 @@ fn round(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
-fn idf_table(old: &[Segment], new: &[Segment]) -> HashMap<String, f64> {
+fn idf_table(old: &[Segment], new: &[Segment]) -> Result<HashMap<String, f64>, TextError> {
     let mut df: HashMap<String, usize> = HashMap::new();
     for s in old.iter().chain(new) {
-        for t in tokens(&s.text).into_iter().collect::<HashSet<_>>() {
+        for t in tokens(&s.text)?.into_iter().collect::<HashSet<_>>() {
             *df.entry(t).or_insert(0) += 1;
         }
     }
     let n = old.len() + new.len();
-    df.into_iter()
+    Ok(df
+        .into_iter()
         .map(|(t, c)| (t, ((ratio(n + 1, c + 1)).ln()) + 1.0))
-        .collect()
+        .collect())
 }
 
 /// Compare `original` and `revised` and list the claims a reviewer must check.
-#[must_use]
-pub fn compare(original: &str, revised: &str) -> Report {
-    let old = segments(original);
-    let new = segments(revised);
-    let idf = idf_table(&old, &new);
-    let old_v: Vec<Vector> = old.iter().map(|s| vectorize(&s.text, &idf)).collect();
-    let new_v: Vec<Vector> = new.iter().map(|s| vectorize(&s.text, &idf)).collect();
+///
+/// # Errors
+///
+/// Returns `claims-text-failed` when `slopvac-text` fails to segment or tokenize, for example
+/// when a pattern exhausts PCRE2's match limit.
+pub fn compare(original: &str, revised: &str) -> Result<Report, AgentsError> {
+    let old = segments(original)?;
+    let new = segments(revised)?;
+    let idf = idf_table(&old, &new)?;
+    let old_v = old
+        .iter()
+        .map(|s| vectorize(&s.text, &idf))
+        .collect::<Result<Vec<Vector>, _>>()?;
+    let new_v = new
+        .iter()
+        .map(|s| vectorize(&s.text, &idf))
+        .collect::<Result<Vec<Vector>, _>>()?;
 
     let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
     for (i, o) in old.iter().enumerate() {
@@ -466,14 +422,14 @@ pub fn compare(original: &str, revised: &str) -> Report {
         });
     }
 
-    let dropped = dropped_facts(&old, &old_to_new, revised);
+    let dropped = dropped_facts(&old, &old_to_new, revised)?;
     summary.dropped = dropped.len();
-    Report {
+    Ok(Report {
         schema_version: 1,
         summary,
         claims,
         dropped,
-    }
+    })
 }
 
 #[allow(clippy::cast_precision_loss, reason = "sentence counts are tiny")]
@@ -485,9 +441,9 @@ fn dropped_facts(
     old: &[Segment],
     aligned: &HashMap<usize, (usize, f64)>,
     revised: &str,
-) -> Vec<Dropped> {
+) -> Result<Vec<Dropped>, TextError> {
     let revised_lower = revised.to_lowercase();
-    let revised_tokens: HashSet<String> = tokens(revised).into_iter().collect();
+    let revised_tokens: HashSet<String> = tokens(revised)?.into_iter().collect();
     let mut dropped = Vec::new();
     for (i, seg) in old.iter().enumerate() {
         if aligned.contains_key(&i) {
@@ -497,7 +453,7 @@ fn dropped_facts(
             .into_iter()
             .filter(|l| !revised_lower.contains(&l.text.to_lowercase()))
             .collect();
-        let own = tokens(&seg.text);
+        let own = tokens(&seg.text)?;
         let coverage = if own.is_empty() {
             1.0
         } else {
@@ -514,7 +470,7 @@ fn dropped_facts(
             token_coverage: round(coverage),
         });
     }
-    dropped
+    Ok(dropped)
 }
 
 /// The `claims` subcommand, for the CLI epic to mount.
@@ -579,7 +535,11 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
         let path = matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
         std::fs::read_to_string(&path).map_err(|e| AgentsError::io(path, e))
     };
-    let report = compare(&read("original")?, &read("revised")?);
+    let report =
+        compare(&read("original")?, &read("revised")?).map_err(|e| AgentsError::Coded {
+            code: "claims-text-failed",
+            message: format!("claims: {e}"),
+        })?;
     if matches
         .get_one::<String>("format")
         .is_some_and(|f| f == "text")

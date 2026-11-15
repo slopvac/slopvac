@@ -41,6 +41,15 @@ pub enum AgentsError {
     },
 }
 
+impl From<slopvac_text::TextError> for AgentsError {
+    fn from(e: slopvac_text::TextError) -> Self {
+        Self::Coded {
+            code: "claims-text-failed",
+            message: format!("text segmentation failed: {e}"),
+        }
+    }
+}
+
 impl AgentsError {
     /// The stable error code.
     #[must_use]
