@@ -1,0 +1,1278 @@
+{
+ "schema": 1,
+ "slopvac_version": "2.18.1",
+ "entries": [
+  {
+   "rule": "ai-residue.chat-leakage",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "As of my last update, the loader retried twice.",
+   "good": "The loader retries twice."
+  },
+  {
+   "rule": "ai-residue.chat-leakage",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "As a large language model, I cannot browse the internet.",
+   "good": "The documentation describes the supported behaviour."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The loader serves as the cache.",
+   "good": "The loader is the cache."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "The flag is designed to skip fences.",
+   "good": "The flag skips fences."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 2,
+   "bad": "The crate features a typed header struct.",
+   "good": "The crate has a typed header struct."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 3,
+   "bad": "The CLI offers a dry-run mode.",
+   "good": "Supported features are listed below."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 4,
+   "bad": "This release represents a major shift in the scheduler.",
+   "good": "The enum represents either an IPv4 or an IPv6 address."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 5,
+   "bad": "The proxy acts as the cache.",
+   "good": "The lineup featured such acts as the house band."
+  },
+  {
+   "rule": "ai-tells-content-shape.durable-vocabulary-habits",
+   "kind": "substitution",
+   "ai_signal": "weak",
+   "example": 6,
+   "bad": "The monitor plays a key role in tracking memory.",
+   "good": "The new strategy offers a way to reuse code without indirection."
+  },
+  {
+   "rule": "ai-tells-content-shape.superficial-ing-analysis",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The gate reads one config file, ensuring reliability.",
+   "good": "The gate reads one config file. A second file is ignored."
+  },
+  {
+   "rule": "ai-tells-figurative.colloquial-assessment",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Batching the writes is the move here.",
+   "good": "Batching the writes cuts the transaction count from 400 to 4."
+  },
+  {
+   "rule": "ai-tells-figurative.colloquial-assessment",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "What really matters is the retry budget.",
+   "good": "The retry budget decides whether the job finishes inside the window."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-casts",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The benchmark casts doubt on the caching claim.",
+   "good": "The benchmark shows no cache hits, so the caching claim is unverified."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-draws",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The design draws on years of operational experience.",
+   "good": "The design follows the 2024 incident review."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-draws",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "This draws a distinction between retries and backoff.",
+   "good": "A retry repeats the call; backoff sets the delay between retries."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-falls",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The cache falls short of the target.",
+   "good": "The cache hits 71% against a 90% target."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-falls",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "Retries fall within the scope of this document.",
+   "good": "This document covers retries."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-lends",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The schema lends itself to incremental validation.",
+   "good": "The schema validates one field at a time."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-loud",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The parser fails loudly on a bad header.",
+   "good": "The parser exits 2 and writes the offending line to stderr."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-rides",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Correctness rides on whether the clock is monotonic.",
+   "good": "Correctness requires a monotonic clock."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-runs",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The disagreement runs deeper than the API surface.",
+   "good": "The two teams disagree about who owns retries."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-runs",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "This runs counter to the retry policy.",
+   "good": "This contradicts the retry policy."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-sits",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The loader sits at the intersection of parsing and validation.",
+   "good": "The loader parses the file, then validates it."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-sits",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "Twelve tickets sit unresolved.",
+   "good": "Twelve tickets are open."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-strikes",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The migration guide strikes the right tone.",
+   "good": "The migration guide gives a command for each of the four steps."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-strikes",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "The bug strikes at the core of the retry design.",
+   "good": "The bug makes every retry reuse the expired token."
+  },
+  {
+   "rule": "ai-tells-figurative.figurative-wins",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Caching the manifest is an easy win.",
+   "good": "Caching the manifest removes 300 ms from every cold start."
+  },
+  {
+   "rule": "ai-tells-figurative.resonate-overuse",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The argument resonates with maintainers.",
+   "good": "Three maintainers said the argument matched their experience."
+  },
+  {
+   "rule": "ai-tells-formatting.cross-reference-signposting",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "As mentioned above, the loader caches.",
+   "good": "The loader caches every resolved path."
+  },
+  {
+   "rule": "ai-tells-register.anthropomorphised-justification-core",
+   "kind": "tokens",
+   "ai_signal": "strong",
+   "example": 0,
+   "bad": "The lookbehind is load-bearing.",
+   "good": "Removing the lookbehind adds five false positives per README."
+  },
+  {
+   "rule": "ai-tells-register.corporate-analytic-filler-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "It's worth noting that, at its core, the loader is a cache.",
+   "good": "The loader caches resolved paths."
+  },
+  {
+   "rule": "ai-tells-register.disclaimed-claim-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "This configuration change makes no claim about endpoint health.",
+   "good": "This branch does not check endpoint health."
+  },
+  {
+   "rule": "ai-tells-register.disclaimed-claim-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "Publication does not establish that the server launches on every host.",
+   "good": "This branch does not test whether the server launches."
+  },
+  {
+   "rule": "ai-tells-register.disclaimed-claim-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 2,
+   "bad": "Keep the IaC server configured without claiming it manages the same resources.",
+   "good": "Keep the IaC server configured. It cannot delete stacks directly."
+  },
+  {
+   "rule": "ai-tells-register.disclaimed-claim-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 3,
+   "bad": "The brief has no links, so this description cannot independently verify the results.",
+   "good": "The brief has no links, and nobody reran these checks."
+  },
+  {
+   "rule": "ai-tells-register.faux-candor-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Let's be real: the gate is slow on a cold cache.",
+   "good": "The gate takes 12 s on a cold cache."
+  },
+  {
+   "rule": "ai-tells-register.figurative-verb-verdict-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The abstraction earns its keep.",
+   "good": "The abstraction removes three near-duplicate functions."
+  },
+  {
+   "rule": "ai-tells-register.intensifier-tics-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The API is genuinely well designed.",
+   "good": "The API has four endpoints and one auth mode."
+  },
+  {
+   "rule": "ai-tells-register.organic-consequence-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The single-config design falls out naturally.",
+   "good": "The maintainers chose one config file so there is one place to look."
+  },
+  {
+   "rule": "ai-tells-register.sycophantic-meta-residue",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Great question! The loader reads the lockfile.",
+   "good": "The loader reads the lockfile."
+  },
+  {
+   "rule": "ai-tells-register.urgency-inflation-core",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "The importance of the lockfile cannot be overstated.",
+   "good": "Without the lockfile, a transitive minor bump breaks the build."
+  },
+  {
+   "rule": "ai-tells-structure.absolute-assertion-core",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 0,
+   "bad": "The only way to fix this is to re-run the sync.",
+   "good": "One way to fix this is to re-run the sync when the cache is stale."
+  },
+  {
+   "rule": "ai-tells-structure.absolute-assertion-core",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 1,
+   "bad": "Every Project Needs A Lockfile.",
+   "good": "A project with more than one direct dependency needs a lockfile."
+  },
+  {
+   "rule": "ai-tells-structure.audience-straddle-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Whether you're a beginner or a seasoned pro, this guide has something for you.",
+   "good": "This guide assumes you have run `apm install` once."
+  },
+  {
+   "rule": "ai-tells-structure.cataphoric-lead-in-core",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 0,
+   "bad": "Three pillars support this: speed, safety, and cost.",
+   "good": "The gate is fast, refuses an unresolvable style, and runs in CI."
+  },
+  {
+   "rule": "ai-tells-structure.contrastive-inversion-frames",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 0,
+   "bad": "It's not a linter, it's a review partner.",
+   "good": "The linter reports 61 rules and scores the document."
+  },
+  {
+   "rule": "ai-tells-structure.contrastive-inversion-frames",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 1,
+   "bad": "It's less about speed and more about determinism.",
+   "good": "The gate produces the same findings on every run."
+  },
+  {
+   "rule": "ai-tells-structure.contrastive-inversion-frames",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 2,
+   "bad": "The Harness Measures, It Does Not Judge",
+   "good": "The Harness Measures."
+  },
+  {
+   "rule": "ai-tells-structure.contrastive-inversion-frames",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 3,
+   "bad": "The parser reads JSON; it does not read YAML.",
+   "good": "The parser reads JSON."
+  },
+  {
+   "rule": "ai-tells-structure.contrastive-inversion-frames",
+   "kind": "pattern",
+   "ai_signal": "strong",
+   "example": 4,
+   "bad": "The client supports HTTP; it does not support FTP.",
+   "good": "The client supports HTTP."
+  },
+  {
+   "rule": "ai-tells-structure.false-suspense-frames",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Here's the thing: the loader reads the lockfile.",
+   "good": "The loader reads the lockfile."
+  },
+  {
+   "rule": "ai-tells-structure.meta-narration-frames",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "In this guide, we'll explore the loader.",
+   "good": "The loader resolves every path in the manifest."
+  },
+  {
+   "rule": "ai-tells-structure.negative-inventory-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Tooling not pinned: versions may drift.",
+   "good": "The lockfile pins the formatter version used by CI."
+  },
+  {
+   "rule": "ai-tells-structure.negative-inventory-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 1,
+   "bad": "Excluded from this review: browser checks and visual polish.",
+   "good": "Browser checks are not run; use the smoke command before release."
+  },
+  {
+   "rule": "ai-tells-structure.negative-inventory-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 3,
+   "bad": "Config is recorded elsewhere.",
+   "good": "The deployment manifest records the region and is the source of truth."
+  },
+  {
+   "rule": "ai-tells-structure.summary-closer-frames",
+   "kind": "tokens",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "In conclusion, the gate reads one config file.",
+   "good": "The gate reads one config file."
+  },
+  {
+   "rule": "ai-tells-structure.think-of-it-as-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Think of it like a highway system for data.",
+   "good": "The bus fans one message out to every registered handler."
+  },
+  {
+   "rule": "ai-tells-structure.vague-attribution-core",
+   "kind": "pattern",
+   "ai_signal": "weak",
+   "example": 0,
+   "bad": "Experts agree that lockfiles reduce drift.",
+   "good": "The npm RFC 0012 measured a 40% drop in resolution variance with a lockfile."
+  },
+  {
+   "rule": "docs-discipline.history-narration",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The loader was previously named the resolver.",
+   "good": "The loader resolves paths."
+  },
+  {
+   "rule": "docs-discipline.internal-refs",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The threshold is set per the spec in specs/004.",
+   "good": "The threshold is 34 words."
+  },
+  {
+   "rule": "docs-discipline.status-language",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The globbing flag is coming soon.",
+   "good": "The flag accepts a literal path."
+  },
+  {
+   "rule": "docs-discipline.status-language",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Support for MDX is not yet implemented.",
+   "good": "The parser reads Markdown."
+  },
+  {
+   "rule": "docs-discipline.status-language",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "This page is a draft that the team still edits.",
+   "good": "Open match: draft a comment on it with the new evidence."
+  },
+  {
+   "rule": "orwell.compound-preposition",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The cache is cleared prior to each run.",
+   "good": "The cache is cleared before each run."
+  },
+  {
+   "rule": "orwell.not-un",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The result is not unexpected.",
+   "good": "The result is expected."
+  },
+  {
+   "rule": "orwell.stale-figure",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "This release unlock the power of your data.",
+   "good": "The release adds nested-input parsing."
+  },
+  {
+   "rule": "orwell.stale-figure",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Error handling is the elephant in the room.",
+   "good": "Errors from the retry path are unhandled."
+  },
+  {
+   "rule": "orwell.unsupported-evaluative",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "A robust parser with comprehensive coverage.",
+   "good": "The parser survives 10^6 malformed inputs; coverage is 94%."
+  },
+  {
+   "rule": "orwell.unsupported-evaluative",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "A seamless, powerful upgrade path.",
+   "good": "The upgrade runs the converter once and keeps the old file as a backup."
+  },
+  {
+   "rule": "prose-agency.agentless-passive",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "It was decided that the loader would retry.",
+   "good": "The maintainers made the loader retry."
+  },
+  {
+   "rule": "prose-agency.agentless-passive",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Mistakes were made in the migration.",
+   "good": "The migration script dropped two rows."
+  },
+  {
+   "rule": "prose-agency.agentless-passive",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "It is assumed that the cache stays warm.",
+   "good": "It is assumed that the reader knows SQL."
+  },
+  {
+   "rule": "prose-agency.agentless-passive",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 3,
+   "bad": "This was agreed in the planning call.",
+   "good": "The vendor option was rejected, as it was determined to be too costly."
+  },
+  {
+   "rule": "prose-agency.anthropomorphism",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The parser knows the schema.",
+   "good": "The parser validates against the schema."
+  },
+  {
+   "rule": "prose-agency.anthropomorphism",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The app understands your workflow.",
+   "good": "The app records each step you run."
+  },
+  {
+   "rule": "prose-agency.false-agency",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The complaint becomes a fix.",
+   "good": "The team fixed it that week."
+  },
+  {
+   "rule": "prose-agency.false-agency",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The suggestion turns into a policy.",
+   "good": "The feedback becomes clearer after a second review."
+  },
+  {
+   "rule": "prose-agency.false-agency",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "The data tells us the market rewards speed.",
+   "good": "Open rates fell from 31% to 22% over three weeks."
+  },
+  {
+   "rule": "prose-agency.narrator-distance",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Look, developers tend to skip the lockfile.",
+   "good": "You skip the lockfile when you run `install` without `--frozen`."
+  },
+  {
+   "rule": "prose-agency.unattributed-recommendation",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "It is recommended that you rotate keys.",
+   "good": "Rotate keys every 90 days."
+  },
+  {
+   "rule": "prose-agency.unattributed-recommendation",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The recommended approach is to pin every version.",
+   "good": "The following defaults are recommended for production."
+  },
+  {
+   "rule": "prose-craft.ambiguity",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Pass a path and/or a glob.",
+   "good": "Pass a path, a glob, or both."
+  },
+  {
+   "rule": "prose-craft.dead-opener",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "There is a flag that controls this.",
+   "good": "The `--strict` flag controls this."
+  },
+  {
+   "rule": "prose-craft.dead-opener",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "It is important to note that the loader retries.",
+   "good": "The loader retries twice."
+  },
+  {
+   "rule": "prose-craft.future-tense",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The loader will retry twice.",
+   "good": "The loader retries twice."
+  },
+  {
+   "rule": "prose-craft.future-tense",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The flag will be removed.",
+   "good": "The plan shows where each value will be dropped."
+  },
+  {
+   "rule": "prose-craft.latinisms",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Pass a glob, e.g. `*.md`.",
+   "good": "Pass a glob, for example `*.md`."
+  },
+  {
+   "rule": "prose-craft.negative-requirement",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "You cannot deploy without a token.",
+   "good": "Deploying requires a token."
+  },
+  {
+   "rule": "prose-craft.ordinals",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Firstly, install the plugin.",
+   "good": "Install the plugin."
+  },
+  {
+   "rule": "prose-craft.politeness",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Please run the migration first.",
+   "good": "Run the migration first."
+  },
+  {
+   "rule": "prose-craft.politeness",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Kindly run the migration first.",
+   "good": "Repos with release-please never hand-edit CHANGELOG.md."
+  },
+  {
+   "rule": "prose-craft.relative-date",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The flag was added recently.",
+   "good": "The flag was added in v3.1.0."
+  },
+  {
+   "rule": "prose-craft.self-reference",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "This section explains the loader.",
+   "good": "The loader resolves every path in the manifest."
+  },
+  {
+   "rule": "prose-craft.spacing",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The loader retries.Twice.",
+   "good": "The loader retries. Twice."
+  },
+  {
+   "rule": "prose-discipline.frozen-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The runner performs an analysis of the coverage report.",
+   "good": "The runner analyzes the coverage report."
+  },
+  {
+   "rule": "prose-discipline.frozen-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Conduct an investigation of the failing shard.",
+   "good": "Investigate the failing shard."
+  },
+  {
+   "rule": "prose-discipline.frozen-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "The hook provides validation of the payload.",
+   "good": "The hook validates the payload."
+  },
+  {
+   "rule": "prose-discipline.frozen-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 3,
+   "bad": "The docs provide an explanation of each flag, with migration notes.",
+   "good": "The docs explain each flag and provide migration notes."
+  },
+  {
+   "rule": "prose-discipline.frozen-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 4,
+   "bad": "Reviewers make a recommendation, then provide guidance on the fix.",
+   "good": "Reviewers recommend a change, then provide guidance on the fix."
+  },
+  {
+   "rule": "prose-discipline.hedged-hedge",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "This could potentially help reduce some of the noise in certain cases.",
+   "good": "This removes the 12 findings that fired on code comments."
+  },
+  {
+   "rule": "prose-discipline.hedged-hedge",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The flag may help avoid certain failures.",
+   "good": "The flag skips the retry path, so a 429 fails immediately."
+  },
+  {
+   "rule": "prose-discipline.marketing-lexicon",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "A turnkey, future-proof deployment story.",
+   "good": "Deploys with one command; supported on Kubernetes 1.28 and later."
+  },
+  {
+   "rule": "prose-discipline.phrasal-verb",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Spin up a replica before you migrate.",
+   "good": "Start a replica before you migrate."
+  },
+  {
+   "rule": "prose-discipline.phrasal-verb",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "We reached out to the maintainers.",
+   "good": "We asked the maintainers."
+  },
+  {
+   "rule": "prose-discipline.phrasal-verb",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "This section unpacks the retry logic.",
+   "good": "This section explains the retry logic."
+  },
+  {
+   "rule": "prose-inclusive.ableist",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The audit found a blind spot in the coverage.",
+   "good": "The audit found a gap in the coverage."
+  },
+  {
+   "rule": "prose-inclusive.ableist",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The complaint fell on deaf ears.",
+   "good": "Nobody answered the complaint."
+  },
+  {
+   "rule": "prose-inclusive.exclusive",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Add the host to the whitelist.",
+   "good": "Add the host to the allowlist."
+  },
+  {
+   "rule": "prose-inclusive.exclusive",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Promote the slave to master.",
+   "good": "Promote the replica to primary."
+  },
+  {
+   "rule": "prose-inflation.additive-hedge",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Not only fast but also safe.",
+   "good": "The parser validates every field."
+  },
+  {
+   "rule": "prose-inflation.apologizing",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Further benchmarking is needed.",
+   "good": "The loader reads 488 files in 0.4 s on the reference machine."
+  },
+  {
+   "rule": "prose-inflation.borderline-hype",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Obviously, the flag is easy to use.",
+   "good": "The flag takes one argument, a glob."
+  },
+  {
+   "rule": "prose-inflation.business-jargon",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "We will circle back on the low-hanging fruit.",
+   "good": "The maintainers will return to the two open bugs."
+  },
+  {
+   "rule": "prose-inflation.document-preamble",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "This document describes the loader.",
+   "good": "The loader resolves every path in the manifest."
+  },
+  {
+   "rule": "prose-inflation.hedge-stack",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "This can help to potentially reduce noise.",
+   "good": "This drops 40 findings on the same corpus."
+  },
+  {
+   "rule": "prose-inflation.nominalized-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The gate performs validation of each field.",
+   "good": "The gate validates each field."
+  },
+  {
+   "rule": "prose-inflation.nominalized-verb",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The loader provides support for globs.",
+   "good": "The loader supports globs."
+  },
+  {
+   "rule": "prose-inflation.slop-lexicon",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "A robust, comprehensive linter.",
+   "good": "A linter with 61 rules across 9 categories."
+  },
+  {
+   "rule": "prose-inflation.vague-declarative",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The tradeoffs are significant.",
+   "good": "The lockfile adds 40 KB and removes one network round trip."
+  },
+  {
+   "rule": "prose-promotion.promotional-adjective-noun",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "An intricate dependency graph.",
+   "good": "A dependency graph with 340 edges."
+  },
+  {
+   "rule": "prose-promotion.promotional-adjective-noun",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "This is a pivotal release.",
+   "good": "This release removes the last Python 3.9 dependency."
+  },
+  {
+   "rule": "prose-promotion.promotional-puffery",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The library has emerged as a hub for astronomy tooling.",
+   "good": "Four astronomy tools depend on the library."
+  },
+  {
+   "rule": "prose-promotion.promotional-puffery",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The rewrite left a lasting impact on latency.",
+   "good": "The rewrite cut p99 latency from 800 ms to 120 ms."
+  },
+  {
+   "rule": "prose-promotion.promotional-puffery",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "The city is renowned for its harbour.",
+   "good": "The city is home to the country's largest harbour."
+  },
+  {
+   "rule": "prose-promotion.promotional-puffery",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 3,
+   "bad": "The file format continues to thrive.",
+   "good": "The file format continues to evolve; version 3 adds streaming reads."
+  },
+  {
+   "rule": "prose-promotion.promotional-verbs",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The demo showcases the new parser.",
+   "good": "The demo runs the new parser on three files."
+  },
+  {
+   "rule": "prose-promotion.promotional-verbs",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "We embark on a migration.",
+   "good": "The migration starts on 3 March."
+  },
+  {
+   "rule": "prose-promotion.promotional-verbs",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "The team spearheads the rewrite.",
+   "good": "The team leads the rewrite."
+  },
+  {
+   "rule": "prose-promotion.strategy-buzzwords",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Caching builds a data moat.",
+   "good": "The cache holds 8 TB no competitor can re-derive without our sensor feed."
+  },
+  {
+   "rule": "prose-promotion.strategy-buzzwords",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Adoption creates a growth flywheel.",
+   "good": "Each new user contributes a review, which raises search ranking."
+  },
+  {
+   "rule": "prose-scope.rejected-alternative",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The loader uses a lockfile rather than a resolver because resolution is slow.",
+   "good": "The loader reads the lockfile."
+  },
+  {
+   "rule": "prose-scope.unrequested-reassurance",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "No configuration required -- it just works.",
+   "good": "The linter reads `.slopvac.toml` when one is present."
+  },
+  {
+   "rule": "ste-practices.false-friend-term",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The retry handles the eventual timeout.",
+   "good": "The retry handles a possible timeout."
+  },
+  {
+   "rule": "ste-practices.false-friend-term",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Set the actual version in the manifest.",
+   "good": "Set the current version in the manifest."
+  },
+  {
+   "rule": "ste-practices.gendered-or-exclusionary-language",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Add the service account to the whitelist before he runs the job.",
+   "good": "Add the service account to the allowlist before the operator runs the job."
+  },
+  {
+   "rule": "ste-practices.latin-abbreviation",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Discard the temporary files (e.g. lock files and partial downloads) after each run.",
+   "good": "Discard the temporary files after each run. These files include lock files and partial downloads."
+  },
+  {
+   "rule": "ste-practices.latin-abbreviation",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Set the retry limit, timeout, backoff, etc. in the client config.",
+   "good": "Set the retry limit, the timeout, and the backoff in the client config."
+  },
+  {
+   "rule": "ste-practices.omitted-conjunction-that",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Make sure the migration completed before you restart the worker.",
+   "good": "Make sure that the migration completed before you restart the worker."
+  },
+  {
+   "rule": "ste-practices.omitted-conjunction-that",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "The dashboard shows the queue is empty.",
+   "good": "The dashboard shows that the queue is empty."
+  },
+  {
+   "rule": "ste-practices.omitted-conjunction-that",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 2,
+   "bad": "We recommend the team ships the fix today.",
+   "good": "Show the user the target, then recommend the upgrade."
+  },
+  {
+   "rule": "ste-practices.omitted-conjunction-that",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 3,
+   "bad": "Make sure you restart the worker.",
+   "good": "Make sure that you restart the worker."
+  },
+  {
+   "rule": "ste-practices.omitted-conjunction-that",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 4,
+   "bad": "Check the service runs on port 80.",
+   "good": "Check the error messages in the output."
+  },
+  {
+   "rule": "ste-practices.phrasal-verb",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Set up the client before you spin up the worker pool.",
+   "good": "Configure the client before you start the worker pool."
+  },
+  {
+   "rule": "ste-practices.phrasal-verb",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "If the import breaks down, roll back the migration.",
+   "good": "If the import fails, revert the migration."
+  },
+  {
+   "rule": "ste-practices.possessive-form-unclear",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Check the workers' pools' retry limits.",
+   "good": "Check the retry limit for each pool of workers."
+  },
+  {
+   "rule": "ste-punctuation.hyphen-group-too-long",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Use the read-only-replica-failover path during the migration.",
+   "good": "Use the failover path for the read-only replica during the migration."
+  },
+  {
+   "rule": "ste-punctuation.hyphen-missing-in-compound-modifier",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The replica serves read only traffic during the migration.",
+   "good": "The replica serves read-only traffic during the migration."
+  },
+  {
+   "rule": "ste-punctuation.hyphen-missing-in-compound-modifier",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Use the command line client for the first run.",
+   "good": "Use the command-line client for the first run."
+  },
+  {
+   "rule": "ste-punctuation.semicolon-used",
+   "kind": "pattern",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The worker drains the queue; the exporter writes the report.",
+   "good": "The worker drains the queue. The exporter writes the report."
+  },
+  {
+   "rule": "ste-verbs.verb-form-not-listed",
+   "kind": "vocabulary",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The runner had been retrying the request for ten minutes.",
+   "good": "The runner retried the request for ten minutes."
+  },
+  {
+   "rule": "ste-words.approved-word-substitution",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The client utilizes exponential backoff prior to the third retry.",
+   "good": "The client uses exponential backoff before the third retry."
+  },
+  {
+   "rule": "ste-words.approved-word-substitution",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Ensure that the migration completed before you restart the worker.",
+   "good": "Make sure that the migration completed before you restart the worker."
+  },
+  {
+   "rule": "ste-words.obligation-word-substitution",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The worker should retry the request before it reports a failure.",
+   "good": "The worker must retry the request before it reports a failure."
+  },
+  {
+   "rule": "ste-words.obligation-word-substitution",
+   "kind": "substitution",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Callers shall close the handle.",
+   "good": "Callers must close the handle."
+  },
+  {
+   "rule": "ste-words.slang-or-jargon-term",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The retry loop has a gotcha when the token expires mid-request.",
+   "good": "The retry loop fails when the token expires during a request."
+  },
+  {
+   "rule": "ste-words.slang-or-jargon-term",
+   "kind": "tokens",
+   "ai_signal": "none",
+   "example": 1,
+   "bad": "Nuke the cache directory and start again.",
+   "good": "Delete the cache directory and start again."
+  },
+  {
+   "rule": "ste-words.verb-or-adjective-form-not-permitted",
+   "kind": "vocabulary",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The queue is the deletablest of the three resources.",
+   "good": "You can delete the queue more easily than the other two resources."
+  },
+  {
+   "rule": "ste-words.word-outside-controlled-vocabulary",
+   "kind": "vocabulary",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "The operator will utilize the retry budget to quickly drain the queue.",
+   "good": "The operator uses the retry budget to drain the queue in under a minute."
+  },
+  {
+   "rule": "ste-words.word-used-in-wrong-part-of-speech",
+   "kind": "vocabulary",
+   "ai_signal": "none",
+   "example": 0,
+   "bad": "Test the endpoint with an expired token.",
+   "good": "Do a test of the endpoint with an expired token."
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+Extending the use of hashTypeGetValue. (#10567)
+
+* Extending the use of hashTypeGetValue.
+
+Functions hashTypeExists, hashTypeGetValueLength and addHashFieldToReply
+have a similar pattern on calling hashTypeGetFromHashTable or
+hashTypeGetFromZipList depending on the underlying data structure. What
+does functions are duing is exactly what hashTypeGetValue does. Those
+functions were changed to use existing function hashTypeGetValue making
+the code more consistent.
+
+Co-authored-by: Madelyn Olson <madelyneolson@gmail.com>

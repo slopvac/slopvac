@@ -1,0 +1,15 @@
+Scheduling Profiler: De-emphasize React internal frames
+
+This commit adds code to all React bundles to explicitly register the beginning and ending of the module. This is done by creating Error objects (which capture the file name, line number, and column number) and passing them explicitly to a DevTools hook (when present).
+
+Next, as the Scheduling Profiler logs metadata to the User Timing API, it prints these module ranges along with other metadata (like Lane values and profiler version number).
+
+Lastly, the Scheduling Profiler UI compares stack frames to these ranges when drawing the flame graph and dims or de-emphasizes frames that fall within an internal module.
+
+The net effect of this is that user code (and 3rd party code) stands out clearly in the flame graph while React internal modules are dimmed.
+
+Internal module ranges are completely optional. Older profiling samples, or ones recorded without the React DevTools extension installed, will simply not dim the internal frames.
+
+Resolves #22579
+
+![deemphasized-internals](https://user-images.githubusercontent.com/29597/137970071-b154188a-4552-460d-a332-e4a5a5e058b7.gif)

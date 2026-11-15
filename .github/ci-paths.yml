@@ -28,6 +28,7 @@ code:
   - 'scripts/contract/**'
   - 'tests/contract/**'
   - 'crates/slopvac-text/**'
+  - 'evals/**'
 
 # Rust workspace under crates/. Build, format, lint and test run across three
 # operating systems.

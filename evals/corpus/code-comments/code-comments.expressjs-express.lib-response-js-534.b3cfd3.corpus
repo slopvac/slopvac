@@ -1,0 +1,220 @@
+ *
+ * Optionally providing an alternate attachment `filename`,
+ * and optional callback `callback(err)`. The callback is invoked
+ * when the data transfer is complete, or when an error has
+ * occurred. Be sure to check `res.headersSent` if you plan to respond.
+ *
+ * Optionally providing an `options` object to use with `res.sendFile()`.
+ * This function will set the `Content-Disposition` header, overriding
+ * any `Content-Disposition` header passed as header options in order
+ * to set the attachment and filename.
+ *
+ * This method uses `res.sendFile()`.
+ *
+ * @public
+ */
+
+res.download = function download (path, filename, options, callback) {
+  var done = callback;
+  var name = filename;
+  var opts = options || null
+
+  // support function as second or third arg
+  if (typeof filename === 'function') {
+    done = filename;
+    name = null;
+    opts = null
+  } else if (typeof options === 'function') {
+    done = options
+    opts = null
+  }
+
+  // support optional filename, where options may be in it's place
+  if (typeof filename === 'object' &&
+    (typeof options === 'function' || options === undefined)) {
+    name = null
+    opts = filename
+  }
+
+  // set Content-Disposition when file is sent
+  var headers = {
+    'Content-Disposition': contentDisposition(name || path)
+  };
+
+  // merge user-provided headers
+  if (opts && opts.headers) {
+    var keys = Object.keys(opts.headers)
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i]
+      if (key.toLowerCase() !== 'content-disposition') {
+        headers[key] = opts.headers[key]
+      }
+    }
+  }
+
+  // merge user-provided options
+  opts = Object.create(opts)
+  opts.headers = headers
+
+  // Resolve the full path for sendFile
+  var fullPath = !opts.root
+    ? resolve(path)
+    : path
+
+  // send file
+  return this.sendFile(fullPath, opts, done)
+};
+
+/**
+ * Set _Content-Type_ response header with `type` through `mime.lookup()`
+ * when it does not contain "/", or set the Content-Type to `type` otherwise.
+ *
+ * Examples:
+ *
+ *     res.type('.html');
+ *     res.type('html');
+ *     res.type('json');
+ *     res.type('application/json');
+ *     res.type('png');
+ *
+ * @param {String} type
+ * @return {ServerResponse} for chaining
+ * @public
+ */
+
+res.contentType =
+res.type = function contentType(type) {
+  var ct = type.indexOf('/') === -1
+    ? mime.lookup(type)
+    : type;
+
+  return this.set('Content-Type', ct);
+};
+
+/**
+ * Respond to the Acceptable formats using an `obj`
+ * of mime-type callbacks.
+ *
+ * This method uses `req.accepted`, an array of
+ * acceptable types ordered by their quality values.
+ * When "Accept" is not present the _first_ callback
+ * is invoked, otherwise the first match is used. When
+ * no match is performed the server responds with
+ * 406 "Not Acceptable".
+ *
+ * Content-Type is set for you, however if you choose
+ * you may alter this within the callback using `res.type()`
+ * or `res.set('Content-Type', ...)`.
+ *
+ *    res.format({
+ *      'text/plain': function(){
+ *        res.send('hey');
+ *      },
+ *
+ *      'text/html': function(){
+ *        res.send('<p>hey</p>');
+ *      },
+ *
+ *      'application/json': function () {
+ *        res.send({ message: 'hey' });
+ *      }
+ *    });
+ *
+ * In addition to canonicalized MIME types you may
+ * also use extnames mapped to these types:
+ *
+ *    res.format({
+ *      text: function(){
+ *        res.send('hey');
+ *      },
+ *
+ *      html: function(){
+ *        res.send('<p>hey</p>');
+ *      },
+ *
+ *      json: function(){
+ *        res.send({ message: 'hey' });
+ *      }
+ *    });
+ *
+ * By default Express passes an `Error`
+ * with a `.status` of 406 to `next(err)`
+ * if a match is not made. If you provide
+ * a `.default` callback it will be invoked
+ * instead.
+ *
+ * @param {Object} obj
+ * @return {ServerResponse} for chaining
+ * @public
+ */
+
+res.format = function(obj){
+  var req = this.req;
+  var next = req.next;
+
+  var keys = Object.keys(obj)
+    .filter(function (v) { return v !== 'default' })
+
+  var key = keys.length > 0
+    ? req.accepts(keys)
+    : false;
+
+  this.vary("Accept");
+
+  if (key) {
+    this.set('Content-Type', normalizeType(key).value);
+    obj[key](req, this, next);
+  } else if (obj.default) {
+    obj.default(req, this, next)
+  } else {
+    next(createError(406, {
+      types: normalizeTypes(keys).map(function (o) { return o.value })
+    }))
+  }
+
+  return this;
+};
+
+/**
+ * Set _Content-Disposition_ header to _attachment_ with optional `filename`.
+ *
+ * @param {String} filename
+ * @return {ServerResponse}
+ * @public
+ */
+
+res.attachment = function attachment(filename) {
+  if (filename) {
+    this.type(extname(filename));
+  }
+
+  this.set('Content-Disposition', contentDisposition(filename));
+
+  return this;
+};
+
+/**
+ * Append additional header `field` with value `val`.
+ *
+ * Example:
+ *
+ *    res.append('Link', ['<http://localhost/>', '<http://localhost:3000/>']);
+ *    res.append('Set-Cookie', 'foo=bar; Path=/; HttpOnly');
+ *    res.append('Warning', '199 Miscellaneous warning');
+ *
+ * @param {String} field
+ * @param {String|Array} val
+ * @return {ServerResponse} for chaining
+ * @public
+ */
+
+res.append = function append(field, val) {
+  var prev = this.get(field);
+  var value = val;
+
+  if (prev) {
+    // concat the new and prev vals
+    value = Array.isArray(prev) ? prev.concat(val)
+      : Array.isArray(val) ? [prev].concat(val)
+        : [prev, val]
+  }

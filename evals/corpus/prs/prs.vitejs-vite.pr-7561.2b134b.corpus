@@ -1,0 +1,30 @@
+fix: fix HMR propagation when imports not analyzed
+
+### Description
+
+In some situations, the HMR signal hits a module that has not been analyzed.
+
+For example, a dynamic import that is never called `const neverCalled = () => import('./dep.js')`. Here the `dep.js` file is never loaded and thus never analyzed by the `importAnalysis.ts` plugin.
+
+If the HMR signal hits such non-analyzed module, then this means that the module has not been loaded.
+
+Because it has not be loaeded there is nothing to refresh; we can and should stop the HMR propagation. Otherwise the HMR signal triggers a wrongful full page reload.
+
+### Additional context
+
+This is a vps 0.4 release blocker. (This situation used to be an edge case with vps 0.3 but, with the new vps architecture, this is a common and problematic case.)
+
+### What is the purpose of this pull request? <!-- (put an "X" next to an item) -->
+
+- [x] Bug fix
+- [ ] New Feature
+- [ ] Documentation update
+- [ ] Other
+
+### Before submitting the PR, please make sure you do the following
+
+- [x] Read the [Contributing Guidelines](https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md).
+- [x] Read the [Pull Request Guidelines](https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md#pull-request-guidelines) and follow the [Commit Convention](https://github.com/vitejs/vite/blob/main/.github/commit-convention.md).
+- [x] Check that there isn't already a PR that solves the problem the same way to avoid creating a duplicate.
+- [x] Provide a description in this PR that addresses **what** the PR is solving, or reference the issue that it solves (e.g. `fixes #123`).
+- [x] Ideally, include relevant tests that fail without this PR but pass with it.

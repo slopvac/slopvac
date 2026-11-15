@@ -1,0 +1,220 @@
+/// operates at millisecond granularity and should not be used for tasks that
+/// require high-resolution timers. The implementation is platform specific,
+/// and some platforms (specifically Windows) will provide timers with a
+/// larger resolution than 1 ms.
+///
+/// To run something regularly on a schedule, see [`interval`].
+///
+/// The maximum duration for a sleep is 68719476734 milliseconds (approximately 2.2 years).
+///
+/// # Cancellation
+///
+/// Canceling a sleep instance is done by dropping the returned future. No additional
+/// cleanup work is required.
+///
+/// # Examples
+///
+/// Wait 100ms and print "100 ms have elapsed".
+///
+/// ```
+/// use tokio::time::{sleep, Duration};
+///
+/// #[tokio::main]
+/// async fn main() {
+///     sleep(Duration::from_millis(100)).await;
+///     println!("100 ms have elapsed");
+/// }
+/// ```
+///
+/// See the documentation for the [`Sleep`] type for more examples.
+///
+/// # Panics
+///
+/// This function panics if there is no current timer set.
+///
+/// It can be triggered when [`Builder::enable_time`] or
+/// [`Builder::enable_all`] are not included in the builder.
+///
+/// It can also panic whenever a timer is created outside of a
+/// Tokio runtime. That is why `rt.block_on(sleep(...))` will panic,
+/// since the function is executed outside of the runtime.
+/// Whereas `rt.block_on(async {sleep(...).await})` doesn't panic.
+/// And this is because wrapping the function on an async makes it lazy,
+/// and so gets executed inside the runtime successfully without
+/// panicking.
+///
+/// [`Sleep`]: struct@crate::time::Sleep
+/// [`interval`]: crate::time::interval()
+/// [`Builder::enable_time`]: crate::runtime::Builder::enable_time
+/// [`Builder::enable_all`]: crate::runtime::Builder::enable_all
+// Alias for old name in 0.x
+#[cfg_attr(docsrs, doc(alias = "delay_for"))]
+#[cfg_attr(docsrs, doc(alias = "wait"))]
+#[track_caller]
+pub fn sleep(duration: Duration) -> Sleep {
+    let location = trace::caller_location();
+
+    match Instant::now().checked_add(duration) {
+        Some(deadline) => Sleep::new_timeout(deadline, location),
+        None => Sleep::new_timeout(Instant::far_future(), location),
+    }
+}
+
+pin_project! {
+    /// Future returned by [`sleep`](sleep) and [`sleep_until`](sleep_until).
+    ///
+    /// This type does not implement the `Unpin` trait, which means that if you
+    /// use it with [`select!`] or by calling `poll`, you have to pin it first.
+    /// If you use it with `.await`, this does not apply.
+    ///
+    /// # Examples
+    ///
+    /// Wait 100ms and print "100 ms have elapsed".
+    ///
+    /// ```
+    /// use tokio::time::{sleep, Duration};
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     sleep(Duration::from_millis(100)).await;
+    ///     println!("100 ms have elapsed");
+    /// }
+    /// ```
+    ///
+    /// Use with [`select!`]. Pinning the `Sleep` with [`tokio::pin!`] is
+    /// necessary when the same `Sleep` is selected on multiple times.
+    /// ```no_run
+    /// use tokio::time::{self, Duration, Instant};
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let sleep = time::sleep(Duration::from_millis(10));
+    ///     tokio::pin!(sleep);
+    ///
+    ///     loop {
+    ///         tokio::select! {
+    ///             () = &mut sleep => {
+    ///                 println!("timer elapsed");
+    ///                 sleep.as_mut().reset(Instant::now() + Duration::from_millis(50));
+    ///             },
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    /// Use in a struct with boxing. By pinning the `Sleep` with a `Box`, the
+    /// `HasSleep` struct implements `Unpin`, even though `Sleep` does not.
+    /// ```
+    /// use std::future::Future;
+    /// use std::pin::Pin;
+    /// use std::task::{Context, Poll};
+    /// use tokio::time::Sleep;
+    ///
+    /// struct HasSleep {
+    ///     sleep: Pin<Box<Sleep>>,
+    /// }
+    ///
+    /// impl Future for HasSleep {
+    ///     type Output = ();
+    ///
+    ///     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    ///         self.sleep.as_mut().poll(cx)
+    ///     }
+    /// }
+    /// ```
+    /// Use in a struct with pin projection. This method avoids the `Box`, but
+    /// the `HasSleep` struct will not be `Unpin` as a consequence.
+    /// ```
+    /// use std::future::Future;
+    /// use std::pin::Pin;
+    /// use std::task::{Context, Poll};
+    /// use tokio::time::Sleep;
+    /// use pin_project_lite::pin_project;
+    ///
+    /// pin_project! {
+    ///     struct HasSleep {
+    ///         #[pin]
+    ///         sleep: Sleep,
+    ///     }
+    /// }
+    ///
+    /// impl Future for HasSleep {
+    ///     type Output = ();
+    ///
+    ///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    ///         self.project().sleep.poll(cx)
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// [`select!`]: ../macro.select.html
+    /// [`tokio::pin!`]: ../macro.pin.html
+    // Alias for old name in 0.2
+    #[cfg_attr(docsrs, doc(alias = "Delay"))]
+    #[derive(Debug)]
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct Sleep {
+        inner: Inner,
+
+        // The link between the `Sleep` instance and the timer that drives it.
+        #[pin]
+        entry: TimerEntry,
+    }
+}
+
+cfg_trace! {
+    #[derive(Debug)]
+    struct Inner {
+        deadline: Instant,
+        ctx: trace::AsyncOpTracingCtx,
+    }
+}
+
+cfg_not_trace! {
+    #[derive(Debug)]
+    struct Inner {
+        deadline: Instant,
+    }
+}
+
+impl Sleep {
+    #[cfg_attr(not(all(tokio_unstable, feature = "tracing")), allow(unused_variables))]
+    #[track_caller]
+    pub(crate) fn new_timeout(
+        deadline: Instant,
+        location: Option<&'static Location<'static>>,
+    ) -> Sleep {
+        use crate::runtime::scheduler;
+
+        let handle = scheduler::Handle::current();
+        let entry = TimerEntry::new(&handle, deadline);
+
+        #[cfg(all(tokio_unstable, feature = "tracing"))]
+        let inner = {
+            let handle = &handle.driver().time();
+            let time_source = handle.time_source();
+            let deadline_tick = time_source.deadline_to_tick(deadline);
+            let duration = deadline_tick.saturating_sub(time_source.now());
+
+            let location = location.expect("should have location if tracing");
+            let resource_span = tracing::trace_span!(
+                "runtime.resource",
+                concrete_type = "Sleep",
+                kind = "timer",
+                loc.file = location.file(),
+                loc.line = location.line(),
+                loc.col = location.column(),
+            );
+
+            let async_op_span = resource_span.in_scope(|| {
+                tracing::trace!(
+                    target: "runtime::resource::state_update",
+                    duration = duration,
+                    duration.unit = "ms",
+                    duration.op = "override",
+                );
+
+                tracing::trace_span!("runtime.resource.async_op", source = "Sleep::new_timeout")
+            });
+
+            let async_op_poll_span =
+                async_op_span.in_scope(|| tracing::trace_span!("runtime.resource.async_op.poll"));

@@ -1,0 +1,19 @@
+Rewrite implementation of `#[alloc_error_handler]`
+
+The new implementation doesn't use weak lang items and instead changes
+`#[alloc_error_handler]` to an attribute macro just like
+`#[global_allocator]`.
+
+The attribute will generate the `__rg_oom` function which is called by
+the compiler-generated `__rust_alloc_error_handler`. If no `__rg_oom`
+function is defined in any crate then the compiler shim will call
+`__rdl_oom` in the alloc crate which will simply panic.
+
+This also fixes link errors with `-C link-dead-code` with
+`default_alloc_error_handler`: `__rg_oom` was previously defined in the
+alloc crate and would attempt to reference the `oom` lang item, even if
+it didn't exist. This worked as long as `__rg_oom` was excluded from
+linking since it was not called.
+
+This is a prerequisite for the stabilization of
+`default_alloc_error_handler` (#102318).

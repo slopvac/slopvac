@@ -1,0 +1,220 @@
+                if (moduleFile) {
+                    const nodeModulesPathParts = getNodeModulePathParts(moduleFile.fileName);
+                    if (nodeModulesPathParts) {
+                        const { topLevelNodeModulesIndex, topLevelPackageNameIndex, packageRootIndex } = nodeModulesPathParts;
+                        packageName = unmangleScopedPackageName(getPackageNameFromTypesPackageName(moduleFile.fileName.substring(topLevelPackageNameIndex + 1, packageRootIndex)));
+                        if (startsWith(importingFile, moduleFile.path.substring(0, topLevelNodeModulesIndex))) {
+                            const prevDeepestNodeModulesPath = packages.get(packageName);
+                            const nodeModulesPath = moduleFile.fileName.substring(0, topLevelPackageNameIndex + 1);
+                            if (prevDeepestNodeModulesPath) {
+                                const prevDeepestNodeModulesIndex = prevDeepestNodeModulesPath.indexOf(nodeModulesPathPart);
+                                if (topLevelNodeModulesIndex > prevDeepestNodeModulesIndex) {
+                                    packages.set(packageName, nodeModulesPath);
+                                }
+                            }
+                            else {
+                                packages.set(packageName, nodeModulesPath);
+                            }
+                        }
+                    }
+                }
+
+                const isDefault = exportKind === ExportKind.Default;
+                const namedSymbol = isDefault && getLocalSymbolForExportDefault(symbol) || symbol;
+                // 1. A named export must be imported by its key in `moduleSymbol.exports` or `moduleSymbol.members`.
+                // 2. A re-export merged with an export from a module augmentation can result in `symbol`
+                //    being an external module symbol; the name it is re-exported by will be `symbolTableKey`
+                //    (which comes from the keys of `moduleSymbol.exports`.)
+                // 3. Otherwise, we have a default/namespace import that can be imported by any name, and
+                //    `symbolTableKey` will be something undesirable like `export=` or `default`, so we try to
+                //    get a better name.
+                const names = exportKind === ExportKind.Named || isExternalModuleSymbol(namedSymbol)
+                    ? unescapeLeadingUnderscores(symbolTableKey)
+                    : getNamesForExportedSymbol(namedSymbol, /*scriptTarget*/ undefined);
+
+                const symbolName = typeof names === "string" ? names : names[0];
+                const capitalizedSymbolName = typeof names === "string" ? undefined : names[1];
+
+                const moduleName = stripQuotes(moduleSymbol.name);
+                const id = exportInfoId++;
+                const target = skipAlias(symbol, checker);
+                const storedSymbol = symbol.flags & SymbolFlags.Transient ? undefined : symbol;
+                const storedModuleSymbol = moduleSymbol.flags & SymbolFlags.Transient ? undefined : moduleSymbol;
+                if (!storedSymbol || !storedModuleSymbol) symbols.set(id, [symbol, moduleSymbol]);
+
+                exportInfo.add(key(symbolName, symbol, isExternalModuleNameRelative(moduleName) ? undefined : moduleName, checker), {
+                    id,
+                    symbolTableKey,
+                    symbolName,
+                    capitalizedSymbolName,
+                    moduleName,
+                    moduleFile,
+                    moduleFileName: moduleFile?.fileName,
+                    packageName,
+                    exportKind,
+                    targetFlags: target.flags,
+                    isFromPackageJson,
+                    symbol: storedSymbol,
+                    moduleSymbol: storedModuleSymbol,
+                });
+            },
+            get: (importingFile, key) => {
+                if (importingFile !== usableByFileName) return;
+                const result = exportInfo.get(key);
+                return result?.map(rehydrateCachedInfo);
+            },
+            search: (importingFile, preferCapitalized, matches, action) => {
+                if (importingFile !== usableByFileName) return;
+                return forEachEntry(exportInfo, (info, key) => {
+                    const { symbolName, ambientModuleName } = parseKey(key);
+                    const name = preferCapitalized && info[0].capitalizedSymbolName || symbolName;
+                    if (matches(name, info[0].targetFlags)) {
+                        const rehydrated = info.map(rehydrateCachedInfo);
+                        const filtered = rehydrated.filter((r, i) => isNotShadowedByDeeperNodeModulesPackage(r, info[i].packageName));
+                        if (filtered.length) {
+                            const res = action(filtered, name, !!ambientModuleName, key);
+                            if (res !== undefined) return res;
+                        }
+                    }
+                });
+            },
+            releaseSymbols: () => {
+                symbols.clear();
+            },
+            onFileChanged: (oldSourceFile: SourceFile, newSourceFile: SourceFile, typeAcquisitionEnabled: boolean) => {
+                if (fileIsGlobalOnly(oldSourceFile) && fileIsGlobalOnly(newSourceFile)) {
+                    // File is purely global; doesn't affect export map
+                    return false;
+                }
+                if (
+                    usableByFileName && usableByFileName !== newSourceFile.path ||
+                    // If ATA is enabled, auto-imports uses existing imports to guess whether you want auto-imports from node.
+                    // Adding or removing imports from node could change the outcome of that guess, so could change the suggestions list.
+                    typeAcquisitionEnabled && consumesNodeCoreModules(oldSourceFile) !== consumesNodeCoreModules(newSourceFile) ||
+                    // Module agumentation and ambient module changes can add or remove exports available to be auto-imported.
+                    // Changes elsewhere in the file can change the *type* of an export in a module augmentation,
+                    // but type info is gathered in getCompletionEntryDetails, which doesn’t use the cache.
+                    !arrayIsEqualTo(oldSourceFile.moduleAugmentations, newSourceFile.moduleAugmentations) ||
+                    !ambientModuleDeclarationsAreEqual(oldSourceFile, newSourceFile)
+                ) {
+                    cache.clear();
+                    return true;
+                }
+                usableByFileName = newSourceFile.path;
+                return false;
+            },
+        };
+        if (Debug.isDebugging) {
+            Object.defineProperty(cache, "__cache", { get: () => exportInfo });
+        }
+        return cache;
+
+        function rehydrateCachedInfo(info: CachedSymbolExportInfo): SymbolExportInfo {
+            if (info.symbol && info.moduleSymbol) return info as SymbolExportInfo;
+            const { id, exportKind, targetFlags, isFromPackageJson, moduleFileName } = info;
+            const [cachedSymbol, cachedModuleSymbol] = symbols.get(id) || emptyArray;
+            if (cachedSymbol && cachedModuleSymbol) {
+                return {
+                    symbol: cachedSymbol,
+                    moduleSymbol: cachedModuleSymbol,
+                    moduleFileName,
+                    exportKind,
+                    targetFlags,
+                    isFromPackageJson,
+                };
+            }
+            const checker = (isFromPackageJson
+                ? host.getPackageJsonAutoImportProvider()!
+                : host.getCurrentProgram()!).getTypeChecker();
+            const moduleSymbol = info.moduleSymbol || cachedModuleSymbol || Debug.checkDefined(info.moduleFile
+                ? checker.getMergedSymbol(info.moduleFile.symbol)
+                : checker.tryFindAmbientModule(info.moduleName));
+            const symbol = info.symbol || cachedSymbol || Debug.checkDefined(exportKind === ExportKind.ExportEquals
+                ? checker.resolveExternalModuleSymbol(moduleSymbol)
+                : checker.tryGetMemberInModuleExportsAndProperties(unescapeLeadingUnderscores(info.symbolTableKey), moduleSymbol),
+                `Could not find symbol '${info.symbolName}' by key '${info.symbolTableKey}' in module ${moduleSymbol.name}`);
+            symbols.set(id, [symbol, moduleSymbol]);
+            return {
+                symbol,
+                moduleSymbol,
+                moduleFileName,
+                exportKind,
+                targetFlags,
+                isFromPackageJson,
+            };
+        }
+
+        function key(importedName: string, symbol: Symbol, ambientModuleName: string | undefined, checker: TypeChecker): string {
+            const moduleKey = ambientModuleName || "";
+            return `${importedName}|${getSymbolId(skipAlias(symbol, checker))}|${moduleKey}`;
+        }
+
+        function parseKey(key: string) {
+            const symbolName = key.substring(0, key.indexOf("|"));
+            const moduleKey = key.substring(key.lastIndexOf("|") + 1);
+            const ambientModuleName = moduleKey === "" ? undefined : moduleKey;
+            return { symbolName, ambientModuleName };
+        }
+
+        function fileIsGlobalOnly(file: SourceFile) {
+            return !file.commonJsModuleIndicator && !file.externalModuleIndicator && !file.moduleAugmentations && !file.ambientModuleNames;
+        }
+
+        function ambientModuleDeclarationsAreEqual(oldSourceFile: SourceFile, newSourceFile: SourceFile) {
+            if (!arrayIsEqualTo(oldSourceFile.ambientModuleNames, newSourceFile.ambientModuleNames)) {
+                return false;
+            }
+            let oldFileStatementIndex = -1;
+            let newFileStatementIndex = -1;
+            for (const ambientModuleName of newSourceFile.ambientModuleNames) {
+                const isMatchingModuleDeclaration = (node: Statement) => isNonGlobalAmbientModule(node) && node.name.text === ambientModuleName;
+                oldFileStatementIndex = findIndex(oldSourceFile.statements, isMatchingModuleDeclaration, oldFileStatementIndex + 1);
+                newFileStatementIndex = findIndex(newSourceFile.statements, isMatchingModuleDeclaration, newFileStatementIndex + 1);
+                if (oldSourceFile.statements[oldFileStatementIndex] !== newSourceFile.statements[newFileStatementIndex]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function isNotShadowedByDeeperNodeModulesPackage(info: SymbolExportInfo, packageName: string | undefined) {
+            if (!packageName || !info.moduleFileName) return true;
+            const typingsCacheLocation = host.getGlobalTypingsCacheLocation();
+            if (typingsCacheLocation && startsWith(info.moduleFileName, typingsCacheLocation)) return true;
+            const packageDeepestNodeModulesPath = packages.get(packageName);
+            return !packageDeepestNodeModulesPath || startsWith(info.moduleFileName, packageDeepestNodeModulesPath);
+        }
+    }
+
+    export function isImportableFile(
+        program: Program,
+        from: SourceFile,
+        to: SourceFile,
+        preferences: UserPreferences,
+        packageJsonFilter: PackageJsonImportFilter | undefined,
+        moduleSpecifierResolutionHost: ModuleSpecifierResolutionHost,
+        moduleSpecifierCache: ModuleSpecifierCache | undefined,
+    ): boolean {
+        if (from === to) return false;
+        const cachedResult = moduleSpecifierCache?.get(from.path, to.path, preferences, {});
+        if (cachedResult?.isBlockedByPackageJsonDependencies !== undefined) {
+            return !cachedResult.isBlockedByPackageJsonDependencies;
+        }
+
+        const getCanonicalFileName = hostGetCanonicalFileName(moduleSpecifierResolutionHost);
+        const globalTypingsCache = moduleSpecifierResolutionHost.getGlobalTypingsCacheLocation?.();
+        const hasImportablePath = !!moduleSpecifiers.forEachFileNameOfModule(
+            from.fileName,
+            to.fileName,
+            moduleSpecifierResolutionHost,
+            /*preferSymlinks*/ false,
+            toPath => {
+                const toFile = program.getSourceFile(toPath);
+                // Determine to import using toPath only if toPath is what we were looking at
+                // or there doesnt exist the file in the program by the symlink
+                return (toFile === to || !toFile) &&
+                    isImportablePath(from.fileName, toPath, getCanonicalFileName, globalTypingsCache);
+            }
+        );
+
+        if (packageJsonFilter) {

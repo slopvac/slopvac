@@ -31,3 +31,6 @@ perf-results/
 
 # Generated docs site source (scripts/docs/build_site.py).
 /build/
+
+# Eval corpus downloads and generated twins; see evals/README.md.
+evals/.cache/

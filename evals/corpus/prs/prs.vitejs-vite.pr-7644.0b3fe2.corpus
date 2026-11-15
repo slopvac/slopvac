@@ -1,0 +1,87 @@
+feat!: relative base
+
+fix #2009
+fix #5270
+
+### Description
+
+Makes built apps portable when using relative base (`base: './'` or `base: ''`).
+
+When using a relative base, there shouldn't be any absolute URL. Including paths to public files and paths to assets from HTML files.
+
+Related discussions:
+- https://github.com/vitejs/vite/discussions/7611#discussioncomment-2500939
+- https://github.com/sveltejs/kit/issues/595
+
+Why we need relative base support, from @Rich-Harris's comment:
+> - the basepath is configured by an environment variable at runtime
+> - the site is deployed with IPFS
+> - you're building a Chrome extension
+> - the site is being viewed on something like the Internet Archive
+
+### Update to modern browser targets
+
+> Edit: We discussed this in a team meeting and we have agreed to update the browser targets as described here in v3 
+
+We need support for `import.meta.url` to be able to find the assets URL in some cases (for the preload URLs for example). 
+
+[`import.meta` is at 91.22%](https://caniuse.com/?search=import.meta), and we are currently require [`dynamic import support` so we are at 91.47%](https://caniuse.com/es6-module-dynamic-import). Given that `import.meta.url` will enable us to implement features like this PR, and the numbers will keep getting better, I think we could change our default modern target in Vite v3 and push an extra 0.25% of users to legacy mode. See Discussion with @bluwy and @sapphi-red in Discord [here](https://discord.com/channels/804011606160703521/804439875226173480/961231593278689321)
+
+The new esbuild resolved target upgrades `'es2019'` to `'es2020'` and downgrades safari from `13.1` to `13` so we keep transpiling nullish coallesing (still at ~89%)
+ 
+```js
+resolved.target = [
+  'es2020', // support import.meta.url
+  'edge88',
+  'firefox78',
+  'chrome87',
+  'safari13' // transpile nullish coallesing
+]
+```
+
+`@vitejs/plugin-legacy` is updated to check `import.meta` support (on top of dynamic import support):
+```js
+const detectModernBrowserCode = `try{import(new URL(import.meta.url).href).catch(()=>1);}catch(e){}window.${detectModernBrowserVarName}=true;`
+```
+
+### Asset URLs replacements in JS files
+
+Edit: after a discussion with @bluwy, he proposed we keep using quotes and `JSON.stringify` and interpolate using `" + ... + "`.
+
+### Alternative interpolation strategy that is no longer used in the PR
+
+For assets paths imported from a JS file, or for CSS inlined with asset URLs, we need to use `import.meta.url` to obtain a runtime absolute path because these strings can be re-exported and used in other files, or used directly in the DOM.
+     
+Instead of plain strings 
+```js
+return `export default ${JSON.stringify(css)}`
+```
+
+We could use template literals in these cases
+```js
+// Return a template string so we can use interpolation when replacing __VITE_ASSET__
+return `export default \`${css}\``
+```
+
+Allowing us to inject runtime interpolation with `new URL(...,import.meta.url)`
+```js
+const replacement = isRelativeBase(config.base)
+  ? `\${new URL(${JSON.stringify(outputFilepath)},import.meta.url)}`
+  : outputFilepath
+s.overwrite(match.index, match.index + full.length, replacement, {
+  contentOnly: true
+})
+```
+
+### Note
+
+During the Vite 2.0.0 beta, https://github.com/vitejs/vite/commit/00bc4466567bd5613d67abd1bdf46d9c9cb23a80 added relative base support, fixing https://github.com/vitejs/vite/issues/1669. Afterward, tests for relative base weren't included in Vite's CI. So the code evolved and we lost support for this feature.
+
+---
+
+### What is the purpose of this pull request? <!-- (put an "X" next to an item) -->
+
+- [ ] Bug fix
+- [x] New Feature
+- [ ] Documentation update
+- [ ] Other

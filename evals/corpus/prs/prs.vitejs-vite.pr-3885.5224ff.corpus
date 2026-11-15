@@ -1,0 +1,49 @@
+fix(plugin-legacy): legacy fallback for dynamic import
+
+Closes #3469
+
+<!-- Thank you for contributing! -->
+
+### Implementation checklist:
+- [x] Add a new option to the plugin `fallbackToLegacyIfNoDynamicImport` (disabled by default)
+- [x] Write a fallback script that loads SystemJs runtime and legacy bundle
+- [x] Do not polyfill dynamic import if option is enabled
+- [x] Inject dynamic import banner to ensure that modern bundle errors out as soon as possible
+- [x] ~~Investigate if it's possible to filter out syntax error from the modern bundle. (We don't want users or tools like Sentry to see this)~~ Even if it's possible, there's no sure way to distinguish between `import()` syntax error and a regular `SyntaxError`, and we don't want to miss the later
+- [x] Document new option, mention drawbacks and alternatives
+- [x] Add CSP hash for the fallback script, add a note to the CSP section in the readme
+
+### Description
+
+<!-- Please insert your description here and provide especially info about the "what" this PR is solving -->
+This is my attempt (or rather PoC) to implement the feature described in #3469.
+I'm not quite happy with the current solution, but it's the best I could think of for now.
+
+The problem is that I wanted for the dynamic fallback check to only influence the legacy bundle and not the main one, so proposed solution (check then load correct bundle) wouldn't work, since it requires code execution before even starting to download the correct bundle, while module/nomodule thing works at parse-time.
+
+To not slow down the main bundle, I opted for this approach:
+- let tha main bundle download and execute (hoping that most of the targets actually have dynamic import)
+- in a separate module script check for dynamic import support and import polyfills and legacy chunk if there's none
+
+The downsides are that main bundle would error-out if dynamic import syntax is not supported, which would produce error, which is not really desirable. Another potential problem is if the main bundle had no dynamic imports, it would fully execute and legacy bundle would load another copy of the app, which sounds like really bad news
+
+### Additional context
+
+<!-- e.g. is there anything you'd like reviewers to focus on? -->
+
+---
+
+### What is the purpose of this pull request? <!-- (put an "X" next to an item) -->
+
+- [ ] Bug fix
+- [x] New Feature
+- [ ] Documentation update
+- [ ] Other
+
+### Before submitting the PR, please make sure you do the following
+
+- [x] Read the [Contributing Guidelines](https://github.com/vitejs/vite/blob/main/.github/contributing.md).
+- [x] Read the [Pull Request Guidelines](https://github.com/vitejs/vite/blob/main/.github/contributing.md#pull-request-guidelines) and follow the [Commit Convention](https://github.com/vitejs/vite/blob/main/.github/commit-convention.md).
+- [x] Check that there isn't already a PR that solves the problem the same way to avoid creating a duplicate.
+- [x] Provide a description in this PR that addresses **what** the PR is solving, or reference the issue that it solves (e.g. `fixes #123`).
+- [ ] Ideally, include relevant tests that fail without this PR but pass with it.

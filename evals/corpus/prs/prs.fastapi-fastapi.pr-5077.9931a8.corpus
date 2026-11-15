@@ -1,0 +1,43 @@
+✨ Add support for wrapped functions (e.g. `@functools.wraps()`) used with forward references
+
+Fixes #5065 where the `globalns` computation in `get_typed_signature` misses an edge case handled by `typing.get_type_hints`. This PR makes the logic similar to `get_type_hints`.
+
+## Background
+
+`functools.wraps` updates the annotations and type signature to match the wrapped function. However, it copies the `__annotations__` dict verbatim, including forward references (strings). `get_type_hints` handles this by [dereferencing the `__wrapped__` attribute](https://github.com/python/cpython/blob/576dd901170af30fc50b0a7f07a388b38fd724a9/Lib/typing.py#L2314-L2315) until it gets to the original function, then uses the `__globals__` of _that_ function.
+
+## Testing
+
+I added a test case which reproduced the `NameError` seen in #5065. The test passes after my commit updating the implementation of `get_typed_signature`:
+
+```
+tests/test_wrapped_method_forward_reference.py:24:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+fastapi/routing.py:617: in decorator
+    self.add_api_route(
+fastapi/routing.py:556: in add_api_route
+    route = route_class(
+fastapi/routing.py:425: in __init__
+    self.dependant = get_dependant(path=self.path_format, call=self.endpoint)
+fastapi/dependencies/utils.py:279: in get_dependant
+    endpoint_signature = get_typed_signature(call)
+fastapi/dependencies/utils.py:249: in get_typed_signature
+    typed_params = [
+fastapi/dependencies/utils.py:254: in <listcomp>
+    annotation=get_typed_annotation(param, globalns),
+fastapi/dependencies/utils.py:266: in get_typed_annotation
+    annotation = evaluate_forwardref(annotation, globalns, globalns)
+pydantic/typing.py:76: in pydantic.typing.evaluate_forwardref
+    ???
+../../.pyenv/versions/3.9.1/lib/python3.9/typing.py:533: in _evaluate
+    eval(self.__forward_code__, globalns, localns),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   NameError: name 'ForwardRef' is not defined
+
+<string>:1: NameError
+============================================================== short test summary info ===============================================================
+FAILED tests/test_wrapped_method_forward_reference.py::test_wrapped_method_type_inference - NameError: name 'ForwardRef' is not defined
+================================================================= 1 failed in 0.59s ==================================================================
+```

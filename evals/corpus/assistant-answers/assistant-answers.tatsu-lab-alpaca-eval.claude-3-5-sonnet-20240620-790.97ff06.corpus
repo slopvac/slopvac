@@ -1,0 +1,106 @@
+Certainly! Here's an implementation of a queue data structure using two stacks in Python:
+
+```python
+class Queue:
+    def __init__(self):
+        self.stack1 = []  # For enqueue operations
+        self.stack2 = []  # For dequeue operations
+
+    def enqueue(self, item):
+        """
+        Add an item to the back of the queue.
+        Time complexity: O(1)
+        """
+        self.stack1.append(item)
+
+    def dequeue(self):
+        """
+        Remove and return the item at the front of the queue.
+        Time complexity: Amortized O(1)
+        """
+        if not self.stack2:
+            if not self.stack1:
+                raise IndexError("Queue is empty")
+            
+            # Transfer all items from stack1 to stack2
+            while self.stack1:
+                self.stack2.append(self.stack1.pop())
+        
+        return self.stack2.pop()
+
+    def peek(self):
+        """
+        Return the item at the front of the queue without removing it.
+        Time complexity: Amortized O(1)
+        """
+        if not self.stack2:
+            if not self.stack1:
+                raise IndexError("Queue is empty")
+            
+            # Transfer all items from stack1 to stack2
+            while self.stack1:
+                self.stack2.append(self.stack1.pop())
+        
+        return self.stack2[-1]
+
+    def is_empty(self):
+        """
+        Check if the queue is empty.
+        Time complexity: O(1)
+        """
+        return len(self.stack1) == 0 and len(self.stack2) == 0
+
+    def size(self):
+        """
+        Return the number of items in the queue.
+        Time complexity: O(1)
+        """
+        return len(self.stack1) + len(self.stack2)
+```
+
+This implementation uses two stacks: `stack1` for enqueue operations and `stack2` for dequeue operations. Here's how it works:
+
+1. `enqueue(item)`: Simply append the item to `stack1`. This operation is O(1).
+
+2. `dequeue()`: If `stack2` is empty, transfer all items from `stack1` to `stack2` (reversing their order in the process). Then pop and return the top item from `stack2`. This operation is amortized O(1) because the transfer operation happens only when `stack2` is empty.
+
+3. `peek()`: Similar to `dequeue()`, but instead of popping the item, it just returns the top item of `stack2` without removing it.
+
+4. `is_empty()`: Check if both stacks are empty.
+
+5. `size()`: Return the sum of the lengths of both stacks.
+
+Here's an example of how to use this Queue class:
+
+```python
+# Create a new queue
+q = Queue()
+
+# Enqueue some items
+q.enqueue(1)
+q.enqueue(2)
+q.enqueue(3)
+
+print(q.size())  # Output: 3
+print(q.peek())  # Output: 1
+
+# Dequeue an item
+print(q.dequeue())  # Output: 1
+
+print(q.size())  # Output: 2
+print(q.is_empty())  # Output: False
+
+# Dequeue remaining items
+print(q.dequeue())  # Output: 2
+print(q.dequeue())  # Output: 3
+
+print(q.is_empty())  # Output: True
+
+# Trying to dequeue from an empty queue
+try:
+    q.dequeue()
+except IndexError as e:
+    print(e)  # Output: Queue is empty
+```
+
+This implementation provides an efficient way to implement a queue using two stacks, with all operations having an amortized time complexity of O(1).

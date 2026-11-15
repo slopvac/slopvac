@@ -1,0 +1,18 @@
+[debuginfo] Make debuginfo type names for slices and str consistent.
+
+Before this PR, the compiler would emit the debuginfo name `slice$<T>`
+for all kinds of slices, regardless of whether they are behind a
+reference or not and regardless of the kind of reference. As a
+consequence, the types `Foo<&[T]>`, `Foo<[T]>`, and `Foo<&mut [T]>`
+would end up with the same type name `Foo<slice$<T> >` in debuginfo,
+making it impossible to disambiguate between them by name. Similarly,
+`&str` would get the name `str` in debuginfo, so the debuginfo name for
+`Foo<str>` and `Foo<&str>` would be the same. In contrast,
+`*const [bool]` and `*mut [bool]` would be `ptr_const$<slice$<bool> >`
+and `ptr_mut$<slice$<bool> >`, i.e. the encoding does not lose
+information about the type.
+
+This PR removes all special handling for slices and `str`. The types
+`&[bool]`, `&mut [bool]`, and `&str` thus get the names
+`ref$<slice2$<bool> >`, `ref_mut$<slice2$<bool> >`, and
+`ref$<str$>` respectively -- as one would expect.

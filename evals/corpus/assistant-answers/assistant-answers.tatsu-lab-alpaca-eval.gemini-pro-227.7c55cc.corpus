@@ -1,0 +1,41 @@
+```luau
+-- Function to find the nearest character to the player.
+function GetNearestCharacter()
+    local minDist = math.huge
+    local nearestChar = nil
+    
+    -- Iterate through all players in the game.
+    for _, player in pairs(game.Players) do
+        if player ~= game.Players.LocalPlayer then
+            -- Calculate the distance between the player and the current player.
+            local dist = (player.Position - game.Players.LocalPlayer.Position).Magnitude
+            
+            -- If the distance is less than the minimum distance, update the minimum distance and the nearest character.
+            if dist < minDist then
+                minDist = dist
+                nearestChar = player
+            end
+        end
+    end
+    
+    -- Return the nearest character.
+    return nearestChar
+end
+
+-- Function to teleport the player to the nearest character.
+function TeleportToNearestCharacter()
+    local nearestChar = GetNearestCharacter()
+    
+    -- If there is a nearest character, teleport the player to that character.
+    if nearestChar then
+        game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = nearestChar.Character.HumanoidRootPart.CFrame
+    end
+end
+
+-- Event to call the TeleportToNearestCharacter function when the player presses the E key.
+game.Players.LocalPlayer.InputBegan:Connect(function(key)
+    if key == Enum.KeyCode.E then
+        TeleportToNearestCharacter()
+    end
+end)
+```

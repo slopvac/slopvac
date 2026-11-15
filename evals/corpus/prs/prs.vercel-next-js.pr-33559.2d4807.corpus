@@ -1,0 +1,28 @@
+fix: `next/image` usage from `node_modules`
+
+|   | Before Fix #31065 | After Fix #31065 |
+|---|---|---| 
+| Screenshot | ![ff8f6cd1a8e7acd59729df349f8627b](https://user-images.githubusercontent.com/14243906/150639494-0cf5fcff-064d-4682-a3a2-18c3436fe42a.png) | ![081008a2e44d0a579fe34a7a9e24969](https://user-images.githubusercontent.com/14243906/150639517-2f9e75be-3942-4839-bd30-86ae0c250a7d.jpg) |
+
+
+## Why error?
+- import `next/image` form node_modules is `var _image = _interopRequireDefault(require('next/image'))` not `__webpack_require('next/image')`
+- So `process.env.__NEXT_IMAGE_OPTS` is not replaced by webpack define plugin, just empty object.
+- SSR will not get the `domain` config.
+- `Error: Invalid src prop (https://i.imgur.com/CgezKMb.jpg) on next/image, hostname "i.imgur.com" is not configured under images in your next.config.js`
+
+## Why fix?
+Add a runtime obj `imageConfigRuntime` for import `next/image` form node_modules will avoid `process.env.__NEXT_IMAGE_OPTS` is empty.
+
+
+<!--
+Thanks for opening a PR! Your contribution is much appreciated.
+In order to make sure your PR is handled as smoothly as possible we request that you follow the checklist sections below.
+Choose the right checklist for the change that you're making:
+-->
+
+## Bug
+
+- [x] Related issues linked using `fixes #number`
+- [x] Integration tests added
+- [ ] Errors have helpful link attached, see `contributing.md`
