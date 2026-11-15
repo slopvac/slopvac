@@ -11,6 +11,8 @@ pub enum WheelTool {
     Uv,
     /// `uvx slopvac`, an ephemeral environment in uv's cache.
     Uvx,
+    /// `uv pip install` into an ordinary virtual environment.
+    UvPip,
     /// A virtual environment or user site managed with pip.
     Pip,
 }
@@ -40,6 +42,7 @@ impl InstallMethod {
             Self::Installer => "installer",
             Self::Wheel(WheelTool::Uv) => "uv-tool",
             Self::Wheel(WheelTool::Uvx) => "uvx",
+            Self::Wheel(WheelTool::UvPip) => "uv-pip",
             Self::Wheel(WheelTool::Pip) => "pip",
             Self::Homebrew => "homebrew",
             Self::Mise => "mise",
@@ -56,6 +59,7 @@ impl InstallMethod {
             Self::Wheel(WheelTool::Uv) => "uv tool upgrade slopvac",
             Self::Wheel(WheelTool::Uvx) => "uvx slopvac@latest",
             Self::Wheel(WheelTool::Pip) => "python -m pip install --upgrade slopvac",
+            Self::Wheel(WheelTool::UvPip) => "uv pip install --upgrade slopvac",
             Self::Homebrew => "brew upgrade srobroek/tap/slopvac",
             Self::Mise => "mise upgrade slopvac",
             Self::Cargo => "cargo install --locked --force slopvac",
@@ -183,10 +187,14 @@ fn dist_info_tool(exe: &Path) -> Option<WheelTool> {
                 }
                 let installer =
                     std::fs::read_to_string(entry.path().join("INSTALLER")).unwrap_or_default();
-                return Some(if installer.trim() == "uv" {
+                // `INSTALLER` names the program that wrote the files, not how the user installed
+                // the tool. Only uv's receipt at the environment root marks a `uv tool` install.
+                return Some(if installer.trim() != "uv" {
+                    WheelTool::Pip
+                } else if prefix.join("uv-receipt.toml").is_file() {
                     WheelTool::Uv
                 } else {
-                    WheelTool::Pip
+                    WheelTool::UvPip
                 });
             }
         }
@@ -406,10 +414,13 @@ mod tests {
     fn pip_user_and_system_installs_are_found_through_dist_info() {
         // The scripts directory has no venv and no `site-packages` component, so only the wheel
         // metadata ties the binary to pip. `.local` is a user install, `usr/local` a system one.
-        for (prefix, installer, want) in [
-            (".local", "pip\n", WheelTool::Pip),
-            ("usr/local", "pip\n", WheelTool::Pip),
-            (".local", "uv\n", WheelTool::Uv),
+        for (prefix, installer, uv_receipt, want) in [
+            (".local", "pip\n", false, WheelTool::Pip),
+            ("usr/local", "pip\n", false, WheelTool::Pip),
+            // `uv pip install` into an ordinary venv: uv installed it, but it is not a uv tool.
+            (".venv", "uv\n", false, WheelTool::UvPip),
+            // A uv tool environment carries uv's receipt at its root.
+            ("tool-env", "uv\n", true, WheelTool::Uv),
         ] {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path().join(prefix);
@@ -422,11 +433,14 @@ mod tests {
             )
             .unwrap();
             std::fs::create_dir_all(root.join("bin")).unwrap();
+            if uv_receipt {
+                std::fs::write(root.join("uv-receipt.toml"), "[tool]\n").unwrap();
+            }
             let exe = root.join("bin/slopvac");
             assert_eq!(
                 detect(&exe, &|_: &str| None),
                 InstallMethod::Wheel(want),
-                "{prefix} {installer:?}"
+                "{prefix} {installer:?} {uv_receipt}"
             );
         }
     }
@@ -475,6 +489,10 @@ mod tests {
             (
                 InstallMethod::Wheel(WheelTool::Pip),
                 Some("python -m pip install --upgrade slopvac"),
+            ),
+            (
+                InstallMethod::Wheel(WheelTool::UvPip),
+                Some("uv pip install --upgrade slopvac"),
             ),
             (
                 InstallMethod::Homebrew,

@@ -27,3 +27,7 @@ minisign.workspace = true
 
 [lints]
 workspace = true
+
+# Opens `slopvac.toml` without blocking and reads it through the handle.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }

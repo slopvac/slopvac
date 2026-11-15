@@ -97,8 +97,19 @@ where
 {
     let tree = cli::command();
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
-    let policy =
-        slopvac_update::policy::network_policy(&std::env::current_dir().unwrap_or_default());
+    let policy = match slopvac_update::policy::network_policy(
+        &std::env::current_dir().unwrap_or_default(),
+    ) {
+        Ok(policy) => policy,
+        Err(err) => {
+            let _ = writeln!(
+                err_out,
+                "{}",
+                CliError::new("config-unreadable", err.to_string())
+            );
+            return exit::code(exit::INCOMPLETE);
+        }
+    };
     let config_offline = policy.offline.then_some(true);
     // `--version --json` is read before the default `lint` command is inserted.
     if let Some(flag) = version_json_offline_flag(&args) {

@@ -448,3 +448,45 @@ fn version_json_accepts_flags_in_any_order() {
         assert_eq!(doc["name"], "slopvac", "{args:?}");
     }
 }
+
+#[test]
+fn unreadable_project_config_exits_two_before_any_command_runs() {
+    // A directory, an oversize file and (on unix) a FIFO all fail the same way and never hang.
+    let mut cases: Vec<(&str, tempfile::TempDir)> = Vec::new();
+
+    let dir_case = tempfile::tempdir().unwrap();
+    fs::create_dir(dir_case.path().join("slopvac.toml")).unwrap();
+    cases.push(("not a regular file", dir_case));
+
+    let big = tempfile::tempdir().unwrap();
+    fs::write(big.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
+    cases.push(("larger than 1048576 bytes", big));
+
+    #[cfg(unix)]
+    {
+        let fifo_case = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("mkfifo")
+            .arg(fifo_case.path().join("slopvac.toml"))
+            .status()
+            .expect("mkfifo");
+        assert!(status.success());
+        cases.push(("not a regular file", fifo_case));
+    }
+
+    for (message, dir) in &cases {
+        for args in [
+            &["--version", "--json"][..],
+            &["self", "update"],
+            &["--help"],
+        ] {
+            slopvac()
+                .current_dir(dir.path())
+                .timeout(std::time::Duration::from_secs(20))
+                .args(args)
+                .assert()
+                .code(2)
+                .stderr(predicate::str::contains("error[config-unreadable]"))
+                .stderr(predicate::str::contains(*message));
+        }
+    }
+}

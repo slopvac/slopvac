@@ -43,9 +43,10 @@ impl UreqFetcher {
         }
     }
 
-    /// Test seam: also allow plain HTTP to a loopback address, so a local listener can stand in
-    /// for a server. Any other plain-HTTP URL is still refused.
-    #[doc(hidden)]
+    /// Test seam, compiled only into test builds: also allow plain HTTP to a loopback address, so a
+    /// local listener can stand in for a server. Redirects are refused, because `ureq` cannot
+    /// enforce HTTPS for the hops once `https_only` is off. Any other plain-HTTP URL is refused.
+    #[cfg(test)]
     #[must_use]
     pub fn allowing_loopback_http(timeout: Duration) -> Self {
         Self {
@@ -79,6 +80,7 @@ impl Fetcher for UreqFetcher {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
             .https_only(!self.allow_loopback_http)
+            .max_redirects(if self.allow_loopback_http { 0 } else { 10 })
             .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
             .build()
             .into();
@@ -86,6 +88,9 @@ impl Fetcher for UreqFetcher {
             ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
             other => FetchError::Network(other.to_string()),
         })?;
+        if self.allow_loopback_http && resp.status().is_redirection() {
+            return Err(FetchError::Network("redirects are refused".into()));
+        }
         let mut buf = Vec::new();
         let n = std::io::Read::read_to_end(
             &mut resp.body_mut().with_config().limit(limit + 1).reader(),
@@ -213,6 +218,27 @@ mod tests {
         let server = serve(reply, false);
         let err = local().get(&server.url, 100).unwrap_err();
         assert!(matches!(err, FetchError::TooLarge(100)), "{err}");
+    }
+
+    #[test]
+    fn the_test_seam_does_not_follow_redirects() {
+        let target = serve(ok(b"reached"), false);
+        target.listener.set_nonblocking(true).unwrap();
+        let redirect = serve(
+            format!(
+                "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\n\r\n",
+                target.url
+            )
+            .into_bytes(),
+            false,
+        );
+        let err = local().get(&redirect.url, 100).unwrap_err();
+        assert!(matches!(err, FetchError::Network(_)), "{err}");
+        let hit = target.listener.accept();
+        assert!(
+            matches!(&hit, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+            "the redirect target was contacted: {hit:?}"
+        );
     }
 
     #[test]
