@@ -156,28 +156,57 @@ impl Cache {
             &mut tmp,
             &serde_json::to_vec(entry).map_err(std::io::Error::other)?,
         )?;
-        // On Windows a rename over a file that another writer is replacing can fail with
-        // PermissionDenied for a moment, so retry briefly.
-        let mut attempt = 0;
-        loop {
-            match tmp.persist(&self.path) {
-                Ok(_) => return Ok(()),
-                Err(e)
-                    if e.error.kind() == std::io::ErrorKind::PermissionDenied && attempt < 20 =>
-                {
-                    attempt += 1;
-                    std::thread::sleep(Duration::from_millis(10));
-                    tmp = e.file;
-                }
-                Err(e) => return Err(e.error),
-            }
-        }
+        persist_retrying(
+            tmp,
+            |tmp| {
+                tmp.persist(&self.path)
+                    .map(|_| ())
+                    .map_err(|e| (e.error, e.file))
+            },
+            PERSIST_RETRIES,
+            PERSIST_PAUSE,
+        )
     }
 
     /// Path of the cache file.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+/// How often a rename that Windows refuses for a moment is retried.
+const PERSIST_RETRIES: u32 = 20;
+const PERSIST_PAUSE: Duration = Duration::from_millis(10);
+
+/// Run `persist` until it succeeds.
+///
+/// On Windows a rename over a file that another writer is replacing can fail with
+/// `PermissionDenied` for a moment, so that error is retried up to `retries` times, with `pause`
+/// between tries. Any other error, or the last `PermissionDenied`, is returned at once. The temp file
+/// is deleted whenever this returns an error.
+fn persist_retrying<F>(
+    mut tmp: tempfile::NamedTempFile,
+    mut persist: F,
+    retries: u32,
+    pause: Duration,
+) -> std::io::Result<()>
+where
+    F: FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>,
+{
+    let mut attempt = 0;
+    loop {
+        match persist(tmp) {
+            Ok(()) => return Ok(()),
+            Err((e, file))
+                if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < retries =>
+            {
+                attempt += 1;
+                std::thread::sleep(pause);
+                tmp = file;
+            }
+            Err((e, _file)) => return Err(e),
+        }
     }
 }
 
@@ -560,6 +589,80 @@ mod tests {
         assert_eq!(keys, want);
         assert_eq!(v["code"], "update-available");
         assert_eq!(v["level"], "info");
+    }
+
+    fn temp_in(dir: &Path) -> tempfile::NamedTempFile {
+        tempfile::Builder::new()
+            .prefix(".update-check-")
+            .tempfile_in(dir)
+            .unwrap()
+    }
+
+    fn denied() -> std::io::Error {
+        std::io::Error::from(std::io::ErrorKind::PermissionDenied)
+    }
+
+    fn dir_is_empty(dir: &Path) -> bool {
+        std::fs::read_dir(dir).unwrap().next().is_none()
+    }
+
+    #[test]
+    fn a_transient_permission_denied_is_retried_until_it_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut calls = 0;
+        let result = persist_retrying(
+            temp_in(dir.path()),
+            |tmp| {
+                calls += 1;
+                if calls < 4 {
+                    Err((denied(), tmp))
+                } else {
+                    Ok(())
+                }
+            },
+            20,
+            Duration::ZERO,
+        );
+        assert!(result.is_ok());
+        assert_eq!(calls, 4);
+    }
+
+    #[test]
+    fn persistent_permission_denied_returns_the_last_error_after_the_retry_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut calls = 0;
+        let err = persist_retrying(
+            temp_in(dir.path()),
+            |tmp| {
+                calls += 1;
+                Err((denied(), tmp))
+            },
+            3,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(calls, 4, "one try plus three retries");
+        assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
+    }
+
+    #[test]
+    fn other_errors_are_not_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut calls = 0;
+        let err = persist_retrying(
+            temp_in(dir.path()),
+            |tmp| {
+                calls += 1;
+                Err((std::io::Error::from(std::io::ErrorKind::NotFound), tmp))
+            },
+            20,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(calls, 1);
+        assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
     }
 
     #[test]

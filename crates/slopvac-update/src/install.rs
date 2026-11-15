@@ -120,7 +120,8 @@ fn receipt_owns(exe: &Path, var: &dyn Fn(&str) -> Option<String>) -> bool {
     let Some(parent) = exe.parent() else {
         return false;
     };
-    parent == receipt.install_prefix || parent == receipt.install_prefix.join("bin")
+    let prefix = strip_verbatim_prefix(&receipt.install_prefix);
+    parent == prefix || parent == prefix.join("bin")
 }
 
 fn names(path: &Path) -> Vec<String> {
@@ -229,7 +230,7 @@ fn cargo_bin(var: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
         .or_else(|| var("HOME").map(|h| PathBuf::from(h).join(".cargo")))
-        .map(|d| d.join("bin"))
+        .map(|d| strip_verbatim_prefix(&d).join("bin"))
 }
 
 /// Drop the `\\?\` prefix that `canonicalize` adds on Windows, so a path compares with the
@@ -250,11 +251,7 @@ pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
 /// directory layouts, then wheel environments, then the cargo bin directory.
 #[must_use]
 pub fn detect(exe: &Path, var: &dyn Fn(&str) -> Option<String>) -> InstallMethod {
-    let exe = &if cfg!(windows) {
-        strip_verbatim_prefix(exe)
-    } else {
-        exe.to_path_buf()
-    };
+    let exe = &strip_verbatim_prefix(exe);
     if receipt_owns(exe, var) {
         return InstallMethod::Installer;
     }
@@ -480,6 +477,39 @@ mod tests {
         assert_eq!(
             detect(&tmp.path().join("bin/slopvac"), &|_: &str| None),
             InstallMethod::Unknown
+        );
+    }
+
+    /// `\\?\` in front of a path, as `canonicalize` writes it on Windows.
+    fn verbatim(path: &Path) -> PathBuf {
+        PathBuf::from(format!(r"\\?\{}", path.display()))
+    }
+
+    #[test]
+    fn a_verbatim_path_on_either_side_of_a_receipt_comparison_still_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prefix = tmp.path().join("home/.cargo");
+        let exe = prefix.join("bin/slopvac");
+        let cases = [
+            ("verbatim receipt prefix", verbatim(&prefix), exe.clone()),
+            ("verbatim exe", prefix.clone(), verbatim(&exe)),
+            ("both verbatim", verbatim(&prefix), verbatim(&exe)),
+        ];
+        for (label, receipt_prefix, exe) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            write_receipt(dir.path(), &receipt_prefix, "slopvac");
+            let var = env(&[("AXOUPDATER_CONFIG_PATH", dir.path().display().to_string())]);
+            assert_eq!(detect(&exe, &var), InstallMethod::Installer, "{label}");
+        }
+    }
+
+    #[test]
+    fn a_verbatim_cargo_home_still_matches() {
+        let home = Path::new("/home/u/.cargo");
+        let var = env(&[("CARGO_HOME", verbatim(home).display().to_string())]);
+        assert_eq!(
+            detect(&home.join("bin/slopvac"), &var),
+            InstallMethod::Cargo
         );
     }
 
