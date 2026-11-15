@@ -893,6 +893,13 @@ pub(crate) fn open_regular(path: &Path) -> io::Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_BACKUP_SEMANTICS lets a directory open, so the handle check names it
+        // (InvalidInput) instead of the open failing with PermissionDenied.
+        opts.custom_flags(0x0200_0000);
+    }
     let file = opts.open(path)?;
     if file.metadata()?.is_file() {
         Ok(file)
@@ -931,6 +938,17 @@ impl Read for Capture<'_> {
 /// [`ExtractError::Refused`] for a link, special file, bad name or bound
 /// breach, [`ExtractError::Io`] for read failures.
 pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
+    tree_hash_observed(dir, &mut |_, _| {})
+}
+
+/// [`tree_hash`] with a callback after each file is hashed, given its relative name and path.
+///
+/// The callback is the test seam for the single-read guarantee: a test rewrites the sidecar from
+/// it, and the result must still come from the bytes that were hashed.
+fn tree_hash_observed(
+    dir: &Path,
+    after_hash: &mut dyn FnMut(&str, &Path),
+) -> Result<TreeHash, ExtractError> {
     let dir = normalised(dir);
     let dir = dir.as_path();
     let root_meta = fs::symlink_metadata(dir).map_err(io_err("inspecting the tree root"))?;
@@ -989,6 +1007,7 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
                 } else {
                     hash_stream(&mut f, None, &rel, Some(budget))?
                 };
+                after_hash(&rel, &child);
                 budget -= len;
                 files.push(FileRecord {
                     path: rel,
@@ -1259,5 +1278,52 @@ mod open_regular_tests {
             let err = within_ten_seconds(move || open_regular(&path).unwrap_err());
             assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         }
+    }
+}
+
+#[cfg(test)]
+mod single_read_tests {
+    use super::*;
+
+    /// A tree with one executable file and the sidecar that lists it.
+    fn tree(root: &Path) {
+        fs::create_dir_all(root).unwrap();
+        fs::write(root.join("run.sh"), b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(root.join("run.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        fs::write(root.join(EXEC_SIDECAR), b"run.sh\n").unwrap();
+    }
+
+    #[test]
+    fn the_sidecar_is_parsed_from_the_bytes_that_were_hashed() {
+        let scratch = tempfile::tempdir().unwrap();
+        let plain = scratch.path().join("plain");
+        let swapped = scratch.path().join("swapped");
+        tree(&plain);
+        tree(&swapped);
+        let expected = tree_hash(&plain).unwrap();
+
+        // Right after the sidecar is hashed, replace it with a list that names a missing file.
+        // A second open would read that list and fail; the captured bytes ignore it.
+        let got = tree_hash_observed(&swapped, &mut |rel, path| {
+            if rel == EXEC_SIDECAR {
+                fs::write(path, b"missing.sh\n").unwrap();
+            }
+        })
+        .expect("the hashed bytes are what gets parsed");
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn the_seam_sees_every_file_once() {
+        let scratch = tempfile::tempdir().unwrap();
+        tree(scratch.path());
+        let mut seen = Vec::new();
+        tree_hash_observed(scratch.path(), &mut |rel, _| seen.push(rel.to_owned())).unwrap();
+        seen.sort();
+        assert_eq!(seen, [EXEC_SIDECAR, "run.sh"]);
     }
 }

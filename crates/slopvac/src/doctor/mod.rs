@@ -747,8 +747,8 @@ mod tests {
         assert_eq!(report("3.0.0", None).update.state, "unknown");
     }
 
-    #[test]
-    fn the_walk_limit_reaches_the_report_as_a_lower_bound_and_a_flag() {
+    /// The cache entry of a report built over `dir` with the given walk limit.
+    fn cache_entry(dir: &Path, walk_limit: usize) -> serde_json::Value {
         struct Dirs(PathBuf);
         impl super::Dirs for Dirs {
             fn cache(&self, _: &dyn Env) -> Located {
@@ -761,34 +761,51 @@ mod tests {
                 Located::unresolved()
             }
         }
+        let env = MapEnv::default();
+        let report = build(&Inputs {
+            env: &env,
+            cwd: Path::new("/nonexistent-cwd"),
+            offline_flag: false,
+            explicit_config: None,
+            version: "3.0.0",
+            update: &Fixed(None),
+            config: &stubs::LocalConfigSources,
+            dirs: &Dirs(dir.to_owned()),
+            walk_limit,
+        });
+        serde_json::from_str::<serde_json::Value>(&report.to_json()).unwrap()["directories"]
+            ["cache"]
+            .clone()
+    }
+
+    #[test]
+    fn the_walk_limit_reaches_the_report_as_a_lower_bound_and_a_flag() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["a", "b", "c", "d", "e"] {
             std::fs::write(dir.path().join(name), b"xy").unwrap();
         }
-        let with_limit = |walk_limit| {
-            let env = MapEnv::default();
-            let report = build(&Inputs {
-                env: &env,
-                cwd: Path::new("/nonexistent-cwd"),
-                offline_flag: false,
-                explicit_config: None,
-                version: "3.0.0",
-                update: &Fixed(None),
-                config: &stubs::LocalConfigSources,
-                dirs: &Dirs(dir.path().to_owned()),
-                walk_limit,
-            });
-            serde_json::from_str::<serde_json::Value>(&report.to_json()).unwrap()["directories"]
-                ["cache"]
-                .clone()
-        };
         // Five files of two bytes each: a limit of five sees them all.
-        let whole = with_limit(5);
+        let whole = cache_entry(dir.path(), 5);
         assert_eq!(whole["bytes"], 10);
         assert_eq!(whole["truncated"], false);
         // A limit of three stops early: three files were counted, and the report says so.
-        let cut = with_limit(3);
+        let cut = cache_entry(dir.path(), 3);
         assert_eq!(cut["bytes"], 6);
+        assert_eq!(cut["truncated"], true);
+    }
+
+    #[test]
+    fn directories_use_up_entries_but_add_no_bytes() {
+        // x, x/y and x/y/f are three entries. Only f has a size.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("x/y")).unwrap();
+        std::fs::write(dir.path().join("x/y/f"), b"123").unwrap();
+        let exact = cache_entry(dir.path(), 3);
+        assert_eq!(exact["bytes"], 3);
+        assert_eq!(exact["truncated"], false);
+        // At two, the walk stops before it reaches the file, so no bytes are counted.
+        let cut = cache_entry(dir.path(), 2);
+        assert_eq!(cut["bytes"], 0);
         assert_eq!(cut["truncated"], true);
     }
 
