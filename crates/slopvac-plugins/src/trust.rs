@@ -200,7 +200,8 @@ impl DeclSummary {
         }
     }
 
-    /// Human-readable differences from `self` (old) to `new`.
+    /// Human-readable differences from `self` (old) to `new`. Names from the
+    /// manifest are escaped, so a line is safe to print as it is.
     #[must_use]
     pub fn diff(&self, new: &Self) -> Vec<String> {
         let mut out = Vec::new();
@@ -209,10 +210,10 @@ impl DeclSummary {
         }
         let mut set_diff = |label: &str, old: &[String], new: &[String]| {
             for added in new.iter().filter(|x| !old.contains(x)) {
-                out.push(format!("{label} added: {added}"));
+                out.push(format!("{label} added: {}", esc(added)));
             }
             for removed in old.iter().filter(|x| !new.contains(x)) {
-                out.push(format!("{label} removed: {removed}"));
+                out.push(format!("{label} removed: {}", esc(removed)));
             }
         };
         set_diff("hook", &self.hooks, &new.hooks);
@@ -842,14 +843,21 @@ impl SpawnGate for TrustGate {
             }
             Err(e) => {
                 return Err(PluginError::HashMismatch(format!(
-                    "{name} (tree refused: {e})"
+                    "{name} (tree refused: {})",
+                    e.unescaped()
                 )));
             }
         }
         let (hash, state) = match self.state(vp, spec) {
             Ok(x) => x,
-            Err(e @ (TrustError::Program(_) | TrustError::Environment(_))) => {
-                return Err(PluginError::Usage(format!("{name}: {e}")));
+            // Raw payloads: `PluginError`'s `Display` escapes the whole message once.
+            Err(TrustError::Program(m)) => {
+                return Err(PluginError::Usage(format!("{name}: program refused: {m}")));
+            }
+            Err(TrustError::Environment(m)) => {
+                return Err(PluginError::Usage(format!(
+                    "{name}: environment refused: {m}"
+                )));
             }
             Err(_) => return Err(PluginError::Untrusted(name.clone())),
         };

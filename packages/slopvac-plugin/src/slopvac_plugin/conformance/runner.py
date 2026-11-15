@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import bisect
 import json
 import time
 import tomllib
-import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ._unsafe_ranges import UNSAFE_RANGES
 from .cases import ALL_KINDS, CASES, Env, handshake
 from .schemas import Schemas
 from .session import CaseFailure, CaseSkip, SuiteError
@@ -18,39 +19,40 @@ from .session import CaseFailure, CaseSkip, SuiteError
 PASS, FAIL, SKIP = "pass", "fail", "skip"
 
 
-# Default-ignorable code points outside the Cf category: fillers and selectors.
-_IGNORABLE = (
-    0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180C, 0x180D, 0x180F,
-    0x3164, 0xFFA0,
-)  # fmt: skip
-_IGNORABLE_RANGES = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
-_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Zl", "Zp"})
+_LOWS = [low for low, _ in UNSAFE_RANGES]
 
 
 def _unsafe(char: str) -> bool:
     code = ord(char)
-    return (
-        unicodedata.category(char) in _UNSAFE_CATEGORIES
-        or 0xFDD0 <= code <= 0xFDEF  # noncharacters
-        or code & 0xFFFE == 0xFFFE
-        or code in _IGNORABLE
-        or any(low <= code <= high for low, high in _IGNORABLE_RANGES)
-    )
+    if 0xD800 <= code <= 0xDFFF:  # a lone surrogate, which Rust text cannot hold
+        return True
+    i = bisect.bisect_right(_LOWS, code) - 1
+    return i >= 0 and code <= UNSAFE_RANGES[i][1]
 
 
 def escape_text(text: str) -> str:
     """Show control, format, bidi, zero-width and other invisible characters as escapes.
 
     Case details quote text the plugin chose, and a terminal acts on raw controls.
-    The set of characters matches the Rust crate `slopvac-sanitize` (the host's
-    sanitiser, threat model O1): Cc, Cf, Co, Zl, Zp, default-ignorable code points
-    and noncharacters. Unassigned code points stay as they are, since the set
-    changes with each Unicode version. The spelling of an escape is Python's.
+
+    The set of characters is the table of the Rust crate `slopvac-sanitize` (the
+    host's sanitiser, threat model O1 and TM-11): `_unsafe_ranges.py` is generated
+    from the same Unicode data, and a test compares the two. Unassigned code
+    points other than reserved default-ignorables stay as they are. The spelling
+    of an escape is Python's (`\\x1b`, `\\u202e`, `\\U000e0041`). A literal
+    backslash is doubled, so the text `\\u202e` cannot pass for an escaped control.
+
+    A GitHub Actions runner reads a line that starts with `::` (after white space)
+    and a `##[` anywhere as a workflow command (`ActionCommand.cs` in
+    actions/runner), so the first colon of such a `::` becomes `\\x3a` and each
+    `##[` becomes `\\x23#[`.
     """
     out = []
     for char in text:
         code = ord(char)
-        if not _unsafe(char):
+        if char == "\\":
+            out.append("\\\\")
+        elif not _unsafe(char):
             out.append(char)
         elif code < 0x100:
             out.append(f"\\x{code:02x}")
@@ -58,7 +60,17 @@ def escape_text(text: str) -> str:
             out.append(f"\\u{code:04x}")
         else:
             out.append(f"\\U{code:08x}")
-    return "".join(out)
+    return _guard_commands("".join(out))
+
+
+def _guard_commands(text: str) -> str:
+    lines = []
+    for line in text.splitlines(keepends=True):
+        rest = line.lstrip()
+        if rest.startswith("::"):
+            line = line[: len(line) - len(rest)] + "\\x3a" + rest[1:]
+        lines.append(line)
+    return "".join(lines).replace("##[", "\\x23#[")
 
 
 @dataclass(frozen=True)

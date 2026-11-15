@@ -15,6 +15,8 @@
 //! | A GitHub Actions annotation message | [`workflow_data`] |
 //! | A GitHub Actions annotation property | [`workflow_property`] |
 //!
+//! # The escape form
+//!
 //! Every function first neutralises unsafe characters: C0 controls (except
 //! newline and tab where a function keeps them), DEL, C1 controls, format
 //! characters (bidirectional overrides and isolates, zero-width characters,
@@ -22,10 +24,38 @@
 //! separators, private use and noncharacters. Each one becomes a visible
 //! `\u{..}` escape, which keeps the evidence. An escape sequence such as
 //! `ESC [ 31 m` or an OSC 8 link loses its introducer (`ESC`, `CSI`, `OSC`,
-//! `BEL`, `ST`), so the terminal sees plain text. The set comes from the
-//! Unicode Character Database [`UNICODE_VERSION`] through
-//! `tools/gen_tables.py`; the Python SDK's `escape_text` in
-//! `packages/slopvac-plugin` covers the same set.
+//! `BEL`, `ST`), so the terminal sees plain text.
+//!
+//! A literal backslash becomes `\\`. Without that rule the text `\u{202e}`
+//! would look like an escaped control character. With it, a reader can decode
+//! the output without doubt: `\\` is a backslash and `\u{hex}` is a code point
+//! that the sanitiser removed.
+//!
+//! A consequence: **pass raw text, once.** Text that already went through one of
+//! these functions is escaped again (`\u{1b}` becomes `\\u{1b}`). That is safe
+//! and still unambiguous, but it reads badly, so a type that stores text keeps
+//! it raw and escapes it where it formats it.
+//!
+//! The character set comes from the Unicode Character Database
+//! [`UNICODE_VERSION`] through `tools/gen_tables.py`. The Python SDK's
+//! `escape_text` in `packages/slopvac-plugin` uses a table that the same script
+//! generates from the same data, and a test compares the two.
+//!
+//! # GitHub Actions workflow commands (O4)
+//!
+//! The runner reads two command forms (`src/Runner.Common/ActionCommand.cs` in
+//! `actions/runner`):
+//!
+//! - `TryParseV2` trims leading white space of a line, then needs the line to
+//!   start with `::` and to hold a second `::` (`::name props::data`).
+//! - `TryParse` (legacy) searches the line for `##[` **anywhere**, then reads
+//!   `name props]data` up to the next `]`.
+//!
+//! So [`terminal`] and [`line()`] escape the first `:` of a `::` that starts a
+//! line (after any white space, Unicode white space included) and every `##[`
+//! wherever it occurs. Each becomes `\u{3a}` or `\u{23}`. A `::` in the middle
+//! of a line is harmless to the runner and stays, since `std::vec` and
+//! `key::value` are common.
 //!
 //! The functions are total and never panic. They do not truncate. The caller
 //! bounds the length.
@@ -68,46 +98,50 @@ fn map(text: &str, mut each: impl FnMut(char, &mut String)) -> String {
     out
 }
 
-/// Escapes a command introducer that starts a line. The GitHub Actions runner
-/// reads a line that starts with `::` as a workflow command, and one that
-/// starts with `##[` as a legacy command, after any leading blanks.
-fn guard_line_starts(text: &str) -> String {
+/// The shared first step: a backslash is doubled, an unsafe character becomes
+/// `\u{..}`, and newline and tab stay when `keep_layout` holds.
+fn visible(text: &str, keep_layout: bool) -> String {
+    map(text, |c, out| {
+        if c == '\\' {
+            out.push_str("\\\\");
+        } else if is_unsafe(c) && !(keep_layout && (c == '\n' || c == '\t')) {
+            push_escape(out, c);
+        } else {
+            out.push(c);
+        }
+    })
+}
+
+/// Neutralises the runner's command introducers in already escaped text.
+fn guard_commands(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.split_inclusive('\n') {
-        let rest = line.trim_start_matches([' ', '\t']);
-        let blanks = &line[..line.len() - rest.len()];
-        out.push_str(blanks);
-        if let Some(tail) = rest.strip_prefix("::") {
-            out.push_str("\\u{3a}:");
-            out.push_str(tail);
-        } else if let Some(tail) = rest.strip_prefix("##[") {
-            out.push_str("\\u{23}#[");
-            out.push_str(tail);
-        } else {
-            out.push_str(rest);
+        let rest = line.trim_start_matches(char::is_whitespace);
+        out.push_str(&line[..line.len() - rest.len()]);
+        match rest.strip_prefix("::") {
+            Some(tail) => {
+                out.push_str("\\u{3a}:");
+                out.push_str(tail);
+            }
+            None => out.push_str(rest),
         }
     }
-    out
+    out.replace("##[", "\\u{23}#[")
 }
 
 /// Makes text safe to write to a terminal or a log, keeping newline and tab.
 ///
-/// Every other unsafe character becomes `\u{..}`. A line that starts with `::`
-/// or `##[` (after blanks) gets its first character escaped, so a CI log never
-/// reads it as a workflow command (O4).
+/// Every other unsafe character becomes `\u{..}` and a backslash becomes `\\`.
+/// The first `:` of a `::` that starts a line and every `##[` get escaped, so a
+/// CI log never reads the text as a workflow command (see the module
+/// documentation).
 ///
 /// ```
 /// assert_eq!(slopvac_sanitize::terminal("a\u{1b}[31m\nb"), "a\\u{1b}[31m\nb");
 /// ```
 #[must_use]
 pub fn terminal(text: &str) -> String {
-    guard_line_starts(&map(text, |c, out| {
-        if is_unsafe(c) && c != '\n' && c != '\t' {
-            push_escape(out, c);
-        } else {
-            out.push(c);
-        }
-    }))
+    guard_commands(&visible(text, true))
 }
 
 /// Like [`terminal`], for a value that must stay on one line: newline and tab
@@ -118,13 +152,7 @@ pub fn terminal(text: &str) -> String {
 /// ```
 #[must_use]
 pub fn line(text: &str) -> String {
-    guard_line_starts(&map(text, |c, out| {
-        if is_unsafe(c) {
-            push_escape(out, c);
-        } else {
-            out.push(c);
-        }
-    }))
+    guard_commands(&visible(text, false))
 }
 
 /// Makes text safe for a string field in SARIF, `CodeClimate` or another JSON
@@ -132,19 +160,14 @@ pub fn line(text: &str) -> String {
 /// since JSON encodes them.
 #[must_use]
 pub fn structured(text: &str) -> String {
-    map(text, |c, out| {
-        if is_unsafe(c) && c != '\n' && c != '\t' {
-            push_escape(out, c);
-        } else {
-            out.push(c);
-        }
-    })
+    visible(text, true)
 }
 
 /// Makes text safe to place in Markdown: unsafe characters are escaped, and
 /// every Markdown or HTML control character gets a backslash, so no link,
 /// image, emphasis, heading, list, table, code span or raw HTML can form.
-/// Newline and tab stay.
+/// Newline and tab stay. Rendered, the text reads as [`structured`] would show
+/// it.
 ///
 /// ```
 /// assert_eq!(
@@ -155,15 +178,11 @@ pub fn structured(text: &str) -> String {
 #[must_use]
 pub fn markdown(text: &str) -> String {
     const SPECIAL: &str = "\\`*_{}[]()<>#+-.!|~&=\"'";
-    map(text, |c, out| {
-        if is_unsafe(c) && c != '\n' && c != '\t' {
-            let _ = write!(out, "\\\\u\\{{{:x}\\}}", u32::from(c));
-        } else if SPECIAL.contains(c) {
+    map(&visible(text, true), |c, out| {
+        if SPECIAL.contains(c) {
             out.push('\\');
-            out.push(c);
-        } else {
-            out.push(c);
         }
+        out.push(c);
     })
 }
 
@@ -179,31 +198,36 @@ pub fn markdown(text: &str) -> String {
 /// ```
 #[must_use]
 pub fn html(text: &str) -> String {
-    map(text, |c, out| match c {
+    map(&visible(text, true), |c, out| match c {
         '&' => out.push_str("&amp;"),
         '<' => out.push_str("&lt;"),
         '>' => out.push_str("&gt;"),
         '"' => out.push_str("&quot;"),
         '\'' => out.push_str("&#39;"),
-        c if is_unsafe(c) && c != '\n' && c != '\t' => push_escape(out, c),
         c => out.push(c),
     })
 }
 
-/// Returns `uri` when it is safe to emit as a link, otherwise `None`.
+/// Returns `uri` as a link target that is safe in HTML attributes, Markdown
+/// destinations and SARIF, or `None` when it is not a clean https link.
 ///
 /// Only `https` passes (O3): the scheme is `https://`, a host follows, and the
-/// rest is printable ASCII without characters that break out of an attribute
-/// or a Markdown link (`"`, `<`, `>`, `\`, `` ` ``, `^`, `{`, `|`, `}`). User
-/// information (`@` in the authority) is refused, because it disguises the host.
-/// A caller that needs a non-ASCII link percent-encodes it first.
+/// rest is printable ASCII without `"`, `<`, `>`, `\`, `` ` ``, `^`, `{`, `|`
+/// and `}`. User information (`@` in the authority) is refused, because it
+/// disguises the host. The characters `'`, `(` and `)` are legal in a URI but
+/// end an attribute or a Markdown destination, so they come back
+/// percent-encoded (`%27`, `%28`, `%29`). A caller that needs a non-ASCII link
+/// percent-encodes it first.
 ///
 /// ```
-/// assert!(slopvac_sanitize::https_uri("https://example.com/a?b=c").is_some());
+/// assert_eq!(
+///     slopvac_sanitize::https_uri("https://example.com/a_(b)"),
+///     Some("https://example.com/a_%28b%29".to_owned()),
+/// );
 /// assert!(slopvac_sanitize::https_uri("javascript:alert(1)").is_none());
 /// ```
 #[must_use]
-pub fn https_uri(uri: &str) -> Option<&str> {
+pub fn https_uri(uri: &str) -> Option<String> {
     let rest = uri.strip_prefix("https://")?;
     let printable = |b: u8| b.is_ascii_graphic() && !b"\"<>\\`^{|}".contains(&b);
     if !rest.bytes().all(printable) {
@@ -213,12 +237,17 @@ pub fn https_uri(uri: &str) -> Option<&str> {
     if authority.is_empty() || authority.contains('@') {
         return None;
     }
-    Some(uri)
+    Some(
+        uri.replace('\'', "%27")
+            .replace('(', "%28")
+            .replace(')', "%29"),
+    )
 }
 
 /// Escapes the message of a GitHub Actions workflow command (an annotation):
-/// `%` becomes `%25`, CR `%0D`, LF `%0A` and `::` `%3A%3A`, after
-/// [`structured`]-style escaping of the other unsafe characters.
+/// `%` becomes `%25`, CR `%0D`, LF `%0A` and `::` `%3A%3A`; a backslash and the
+/// other unsafe characters are escaped as in [`structured`], and `##[` is
+/// neutralised as in [`terminal`].
 ///
 /// The runner decodes `%25`, `%0D` and `%0A` back when it shows the message.
 /// It does not decode `%3A`, so a message with `::` shows the literal `%3A%3A`.
@@ -235,10 +264,12 @@ pub fn workflow_data(text: &str) -> String {
         '%' => out.push_str("%25"),
         '\r' => out.push_str("%0D"),
         '\n' => out.push_str("%0A"),
+        '\\' => out.push_str("\\\\"),
         c if is_unsafe(c) && c != '\t' => push_escape(out, c),
         c => out.push(c),
     })
     .replace("::", "%3A%3A")
+    .replace("##[", "\\u{23}#[")
 }
 
 /// Escapes a property of a workflow command (`title`, `file`): as
@@ -276,13 +307,16 @@ mod tests {
         (0x202a, "left-to-right embedding"),
         (0x202e, "right-to-left override"),
         (0x2060, "word joiner"),
+        (0x2065, "reserved default-ignorable"),
         (0x2066, "left-to-right isolate"),
         (0x2069, "pop directional isolate"),
         (0x3164, "hangul filler"),
         (0xfe0f, "variation selector 16"),
         (0xfeff, "byte order mark"),
+        (0xfff0, "reserved default-ignorable"),
         (0xfff9, "interlinear annotation anchor"),
         (0xe0041, "tag latin capital letter a"),
+        (0xe0080, "reserved tag-block code point"),
         (0xe0100, "variation selector 17"),
         (0xe000, "private use"),
         (0xfdd0, "noncharacter"),
@@ -299,8 +333,9 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_text_is_not_flagged() {
-        for c in "Zürich – ok ✓ 日本語 😀 \u{a0}~".chars() {
+    fn ordinary_and_merely_unassigned_text_is_not_flagged() {
+        // U+0378 is unassigned in every Unicode version so far, and U+1F600 is an emoji.
+        for c in "Zürich – ok ✓ 日本語 😀 \u{a0}~\u{378}".chars() {
             assert!(!is_unsafe(c), "{c:?}");
         }
     }
@@ -311,6 +346,46 @@ mod tests {
             assert!(w[0].1 + 1 < w[1].0, "{w:?}");
         }
         assert!(tables::UNSAFE.iter().all(|&(low, high)| low <= high));
+    }
+
+    /// The oracle is the vendored UCD extract, parsed here with code that shares
+    /// nothing with the generator or the table.
+    #[test]
+    fn the_table_equals_the_vendored_ucd_data_for_every_code_point() {
+        const UNICODE_DATA: &str = include_str!("../tools/ucd/17.0.0/UnicodeData.subset.txt");
+        const DERIVED: &str = include_str!("../tools/ucd/17.0.0/DerivedCoreProperties.subset.txt");
+        let mut want = vec![false; 0x11_0000];
+        let mut open = 0_usize;
+        for l in UNICODE_DATA.lines() {
+            let mut f = l.split(';');
+            let code = usize::from_str_radix(f.next().unwrap(), 16).unwrap();
+            let name = f.next().unwrap();
+            if name.ends_with(", First>") {
+                open = code;
+            } else if name.ends_with(", Last>") {
+                want[open..=code].fill(true);
+            } else {
+                want[code] = true;
+            }
+        }
+        for l in DERIVED.lines() {
+            let span = l.split(';').next().unwrap().trim();
+            let (lo, hi) = span.split_once("..").unwrap_or((span, span));
+            let lo = usize::from_str_radix(lo, 16).unwrap();
+            let hi = usize::from_str_radix(hi, 16).unwrap();
+            want[lo..=hi].fill(true);
+        }
+        want[0xfdd0..=0xfdef].fill(true);
+        for plane in 0..=16 {
+            want[plane << 16 | 0xfffe] = true;
+            want[plane << 16 | 0xffff] = true;
+        }
+        let bad: Vec<String> = (0..0x11_0000_u32)
+            .filter_map(char::from_u32)
+            .filter(|&c| is_unsafe(c) != want[c as usize])
+            .map(|c| format!("{:#x}", u32::from(c)))
+            .collect();
+        assert!(bad.is_empty(), "{bad:?}");
     }
 
     #[test]
@@ -346,6 +421,25 @@ mod tests {
     }
 
     #[test]
+    fn a_literal_backslash_is_doubled_so_it_cannot_pose_as_an_escape() {
+        let cases = [
+            ("\\u{202e}", "\\\\u{202e}"),
+            ("a\\b", "a\\\\b"),
+            ("\\\u{1b}", "\\\\\\u{1b}"),
+            ("\\\\", "\\\\\\\\"),
+            ("C:\\dir", "C:\\\\dir"),
+        ];
+        for f in [terminal, line, structured] {
+            for (input, want) in cases {
+                assert_eq!(f(input), want, "{input:?}");
+            }
+        }
+    }
+
+    /// Cases follow `ActionCommand.TryParseV2` and `TryParse` of actions/runner:
+    /// V2 trims leading white space and needs a leading `::`; the legacy parser
+    /// finds `##[` anywhere in the line.
+    #[test]
     fn a_line_that_starts_a_command_is_escaped_at_its_start() {
         let cases = [
             ("::error::x", "\\u{3a}:error::x"),
@@ -354,10 +448,12 @@ mod tests {
                 "ok\n\\u{3a}:set-output name=a::b",
             ),
             ("  \t::warning::x", "  \t\\u{3a}:warning::x"),
-            ("##[error]x", "\\u{23}#[error]x"),
-            ("a\n##[add-mask]x", "a\n\\u{23}#[add-mask]x"),
+            // C# TrimStart also trims these; Rust's white space set matches.
+            ("\u{a0}::error::x", "\u{a0}\\u{3a}:error::x"),
+            ("\u{3000}::error::x", "\u{3000}\\u{3a}:error::x"),
+            ("\u{2003}\u{a0}::error::x", "\u{2003}\u{a0}\\u{3a}:error::x"),
             ("mid :: line", "mid :: line"),
-            ("a:b", "a:b"),
+            ("std::vec and a:b", "std::vec and a:b"),
         ];
         for (input, want) in cases {
             assert_eq!(terminal(input), want, "{input:?}");
@@ -365,8 +461,28 @@ mod tests {
     }
 
     #[test]
-    fn a_command_hidden_behind_a_newline_escape_stays_inert_in_one_line_mode() {
-        // `line` escapes the newline, so the text is a single line that starts with "ok".
+    fn a_legacy_command_is_escaped_wherever_it_occurs() {
+        let cases = [
+            ("##[error]x", "\\u{23}#[error]x"),
+            ("prefix ##[error]x", "prefix \\u{23}#[error]x"),
+            ("a ##[b] ##[c]", "a \\u{23}#[b] \\u{23}#[c]"),
+            ("###[error]x", "#\\u{23}#[error]x"),
+            ("## [not] a command", "## [not] a command"),
+        ];
+        for f in [terminal, line] {
+            for (input, want) in cases {
+                assert_eq!(f(input), want, "{input:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_legacy_command_after_a_newline_is_escaped_in_terminal_text() {
+        assert_eq!(terminal("a\n##[add-mask]x"), "a\n\\u{23}#[add-mask]x");
+    }
+
+    #[test]
+    fn a_command_behind_a_newline_stays_inert_in_one_line_mode() {
         assert_eq!(line("ok\n::error::x"), "ok\\u{a}::error::x");
     }
 
@@ -387,8 +503,10 @@ mod tests {
                 "a|b `c` *d* _e_ &amp; ~f~",
                 "a\\|b \\`c\\` \\*d\\* \\_e\\_ \\&amp; \\~f\\~",
             ),
-            ("back\\slash", "back\\\\slash"),
+            // Rendered, a literal backslash reads `\\`, an escaped control reads `\u{202e}`.
+            ("back\\slash", "back\\\\\\\\slash"),
             ("a\u{202e}b", "a\\\\u\\{202e\\}b"),
+            ("\\u{202e}", "\\\\\\\\u\\{202e\\}"),
         ];
         for (input, want) in cases {
             assert_eq!(markdown(input), want, "{input:?}");
@@ -407,6 +525,7 @@ mod tests {
             ),
             ("a\u{202e}b\u{1b}", "a\\u{202e}b\\u{1b}"),
             ("a\nb\tc", "a\nb\tc"),
+            ("\\u{202e}", "\\\\u{202e}"),
         ];
         for (input, want) in cases {
             assert_eq!(html(input), want, "{input:?}");
@@ -430,7 +549,7 @@ mod tests {
             "https://[::1]/x",
         ];
         for uri in ok {
-            assert_eq!(https_uri(uri), Some(uri), "{uri}");
+            assert_eq!(https_uri(uri).as_deref(), Some(uri), "{uri}");
         }
         let bad = [
             "javascript:alert(1)",
@@ -457,6 +576,28 @@ mod tests {
     }
 
     #[test]
+    fn a_returned_link_cannot_end_an_attribute_or_a_markdown_destination() {
+        let cases = [
+            ("https://e.example/a'b", "https://e.example/a%27b"),
+            ("https://e.example/a)b", "https://e.example/a%29b"),
+            ("https://e.example/a(b", "https://e.example/a%28b"),
+            (
+                "https://e.example/w/Rust_(language)",
+                "https://e.example/w/Rust_%28language%29",
+            ),
+            (
+                "https://e.example/x')onerror=alert(1)",
+                "https://e.example/x%27%29onerror=alert%281%29",
+            ),
+        ];
+        for (input, want) in cases {
+            let got = https_uri(input).unwrap();
+            assert_eq!(got, want, "{input}");
+            assert!(!got.contains(['\'', '(', ')', '"', '<', '>', ' ']));
+        }
+    }
+
+    #[test]
     fn workflow_data_leaves_no_command_and_survives_a_runner_decode() {
         let cases = [
             ("x\n::error::y", "x%0A%3A%3Aerror%3A%3Ay"),
@@ -465,6 +606,8 @@ mod tests {
             ("100% sure", "100%25 sure"),
             ("a\u{1b}[0m\u{202e}", "a\\u{1b}[0m\\u{202e}"),
             ("tab\tkept", "tab\tkept"),
+            ("a ##[error]b", "a \\u{23}#[error]b"),
+            ("\\u{202e}", "\\\\u{202e}"),
         ];
         for (input, want) in cases {
             assert_eq!(workflow_data(input), want, "{input:?}");
@@ -476,29 +619,52 @@ mod tests {
         assert_eq!(workflow_property("a:b,c\n%"), "a%3Ab%2Cc%0A%25");
     }
 
+    /// Every scalar value, through every function. Debug builds make this slow, so
+    /// it runs on request: `cargo test -p slopvac-sanitize -- --ignored`.
     #[test]
+    #[ignore = "exhaustive sweep, several seconds in a debug build"]
     fn no_function_emits_an_unsafe_character_for_any_scalar_value() {
         for code in 0..=0x0010_ffff_u32 {
-            let Some(c) = char::from_u32(code) else {
-                continue;
-            };
-            let text = format!("<{c}>");
-            for (name, out) in [
-                ("terminal", terminal(&text)),
-                ("line", line(&text)),
-                ("structured", structured(&text)),
-                ("markdown", markdown(&text)),
-                ("html", html(&text)),
-                ("workflow_data", workflow_data(&text)),
-                ("workflow_property", workflow_property(&text)),
-            ] {
-                let bad = out
-                    .chars()
-                    .find(|&o| is_unsafe(o) && o != '\n' && o != '\t');
-                assert_eq!(bad, None, "{name} on {code:#x}");
+            if let Some(c) = char::from_u32(code) {
+                check_no_unsafe_output(c);
             }
-            for out in [line(&text), workflow_data(&text)] {
-                assert!(!out.contains(['\n', '\r']), "{code:#x}");
+        }
+    }
+
+    fn check_no_unsafe_output(c: char) {
+        let code = u32::from(c);
+        let text = format!("<{c}>");
+        for (name, out) in [
+            ("terminal", terminal(&text)),
+            ("line", line(&text)),
+            ("structured", structured(&text)),
+            ("markdown", markdown(&text)),
+            ("html", html(&text)),
+            ("workflow_data", workflow_data(&text)),
+            ("workflow_property", workflow_property(&text)),
+        ] {
+            let bad = out
+                .chars()
+                .find(|&o| is_unsafe(o) && o != '\n' && o != '\t');
+            assert_eq!(bad, None, "{name} on {code:#x}");
+        }
+        for out in [line(&text), workflow_data(&text)] {
+            assert!(!out.contains(['\n', '\r']), "{code:#x}");
+        }
+    }
+
+    /// The default-run version of the sweep: the edges of every table range, the
+    /// ASCII and Latin-1 blocks, and the start of each plane.
+    #[test]
+    fn no_function_emits_an_unsafe_character_at_the_edges_of_the_table() {
+        let mut codes: Vec<u32> = (0..0x300).collect();
+        for &(low, high) in tables::UNSAFE {
+            codes.extend([low.saturating_sub(1), low, high, high + 1]);
+        }
+        codes.extend((0..=16).map(|plane| plane << 16));
+        for code in codes {
+            if let Some(c) = char::from_u32(code) {
+                check_no_unsafe_output(c);
             }
         }
     }

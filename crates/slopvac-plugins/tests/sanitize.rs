@@ -14,11 +14,11 @@ use slopvac_plugins::trust::TrustError;
 use slopvac_plugins::{PluginError, RpcError};
 
 /// ESC, an OSC 8 opener with BEL, a C1 CSI, a bidi override, a zero-width space,
-/// a newline that would start a workflow command, and a plain tail.
-const HOSTILE: &str = "\u{1b}]8;;https://e.example\u{7}\u{9b}\u{202e}\u{200b}\n::error::x!";
+/// a newline that would start a workflow command, and a legacy command.
+const HOSTILE: &str =
+    "\u{1b}]8;;https://e.example\u{7}\u{9b}\u{202e}\u{200b}\n::error::x! ##[add-mask]z";
 /// What the one-line escaper must make of `HOSTILE`, worked out by hand.
-const ESCAPED: &str =
-    "\\u{1b}]8;;https://e.example\\u{7}\\u{9b}\\u{202e}\\u{200b}\\u{a}::error::x!";
+const ESCAPED: &str = "\\u{1b}]8;;https://e.example\\u{7}\\u{9b}\\u{202e}\\u{200b}\\u{a}::error::x! \\u{23}#[add-mask]z";
 
 fn cases() -> Vec<(&'static str, String)> {
     let h = || HOSTILE.to_owned();
@@ -118,7 +118,7 @@ fn an_exited_plugin_keeps_its_stderr_lines_and_escapes_the_rest() {
         stderr: format!("\nstderr:\n{HOSTILE}\nline two"),
     }
     .to_string();
-    let want = "plugin p exited (code 3)\nstderr:\n\\u{1b}]8;;https://e.example\\u{7}\\u{9b}\\u{202e}\\u{200b}\n\\u{3a}:error::x!\nline two";
+    let want = "plugin p exited (code 3)\nstderr:\n\\u{1b}]8;;https://e.example\\u{7}\\u{9b}\\u{202e}\\u{200b}\n\\u{3a}:error::x! \\u{23}#[add-mask]z\nline two";
     assert_eq!(msg, want);
 }
 
@@ -134,4 +134,26 @@ fn a_link_name_the_name_check_lets_through_is_escaped_in_the_extract_error() {
         err.to_string(),
         "archive refused: `a\\u{ad}b\\u{feff}` is a link or special file"
     );
+}
+
+#[test]
+fn a_literal_backslash_in_an_error_field_cannot_pose_as_an_escape() {
+    let msg = PluginError::Untrusted("\\u{202e}".into()).to_string();
+    assert!(
+        msg.starts_with("plugin \\\\u{202e} is not trusted"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn declaration_differences_escape_manifest_names() {
+    use slopvac_plugins::trust::DeclSummary;
+    let summary = |hooks: &[&str]| DeclSummary {
+        network: false,
+        hooks: hooks.iter().map(|h| (*h).to_owned()).collect(),
+        required_features: vec![],
+        optional_features: vec![],
+    };
+    let changes = summary(&[]).diff(&summary(&["tag\u{202e}\n::error::x"]));
+    assert_eq!(changes, ["hook added: tag\\u{202e}\\u{a}::error::x"]);
 }

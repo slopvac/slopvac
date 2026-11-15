@@ -18,7 +18,6 @@ use std::time::{Duration, SystemTime};
 use flate2::read::MultiGzDecoder;
 use sha2::{Digest as _, Sha256};
 use slopvac_sanitize::line as esc;
-use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::hooks::check_relative_path;
@@ -106,29 +105,59 @@ fn new_parents(dirs: &HashSet<String>, rel: &str) -> Vec<String> {
 }
 
 /// Why an artifact was refused. Any error leaves the store unchanged.
-#[derive(Debug, Error)]
+///
+/// The variants hold raw text. `Display` escapes it with `slopvac-sanitize`;
+/// [`ExtractError::unescaped`] gives the text before that, for a caller that
+/// builds a larger message and escapes it once.
+#[derive(Debug)]
 pub enum ExtractError {
     /// The archive breaks a rule.
-    #[error("archive refused: {}", esc(.0))]
     Refused(String),
     /// The archive is not valid gzip or tar.
-    #[error("archive is malformed: {}", esc(.0))]
     Malformed(String),
     /// A cached tree differs from its recorded hash.
-    #[error("cached tree {} does not match its hash", esc(&.path.to_string_lossy()))]
     Tampered {
         /// The tree.
         path: PathBuf,
     },
     /// A file system operation failed.
-    #[error("{}: {}", esc(.what), esc(&.source.to_string()))]
     Io {
         /// The operation.
         what: String,
         /// The cause.
-        #[source]
         source: io::Error,
     },
+}
+
+impl ExtractError {
+    /// The message as built, before escaping. Do not print it.
+    #[must_use]
+    pub fn unescaped(&self) -> String {
+        match self {
+            Self::Refused(m) => format!("archive refused: {m}"),
+            Self::Malformed(m) => format!("archive is malformed: {m}"),
+            Self::Tampered { path } => format!(
+                "cached tree {} does not match its hash",
+                path.to_string_lossy()
+            ),
+            Self::Io { what, source } => format!("{what}: {source}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ExtractError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&esc(&self.unescaped()))
+    }
+}
+
+impl std::error::Error for ExtractError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
 }
 
 fn refused(msg: impl Into<String>) -> ExtractError {
@@ -306,7 +335,7 @@ fn normalise_entry_path(raw: &[u8]) -> Result<String, ExtractError> {
     let s = std::str::from_utf8(raw).map_err(|_| refused("entry path is not UTF-8"))?;
     let s = s.strip_prefix("./").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
-    check_name(s).map_err(|e| refused(format!("entry path `{}`: {e}", s.escape_debug())))?;
+    check_name(s).map_err(|e| refused(format!("entry path `{s}`: {e}")))?;
     Ok(s.to_owned())
 }
 
@@ -914,7 +943,7 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
             } else {
                 format!("{prefix}/{name}")
             };
-            check_name(&rel).map_err(|e| refused(format!("`{}`: {e}", rel.escape_debug())))?;
+            check_name(&rel).map_err(|e| refused(format!("`{rel}`: {e}")))?;
             let child = entry.path();
             let meta = fs::symlink_metadata(&child).map_err(io_err("inspecting an entry"))?;
             if meta.is_dir() {

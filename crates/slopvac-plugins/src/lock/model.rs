@@ -16,10 +16,17 @@ pub const MAX_REQUIRES: usize = 256;
 /// Longest string value, in bytes.
 pub const MAX_STRING_BYTES: usize = 4096;
 
-/// A rejected value, with the reason.
+/// A rejected value, with the reason. The text is raw; `Display` escapes it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
+#[error("{}", sanitize(.0))]
 pub struct ValueError(String);
+
+impl ValueError {
+    /// The reason as built, for a caller that escapes it itself.
+    pub(super) fn raw(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Longest message, in characters. A longer one is cut and ends in `...`, so a
 /// hostile value cannot flood the output.
@@ -35,7 +42,7 @@ pub(super) fn sanitize(text: &str) -> String {
 }
 
 fn bad<T>(message: impl AsRef<str>) -> Result<T, ValueError> {
-    Err(ValueError(sanitize(message.as_ref())))
+    Err(ValueError(message.as_ref().to_owned()))
 }
 
 /// A lock file error. `pointer` is a JSON Pointer into the file
@@ -152,9 +159,9 @@ impl FromStr for NotBefore {
 
     fn from_str(s: &str) -> Result<Self, ValueError> {
         let format_error = || {
-            ValueError(sanitize(&format!(
+            ValueError(format!(
                 "`{s}` is not a UTC time (`YYYY-MM-DDTHH:MM:SSZ`, calendar-valid)"
-            )))
+            ))
         };
         let b = s.as_bytes();
         if b.len() != 20 {

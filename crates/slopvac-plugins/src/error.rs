@@ -48,7 +48,7 @@ pub enum PluginError {
         plugin: String,
         /// Exit status description.
         status: String,
-        /// Sanitised stderr tail, with a leading newline, or empty.
+        /// Raw stderr tail, with a leading newline, or empty. `Display` escapes it.
         stderr: String,
     },
     /// A framing error, a limit breach or a duplicate key.

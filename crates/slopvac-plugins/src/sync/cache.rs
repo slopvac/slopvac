@@ -75,7 +75,7 @@ impl Store {
     }
 
     pub(super) fn prepare(&self) -> Result<(), SyncError> {
-        let store = |e: ExtractError| SyncError::Store(e.to_string());
+        let store = |e: ExtractError| SyncError::Store(e.unescaped());
         ensure_private_dir(&self.root).map_err(store)?;
         // Every child is checked as an owned, non-link directory before use: extraction
         // chmods and renames inside `trees`, so a planted link must not redirect it.

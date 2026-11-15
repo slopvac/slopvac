@@ -260,7 +260,7 @@ impl Shared {
         let ring = lock(&self.stderr);
         let bytes: Vec<u8> = ring.iter().copied().collect();
         let start = bytes.len().saturating_sub(STDERR_SHOWN);
-        let text = slopvac_sanitize::terminal(&String::from_utf8_lossy(&bytes[start..]));
+        let text = String::from_utf8_lossy(&bytes[start..]);
         let text = text.trim_end();
         if text.is_empty() {
             String::new()
