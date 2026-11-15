@@ -1,111 +1,22 @@
-# Built-in declarative taggers. Patterns are PCRE2 and case-insensitive.
-# STUB(slopvac-8l4.5.12): field names follow the pack tagger schema once published.
+# Built-in declarative taggers, as `tagger.schema.json` defines them. Patterns are PCRE2.
+# Each entry is one tagger file; the list is a bundle for the built-in pack.
 
-# change-note: headings, version headings, admonitions, version tokens, files.
-- id: change-note-heading
-  kind: change-note
-  scope: section
-  confidence: 0.9
-  when:
-    heading_path: '\b(?:breaking|upgrad\w*|migrat\w*|what.?s new|release notes?|changelog|changes? in|deprecat\w*|compatibility notes?|version history)\b'
-
-- id: change-note-changelog-heading
-  kind: change-note
-  scope: section
-  confidence: 0.9
-  when:
-    heading_path: '^\W*(?:added|changed|fixed|removed)\W*$'
-
-- id: change-note-version-heading
-  kind: change-note
-  scope: section
-  confidence: 0.9
-  when:
-    heading_path: '^\W*(?:version\s+|v)?\d+\.\d+(?:\.\d+)?\b'
-
-- id: change-note-admonition
-  kind: change-note
-  scope: paragraph
-  confidence: 0.9
-  when:
-    admonition_title: '\b(?:changed|deprecated|breaking)\b|\bv?\d+\.\d+'
-
-- id: change-note-version-sentence
-  kind: change-note
-  scope: sentence
+- schema_version: 3
+  id: change-note-version-sentence
+  description: A sentence that names a version.
+  tag: change-note
+  unit: sentence
   confidence: 0.6
-  when:
-    sentence: '\bv\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b|\b(?:version|release|since|until)\s+v?\d+\.\d+\b'
+  evidence: The sentence names a version.
+  match:
+    - pattern: '\bv\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b|\b(?:version|release|since|until)\s+v?\d+\.\d+\b'
 
-- id: change-note-file
-  kind: change-note
-  scope: document
-  confidence: 0.7
-  when:
-    path: '(?:^|/)(?:changelog|changes|history|news|releases?|upgrading|migration)[^/]*$'
-
-# procedure, safety, example, quote, generated.
-- id: procedure-heading
-  kind: procedure
-  scope: section
+- schema_version: 3
+  id: generated-notice
+  description: A paragraph that says the file is generated.
+  tag: generated
+  unit: paragraph
   confidence: 0.8
-  when:
-    heading_path: '\b(?:procedures?|steps?|install(?:ation)?|set ?up|getting started|instructions|how to|walkthrough)\b'
-
-- id: safety-admonition
-  kind: safety
-  scope: paragraph
-  confidence: 0.95
-  when:
-    admonition_title: '^\W*(?:warning|danger|caution)\b'
-
-- id: safety-heading
-  kind: safety
-  scope: section
-  confidence: 0.8
-  when:
-    heading_path: '\b(?:safety|warnings?|cautions?)\b'
-
-- id: example-heading
-  kind: example
-  scope: section
-  confidence: 0.8
-  when:
-    heading_path: '^\W*(?:examples?|sample|samples|example usage)\b'
-
-- id: example-admonition
-  kind: example
-  scope: paragraph
-  confidence: 0.9
-  when:
-    admonition_title: '^\W*examples?\b'
-
-- id: quote-block
-  kind: quote
-  scope: paragraph
-  confidence: 1.0
-  when:
-    block_kind: quote
-
-- id: generated-heading
-  kind: generated
-  scope: section
-  confidence: 0.8
-  when:
-    heading_path: '\b(?:auto-?generated|generated (?:by|from|file|section|reference))\b'
-
-- id: generated-frontmatter
-  kind: generated
-  scope: document
-  confidence: 0.95
-  when:
-    frontmatter:
-      key: generated
-      matches: '^(?:true|yes)$'
-
-- id: generated-notice
-  kind: generated
-  scope: paragraph
-  confidence: 0.8
-  when:
-    sentence: '\b(?:this file is (?:auto-?)?generated|auto-?generated (?:file|by)|do not edit (?:this|by hand))\b'
+  evidence: The paragraph says the file is generated.
+  match:
+    - pattern: '\b(?:this file is (?:auto-?)?generated|auto-?generated (?:file|by)|do not edit (?:this|by hand))\b'

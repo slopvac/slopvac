@@ -1,112 +1,136 @@
-# Built-in genres. Detection patterns are PCRE2 and case-insensitive.
-# STUB(slopvac-8l4.5.12): field names follow the pack genre schema once published.
+# Built-in genres, as `genre.schema.json` defines them. Heading and text patterns are PCRE2
+# and case-insensitive. Path globs ignore case. Each genre needs a score of 3 to be detected.
+# Each entry is one genre file; the list is a bundle for the built-in pack.
 
-- id: consumer
+- schema_version: 3
+  id: consumer
   description: Shipped behavior and reader use. README, docs, guides.
   profile: normal
   detect:
-    - { path: '(?:^|/)readme[^/]*$', weight: 2 }
-    - { path: '(?:^|/)(?:docs?|guides?|manual)/', weight: 1.5 }
-    - { heading: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
-  prime: Describe what the product does now and how the reader uses it. Skip its history.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/readme*', weight: 2 }
+      - { kind: path, glob: '**/{doc,docs,guide,guides,manual}/**', weight: 1.5 }
+      - { kind: heading, pattern: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
 
-- id: reference
+- schema_version: 3
+  id: reference
   description: Exact operations and dated facts for use or verification. API docs, runbooks, procedures, safety text.
   profile: strict
   detect:
-    - { path: '(?:^|/)(?:reference|api|runbooks?|procedures?|man)/', weight: 3 }
-    - { heading: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
-    - { heading: '\b(?:runbook|procedure|safety)\b', weight: 2 }
-  prime: State exact values, limits and steps. Prefer tables and numbered steps to prose.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{reference,api,runbook,runbooks,procedure,procedures,man}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
+      - { kind: heading, pattern: '\b(?:runbook|procedure|safety)\b', weight: 2 }
 
-- id: change-comms
+- schema_version: 3
+  id: change-comms
   description: Change, rationale, verification. PR and MR text, commits, release notes, migration guides.
   profile: normal
   detect:
-    - { path: '(?:^|/)(?:changelog|changes|history|news|releases?|upgrading|migration)[^/]*$', weight: 3 }
-    - { heading: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
-    - { heading: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
-  prime: Say what changed, why, and how it was checked. History is the point here.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{changelog,changes,history,news,release,releases,upgrading,migration}*', weight: 3 }
+      - { kind: heading, pattern: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
 
-- id: internal
+- schema_version: 3
+  id: internal
   description: Requirements and decision rationale. Specifications, decision records, contributor docs.
   profile: normal
   detect:
-    - { path: '(?:^|/)(?:adr|decisions?|rfcs?|specs?|design)(?:/|[-_])', weight: 3 }
-    - { path: '(?:^|/)(?:contributing|development)[^/]*$', weight: 3 }
-    - { heading: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
-  prime: Record the requirement or decision, the reasons, and what was rejected.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{adr,decision,decisions,rfc,rfcs,spec,specs,design}{/**,[-_]*,[-_]*/**}', weight: 3 }
+      - { kind: path, glob: '**/{contributing,development}*', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
 
-- id: informal
+- schema_version: 3
+  id: informal
   description: Immediate context. Issue comments, discussions, blogs, drafts.
   profile: relaxed
   detect:
-    - { path: '(?:^|/)(?:blog|posts?|drafts?|notes?|discussions?)/', weight: 3 }
-    - { frontmatter: { key: status, matches: '^draft$' }, weight: 3 }
-  prime: Keep it short and direct. Context matters more than polish.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{blog,post,posts,draft,drafts,note,notes,discussion,discussions}/**', weight: 3 }
+      - { kind: front-matter, key: status, equals: draft, weight: 3 }
 
-- id: security
-  extends: reference
+# Declared, never detected: it has no `detect`. The built-in registry declares the
+# `security` context for it, see `builtin_genres`.
+- schema_version: 3
+  id: security
+  extends: [reference]
   description: Security guidance, threat models and policies. Declared, never detected.
-  contexts: [security]
-  prime: Name the control that enforces each guarantee. A guarantee with no mechanism is a claim.
 
-- id: ui-copy
+- schema_version: 3
+  id: ui-copy
   description: UI strings, error messages and CLI help.
   profile: normal
   detect:
-    - { path: '(?:^|/)(?:ui-copy|ux-writing|microcopy|strings|messages)(?:/|[-_.])', weight: 3 }
-    - { frontmatter: { key: type, matches: '^ui-copy$' }, weight: 3 }
-  prime: Write the shortest text that tells the reader what happened and what to do next. Keep terms consistent across screens.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{ui-copy,ux-writing,microcopy,strings,messages}{/**,[-_.]*,[-_.]*/**}', weight: 3 }
+      - { kind: front-matter, key: type, equals: ui-copy, weight: 3 }
 
-- id: agent-instructions
-  extends: reference
+- schema_version: 3
+  id: agent-instructions
+  extends: [reference]
   description: Instructions for coding agents. Normative MUST and NEVER are allowed.
   detect:
-    - { path: '(?:^|/)(?:agents|claude|gemini)\.md$', weight: 3 }
-    - { path: '(?:^|/)copilot-instructions\.md$', weight: 3 }
-    - { path: '(?:^|/)(?:\.cursor/rules|\.github/instructions)/', weight: 3 }
-  tolerances:
-    prose-craft.negative-requirement: off
-  prime: Give each instruction as a command with its reason. MUST, NEVER and exact commands are fine here.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{agents,claude,gemini}.md', weight: 3 }
+      - { kind: path, glob: '**/copilot-instructions.md', weight: 3 }
+      - { kind: path, glob: '**/{.cursor/rules,.github/instructions}/**', weight: 3 }
+  rules:
+    prose-craft.negative-requirement: 'off'
 
 # Diataxis content types. Each one is a consumer genre. Compass: does the reader act or
 # study, and does the page serve learning or work? Tutorial = act + learn, how-to = act +
 # work, reference = study + work, explanation = study + learn. A page that serves two
 # quadrants should be split.
-- id: tutorial
-  extends: consumer
+- schema_version: 3
+  id: tutorial
+  extends: [consumer]
   description: Diataxis tutorial. A guided lesson that ends in something the reader built.
   detect:
-    - { path: '(?:^|/)tutorials?/', weight: 3 }
-    - { heading: '^\W*(?:what you.ll (?:learn|build)|next steps|step \d+)\b', weight: 1.5 }
-  tolerances:
-    prose-craft.future-tense: off
-  prime: Lead the reader through one outcome. Say what they will see at each step. Skip options and background.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{tutorial,tutorials}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:what you.ll (?:learn|build)|next steps|step \d+)\b', weight: 1.5 }
+  rules:
+    prose-craft.future-tense: 'off'
 
-- id: how-to
-  extends: consumer
+- schema_version: 3
+  id: how-to
+  extends: [consumer]
   description: Diataxis how-to guide. Steps that solve one task for a reader who knows the basics.
   detect:
-    - { path: '(?:^|/)how-?tos?/', weight: 3 }
-    - { heading: '^\W*how to\b', weight: 3 }
-  prime: Title it with the task. Give the steps and nothing else. Link out for background.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{howto,howtos,how-to,how-tos}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*how to\b', weight: 3 }
 
-- id: reference-page
-  extends: consumer
+- schema_version: 3
+  id: reference-page
+  extends: [consumer]
   description: Diataxis reference. Neutral, complete description of the machinery.
   detect:
-    - { path: '(?:^|/)cli/', weight: 3 }
-    - { heading: '^\W*(?:options|parameters|configuration|settings|fields)\W*$', weight: 1.5 }
-  prime: Describe, do not instruct. Keep the structure the same as the thing described.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/cli/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:options|parameters|configuration|settings|fields)\W*$', weight: 1.5 }
 
-- id: explanation
-  extends: consumer
+- schema_version: 3
+  id: explanation
+  extends: [consumer]
   description: Diataxis explanation. Background, reasons and trade-offs.
   detect:
-    - { path: '(?:^|/)(?:explanation|concepts?|background|architecture)/', weight: 3 }
-    - { heading: '^\W*(?:background|why|design|how it works)\b', weight: 1.5 }
-  tolerances:
-    prose-scope.contrastive-inversion-frames: off
-    prose-scope.contrastive-inversion-remainder: off
-  prime: Explain why. Contrast with alternatives is fine here. Do not slip in steps.
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{explanation,concept,concepts,background,architecture}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:background|why|design|how it works)\b', weight: 1.5 }
+  rules:
+    prose-scope.contrastive-inversion-frames: 'off'
+    prose-scope.contrastive-inversion-remainder: 'off'
