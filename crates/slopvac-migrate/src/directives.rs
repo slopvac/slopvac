@@ -188,90 +188,92 @@ mod tests {
 
     #[test]
     fn leaves_fenced_and_inline_examples_alone() {
-        let text = "```md\n<!-- slopvac-allow: rule=a.b reason=x -->\n```\nUse `<!-- slopvac-allow: rule=a.b reason=x -->` here.\n";
+        let text = "```md\n<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n```\nUse `<!-- slopvac-allow: rule=orwell.not-un reason=x -->` here.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn double_backtick_span_holding_a_single_backtick_is_quoted() {
-        let text = "Write ``a ` <!-- slopvac-allow: rule=a.b reason=x -->`` here.\n";
+        let text = "Write ``a ` <!-- slopvac-allow: rule=orwell.not-un reason=x -->`` here.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn code_span_that_wraps_across_lines_is_quoted() {
-        let text = "Use `the directive\n<!-- slopvac-allow: rule=a.b reason=x --> in` prose.\n";
+        let text =
+            "Use `the directive\n<!-- slopvac-allow: rule=orwell.not-un reason=x --> in` prose.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn unmatched_backtick_does_not_quote_the_directive() {
-        let (out, _) = run("A stray ` tick <!-- slopvac-allow: rule=a.b reason=x -->\n");
+        let (out, _) = run("A stray ` tick <!-- slopvac-allow: rule=orwell.not-un reason=x -->\n");
         assert_eq!(
             out,
-            "A stray ` tick <!-- slopvac-allow: rule=core:a.b reason=x -->\n"
+            "A stray ` tick <!-- slopvac-allow: rule=core:orwell.not-un reason=x -->\n"
         );
     }
 
     #[test]
     fn a_blank_line_ends_a_code_span() {
-        let (out, _) = run("Open `tick\n\n<!-- slopvac-allow: rule=a.b reason=x --> `\n");
+        let (out, _) = run("Open `tick\n\n<!-- slopvac-allow: rule=orwell.not-un reason=x --> `\n");
         assert_eq!(
             out,
-            "Open `tick\n\n<!-- slopvac-allow: rule=core:a.b reason=x --> `\n"
+            "Open `tick\n\n<!-- slopvac-allow: rule=core:orwell.not-un reason=x --> `\n"
         );
     }
 
     #[test]
     fn indented_code_is_left_alone() {
-        let text = "    <!-- slopvac-allow: rule=a.b reason=x -->\n";
+        let text = "    <!-- slopvac-allow: rule=orwell.not-un reason=x -->\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn longer_fence_is_not_closed_by_a_shorter_one() {
-        let text = "````md\n```\n<!-- slopvac-allow: rule=a.b reason=x -->\n````\n";
+        let text = "````md\n```\n<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n````\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn a_backslash_before_the_closing_backtick_does_not_escape_it() {
         // `a\` is a complete code span, so the directive after it is prose.
-        let (out, _) = run("`a\\` x <!-- slopvac-allow: rule=a.b reason=x --> `\n");
+        let (out, _) = run("`a\\` x <!-- slopvac-allow: rule=orwell.not-un reason=x --> `\n");
         assert_eq!(
             out,
-            "`a\\` x <!-- slopvac-allow: rule=core:a.b reason=x --> `\n"
+            "`a\\` x <!-- slopvac-allow: rule=core:orwell.not-un reason=x --> `\n"
         );
     }
 
     #[test]
     fn a_backslash_escapes_an_opening_backtick_outside_a_span() {
-        let text = "\\`not a span <!-- slopvac-allow: rule=a.b reason=x --> still prose`\n";
+        let text =
+            "\\`not a span <!-- slopvac-allow: rule=orwell.not-un reason=x --> still prose`\n";
         let (out, _) = run(text);
         assert_eq!(
             out,
-            "\\`not a span <!-- slopvac-allow: rule=core:a.b reason=x --> still prose`\n"
+            "\\`not a span <!-- slopvac-allow: rule=core:orwell.not-un reason=x --> still prose`\n"
         );
     }
 
     #[test]
     fn qualified_ids_stay() {
-        let text = "<!-- slopvac-allow: rule=core:a.b reason=x -->\n";
+        let text = "<!-- slopvac-allow: rule=core:orwell.not-un reason=x -->\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn id_ending_the_comment_without_reason() {
-        let (out, _) = run("<!-- slopvac-allow: rule=a.b-->\n");
-        assert_eq!(out, "<!-- slopvac-allow: rule=core:a.b-->\n");
+        let (out, _) = run("<!-- slopvac-allow: rule=orwell.not-un-->\n");
+        assert_eq!(out, "<!-- slopvac-allow: rule=core:orwell.not-un-->\n");
     }
 
     #[test]
     fn unknown_ids_are_reported_and_kept() {
-        let text = "<!-- slopvac-allow: rule=Nope reason=x -->\n";
+        let text = "<!-- slopvac-allow: rule=prose-craft.no-such-rule reason=x -->\n";
         let (out, unknown) = run(text);
         assert_eq!(out, text);
-        assert_eq!(unknown, vec!["Nope".to_owned()]);
+        assert_eq!(unknown, vec!["prose-craft.no-such-rule".to_owned()]);
     }
 
     #[test]
