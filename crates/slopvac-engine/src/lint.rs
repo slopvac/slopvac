@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
@@ -30,7 +31,7 @@ use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit};
+use crate::prepare::{Prepared, Unit, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -139,9 +140,9 @@ pub enum EngineError {
 
 /// A rule that runs.
 struct Active {
-    set: usize,
-    category: usize,
-    rule: usize,
+    pub(crate) set: usize,
+    pub(crate) category: usize,
+    pub(crate) rule: usize,
     severity: Severity,
     replacements: LazyReplacements,
 }
@@ -174,8 +175,10 @@ enum Catalog {
 
 /// The engine.
 pub struct Engine {
-    sets: Vec<RuleSet>,
-    settings: Settings,
+    pub(crate) sets: Vec<Arc<RuleSet>>,
+    /// The blocklist the vocabulary rules enforce, kept to rebuild a restricted engine.
+    pub(crate) blocklist: Blocklist,
+    pub(crate) settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
     checkers: Vec<Box<dyn DiagramChecker>>,
@@ -194,7 +197,7 @@ pub struct Engine {
     /// Every known rule id.
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
-    running: HashSet<String>,
+    pub(crate) running: HashSet<String>,
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
@@ -265,10 +268,16 @@ impl Engine {
     /// capitalization, and metrics it does not measure) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
+        Self::new_shared(sets.into_iter().map(Arc::new).collect(), settings)
+    }
+
+    /// Like [`Engine::new`], over rule sets that other engines share.
+    pub fn new_shared(sets: Vec<Arc<RuleSet>>, settings: Settings) -> Result<Self, EngineError> {
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
             sets,
+            blocklist: Blocklist::default(),
             settings,
             detectors: Detectors::builtin(),
             tagger,
@@ -296,6 +305,7 @@ impl Engine {
     /// empty one, they have nothing to check and each document says so in an `info` notice.
     pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
         self.plan_vocabulary(blocklist)?;
+        self.blocklist = blocklist.clone();
         Ok(self)
     }
 
@@ -478,6 +488,33 @@ impl Engine {
         Ok(())
     }
 
+    /// Why the engine does not execute `rule`, or `None` when it does.
+    ///
+    /// A rule that is switched off, limited by `applies_to` to another genre or mode, of a
+    /// kind the engine does not implement, or of a capitalization style or metric it does
+    /// not run is not executed. A vocabulary rule runs only with a blocklist it can use.
+    #[must_use]
+    pub fn unexecuted(&self, rule: &LoadedRule) -> Option<&'static str> {
+        let id = rule.id();
+        let at = |a: &&crate::lint::Active| {
+            self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id
+        };
+        if !self.running.contains(id.as_str()) {
+            return Some("the rule is switched off or does not apply under the engine settings");
+        }
+        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let executes = self.active.iter().any(|a| at(&a))
+            || self.metrics.iter().any(|a| at(&a))
+            || owner.is_some_and(|a| at(&a));
+        if executes {
+            None
+        } else if rule.kind() == MatchKind::Vocabulary {
+            Some("a vocabulary rule needs a usable word blocklist")
+        } else {
+            Some("the engine does not run this kind, style or metric of rule")
+        }
+    }
+
     /// The loaded rule for a qualified id.
     fn loaded(&self, id: &str) -> Option<&LoadedRule> {
         let Catalog::Loaded(set) = self.catalog.get(id)? else {
@@ -514,6 +551,8 @@ impl Engine {
             Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
         };
+        let index = SourceIndex::new(input.source, input.bom);
+        let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(input.source, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
@@ -558,9 +597,8 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
-            front: front_matter.as_ref(),
             subject: &subject,
-            index: SourceIndex::new(input.source, input.bom),
+            index,
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
@@ -697,8 +735,6 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
-    /// The parsed front matter, for context tags.
-    front: Option<&'a FrontMatter<'a>>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }

@@ -5,7 +5,7 @@
 //! [`Report`] lists every readable document with its word count and a clean score.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::json;
 use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel, Report};
@@ -116,7 +116,7 @@ impl Linter for StubLinter {
             );
         }
         for path in &request.targets {
-            let shown = shown_path(path, &request.root);
+            let shown = redact::shown_path(path, &request.root);
             match std::fs::read(path) {
                 Ok(bytes) => check(&shown, &bytes, &mut outcome, &mut docs, &mut skipped),
                 Err(err) => skip(
@@ -131,14 +131,6 @@ impl Linter for StubLinter {
         outcome.report = clean_report(&docs);
         outcome.report.notices = skipped;
         outcome
-    }
-}
-
-fn shown_path(path: &Path, root: &Path) -> String {
-    if path.is_absolute() {
-        redact::path_for_log(path, root)
-    } else {
-        path.display().to_string()
     }
 }
 
