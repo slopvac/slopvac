@@ -30,7 +30,7 @@ use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit};
+use crate::prepare::{Prepared, Unit, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -466,6 +466,8 @@ impl Engine {
             Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
         };
+        let index = SourceIndex::new(input.source, input.bom);
+        let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(input.source, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
@@ -510,9 +512,8 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
-            front: front_matter.as_ref(),
             subject: &subject,
-            index: SourceIndex::new(input.source, input.bom),
+            index,
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
@@ -641,8 +642,6 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
-    /// The parsed front matter, for context tags.
-    front: Option<&'a FrontMatter<'a>>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }

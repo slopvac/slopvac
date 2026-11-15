@@ -3,12 +3,63 @@
 use std::cell::OnceCell;
 use std::ops::Range;
 
+use slopvac_model::SourceIndex;
 use slopvac_model::Span;
-use slopvac_parse::{BlockKind, Document, Projection, TokenKind};
+use slopvac_parse::{BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments};
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, split_sentences};
 
 use crate::directives::Lines;
+
+/// `doc` with the prose of its raw HTML blocks (`<td>`, `<em>`, `<p>`) read as blocks of
+/// their own, in source order, as 2.x did. Every consumer of a document then sees the same
+/// text: rules of every kind, the counts, the metrics, the context tags and the skip ranges.
+///
+/// An extracted block sits in the containers of the Markdown block it came from, outside
+/// any ancestry of its own. Inline code in the HTML (`<code>`) joins the code spans.
+///
+/// `html_blocks` of the result lists only the blocks that added prose. Each counts as one
+/// paragraph, as in 2.x, whatever elements it holds. Call this once for a document: the
+/// blocks it lists are already read.
+///
+/// # Errors
+/// Returns a [`ParseError`] when an HTML block is too large or its segments are invalid.
+pub(crate) fn with_html_prose(
+    source: &str,
+    index: &SourceIndex<'_>,
+    mut doc: Document,
+) -> Result<Document, ParseError> {
+    let html_blocks = std::mem::take(&mut doc.html_blocks);
+    if html_blocks.is_empty() {
+        return Ok(doc);
+    }
+    for block in html_blocks {
+        let html = parse_html_segments(source, index, &block.segments)?;
+        doc.code_spans.extend(html.code_spans);
+        let before = doc.blocks.len();
+        for mut inner in html.blocks {
+            inner
+                .containers
+                .splice(0..0, block.containers.iter().copied());
+            doc.blocks.push(inner);
+        }
+        if doc.blocks[before..].iter().any(has_prose) {
+            doc.html_blocks.push(block);
+        }
+    }
+    // Stable, so a container keeps its place before the blocks inside it.
+    doc.blocks
+        .sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+    doc.code_spans.sort_by_key(Span::start);
+    Ok(doc)
+}
+
+fn has_prose(block: &slopvac_parse::Block) -> bool {
+    block
+        .projection
+        .as_ref()
+        .is_some_and(|p| !p.text().is_empty())
+}
 
 /// How a unit's offsets map to source bytes.
 #[derive(Clone, Copy)]
@@ -84,6 +135,8 @@ pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
     composite: OnceCell<Result<Composite, TextError>>,
+    /// The source extent of each raw HTML block with prose, in source order: a paragraph each.
+    html_extents: Vec<Range<usize>>,
 }
 
 impl<'a> Prepared<'a> {
@@ -107,6 +160,11 @@ impl<'a> Prepared<'a> {
             source,
             blocks,
             composite: OnceCell::new(),
+            html_extents: doc
+                .html_blocks
+                .iter()
+                .filter_map(|b| Some(b.segments.first()?.start()..b.segments.last()?.end()))
+                .collect(),
         })
     }
 
@@ -129,10 +187,19 @@ impl<'a> Prepared<'a> {
     }
 
     pub(crate) fn paragraph_count(&self) -> usize {
-        self.blocks
+        // A raw HTML block is one paragraph in 2.x, however many elements it holds, so
+        // the paragraphs read out of it are not counted one by one.
+        let inside_html = |b: &ProseBlock<'_>| {
+            let at = b.projection.tokens().first().map_or(0, |t| t.src.start());
+            let next = self.html_extents.partition_point(|e| e.end <= at);
+            self.html_extents.get(next).is_some_and(|e| e.start <= at)
+        };
+        let markdown = self
+            .blocks
             .iter()
-            .filter(|b| matches!(b.kind, BlockKind::Paragraph) && !b.contained)
-            .count()
+            .filter(|b| matches!(b.kind, BlockKind::Paragraph) && !b.contained && !inside_html(b))
+            .count();
+        markdown + self.html_extents.len()
     }
 
     /// The whole document as one projection, with a synthetic space between blocks.

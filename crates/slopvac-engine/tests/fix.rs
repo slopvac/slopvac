@@ -348,3 +348,14 @@ fn every_js_line_terminator_ends_a_comment_in_a_tag() {
         assert_eq!(fixed, want, "{terminator:?}");
     }
 }
+
+#[test]
+fn raw_html_prose_is_rewritten_but_its_tags_and_attributes_are_not() {
+    let e = single("delta", "d", &json!({}));
+    let text = "<p title=\"delta\">A delta <a href=\"delta\">delta</a> end.</p>\n";
+    let report = fix(&e, text, None);
+    assert_eq!(
+        report.text,
+        "<p title=\"delta\">A d <a href=\"delta\">d</a> end.</p>\n"
+    );
+}

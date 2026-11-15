@@ -435,3 +435,70 @@ fn a_greek_final_sigma_does_not_defeat_an_allowlisted_phrase() {
     assert_eq!(doc.findings.len(), 1);
     assert_eq!(doc.findings[0].start.column(), 26);
 }
+
+#[test]
+fn a_rule_reads_the_prose_of_a_raw_html_block_at_its_exact_position() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "Intro.\n\n<table>\n<tr>\n<td>We leverage data</td>\n</tr>\n</table>\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 8)]);
+}
+
+#[test]
+fn a_raw_html_block_counts_in_words_sentences_and_paragraphs() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "One two.\n\n<p>Three four five.</p>\n");
+    // 2 + 3 words, a sentence in each block, and one paragraph for each block.
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (5, 2, 2));
+}
+
+#[test]
+fn a_raw_html_block_with_several_elements_is_one_paragraph() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<table>\n<tr><td>One two.</td><td>Three.</td></tr>\n</table>\n",
+    );
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (3, 2, 1));
+}
+
+#[test]
+fn a_raw_html_block_in_a_quote_obeys_the_quote_context() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"contexts": {"skip": ["quote"]}}),
+    )]);
+    let doc = lint(
+        &e,
+        "> <td>Quoted leverage</td>\n\n<td>Outside leverage</td>\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 3, 13)]);
+}
+
+#[test]
+fn a_raw_html_heading_obeys_exclude_blocks() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"exclude_blocks": ["heading"]}),
+    )]);
+    let doc = lint(&e, "<h1>On leverage</h1>\n\n<p>Some leverage.</p>\n");
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 3, 9)]);
+}
+
+#[test]
+fn a_raw_html_block_in_a_list_item_obeys_exclude_blocks() {
+    let e = engine(&[tokens(
+        "dull",
+        "leverage",
+        &json!({"exclude_blocks": ["list-item"]}),
+    )]);
+    let doc = lint(
+        &e,
+        "- item\n\n  <p>Inner leverage.</p>\n\n<p>Outer leverage.</p>\n",
+    );
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 10)]);
+}
