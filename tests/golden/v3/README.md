@@ -5,7 +5,7 @@ This suite fixes what a slopvac 3.0 binary must reproduce. Three modes share one
 | Mode | Expectation | Source of truth |
 | --- | --- | --- |
 | `parity` | The binary matches the Python 2.x reference. | `parity/<profile>/<input>.json`, recorded from the reference pinned in `pin.toml`. |
-| `preserve` | The binary, given the generated `core:legacy-<profile>` style, matches the same files. | The `parity` files. The profile mapping makes the two equal ([profiles.md](../../../docs/contract/profiles.md)). |
+| `preserve` | The binary, given the generated `core:legacy-<profile>` style, matches the same files. | The `parity` files. The profile mapping makes the two equal (`docs/contract/profiles.md`, added by the profile mapping PR). |
 | `policy` | The binary under the 3.0 default policy matches the `parity` files plus reviewed deltas. | `parity/` and `policy/deltas.toml`. |
 
 ## Inputs
