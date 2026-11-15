@@ -4,7 +4,7 @@
 //! Expected values are worked out from the HTML in each test, not from the parser output.
 
 use slopvac_model::Span;
-use slopvac_parse::{Block, BlockKind, Document, Projection, TokenKind, parse_html};
+use slopvac_parse::{Block, BlockKind, Container, Document, Projection, TokenKind, parse_html};
 
 fn parse(source: &str) -> Document {
     parse_html(source, Span::new(0, source.len()).unwrap()).unwrap()
@@ -650,4 +650,92 @@ fn the_surviving_newline_keeps_its_own_bytes_after_one_is_dropped() {
     assert_eq!(tokens[1].kind, TokenKind::Collapse);
     // `<p>a<textarea>` is 14 bytes: the dropped newline is byte 14 and the kept one 15.
     assert_eq!(tokens[1].src, Span::new(15, 16).unwrap());
+}
+
+/// `(text of the block, its containers)` for every block with prose or code.
+fn ancestry(source: &str) -> Vec<(String, Vec<Container>)> {
+    parse(source)
+        .blocks
+        .iter()
+        .map(|b| {
+            (
+                source[b.span.start()..b.span.end()].to_owned(),
+                b.containers.clone(),
+            )
+        })
+        .collect()
+}
+
+const fn item(ordered: bool, depth: usize) -> Container {
+    Container::ListItem { ordered, depth }
+}
+
+#[test]
+fn a_block_outside_lists_and_quotes_has_no_container() {
+    assert_eq!(ancestry("<p>Plain.</p>"), [("Plain.".to_owned(), vec![])]);
+}
+
+#[test]
+fn nested_lists_record_order_and_depth() {
+    let source = "<ul><li>one<ol><li>two</li></ol></li><li>three</li></ul><p>after</p>";
+    assert_eq!(
+        ancestry(source),
+        [
+            ("one".to_owned(), vec![item(false, 1)]),
+            ("two".to_owned(), vec![item(false, 1), item(true, 2)]),
+            ("three".to_owned(), vec![item(false, 1)]),
+            ("after".to_owned(), vec![]),
+        ]
+    );
+}
+
+#[test]
+fn menu_and_dir_lists_are_unordered() {
+    for tag in ["menu", "dir"] {
+        let source = format!("<{tag}><li>one</li></{tag}>");
+        assert_eq!(
+            ancestry(&source),
+            [("one".to_owned(), vec![item(false, 1)])],
+            "{tag}"
+        );
+    }
+}
+
+#[test]
+fn a_quote_inside_a_list_item_follows_the_item() {
+    let source = "<ol><li><blockquote><p>said</p></blockquote><p>then</p></li></ol>";
+    assert_eq!(
+        ancestry(source),
+        [
+            (
+                "said".to_owned(),
+                vec![item(true, 1), Container::BlockQuote]
+            ),
+            ("then".to_owned(), vec![item(true, 1)]),
+        ]
+    );
+}
+
+#[test]
+fn nested_quotes_repeat_the_container() {
+    let source = "<blockquote><p>a</p><blockquote><p>b</p></blockquote></blockquote>";
+    assert_eq!(
+        ancestry(source),
+        [
+            ("a".to_owned(), vec![Container::BlockQuote]),
+            (
+                "b".to_owned(),
+                vec![Container::BlockQuote, Container::BlockQuote]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_code_block_carries_its_containers() {
+    let source = "<blockquote><pre>code</pre></blockquote>";
+    assert_eq!(
+        ancestry(source),
+        [("<pre>code</pre>".to_owned(), vec![Container::BlockQuote])]
+    );
 }

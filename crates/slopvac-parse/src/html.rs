@@ -20,7 +20,7 @@ use std::rc::Rc;
 use html5ever::ns;
 use slopvac_model::{SourceIndex, Span};
 
-use crate::{Block, BlockKind, Document, ParseError, Projection, TokenKind};
+use crate::{Block, BlockKind, Container, Document, ParseError, Projection, TokenKind};
 pub use dom::Stats;
 use dom::{Dom, Kind, PieceKind, Seg, TagKind};
 
@@ -336,6 +336,12 @@ struct Walker<'a> {
     prose: Prose,
     headings: Vec<u8>,
     tables: Vec<Table>,
+    /// Whether each open list is ordered, outermost first.
+    lists: Vec<bool>,
+    /// The open list items and block quotes, outermost first.
+    containers: Vec<Container>,
+    /// Container copies made for blocks since the work budget was last charged.
+    copied: usize,
 }
 
 impl<'a> Walker<'a> {
@@ -347,6 +353,9 @@ impl<'a> Walker<'a> {
             prose: Prose::new(Rc::clone(&map)),
             headings: Vec::new(),
             tables: Vec::new(),
+            lists: Vec::new(),
+            containers: Vec::new(),
+            copied: 0,
             map,
         }
     }
@@ -367,7 +376,7 @@ impl<'a> Walker<'a> {
                 Step::Enter(id) => self.enter(dom, id, &mut stack),
                 Step::Exit(id) => self.exit(dom, id),
             }
-            dom.charge(self.map.take_visits());
+            dom.charge(self.map.take_visits() + std::mem::take(&mut self.copied));
         }
         self.flush();
         let Self {
@@ -429,12 +438,12 @@ impl<'a> Walker<'a> {
                 body: self.span(start.end.min(body_end), body_end),
                 fenced: false,
             };
+            let containers = self.copy_containers();
             self.blocks.push(Block {
                 kind,
                 span: self.span(start.start, end),
                 projection: None,
-                // STUB(slopvac-8l4.3.31): HTML container ancestry
-                containers: Vec::new(),
+                containers,
             });
             return;
         }
@@ -470,6 +479,12 @@ impl<'a> Walker<'a> {
         }
         self.flush();
         match local {
+            "ul" | "ol" | "menu" | "dir" => {
+                self.lists.pop();
+            }
+            "li" | "blockquote" => {
+                self.containers.pop();
+            }
             "table" => {
                 self.tables.pop();
             }
@@ -497,6 +512,13 @@ impl<'a> Walker<'a> {
         }
         self.flush();
         match local {
+            "ul" | "menu" | "dir" => self.lists.push(false),
+            "ol" => self.lists.push(true),
+            "li" => self.containers.push(Container::ListItem {
+                ordered: self.lists.last().copied().unwrap_or(false),
+                depth: self.lists.len().max(1),
+            }),
+            "blockquote" => self.containers.push(Container::BlockQuote),
             "table" => self.tables.push(Table::default()),
             "tr" => {
                 if let Some(table) = self.tables.last_mut() {
@@ -627,6 +649,12 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// The containers a new block sits in. Copying them is work, so it is counted.
+    fn copy_containers(&mut self) -> Vec<Container> {
+        self.copied += self.containers.len();
+        self.containers.clone()
+    }
+
     /// End the open block of prose.
     fn flush(&mut self) {
         let cell = self.tables.last().and_then(|t| t.cell);
@@ -636,12 +664,12 @@ impl<'a> Walker<'a> {
             (None, None) => BlockKind::Paragraph,
         };
         if let Some((projection, first, last)) = self.prose.take() {
+            let containers = self.copy_containers();
             self.blocks.push(Block {
                 kind,
                 span: self.span(first, last),
                 projection: Some(projection),
-                // STUB(slopvac-8l4.3.31): HTML container ancestry
-                containers: Vec::new(),
+                containers,
             });
         }
     }

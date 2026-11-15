@@ -504,6 +504,55 @@ fn a_quote_exclusion_reaches_raw_html_in_a_list_item() {
 }
 
 #[test]
+fn a_quote_exclusion_reaches_an_html_block_quote_inside_raw_html() {
+    let source =
+        "<blockquote><p>Please request data</p></blockquote>\n\n<p>Please request data</p>\n";
+    let doc = lint_with(
+        &json!({"exclude_blocks": ["quote"]}),
+        &[("request", "verb")],
+        source,
+    );
+    assert_eq!(lines(&doc), [3]);
+}
+
+#[test]
+fn a_list_item_exclusion_reaches_an_html_list_inside_raw_html() {
+    let source = "<ul><li>Please request data</li></ul>\n\n<p>Please request data</p>\n";
+    let doc = lint_with(
+        &json!({"exclude_blocks": ["list-item"]}),
+        &[("request", "verb")],
+        source,
+    );
+    assert_eq!(lines(&doc), [3]);
+}
+
+#[test]
+fn an_html_list_in_a_markdown_quote_keeps_both_containers() {
+    // Each exclusion alone must drop the item: the quote comes from Markdown, the item from HTML.
+    let source = "> <ul><li>Please request data</li></ul>\n\n<p>Please request data</p>\n";
+    for kind in ["quote", "list-item"] {
+        let doc = lint_with(
+            &json!({"exclude_blocks": [kind]}),
+            &[("request", "verb")],
+            source,
+        );
+        assert_eq!(lines(&doc), [3], "exclude_blocks {kind}");
+    }
+}
+
+#[test]
+fn context_gates_see_an_html_block_quote_inside_raw_html() {
+    let source =
+        "<blockquote><p>Please request data</p></blockquote>\n\n<p>Please request data</p>\n";
+    let only = lint_with(
+        &json!({"contexts": {"only": ["quote"]}}),
+        &[("request", "verb")],
+        source,
+    );
+    assert_eq!(lines(&only), [1]);
+}
+
+#[test]
 fn context_gates_see_raw_html_in_a_block_quote() {
     let skip = lint_with(
         &json!({"contexts": {"skip": ["quote"]}}),
