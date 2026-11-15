@@ -267,6 +267,7 @@ impl Run<'_> {
                     || self.guarded_in(
                         tags,
                         doc,
+                        None,
                         rule,
                         &sweep.detectors,
                         unit.text,

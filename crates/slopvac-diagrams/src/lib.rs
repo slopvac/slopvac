@@ -15,9 +15,7 @@ mod plantuml;
 mod signals;
 
 pub use fences::{DiagramBlock, find_markdown_blocks, find_mdx_blocks};
-pub use signals::{
-    DiagramFinding, JUDGEMENT_RULES, ProseBlock, Severity, check_labels, check_prose,
-};
+pub use signals::{PACK, ProseBlock, Signal, SignalHit, check_labels, check_prose};
 
 use std::ops::Range;
 

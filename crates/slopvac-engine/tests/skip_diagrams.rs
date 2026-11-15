@@ -12,8 +12,8 @@ mod common;
 use common::{category, id, ruleset, settings};
 use slopvac_diagrams::Format;
 use slopvac_engine::{
-    DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level, SignalChecker,
-    skip_ranges,
+    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level,
+    diagram_rule_set, skip_ranges,
 };
 use slopvac_model::{PackId, Severity, Span};
 use slopvac_parse::parse_markdown;
@@ -62,9 +62,8 @@ fn skip_ranges_hold_list_items_and_quotes() {
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
 
 fn diagram_engine(settings: slopvac_engine::Settings) -> Engine {
-    Engine::new(vec![ruleset(vec![category("cat", &[])])], settings)
-        .unwrap()
-        .with_diagram_checker(Box::new(SignalChecker::new(PackId::new("core").unwrap())))
+    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings).unwrap()
 }
 
 #[test]
@@ -74,7 +73,7 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
         .unwrap();
     assert_eq!(doc.findings.len(), 1);
     let f = &doc.findings[0];
-    assert_eq!(f.rule_id, id("core:diagram.label-run-on"));
+    assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
     assert_eq!(f.category.as_str(), "diagram");
     assert_eq!(f.severity, Severity::Warning);
     assert_eq!(f.matched_text, "This label has far too many words in it");
@@ -100,7 +99,7 @@ fn a_diagram_file_is_checked_without_prose() {
 fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
     let mut off = settings();
     off.rule_levels
-        .insert(id("core:diagram.label-run-on"), Level::Off);
+        .insert(id("diagrams:diagram.label-run-on"), Level::Off);
     assert!(
         diagram_engine(off)
             .lint(&Input::markdown("a.md", MERMAID))
@@ -109,9 +108,10 @@ fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
             .is_empty()
     );
     let mut error = settings();
-    error
-        .rule_levels
-        .insert(id("core:diagram.label-run-on"), Level::On(Severity::Error));
+    error.rule_levels.insert(
+        id("diagrams:diagram.label-run-on"),
+        Level::On(Severity::Error),
+    );
     let doc = diagram_engine(error)
         .lint(&Input::markdown("a.md", MERMAID))
         .unwrap();
@@ -136,6 +136,62 @@ fn a_fence_without_a_diagram_language_is_not_a_diagram() {
             .findings
             .is_empty()
     );
+}
+
+#[test]
+fn the_shipped_pack_holds_five_signal_rules_and_three_judgement_rules() {
+    let set = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let mut got: Vec<_> = set
+        .rules()
+        .map(|r| (r.id().to_string(), r.rule().severity))
+        .collect();
+    got.sort_by(|a, b| a.0.cmp(&b.0));
+    let want = [
+        ("diagrams:diagram.label-run-on", Severity::Warning),
+        (
+            "diagrams:diagram.label-title-plus-gloss",
+            Severity::Suggestion,
+        ),
+        ("diagrams:diagram.meta-reference", Severity::Warning),
+        ("diagrams:diagram.note-long", Severity::Warning),
+        ("diagrams:diagram.note-needed", Severity::Suggestion),
+        ("diagrams:diagram.over-explained", Severity::Suggestion),
+        ("diagrams:diagram.prose-restates", Severity::Suggestion),
+        ("diagrams:diagram.prose-restates-labels", Severity::Warning),
+    ];
+    assert_eq!(got, want.map(|(i, s)| (i.to_owned(), s)));
+}
+
+#[test]
+fn the_pack_severity_is_the_shipped_level_and_a_category_level_replaces_it() {
+    let source = "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
+    let input = Input::diagram("flow.mmd", source, Format::Mermaid);
+    let shipped = diagram_engine(settings()).lint(&input).unwrap();
+    assert_eq!(shipped.findings[0].severity, Severity::Warning);
+    let mut capped = settings();
+    capped.categories.insert(
+        slopvac_model::CategoryId::new("diagram").unwrap(),
+        slopvac_engine::CategoryDials {
+            level: Some(Level::On(Severity::Suggestion)),
+            ..Default::default()
+        },
+    );
+    let doc = diagram_engine(capped).lint(&input).unwrap();
+    assert_eq!(doc.findings[0].severity, Severity::Suggestion);
+}
+
+#[test]
+fn a_title_plus_gloss_label_ships_as_a_suggestion() {
+    let source = "flowchart TD\n  A[Clean Data: remove duplicates, nulls] --> B[End]\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("flow.mmd", source, Format::Mermaid))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(
+        doc.findings[0].rule_id,
+        id("diagrams:diagram.label-title-plus-gloss")
+    );
+    assert_eq!(doc.findings[0].severity, Severity::Suggestion);
 }
 
 /// A checker that flags every fragment, to show the dispatch hands over each one.
@@ -186,7 +242,7 @@ fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
         .unwrap();
     doc.findings
         .iter()
-        .filter(|f| f.rule_id == id("core:diagram.meta-reference"))
+        .filter(|f| f.rule_id == id("diagrams:diagram.meta-reference"))
         .map(|f| {
             let span = f.extent.unwrap().span;
             (f.matched_text.clone(), span.start(), span.end())
@@ -290,4 +346,255 @@ fn a_checker_range_that_is_reversed_or_out_of_bounds_is_an_error_with_no_finding
         let result = e.lint(&Input::markdown("a.md", &source));
         assert!(result.is_err(), "{name}: {result:?}");
     }
+}
+fn signal_rule(id: &str, check: &str, extra: &serde_json::Value) -> serde_json::Value {
+    common::rule(
+        id,
+        &serde_json::json!({"kind": "structure", "check": check}),
+        extra,
+    )
+}
+
+fn found(engine: &Engine, input: &Input<'_>) -> Vec<String> {
+    engine
+        .lint(input)
+        .unwrap()
+        .findings
+        .iter()
+        .map(|f| f.rule_id.to_string())
+        .collect()
+}
+
+#[test]
+fn an_allow_with_a_listed_exception_suppresses_a_dispatched_diagram_rule() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"exceptions": [{"name": "figure-caption"}]}),
+    );
+    let engine = Engine::new(
+        vec![ruleset(vec![category("diagram", &[rule])])],
+        settings(),
+    )
+    .unwrap();
+    let allow = "<!-- slopvac-allow: rule=core:diagram.meta-reference reason=figure-caption -->\n";
+    let text = format!("See the diagram below for details.\n\n{DIAGRAM}");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &text)),
+        ["core:diagram.meta-reference"]
+    );
+    let allowed = format!("{allow}{text}");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &allowed)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn note_long_flags_a_six_word_note_and_not_a_five_word_one() {
+    let note = |n: &str| format!("sequenceDiagram\n  participant A\n  Note right of A: {n}\n");
+    let engine = diagram_engine(settings());
+    let flag = |n: &str| found(&engine, &Input::diagram("s.mmd", &note(n), Format::Mermaid));
+    assert_eq!(
+        flag("keys rotate every night at midnight"),
+        ["diagrams:diagram.note-long"]
+    );
+    assert_eq!(flag("keys rotate every night here"), Vec::<String>::new());
+}
+
+#[test]
+fn prose_that_restates_the_labels_is_flagged_and_prose_that_adds_a_reason_is_not() {
+    let labels = "flowchart TD\n  A[Load Balancer] --> B[API Gateway]\n  B --> C[Auth Service]\n  C --> D[User Database]\n";
+    let restating = "Requests reach the load balancer first. The balancer forwards each request to the API gateway. The gateway asks the auth service to check the token, and then the user database returns the account record for that user. Responses travel back through the same path to the client over the network connection.";
+    let adding = "We cap each tenant at 200 requests per second because the shared cache saturates beyond that point. When the cache fails, reads fall back to the primary at a latency cost of roughly 40 milliseconds, so alerts fire on the hit ratio instead of errors.";
+    let engine = diagram_engine(settings());
+    let doc = |prose: &str| format!("{prose}\n\n```mermaid\n{labels}```\n");
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &doc(restating))),
+        ["diagrams:diagram.prose-restates-labels"]
+    );
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", &doc(adding))),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_inactive_rule_does_not_hide_a_later_rule_with_the_same_check() {
+    let first = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let second = signal_rule("long-label", "diagram-label-run-on", &serde_json::json!({}));
+    let mut s = settings();
+    s.rule_levels
+        .insert(id("core:diagram.label-run-on"), Level::Off);
+    let engine = Engine::new(
+        vec![ruleset(vec![
+            category("diagram", &[first]),
+            category("extra", &[second]),
+        ])],
+        s,
+    )
+    .unwrap();
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        ["core:extra.long-label"]
+    );
+}
+fn one_rule_engine(rules: Vec<(&str, &serde_json::Value)>) -> Engine {
+    let sets = rules
+        .into_iter()
+        .map(|(category_id, rule)| ruleset(vec![category(category_id, &[rule.clone()])]))
+        .collect();
+    Engine::new(sets, settings()).unwrap()
+}
+
+#[test]
+fn a_replaced_rule_id_reports_once_under_the_last_definition() {
+    let run_on = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &run_on), ("diagram", &run_on)]);
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        ["core:diagram.label-run-on"]
+    );
+}
+
+#[test]
+fn a_replaced_rule_id_does_not_keep_reporting_its_old_signal() {
+    let run_on = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let note = signal_rule("label-run-on", "diagram-note-long", &serde_json::json!({}));
+    let engine = one_rule_engine(vec![("diagram", &run_on), ("diagram", &note)]);
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_detector_exception_drops_a_quoted_diagram_reference() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"exceptions": [{"name": "quotation", "detector": "quotation"}]}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let lint = |text: &str| {
+        found(
+            &engine,
+            &Input::markdown("a.md", &format!("{text}\n\n{DIAGRAM}")),
+        )
+    };
+    assert_eq!(
+        lint("Never write \"the diagram below\" in a doc."),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        lint("See the diagram below for details."),
+        ["core:diagram.meta-reference"]
+    );
+}
+
+#[test]
+fn a_context_gate_drops_a_diagram_reference_in_a_quote_block() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"contexts": {"skip": ["quote"]}}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let lint = |text: &str| {
+        found(
+            &engine,
+            &Input::markdown("a.md", &format!("{text}\n\n{DIAGRAM}")),
+        )
+    };
+    assert_eq!(
+        lint("> See the diagram below for details."),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        lint("See the diagram below for details."),
+        ["core:diagram.meta-reference"]
+    );
+}
+
+#[test]
+fn a_finding_carries_the_message_of_the_loaded_rule() {
+    let rule = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({"message": "Shorten {match}."}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let doc = engine.lint(&Input::markdown("a.md", MERMAID)).unwrap();
+    assert_eq!(
+        doc.findings[0].message.as_str(),
+        "Shorten This label has far too many words in it."
+    );
+}
+const LONG_LABEL_FILE: &str =
+    "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
+
+fn run_on_with(extra: &serde_json::Value) -> Engine {
+    let rule = signal_rule("label-run-on", "diagram-label-run-on", extra);
+    one_rule_engine(vec![("diagram", &rule)])
+}
+
+fn both_inputs(engine: &Engine) -> [Vec<String>; 2] {
+    [
+        found(
+            engine,
+            &Input::diagram("flow.mmd", LONG_LABEL_FILE, Format::Mermaid),
+        ),
+        found(engine, &Input::markdown("a.md", MERMAID)),
+    ]
+}
+
+#[test]
+fn a_gate_that_needs_the_diagram_label_context_keeps_the_hit() {
+    let engine = run_on_with(&serde_json::json!({"contexts": {"only": ["diagram-label"]}}));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, ["core:diagram.label-run-on"]);
+    }
+}
+
+#[test]
+fn a_gate_that_skips_the_diagram_label_context_drops_the_hit() {
+    let engine = run_on_with(&serde_json::json!({"contexts": {"skip": ["diagram-label"]}}));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn a_detector_named_for_the_diagram_label_context_drops_the_hit() {
+    let engine = run_on_with(&serde_json::json!({
+        "exceptions": [{"name": "labels", "detector": "diagram-label"}]
+    }));
+    for got in both_inputs(&engine) {
+        assert_eq!(got, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn the_ai_signal_of_a_diagram_rule_reaches_the_finding_and_the_summary() {
+    let engine = run_on_with(&serde_json::json!({
+        "ai_signal": "strong", "ai_signal_source": "measured"
+    }));
+    let doc = engine.lint(&Input::markdown("a.md", MERMAID)).unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].ai_signal, slopvac_model::AiSignal::Strong);
+    assert_eq!(doc.ai_register.strong.findings, 1);
+    assert_eq!(doc.ai_register.strong.warnings, 1);
+    assert_eq!(doc.prose.findings, 0);
 }
