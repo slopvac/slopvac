@@ -195,6 +195,9 @@ pub enum CasesError {
     /// The selected id names no rule of the engine.
     #[error("no rule {0}")]
     UnknownRule(RuleId),
+    /// The engine holds no rule with cases or checkable examples, so nothing would run.
+    #[error("no rule has cases or checkable examples to run")]
+    NothingToRun,
     /// The engine failed.
     #[error(transparent)]
     Engine(#[from] EngineError),
@@ -391,18 +394,33 @@ fn run_rule(
 /// A judgement rule reports nothing unless `only` selects it.
 pub fn run_cases(engine: &Engine, only: Option<&RuleId>) -> Result<CaseReport, CasesError> {
     let mut report = CaseReport::default();
-    let mut found = only.is_none();
-    for set in &engine.sets {
-        for rule in set.rules().filter(|r| only.is_none_or(|o| o == r.id())) {
-            found = true;
-            run_rule(engine, rule, only.is_some(), &mut report.results)?;
-        }
+    let mut found = false;
+    for rule in effective_rules(engine).filter(|r| only.is_none_or(|o| o == r.id())) {
+        found = true;
+        run_rule(engine, rule, only.is_some(), &mut report.results)?;
     }
     match only {
         Some(id) if !found => Err(CasesError::UnknownRule(id.clone())),
+        _ if report.results.is_empty() => Err(CasesError::NothingToRun),
         _ => Ok(report),
     }
 }
+
+/// The rules the engine resolves: when several sets define an id, only the last set's
+/// definition counts, as in `Engine::resolve`.
+fn effective_rules(engine: &Engine) -> impl Iterator<Item = &LoadedRule> {
+    let mut owner: BTreeMap<&RuleId, usize> = BTreeMap::new();
+    for (s, set) in engine.sets.iter().enumerate() {
+        for rule in set.rules() {
+            owner.insert(rule.id(), s);
+        }
+    }
+    engine.sets.iter().enumerate().flat_map(move |(s, set)| {
+        let owner = owner.clone();
+        set.rules().filter(move |r| owner.get(r.id()) == Some(&s))
+    })
+}
+
 /// How often each mechanical rule matched in a corpus.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Coverage {
@@ -440,10 +458,7 @@ impl fmt::Display for Coverage {
 
 /// Lint `corpus` and count the findings of each mechanical rule the engine runs.
 pub fn coverage(engine: &Engine, corpus: &[Input<'_>]) -> Result<Coverage, EngineError> {
-    let mut findings: BTreeMap<RuleId, usize> = engine
-        .sets
-        .iter()
-        .flat_map(|set| set.rules())
+    let mut findings: BTreeMap<RuleId, usize> = effective_rules(engine)
         .filter(|r| r.matcher().is_some() && engine.running.contains(r.id().as_str()))
         .map(|r| (r.id().clone(), 0))
         .collect();

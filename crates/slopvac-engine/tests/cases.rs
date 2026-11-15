@@ -146,8 +146,15 @@ fn a_judgement_rule_examples_are_documentation_only() {
         &json!({"kind": "judgement", "question": "Is it vague?"}),
         &json!({"severity": "suggestion", "examples": [{"bad": "foo", "good": "foo"}]}),
     );
-    let report = run_cases(&engine(&[judgement]), None).unwrap();
-    assert_eq!(report.results.len(), 0);
+    let report = run_cases(
+        &engine(&[
+            judgement,
+            foo_rule(&json!({"cases": [{"input": "foo", "want": 1}]})),
+        ]),
+        None,
+    )
+    .unwrap();
+    assert_eq!(report.results.len(), 1);
 }
 
 #[test]
@@ -192,6 +199,123 @@ fn a_rule_that_is_switched_off_is_incomplete_not_passed() {
         )]
     );
     assert_eq!(report.exit_code(), 2);
+}
+
+fn passed_flags(report: &CaseReport) -> Vec<bool> {
+    report
+        .results
+        .iter()
+        .map(|r| r.outcome == Outcome::Passed)
+        .collect()
+}
+
+fn incomplete_count(report: &CaseReport) -> usize {
+    report.incomplete().count()
+}
+
+fn metric_rule(metric: &str) -> Value {
+    common::rule(
+        "m",
+        &json!({"kind": "metric", "metric": metric, "threshold": 3, "comparison": "gt"}),
+        &json!({"cases": [
+            {"input": "One two.", "want": 0},
+            {"input": "One two three four five six.", "want": 1},
+        ]}),
+    )
+}
+
+#[test]
+fn a_supported_metric_executes_and_an_unsupported_one_is_incomplete() {
+    let ok = run_cases(&engine(&[metric_rule("sentence_words")]), None).unwrap();
+    assert_eq!(passed_flags(&ok), [true, true], "{ok}");
+    let bad = run_cases(&engine(&[metric_rule("not_a_metric")]), None).unwrap();
+    assert_eq!((bad.passed(), incomplete_count(&bad)), (0, 2), "{bad}");
+}
+
+fn caps_rule(style: &str) -> Value {
+    common::rule(
+        "c",
+        &json!({"kind": "capitalization", "style": style}),
+        &json!({"scope": "heading", "cases": [
+            {"input": "# Install the plugin", "want": 0},
+            {"input": "# Install The Plugin", "want": 1},
+        ]}),
+    )
+}
+
+#[test]
+fn the_sentence_style_executes_and_other_capitalization_styles_are_incomplete() {
+    let ok = run_cases(&engine(&[caps_rule("sentence")]), None).unwrap();
+    assert_eq!(passed_flags(&ok), [true, true], "{ok}");
+    let title = run_cases(&engine(&[caps_rule("title")]), None).unwrap();
+    assert_eq!(
+        (title.passed(), incomplete_count(&title)),
+        (0, 2),
+        "{title}"
+    );
+}
+
+fn vocabulary_rule() -> Value {
+    common::rule(
+        "word-outside-controlled-vocabulary",
+        &json!({"kind": "vocabulary", "check": "word-outside-controlled-vocabulary"}),
+        &json!({"cases": [
+            {"input": "The deploy failed.", "want": 1},
+            {"input": "We deploy the app.", "want": 0},
+        ]}),
+    )
+}
+
+#[test]
+fn a_vocabulary_rule_needs_a_blocklist_and_isolation_keeps_it() {
+    let without = run_cases(&engine(&[vocabulary_rule()]), None).unwrap();
+    assert_eq!(
+        (without.passed(), incomplete_count(&without)),
+        (0, 2),
+        "{without}"
+    );
+    let list = slopvac_terms::Blocklist::parse(
+        "b.toml",
+        "toml",
+        "[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"r\"\n",
+    )
+    .unwrap();
+    let with = engine(&[vocabulary_rule()]).with_blocklist(&list).unwrap();
+    let report = run_cases(&with, None).unwrap();
+    assert_eq!(passed_flags(&report), [true, true], "{report}");
+}
+
+#[test]
+fn an_engine_without_checkable_rules_is_an_error_not_a_pass() {
+    let judgement = common::rule(
+        "j",
+        &json!({"kind": "judgement", "question": "Is it vague?"}),
+        &json!({"severity": "suggestion"}),
+    );
+    let err = run_cases(&engine(&[judgement]), None).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "no rule has cases or checkable examples to run"
+    );
+}
+
+#[test]
+fn only_the_last_definition_of_a_duplicated_id_runs() {
+    // Two sets define `cat.r`; the engine runs the later one, so the earlier one's failing
+    // case must not appear.
+    let shadowed = ruleset(vec![common::category(
+        "cat",
+        &[foo_rule(&json!({"cases": [{"input": "foo", "want": 5}]}))],
+    )]);
+    let effective = ruleset(vec![common::category(
+        "cat",
+        &[foo_rule(&json!({"cases": [{"input": "foo", "want": 1}]}))],
+    )]);
+    let e = Engine::new(vec![shadowed, effective], settings()).unwrap();
+    let report = run_cases(&e, None).unwrap();
+    assert_eq!(outcomes(&report), [(Origin::Case(0), true)]);
+    let cov = coverage(&e, &[Input::markdown("a.md", "foo")]).unwrap();
+    assert_eq!(cov.findings.len(), 1);
 }
 
 #[test]
@@ -485,6 +609,26 @@ fn the_command_exits_2_on_an_incomplete_check() {
         out,
         "core:cat.bare cases: incomplete: the rule has no cases or checkable examples\n\
          0 passed, 0 failed, 1 incomplete\n"
+    );
+}
+
+#[test]
+fn the_command_rejects_a_pack_with_nothing_to_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let judgement = common::rule(
+        "j",
+        &json!({"kind": "judgement", "question": "Is it vague?"}),
+        &json!({"severity": "suggestion"}),
+    );
+    let (name, text) = common::category("cat", &[judgement]);
+    std::fs::write(dir.path().join(name), text).unwrap();
+    let m = slopvac_engine::cases::cli::command()
+        .try_get_matches_from(["cases", dir.path().to_str().unwrap()])
+        .unwrap();
+    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "no rule has cases or checkable examples to run"
     );
 }
 
