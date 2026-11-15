@@ -1,0 +1,11 @@
+---
+source: crates/slopvac-config/tests/render.rs
+expression: "rendered(\"schema_version = 3\\n\\n[rules]\\n\\\"core:no-dash\\\" = \\\"of\\\"\\n\")"
+---
+error[config-invalid-value]: `of` is not an accepted value
+ --> slopvac.toml:4:18
+  |
+4 | "core:no-dash" = "of"
+  |                  ^^^^ not accepted
+  |
+help: did you mean `off`?

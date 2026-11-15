@@ -2383,6 +2383,15 @@ dependencies = [
 [[package]]
 name = "slopvac-config"
 version = "0.0.0"
+dependencies = [
+ "annotate-snippets",
+ "insta",
+ "saphyr",
+ "serde_json",
+ "strsim",
+ "thiserror",
+ "toml_edit",
+]
 
 [[package]]
 name = "slopvac-context"
