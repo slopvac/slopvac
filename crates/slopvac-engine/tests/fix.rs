@@ -1,6 +1,10 @@
 //! Safe fixes: parity with the 2.x `--fix`, and the refusals 3.0 adds.
 
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 mod common;
 
@@ -106,6 +110,7 @@ fn a_replacement_with_alternatives_is_not_fixed_or_reported_as_skipped() {
 }
 
 #[test]
+#[allow(clippy::single_range_in_vec_init)]
 fn only_lines_in_the_changed_ranges_are_fixed() {
     let text = "delta one.\ndelta two.\ndelta three.\n";
     let report = fix(&swaps(), text, Some(&[2..=2]));
