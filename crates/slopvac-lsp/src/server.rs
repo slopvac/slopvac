@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
@@ -46,6 +47,9 @@ pub enum ServerError {
     #[error("the lint worker panicked")]
     WorkerPanicked,
 }
+
+/// How long a clean exit waits for queued diagnostics to reach the client.
+const FLUSH_WAIT: Duration = Duration::from_secs(5);
 
 /// How a served session ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +126,9 @@ impl Server {
         // reads slowly, and that must never hold up the document lock.
         let (queue_tx, queue_rx) = crossbeam_channel::unbounded::<Message>();
         let transport = connection.sender.clone();
-        let writer = std::thread::Builder::new()
+        let (flushed_tx, flushed) = crossbeam_channel::bounded::<()>(1);
+        // Never joined: a client that stopped reading blocks it for good.
+        std::thread::Builder::new()
             .name("slopvac-lsp-write".to_owned())
             .spawn(move || {
                 for message in queue_rx {
@@ -130,6 +136,7 @@ impl Server {
                         break;
                     }
                 }
+                let _ = flushed_tx.send(());
             })
             .map_err(|_| ServerError::WorkerPanicked)?;
         let (jobs_tx, jobs_rx) = crossbeam_channel::unbounded::<String>();
@@ -146,9 +153,11 @@ impl Server {
         worker.join().map_err(|_| ServerError::WorkerPanicked)?;
         drop(queue_tx);
         if result.is_ok() {
-            // Flush what is queued. After an error the transport may be stuck, so the
-            // writer is left to end with the process.
-            writer.join().map_err(|_| ServerError::WorkerPanicked)?;
+            // Give the writer time to flush what is queued. A client that stopped reading
+            // after `shutdown` must not keep the process alive, so the wait is bounded and
+            // the writer is left to end with the process. After an error the transport may
+            // be stuck, so nothing waits for it.
+            let _ = flushed.recv_timeout(FLUSH_WAIT);
         }
         result
     }

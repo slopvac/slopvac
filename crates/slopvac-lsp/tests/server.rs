@@ -742,74 +742,169 @@ fn a_close_during_publication_is_never_followed_by_stale_diagnostics() {
     client.finish().unwrap();
 }
 
-#[test]
-fn a_client_that_stops_reading_does_not_stall_document_updates() {
-    // Both directions are zero-capacity, like the stdio transport: a send completes only
-    // when the other side receives.
-    let (to_client, from_server) = crossbeam_channel::bounded::<Message>(0);
-    let (to_server, from_client) = crossbeam_channel::bounded::<Message>(0);
-    let (reached_tx, reached) = crossbeam_channel::unbounded::<()>();
-    let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(0)))))
-        .with_pre_publish_hook(Arc::new(move |_uri| {
-            let _ = reached_tx.send(());
-        }));
-    let connection = Connection {
-        sender: to_client,
-        receiver: from_client,
-    };
-    let handle = std::thread::spawn(move || server.serve(&connection));
-    let send = |message: Message| {
-        to_server
+/// A running server over zero-capacity channels, like the stdio transport: a send completes
+/// only when the other side receives.
+struct Stalled {
+    to_server: crossbeam_channel::Sender<Message>,
+    from_server: crossbeam_channel::Receiver<Message>,
+    reached: crossbeam_channel::Receiver<()>,
+    done: crossbeam_channel::Receiver<Result<Exit, ServerError>>,
+}
+
+impl Stalled {
+    fn start() -> Self {
+        let (to_client, from_server) = crossbeam_channel::bounded::<Message>(0);
+        let (to_server, from_client) = crossbeam_channel::bounded::<Message>(0);
+        let (reached_tx, reached) = crossbeam_channel::unbounded::<()>();
+        let (done_tx, done) = crossbeam_channel::unbounded();
+        let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(0)))))
+            .with_pre_publish_hook(Arc::new(move |_uri| {
+                let _ = reached_tx.send(());
+            }));
+        let connection = Connection {
+            sender: to_client,
+            receiver: from_client,
+        };
+        std::thread::spawn(move || {
+            let _ = done_tx.send(server.serve(&connection));
+        });
+        Self {
+            to_server,
+            from_server,
+            reached,
+            done,
+        }
+    }
+
+    fn send(&self, message: Message) {
+        self.to_server
             .send_timeout(message, Duration::from_secs(5))
             .expect("the server keeps reading");
-    };
-    let note = |method: &str, params: &Value| {
-        Message::Notification(Notification::new(method.to_owned(), params))
-    };
-    send(Message::Request(Request::new(
-        RequestId::from(1),
-        "initialize".to_owned(),
-        json!({"processId": null, "rootUri": null, "capabilities": {}}),
-    )));
-    from_server.recv_timeout(WAIT).expect("initialize response");
-    send(note("initialized", &json!({})));
-    let open =
-        json!({"textDocument": {"uri": URI, "languageId": "markdown", "version": 1, "text": "a"}});
-    send(note("textDocument/didOpen", &open));
-    // From here the client reads nothing. The worker queues its diagnostics, and the
-    // transport blocks. Each change makes the worker publish again, so by the second
-    // `reached` the transport has been blocked for a full message.
-    reached.recv_timeout(WAIT).unwrap();
-    let change = |version: i32| {
-        note(
+    }
+
+    fn note(&self, method: &str, params: &Value) {
+        self.send(Message::Notification(Notification::new(
+            method.to_owned(),
+            params,
+        )));
+    }
+
+    fn change(&self, version: i32) {
+        self.note(
             "textDocument/didChange",
             &json!({"textDocument": {"uri": URI, "version": version},
                     "contentChanges": [{"text": format!("v{version}")}]}),
-        )
-    };
-    send(change(2));
-    reached.recv_timeout(WAIT).unwrap();
-    for version in 3..=5 {
-        send(change(version));
+        );
     }
+
+    /// Handshake, open a document and change it three times, waiting for the server to
+    /// queue each message. Then stop reading: the writer blocks on the transport with more
+    /// messages queued behind the one it holds.
+    fn start_and_stop_reading() -> Self {
+        let session = Self::start();
+        session.send(Message::Request(Request::new(
+            RequestId::from(1),
+            "initialize".to_owned(),
+            json!({"processId": null, "rootUri": null, "capabilities": {}}),
+        )));
+        session
+            .from_server
+            .recv_timeout(WAIT)
+            .expect("initialize response");
+        session.note("initialized", &json!({}));
+        session.note(
+            "textDocument/didOpen",
+            &json!({"textDocument": {"uri": URI, "languageId": "markdown", "version": 1, "text": "a"}}),
+        );
+        session.reached.recv_timeout(WAIT).unwrap();
+        for version in 2..=4 {
+            session.change(version);
+            session.reached.recv_timeout(WAIT).unwrap();
+        }
+        session
+    }
+
+    /// Send `shutdown` and read until its response. The writer still holds diagnostics.
+    fn shutdown_and_read_the_response(&self) {
+        self.send(Message::Request(Request::new(
+            RequestId::from(2),
+            "shutdown".to_owned(),
+            Value::Null,
+        )));
+        loop {
+            if let Message::Response(r) = self
+                .from_server
+                .recv_timeout(WAIT)
+                .expect("shutdown response")
+            {
+                assert_eq!(r.id, RequestId::from(2));
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn a_client_that_stops_reading_does_not_stall_document_updates() {
+    let session = Stalled::start_and_stop_reading();
+    // The transport is blocked. Document updates must still be accepted.
+    session.change(5);
+    session.change(6);
     // The client reads again and gets the latest diagnostics.
     loop {
-        match from_server.recv_timeout(WAIT).expect("latest diagnostics") {
-            Message::Notification(n) if n.params["version"] == 5 => break,
+        match session
+            .from_server
+            .recv_timeout(WAIT)
+            .expect("latest diagnostics")
+        {
+            Message::Notification(n) if n.params["version"] == 6 => break,
             _ => {}
         }
     }
-    send(Message::Request(Request::new(
-        RequestId::from(2),
-        "shutdown".to_owned(),
+    session.shutdown_and_read_the_response();
+    session.note("exit", &Value::Null);
+    // Keep reading while the server finishes, so queued messages cannot block it.
+    let deadline = std::time::Instant::now() + WAIT;
+    let result = loop {
+        if let Ok(result) = session.done.try_recv() {
+            break result;
+        }
+        assert!(std::time::Instant::now() < deadline, "serve did not finish");
+        let _ = session.from_server.recv_timeout(Duration::from_millis(20));
+    };
+    assert_eq!(result.unwrap(), Exit::AfterShutdown);
+}
+
+#[test]
+fn a_clean_exit_does_not_wait_for_a_client_that_stopped_reading() {
+    let session = Stalled::start_and_stop_reading();
+    session.shutdown_and_read_the_response();
+    session.note("exit", &Value::Null);
+    // The client reads nothing more. The wait for queued diagnostics is bounded.
+    let result = session
+        .done
+        .recv_timeout(Duration::from_secs(15))
+        .expect("serve returns although the transport is blocked");
+    assert_eq!(result.unwrap(), Exit::AfterShutdown);
+}
+
+#[test]
+fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
+    let session = Stalled::start_and_stop_reading();
+    session.shutdown_and_read_the_response();
+    // Anything but `exit` after `shutdown` is a protocol error, which ends serve.
+    session.send(Message::Request(Request::new(
+        RequestId::from(3),
+        "textDocument/hover".to_owned(),
         Value::Null,
     )));
-    loop {
-        if let Message::Response(r) = from_server.recv_timeout(WAIT).expect("shutdown response") {
-            assert_eq!(r.id, RequestId::from(2));
-            break;
-        }
-    }
-    send(note("exit", &Value::Null));
-    assert_eq!(handle.join().unwrap().unwrap(), Exit::AfterShutdown);
+    // Shorter than the bounded wait of a clean exit, so waiting for the writer fails it.
+    let result = session
+        .done
+        .recv_timeout(Duration::from_secs(3))
+        .expect("serve returns although the transport is blocked");
+    assert!(
+        matches!(result, Err(ServerError::Protocol(_))),
+        "{result:?}"
+    );
 }
