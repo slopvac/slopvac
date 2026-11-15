@@ -1,7 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://srobroek.github.io/slopvac/schemas/v3/genre.schema.json",
-  "$comment": "STUB(slopvac-8l4.2.20): GenreId and GenreRef mirror Genre from rule.schema.json (PR #281).",
   "title": "slopvac v3 genre",
   "description": "A document purpose class as data. A genre may extend other genres, so a content type such as how-to extends a broader genre. Detection signals score a document, and the genre with the highest score at or above its threshold wins. A config [[genres]] block or front matter overrides detection. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",
@@ -10,7 +9,7 @@
       "$ref": "common.schema.json#/$defs/SchemaVersion"
     },
     "id": {
-      "$ref": "#/$defs/GenreId"
+      "$ref": "rule.schema.json#/$defs/Genre"
     },
     "title": {
       "type": "string",
@@ -29,7 +28,7 @@
       "description": "Genres this one builds on, lowest first. Their settings apply below this genre's.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/GenreRef"
+        "$ref": "config.schema.json#/$defs/Ref"
       },
       "uniqueItems": true
     },
@@ -48,26 +47,26 @@
       "description": "Styles the genre activates, in order.",
       "type": "array",
       "items": {
-        "$ref": "style.schema.json#/$defs/Ref"
+        "$ref": "config.schema.json#/$defs/Ref"
       }
     },
     "categories": {
       "type": "object",
       "propertyNames": {
-        "$ref": "style.schema.json#/$defs/Key"
+        "$ref": "config.schema.json#/$defs/RuleKey"
       },
       "additionalProperties": {
-        "$ref": "style.schema.json#/$defs/Level"
+        "$ref": "config.schema.json#/$defs/CategorySettings"
       },
       "description": "Levels keyed by category name. Keys are data, so the x- convention does not apply."
     },
     "rules": {
       "type": "object",
       "propertyNames": {
-        "$ref": "style.schema.json#/$defs/Key"
+        "$ref": "config.schema.json#/$defs/RuleKey"
       },
       "additionalProperties": {
-        "$ref": "style.schema.json#/$defs/Level"
+        "$ref": "config.schema.json#/$defs/RuleLevel"
       },
       "description": "Levels keyed by rule name. Keys are data, so the x- convention does not apply."
     }
@@ -81,15 +80,6 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "GenreId": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
-    },
-    "GenreRef": {
-      "description": "A genre name: bare when unambiguous across the active packs, or <pack>:<name>.",
-      "type": "string",
-      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
-    },
     "Detect": {
       "description": "Signals that suggest the genre. A document scores the sum of the weights of the signals that match. The genre is a candidate when the score reaches min_score.",
       "type": "object",
