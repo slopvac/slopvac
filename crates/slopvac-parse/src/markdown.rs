@@ -281,7 +281,17 @@ impl<'a> Collector<'a> {
                 }
             }
             Event::Html(_) if self.image_depth == 0 => {
-                let span = self.masked.span(range.start, range.end);
+                let mut span = self.masked.span(range.start, range.end);
+                // The parser reports the `\n` of a CRLF as its own event, without the `\r`
+                // before it. A segment must not start inside the line break.
+                let bytes = self.source.as_bytes();
+                if span.start() > 0
+                    && bytes[span.start() - 1] == b'\r'
+                    && bytes[span.start()] == b'\n'
+                {
+                    span = Span::new(span.start() - 1, span.end().max(span.start() - 1))
+                        .expect("start does not exceed end");
+                }
                 // The lines of one block follow each other, line breaks included. A
                 // container prefix between two lines starts a new segment of the block.
                 if let Some(block) = self.html_blocks.last_mut() {

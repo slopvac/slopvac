@@ -2347,6 +2347,11 @@ dependencies = [
  "predicates",
  "proptest",
  "rstest",
+ "serde",
+ "serde_json",
+ "slopvac-model",
+ "slopvac-report",
+ "slopvac-rules",
  "snapbox",
  "tempfile",
  "tracing",
@@ -2374,10 +2379,13 @@ name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "ignore",
  "insta",
  "saphyr",
+ "serde",
  "serde_json",
  "strsim",
+ "tempfile",
  "thiserror",
  "toml_edit",
 ]
@@ -2415,6 +2423,7 @@ version = "0.0.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
+ "clap",
  "crossbeam-channel",
  "frontmatter-spans",
  "globset",

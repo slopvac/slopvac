@@ -3,12 +3,213 @@
 use std::cell::OnceCell;
 use std::ops::Range;
 
+use slopvac_model::SourceIndex;
 use slopvac_model::Span;
-use slopvac_parse::{BlockKind, Document, Projection, TokenKind};
+use slopvac_parse::{
+    Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
+};
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, split_sentences};
 
 use crate::directives::Lines;
+
+/// `doc` with its raw HTML blocks (`<td>`, `<em>`, `<p>`) read as 2.x reads them: the prose
+/// of one block is one paragraph of the kind `Paragraph`, in source order. Every consumer of
+/// a document then sees the same text: rules of every kind, the counts, the metrics, the
+/// context tags and the skip ranges. Sentences span the elements of the block, so a cell
+/// without a final period runs into the next one.
+///
+/// As in 2.x, the paragraph is not a heading, table cell or list item whatever elements it
+/// came from, and the lists and quotes of the enclosing Markdown do not hold it. Inline code
+/// in the HTML (`<code>`) joins the code spans, and `<pre>` stays a code block. A Markdown
+/// fence inside the block is code, not prose: it becomes a code block and is not shown to
+/// the HTML parser.
+///
+/// # Errors
+/// Returns a [`ParseError`] when an HTML block is too large or its segments are invalid.
+pub(crate) fn with_html_prose(
+    source: &str,
+    index: &SourceIndex<'_>,
+    mut doc: Document,
+) -> Result<Document, ParseError> {
+    let html_blocks = std::mem::take(&mut doc.html_blocks);
+    for block in html_blocks {
+        let (segments, fences) = split_fences(source, &block.segments);
+        for fence in fences {
+            doc.blocks.push(Block {
+                kind: BlockKind::CodeBlock {
+                    lang: None,
+                    info: None,
+                    body: fence,
+                    fenced: true,
+                },
+                span: fence,
+                projection: None,
+                containers: Vec::new(),
+            });
+        }
+        if segments.is_empty() {
+            continue;
+        }
+        let html = parse_html_segments(source, index, &segments)?;
+        doc.code_spans.extend(html.code_spans);
+        let mut prose = Vec::new();
+        for mut inner in html.blocks {
+            if has_prose(&inner) {
+                prose.push(inner);
+            } else {
+                inner.containers.clear();
+                doc.blocks.push(inner);
+            }
+        }
+        let (Some(first), Some(end)) = (
+            prose.iter().map(|b| b.span.start()).min(),
+            prose.iter().map(|b| b.span.end()).max(),
+        ) else {
+            continue;
+        };
+        doc.blocks.push(Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(first, end).expect("a block ends after it starts"),
+            projection: Some(join(prose.iter().filter_map(|b| b.projection.as_ref()))),
+            containers: Vec::new(),
+        });
+    }
+    // Stable, so a container keeps its place before the blocks inside it.
+    doc.blocks
+        .sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+    doc.code_spans.sort_by_key(Span::start);
+    Ok(doc)
+}
+
+/// The fence character and marker length when `line` opens or closes a Markdown fence:
+/// 2.x's `_FENCE_START`, up to three whitespace characters of indent and three or more of `` ` `` or `~`.
+fn fence_marker(line: &str) -> Option<(char, usize)> {
+    // `\s{0,3}`: up to three whitespace characters of any kind, tabs included.
+    let rest = line.trim_start_matches(char::is_whitespace);
+    if line.chars().count() - rest.chars().count() > 3 {
+        return None;
+    }
+    let ch = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let run = rest.chars().take_while(|&c| c == ch).count();
+    (run >= 3).then_some((ch, run))
+}
+
+/// The lines of `text` with their terminators: LF, CRLF or a lone CR ends a line.
+fn split_lines(text: &str) -> impl Iterator<Item = &str> {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        if start >= bytes.len() {
+            return None;
+        }
+        let mut end = start;
+        while end < bytes.len() && !matches!(bytes[end], b'\n' | b'\r') {
+            end += 1;
+        }
+        if end < bytes.len() {
+            end += if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+        }
+        let line = &text[start..end];
+        start = end;
+        Some(line)
+    })
+}
+
+/// The segments of an HTML block without the lines of Markdown fences inside it, and the
+/// source span of each fence (an unclosed one runs to the end of the block), as 2.x's
+/// `_html_fence_lines` finds them. The HTML parser does not know Markdown fences, so it
+/// would read their contents as prose.
+fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
+    // Each line: where it starts, where it ends with its terminator, and its text without.
+    let mut lines: Vec<(usize, usize, &str)> = Vec::new();
+    for segment in segments {
+        let mut at = segment.start();
+        for line in split_lines(&source[segment.start()..segment.end()]) {
+            lines.push((at, at + line.len(), line.trim_end_matches(['\r', '\n'])));
+            at += line.len();
+        }
+    }
+    let mut in_fence = vec![false; lines.len()];
+    let mut fences = Vec::new();
+    let mut open: Option<(char, usize, usize)> = None;
+    for (i, (_, _, text)) in lines.iter().enumerate() {
+        let marker = fence_marker(text);
+        match open {
+            None => {
+                if let Some((ch, run)) = marker {
+                    open = Some((ch, run, i));
+                }
+            }
+            Some((ch, run, from)) => {
+                if marker.is_some_and(|(c, n)| c == ch && n >= run) {
+                    in_fence[from..=i].fill(true);
+                    fences.push((from, i));
+                    open = None;
+                }
+            }
+        }
+    }
+    if let Some((_, _, from)) = open {
+        in_fence[from..].fill(true);
+        fences.push((from, lines.len() - 1));
+    }
+    let span =
+        |start: usize, end: usize| Span::new(start, end).expect("a line ends after it starts");
+    let fence_spans = fences
+        .into_iter()
+        .map(|(from, to)| span(lines[from].0, lines[to].0 + lines[to].2.len()))
+        .collect();
+    let mut kept: Vec<Span> = Vec::new();
+    for (i, &(start, end, _)) in lines.iter().enumerate() {
+        if in_fence[i] {
+            continue;
+        }
+        match kept.last_mut() {
+            Some(last) if last.end() == start => *last = span(last.start(), end),
+            _ => kept.push(span(start, end)),
+        }
+    }
+    (kept, fence_spans)
+}
+
+fn has_prose(block: &Block) -> bool {
+    block
+        .projection
+        .as_ref()
+        .is_some_and(|p| !p.text().is_empty())
+}
+
+/// `projections` as one text, with a synthetic space between them.
+fn join<'p>(projections: impl Iterator<Item = &'p Projection>) -> Projection {
+    let mut joined = Projection::new();
+    let mut end = 0;
+    let mut first = true;
+    for projection in projections {
+        let tokens = projection.tokens();
+        if tokens.is_empty() {
+            continue;
+        }
+        if !first {
+            // The space between blocks bridges the source between them.
+            joined.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
+        }
+        first = false;
+        for (i, token) in tokens.iter().enumerate() {
+            if projection.is_bridge(i) {
+                joined.push_bridge(token.kind, &token.text, token.src);
+            } else {
+                joined.push_unordered(token.kind, &token.text, token.src);
+            }
+            end = token.src.end();
+        }
+    }
+    joined
+}
 
 /// How a unit's offsets map to source bytes.
 #[derive(Clone, Copy)]
@@ -145,28 +346,7 @@ impl<'a> Prepared<'a> {
     fn composite(&self) -> Result<&Composite, TextError> {
         self.composite
             .get_or_init(|| {
-                let mut projection = Projection::new();
-                let mut end = 0;
-                let mut first = true;
-                for block in &self.blocks {
-                    let tokens = block.projection.tokens();
-                    if tokens.is_empty() {
-                        continue;
-                    }
-                    if !first {
-                        // The space between blocks bridges the source between them.
-                        projection.push_bridge(TokenKind::Wrap, " ", Span::empty(end));
-                    }
-                    first = false;
-                    for (i, token) in tokens.iter().enumerate() {
-                        if block.projection.is_bridge(i) {
-                            projection.push_bridge(token.kind, &token.text, token.src);
-                        } else {
-                            projection.push_unordered(token.kind, &token.text, token.src);
-                        }
-                        end = token.src.end();
-                    }
-                }
+                let projection = join(self.blocks.iter().map(|b| b.projection));
                 let sentences = split_sentences(projection.text())?;
                 Ok(Composite {
                     projection,

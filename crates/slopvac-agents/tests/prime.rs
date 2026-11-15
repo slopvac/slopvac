@@ -217,7 +217,17 @@ fn run_renders_the_requested_topic_and_level() {
 fn prime_migrate_prints_the_migration_guide_from_its_one_source() {
     let text = render(Some("migrate"), Level::Default);
     assert_eq!(text.trim_end(), slopvac_migrate::prime_migrate().trim_end());
-    assert!(slopvac_migrate::guide_doc().contains(slopvac_migrate::prime_migrate()));
+    let doc_path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/migrate-2-to-3.md");
+    // Git may check files out with CRLF on Windows; compare line content only.
+    let doc = fs::read_to_string(doc_path).unwrap().replace("\r\n", "\n");
+    let (notice, body) = doc.split_once("-->\n\n").expect("generated-file notice");
+    assert!(notice.starts_with("<!-- Generated from"));
+    assert_eq!(
+        text.trim_end(),
+        body.trim_end(),
+        "prime migrate diverges from docs/migrate-2-to-3.md"
+    );
     for level in [Level::Minimal, Level::Full] {
         assert_eq!(
             render(Some("migrate"), level),

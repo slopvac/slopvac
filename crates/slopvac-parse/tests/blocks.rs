@@ -636,6 +636,15 @@ fn raw_html_blocks_are_listed_by_source_range() {
 }
 
 #[test]
+fn raw_html_segments_never_start_inside_a_crlf() {
+    let source = "<div>\r\nOne.\r\n</div>\r\n\r\nText.\r\n";
+    assert_eq!(
+        html_segments(source, &md(source)),
+        [vec!["<div>\r\nOne.\r\n</div>"]]
+    );
+}
+
+#[test]
 fn a_raw_html_block_in_a_block_quote_is_one_block_with_a_segment_per_line() {
     let source = "> <pre>\n> one\n> two</pre>\n";
     assert_eq!(
