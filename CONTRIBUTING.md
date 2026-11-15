@@ -49,6 +49,8 @@ CI also posts prose and shellcheck findings as review comments on added lines. T
 
 That workflow treats the artifacts as untrusted. It accepts a pull request number only when that PR is open and its head commit is the one the CI run tested. `workflow_run` workflows load from the default branch, so changes to `reviewdog.yml` take effect only after merge. The pass or fail result of the lint jobs does not depend on this path.
 
+Rust test conventions are in [`docs/testing-rust.md`](docs/testing-rust.md). Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot.
+
 ## Rules
 
 Rule definitions live in [`packages/slopvac-lint/src/slopvac/rules/`](packages/slopvac-lint/src/slopvac/rules/). Each YAML file defines a category and its rules. Add examples of text the rule should flag and text it should leave alone.
