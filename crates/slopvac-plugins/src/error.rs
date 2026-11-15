@@ -27,7 +27,9 @@ pub enum PluginError {
     #[error("plugin {0} is not trusted; run `slopvac plugins trust` for it")]
     Untrusted(String),
     /// The installed bytes differ from the hash that trust recorded.
-    #[error("plugin {0} changed after it was trusted")]
+    #[error(
+        "plugin {0} changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content"
+    )]
     HashMismatch(String),
     /// A timer in section 6.3 expired.
     #[error("plugin {plugin} timed out: {what}")]
