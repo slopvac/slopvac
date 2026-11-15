@@ -156,12 +156,21 @@ def main():
     }
 
     def locked(child):
-        """Whether changing the words of a reference changes where it points."""
-        if child.tagname != "reference":
-            return False
+        """Whether a fix inside the words of an inline node could change its meaning.
+
+        Only emphasis and strong written with `*` are plain prose. Interpreted text (a role,
+        or the default role, which docutils may map to any node) is locked, whatever node it
+        became. A reference is locked when its words name its target.
+        """
         raw = child.rawsource or ""
-        if child.get("refname") or not raw.rstrip("_").endswith("`"):
-            return True  # Named, or a bare URL or address: the text is the target.
+        tag = child.tagname
+        if tag in ("emphasis", "strong"):
+            return not raw.startswith("*")
+        if tag != "reference":
+            return True
+        embedded = raw.endswith("_") and raw.rstrip("_").endswith("`")
+        if child.get("refname") or not embedded:
+            return True  # Named, a bare address or a role: the text is the target.
         name = child.get("name")
         # `text <url>`_ also defines a target named by its text.
         return bool(name) and nodes.fully_normalize_name(name) in used_names

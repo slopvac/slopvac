@@ -6,13 +6,18 @@ Fix delta
 Plain delta prose with ``delta literal``, a `delta guide`_, a `delta text <https://example.com/delta>`_
 link, :emphasis:`delta role` and |delta|.
 
+Interpreted `delta default`, :sub:`delta` and `delta role`:abbreviation: stay, while
+*delta star* and **delta strong** are prose.
+
 See https://example.com/delta for delta.
 
 Also `delta shared <https://example.com/s>`_ and `delta shared`_ name one target.
 
 .. _delta guide: https://example.com/delta
 
-.. |delta| replace:: delta substitution
+.. |delta| replace:: delta
+
+.. |other| replace:: delta words
 
 .. delta comment
 
@@ -28,3 +33,7 @@ Also `delta shared <https://example.com/s>`_ and `delta shared`_ name one target
 Literal delta::
 
     delta literal block
+
+.. default-role:: emphasis
+
+Custom `delta emphasis` stays.

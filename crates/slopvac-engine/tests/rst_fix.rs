@@ -34,6 +34,8 @@ const CHANGES: &[(&str, &str)] = &[
     ("Note delta text.", "Note d text."),
     ("Literal delta::", "Literal d::"),
     ("for delta.", "for d."),
+    ("*delta star*", "*d star*"),
+    ("**delta strong**", "**d strong**"),
 ];
 
 fn expected() -> String {
@@ -114,4 +116,96 @@ fn rst_prose_is_fixed_and_everything_else_stays_with_docutils() {
         return;
     }
     check(&e);
+}
+
+/// A fake interpreter that prints the driver output saved in `fixture`.
+#[cfg(unix)]
+fn fake(dir: &std::path::Path, name: &str, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(unix)]
+fn engine_for(path: PathBuf, words: &serde_json::Value) -> Engine {
+    let mut options = RstOptions::default();
+    options.interpreter = Some(path);
+    engine(&[rule(
+        "swap",
+        &json!({"kind": "substitution", "substitutions": words}),
+        &json!({}),
+    )])
+    .with_rst(options)
+}
+
+#[cfg(unix)]
+#[test]
+fn words_in_two_cells_of_a_wrapped_row_are_both_fixed_but_a_phrase_across_the_wrap_is_not() {
+    let dir = common::private_dir("rst-fix-table");
+    let python = fake(
+        &dir,
+        "python",
+        &format!("cat >/dev/null\ncat '{FIXTURES}/table-wrap.json'"),
+    );
+    let source = std::fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap();
+    let e = engine_for(
+        python.clone(),
+        &json!({"continues": "goes", "Rightonly": "solo"}),
+    );
+    let report = fixed(&e, &source);
+    assert_eq!(
+        report.text,
+        source
+            .replacen("continues", "goes", 1)
+            .replacen("Rightonly", "Solo", 1)
+    );
+    assert_eq!(report.applied, 2);
+    // "wrap continues" runs over the line break, which also crosses the cell beside it, so
+    // the text must not change whether the finding is dropped or refused.
+    let e = engine_for(python, &json!({"wrap continues": "x"}));
+    let report = fixed(&e, &source);
+    assert_eq!(report.text, source);
+    assert_eq!(report.applied, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_converter_that_disappears_after_the_lint_fails_the_fix_and_writes_nothing() {
+    use slopvac_engine::{FixError, Kind, fix_file};
+    let dir = common::private_dir("rst-fix-gone");
+    let marker = dir.join("ran");
+    let python = fake(
+        &dir,
+        "python",
+        &format!(
+            "cat >/dev/null\nif [ -e '{m}' ]; then exit 3; fi\ntouch '{m}'\ncat '{FIXTURES}/fix.json'",
+            m = marker.display()
+        ),
+    );
+    let e = engine_for(python.clone(), &json!({"delta": "d"}));
+    let source = source();
+    let input = Input::rst("doc.rst", &source);
+    let doc = e.lint(&input).unwrap();
+    // The first run found the interpreter; the second does not.
+    let error = fix_document(&e, &input, &doc, None).unwrap_err();
+    assert!(matches!(error, FixError::Rst(_)), "{error}");
+
+    let root = common::private_dir("rst-fix-gone-root");
+    std::fs::write(root.join("doc.rst"), &source).unwrap();
+    std::fs::remove_file(&marker).unwrap();
+    let result = fix_file(
+        &e,
+        &root,
+        std::path::Path::new("doc.rst"),
+        Kind::Rst,
+        false,
+        None,
+    );
+    assert!(matches!(result, Err(FixError::Rst(_))), "{result:?}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("doc.rst")).unwrap(),
+        source
+    );
 }

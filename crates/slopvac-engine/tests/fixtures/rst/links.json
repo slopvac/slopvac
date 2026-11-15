@@ -52,7 +52,8 @@
     {
      "k": "i",
      "t": "stress",
-     "raw": ":emphasis:`stress`"
+     "raw": ":emphasis:`stress`",
+     "lock": true
     },
     {
      "k": "t",

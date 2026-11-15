@@ -73,7 +73,8 @@
     {
      "k": "i",
      "t": "delta role",
-     "raw": ":emphasis:`delta role`"
+     "raw": ":emphasis:`delta role`",
+     "lock": true
     },
     {
      "k": "t",
@@ -93,7 +94,67 @@
   {
    "tag": "paragraph",
    "start": 9,
-   "end": 9,
+   "end": 10,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Interpreted "
+    },
+    {
+     "k": "i",
+     "t": "delta default",
+     "raw": "`delta default`",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": ", "
+    },
+    {
+     "k": "i",
+     "t": "delta",
+     "raw": ":sub:`delta`",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "i",
+     "t": "delta role",
+     "raw": "`delta role`:abbreviation:",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " stay, while\n"
+    },
+    {
+     "k": "i",
+     "t": "delta star",
+     "raw": "*delta star*"
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "i",
+     "t": "delta strong",
+     "raw": "**delta strong**"
+    },
+    {
+     "k": "t",
+     "t": " are prose."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 12,
+   "end": 12,
    "pieces": [
     {
      "k": "t",
@@ -114,8 +175,8 @@
   },
   {
    "tag": "paragraph",
-   "start": 11,
-   "end": 11,
+   "start": 14,
+   "end": 14,
    "pieces": [
     {
      "k": "t",
@@ -146,12 +207,24 @@
   },
   {
    "tag": "substitution_definition",
-   "start": 15,
-   "end": 15,
+   "start": 18,
+   "end": 18,
    "pieces": [
     {
      "k": "t",
-     "t": "delta substitution"
+     "t": "delta"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "substitution_definition",
+   "start": 20,
+   "end": 20,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "delta words"
     }
    ],
    "containers": []
@@ -159,15 +232,15 @@
   {
    "tag": "admonition",
    "adm": "note",
-   "start": 19,
-   "end": 22,
+   "start": 24,
+   "end": 27,
    "title": null,
    "containers": []
   },
   {
    "tag": "paragraph",
-   "start": 22,
-   "end": 22,
+   "start": 27,
+   "end": 27,
    "pieces": [
     {
      "k": "t",
@@ -179,16 +252,16 @@
   {
    "tag": "literal_block",
    "code": true,
-   "start": 27,
-   "end": 27,
+   "start": 32,
+   "end": 32,
    "text": "delta = 1",
    "lang": "python",
    "containers": []
   },
   {
    "tag": "paragraph",
-   "start": 28,
-   "end": 28,
+   "start": 33,
+   "end": 33,
    "pieces": [
     {
      "k": "t",
@@ -200,10 +273,32 @@
   {
    "tag": "literal_block",
    "code": true,
-   "start": 30,
-   "end": 30,
+   "start": 35,
+   "end": 35,
    "text": "delta literal block",
    "lang": null,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 39,
+   "end": 39,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Custom "
+    },
+    {
+     "k": "i",
+     "t": "delta emphasis",
+     "raw": "`delta emphasis`",
+     "lock": true
+    },
+    {
+     "k": "t",
+     "t": " stays."
+    }
+   ],
    "containers": []
   }
  ]

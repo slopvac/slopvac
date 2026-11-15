@@ -96,6 +96,7 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
             locked.extend(mapper.mark(node));
             continue;
         }
+        let tag = node.tag.as_str();
         match mapper.block(node) {
             Outcome::Unplaced => unplaced.push(&node.tag),
             Outcome::Empty => {}
@@ -106,7 +107,7 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
                 precise,
             } => {
                 line_precise += usize::from(precise);
-                if block.projection.is_some() && !precise {
+                if !precise && is_prose(&block, tag) {
                     allowed.push(block.span);
                 }
                 locked.extend(locks);
@@ -152,6 +153,17 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
         scanned: mapper.m.scanned(),
         protected: protected(allowed, locked, source.len()),
     }
+}
+
+/// Whether a fix may write in a block. Only the nodes docutils builds from running prose are
+/// listed; definitions, targets and every tag not named here are never writable, so a new
+/// node type is protected until someone decides otherwise.
+fn is_prose(block: &Block, tag: &str) -> bool {
+    block.projection.is_some()
+        && matches!(
+            tag,
+            "paragraph" | "title" | "subtitle" | "term" | "classifier" | "line" | "attribution"
+        )
 }
 
 /// The spans a fix must not touch: `locked`, and every part of the `len`-byte source that
@@ -378,14 +390,23 @@ impl<'a> Mapper<'a> {
         }
     }
 
-    /// Lock the whitespace tokens that hold more than whitespace: the border of a table
-    /// between the lines of a cell.
+    /// Lock what a token over a gap holds besides whitespace: the line breaks and the table
+    /// borders. An edit that crosses a wrapped line of a table cell crosses the words of the
+    /// cells beside it, so it must touch a line break; the words themselves stay fixable
+    /// through their own blocks.
     fn lock_borders(&mut self, placed: &mut Placed) {
         for t in placed.projection.tokens() {
-            if matches!(t.kind, TokenKind::Collapse) && !t.src.is_empty() {
-                let text = self.src.slice_free(&mut self.m, t.src.start(), t.src.end());
-                if text.chars().any(|c| !c.is_whitespace()) {
-                    placed.locks.push(t.src);
+            if !matches!(t.kind, TokenKind::Collapse) || t.src.is_empty() {
+                continue;
+            }
+            let at = t.src.start();
+            let text = self.src.slice_free(&mut self.m, at, t.src.end());
+            if text.chars().all(char::is_whitespace) {
+                continue;
+            }
+            for (i, c) in text.char_indices() {
+                if matches!(c, '\n' | '\r' | '|' | '+') {
+                    placed.locks.push(span(at + i, at + i + 1));
                 }
             }
         }
@@ -754,8 +775,8 @@ impl<'a> Mapper<'a> {
                         }
                         "i" => {
                             let words = self.inline(piece, begin, end, &mut out.toks);
-                            if piece.lock || is_role(&piece.raw) {
-                                // The words name the target or belong to the role.
+                            if piece.lock {
+                                // The words name the target or belong to interpreted text.
                                 out.locks.push(span(begin, end));
                             } else if let Some((from, to)) = words {
                                 // Only the markup around the words is locked.
@@ -1004,11 +1025,6 @@ impl<'a> Mapper<'a> {
         flush(toks, &mut run, run_start, p);
         Some(p)
     }
-}
-
-/// Whether the inline construct is written with a role, before or after its text.
-fn is_role(raw: &str) -> bool {
-    raw.starts_with(':') || (raw.ends_with(':') && raw.contains('`'))
 }
 
 /// Push a token. Whitespace that follows whitespace, or opens the list, is dropped.
