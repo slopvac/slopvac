@@ -42,7 +42,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
 toml = "1"
-jsonschema = "0.61.2"
+# No default features: they pull reqwest and tokio, which ADR 0001 bans (cargo-deny).
+jsonschema = { version = "0.61.2", default-features = false }
 proptest = "1.12.0"
 thiserror = "2"
 html5gum = "0.9"
@@ -115,3 +116,19 @@ panic = "abort"
 # Profile for cargo-dist release builds.
 [profile.dist]
 inherits = "release"
+
+# The skeleton declares every crate before any of them depends on another.
+# Remove a name here when its first dependant lands; cargo-shear then guards it.
+# pcre2-sys is a deliberate version pin of a transitive dependency of pcre2.
+[workspace.metadata.cargo-shear]
+ignored = [
+  "pcre2-sys",
+  "slopvac-agents",
+  "slopvac-config",
+  "slopvac-engine",
+  "slopvac-lsp",
+  "slopvac-migrate",
+  "slopvac-plugins",
+  "slopvac-report",
+  "slopvac-styles",
+]
