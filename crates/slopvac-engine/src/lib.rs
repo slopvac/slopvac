@@ -37,6 +37,7 @@
 //! work tree changed, to scope findings and fixes to them.
 
 mod capitalization;
+pub mod cases;
 mod commit;
 mod diagrams;
 pub mod diff_scope;

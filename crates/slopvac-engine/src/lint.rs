@@ -171,7 +171,7 @@ enum Catalog {
 
 /// The engine.
 pub struct Engine {
-    sets: Vec<RuleSet>,
+    pub(crate) sets: Vec<RuleSet>,
     settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
@@ -189,7 +189,7 @@ pub struct Engine {
     /// Every known rule id.
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
-    running: HashSet<String>,
+    pub(crate) running: HashSet<String>,
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
