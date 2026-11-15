@@ -27,10 +27,15 @@
 //! - A finding is kept when any line of its full span touches a changed range. A finding
 //!   without a source range is dropped, as the 2.x metric findings were.
 //!
-//! Git runs as a hardened subprocess; see the `git` module's notes. No new dependency.
+//! Git runs as a hardened subprocess with an output cap and a deadline; see the `git`
+//! module's notes for the trust model. The patch names lines by LF only, so
+//! [`ChangedLines::ranges_for`] translates them to the line numbers findings use.
 
 mod git;
+mod lines;
 mod patch;
+
+pub use git::Limits;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
@@ -69,6 +74,16 @@ pub enum DiffError {
     /// Git printed a patch this parser does not accept.
     #[error("malformed Git diff: {0}")]
     Malformed(String),
+    /// Git needs an object this clone does not have, and fetching is off. Fetch it, then
+    /// run again. The check is incomplete.
+    #[error("Git object missing from this clone: {0}")]
+    MissingObject(String),
+    /// Git printed more than the output cap. The check is incomplete.
+    #[error("git output exceeded {0} bytes")]
+    OutputTooLarge(usize),
+    /// Git ran past the deadline and was stopped. The check is incomplete.
+    #[error("git did not finish within {0:?}")]
+    TimedOut(std::time::Duration),
     /// A changed path is a symlink.
     #[error("symlinked changed path is not supported: {}", .0.display())]
     Symlink(PathBuf),
@@ -93,13 +108,20 @@ impl ChangedLines {
     }
 
     /// The changed, non-symlink files with their ranges, keyed by absolute path under
-    /// [`Self::root`]. Ranges are 1-based, inclusive, sorted and merged.
+    /// [`Self::root`]. Ranges are 1-based, inclusive, sorted and merged, in git's LF-only
+    /// line numbers; use [`Self::ranges_for`] for the numbers findings carry.
     #[must_use]
     pub fn files(&self) -> &BTreeMap<PathBuf, Vec<RangeInclusive<u32>>> {
         &self.files
     }
 
-    /// The changed lines of `path`: empty when git reports no added line for it.
+    /// The changed lines of `path`, in the line numbers findings use. Empty when git
+    /// reports no added line for it.
+    ///
+    /// Git counts lines by LF only, while findings count LF, CRLF and a lone CR as line
+    /// ends. When the file holds a lone CR this reads the file and translates the ranges;
+    /// a git line that spans several source lines maps to all of them. A file that cannot
+    /// be read as UTF-8 keeps git's numbers.
     ///
     /// `path` may be relative to the current directory. Its directory is resolved but the
     /// final name is not, so a symlink is seen as a symlink.
@@ -107,12 +129,21 @@ impl ChangedLines {
     /// # Errors
     ///
     /// [`DiffError::Symlink`] when `path` is a symlink that git reports as changed.
-    pub fn ranges_for(&self, path: &Path) -> Result<&[RangeInclusive<u32>], DiffError> {
+    pub fn ranges_for(&self, path: &Path) -> Result<Vec<RangeInclusive<u32>>, DiffError> {
         let key = locate(path);
         if self.symlinks.contains(&key) {
             return Err(DiffError::Symlink(key));
         }
-        Ok(self.files.get(&key).map_or(&[][..], Vec::as_slice))
+        let Some(ranges) = self.files.get(&key) else {
+            return Ok(Vec::new());
+        };
+        let text = std::fs::read(&key)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        Ok(match text {
+            Some(text) => lines::to_source_lines(&text, ranges),
+            None => ranges.clone(),
+        })
     }
 
     /// Whether `path` is changed in every line, as an untracked file is.
@@ -137,20 +168,36 @@ impl ChangedLines {
     }
 }
 
-/// Resolve the changed lines for `scope` in the repository that contains `dir`.
+/// Resolve the changed lines for `scope` in the repository that contains `dir`, with the
+/// default [`Limits`].
 ///
 /// # Errors
 ///
 /// A [`DiffError`] when git is missing or fails, `dir` is not in a work tree, the base
-/// is not a commit, or the patch is malformed. The scope is never partial.
+/// is not a commit, an object is missing, a limit is hit, or the patch is malformed. The
+/// scope is never partial.
 pub fn changed_lines(dir: &Path, scope: &DiffScope) -> Result<ChangedLines, DiffError> {
-    let toplevel = git::run(dir, &["rev-parse", "--show-toplevel"]).map_err(|e| match e {
-        DiffError::Git(detail) if detail.is_empty() => {
-            DiffError::NotRepository("not inside a Git repository".to_owned())
-        }
-        DiffError::Git(detail) => DiffError::NotRepository(detail),
-        other => other,
-    })?;
+    changed_lines_with(dir, scope, &Limits::default())
+}
+
+/// [`changed_lines`] with explicit output and time limits for each git call.
+///
+/// # Errors
+///
+/// As [`changed_lines`].
+pub fn changed_lines_with(
+    dir: &Path,
+    scope: &DiffScope,
+    limits: &Limits,
+) -> Result<ChangedLines, DiffError> {
+    let toplevel =
+        git::run(dir, &["rev-parse", "--show-toplevel"], limits).map_err(|e| match e {
+            DiffError::Git(detail) if detail.is_empty() => {
+                DiffError::NotRepository("not inside a Git repository".to_owned())
+            }
+            DiffError::Git(detail) => DiffError::NotRepository(detail),
+            other => other,
+        })?;
     let toplevel = patch::to_path(trim_newline(&toplevel))?;
     let root = std::fs::canonicalize(&toplevel)
         .map_err(|e| DiffError::Git(format!("cannot resolve the Git root: {e}")))?;
@@ -159,13 +206,13 @@ pub fn changed_lines(dir: &Path, scope: &DiffScope) -> Result<ChangedLines, Diff
     let mut diff_args: Vec<&str> = git::DIFF_ARGS.to_vec();
     match scope {
         DiffScope::Base(base) => {
-            range = format!("{}...HEAD", resolve_base(&root, base)?);
+            range = format!("{}...HEAD", resolve_base(&root, base, limits)?);
             diff_args.push(&range);
         }
         DiffScope::WorkingTree => diff_args.push("HEAD"),
     }
     diff_args.push("--");
-    let parsed = patch::parse(&git::run(&root, &diff_args)?)?;
+    let parsed = patch::parse(&git::run(&root, &diff_args, limits)?)?;
 
     let mut changed = ChangedLines {
         root,
@@ -179,6 +226,7 @@ pub fn changed_lines(dir: &Path, scope: &DiffScope) -> Result<ChangedLines, Diff
         let listing = git::run(
             &changed.root,
             &["ls-files", "--others", "--exclude-standard", "-z"],
+            limits,
         )?;
         for entry in listing.split(|b| *b == 0).filter(|e| !e.is_empty()) {
             // A nested repository is listed as `dir/`; it is not a file.
@@ -218,14 +266,18 @@ impl ChangedLines {
 }
 
 /// Turn `base` into a full commit id, so only an id reaches `git diff`.
-fn resolve_base(root: &Path, base: &str) -> Result<String, DiffError> {
+fn resolve_base(root: &Path, base: &str, limits: &Limits) -> Result<String, DiffError> {
     // A leading dash would read as an option; a revision name cannot start with one.
     if base.is_empty() || base.starts_with('-') {
         return Err(DiffError::InvalidBase(base.to_owned()));
     }
     let spec = format!("{base}^{{commit}}");
-    let out = git::run(root, &["rev-parse", "--verify", "--quiet", &spec])
-        .map_err(|_| DiffError::InvalidBase(base.to_owned()))?;
+    let out = git::run(root, &["rev-parse", "--verify", "--quiet", &spec], limits).map_err(
+        |e| match e {
+            DiffError::Git(_) => DiffError::InvalidBase(base.to_owned()),
+            other => other,
+        },
+    )?;
     let id = String::from_utf8_lossy(trim_newline(&out)).into_owned();
     if id.is_empty() || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(DiffError::InvalidBase(base.to_owned()));

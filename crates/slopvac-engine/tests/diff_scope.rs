@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use slopvac_engine::diff_scope::{
-    ChangedLines, DiffError, DiffScope, changed_lines, finding_fixable, finding_in_scope,
-    retain_in_scope,
+    ChangedLines, DiffError, DiffScope, Limits, changed_lines, changed_lines_with, finding_fixable,
+    finding_in_scope, retain_in_scope,
 };
 use slopvac_model::Finding;
 use tempfile::TempDir;
@@ -91,7 +91,7 @@ impl Repo {
     }
 
     fn ranges(&self, changed: &ChangedLines, name: &str) -> Vec<RangeInclusive<u32>> {
-        changed.ranges_for(&self.path(name)).unwrap().to_vec()
+        changed.ranges_for(&self.path(name)).unwrap()
     }
 }
 
@@ -665,4 +665,203 @@ fn a_finding_without_a_fix_is_not_fixable() {
     let f = finding(2, 2, "bad", false);
 
     assert!(!finding_fixable(&f, &[1..=9]));
+}
+
+#[test]
+fn an_empty_new_file_has_no_changed_lines() {
+    let repo = repo!();
+    repo.write("anchor.md", "x\n");
+    let base = repo.commit("base");
+    repo.write("empty.md", "");
+    repo.commit("add empty file");
+
+    assert!(repo.lines(&since(&base)).files().is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_mode_only_change_has_no_changed_lines() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = repo!();
+    repo.write("run.md", "x\n");
+    let base = repo.commit("base");
+    fs::set_permissions(repo.path("run.md"), fs::Permissions::from_mode(0o755)).unwrap();
+    repo.commit("make executable");
+
+    assert!(repo.lines(&since(&base)).files().is_empty());
+}
+
+#[test]
+fn a_pure_deletion_inside_a_file_leaves_no_range() {
+    let repo = repo!();
+    repo.write("doc.md", "a\nb\nc\nd\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\nd\n");
+    repo.commit("delete b and c");
+
+    assert!(repo.lines(&since(&base)).files().is_empty());
+}
+
+#[test]
+fn separated_edits_give_separate_ranges() {
+    let repo = repo!();
+    repo.write("doc.md", "a\nb\nc\nd\ne\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "A\nb\nc\nd\nE\nnew\n");
+    repo.commit("edit");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![1..=1, 5..=6]);
+}
+
+#[test]
+fn changed_text_that_looks_like_patch_headers_is_still_content() {
+    let repo = repo!();
+    repo.write("doc.md", "-- a/other.md\nkeep\n++ b/other.md\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "- a/other.md\nkeep\n+ b/other.md\n");
+    repo.commit("edit");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![1..=1, 3..=3]);
+    assert!(!changed.is_changed(&repo.path("other.md")).unwrap());
+}
+
+#[test]
+fn a_form_feed_before_header_like_text_does_not_split_the_patch() {
+    let repo = repo!();
+    repo.write("doc.md", "keep\nold\n");
+    let base = repo.commit("base");
+    repo.write(
+        "doc.md",
+        "keep\nnote\x0cdiff --git a/ghost.md b/ghost.md\n--- a/ghost.md\n",
+    );
+    repo.commit("edit");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![2..=3]);
+    assert!(!changed.is_changed(&repo.path("ghost.md")).unwrap());
+}
+
+#[test]
+fn a_lone_cr_shifts_source_lines_but_not_git_lines() {
+    let repo = repo!();
+    // Source lines: one=1, two=2, three=3, four=4. Git counts only LF: 3 lines.
+    repo.write("doc.md", "one\rtwo\nthree\r\nfour\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "one\rtwo\nthree\r\nFOUR\n");
+    repo.commit("edit the last line");
+
+    let changed = repo.lines(&since(&base));
+    let ranges = repo.ranges(&changed, "doc.md");
+
+    assert_eq!(ranges, vec![4..=4]);
+    let mut findings = vec![finding(3, 3, "bad", false), finding(4, 4, "bad", false)];
+    retain_in_scope(&mut findings, &ranges);
+    let lines: Vec<usize> = findings.iter().map(|f| f.start.line()).collect();
+    assert_eq!(lines, vec![4]);
+}
+
+#[test]
+fn a_git_line_holding_a_lone_cr_covers_every_source_line_it_spans() {
+    let repo = repo!();
+    // Git line 1 is `one\rtwo` (source lines 1 and 2); git line 2 is `three`.
+    repo.write("doc.md", "one\rtwo\nthree\nfour\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "one\rTWO\nthree\nfour\n");
+    repo.commit("edit");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![1..=2]);
+}
+
+#[test]
+fn mixed_line_terminators_map_each_edit_to_its_source_line() {
+    let repo = repo!();
+    // Source lines: a=1, b=2, c=3, d=4, e=5. Git lines: `a\r`=1, `b\rc`=2, `d\r`=3, `e`=4.
+    repo.write("doc.md", "a\r\nb\rc\nd\r\ne");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\r\nb\rc\nd\r\nE");
+    repo.commit("edit the last line");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![5..=5]);
+}
+
+#[test]
+fn a_whole_file_range_survives_a_lone_cr() {
+    let repo = repo!();
+    repo.write("anchor.md", "x\n");
+    repo.commit("base");
+    repo.write("new.md", "a\rb\nc\n");
+
+    let changed = repo.lines(&DiffScope::WorkingTree);
+
+    assert!(changed.is_whole_file(&repo.path("new.md")).unwrap());
+}
+
+#[test]
+fn output_over_the_cap_is_an_incomplete_error() {
+    let repo = repo!();
+    repo.write("doc.md", "x\n");
+    repo.commit("base");
+    let limits = Limits {
+        max_stdout: 8,
+        ..Limits::default()
+    };
+
+    let err = changed_lines_with(&repo.root, &DiffScope::WorkingTree, &limits).unwrap_err();
+
+    assert!(matches!(err, DiffError::OutputTooLarge(8)), "{err}");
+}
+
+#[test]
+fn a_run_past_the_deadline_is_an_incomplete_error() {
+    let repo = repo!();
+    repo.write("doc.md", "x\n");
+    repo.commit("base");
+    let limits = Limits {
+        timeout: std::time::Duration::ZERO,
+        ..Limits::default()
+    };
+
+    let err = changed_lines_with(&repo.root, &DiffScope::WorkingTree, &limits).unwrap_err();
+
+    assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
+}
+
+/// A partial clone that has no blobs. Reading a blob would make git fetch it from the
+/// origin; the scope must report the object missing instead.
+#[test]
+fn a_missing_object_is_an_incomplete_error_and_is_never_fetched() {
+    let repo = repo!();
+    repo.write("doc.md", "a\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\nb\n");
+    repo.commit("edit");
+    repo.git(&["config", "uploadpack.allowFilter", "true"]);
+    repo.git(&["config", "uploadpack.allowAnySHA1InWant", "true"]);
+    let clone = repo.root.parent().unwrap().join("clone");
+    let url = format!("file://{}", repo.root.display());
+    repo.git(&[
+        "clone",
+        "-q",
+        "--no-checkout",
+        "--filter=blob:none",
+        &url,
+        clone.to_str().unwrap(),
+    ]);
+    let before = repo.git(&["-C", clone.to_str().unwrap(), "count-objects", "-v"]);
+
+    let err = changed_lines(&clone, &since(&base)).unwrap_err();
+
+    assert!(matches!(err, DiffError::MissingObject(_)), "{err}");
+    let after = repo.git(&["-C", clone.to_str().unwrap(), "count-objects", "-v"]);
+    assert_eq!(before, after, "the clone fetched objects");
 }
