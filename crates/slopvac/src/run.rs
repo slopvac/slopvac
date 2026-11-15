@@ -6,12 +6,12 @@ use std::process::ExitCode;
 
 use clap::ArgMatches;
 
-use crate::cli::{self, REMOVED_LINT_OPTIONS};
+use crate::cli;
 use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, logging, offline, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +151,14 @@ fn dispatch(
             write_stdout(out, &generate::completions(shell))
         }
         Some(("init", m)) => init::run(m, out),
+        Some(("rules", m)) => {
+            reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
+            inspect::rules(m, out)
+        }
+        Some(("explain", m)) => {
+            reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
+            inspect::explain(m, out)
+        }
         Some(("man", m)) => man(m, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
@@ -181,6 +189,18 @@ fn dispatch(
             write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
+}
+
+/// Fail with the 3.0 pointer when a removed 2.x option was given.
+fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
+    for name in names {
+        if m.contains_id(name)
+            && let Some(message) = cli::removed_message(name)
+        {
+            return Err(CliError::new("removed-option", message));
+        }
+    }
+    Ok(())
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
@@ -221,11 +241,7 @@ fn lint_with(
     linter: &dyn Linter,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    for (name, message) in REMOVED_LINT_OPTIONS {
-        if m.contains_id(name) {
-            return Err(CliError::new("removed-option", message));
-        }
-    }
+    reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
         tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");

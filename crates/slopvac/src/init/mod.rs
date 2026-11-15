@@ -32,11 +32,7 @@ pub fn harness_names() -> Vec<&'static str> {
 
 /// How a path appears in a message: as given when relative, redacted when absolute.
 fn shown(path: &Path) -> String {
-    if path.is_absolute() {
-        redact::path_for_log(path, &std::env::current_dir().unwrap_or_default())
-    } else {
-        path.display().to_string()
-    }
+    redact::shown_path(path, &std::env::current_dir().unwrap_or_default())
 }
 
 /// Replace the project root in `text` so no absolute path leaves the process.
@@ -159,11 +155,9 @@ fn io_error(path: &Path, err: &std::io::Error) -> CliError {
 /// error code when a harness fails.
 pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
     if m.contains_id("profile")
-        && let Some((_, message)) = crate::cli::REMOVED_LINT_OPTIONS
-            .iter()
-            .find(|(name, _)| *name == "profile")
+        && let Some(message) = crate::cli::removed_message("profile")
     {
-        return Err(CliError::new("removed-option", *message));
+        return Err(CliError::new("removed-option", message));
     }
     let path = m
         .get_one::<PathBuf>("path")

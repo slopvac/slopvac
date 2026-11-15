@@ -115,12 +115,10 @@ missing_panics_doc = "allow"
 [workspace.metadata.cargo-shear]
 ignored = [
   "pcre2-sys",
-  "slopvac-agents",
   "slopvac-config",
   "slopvac-engine",
   "slopvac-lsp",
   "slopvac-plugins",
-  "slopvac-report",
   "slopvac-styles",
 ]
 

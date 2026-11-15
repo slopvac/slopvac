@@ -123,6 +123,33 @@ fn a_paragraph_counts_its_sentences_but_a_list_item_does_not() {
 }
 
 #[test]
+fn a_raw_html_block_is_one_paragraph_for_the_paragraph_metrics() {
+    let rule = metric(
+        "paragraph_sentences",
+        2.0,
+        "gt",
+        &json!({"scope": "paragraph"}),
+    );
+    // Two cells of two sentences each: four sentences in the one block, as in 2.x.
+    let doc = lint(
+        &rule,
+        "<table>\n<tr><td>One. Two.</td><td>Three. Four.</td></tr>\n</table>\n",
+    );
+    assert_eq!(hits(&doc), [(2, "Got 4 over 2.".to_owned())]);
+}
+
+#[test]
+fn a_sentence_metric_reads_a_raw_html_block_as_one_text() {
+    let rule = gt("sentence_words", 3.0);
+    // "No period Next one." is one sentence of four words in 2.x, not two cells of two.
+    let doc = lint(
+        &rule,
+        "<table>\n<tr><td>No period</td><td>Next one.</td></tr>\n</table>\n",
+    );
+    assert_eq!(hits(&doc), [(2, "Got 4 over 3.".to_owned())]);
+}
+
+#[test]
 fn a_long_paragraph_counts_only_when_three_sentences_hold_a_series() {
     let rule = metric(
         "enumerating_paragraph_words",

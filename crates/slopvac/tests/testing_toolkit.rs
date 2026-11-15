@@ -7,8 +7,19 @@ use proptest::prelude::*;
 use rstest::rstest;
 use snapbox::cmd::{Command, cargo_bin};
 
+/// The binary under test, with the ambient colour and logging settings cleared so
+/// a developer's or CI's `FORCE_COLOR` cannot change the output.
 fn slopvac() -> Command {
-    Command::new(cargo_bin!("slopvac"))
+    let mut cmd = Command::new(cargo_bin!("slopvac"));
+    for var in [
+        "SLOPVAC_OFFLINE",
+        "SLOPVAC_LOG",
+        "FORCE_COLOR",
+        "CLICOLOR_FORCE",
+    ] {
+        cmd = cmd.env_remove(var);
+    }
+    cmd.env("NO_COLOR", "1")
 }
 
 /// snapbox: assert on output with inline expectations. `[..]` matches any text.
@@ -23,9 +34,9 @@ fn version_prints_name_and_semver() {
 
 /// rstest: one behaviour, several inputs. Cases differ only in data.
 #[rstest]
-#[case::long("--help")]
 #[case::short("-h")]
-fn help_flags_succeed(#[case] flag: &str) {
+#[case::version_short("-V")]
+fn short_flags_succeed(#[case] flag: &str) {
     slopvac().arg(flag).assert().success();
 }
 
