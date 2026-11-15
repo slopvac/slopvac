@@ -54,7 +54,7 @@ language = "markdown"
 id = "rule-examples-ai-tells-structure"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/ai-tells-structure.md"
-sha256 = "8d7fee91596ffd0ed9d285ca1790ba6c122667d1ff7df17d2f39ca31d63600d7"
+sha256 = "601513f00167ac9af32c961ae9b4648943062e9b7c0c9e1f1187fd342fc051b4"
 surface = "prose"
 language = "markdown"
 
