@@ -1,4 +1,5 @@
-//! Built-in taggers: declarative ones from `taggers.yaml`, sentence-level code taggers.
+//! Built-in taggers: declarative ones from `taggers.yaml`, structural ones from
+//! `structural.yaml`, and sentence-level code taggers.
 
 mod leadin;
 mod sentence;
