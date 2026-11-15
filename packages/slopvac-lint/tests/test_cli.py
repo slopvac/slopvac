@@ -1834,6 +1834,27 @@ def test_rst_without_converter_is_unchecked_but_other_files_score(
     )
 
 
+def test_an_excluded_rst_file_needs_no_converter(runner, tmp_path, monkeypatch):
+    """A file the config excludes is not a target, so a missing converter does not matter."""
+    _write(tmp_path, "a.md", CLEAN)
+    (tmp_path / "fixtures").mkdir()
+    _write(tmp_path, "fixtures/b.rst", "A title\n=======\n\nPlain text.\n")
+    (tmp_path / "slopvac.toml").write_text(
+        'profile = "normal"\nexclude = ["fixtures/**"]\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        main, ["lint", "a.md", "fixtures/b.rst", "--no-vale", "--format", "json"]
+    )
+
+    report = json.loads(result.output)
+    assert {Path(doc["path"]).name for doc in report["documents"]} == {"a.md"}
+    notes = [note for doc in report["documents"] for note in doc["unchecked"]]
+    assert not any("RST" in note for note in notes), notes
+
+
 def test_explicit_rst_without_converter_is_unchecked(runner, tmp_path, monkeypatch):
     path = _write(tmp_path, "only.rst", "A title\n=======\n\nPlain text.\n")
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))

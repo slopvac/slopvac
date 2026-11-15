@@ -869,6 +869,9 @@ def load_run_context(
         base = load_discovered(discovered)
         source = base.source.resolve() if base.source is not None else None
         config = effective_by_source[source]
+        if config.is_excluded(_relative_to_config(path, config)):
+            # An excluded file is not a target, so it cannot leave the run incomplete.
+            continue
         if message.startswith("unsupported source language skipped:"):
             if config.mode is Mode.CODE_COMMENTS and message not in informational:
                 informational.append(message)
