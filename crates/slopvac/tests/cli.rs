@@ -503,6 +503,8 @@ fn stopped_reader_run(documents: usize) -> Stopped {
     };
     finished.store(true, Ordering::SeqCst);
     let _ = child.lock().unwrap().kill();
+    // Reap the child so discarded attempts leave no zombie behind.
+    let _ = child.lock().unwrap().wait();
     watchdog.join().unwrap();
     drop((stdin, stdout));
     match outcome {
