@@ -389,3 +389,31 @@ fn a_tab_indented_fence_in_a_raw_html_block_is_never_rewritten() {
         "<div>\n\t```\ndelta code\n\t```\nSee d now.\n</div>\n"
     );
 }
+
+#[test]
+fn fenced_code_in_a_raw_html_block_stays_with_every_line_ending() {
+    let e = single("delta", "d", &json!({}));
+    for eol in ["\n", "\r\n", "\r"] {
+        let text = [
+            "<div>",
+            "```",
+            "delta code",
+            "```",
+            "See delta now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        let want = [
+            "<div>",
+            "```",
+            "delta code",
+            "```",
+            "See d now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        assert_eq!(fix(&e, &text, None).text, want, "{eol:?}");
+    }
+}

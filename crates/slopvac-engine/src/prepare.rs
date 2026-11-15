@@ -95,6 +95,31 @@ fn fence_marker(line: &str) -> Option<(char, usize)> {
     (run >= 3).then_some((ch, run))
 }
 
+/// The lines of `text` with their terminators: LF, CRLF or a lone CR ends a line.
+fn split_lines(text: &str) -> impl Iterator<Item = &str> {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        if start >= bytes.len() {
+            return None;
+        }
+        let mut end = start;
+        while end < bytes.len() && !matches!(bytes[end], b'\n' | b'\r') {
+            end += 1;
+        }
+        if end < bytes.len() {
+            end += if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+        }
+        let line = &text[start..end];
+        start = end;
+        Some(line)
+    })
+}
+
 /// The segments of an HTML block without the lines of Markdown fences inside it, and the
 /// source span of each fence (an unclosed one runs to the end of the block), as 2.x's
 /// `_html_fence_lines` finds them. The HTML parser does not know Markdown fences, so it
@@ -104,7 +129,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
     let mut lines: Vec<(usize, usize, &str)> = Vec::new();
     for segment in segments {
         let mut at = segment.start();
-        for line in source[segment.start()..segment.end()].split_inclusive('\n') {
+        for line in split_lines(&source[segment.start()..segment.end()]) {
             lines.push((at, at + line.len(), line.trim_end_matches(['\r', '\n'])));
             at += line.len();
         }

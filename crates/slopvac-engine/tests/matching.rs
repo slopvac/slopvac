@@ -566,3 +566,27 @@ fn a_tab_indented_fence_inside_a_raw_html_block_is_code() {
     assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 5)]);
     assert_eq!((doc.words, doc.sentences), (3, 1));
 }
+
+#[test]
+fn a_fence_in_a_raw_html_block_is_code_with_every_line_ending() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    for eol in ["\n", "\r\n", "\r"] {
+        let text = [
+            "<div>",
+            "```",
+            "leverage code",
+            "```",
+            "See leverage now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        let doc = lint(&e, &text);
+        assert_eq!(
+            places(&doc),
+            [("core:cat.dull".to_owned(), 5, 5)],
+            "{eol:?}"
+        );
+        assert_eq!((doc.words, doc.sentences), (3, 1), "{eol:?}");
+    }
+}
