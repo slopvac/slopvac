@@ -14,7 +14,9 @@ so that is command injection. This script rewrites the generated text:
   fails unless it still points at the commit the workflow runs on (CWE-367);
 * the Windows build step runs under bash, where `$TAG_FLAG` is an environment
   variable (under PowerShell it expands to nothing);
-* the CycloneDX step output is read as `outputs`, which dist spells `output`.
+* the CycloneDX step output is read as `outputs`, which dist spells `output`;
+* artifacts are signed with minisign before they reach the draft release;
+* the Homebrew job pushes with a token minted from the release App, not a stored secret.
 
 Run `scripts/dist_generate.sh` instead of `dist generate`. Each rewrite must
 match exactly once, so a dist upgrade that changes the template fails loudly
@@ -158,6 +160,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
+    text = _mint_tap_token(text)
     text = _route_by_major_version(text)
     _assert_clean(text)
     return text
@@ -229,6 +232,37 @@ _VERIFY_STEP = """\
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
 """
 _HOST_STEP = "      - id: host\n"
+
+# cargo-dist reads a long-lived HOMEBREW_TAP_TOKEN secret to push the formula. Mint a
+# short-lived installation token from the release App instead, scoped to the tap.
+_TAP_TOKEN_OLD = "          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}\n"
+_TAP_TOKEN_NEW = "          token: ${{ steps.tap-token.outputs.token }}\n"
+_TAP_MINT_STEP = """\
+      # `client-id`, not `app-id`, and the same App credentials as release-please.yml.
+      - name: Mint the Homebrew tap token
+        id: tap-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: srobroek
+          repositories: homebrew-tap
+          permission-contents: write
+"""
+
+
+def _mint_tap_token(text: str) -> str:
+    """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App."""
+    if text.count(_TAP_TOKEN_OLD) != 1:
+        raise ValueError(
+            f"expected exactly one Homebrew tap token, found {text.count(_TAP_TOKEN_OLD)}"
+        )
+    end = text.index(_TAP_TOKEN_OLD)
+    checkout = text.rfind("      - uses: actions/checkout@", 0, end)
+    if checkout < 0:
+        raise ValueError("expected a checkout step before the Homebrew tap token")
+    text = text.replace(_TAP_TOKEN_OLD, _TAP_TOKEN_NEW)
+    return text[:checkout] + _TAP_MINT_STEP + text[checkout:]
 
 
 def _verify_tag_before_publishing(text: str) -> str:

@@ -503,3 +503,52 @@ def test_minisign_is_installed_by_the_pinned_script(workflow):
         _host_step_index(workflow, "Install minisign")
     ]
     assert step["run"] == "bash scripts/install_minisign.sh"
+
+
+# --- Homebrew tap token minted from the release App -----------------------------
+
+
+def _homebrew_steps(workflow) -> list[dict]:
+    return workflow["jobs"]["publish-homebrew-formula"]["steps"]
+
+
+def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workflow):
+    steps = _homebrew_steps(workflow)
+    mint = steps[0]
+    assert mint["id"] == "tap-token"
+    assert mint["uses"].startswith(
+        "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 "
+    )
+    assert mint["with"] == {
+        "client-id": "${{ vars.RELEASE_APP_CLIENT_ID }}",
+        "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+        "owner": "srobroek",
+        "repositories": "homebrew-tap",
+        "permission-contents": "write",
+    }
+    checkout = steps[1]
+    assert checkout["with"]["repository"] == "srobroek/homebrew-tap"
+    assert checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
+
+
+def test_the_app_action_matches_the_pin_release_please_uses():
+    release_please = (ROOT / ".github" / "workflows" / "release-please.yml").read_text(
+        encoding="utf-8"
+    )
+    pin = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0"
+    assert pin in release_please
+    assert pin in WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_no_repository_secret_named_homebrew_tap_token_is_read():
+    for path in (ROOT / ".github" / "workflows").glob("*.yml"):
+        assert "secrets.HOMEBREW_TAP_TOKEN" not in path.read_text(encoding="utf-8")
+
+
+def test_a_second_tap_token_in_the_template_fails_the_patch(raw):
+    old = "          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}\n"
+    assert old in raw
+    with pytest.raises(ValueError, match="expected exactly one Homebrew"):
+        patcher.harden(raw.replace(old, old + old))
+    with pytest.raises(ValueError, match="expected exactly one Homebrew"):
+        patcher.harden(raw.replace(old, ""))
