@@ -5,12 +5,15 @@
 
 mod common;
 
+#[cfg(unix)]
 use std::io::Error;
 use std::path::Path;
 
 use common::{engine, rule};
 use serde_json::json;
-use slopvac_engine::{Engine, FileFix, FileResult, Kind, Refusal, Step, fix_file, fix_file_hooked};
+use slopvac_engine::{Engine, FileFix, FileResult, Kind, Refusal, fix_file};
+#[cfg(unix)]
+use slopvac_engine::{Step, fix_file_hooked};
 
 const DOC: &str = "Use delta here.\n";
 const FIXED: &str = "Use d here.\n";
@@ -183,6 +186,7 @@ fn a_path_outside_the_root_is_refused() {
 }
 
 /// Run `tamper` at `step` of a write to `doc.md`, with `swaps()`.
+#[cfg(unix)]
 fn at(
     root: &Path,
     step: Step,

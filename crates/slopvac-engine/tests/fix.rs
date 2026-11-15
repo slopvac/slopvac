@@ -316,3 +316,36 @@ fn an_autolink_inside_an_image_does_not_unprotect_the_image_destination() {
         "![see <https://example.com> now](img/delta.png) d\n"
     );
 }
+
+#[test]
+fn a_regex_in_an_attribute_expression_never_exposes_the_attributes_after_it() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    let mut parsed = 0;
+    // Whatever the scanner makes of the regex, the later attribute stays protected. The MDX
+    // parser rejects some of these, and those are skipped.
+    for text in [
+        "<A b={/['{]\\}>/} c=\"delta\" />\n\ndelta\n",
+        "<A b={x / 2} c=\"delta\" />\n\ndelta\n",
+        "<A b={/}>/.test(s)} c=\"delta\" />\n\ndelta\n",
+        "<A b={/[}]>/} c=\"delta\" />\n\ndelta\n",
+    ] {
+        let input = Input::mdx("doc.mdx", text);
+        let Ok(doc) = raw.lint(&input) else { continue };
+        parsed += 1;
+        let fixed = fix_document(&input, &doc, None).unwrap().text;
+        assert!(fixed.contains("c=\"delta\""), "{text:?} became {fixed:?}");
+        assert!(fixed.ends_with("\n\nd\n"), "{text:?} became {fixed:?}");
+    }
+    assert!(parsed >= 2, "only {parsed} inputs parsed");
+}
+
+#[test]
+fn every_js_line_terminator_ends_a_comment_in_a_tag() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    for terminator in ["\n", "\r", "\u{2028}", "\u{2029}"] {
+        let text = format!("<A b={{1 // note{terminator}}} c=\"delta\">delta</A>\n");
+        let fixed = fix_mdx(&raw, &text);
+        let want = format!("<A b={{1 // note{terminator}}} c=\"delta\">d</A>\n");
+        assert_eq!(fixed, want, "{terminator:?}");
+    }
+}
