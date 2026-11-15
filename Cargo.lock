@@ -2375,6 +2375,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-migrate",
+ "slopvac-text",
  "tempfile",
  "thiserror",
 ]
