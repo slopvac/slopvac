@@ -3,6 +3,7 @@
 //! The blocks come from the code blocks of `slopvac-parse`, so fences in lists,
 //! block quotes and MDX follow the same rules as the prose engine.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use slopvac_model::Span;
@@ -24,7 +25,8 @@ pub struct DiagramBlock {
 /// # Errors
 /// Returns the parser's error when the document does not parse.
 pub fn find_markdown_blocks(markdown: &str) -> Result<Vec<DiagramBlock>, ParseError> {
-    Ok(diagram_blocks(&parse_markdown(markdown, whole(markdown))?))
+    let source = lone_cr_as_lf(markdown);
+    Ok(diagram_blocks(&parse_markdown(&source, whole(&source))?))
 }
 
 /// Find the diagram fences of an MDX document.
@@ -32,7 +34,26 @@ pub fn find_markdown_blocks(markdown: &str) -> Result<Vec<DiagramBlock>, ParseEr
 /// # Errors
 /// Returns the parser's error when the document is not valid MDX.
 pub fn find_mdx_blocks(mdx: &str) -> Result<Vec<DiagramBlock>, ParseError> {
-    Ok(diagram_blocks(&parse_mdx(mdx, whole(mdx))?))
+    let source = lone_cr_as_lf(mdx);
+    Ok(diagram_blocks(&parse_mdx(&source, whole(&source))?))
+}
+
+/// `slopvac-parse` does not treat a lone CR as a line ending in fences, but the
+/// positions contract does. Swapping each CR that does not precede LF for LF
+/// keeps the byte length, so every offset still addresses the original text.
+fn lone_cr_as_lf(source: &str) -> Cow<'_, str> {
+    let bytes = source.as_bytes();
+    let lone = |i: usize| bytes[i] == b'\r' && bytes.get(i + 1) != Some(&b'\n');
+    if !(0..bytes.len()).any(lone) {
+        return Cow::Borrowed(source);
+    }
+    // CR and LF are ASCII, so the swap keeps the text valid UTF-8.
+    Cow::Owned(
+        source
+            .char_indices()
+            .map(|(i, c)| if c == '\r' && lone(i) { '\n' } else { c })
+            .collect(),
+    )
 }
 
 fn whole(source: &str) -> Span {
@@ -92,8 +113,31 @@ mod tests {
     }
 
     #[test]
-    fn indented_code_is_not_a_diagram() {
-        assert_eq!(bodies("    mermaid\n    A-->B\n"), []);
+    fn indented_apparent_fence_is_not_a_diagram() {
+        assert_eq!(bodies("    ```mermaid\n    A-->B\n    ```\n"), []);
+    }
+
+    #[test]
+    fn unterminated_fence_runs_to_the_end_of_the_document() {
+        let md = "```mermaid\nA-->B\n";
+        let blocks = find_markdown_blocks(md).unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].format, Format::Mermaid);
+        assert_eq!(blocks[0].body, 11..md.len());
+    }
+
+    #[test]
+    fn mixed_and_lone_cr_endings_keep_original_offsets() {
+        let md = "x\r\n```mermaid\rA-->B\r```\r\n";
+        assert_eq!(bodies(md), [(Format::Mermaid, "A-->B\r")]);
+    }
+
+    #[test]
+    fn mdx_lone_cr_endings_keep_original_offsets() {
+        let mdx = "x\r\n```mermaid\rA-->B\r```\r\n";
+        let blocks = find_mdx_blocks(mdx).unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(&mdx[blocks[0].body.clone()], "A-->B\r");
     }
 
     #[test]
