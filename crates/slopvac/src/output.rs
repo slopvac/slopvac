@@ -1,6 +1,7 @@
 //! Deliver a lint report: `--format` picks the renderer, `--out` the destination
 //! (compat rows `opt:lint:--format`, `opt:lint:--out`, `behavior:report-out-open`).
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::{ArgMatches, parser::ValueSource};
@@ -55,9 +56,18 @@ pub fn deliver(
     out.flush().map_err(failed)
 }
 
+/// Replace `path` atomically: write a temp file beside it, then rename over it
+/// (policies 1.8), so a failed write leaves the previous report intact.
 fn write_file(path: &Path, text: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, text)
+    let dir = match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(parent) => {
+            std::fs::create_dir_all(parent)?;
+            parent
+        }
+        None => Path::new("."),
+    };
+    let mut file = tempfile::NamedTempFile::new_in(dir)?;
+    file.write_all(text.as_bytes())?;
+    file.persist(path).map_err(|err| err.error)?;
+    Ok(())
 }

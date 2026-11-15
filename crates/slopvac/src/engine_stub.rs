@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use slopvac_model::Report;
+use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel, Report};
 
 use crate::errors::CliError;
 use crate::redact;
@@ -105,20 +105,31 @@ impl Linter for StubLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut outcome = RunOutcome::default();
         let mut docs = Vec::new();
+        let mut skipped = Vec::new();
         if let Some(bytes) = &request.stdin {
-            check(redact::STDIN_NAME, bytes, &mut outcome, &mut docs);
+            check(
+                redact::STDIN_NAME,
+                bytes,
+                &mut outcome,
+                &mut docs,
+                &mut skipped,
+            );
         }
         for path in &request.targets {
             let shown = shown_path(path, &request.root);
             match std::fs::read(path) {
-                Ok(bytes) => check(&shown, &bytes, &mut outcome, &mut docs),
-                Err(err) => outcome.incomplete.push(CliError::new(
+                Ok(bytes) => check(&shown, &bytes, &mut outcome, &mut docs, &mut skipped),
+                Err(err) => skip(
                     "input-unreadable",
+                    &shown,
                     format!("{shown}: {}", err.kind()),
-                )),
+                    &mut outcome,
+                    &mut skipped,
+                ),
             }
         }
         outcome.report = clean_report(&docs);
+        outcome.report.notices = skipped;
         outcome
     }
 }
@@ -131,15 +142,42 @@ fn shown_path(path: &Path, root: &Path) -> String {
     }
 }
 
-fn check(name: &str, bytes: &[u8], outcome: &mut RunOutcome, docs: &mut Vec<(String, usize)>) {
+/// Record a skipped input as an incomplete-run error and a report notice.
+fn skip(
+    code: &'static str,
+    shown: &str,
+    message: String,
+    outcome: &mut RunOutcome,
+    notices: &mut Vec<Notice>,
+) {
+    let error = CliError::new(code, message);
+    notices.push(Notice {
+        code: KebabName::new(code).expect("skip codes are kebab-case"),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new(error.message.clone()).expect("messages are not empty"),
+        path: Some(shown.to_owned()),
+    });
+    outcome.incomplete.push(error);
+}
+
+fn check(
+    name: &str,
+    bytes: &[u8],
+    outcome: &mut RunOutcome,
+    docs: &mut Vec<(String, usize)>,
+    notices: &mut Vec<Notice>,
+) {
     if let Ok(text) = std::str::from_utf8(bytes) {
         outcome.documents += 1;
         docs.push((name.to_owned(), text.split_whitespace().count()));
         outcome.sources.insert(name.to_owned(), text.to_owned());
     } else {
-        outcome.incomplete.push(CliError::new(
+        skip(
             "input-not-utf8",
+            name,
             format!("{name}: not valid UTF-8"),
-        ));
+            outcome,
+            notices,
+        );
     }
 }

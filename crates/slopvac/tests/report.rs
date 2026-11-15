@@ -273,3 +273,76 @@ fn invalid_utf8_stdin_writes_no_report() {
         .code(2)
         .stdout(predicate::str::is_empty());
 }
+
+#[test]
+fn skipped_inputs_become_notices_with_codes_and_no_absolute_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("good.md"), TEXT).unwrap();
+    fs::write(dir.path().join("bad.md"), b"\xff\xfe").unwrap();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args([
+            "lint",
+            "good.md",
+            "bad.md",
+            "missing.md",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&out).expect("json");
+    assert!(validator().is_valid(&report), "{report}");
+    assert_eq!(report["documents"].as_array().unwrap().len(), 1);
+    let notices: Vec<(&str, &str, &str)> = report["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| {
+            (
+                n["code"].as_str().unwrap(),
+                n["level"].as_str().unwrap(),
+                n["path"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        notices,
+        [
+            ("input-not-utf8", "warning", "bad.md"),
+            ("input-unreadable", "warning", "missing.md"),
+        ]
+    );
+    assert!(
+        !report
+            .to_string()
+            .contains(&dir.path().display().to_string())
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_out_write_keeps_the_previous_report() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("report.json");
+    fs::write(&target, "previous").unwrap();
+    // The file stays writable but the directory refuses new entries, so only a
+    // truncate-in-place write could still succeed or damage it.
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    if fs::File::create(dir.path().join("probe")).is_ok() {
+        return; // running with privileges that ignore permissions
+    }
+    slopvac()
+        .args(["lint", "--stdin", "--format", "json", "--out"])
+        .arg(&target)
+        .write_stdin(TEXT)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[output-failed]: "));
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(), "previous");
+}
