@@ -23,6 +23,10 @@
 //! metrics it does not measure) are skipped, and each document says so in an `info`
 //! notice.
 //!
+//! [`fix_document`] and [`fix_file`] apply the single-replacement substitutions that a run
+//! found, atomically and never over code, links or front matter. [`unified_diff`] renders a
+//! dry run.
+//!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.
 
@@ -30,6 +34,7 @@ mod diagrams;
 mod directives;
 pub mod discover;
 mod exceptions;
+mod fix;
 mod lint;
 mod matching;
 mod metrics;
@@ -41,6 +46,10 @@ mod tagging;
 
 pub use diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite};
+pub use fix::{
+    FileFix, FixError, FixReport, Refusal, SkipReason, Skipped, fix_document, fix_file,
+    unified_diff,
+};
 pub use lint::{Engine, EngineError, Input, Kind};
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};

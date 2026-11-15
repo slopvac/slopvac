@@ -16,6 +16,7 @@ frontmatter-spans = { workspace = true }
 globset.workspace = true
 ignore.workspace = true
 rayon = { workspace = true }
+similar.workspace = true
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
 slopvac-model = { workspace = true }

@@ -1,0 +1,8 @@
+{
+ "CONTRIBUTING.md": {
+  "reason": "2.x maps the position of a match after inline code to the wrong column, finds a different text there and skips the fix, so it leaves one `should` that Rust fixes at the right place."
+ },
+ "fix/code-span": {
+  "reason": "The 2.x position bug moves the fix onto the second inline code span: it rewrites `utilize` inside backticks and leaves the prose word. Rust fixes the prose word and never edits code."
+ }
+}
