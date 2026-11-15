@@ -23,6 +23,8 @@ use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
 use crate::matching::format_message;
 use crate::prepare::Prepared;
 use crate::skip;
+use crate::tagging;
+use slopvac_context::TagIndex;
 
 /// The rules that may own the sweep, most preferred first. STE 1.1 is the clause that a
 /// blocklist answers.
@@ -186,11 +188,26 @@ impl Run<'_> {
                 .collect(),
         };
         let mut out = Vec::new();
-        self.sweep_document(&sweep, self.parsed, self.prepared, &mut out)?;
+        self.sweep_document(&sweep, self.parsed, self.tags, self.prepared, &mut out)?;
         for block in &self.parsed.html_blocks {
-            let html = parse_html_segments(self.input.source, &self.index, block)?;
+            let mut html = parse_html_segments(self.input.source, &self.index, &block.segments)?;
+            // The block's prose sits in the containers of the Markdown block it came from,
+            // outside any ancestry of its own.
+            for inner in &mut html.blocks {
+                inner
+                    .containers
+                    .splice(0..0, block.containers.iter().copied());
+            }
+            let tags = tagging::tag(
+                &self.engine.tagger,
+                self.input.path,
+                self.input.source,
+                &html,
+                None,
+            )
+            .map_err(|e| EngineError::Context(e.to_string()))?;
             let prepared = Prepared::new(self.input.source, &html)?;
-            self.sweep_document(&sweep, &html, &prepared, &mut out)?;
+            self.sweep_document(&sweep, &html, &tags, &prepared, &mut out)?;
         }
         Ok(out)
     }
@@ -199,6 +216,7 @@ impl Run<'_> {
         &self,
         sweep: &Sweep<'_>,
         doc: &Parsed,
+        tags: &TagIndex,
         prepared: &Prepared<'_>,
         out: &mut Vec<Finding>,
     ) -> Result<(), EngineError> {
@@ -223,7 +241,7 @@ impl Run<'_> {
                 let range: Range<usize> = token.span.clone();
                 let span = unit.span(&range);
                 if skip.hides(span)
-                    || self.guarded(rule, &sweep.detectors, unit.text, &range, span)
+                    || self.guarded_in(tags, doc, rule, &sweep.detectors, unit.text, &range, span)
                     || self.suppressed(sweep.loaded.id().as_str(), &sweep.exceptions, span)
                 {
                     continue;

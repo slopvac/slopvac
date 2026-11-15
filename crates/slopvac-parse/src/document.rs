@@ -83,6 +83,17 @@ pub enum Container {
     BlockQuote,
 }
 
+/// A raw HTML block of a Markdown file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HtmlBlock {
+    /// The source ranges that hold the block's text, in order. Consecutive lines are one
+    /// range. A block in a block quote or list item has one range per line, because the
+    /// container prefix sits between the lines.
+    pub segments: Vec<Span>,
+    /// The lists and block quotes that hold the block, outermost first.
+    pub containers: Vec<Container>,
+}
+
 /// One block and where it sits in the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -112,7 +123,7 @@ pub struct Document {
     /// has one range per line, because the container prefix sits between the lines. Read the
     /// ranges as one stream with [`crate::parse_html_segments`]. Only the Markdown parser
     /// fills this.
-    pub html_blocks: Vec<Vec<Span>>,
+    pub html_blocks: Vec<HtmlBlock>,
 }
 
 /// Why a document did not parse.

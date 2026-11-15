@@ -22,7 +22,7 @@ mod projection;
 mod work;
 
 pub use document::{
-    Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, ParseError,
+    Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, HtmlBlock, ParseError,
 };
 #[doc(hidden)]
 pub use html::{

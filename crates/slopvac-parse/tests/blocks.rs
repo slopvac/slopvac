@@ -4,7 +4,7 @@
 
 use slopvac_model::Span;
 use slopvac_parse::{
-    Admonition, AdmonitionSyntax, Block, BlockKind, Document, ParseError, TokenKind,
+    Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, ParseError, TokenKind,
     parse_markdown, parse_mdx,
 };
 
@@ -619,7 +619,7 @@ fn blocks_come_in_source_order_with_containers_first() {
 fn html_segments<'a>(source: &'a str, doc: &Document) -> Vec<Vec<&'a str>> {
     doc.html_blocks
         .iter()
-        .map(|block| block.iter().map(|s| slice(source, *s)).collect())
+        .map(|block| block.segments.iter().map(|s| slice(source, *s)).collect())
         .collect()
 }
 
@@ -651,4 +651,22 @@ fn two_raw_html_blocks_stay_two_blocks() {
         html_segments(source, &md(source)),
         [vec!["<p>a</p>"], vec!["<p>b</p>"]]
     );
+}
+#[test]
+fn raw_html_blocks_carry_their_containers() {
+    let quoted = "> <p>a</p>\n";
+    assert_eq!(
+        md(quoted).html_blocks[0].containers,
+        [Container::BlockQuote]
+    );
+    let listed = "- item\n\n  <p>a</p>\n";
+    assert_eq!(
+        md(listed).html_blocks[0].containers,
+        [Container::ListItem {
+            ordered: false,
+            depth: 1
+        }]
+    );
+    let top = "<p>a</p>\n";
+    assert_eq!(md(top).html_blocks[0].containers, []);
 }

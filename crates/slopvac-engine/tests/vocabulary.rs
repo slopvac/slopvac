@@ -476,3 +476,56 @@ fn an_escaped_backtick_stays_attached_to_its_word_as_in_vale() {
     let doc = lint(&[("deploy", "noun")], "The deploy\\` failed.\n");
     assert_eq!(matched(&doc), Vec::<&str>::new());
 }
+const QUOTED_HTML: &str = "> <p>Please request data</p>\n\n<p>Please request data</p>\n";
+
+fn lines(doc: &Document) -> Vec<usize> {
+    doc.findings.iter().map(|f| f.start.line()).collect()
+}
+
+#[test]
+fn a_quote_exclusion_reaches_raw_html_in_a_block_quote() {
+    let doc = lint_with(
+        &json!({"exclude_blocks": ["quote"]}),
+        &[("request", "verb")],
+        QUOTED_HTML,
+    );
+    assert_eq!(lines(&doc), [3]);
+}
+
+#[test]
+fn a_quote_exclusion_reaches_raw_html_in_a_list_item() {
+    let source = "- item\n\n  <p>Please request data</p>\n\n<p>Please request data</p>\n";
+    let doc = lint_with(
+        &json!({"exclude_blocks": ["list-item"]}),
+        &[("request", "verb")],
+        source,
+    );
+    assert_eq!(lines(&doc), [5]);
+}
+
+#[test]
+fn context_gates_see_raw_html_in_a_block_quote() {
+    let skip = lint_with(
+        &json!({"contexts": {"skip": ["quote"]}}),
+        &[("request", "verb")],
+        QUOTED_HTML,
+    );
+    assert_eq!(lines(&skip), [3]);
+    let only = lint_with(
+        &json!({"contexts": {"only": ["quote"]}}),
+        &[("request", "verb")],
+        QUOTED_HTML,
+    );
+    assert_eq!(lines(&only), [1]);
+}
+
+#[test]
+fn a_tag_exception_detector_suppresses_raw_html_in_a_block_quote() {
+    // A detector with no registered implementation matches a context tag of that name.
+    let doc = lint_with(
+        &json!({"exceptions": [{"name": "quoted", "detector": "quote"}]}),
+        &[("request", "verb")],
+        QUOTED_HTML,
+    );
+    assert_eq!(lines(&doc), [3]);
+}

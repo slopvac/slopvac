@@ -647,9 +647,25 @@ impl Run<'_> {
         range: &Range<usize>,
         span: Span,
     ) -> bool {
+        self.guarded_in(self.tags, self.parsed, rule, detectors, text, range, span)
+    }
+
+    /// [`Self::guarded`] for text of another parse of the file, with that parse's context
+    /// tags and document.
+    #[allow(clippy::too_many_arguments)]
+    fn guarded_in(
+        &self,
+        tags: &TagIndex,
+        document: &Parsed,
+        rule: &slopvac_rules::Rule,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+    ) -> bool {
         let gate = rule.contexts.as_ref();
         let kinds = if gate.is_some() || !detectors.is_empty() {
-            self.tags.kinds_at(&(span.start()..span.end()))
+            tags.kinds_at(&(span.start()..span.end()))
         } else {
             Vec::new()
         };
@@ -666,7 +682,7 @@ impl Run<'_> {
             text,
             range,
             span,
-            document: self.parsed,
+            document,
             tags: &kinds,
         };
         detectors

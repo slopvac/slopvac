@@ -8,7 +8,7 @@ use slopvac_model::{SourceIndex, Span};
 use crate::align::{ProseBuilder, align};
 use crate::code::{code_kind, trim_terminator};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Container, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, HtmlBlock, ParseError, TokenKind};
 
 const BOM: &str = "\u{feff}";
 
@@ -83,13 +83,15 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
     let mut document = finish(blocks, code_spans);
     document.html_blocks = html_blocks
         .into_iter()
-        .filter_map(|mut segments| {
+        .filter_map(|mut block| {
             // The last line's terminator is not part of the block.
-            let last = segments.pop()?;
+            let last = block.segments.pop()?;
             let text = &source[last.start()..last.end()];
             let kept = text.trim_end_matches(['\n', '\r']).len();
-            segments.push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
-            Some(segments)
+            block
+                .segments
+                .push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
+            Some(block)
         })
         .collect();
     Ok(document)
@@ -121,7 +123,7 @@ struct Collector<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
-    html_blocks: Vec<Vec<Span>>,
+    html_blocks: Vec<HtmlBlock>,
     open: Option<Open>,
     code: Option<OpenCode>,
     image_depth: usize,
@@ -282,7 +284,8 @@ impl<'a> Collector<'a> {
                 let span = self.masked.span(range.start, range.end);
                 // The lines of one block follow each other, line breaks included. A
                 // container prefix between two lines starts a new segment of the block.
-                if let Some(segments) = self.html_blocks.last_mut() {
+                if let Some(block) = self.html_blocks.last_mut() {
+                    let segments = &mut block.segments;
                     match segments.last_mut() {
                         Some(last) if last.end() == span.start() => {
                             *last = Span::new(last.start(), span.end().max(last.end()))
@@ -376,7 +379,10 @@ impl<'a> Collector<'a> {
             }
             Tag::HtmlBlock => {
                 self.flush();
-                self.html_blocks.push(Vec::new());
+                self.html_blocks.push(HtmlBlock {
+                    segments: Vec::new(),
+                    containers: self.containers.clone(),
+                });
             }
             Tag::Image { .. } => {
                 self.inline_range(&range);
