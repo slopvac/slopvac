@@ -102,7 +102,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
             at += line.len();
         }
     }
-    let mut fenced = vec![false; lines.len()];
+    let mut in_fence = vec![false; lines.len()];
     let mut fences = Vec::new();
     let mut open: Option<(char, usize, usize)> = None;
     for (i, (_, _, text)) in lines.iter().enumerate() {
@@ -115,7 +115,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
             }
             Some((ch, run, from)) => {
                 if marker.is_some_and(|(c, n)| c == ch && n >= run) {
-                    fenced[from..=i].fill(true);
+                    in_fence[from..=i].fill(true);
                     fences.push((from, i));
                     open = None;
                 }
@@ -123,7 +123,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
         }
     }
     if let Some((_, _, from)) = open {
-        fenced[from..].fill(true);
+        in_fence[from..].fill(true);
         fences.push((from, lines.len() - 1));
     }
     let span =
@@ -134,7 +134,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
         .collect();
     let mut kept: Vec<Span> = Vec::new();
     for (i, &(start, end, _)) in lines.iter().enumerate() {
-        if fenced[i] {
+        if in_fence[i] {
             continue;
         }
         match kept.last_mut() {
@@ -233,7 +233,7 @@ struct HtmlParagraph {
 }
 
 /// Text with its sentences: a Markdown block, or the prose of a raw HTML block.
-pub(crate) struct Sentences<'p> {
+pub(crate) struct Counted<'p> {
     /// The kind of the Markdown block. A raw HTML block has none.
     pub(crate) kind: Option<&'p BlockKind>,
     /// Whether a list item or a block quote holds the Markdown block.
@@ -337,18 +337,18 @@ impl<'a> Prepared<'a> {
 
     /// The text with sentences to count and measure, in document order. A raw HTML block is
     /// one text, as in 2.x, however many elements it holds.
-    pub(crate) fn sentence_sources(&self) -> Vec<Sentences<'_>> {
+    pub(crate) fn sentence_sources(&self) -> Vec<Counted<'_>> {
         let mut seen = vec![false; self.html.len()];
         let mut out = Vec::new();
         for block in &self.blocks {
             match block.html {
-                None => out.push(Sentences {
+                None => out.push(Counted {
                     kind: Some(block.kind),
                     contained: block.contained,
                     projection: block.projection,
                     sentences: &block.sentences,
                 }),
-                Some(i) if !std::mem::replace(&mut seen[i], true) => out.push(Sentences {
+                Some(i) if !std::mem::replace(&mut seen[i], true) => out.push(Counted {
                     kind: None,
                     contained: false,
                     projection: &self.html[i].projection,
