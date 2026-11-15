@@ -276,7 +276,10 @@ mod tests {
         if std::env::var_os("SLOPVAC_UPDATE_TEMPLATE").is_some() {
             std::fs::write(&path, &generated).unwrap();
         }
-        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
+        // A Windows checkout may convert the committed file to CRLF.
+        let checked_in = std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
         assert!(
             checked_in == generated,
             "templates/slopvac.toml is stale; run `SLOPVAC_UPDATE_TEMPLATE=1 cargo test -p slopvac template_is_current`"
