@@ -229,6 +229,11 @@ _NORMAL_RULES: dict[str, RuleSettings] = {
 
 _STRICT_RULES: dict[str, RuleSettings] = {
     **_OFF_BY_DEFAULT,
+    # The appositive contrast states a real scope as often as it narrates a
+    # strawman, so strict reports a warning, not the category's error.
+    "ai-tells-structure.contrastive-appositive": RuleSettings(
+        severity=Severity.WARNING
+    ),
     "ai-tells-structure.definitional-negation-pair": RuleSettings(
         severity=Severity.WARNING
     ),
