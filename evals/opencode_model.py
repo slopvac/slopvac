@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -55,6 +56,8 @@ CREDENTIAL_ENV = (
 )
 CREDENTIAL_TIMEOUT = 60
 MIN_LIFETIME = 600  # seconds a credential must still be valid when an attempt starts
+CREDENTIAL_WAIT = 330  # longest wait for the CLI to hand out fresh credentials
+CREDENTIAL_POLL = 20
 CREDENTIAL_KEYS = {
     "AccessKeyId": "AWS_ACCESS_KEY_ID",
     "SecretAccessKey": "AWS_SECRET_ACCESS_KEY",
@@ -156,15 +159,29 @@ def fresh_credentials(
     profile: str,
     parent: Mapping[str, str],
     now: Callable[[], dt.datetime] = lambda: dt.datetime.now(dt.UTC),
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, str]:
-    """Credentials with at least MIN_LIFETIME seconds left; export again once if short."""
-    for _ in range(2):
+    """Credentials with at least MIN_LIFETIME seconds left.
+
+    The AWS CLI serves cached credentials until shortly before they expire and
+    only then fetches new ones. When the cached ones are short-lived, wait inside
+    this one attempt and export again, instead of failing and burning a retry.
+    The wait is measured on a monotonic clock and bounded, so the attempt still
+    ends before the harness timeout.
+    """
+    deadline = clock() + CREDENTIAL_WAIT
+    while True:
         credentials, expiry = export_credentials(profile, parent)
         if expiry is None or (expiry - now()).total_seconds() >= MIN_LIFETIME:
             return credentials
-    raise ModelCallError(
-        f"credentials for profile {profile!r} expire in under {MIN_LIFETIME // 60} minutes"
-    )
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise ModelCallError(
+                f"credentials for profile {profile!r} expire in under "
+                f"{MIN_LIFETIME // 60} minutes after waiting {CREDENTIAL_WAIT}s for fresh ones"
+            )
+        sleep(min(CREDENTIAL_POLL, remaining))
 
 
 def parse_events(stdout: str) -> str:

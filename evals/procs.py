@@ -26,7 +26,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 # The adapter must give up before the harness does, so the adapter can report why.
-ADAPTER_TIMEOUT = 600
+# The credential wait (330s), one credential export (60s) and the model call (500s)
+# must stay below the harness limit.
+ADAPTER_TIMEOUT = 500
 OUTER_TIMEOUT = 900
 POLL_SECONDS = 0.02
 

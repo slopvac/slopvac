@@ -815,22 +815,57 @@ def test_credentials_with_enough_lifetime_are_used_as_they_are(
     assert len(calls) == exports
 
 
-def test_short_lived_credentials_are_exported_again(monkeypatch):
-    export, calls = fake_export(
-        [NOW + dt.timedelta(minutes=9, seconds=59), NOW + dt.timedelta(hours=1)]
+class FakeClock:
+    """A monotonic clock that only moves when the test sleeps."""
+
+    def __init__(self):
+        self.t = 0.0
+        self.slept = []
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.t += seconds
+
+    def __call__(self):
+        return self.t
+
+
+def test_short_lived_credentials_wait_for_a_fresh_export_inside_one_attempt(
+    monkeypatch,
+):
+    short = NOW + dt.timedelta(minutes=9, seconds=59)
+    export, calls = fake_export([short, short, NOW + dt.timedelta(hours=1)])
+    monkeypatch.setattr(opencode_model, "export_credentials", export)
+    clock = FakeClock()
+    creds = opencode_model.fresh_credentials(
+        "p", {}, now=lambda: NOW, sleep=clock.sleep, clock=clock
     )
-    monkeypatch.setattr(opencode_model, "export_credentials", export)
-    assert opencode_model.fresh_credentials("p", {}, now=lambda: NOW) == CREDS
-    assert len(calls) == 2
+    assert creds == CREDS and len(calls) == 3
+    assert clock.slept == [opencode_model.CREDENTIAL_POLL] * 2
 
 
-def test_an_attempt_is_refused_when_the_credentials_stay_short_lived(monkeypatch):
+def test_an_attempt_is_refused_after_a_bounded_wait_when_credentials_stay_short(
+    monkeypatch,
+):
     short = NOW + dt.timedelta(minutes=3)
-    export, calls = fake_export([short, short])
+    export, calls = fake_export([short] * 100)
     monkeypatch.setattr(opencode_model, "export_credentials", export)
+    clock = FakeClock()
     with pytest.raises(opencode_model.ModelCallError, match="under 10 minutes"):
-        opencode_model.fresh_credentials("p", {}, now=lambda: NOW)
-    assert len(calls) == 2
+        opencode_model.fresh_credentials(
+            "p", {}, now=lambda: NOW, sleep=clock.sleep, clock=clock
+        )
+    assert sum(clock.slept) == opencode_model.CREDENTIAL_WAIT  # 330s, then it gives up
+    assert len(calls) == len(clock.slept) + 1
+
+
+def test_the_credential_wait_and_the_model_call_fit_inside_the_harness_timeout():
+    total = (
+        opencode_model.CREDENTIAL_WAIT
+        + opencode_model.CREDENTIAL_TIMEOUT
+        + procs.ADAPTER_TIMEOUT
+    )
+    assert total < procs.OUTER_TIMEOUT
 
 
 def test_each_attempt_resolves_credentials_again(fake_opencode, tmp_path):
