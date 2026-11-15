@@ -1,0 +1,45 @@
+schema_version: 3
+id: filler-phrase
+name: Cut the filler phrase
+message: 'filler: {match} -- cut it'
+severity: warning
+scope: prose
+text_type: any
+match:
+  kind: tokens
+  tokens: [needless to say, it goes without saying]
+  ignore_case: true
+  match_all_caps: false
+exclude_blocks: [code, code-span, front-matter, quote]
+contexts:
+  skip: [change-note, requirement]
+applies_to:
+  modes: [prose]
+  genres: [consumer, internal]
+exceptions:
+  - name: quotation
+    detector: quotation
+  - name: api-name
+    description: The phrase is part of a product or API name.
+allowlist: [Needless to Say Records]
+examples:
+  - bad: Needless to say, the build passed.
+    good: The build passed.
+cases:
+  - input: Needless to say, we shipped.
+    want: 1
+    contains: [Needless to say]
+  - input: We shipped.
+    want: 0
+  - input: It goes without saying that we shipped.
+    want: {min: 1, max: 2}
+    absent: [shipped]
+fix: Delete the phrase.
+ai_signal: weak
+ai_signal_source: catalog
+citation:
+  source: Orwell 1946
+  orwell_ref: stale-figure
+  url: https://example.org/orwell
+  note: Reworded.
+x-owner: docs-team

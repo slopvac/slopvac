@@ -1,0 +1,23 @@
+{
+  "schema_version": 3,
+  "id": "c",
+  "title": "t",
+  "description": "d",
+  "rules": [
+    {
+      "id": "r",
+      "name": "n",
+      "message": "m",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "x"
+        ]
+      },
+      "citation": {
+        "source": "s"
+      },
+      "tiers": {}
+    }
+  ]
+}
