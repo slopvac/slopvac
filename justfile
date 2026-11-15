@@ -146,3 +146,8 @@ docs-site:
     cd site && npm ci && npm run build
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
     rm -rf site/dist/api && cp -R target/doc site/dist/api
+
+# Measure Rust line coverage (needs cargo-llvm-cov and the llvm-tools-preview component); writes target/llvm-cov/lcov.info and prints a summary.
+coverage:
+    cargo llvm-cov nextest --workspace --locked --no-tests=pass --lcov --output-path target/llvm-cov/lcov.info
+    cargo llvm-cov report --summary-only

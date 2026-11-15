@@ -98,7 +98,11 @@ jobs:
   codeql:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.code }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, python, rust]
     permissions:
       contents: read
       security-events: write
@@ -110,9 +114,12 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
-          languages: python
+          languages: ${{ matrix.language }}
+          build-mode: none
       - name: Analyze
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:${{ matrix.language }}
 
   osv:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.dependencies }}
