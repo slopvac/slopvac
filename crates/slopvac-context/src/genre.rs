@@ -9,7 +9,7 @@ use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 
-use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key};
+use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key, present};
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
 /// The level a rule or category reports at (`RuleLevel` in `config.schema.json`).
@@ -69,15 +69,19 @@ pub enum NoBudget {
 }
 
 /// The table form of `CategorySettings`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct CategoryTable {
     /// Level of the category.
+    #[serde(default, deserialize_with = "present")]
     pub severity: Option<RuleLevel>,
     /// Lowest level that inherited rules may report at.
+    #[serde(default, deserialize_with = "present")]
     pub minimum_severity: Option<RuleLevel>,
     /// Density budget.
+    #[serde(default, deserialize_with = "present")]
     pub max_per_100_words: Option<Budget>,
     /// Multiplier on the category's share of the score.
+    #[serde(default, deserialize_with = "present")]
     pub weight: Option<f64>,
     #[serde(flatten)]
     _extensions: Extensions,
@@ -116,6 +120,28 @@ impl<'de> Deserialize<'de> for CategorySettings {
             }
         }
         d.deserialize_any(V)
+    }
+}
+
+impl CategorySettings {
+    fn as_table(&self) -> CategoryTable {
+        match self {
+            Self::Level(l) => CategoryTable {
+                severity: Some(*l),
+                ..CategoryTable::default()
+            },
+            Self::Table(t) => t.clone(),
+        }
+    }
+}
+
+impl CategoryTable {
+    /// Set every dial that `over` sets.
+    fn patch(&mut self, over: &CategoryTable) {
+        self.severity = over.severity.or(self.severity);
+        self.minimum_severity = over.minimum_severity.or(self.minimum_severity);
+        self.max_per_100_words = over.max_per_100_words.or(self.max_per_100_words);
+        self.weight = over.weight.or(self.weight);
     }
 }
 
@@ -178,12 +204,16 @@ pub struct Signal {
     #[serde(default = "default_weight")]
     pub weight: f32,
     /// `path`: glob over the path.
+    #[serde(default, deserialize_with = "present")]
     pub glob: Option<String>,
     /// `front-matter`: key name.
+    #[serde(default, deserialize_with = "present")]
     pub key: Option<String>,
     /// `front-matter`: exact value; absent means the key only has to exist.
+    #[serde(default, deserialize_with = "present")]
     pub equals: Option<Scalar>,
     /// `heading` and `text`: PCRE2 pattern.
+    #[serde(default, deserialize_with = "present")]
     pub pattern: Option<String>,
     #[serde(flatten)]
     _extensions: Extensions,
@@ -218,17 +248,22 @@ pub struct GenreSpec {
     /// Genre id, `^[a-z][a-z0-9-]*$`.
     pub id: String,
     /// Display title.
+    #[serde(default, deserialize_with = "present")]
     pub title: Option<String>,
     /// What the genre is for.
+    #[serde(default, deserialize_with = "present")]
     pub description: Option<String>,
     /// Typical documents, for people.
+    #[serde(default, deserialize_with = "present")]
     pub surfaces: Option<String>,
     /// Genres this one builds on, lowest first. Their settings apply below this genre's.
     #[serde(default)]
     pub extends: Vec<String>,
     /// Strictness profile that the genre selects when no other layer sets one.
+    #[serde(default, deserialize_with = "present")]
     pub profile: Option<Profile>,
     /// Detection. A genre without it is never detected.
+    #[serde(default, deserialize_with = "present")]
     pub detect: Option<Detect>,
     /// Styles the genre activates, in order.
     #[serde(default)]
@@ -559,12 +594,15 @@ impl GenreRegistry {
         Ok(out)
     }
 
-    /// Settings per category for a genre. Later genres in the chain win over earlier ones,
-    /// an entry at a time.
-    pub fn categories(&self, id: &str) -> Result<BTreeMap<String, CategorySettings>, Error> {
-        let mut out = BTreeMap::new();
+    /// Settings per category for a genre. A map merges by key, and a later genre in the
+    /// chain patches an earlier one's entry dial by dial (`docs/contract/config.md`,
+    /// section 1.2). A bare level counts as `severity`.
+    pub fn categories(&self, id: &str) -> Result<BTreeMap<String, CategoryTable>, Error> {
+        let mut out: BTreeMap<String, CategoryTable> = BTreeMap::new();
         for s in self.chain(id)? {
-            out.extend(s.categories.iter().map(|(k, v)| (k.clone(), v.clone())));
+            for (k, v) in &s.categories {
+                out.entry(k.clone()).or_default().patch(&v.as_table());
+            }
         }
         Ok(out)
     }
@@ -705,7 +743,7 @@ impl GenreRegistry {
                     }
                     Matcher::Text(p) => p
                         .find(&body)?
-                        .map(|m| ("text", format!("text `{}`", &body[m]))),
+                        .map(|m| ("text", format!("text `{}`", lossy(&body, m)))),
                     Matcher::Path(glob) => glob
                         .is_match(rel)
                         .then(|| ("path", format!("path `{}`", doc.path()))),
@@ -735,6 +773,11 @@ impl Genre {
     fn is_candidate(&self, score: f32) -> bool {
         !self.signals.is_empty() && score >= self.min_score
     }
+}
+
+/// The matched bytes as text. A pattern such as `\C` can end a match inside a character.
+fn lossy(text: &str, range: std::ops::Range<usize>) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(text.as_bytes().get(range).unwrap_or_default())
 }
 
 /// The genre name in a `Ref`. A registry holds one set of genres, so the pack prefix of a

@@ -96,3 +96,10 @@
     frontmatter:
       key: generated
       matches: '^(?:true|yes)$'
+
+- id: generated-notice
+  kind: generated
+  scope: paragraph
+  confidence: 0.8
+  when:
+    sentence: '\b(?:this file is (?:auto-?)?generated|auto-?generated (?:file|by)|do not edit (?:this|by hand))\b'

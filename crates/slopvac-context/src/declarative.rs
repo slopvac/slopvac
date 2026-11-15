@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::schema::{Extensions, check_schema_version, is_name};
+use crate::schema::{Extensions, check_schema_version, is_name, present};
 use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
 
 /// The text unit that receives the tag.
@@ -57,8 +57,10 @@ impl Unit {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Matcher {
     /// PCRE2 pattern. Exactly one of `pattern` and `words` is set.
+    #[serde(default, deserialize_with = "present")]
     pub pattern: Option<String>,
     /// Words and phrases, matched as whole words.
+    #[serde(default, deserialize_with = "present")]
     pub words: Option<Vec<String>>,
     /// Match case. Matching ignores case when false.
     #[serde(default)]
@@ -75,6 +77,7 @@ pub struct TaggerSpec {
     /// Tagger id, `^[a-z][a-z0-9-]*$`.
     pub id: String,
     /// What the tagger does, for people.
+    #[serde(default, deserialize_with = "present")]
     pub description: Option<String>,
     /// The context tag the tagger sets.
     pub tag: String,
@@ -91,6 +94,7 @@ pub struct TaggerSpec {
     #[serde(default = "one")]
     pub confidence: f32,
     /// Short text that explains the tag in reports.
+    #[serde(default, deserialize_with = "present")]
     pub evidence: Option<String>,
     #[serde(flatten)]
     _extensions: Extensions,
@@ -169,7 +173,7 @@ impl Matcher {
     }
 }
 
-/// A PCRE2 pattern for whole words and phrases. `None` for an empty list, an empty entry
+/// A PCRE2 pattern for whole words and phrases, with Unicode-aware word boundaries. `None` for an empty list, an empty entry
 /// or a repeated entry.
 fn words_pattern(words: &[String]) -> Option<String> {
     let mut seen = std::collections::BTreeSet::new();
@@ -177,7 +181,10 @@ fn words_pattern(words: &[String]) -> Option<String> {
         return None;
     }
     let alternatives: Vec<String> = words.iter().map(|w| escape(w)).collect();
-    Some(format!(r"(?<!\w)(?:{})(?!\w)", alternatives.join("|")))
+    Some(format!(
+        r"(*UCP)(?<![\w\p{{M}}])(?:{})(?![\w\p{{M}}])",
+        alternatives.join("|")
+    ))
 }
 
 fn escape(word: &str) -> String {

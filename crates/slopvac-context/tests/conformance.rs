@@ -149,7 +149,7 @@ fn every_built_in_tagger_satisfies_the_tagger_schema() {
     let v = validator("tagger.schema.json");
     let list = builtin("taggers.yaml");
     let taggers = list.as_array().unwrap();
-    assert_eq!(taggers.len(), 2);
+    assert_eq!(taggers.len(), 1);
     for t in taggers {
         let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);

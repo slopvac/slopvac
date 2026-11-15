@@ -10,13 +10,3 @@
   evidence: The sentence names a version.
   match:
     - pattern: '\bv\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b|\b(?:version|release|since|until)\s+v?\d+\.\d+\b'
-
-- schema_version: 3
-  id: generated-notice
-  description: A paragraph that says the file is generated.
-  tag: generated
-  unit: paragraph
-  confidence: 0.8
-  evidence: The paragraph says the file is generated.
-  match:
-    - pattern: '\b(?:this file is (?:auto-?)?generated|auto-?generated (?:file|by)|do not edit (?:this|by hand))\b'

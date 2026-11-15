@@ -1,7 +1,7 @@
 //! Declarative tagger behaviour (`tagger.schema.json`) through the public API.
 #![allow(clippy::assert_is_empty)]
 
-use slopvac_context::{PlainDocument, TagRegistry, Tagger, TaggerSpec};
+use slopvac_context::{BlockKind, OwnedBlock, PlainDocument, TagRegistry, Tagger, TaggerSpec};
 
 fn spec(yaml: &str) -> Result<Box<dyn Tagger>, slopvac_context::Error> {
     Ok(Box::new(TaggerSpec::from_yaml(yaml)?.compile()?))
@@ -97,4 +97,84 @@ fn x_keys_are_ignored_and_other_unknown_keys_are_errors() {
 fn a_wrong_schema_version_is_an_error() {
     let y = "schema_version: 2\nid: t\ntag: k\nmatch:\n  - pattern: a\n";
     assert!(spec(y).is_err());
+}
+
+#[test]
+fn a_list_item_unit_tags_matching_list_items_only() {
+    let y = format!("{HEAD}unit: list-item\nmatch:\n  - pattern: 'must'\n");
+    let src = "# T\n\nA paragraph that must stay.\n\n- One must go.\n- Two may stay.\n";
+    assert_eq!(tagged(&y, src), ["One must go."]);
+}
+
+fn cell(span: std::ops::Range<usize>, text: &str, kind: BlockKind) -> OwnedBlock {
+    OwnedBlock {
+        kind,
+        span,
+        text: text.to_owned(),
+        heading_path: vec![],
+        heading_level: None,
+        admonition_title: None,
+    }
+}
+
+#[test]
+fn a_table_cell_unit_tags_matching_cells_only() {
+    let src = "| must | may |\n";
+    let doc = PlainDocument {
+        path: "a.md".into(),
+        source_len: src.len(),
+        blocks: vec![
+            cell(2..6, "must", BlockKind::TableRow),
+            cell(9..12, "may", BlockKind::TableRow),
+            cell(0..4, "must", BlockKind::Paragraph),
+        ],
+        ..Default::default()
+    };
+    let y = format!("{HEAD}unit: table-cell\nmatch:\n  - pattern: 'must'\n");
+    let mut reg = TagRegistry::new();
+    reg.register(spec(&y).unwrap()).unwrap();
+    let spans: Vec<_> = reg
+        .tag_document(&doc)
+        .unwrap()
+        .tags()
+        .iter()
+        .map(|t| t.span.clone())
+        .collect();
+    assert_eq!(spans, vec![2..6]);
+}
+
+#[test]
+fn word_matchers_respect_non_ascii_letters_next_to_the_word() {
+    let y = format!("{HEAD}match:\n  - words: ['must']\n");
+    let src = "# T\n\nIt musté run. Un must\u{e9} aussi. Xmust y. It must run.\n";
+    assert_eq!(tagged(&y, src), ["It must run."]);
+    let before = format!("{HEAD}match:\n  - words: ['été']\n");
+    assert_eq!(
+        tagged(
+            &before,
+            "# T\n\nL\u{e9}t\u{e9} est la. Un \u{e9}t\u{e9} ici. Xété y.\n"
+        ),
+        ["Un été ici."]
+    );
+}
+
+#[test]
+fn present_null_fields_are_errors() {
+    for extra in [
+        "description: null\n",
+        "evidence: null\n",
+        "unit: null\n",
+        "confidence: null\n",
+    ] {
+        let y = format!("{HEAD}{extra}match:\n  - pattern: a\n");
+        assert!(spec(&y).is_err(), "{extra}");
+    }
+    for m in [
+        "pattern: null",
+        "words: null\n    pattern: a",
+        "case_sensitive: null\n    pattern: a",
+    ] {
+        let y = format!("{HEAD}match:\n  - {m}\n");
+        assert!(spec(&y).is_err(), "{m}");
+    }
 }

@@ -40,6 +40,16 @@ impl<'de> Deserialize<'de> for Extensions {
     }
 }
 
+/// `deserialize_with` for optional fields: absent is `None`, but a present `null` is an
+/// error, because the schemas give every field a type that excludes null.
+pub(crate) fn present<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(d).map(Some)
+}
+
 pub(crate) fn check_schema_version(what: &str, v: u32) -> Result<(), Error> {
     if v == SCHEMA_VERSION {
         Ok(())

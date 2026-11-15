@@ -2,8 +2,8 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    Budget, CategorySettings, Error, GenreAssignment, GenreRegistry, GenreSource, NoBudget,
-    PlainDocument, Profile, ResolveOptions, RuleLevel, builtin_genres, parse_genres,
+    Budget, Error, GenreAssignment, GenreRegistry, GenreSource, NoBudget, PlainDocument, Profile,
+    ResolveOptions, RuleLevel, builtin_genres, parse_genres,
 };
 
 fn resolve(path: &str, src: &str) -> slopvac_context::GenreResult {
@@ -188,17 +188,69 @@ fn extends_merges_rules_contexts_and_profile() {
 }
 
 #[test]
-fn a_child_category_entry_replaces_the_parent_entry() {
+fn a_child_category_entry_patches_the_parent_entry_field_by_field() {
     let cats = chain().categories("child").unwrap();
-    assert!(matches!(
-        cats["prose-craft"],
-        CategorySettings::Level(RuleLevel::Warning)
-    ));
-    let CategorySettings::Table(t) = &cats["prose-scope"] else {
-        panic!("table form expected");
-    };
-    assert_eq!(t.max_per_100_words, Some(Budget::None(NoBudget::None)));
-    assert_eq!(t.severity, None);
+    // The parent set only a bare level: it stays as the severity.
+    assert_eq!(cats["prose-craft"].severity, Some(RuleLevel::Warning));
+    // The child cleared the budget and left the parent's severity alone.
+    let scope = &cats["prose-scope"];
+    assert_eq!(scope.severity, Some(RuleLevel::Error));
+    assert_eq!(scope.max_per_100_words, Some(Budget::None(NoBudget::None)));
+}
+
+#[test]
+fn a_child_category_dial_replaces_only_that_dial() {
+    let y = "
+- {schema_version: 3, id: p, categories: {c: {severity: error, minimum_severity: warning, max_per_100_words: 2, weight: 3}}}
+- {schema_version: 3, id: k, extends: [p], categories: {c: {max_per_100_words: 5}}}
+";
+    let reg = GenreRegistry::new(parse_genres(y).unwrap(), "k").unwrap();
+    let c = &reg.categories("k").unwrap()["c"];
+    assert_eq!(c.severity, Some(RuleLevel::Error));
+    assert_eq!(c.minimum_severity, Some(RuleLevel::Warning));
+    assert_eq!(c.max_per_100_words, Some(Budget::Limit(5.0)));
+    assert_eq!(c.weight, Some(3.0));
+}
+
+#[test]
+fn a_text_signal_that_matches_part_of_a_character_does_not_panic() {
+    // `\C` matches one byte, so the match can end inside the two bytes of `é`.
+    let y = "
+- {schema_version: 3, id: base}
+- schema_version: 3
+  id: a
+  detect:
+    signals:
+      - { kind: text, pattern: '\\C' }
+";
+    let reg = GenreRegistry::new(parse_genres(y).unwrap(), "base").unwrap();
+    let doc = PlainDocument::from_markdown("a.md", "\u{e9}t\u{e9}\n");
+    let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+    assert_eq!(r.id, "a");
+    assert_eq!(r.reasons[0].signal, "text");
+}
+
+#[test]
+fn present_null_fields_are_errors() {
+    let bad = [
+        "- {schema_version: 3, id: a, title: null}\n",
+        "- {schema_version: 3, id: a, description: null}\n",
+        "- {schema_version: 3, id: a, surfaces: null}\n",
+        "- {schema_version: 3, id: a, profile: null}\n",
+        "- {schema_version: 3, id: a, detect: null}\n",
+        "- {schema_version: 3, id: a, extends: null}\n",
+        "- {schema_version: 3, id: a, categories: {c: {severity: null}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {minimum_severity: null}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {max_per_100_words: null}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {weight: null}}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: path, glob: null}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: front-matter, key: null}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: front-matter, key: k, equals: null}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: text, pattern: null}]}}\n",
+    ];
+    for y in bad {
+        assert!(parse_genres(y).is_err(), "{y}");
+    }
 }
 
 #[test]
