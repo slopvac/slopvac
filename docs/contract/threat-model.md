@@ -154,8 +154,16 @@ The pack index is rebuilt by a job. Whoever controls that job, or a pull request
 - **Rotation.** A publisher announces a new key with a rotation statement signed by the old key and by the new key. The statement names the pack namespace, both key ids and a `notBefore` time. The host accepts a rotation only for a pinned key and shows the new fingerprint. The user confirms with the pinning command. The first-party compiled set changes only with a slopvac release.
 - **Compromised key.** The publisher cannot sign its own revocation if the key is lost, so a revocation is a statement signed by the first-party root key. It lists key ids and artifact manifest digests. The host caches the signed list, fetches it during `sync`, `update` and `outdated`, and checks it at every plugin spawn from the cache.
 - **Effect.** A revoked key or digest fails `sync` with exit 2 and refuses to spawn. Trust records for a revoked digest are inert and `plugins status` flags them.
-- **Offline.** An offline run uses the cached list. A cache older than 30 days (proposed) prints a notice and does not block. The window is a residual risk (R3).
+- **Offline.** An offline run uses the cached list. A cache fetched more than 30 days ago prints a notice and does not block. A machine that never fetched a list runs with a notice too. The user chose this window (`slopvac-8l4.9.15`). The window is a residual risk (R3).
 - **Rollback.** A statement carries `version` and `notBefore`, and the lockfile holds both as a floor. The verifier refuses an earlier version and, independently, an earlier `notBefore`, unless the caller passes the explicit downgrade flag. A new statement with the same version and an older `notBefore` is refused. A malformed floor time fails closed. The lockfile also fixes the exact `keyId` and `notBefore`, so `sync` rejects any other valid signature for the same digest. The implemented test is `tm25_an_older_version_or_older_not_before_is_refused_without_the_downgrade_flag` in `crates/slopvac-plugins/tests/sign.rs`.
+
+Formats (implemented in `crates/slopvac-plugins/src/sign.rs` and `crates/slopvac-plugins/src/revoke.rs`):
+
+- Both documents are canonical JSON as in section 5.1, parsed strictly, and signed in the prehashed minisign mode. A `type` field keeps one signed document from passing as another.
+- A rotation statement holds `schema_version` (1), `type` (`rotation`), `namespace`, `oldKeyId`, `newKeyId` and `notBefore`, at most 4 KiB. The old key and the new key each sign it, in two `.minisig` texts. A key pin records the `notBefore` of the rotation that set it. A later rotation must carry a later `notBefore`. A rotation from or to a revoked key is refused, because a stolen key can sign a rotation to the thief's key.
+- The revocation list holds `schema_version` (1), `type` (`revocations`), `issued`, `keys` (key ids) and `digests` (manifest digests), at most 1 MiB. Each array is sorted and has no repeats. A fetched list with an earlier `issued` than the cached one is a rollback and fails the command.
+- The list is an OCI artifact of type `application/vnd.slopvac.revocations.v1`. It has two layers, the list (`application/vnd.slopvac.revocations.v1+json`) and its `.minisig` (`application/vnd.slopvac.signature.minisig.v1`). The location `ghcr.io/srobroek/slopvac-revocations:latest` is provisional.
+- The cache is one private file in the per-user state directory. It holds the list, its signature and the fetch time. Every read verifies the signature again, so an edited cache fails closed with exit 2 until an online run replaces it. An online command that cannot fetch the list exits 2.
 
 ### 5.4 Trust scope
 
@@ -429,15 +437,16 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 |---|---|---|
 | H-tests (`h<N>_...`), TM-2, TM-3, TM-4, TM-5, TM-8 | `host.rs`, `teardown.rs`, `interrupt.rs` | P1 to P5, P7 to P9, P12 |
 | TM-6, TM-9, TM-26, TM-28, TM-29 | `trust.rs` | P10, P13, K5 (revoked inputs), K7, K8, K9, O13 |
+| TM-26 (spawn and status), TM-27, rotation | `revoke.rs` | K5, K6 |
 | TM-22, TM-23, TM-24, TM-25, TM-30 | `sign.rs` | K1 to K4, K10 |
-| TM-22, TM-39, TM-46, TM-48 | `sync.rs` | K1, N9, E8, E10 |
+| TM-22, TM-26, TM-27, TM-39, TM-46, TM-48 | `sync.rs` | K1, K5, K6, N9, E8, E10 |
 | TM-41 | `index.rs` | N11 |
 | TM-33, TM-34, TM-35, TM-36, TM-38 | `oci.rs` | N1 to N4, N6 |
 | TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
 | TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
 | TM-5 limits, TM-4 on Linux (open, PR #389) | `limits.rs` | P5, P6 |
 
-Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10 to TM-14, TM-19 to TM-21, TM-27, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-49 to TM-59. TM-49 to TM-53 belong to `slopvac-8l4.9.31`, TM-11 to TM-13 to `slopvac-8l4.9.32`, TM-27 to `slopvac-8l4.9.15`, and TM-54 to TM-58 to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat.
+Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10 to TM-14, TM-19 to TM-21, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-49 to TM-59. TM-49 to TM-53 belong to `slopvac-8l4.9.31`, TM-11 to TM-13 to `slopvac-8l4.9.32`, and TM-54 to TM-58 to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat.
 
 ## 8. Work items from this model
 
@@ -448,7 +457,7 @@ Every work item of this model has a bead.
 | Managed Python environments | `slopvac-8l4.9.31` | open | Y1 to Y7 |
 | Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
 | Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
-| Rotation and the signed revocation list | `slopvac-8l4.9.15` | open | K5, K6 |
+| Rotation and the signed revocation list | `slopvac-8l4.9.15` | in progress | K5, K6 |
 | Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | open | O1 to O4, P15 |
 | Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged (PR #344) | E1 to E7 |
 | Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |

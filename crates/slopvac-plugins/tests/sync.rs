@@ -2,6 +2,7 @@
 //! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
 
 mod oci_server;
+mod revocations;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -11,12 +12,14 @@ use std::path::{Path, PathBuf};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use oci_server::{Response, Server};
+use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::lock::{
     Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, parse_version_req,
 };
 use slopvac_plugins::oci::{
     Anonymous, Client, Descriptor, Digest, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
+use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revocations};
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
     SignError, Statement,
@@ -27,6 +30,7 @@ use slopvac_plugins::sync::{
 };
 
 const NOT_BEFORE: &str = "2026-11-01T00:00:00Z";
+const NOW: &str = "2026-11-14T00:00:00Z";
 
 struct Key {
     pk: minisign::PublicKey,
@@ -188,14 +192,36 @@ fn oci_lock(registry: &str, p: &Published) -> Lockfile {
 struct Env {
     data: tempfile::TempDir,
     project: tempfile::TempDir,
+    root: Root,
+    list: ListServer,
 }
 
 impl Env {
+    /// The revocation source serves an empty list signed by the root.
     fn new() -> Self {
+        let root = Root::new();
+        let empty = Signed::by(&root, list_json("2026-11-01T00:00:00Z", &[], &[]));
         Self {
             data: tempfile::tempdir().unwrap(),
             project: tempfile::tempdir().unwrap(),
+            root,
+            list: ListServer::start(Some(empty)),
         }
+    }
+    fn revocations(&self, now: &str) -> Revocations {
+        Revocations::new(
+            self.data.path().join("state"),
+            vec![self.root.public()],
+            self.list.source(),
+            now,
+        )
+        .unwrap()
+    }
+    fn revoke(&self, keys: &[&str], digests: &[&str]) {
+        self.list.serve(Some(Signed::by(
+            &self.root,
+            list_json("2026-11-10T00:00:00Z", keys, digests),
+        )));
     }
     fn store(&self) -> Store {
         Store::new(self.data.path().join("slopvac"))
@@ -226,8 +252,19 @@ fn run(
     policy: &KeyPolicy,
     lock: &Lockfile,
 ) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+    run_at(env, network, policy, lock, NOW)
+}
+
+fn run_at(
+    env: &Env,
+    network: Network<'_>,
+    policy: &KeyPolicy,
+    lock: &Lockfile,
+    now: &str,
+) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
     let store = env.store();
-    Syncer::new(&store, network, policy, env.project.path()).sync(lock)
+    let revs = env.revocations(now);
+    Syncer::new(&store, network, policy, env.project.path(), &revs).sync(lock)
 }
 
 const FILES: &[(&str, &[u8])] = &[
@@ -802,7 +839,8 @@ fn a_second_sync_waits_for_the_store_lock_and_then_sees_the_first_result() {
     std::thread::scope(|scope| {
         scope.spawn(|| {
             let pol = KeyPolicy::default();
-            let report = Syncer::new(&store, Network::Offline, &pol, env.project.path())
+            let revs = env.revocations(NOW);
+            let report = Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
                 .sync(&lock)
                 .unwrap();
             tx.send(report.packs[0].change.clone()).unwrap();
@@ -824,11 +862,12 @@ fn concurrent_syncs_of_one_store_all_succeed_with_an_intact_tree() {
     let lock = lock_text(&[local_archive(&env, "style", FILES)]);
     let store = env.store();
     let pol = KeyPolicy::default();
+    let revs = env.revocations(NOW);
     let changes: Vec<Change> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 scope.spawn(|| {
-                    Syncer::new(&store, Network::Offline, &pol, env.project.path())
+                    Syncer::new(&store, Network::Offline, &pol, env.project.path(), &revs)
                         .sync(&lock)
                         .unwrap()
                         .packs[0]
@@ -974,6 +1013,157 @@ fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
     .unwrap_err();
     assert!(
         matches!(err, SyncError::SignatureDiffersFromLock { .. }),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
+// ---- Revocation (threat model K5, K6; TM-26, TM-27) ----
+
+#[test]
+fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    env.revoke(&[], &[&p.digest]);
+    let c = client();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap_err();
+    assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "pack-revoked");
+    assert_eq!(server.requests().len(), 0);
+    env.assert_no_trees();
+}
+
+#[test]
+fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    env.revoke(&[&p.key_id], &[]);
+    let c = client();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap_err();
+    assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+    env.assert_no_trees();
+}
+
+#[test]
+fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    env.revoke(&[], &[&p.digest]);
+    // Offline reads the cache, which still holds the old list (residual risk R3).
+    run(&env, Network::Offline, &pol, &lock).unwrap();
+    let err = run(&env, Network::Online(&c), &pol, &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
+    // The online run cached the new list, so offline now refuses too.
+    let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
+    assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
+}
+
+#[test]
+fn a_list_that_names_other_artifacts_installs_normally() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let other = Digest::of(b"other").to_string();
+    env.revoke(&["0000000000000000"], &[&other]);
+    let c = client();
+    let report = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap();
+    assert_eq!(report.packs[0].change, Change::Installed);
+    assert_eq!(report.notices, vec![]);
+}
+
+#[test]
+fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    env.list.serve(Some(Signed::by(
+        &Root::new(),
+        list_json("2026-11-10T00:00:00Z", &[], &[]),
+    )));
+    let c = client();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy("acme", &[&key]),
+        &oci_lock(&server.registry(), &p),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, SyncError::Revocation(RevocationError::BadSignature)),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "revocation-list-invalid");
+    env.assert_no_trees();
+}
+
+#[test]
+fn tm27_a_stale_cache_offline_prints_a_notice_and_the_sync_runs() {
+    let key = Key::new();
+    let p = publish(&key, "acme", FILES);
+    let server = registry(&[&p]);
+    let env = Env::new();
+    let c = client();
+    let pol = policy("acme", &[&key]);
+    let lock = oci_lock(&server.registry(), &p);
+    run(&env, Network::Online(&c), &pol, &lock).unwrap();
+    // NOW plus 31 days.
+    let report = run_at(&env, Network::Offline, &pol, &lock, "2026-12-15T00:00:00Z").unwrap();
+    assert_eq!(report.packs[0].change, Change::Unchanged);
+    let codes: Vec<&str> = report.notices.iter().map(RevocationNotice::code).collect();
+    assert_eq!(codes, vec!["revocation-list-stale"]);
+}
+
+#[test]
+fn an_offline_sync_that_never_fetched_a_list_runs_with_a_notice() {
+    let env = Env::new();
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let report = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap();
+    let codes: Vec<&str> = report.notices.iter().map(RevocationNotice::code).collect();
+    assert_eq!(codes, vec!["revocation-list-missing"]);
+}
+
+#[test]
+fn k6_an_online_sync_fails_when_the_list_is_withheld() {
+    let env = Env::new();
+    env.list.serve(None);
+    let lock = lock_text(&[local_archive(&env, "style", FILES)]);
+    let c = client();
+    let err = run(&env, Network::Online(&c), &KeyPolicy::default(), &lock).unwrap_err();
+    assert!(
+        matches!(err, SyncError::Revocation(RevocationError::Fetch(_))),
         "{err:?}"
     );
     assert_eq!(err.exit_code(), 2);

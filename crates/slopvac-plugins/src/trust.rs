@@ -42,7 +42,8 @@ use crate::extract::{ExtractError, TreeHash, tree_hash, verify_tree};
 use crate::host::{PluginSpec, SpawnGate};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
-use crate::sign::{PublicKey, canonical_json};
+use crate::revoke::RevocationList;
+use crate::sign::{PublicKey, RotationProof, SignError, canonical_json, verify_rotation};
 
 const FILE_NAME: &str = "trust.json";
 const LOCK_NAME: &str = "trust.lock";
@@ -92,6 +93,15 @@ pub enum TrustError {
     /// The environment or `PATH` handed to the plugin is not allowed.
     #[error("environment refused: {0}")]
     Environment(String),
+    /// A rotation statement failed verification.
+    #[error("rotation refused: {0}")]
+    Rotation(SignError),
+    /// A rotation names a namespace that has no pinned key to rotate from.
+    #[error("namespace `{0}` has no pinned key to rotate; pin one first")]
+    NotPinned(String),
+    /// The revocation list names a key the operation needs.
+    #[error("{0} is on the revocation list")]
+    Revoked(String),
     /// A write would push the store past the size the reader accepts.
     #[error("the trust store would reach {bytes} bytes; the reader accepts at most 8 MiB")]
     TooLarge {
@@ -240,6 +250,12 @@ pub struct TrustRecord {
     pub source: String,
     /// Fingerprint of the publisher key, when signed.
     pub key_fingerprint: Option<String>,
+    /// Digest of the OCI manifest, so `plugins status` can flag a revoked one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_digest: Option<String>,
+    /// Key id of the publisher key, so `plugins status` can flag a revoked one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
     /// What the plugin declared when it was trusted.
     pub declaration: DeclSummary,
     /// When, as `YYYY-MM-DDTHH:MM:SSZ`. The caller supplies the clock.
@@ -258,6 +274,10 @@ pub struct KeyPin {
     pub key: String,
     /// When it was pinned.
     pub pinned_at: String,
+    /// The `notBefore` of the rotation that installed this key. A later
+    /// rotation must be newer. A first pin has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -418,7 +438,7 @@ impl TrustStore {
     }
 
     /// Pin a publisher key for a namespace. The first pin binds the namespace to
-    /// the key; a different key needs a rotation statement (not built yet).
+    /// the key; a different key needs a rotation statement ([`Self::rotate_key`]).
     ///
     /// # Errors
     /// [`TrustError::NamespaceBound`] when the namespace has another key.
@@ -432,6 +452,7 @@ impl TrustStore {
             fingerprint: key.fingerprint(),
             key: key_b64.trim().to_owned(),
             pinned_at: now.to_owned(),
+            not_before: None,
         };
         self.update(|f| {
             f.schema_version = 1;
@@ -446,6 +467,53 @@ impl TrustStore {
             }
             f.pins.push(pin.clone());
             Ok(pin)
+        })
+    }
+
+    /// Replace the key pinned for `namespace` with the new key of a rotation.
+    ///
+    /// This is the pinning command's confirmation step: the caller has shown
+    /// `proof.new_key`'s fingerprint first. Under the store lock it verifies the
+    /// proof against the current pin ([`verify_rotation`], with the pin's
+    /// `notBefore` as the floor) and refuses a rotation from or to a key on the
+    /// revocation list, because a stolen key can sign a rotation to its thief's
+    /// key (K5). The new pin records the rotation's `notBefore`.
+    ///
+    /// # Errors
+    /// [`TrustError::NotPinned`] for a namespace with no pin,
+    /// [`TrustError::Rotation`] for a proof that fails verification,
+    /// [`TrustError::Revoked`] for a revoked key, plus store failures.
+    pub fn rotate_key(
+        &self,
+        namespace: &str,
+        proof: &RotationProof<'_>,
+        revoked: &RevocationList,
+        now: &str,
+    ) -> Result<KeyPin, TrustError> {
+        let path = self.path();
+        self.update(|f| {
+            let Some(slot) = f.pins.iter_mut().find(|p| p.namespace == namespace) else {
+                return Err(TrustError::NotPinned(namespace.to_owned()));
+            };
+            let pinned = PublicKey::from_base64(&slot.key).map_err(|e| TrustError::Corrupt {
+                path: path.clone(),
+                why: e.to_string(),
+            })?;
+            let st = verify_rotation(proof, namespace, &pinned, slot.not_before.as_deref())
+                .map_err(TrustError::Rotation)?;
+            for id in [&st.old_key_id, &st.new_key_id] {
+                if revoked.revokes_key(id) {
+                    return Err(TrustError::Revoked(format!("key {id}")));
+                }
+            }
+            *slot = KeyPin {
+                namespace: namespace.to_owned(),
+                fingerprint: proof.new_key.fingerprint(),
+                key: proof.new_key.to_base64(),
+                pinned_at: now.to_owned(),
+                not_before: Some(st.not_before),
+            };
+            Ok(slot.clone())
         })
     }
 
@@ -525,6 +593,8 @@ pub struct VerifiedPlugin {
     pub manifest_digest: Option<String>,
     /// Fingerprint of the key that signed it.
     pub key_fingerprint: Option<String>,
+    /// Key id of the key that signed it, which the revocation list names.
+    pub key_id: Option<String>,
 }
 
 /// Whether `name` may not be passed to a plugin: it loads code into the child
@@ -685,6 +755,9 @@ pub enum Revocation {
     ManifestDigest(Digest),
     /// Every plugin signed by this publisher key fingerprint.
     PublisherKey(String),
+    /// Every plugin signed by the key with this key id (16 hex digits), the
+    /// form the signed revocation list uses.
+    KeyId(String),
 }
 
 /// Decides, before spawn, whether a plugin may run. Read-only.
@@ -694,6 +767,7 @@ pub struct TrustGate {
     revoked_hashes: HashSet<String>,
     revoked_manifests: HashSet<String>,
     revoked_keys: HashSet<String>,
+    revoked_key_ids: HashSet<String>,
     external: HashSet<PathBuf>,
     plugins: HashMap<String, VerifiedPlugin>,
 }
@@ -708,6 +782,7 @@ impl TrustGate {
             revoked_hashes: HashSet::new(),
             revoked_manifests: HashSet::new(),
             revoked_keys: HashSet::new(),
+            revoked_key_ids: HashSet::new(),
             external: HashSet::new(),
             plugins: plugins.into_iter().map(|p| (p.name.clone(), p)).collect(),
         }
@@ -722,6 +797,7 @@ impl TrustGate {
                 Revocation::TrustHash(d) => self.revoked_hashes.insert(d.to_string()),
                 Revocation::ManifestDigest(d) => self.revoked_manifests.insert(d.to_string()),
                 Revocation::PublisherKey(k) => self.revoked_keys.insert(k.to_ascii_lowercase()),
+                Revocation::KeyId(k) => self.revoked_key_ids.insert(k.to_ascii_uppercase()),
             };
         }
         self
@@ -746,6 +822,10 @@ impl TrustGate {
                 .key_fingerprint
                 .as_ref()
                 .is_some_and(|k| self.revoked_keys.contains(&k.to_ascii_lowercase()))
+            || vp
+                .key_id
+                .as_ref()
+                .is_some_and(|k| self.revoked_key_ids.contains(&k.to_ascii_uppercase()))
     }
 
     /// The state of a plugin started as `spec`.
@@ -806,6 +886,8 @@ impl TrustGate {
             version: vp.version.clone(),
             source: vp.source.clone(),
             key_fingerprint: vp.key_fingerprint.clone(),
+            manifest_digest: vp.manifest_digest.clone(),
+            key_id: vp.key_id.clone(),
             declaration: DeclSummary::of(&spec.declaration),
             recorded_at: now.to_owned(),
         };
