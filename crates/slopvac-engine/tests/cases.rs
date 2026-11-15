@@ -319,6 +319,22 @@ fn only_the_last_definition_of_a_duplicated_id_runs() {
 }
 
 #[test]
+fn coverage_leaves_out_an_id_that_a_later_non_lexical_definition_replaces() {
+    let lexical = ruleset(vec![common::category("cat", &[foo_rule(&json!({}))])]);
+    let judgement = ruleset(vec![common::category(
+        "cat",
+        &[common::rule(
+            "r",
+            &json!({"kind": "judgement", "question": "Is it vague?"}),
+            &json!({"severity": "suggestion"}),
+        )],
+    )]);
+    let e = Engine::new(vec![lexical, judgement], settings()).unwrap();
+    let cov = coverage(&e, &[Input::markdown("a.md", "foo")]).unwrap();
+    assert_eq!(cov.findings.len(), 0);
+}
+
+#[test]
 fn a_rule_the_engine_cannot_execute_never_passes_a_zero_count_case() {
     let structure = common::rule(
         "s",
