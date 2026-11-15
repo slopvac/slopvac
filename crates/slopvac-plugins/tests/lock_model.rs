@@ -266,7 +266,6 @@ fn source_forms_are_accepted_or_rejected_as_the_schema_says() {
         "packs/local",
         "./packs/local",
         "packs/a..b",
-        "dir/a:b",
     ];
     let reject = [
         "http://example.org/p.tar.gz",
@@ -523,4 +522,21 @@ fn a_bare_version_is_a_caret_requirement() {
         run("1.2.0", "1.2", &["1.9.0", "2.0.0"]),
         pair("1.9.0", "2.0.0")
     );
+}
+
+#[test]
+fn a_path_source_never_has_a_colon_in_any_segment() {
+    // On Windows `Path::push("C:x")` replaces or rebases the path, and `a:b` names a
+    // stream, so a drive or stream form after an ordinary segment would leave the
+    // project root. The check runs on every platform, so a lock reads the same everywhere.
+    for source in [
+        "packs/C:x",
+        "packs/C:",
+        "dir/a:b",
+        "a/b/c:d/e",
+        "packs/C:..",
+        "x/:",
+    ] {
+        assert!(source.parse::<Source>().is_err(), "accepted {source:?}");
+    }
 }

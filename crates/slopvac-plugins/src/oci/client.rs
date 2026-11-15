@@ -381,6 +381,58 @@ impl Client {
         })
     }
 
+    /// The URL to request. Test clients (and only they) reach an `https://`
+    /// URL on a loopback host over plain HTTP, so a lock, which only accepts
+    /// `https://`, can point at the fake server. Production clients return the
+    /// URL unchanged.
+    fn reach(&self, url: &str) -> String {
+        match url.strip_prefix("https://") {
+            Some(rest)
+                if self.allow_loopback_http
+                    && is_loopback_host(bare_host(rest.split('/').next().unwrap_or_default())) =>
+            {
+                format!("http://{rest}")
+            }
+            _ => url.to_owned(),
+        }
+    }
+
+    /// Download a release archive from an `https://` URL into `out`, reading at most
+    /// `max` bytes. Redirects follow the same rules as registry requests, and no
+    /// credentials are sent. The caller checks the digest of what was written.
+    ///
+    /// # Errors
+    /// [`OciError::InsecureUrl`] for anything but HTTPS, [`OciError::TooLarge`] past `max`,
+    /// and the usual network and status errors.
+    pub fn download(&self, url: &str, max: u64, out: &mut dyn Write) -> Result<(), OciError> {
+        let url = self.reach(url);
+        let url = url.as_str();
+        let mut resp = self.transport.send(&Req {
+            method: "GET",
+            url: url.to_owned(),
+            headers: vec![],
+            authorization: None,
+            body: None,
+        })?;
+        let status = resp.status().as_u16();
+        if status != 200 {
+            return Err(Self::deny_or_status(url, status));
+        }
+        let shown = redact_url(url);
+        let mut reader = resp.body_mut().with_config().limit(max + 1).reader();
+        let copied = std::io::copy(&mut reader, out).map_err(|e| OciError::Network {
+            url: shown,
+            message: e.to_string(),
+        })?;
+        if copied > max {
+            return Err(OciError::TooLarge {
+                what: "archive".into(),
+                limit: max,
+            });
+        }
+        Ok(())
+    }
+
     /// Stream a blob into `out`, checking size and digest as it goes.
     ///
     /// On `Err` the bytes already written must be discarded: the caller writes
