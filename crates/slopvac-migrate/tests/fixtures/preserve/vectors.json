@@ -1840,6 +1840,47 @@
    },
    "input": "profile = \"strict\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
   },
+  "dropped-entry-takes-the-profile-default-at-the-top": {
+   "expected": {
+    "categories": {
+     "core:prose-craft": {
+      "severity": "off"
+     }
+    },
+    "profile": "strict",
+    "rules": {
+     "core:prose-craft.latinisms": "off"
+    },
+    "styles": [
+     "core:legacy-strict"
+    ]
+   },
+   "input": "profile = \"strict\"\n[categories]\n\"prose-craft\" = \"off\"\n[rules]\n\"prose-craft.latinisms\" = \"error\"\n"
+  },
+  "dropped-entry-takes-the-profile-default-in-an-override": {
+   "expected": {
+    "overrides": [
+     {
+      "categories": {
+       "core:prose-craft": {
+        "severity": "off"
+       }
+      },
+      "files": [
+       "docs/**"
+      ],
+      "rules": {
+       "core:prose-craft.latinisms": "off"
+      }
+     }
+    ],
+    "profile": "strict",
+    "styles": [
+     "core:legacy-strict"
+    ]
+   },
+   "input": "profile = \"strict\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"prose-craft\" = \"off\" }\nrules = { \"prose-craft.latinisms\" = \"error\" }\n"
+  },
   "ignored-rule-entry-is-dropped": {
    "expected": {
     "profile": "relaxed",

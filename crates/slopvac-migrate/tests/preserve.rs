@@ -244,12 +244,85 @@ fn authored_comments_and_other_override_keys_survive() {
 }
 
 #[test]
-fn an_unknown_rule_is_a_dropped_setting() {
-    let err = preserve("[rules]\n\"prose-craft.no-such-rule\" = \"error\"\n").unwrap_err();
-    let Error::Dropped(dropped) = err else {
-        panic!("expected Dropped, got {err:?}");
-    };
-    assert_eq!(dropped.len(), 1);
-    assert_eq!(dropped[0].key, "rules.prose-craft.no-such-rule");
-    assert_eq!(dropped[0].line, 2);
+fn a_rewritten_rule_entry_keeps_its_comments() {
+    // 2.x ignored this entry (its category is off), so the strict default replaces it.
+    let rw = preserve(
+        "profile = \"strict\"\n[categories]\n\"prose-craft\" = \"off\"\n[rules]\n\
+         # why\n\"prose-craft.latinisms\" = \"error\" # trailing\n",
+    )
+    .unwrap();
+    assert!(
+        rw.text
+            .contains("# why\n\"core:prose-craft.latinisms\" = \"off\" # trailing\n"),
+        "{}",
+        rw.text
+    );
+}
+
+/// The key and line of the only dropped setting.
+fn only_dropped(text: &str) -> (String, usize) {
+    match preserve(text) {
+        Err(Error::Dropped(d)) if d.len() == 1 => (d[0].key.clone(), d[0].line),
+        other => panic!("expected one Dropped, got {other:?}"),
+    }
+}
+
+#[test]
+fn unknown_names_are_dropped_settings_at_their_lines() {
+    let block = "[[overrides]]\nfiles = [\"docs/**\"]\n";
+    let cases = [
+        ("profile = \"lax\"\n".to_owned(), "profile", 1),
+        (
+            format!("{block}profile = \"lax\"\n"),
+            "overrides[0].profile",
+            3,
+        ),
+        (
+            "[categories]\n\"no-such\" = \"off\"\n".to_owned(),
+            "categories.no-such",
+            2,
+        ),
+        (
+            format!("{block}[overrides.categories]\n\"no-such\" = \"off\"\n"),
+            "overrides[0].categories.no-such",
+            4,
+        ),
+        (
+            "[rules]\n\"prose-craft.no-such-rule\" = \"error\"\n".to_owned(),
+            "rules.prose-craft.no-such-rule",
+            2,
+        ),
+        (
+            format!("{block}[overrides.rules]\n\"prose-craft.no-such-rule\" = \"error\"\n"),
+            "overrides[0].rules.prose-craft.no-such-rule",
+            4,
+        ),
+    ];
+    for (text, key, line) in cases {
+        assert_eq!(only_dropped(&text), (key.to_owned(), line), "{text}");
+    }
+}
+
+#[test]
+fn the_overlap_error_gives_the_line_of_the_block() {
+    let cases = [
+        (
+            "[[overrides]]\nfiles = [\"docs/**\"]\n\n[[overrides]]\nfiles = [\"a.md\"]\n",
+            1,
+            4,
+        ),
+        (
+            "overrides = [\n  { files = [\"docs/**\"] },\n  { files = [\"a.md\"] },\n]\n",
+            1,
+            3,
+        ),
+    ];
+    for (text, block, line) in cases {
+        match preserve(text) {
+            Err(Error::OverrideOverlap {
+                block: b, line: l, ..
+            }) => assert_eq!((b, l), (block, line), "{text}"),
+            other => panic!("expected OverrideOverlap, got {other:?}"),
+        }
+    }
 }

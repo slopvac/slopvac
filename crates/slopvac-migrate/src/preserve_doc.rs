@@ -3,8 +3,9 @@
 //! [`crate::preserve::expand`] works on 2.x names. This module reads them from the
 //! original document, checks them against the bundled 2.x data, and patches the
 //! migrated document: it keeps every authored entry with its comments, adds the
-//! entries the expansion adds, removes the ones it drops, and puts the profile
-//! switch blocks before and the guard blocks after the original overrides.
+//! entries the expansion adds, removes the ones it drops, sets the new level of an
+//! entry whose level changes (comments kept), and puts the profile switch blocks
+//! before and the guard blocks after the original overrides.
 // STUB(slopvac-8l4.16.11): follows the expansion of PR #296 b138f5888a.
 
 use std::collections::{BTreeMap, HashMap};
@@ -417,9 +418,26 @@ fn reconcile_rules(
     }
     let mut added = 0;
     for (key, level) in wanted {
-        if !rules.contains_key(key) {
-            rules.insert(key, Item::Value(level.as_str().into()));
-            added += 1;
+        match rules.get_mut(key).and_then(Item::as_value_mut) {
+            None => {
+                rules.insert(key, Item::Value(level.as_str().into()));
+                added += 1;
+            }
+            Some(current) if current.as_str() != Some(level.as_str()) => {
+                // Keep the comments and spacing around the old value.
+                let decor = current.decor().clone();
+                *current = level.as_str().into();
+                *current.decor_mut() = decor;
+                let at = if prefix.is_empty() {
+                    format!("rules.{key}")
+                } else {
+                    format!("{prefix}.rules.{key}")
+                };
+                ctx.notes.push(format!(
+                    "set {at} to \"{level}\": the 2.x profile default replaces an entry 2.x ignored"
+                ));
+            }
+            Some(_) => {}
         }
     }
     if added > 0 {

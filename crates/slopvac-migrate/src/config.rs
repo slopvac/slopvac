@@ -598,7 +598,11 @@ fn walk(t: &dyn TableLike, prefix: &str, text: &str, out: &mut HashMap<String, u
             Item::Value(Value::Array(arr)) => {
                 for (i, v) in arr.iter().enumerate() {
                     if let Some(it) = v.as_inline_table() {
-                        walk(it, &format!("{path}[{i}]"), text, out);
+                        let p = format!("{path}[{i}]");
+                        if let Some(span) = v.span() {
+                            out.insert(p.clone(), line_of(text, span.start));
+                        }
+                        walk(it, &p, text, out);
                     }
                 }
             }
