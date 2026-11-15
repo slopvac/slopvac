@@ -74,5 +74,13 @@
    "end"
   ],
   "reason": "2.x ends a match at the end of the markup that closes it: a match that ends a bold or link text ends two or more columns late, after the `**` or the link target. The Rust end column is the end of the matched text."
+ },
+ "sample/vocabulary": {
+  "ignore": [
+   "words",
+   "sentences",
+   "paragraphs"
+  ],
+  "reason": "2.x counts the prose of a raw HTML block in Markdown. The Rust engine reads that prose only for the vocabulary sweep, because Vale lints it, and not for the lexical rules or the counts. The sweep's findings agree. Whether every rule should read raw HTML blocks is a question for the lead."
  }
 }

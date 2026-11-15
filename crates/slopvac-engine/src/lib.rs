@@ -19,10 +19,14 @@
 //! line and no source range, as 2.x did.
 //!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (structure checks, vocabulary and the metrics it does
-//! not measure) are skipped, and each document says so in an `info` notice. A capitalization
-//! rule in a style other than sentence is skipped with a `warning` notice, which makes the
-//! check incomplete.
+//! kinds the engine does not run yet (structure checks and the metrics it does not measure)
+//! are skipped, and each document says so in an `info` notice. A capitalization rule in a
+//! style other than sentence is skipped with a `warning` notice, which makes the check
+//! incomplete.
+//!
+//! Vocabulary rules enforce a word blocklist ([`Engine::with_blocklist`]) on the
+//! part-of-speech tagger of `slopvac-pos`. One rule owns the sweep. Without a blocklist
+//! they do not run, and a notice says so.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint.

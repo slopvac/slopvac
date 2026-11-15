@@ -19,6 +19,7 @@ use slopvac_model::{
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
+use slopvac_terms::Blocklist;
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
@@ -35,6 +36,9 @@ use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
 use crate::tagging;
+
+mod vocabulary;
+use vocabulary::Vocabulary;
 
 /// The id of the finding for a directive that does not hold.
 const INVALID_SUPPRESSION: &str = "meta.invalid-suppression";
@@ -142,6 +146,18 @@ struct Active {
     replacements: LazyReplacements,
 }
 
+impl Active {
+    fn new(set: usize, category: usize, rule: usize, severity: Severity) -> Self {
+        Self {
+            set,
+            category,
+            rule,
+            severity,
+            replacements: LazyReplacements::default(),
+        }
+    }
+}
+
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
@@ -162,6 +178,10 @@ pub struct Engine {
     checkers: Vec<Box<dyn DiagramChecker>>,
     /// Lexical rules that run.
     active: Vec<Active>,
+    /// Vocabulary rules that run. They share one sweep over the word blocklist.
+    vocabulary_rules: Vec<Active>,
+    /// The blocklist sweep and the notices about it.
+    vocabulary: Vocabulary,
     /// Metric rules that run.
     metrics: Vec<Active>,
     /// Diagram rules that run, by id.
@@ -236,7 +256,7 @@ impl Engine {
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
-    /// Rules of kinds the engine does not run yet (structure checks, vocabulary and
+    /// Rules of kinds the engine does not run yet (structure checks and
     /// capitalization, and metrics it does not measure) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
@@ -249,6 +269,8 @@ impl Engine {
             tagger,
             checkers: Vec::new(),
             active: Vec::new(),
+            vocabulary_rules: Vec::new(),
+            vocabulary: Vocabulary::default(),
             metrics: Vec::new(),
             diagram_rules: HashMap::new(),
             catalog: HashMap::new(),
@@ -259,7 +281,15 @@ impl Engine {
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
+        engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
+    }
+
+    /// Set the word blocklist that the vocabulary rules enforce. Without one, or with an
+    /// empty one, they have nothing to check and each document says so in an `info` notice.
+    pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
+        self.plan_vocabulary(blocklist)?;
+        Ok(self)
     }
 
     /// Replace the exception detectors.
@@ -360,13 +390,7 @@ impl Engine {
                     self.running.insert(loaded.id().as_str().to_owned());
                     match loaded.kind() {
                         kind if runs_lexically(kind, &rule.match_) => {
-                            self.active.push(Active {
-                                set: s,
-                                category: c,
-                                rule: r,
-                                severity,
-                                replacements: LazyReplacements::default(),
-                            });
+                            self.active.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Judgement
                         | MatchKind::Tokens
@@ -378,19 +402,15 @@ impl Engine {
                                 Match::Metric(m) if metrics::supported(m.metric.as_str())
                             );
                             if supported {
-                                self.metrics.push(Active {
-                                    set: s,
-                                    category: c,
-                                    rule: r,
-                                    severity,
-                                    replacements: LazyReplacements::default(),
-                                });
+                                self.metrics.push(Active::new(s, c, r, severity));
                             } else {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
-                        MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
+                        MatchKind::Vocabulary => {
+                            self.vocabulary_rules.push(Active::new(s, c, r, severity));
+                        }
                         MatchKind::Capitalization => {
                             *unrun.entry(CAPITALIZATION).or_default() += 1;
                         }
@@ -490,10 +510,12 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
+            front: front_matter.as_ref(),
             subject: &subject,
             index: SourceIndex::new(input.source, input.bom),
         };
         let mut findings = run.lexical()?;
+        findings.extend(run.vocabulary()?);
         findings.extend(run.metrics()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
@@ -548,6 +570,7 @@ impl Engine {
         let words = prepared.words();
         let mut unchecked = self.notices.clone();
         unchecked.extend(extra);
+        unchecked.extend(self.vocabulary.notices().iter().cloned());
         let scoring = score_document(
             &findings,
             words,
@@ -608,6 +631,8 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
+    /// The parsed front matter, for context tags.
+    front: Option<&'a FrontMatter<'a>>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }
@@ -744,9 +769,25 @@ impl Run<'_> {
         range: &Range<usize>,
         span: Span,
     ) -> bool {
+        self.guarded_in(self.tags, self.parsed, rule, detectors, text, range, span)
+    }
+
+    /// [`Self::guarded`] for text of another parse of the file, with that parse's context
+    /// tags and document.
+    #[allow(clippy::too_many_arguments)]
+    fn guarded_in(
+        &self,
+        tags: &TagIndex,
+        document: &Parsed,
+        rule: &slopvac_rules::Rule,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+    ) -> bool {
         let gate = rule.contexts.as_ref();
         let kinds = if gate.is_some() || !detectors.is_empty() {
-            self.tags.kinds_at(&(span.start()..span.end()))
+            tags.kinds_at(&(span.start()..span.end()))
         } else {
             Vec::new()
         };
@@ -763,7 +804,7 @@ impl Run<'_> {
             text,
             range,
             span,
-            document: self.parsed,
+            document,
             tags: &kinds,
         };
         detectors
