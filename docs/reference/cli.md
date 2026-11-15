@@ -61,8 +61,8 @@ List rules.
 | --- | --- |
 | `--category` | Only this category. Repeatable. |
 | `--kind` | Only this match kind. |
-| `--genre` | Only rules that apply to this genre. |
-| `--include-excluded` | Include rules the genre excludes. |
+| `--genre` | Only rules in categories recommended for this genre. |
+| `--include-excluded` | With --genre, keep rules whose applies_to excludes the genre. |
 | `--format` | Output format. |
 | `--config` | Use this slopvac.toml instead of the nearest one. |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |

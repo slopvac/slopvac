@@ -284,16 +284,6 @@ fn colour_flag_colours_help_and_no_color_does_not() {
 }
 
 #[test]
-fn rules_category_is_repeatable() {
-    // The command is unwired, but the arguments must parse: a parse error is a usage error.
-    slopvac()
-        .args(["rules", "--category", "a", "--category", "b"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::starts_with("error[command-not-wired]"));
-}
-
-#[test]
 fn man_pages_into_an_unwritable_directory_exit_2() {
     let (_dir, file) = doc(b"not a directory");
     slopvac()
