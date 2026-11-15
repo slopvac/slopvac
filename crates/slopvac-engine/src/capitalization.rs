@@ -133,21 +133,26 @@ fn grammar_tokens(text: &str) -> impl Iterator<Item = Option<&str>> {
 /// Whether the token is a word, small word, number, code span or punctuation mark, with
 /// optional trailing punctuation.
 fn is_run_token(token: &str) -> Result<bool, TextError> {
-    // The word may be followed by punctuation, so every split of the token is a candidate.
-    for at in (1..=token.len()).filter(|&at| token.is_char_boundary(at)) {
-        if token[at..].chars().all(|c| TRAILING.contains(&c)) && is_body(&token[..at])? {
-            return Ok(true);
-        }
+    // No body ends in trailing punctuation except a single punctuation mark. So the body is
+    // what precedes the trailing run, or the first character when that is such a mark.
+    let body = token.trim_end_matches(TRAILING);
+    if !body.is_empty() && is_body(body)? {
+        return Ok(true);
     }
-    Ok(false)
+    let mut chars = token.chars();
+    Ok(chars.next().is_some_and(|c| LONE.contains(&c)) && chars.all(|c| TRAILING.contains(&c)))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Bytes handed to `is_body`: the work counter of the tests.
+    static BODY_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn is_body(word: &str) -> Result<bool, TextError> {
-    Ok(is_name(word)
-        || SMALL_WORDS.contains(&word)
-        || is_code(word)
-        || (word.len() == 1 && word.starts_with(LONE))
-        || NUMBER.is_match(word)?)
+    #[cfg(test)]
+    BODY_BYTES.with(|b| b.set(b.get() + word.len()));
+    Ok(is_name(word) || SMALL_WORDS.contains(&word) || is_code(word) || NUMBER.is_match(word)?)
 }
 
 /// `[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*`
@@ -175,4 +180,44 @@ fn is_code(word: &str) -> bool {
         && word.starts_with('`')
         && word.ends_with('`')
         && !word[1..word.len() - 1].contains('`')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BODY_BYTES;
+    use super::*;
+
+    #[test]
+    fn a_long_punctuation_run_is_scanned_once() {
+        let token = format!("word{}", "!".repeat(4000));
+        BODY_BYTES.with(|b| b.set(0));
+        assert!(!is_run_token(&token).unwrap());
+        // Each byte of the token is validated at most once, whatever the run length.
+        assert!(BODY_BYTES.with(std::cell::Cell::get) <= token.len());
+    }
+
+    #[test]
+    fn punctuation_only_tokens_are_run_tokens() {
+        for token in ["-", "(", "&", "...", "?!", ")", "-.", "(.", "&!!"] {
+            assert!(is_run_token(token).unwrap(), "{token}");
+        }
+        for token in ["-a", "foo!", "!!a", "+-", "(("] {
+            assert!(!is_run_token(token).unwrap(), "{token}");
+        }
+    }
+
+    #[test]
+    fn words_keep_their_trailing_punctuation() {
+        for token in [
+            "Server,",
+            "the)",
+            "1.",
+            "1.2.",
+            "`x`,",
+            "Foo-Bar!?",
+            "2.0...",
+        ] {
+            assert!(is_run_token(token).unwrap(), "{token}");
+        }
+    }
 }

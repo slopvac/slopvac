@@ -247,3 +247,18 @@ fn styles_other_than_sentence_leave_the_check_incomplete() {
     assert_eq!(doc.gate.reasons().len(), 1);
     assert!(doc.gate.reasons()[0].starts_with("incomplete check:"));
 }
+
+#[test]
+fn escaped_backticks_in_a_markdown_heading_are_literal_text() {
+    // Expected from the 2.x engine run on this source: lines 1 and 3 are reported, line 5 is not.
+    let e = engine_with(&sentence_rule(&[]), &[]);
+    let source =
+        "# \\`Alpha Beta\\` Gamma\n\n## \\`Alpha\\` Beta Gamma\n\n## Foo \\`bar Baz\\` qux\n";
+    let doc = e.lint(&Input::markdown("a.md", source)).unwrap();
+    let got: Vec<(usize, &str)> = doc
+        .findings
+        .iter()
+        .map(|f| (f.start.line(), f.matched_text.as_str()))
+        .collect();
+    assert_eq!(got, [(1, "`Alpha Beta` Gamma"), (3, "`Alpha` Beta Gamma")]);
+}
