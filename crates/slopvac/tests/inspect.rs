@@ -282,12 +282,15 @@ fn config_must_exist() {
 
 #[test]
 fn a_missing_absolute_config_path_is_redacted() {
+    // A real temporary directory gives an absolute path on every platform.
+    let outside = tempfile::Builder::new()
+        .prefix("SENTINEL-user-4471")
+        .tempdir()
+        .unwrap();
+    let missing = outside.path().join("proj").join("slopvac.toml");
     let out = slopvac()
-        .args([
-            "rules",
-            "--config",
-            "/home/SENTINEL-user-4471/proj/slopvac.toml",
-        ])
+        .args(["rules", "--config"])
+        .arg(&missing)
         .output()
         .expect("run");
     let err = String::from_utf8_lossy(&out.stderr);
