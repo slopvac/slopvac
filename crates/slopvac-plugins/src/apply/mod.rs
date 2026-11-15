@@ -87,7 +87,7 @@ pub enum ApplyError {
     #[error("`{}` changed since it was read", esc(.0))]
     SourceChanged(String),
     /// A denied path was not approved. `needs` lists the paths to approve.
-    #[error("`{}` is a sensitive path; approve {:?} to write it", esc(.path), .needs)]
+    #[error("`{}` is a sensitive path; approve {} to write it", esc(.path), quoted(.needs))]
     Sensitive {
         /// Path as the plan names it.
         path: String,
@@ -119,6 +119,12 @@ pub enum ApplyError {
     /// An operating-system error.
     #[error("{}", esc(.0))]
     Io(String),
+}
+
+/// ``a`, `b`` with every item escaped: untrusted paths never go through `Debug`.
+fn quoted(items: &[String]) -> String {
+    let items: Vec<String> = items.iter().map(|s| format!("`{}`", esc(s))).collect();
+    items.join(", ")
 }
 
 impl ApplyError {

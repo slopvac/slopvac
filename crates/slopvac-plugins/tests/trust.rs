@@ -1100,6 +1100,34 @@ mod unix_only {
         );
     }
 
+    /// The gate forwards the raw `Program` and `Environment` reasons, so the
+    /// final message holds each hostile character and each backslash once.
+    #[test]
+    fn a_refused_program_or_variable_reaches_the_usage_error_escaped_once() {
+        let s = Scratch::new("u-escape-once");
+        let vp = install(&s, "1.0.0", "x");
+        let g = spawn_gate(&s, &vp);
+
+        let mut spec = spawn_spec(&vp);
+        spec.env = vec![("A=\u{202e}\\##[x]".into(), "v".into())];
+        let msg = g.check(&spec).unwrap_err().to_string();
+        assert_eq!(
+            msg,
+            "invalid use of plugin: fake: environment refused: \
+             `A=\\u{202e}\\\\\\u{23}#[x]` is not a variable name"
+        );
+
+        let mut spec = spawn_spec(&vp);
+        spec.program = vp.root.join("x\u{202e}\\##[e]");
+        let msg = g.check(&spec).unwrap_err().to_string();
+        let want = "/x\\u{202e}\\\\\\u{23}#[e]`: No such file or directory (os error 2)";
+        assert!(
+            msg.starts_with("invalid use of plugin: fake: program refused: `"),
+            "{msg}"
+        );
+        assert!(msg.ends_with(want), "{msg}");
+    }
+
     #[test]
     fn tm6_a_new_executable_bit_after_trust_stops_the_spawn() {
         let s = Scratch::new("u-tm6-exec");

@@ -204,14 +204,14 @@ impl Store {
         match verify_tree(&dir, &hash) {
             Ok(()) => Ok(TreeState::Intact(dir)),
             Err(ExtractError::Tampered { .. }) => Ok(TreeState::Tampered(dir)),
-            Err(e) => Err(SyncError::Store(e.to_string())),
+            Err(e) => Err(SyncError::Store(e.unescaped())),
         }
     }
 }
 
 /// Remove a modified tree. Returns where it was moved when it was too large to delete.
 pub(super) fn evict_tree(dir: &Path) -> Result<Option<PathBuf>, SyncError> {
-    match evict(dir).map_err(|e| SyncError::Store(e.to_string()))? {
+    match evict(dir).map_err(|e| SyncError::Store(e.unescaped()))? {
         Evicted::Removed => Ok(None),
         Evicted::Quarantined(aside) => Ok(Some(aside)),
     }

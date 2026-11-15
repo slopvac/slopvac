@@ -157,3 +157,165 @@ fn declaration_differences_escape_manifest_names() {
     let changes = summary(&[]).diff(&summary(&["tag\u{202e}\n::error::x"]));
     assert_eq!(changes, ["hook added: tag\\u{202e}\\u{a}::error::x"]);
 }
+
+// ---- composed and nested paths (review round 2) ----
+
+const D1: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn a_recipe_path_in_the_approval_list_is_escaped_not_debug_printed() {
+    use slopvac_plugins::apply::{EntryStatus, PlanOptions, apply_plan};
+    use slopvac_plugins::hooks::parse_recipe;
+    // A workflow path is on the deny list; `##[` is a legacy runner command.
+    let result = serde_json::json!({"files": [{
+        "path": ".github/workflows/a##[error]b.yml",
+        "action": "write",
+        "content": "x",
+    }]});
+    let files = parse_recipe(&result).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let options = PlanOptions {
+        dry_run: true,
+        allow_sensitive: vec![],
+    };
+    let report = apply_plan(root.path(), &files, &options);
+    let EntryStatus::Refused(err) = &report.entries[0].status else {
+        panic!("{:?}", report.entries[0].status);
+    };
+    assert_eq!(
+        err.to_string(),
+        "`.github/workflows/a\\u{23}#[error]b.yml` is a sensitive path; \
+         approve `.github/workflows/a\\u{23}#[error]b.yml` to write it"
+    );
+}
+
+#[test]
+fn a_locked_source_in_the_lock_mismatch_is_escaped() {
+    use slopvac_plugins::lock::{LockedPack, Lockfile, PackKind, ResolvedPack};
+    use slopvac_plugins::sync::check_lock;
+    let pack = |source: &str, digest: &str| LockedPack {
+        id: "p".parse().unwrap(),
+        kind: PackKind::Data,
+        version: "1.0.0".parse().unwrap(),
+        slopvac_api: 1,
+        source: source.parse().unwrap(),
+        digest: digest.parse().unwrap(),
+        signature: None,
+        requires: Vec::new(),
+    };
+    let locked = pack("https://example.org/a##[error]x.tgz", D1);
+    let lock = Lockfile::new(vec![locked]).unwrap();
+    let resolved = ResolvedPack {
+        id: "p".parse().unwrap(),
+        version: "1.0.0".parse().unwrap(),
+        source: "https://example.org/b##[add-mask]y.tgz".parse().unwrap(),
+        digest: D1.parse().unwrap(),
+    };
+    let msg = check_lock(&lock, &[resolved]).unwrap_err().to_string();
+    assert_eq!(
+        msg,
+        "the lock does not match the resolved packs:\n\
+         changed: p source https://example.org/a\\u{23}#[error]x.tgz \
+         -> https://example.org/b\\u{23}#[add-mask]y.tgz\n"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn a_store_path_with_hostile_characters_is_escaped_once() {
+    use slopvac_plugins::sync::Store;
+    let tmp = tempfile::tempdir().unwrap();
+    // U+202E, a literal backslash and a legacy command in a directory name.
+    let root = tmp.path().join("s\u{202e}\\n##[e]");
+    std::fs::create_dir_all(root.join(".lock")).unwrap();
+    let msg = Store::new(&root).lock().err().unwrap().to_string();
+    let want = "/s\\u{202e}\\\\n\\u{23}#[e]/.lock is not a plain file";
+    assert!(msg.starts_with("data directory: "), "{msg}");
+    assert!(msg.ends_with(want), "{msg}");
+}
+
+#[test]
+#[cfg(unix)]
+fn a_planted_link_in_a_store_with_a_hostile_path_is_escaped_once() {
+    use slopvac_plugins::sync::Store;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("s\u{202e}\\n##[e]");
+    std::fs::create_dir_all(&root).unwrap();
+    std::os::unix::fs::symlink(tmp.path(), root.join("trees")).unwrap();
+    let msg = Store::new(&root).lock().err().unwrap().to_string();
+    assert!(
+        msg.starts_with("data directory: archive refused: "),
+        "{msg}"
+    );
+    assert!(msg.contains("/s\\u{202e}\\\\n\\u{23}#[e]/trees"), "{msg}");
+}
+
+#[test]
+fn a_digest_in_a_manifest_is_escaped_once_in_the_parse_error() {
+    use slopvac_plugins::oci::{Digest, Fetched};
+    let body = r#"{"schemaVersion":2,"config":{"mediaType":"x","digest":"bad\u202e\\##[","size":1},"layers":[]}"#;
+    let fetched = Fetched {
+        digest: Digest::of(body.as_bytes()),
+        media_type: "application/vnd.oci.image.manifest.v1+json".into(),
+        body: body.as_bytes().to_vec(),
+    };
+    let msg = fetched.manifest().unwrap_err().to_string();
+    assert!(
+        msg.starts_with(
+            "invalid OCI input: manifest: digest `bad\\u{202e}\\\\\\u{23}#[` is not sha256"
+        ),
+        "{msg}"
+    );
+}
+
+#[test]
+fn revocation_errors_and_notices_escape_their_fields() {
+    use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revoked};
+    let h = || HOSTILE.to_owned();
+    for (name, msg) in [
+        (
+            "Expired",
+            RevocationError::Expired { expires: h() }.to_string(),
+        ),
+        (
+            "Rollback",
+            RevocationError::Rollback {
+                cached: h(),
+                fetched: h(),
+            }
+            .to_string(),
+        ),
+        (
+            "Equivocation",
+            RevocationError::Equivocation { issued: h() }.to_string(),
+        ),
+        ("Invalid", RevocationError::Invalid(h()).to_string()),
+        ("Layout", RevocationError::Layout(h()).to_string()),
+        ("Clock", RevocationError::Clock(h()).to_string()),
+        (
+            "CacheInvalid",
+            RevocationError::CacheInvalid {
+                path: h().into(),
+                why: h(),
+            }
+            .to_string(),
+        ),
+        ("Revoked::Key", Revoked::Key(h()).to_string()),
+        ("Revoked::Digest", Revoked::Digest(h()).to_string()),
+        (
+            "Stale",
+            RevocationNotice::Stale {
+                issued: h(),
+                expires: h(),
+            }
+            .to_string(),
+        ),
+    ] {
+        assert_eq!(
+            msg.chars().find(|&c| slopvac_sanitize::is_unsafe(c)),
+            None,
+            "{name}: {msg:?}"
+        );
+        assert!(msg.contains(ESCAPED), "{name}: {msg:?}");
+    }
+}

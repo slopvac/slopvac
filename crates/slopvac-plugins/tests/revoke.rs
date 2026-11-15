@@ -575,6 +575,33 @@ fn a_cache_that_is_not_a_cache_file_fails_closed() {
     }
 }
 
+/// The cache holds a statement the root signed that the strict parser rejects.
+/// The reason came from `verify` and is escaped once in the final message.
+#[test]
+fn a_root_signed_but_invalid_cache_reports_its_reason_escaped_once() {
+    let env = Env::new();
+    env.warm(env.list(ISSUED, EXPIRES, &[], &[]));
+    let revs = env.offline("2026-11-02T00:00:00Z");
+    let bytes = format!(
+        "{{\"digests\":[],\"expires\":\"{EXPIRES}\",\"extra\u{202e}\\\\##[x\":1,\"issued\":\"{ISSUED}\",\"keys\":[],\"schema_version\":1,\"type\":\"revocations\"}}"
+    );
+    let signed = Signed::by(&env.root, bytes.clone().into_bytes());
+    let doc = serde_json::json!({
+        "schema_version": 1,
+        "fetched_at": FETCHED,
+        "statement": bytes,
+        "minisig": signed.minisig,
+    });
+    fs::write(revs.cache_file(), doc.to_string()).unwrap();
+    let msg = revs.cached().unwrap_err().to_string();
+    assert!(
+        msg.ends_with(
+            "is damaged: the revocation list is invalid: the signed statement is invalid: unknown field `extra\\u{202e}\\\\\\u{23}#[x`, expected one of `schema_version`, `type`, `issued`, `expires`, `keys`, `digests`; run an online sync to replace it"
+        ),
+        "{msg}"
+    );
+}
+
 #[test]
 fn an_invalid_clock_is_refused() {
     let env = Env::new();
@@ -1068,4 +1095,28 @@ fn a_second_rotation_must_be_newer_than_the_first() {
     }
     rotate(&store, &b, &c, "2026-11-10T00:00:01Z").unwrap();
     assert_eq!(pinned_ids(&store), vec![c.public().key_id()]);
+}
+
+/// A signed statement the strict parser rejects: its error names the field the
+/// root signed. The reason is escaped once, whatever path built the error.
+#[test]
+fn an_unknown_field_name_in_a_signed_list_is_escaped_once() {
+    let root = Root::new();
+    let (i, e) = ("2026-11-12T00:00:00Z", "2026-12-12T00:00:00Z");
+    // Canonical order: digests, expires, extra..., issued, keys. The name holds
+    // U+202E, a literal backslash and a legacy runner command.
+    let bytes = format!(
+        "{{\"digests\":[],\"expires\":\"{e}\",\"extra\u{202e}\\\\##[x\":1,\"issued\":\"{i}\",\"keys\":[],\"schema_version\":1,\"type\":\"revocations\"}}"
+    )
+    .into_bytes();
+    let signed = Signed::by(&root, bytes);
+    let err =
+        RevocationList::verify(&signed.statement, &signed.minisig, &[root.public()]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.starts_with(
+            "the revocation list is invalid: the signed statement is invalid: unknown field `extra\\u{202e}\\\\\\u{23}#[x`"
+        ),
+        "{msg}"
+    );
 }
