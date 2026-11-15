@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::errors::CliError;
 use crate::redact;
+use crate::stdin::StdinPlan;
 
 /// What the CLI asks the engine to lint.
 #[derive(Debug, Clone, Default)]
@@ -17,6 +18,8 @@ pub struct LintRequest {
     pub targets: Vec<PathBuf>,
     /// Raw stdin bytes, when `--stdin` was given.
     pub stdin: Option<Vec<u8>>,
+    /// Parser name and mode for the stdin document, set with `stdin`.
+    pub stdin_plan: Option<StdinPlan>,
 }
 
 /// The result of one run.
