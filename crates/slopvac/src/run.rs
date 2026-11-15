@@ -128,7 +128,7 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, out, err_out) {
+    match dispatch(&matches, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -139,6 +139,7 @@ where
 
 fn dispatch(
     matches: &ArgMatches,
+    env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
@@ -151,6 +152,7 @@ fn dispatch(
             write_stdout(out, &generate::completions(shell))
         }
         Some(("man", m)) => man(m, out),
+        Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
@@ -162,7 +164,6 @@ fn dispatch(
                 .map(|(_, _, o)| *o)
                 .or(match name {
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
-                    "doctor" => Some("slopvac-8l4.12.5"),
                     "self" => Some("slopvac-8l4.12.4"),
                     "lsp" => Some("slopvac-8l4.12.7"),
                     _ => None,
@@ -180,6 +181,38 @@ fn dispatch(
             write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
+}
+
+/// `slopvac doctor`: print the report, and exit 2 when something needs attention.
+fn doctor(
+    root: &ArgMatches,
+    m: &ArgMatches,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let report = crate::doctor::build(&crate::doctor::Inputs {
+        env,
+        cwd: &cwd,
+        offline_flag: root.get_flag("offline"),
+        explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
+        version: env!("CARGO_PKG_VERSION"),
+        update: &LocalUpdateProbe,
+        config: &LocalConfigSources,
+        dirs: &EnvDirs,
+    });
+    let text = if m.get_one::<String>("format").is_some_and(|f| f == "json") {
+        report.to_json()
+    } else {
+        report.to_text()
+    };
+    write_stdout(out, text.as_bytes())?;
+    Ok(if report.ok {
+        exit::PASS
+    } else {
+        exit::INCOMPLETE
+    })
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
