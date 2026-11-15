@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use slopvac_engine::diff_scope::{
-    ChangedLines, DiffError, DiffScope, Limits, changed_lines, changed_lines_with, finding_fixable,
-    finding_in_scope, retain_in_scope,
+    ChangedLines, DiffError, DiffScope, Limits, Options, changed_lines, changed_lines_with,
+    finding_fixable, finding_in_scope, retain_in_scope,
 };
 use slopvac_model::Finding;
 use tempfile::TempDir;
@@ -806,6 +806,13 @@ fn a_whole_file_range_survives_a_lone_cr() {
     assert!(changed.is_whole_file(&repo.path("new.md")).unwrap());
 }
 
+fn options(limits: Limits) -> Options {
+    Options {
+        limits,
+        ..Options::default()
+    }
+}
+
 #[test]
 fn output_over_the_cap_is_an_incomplete_error() {
     let repo = repo!();
@@ -816,24 +823,223 @@ fn output_over_the_cap_is_an_incomplete_error() {
         ..Limits::default()
     };
 
-    let err = changed_lines_with(&repo.root, &DiffScope::WorkingTree, &limits).unwrap_err();
+    let err =
+        changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options(limits)).unwrap_err();
 
     assert!(matches!(err, DiffError::OutputTooLarge(8)), "{err}");
 }
 
+/// Stand-in `git` programs that never finish, for the process-cleanup tests.
+#[cfg(unix)]
+mod runaway {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+    use std::time::Duration;
+
+    struct Shim {
+        _dir: TempDir,
+        program: PathBuf,
+        pid: PathBuf,
+        child_pid: PathBuf,
+    }
+
+    /// A program that records its pid, starts a background child in its process group and
+    /// records that pid, then runs `tail` forever.
+    fn shim(tail: &str) -> Shim {
+        let dir = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(dir.path()).unwrap();
+        let (pid, child_pid) = (base.join("pid"), base.join("child-pid"));
+        let program = base.join("git");
+        let script = format!(
+            "#!/bin/sh\nsleep 600 &\necho $! > '{}'\necho $$ > '{}.tmp'\nmv '{}.tmp' '{}'\nexec {tail}\n",
+            child_pid.display(),
+            pid.display(),
+            pid.display(),
+            pid.display(),
+        );
+        fs::write(&program, script).unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        Shim {
+            _dir: dir,
+            program,
+            pid,
+            child_pid,
+        }
+    }
+
+    fn read_pid(path: &Path) -> String {
+        fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the stand-in git never started: {e}"))
+            .trim()
+            .to_owned()
+    }
+
+    /// Whether `ps` still lists the process. A zombie is listed, so an unreaped child
+    /// counts as present.
+    fn listed(pid: &str) -> bool {
+        let out = Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    }
+
+    /// Wait until `pid` is gone. Init may need a moment to reap an orphan, so this polls;
+    /// it asserts a state, never a duration.
+    fn assert_gone(pid: &str, what: &str) {
+        for _ in 0..400 {
+            if !listed(pid) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("{what} (pid {pid}) is still running or unreaped");
+    }
+
+    fn run(repo: &Repo, shim: &Shim, limits: Limits) -> DiffError {
+        let options = Options {
+            limits,
+            program: shim.program.clone().into_os_string(),
+        };
+        changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options).unwrap_err()
+    }
+
+    #[test]
+    fn a_run_past_the_deadline_kills_and_reaps_git_and_its_children() {
+        let repo = repo!();
+        let shim = shim("sleep 600");
+        let limits = Limits {
+            timeout: Duration::from_secs(2),
+            ..Limits::default()
+        };
+
+        let err = run(&repo, &shim, limits);
+
+        assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
+        assert_gone(&read_pid(&shim.pid), "git");
+        assert_gone(&read_pid(&shim.child_pid), "the child of git");
+    }
+
+    #[test]
+    fn output_over_the_cap_kills_and_reaps_git_and_its_children() {
+        let repo = repo!();
+        let shim = shim("yes");
+        let limits = Limits {
+            max_stdout: 1024,
+            ..Limits::default()
+        };
+
+        let err = run(&repo, &shim, limits);
+
+        assert!(matches!(err, DiffError::OutputTooLarge(1024)), "{err}");
+        assert_gone(&read_pid(&shim.pid), "git");
+        assert_gone(&read_pid(&shim.child_pid), "the child of git");
+    }
+}
+
 #[test]
-fn a_run_past_the_deadline_is_an_incomplete_error() {
+fn a_changed_file_over_the_read_cap_is_an_error_but_membership_needs_no_read() {
     let repo = repo!();
-    repo.write("doc.md", "x\n");
-    repo.commit("base");
+    repo.write("doc.md", "a\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n");
+    repo.commit("grow");
     let limits = Limits {
-        timeout: std::time::Duration::ZERO,
+        max_file: 16,
         ..Limits::default()
     };
 
-    let err = changed_lines_with(&repo.root, &DiffScope::WorkingTree, &limits).unwrap_err();
+    let changed = changed_lines_with(&repo.root, &since(&base), &options(limits)).unwrap();
 
-    assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
+    assert!(changed.is_changed(&repo.path("doc.md")).unwrap());
+    assert!(!changed.is_whole_file(&repo.path("doc.md")).unwrap());
+    let err = changed.ranges_for(&repo.path("doc.md")).unwrap_err();
+    assert!(
+        matches!(err, DiffError::FileTooLarge { limit: 16, .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_whole_file_answer_does_not_read_an_oversized_untracked_file() {
+    let repo = repo!();
+    repo.write("anchor.md", "x\n");
+    repo.commit("base");
+    repo.write("new.md", "0123456789012345678901234567890123456789\n");
+    let limits = Limits {
+        max_file: 8,
+        ..Limits::default()
+    };
+
+    let changed =
+        changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options(limits)).unwrap();
+
+    assert!(changed.is_whole_file(&repo.path("new.md")).unwrap());
+    assert_eq!(repo.ranges(&changed, "new.md"), vec![1..=u32::MAX]);
+}
+
+#[test]
+fn a_cr_at_a_read_boundary_is_classified_by_the_byte_that_follows_it() {
+    let repo = repo!();
+    // The CR is the last byte of the first 64 KiB read. Followed by LF it is one CRLF
+    // terminator (source line 2 is `b`); followed by `b` it is a lone CR (`c` is line 3).
+    let pad = "a".repeat(64 * 1024 - 1);
+    repo.write("crlf.md", format!("{pad}\r\nb\n"));
+    repo.write("lone.md", format!("{pad}\rb\nc\n"));
+    let base = repo.commit("base");
+    repo.write("crlf.md", format!("{pad}\r\nB\n"));
+    repo.write("lone.md", format!("{pad}\rb\nC\n"));
+    repo.commit("edit");
+
+    let changed = repo.lines(&since(&base));
+
+    assert_eq!(repo.ranges(&changed, "crlf.md"), vec![2..=2]);
+    assert_eq!(repo.ranges(&changed, "lone.md"), vec![3..=3]);
+}
+
+#[cfg(unix)]
+mod replaced {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn a_file_replaced_by_a_symlink_after_the_scope_was_built_is_refused() {
+        let repo = repo!();
+        repo.write("doc.md", "a\n");
+        let base = repo.commit("base");
+        repo.write("doc.md", "a\nb\n");
+        repo.commit("edit");
+        let changed = repo.lines(&since(&base));
+        let secret = repo.root.parent().unwrap().join("secret.md");
+        fs::write(&secret, "outside\n").unwrap();
+        fs::remove_file(repo.path("doc.md")).unwrap();
+        symlink(&secret, repo.path("doc.md")).unwrap();
+
+        let err = changed.ranges_for(&repo.path("doc.md")).unwrap_err();
+
+        assert!(matches!(err, DiffError::Symlink(_)), "{err}");
+    }
+
+    #[test]
+    fn a_file_replaced_by_a_fifo_after_the_scope_was_built_is_refused_without_blocking() {
+        let repo = repo!();
+        repo.write("doc.md", "a\n");
+        let base = repo.commit("base");
+        repo.write("doc.md", "a\nb\n");
+        repo.commit("edit");
+        let changed = repo.lines(&since(&base));
+        fs::remove_file(repo.path("doc.md")).unwrap();
+        let made = Command::new("mkfifo")
+            .arg(repo.path("doc.md"))
+            .status()
+            .unwrap();
+        assert!(made.success());
+
+        let err = changed.ranges_for(&repo.path("doc.md")).unwrap_err();
+
+        assert!(matches!(err, DiffError::NotRegularFile(_)), "{err}");
+    }
 }
 
 /// A partial clone that has no blobs. Reading a blob would make git fetch it from the
@@ -864,4 +1070,22 @@ fn a_missing_object_is_an_incomplete_error_and_is_never_fetched() {
     assert!(matches!(err, DiffError::MissingObject(_)), "{err}");
     let after = repo.git(&["-C", clone.to_str().unwrap(), "count-objects", "-v"]);
     assert_eq!(before, after, "the clone fetched objects");
+}
+
+#[test]
+fn a_range_past_the_end_of_the_current_file_is_dropped_or_clipped() {
+    let repo = repo!();
+    // Git lines: `a\rb` (source lines 1 and 2), `c` (3), `d` (4), `e` (5).
+    repo.write("doc.md", "a\rb\nc\nd\ne\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\rb\nc\nD\nE\n");
+    repo.commit("edit the last two lines");
+    let changed = repo.lines(&since(&base));
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![4..=5]);
+
+    // The work tree now has fewer lines than the committed file.
+    repo.write("doc.md", "a\rb\nc\nD");
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![4..=4]);
+    repo.write("doc.md", "a\rb\n");
+    assert_eq!(repo.ranges(&changed, "doc.md"), vec![]);
 }

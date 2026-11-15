@@ -2447,6 +2447,7 @@ dependencies = [
  "ignore",
  "proptest",
  "rayon",
+ "rustix",
  "serde",
  "serde_json",
  "slopvac-context",

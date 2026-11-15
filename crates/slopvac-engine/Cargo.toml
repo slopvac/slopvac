@@ -34,3 +34,8 @@ proptest.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile.workspace = true
+
+# Kill git's whole process group on a limit, and open changed files without following a
+# symlink or blocking on a FIFO.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs", "process"] }

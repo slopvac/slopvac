@@ -40,8 +40,9 @@
 //!
 //! Output is read on helper threads with a hard cap on stdout, and stderr past its cap is
 //! dropped. The run has a deadline. When either limit is hit the child is killed and
-//! reaped and the result is an error, never a partial diff. A helper thread whose pipe a
-//! grandchild still holds open is left to finish by itself.
+//! reaped and the result is an error, never a partial diff. On Unix git runs in its own
+//! process group and the whole group is killed, so a filter it started does not outlive
+//! it. A helper thread whose pipe a survivor still holds open is left to finish by itself.
 
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
@@ -91,6 +92,8 @@ pub struct Limits {
     pub max_stderr: usize,
     /// The longest a git call may run.
     pub timeout: Duration,
+    /// The largest changed file [`super::ChangedLines::ranges_for`] reads, in bytes.
+    pub max_file: u64,
 }
 
 impl Default for Limits {
@@ -99,6 +102,25 @@ impl Default for Limits {
             max_stdout: 256 * 1024 * 1024,
             max_stderr: 1024 * 1024,
             timeout: Duration::from_secs(120),
+            max_file: 64 * 1024 * 1024,
+        }
+    }
+}
+
+/// How to run git: the program and the limits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    /// The limits for each git call and for reading changed files.
+    pub limits: Limits,
+    /// The program to run. This is `git`; a test points it at a stand-in.
+    pub program: OsString,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            limits: Limits::default(),
+            program: OsString::from("git"),
         }
     }
 }
@@ -111,8 +133,9 @@ const DRAIN_GRACE: Duration = Duration::from_secs(5);
 /// Run `git` with the hardened argument set and return stdout.
 ///
 /// `args` follow the global options; `cwd` is the directory git starts in.
-pub(super) fn run(cwd: &Path, args: &[&str], limits: &Limits) -> Result<Vec<u8>, DiffError> {
-    let mut command = Command::new("git");
+pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8>, DiffError> {
+    let limits = &options.limits;
+    let mut command = Command::new(&options.program);
     command.args(GLOBAL_ARGS).args(args);
     command.current_dir(cwd);
     command
@@ -121,6 +144,9 @@ pub(super) fn run(cwd: &Path, args: &[&str], limits: &Limits) -> Result<Vec<u8>,
         .stderr(Stdio::piped());
     scrub_environment(&mut command);
     command.env("GIT_NO_LAZY_FETCH", "1");
+    // Its own process group, so a limit can stop git and the filters it started.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
 
     let mut child = command.spawn().map_err(DiffError::Spawn)?;
     let exceeded = Arc::new(AtomicBool::new(false));
@@ -166,8 +192,16 @@ pub(super) fn run(cwd: &Path, args: &[&str], limits: &Limits) -> Result<Vec<u8>,
     }
 }
 
-/// Kill the child and wait for it, so no zombie is left.
+/// Kill the child and its process group, and wait for it, so no zombie is left.
 fn stop(child: &mut Child) {
+    #[cfg(unix)]
+    if let Some(group) = i32::try_from(child.id())
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        // The group may already be gone; the child itself is killed below either way.
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
     // `kill` fails only when the child already ended; `wait` then reaps it.
     let _ = child.kill();
     let _ = child.wait();

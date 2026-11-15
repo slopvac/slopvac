@@ -34,8 +34,9 @@
 mod git;
 mod lines;
 mod patch;
+mod read;
 
-pub use git::Limits;
+pub use git::{Limits, Options};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
@@ -84,6 +85,17 @@ pub enum DiffError {
     /// Git ran past the deadline and was stopped. The check is incomplete.
     #[error("git did not finish within {0:?}")]
     TimedOut(std::time::Duration),
+    /// A changed file is larger than [`Limits::max_file`], so it was not read.
+    #[error("changed file {} is larger than {limit} bytes", .path.display())]
+    FileTooLarge {
+        /// The file.
+        path: PathBuf,
+        /// The cap in bytes.
+        limit: u64,
+    },
+    /// A changed file is no longer a regular file (a FIFO or a device now).
+    #[error("changed path is not a regular file: {}", .0.display())]
+    NotRegularFile(PathBuf),
     /// A changed path is a symlink.
     #[error("symlinked changed path is not supported: {}", .0.display())]
     Symlink(PathBuf),
@@ -96,6 +108,7 @@ pub enum DiffError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedLines {
     root: PathBuf,
+    max_file: u64,
     files: BTreeMap<PathBuf, Vec<RangeInclusive<u32>>>,
     symlinks: BTreeSet<PathBuf>,
 }
@@ -119,31 +132,51 @@ impl ChangedLines {
     /// reports no added line for it.
     ///
     /// Git counts lines by LF only, while findings count LF, CRLF and a lone CR as line
-    /// ends. When the file holds a lone CR this reads the file and translates the ranges;
-    /// a git line that spans several source lines maps to all of them. A file that cannot
-    /// be read as UTF-8 keeps git's numbers.
+    /// ends. This reads the file once, in chunks and without keeping it, and translates
+    /// the ranges; a git line that spans several source lines maps to all of them. A
+    /// file that is absent or unreadable keeps git's numbers.
+    ///
+    /// The open does not follow a symlink and does not block on a FIFO, and the file is
+    /// read up to [`Limits::max_file`] bytes. A whole-file range is returned without a
+    /// read, and [`Self::is_changed`] and [`Self::is_whole_file`] never read.
     ///
     /// `path` may be relative to the current directory. Its directory is resolved but the
     /// final name is not, so a symlink is seen as a symlink.
     ///
     /// # Errors
     ///
-    /// [`DiffError::Symlink`] when `path` is a symlink that git reports as changed.
+    /// [`DiffError::Symlink`] when `path` is a symlink that git reports as changed or one
+    /// that replaced the file since; [`DiffError::NotRegularFile`] for a FIFO or device;
+    /// [`DiffError::FileTooLarge`] over the cap.
     pub fn ranges_for(&self, path: &Path) -> Result<Vec<RangeInclusive<u32>>, DiffError> {
+        let (key, ranges) = self.raw(path)?;
+        // Nothing to translate: no range, or the whole file.
+        if ranges.is_empty() || ranges.iter().any(|r| *r.end() == WHOLE_FILE_END) {
+            return Ok(ranges.to_vec());
+        }
+        let Some(mut file) = read::open_regular(&key, self.max_file)? else {
+            return Ok(ranges.to_vec());
+        };
+        // One byte past the cap catches a file that grew after the size check.
+        let mut bounded = std::io::Read::take(&mut file, self.max_file.saturating_add(1));
+        match lines::to_source_lines(&mut bounded, ranges) {
+            Ok((_, read)) if read > self.max_file => Err(DiffError::FileTooLarge {
+                path: key,
+                limit: self.max_file,
+            }),
+            Ok((mapped, _)) => Ok(mapped),
+            Err(_) => Ok(ranges.to_vec()),
+        }
+    }
+
+    /// The lookup key for `path` and git's ranges for it, without reading the file.
+    fn raw(&self, path: &Path) -> Result<(PathBuf, &[RangeInclusive<u32>]), DiffError> {
         let key = locate(path);
         if self.symlinks.contains(&key) {
             return Err(DiffError::Symlink(key));
         }
-        let Some(ranges) = self.files.get(&key) else {
-            return Ok(Vec::new());
-        };
-        let text = std::fs::read(&key)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok());
-        Ok(match text {
-            Some(text) => lines::to_source_lines(&text, ranges),
-            None => ranges.clone(),
-        })
+        let ranges = self.files.get(&key).map_or(&[][..], Vec::as_slice);
+        Ok((key, ranges))
     }
 
     /// Whether `path` is changed in every line, as an untracked file is.
@@ -153,7 +186,8 @@ impl ChangedLines {
     /// [`DiffError::Symlink`] as for [`Self::ranges_for`].
     pub fn is_whole_file(&self, path: &Path) -> Result<bool, DiffError> {
         Ok(self
-            .ranges_for(path)?
+            .raw(path)?
+            .1
             .iter()
             .any(|r| *r.start() == 1 && *r.end() == WHOLE_FILE_END))
     }
@@ -164,7 +198,7 @@ impl ChangedLines {
     ///
     /// [`DiffError::Symlink`] as for [`Self::ranges_for`].
     pub fn is_changed(&self, path: &Path) -> Result<bool, DiffError> {
-        Ok(!self.ranges_for(path)?.is_empty())
+        Ok(!self.raw(path)?.1.is_empty())
     }
 }
 
@@ -177,10 +211,10 @@ impl ChangedLines {
 /// is not a commit, an object is missing, a limit is hit, or the patch is malformed. The
 /// scope is never partial.
 pub fn changed_lines(dir: &Path, scope: &DiffScope) -> Result<ChangedLines, DiffError> {
-    changed_lines_with(dir, scope, &Limits::default())
+    changed_lines_with(dir, scope, &Options::default())
 }
 
-/// [`changed_lines`] with explicit output and time limits for each git call.
+/// [`changed_lines`] with explicit limits and git program.
 ///
 /// # Errors
 ///
@@ -188,10 +222,10 @@ pub fn changed_lines(dir: &Path, scope: &DiffScope) -> Result<ChangedLines, Diff
 pub fn changed_lines_with(
     dir: &Path,
     scope: &DiffScope,
-    limits: &Limits,
+    options: &Options,
 ) -> Result<ChangedLines, DiffError> {
     let toplevel =
-        git::run(dir, &["rev-parse", "--show-toplevel"], limits).map_err(|e| match e {
+        git::run(dir, &["rev-parse", "--show-toplevel"], options).map_err(|e| match e {
             DiffError::Git(detail) if detail.is_empty() => {
                 DiffError::NotRepository("not inside a Git repository".to_owned())
             }
@@ -206,16 +240,17 @@ pub fn changed_lines_with(
     let mut diff_args: Vec<&str> = git::DIFF_ARGS.to_vec();
     match scope {
         DiffScope::Base(base) => {
-            range = format!("{}...HEAD", resolve_base(&root, base, limits)?);
+            range = format!("{}...HEAD", resolve_base(&root, base, options)?);
             diff_args.push(&range);
         }
         DiffScope::WorkingTree => diff_args.push("HEAD"),
     }
     diff_args.push("--");
-    let parsed = patch::parse(&git::run(&root, &diff_args, limits)?)?;
+    let parsed = patch::parse(&git::run(&root, &diff_args, options)?)?;
 
     let mut changed = ChangedLines {
         root,
+        max_file: options.limits.max_file,
         files: BTreeMap::new(),
         symlinks: BTreeSet::new(),
     };
@@ -226,7 +261,7 @@ pub fn changed_lines_with(
         let listing = git::run(
             &changed.root,
             &["ls-files", "--others", "--exclude-standard", "-z"],
-            limits,
+            options,
         )?;
         for entry in listing.split(|b| *b == 0).filter(|e| !e.is_empty()) {
             // A nested repository is listed as `dir/`; it is not a file.
@@ -266,13 +301,13 @@ impl ChangedLines {
 }
 
 /// Turn `base` into a full commit id, so only an id reaches `git diff`.
-fn resolve_base(root: &Path, base: &str, limits: &Limits) -> Result<String, DiffError> {
+fn resolve_base(root: &Path, base: &str, options: &Options) -> Result<String, DiffError> {
     // A leading dash would read as an option; a revision name cannot start with one.
     if base.is_empty() || base.starts_with('-') {
         return Err(DiffError::InvalidBase(base.to_owned()));
     }
     let spec = format!("{base}^{{commit}}");
-    let out = git::run(root, &["rev-parse", "--verify", "--quiet", &spec], limits).map_err(
+    let out = git::run(root, &["rev-parse", "--verify", "--quiet", &spec], options).map_err(
         |e| match e {
             DiffError::Git(_) => DiffError::InvalidBase(base.to_owned()),
             other => other,
