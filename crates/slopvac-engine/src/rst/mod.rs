@@ -30,6 +30,7 @@
 //! node's lines, line-precise where they are not, never dropped.
 
 mod map;
+mod meter;
 mod model;
 mod run;
 pub mod trust;
@@ -306,7 +307,7 @@ impl RstAdapter {
             docutils: output.docutils,
             notices: mapped.notices,
             work: mapped.work,
-            scanned: mapped.scanned,
+            scanned: mapped.scanned + bytes.len(),
         })
     }
 }

@@ -21,9 +21,12 @@
 //! some directive output (`rubric`) one line late. A node with no usable lines is reported
 //! in a notice. No prose is dropped.
 //!
-//! The work is bounded. Every character looked at is charged to one budget that grows with
-//! the size of the source and the text. Past it, nodes fall back to line precision without
-//! any more matching, so the cost stays linear.
+//! # Accounting
+//!
+//! Source text and driver output are read only through the metered types in `meter`, which
+//! count every byte they examine. The budget grows with the size of the source and the text.
+//! Past it, nodes fall back to line precision without any more matching, so the cost stays
+//! linear. The `scanned` total keeps counting after that, and the property tests bound it.
 
 use std::collections::HashMap;
 
@@ -33,6 +36,7 @@ use slopvac_parse::{
     Projection, TokenKind,
 };
 
+use super::meter::{Cur, Meter, Src};
 use super::model::{Container, Node, Piece};
 use super::{RstNotice, span};
 
@@ -50,8 +54,8 @@ pub(super) struct Mapped {
     pub(super) notices: Vec<RstNotice>,
     /// Characters charged to the budget.
     pub(super) work: usize,
-    /// Source bytes looked at by every loop in this module, charged or not. The budget caps
-    /// the charged part; the rest is a small multiple of the input.
+    /// Bytes examined by every read of the source and of the driver output, charged or not.
+    /// The budget caps the charged part; the rest is a small multiple of the input.
     pub(super) scanned: usize,
 }
 
@@ -67,14 +71,16 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
                     .sum::<usize>()
         })
         .sum();
-    let mut mapper = Mapper::new(
-        source,
-        line_starts(source, bom),
-        0,
+    let mut meter = Meter::new(
         WORK_PER_BYTE
             .saturating_mul(source.len().saturating_add(text_bytes))
             .saturating_add(WORK_BASE),
     );
+    // The driver output was decoded: its bytes are examined once here.
+    meter.scan(text_bytes);
+    let src = Src::new(source);
+    let starts = src.line_starts(&mut meter, bom);
+    let mut mapper = Mapper::new(src, starts, meter);
     let mut blocks = Vec::new();
     let mut code_spans = Vec::new();
     let mut unplaced: Vec<&str> = Vec::new();
@@ -122,8 +128,8 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
     Mapped {
         document: Document { blocks, code_spans },
         notices,
-        work: mapper.work,
-        scanned: mapper.scanned,
+        work: mapper.m.work(),
+        scanned: mapper.m.scanned(),
     }
 }
 
@@ -149,7 +155,8 @@ impl Border {
     }
 }
 
-/// Read a grid (`+----+----+`) or simple (`====  ====`) table border.
+/// Read a grid (`+----+----+`) or simple (`====  ====`) table border. The caller has paid
+/// for the bytes of `line`.
 fn parse_border(line: &str) -> Option<Border> {
     let text = line.trim_end();
     let body = text.trim_start();
@@ -177,27 +184,6 @@ fn parse_border(line: &str) -> Option<Border> {
         return Some(Border::Simple(starts));
     }
     None
-}
-
-/// Start offsets of the lines: LF, CRLF and a lone CR end a line.
-fn line_starts(source: &str, bom: usize) -> Vec<usize> {
-    let bytes = source.as_bytes();
-    let mut starts = vec![bom];
-    let mut i = bom;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\n' => starts.push(i + 1),
-            b'\r' => {
-                if bytes.get(i + 1) == Some(&b'\n') {
-                    i += 1;
-                }
-                starts.push(i + 1);
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    starts
 }
 
 /// What became of a node.
@@ -229,12 +215,9 @@ struct Attempt {
 }
 
 struct Mapper<'a> {
-    src: &'a str,
+    src: Src<'a>,
     starts: Vec<usize>,
-    work: usize,
-    /// Bytes looked at, charged to the budget or not.
-    scanned: usize,
-    budget: usize,
+    m: Meter,
     /// For a line, the nearest table border at or above it (`None`: there is none).
     memo: HashMap<usize, Option<usize>>,
     /// For a line, where its text starts and ends without the whitespace around it.
@@ -244,21 +227,17 @@ struct Mapper<'a> {
 }
 
 impl<'a> Mapper<'a> {
-    fn new(src: &'a str, starts: Vec<usize>, work: usize, budget: usize) -> Self {
+    fn new(src: Src<'a>, starts: Vec<usize>, m: Meter) -> Self {
         Self {
             src,
             starts,
-            work,
-            scanned: src.len(),
-            budget,
+            m,
             memo: HashMap::new(),
             trims: HashMap::new(),
             borders: HashMap::new(),
         }
     }
-}
 
-impl<'a> Mapper<'a> {
     /// The block for `node`.
     fn block(&mut self, node: &Node) -> Outcome {
         let Some((lo, hi)) = node
@@ -356,38 +335,13 @@ impl<'a> Mapper<'a> {
         if line >= self.starts.len() {
             return self.src.len();
         }
-        let next = self.starts[line];
-        let bytes = self.src.as_bytes();
-        if next >= 2 && bytes[next - 2] == b'\r' && bytes[next - 1] == b'\n' {
-            next - 2
-        } else {
-            next - 1
-        }
+        self.src.line_end_before(self.starts[line])
     }
 
-    /// Charge `units` of work. False once the budget is spent. A spent budget takes no
-    /// more charges, so the count stops one step past it.
-    fn charge(&mut self, units: usize) -> bool {
-        if self.work > self.budget {
-            return false;
-        }
-        self.scanned = self.scanned.saturating_add(units);
-        self.work = self.work.saturating_add(units);
-        self.work <= self.budget
-    }
-
-    /// Count `units` bytes looked at by a loop that is not charged to the budget.
-    fn scan(&mut self, units: usize) {
-        self.scanned = self.scanned.saturating_add(units);
-    }
-
-    /// Charge `units`; `None` once the budget is spent.
-    fn spend(&mut self, units: usize) -> Option<()> {
-        self.charge(units).then_some(())
-    }
-
-    const fn exhausted(&self) -> bool {
-        self.work > self.budget
+    /// The text of line `line` (1-based), without its terminator. Its bytes are charged.
+    fn line_text(&mut self, line: usize) -> &'a str {
+        let (a, b) = (self.starts[line - 1], self.line_end(line));
+        self.src.slice(&mut self.m, a, b)
     }
 
     /// Place a prose node inside lines `lo..hi`.
@@ -397,7 +351,7 @@ impl<'a> Mapper<'a> {
         {
             return self.place_in_column(node, window);
         }
-        if !self.exhausted() {
+        if !self.m.exhausted() {
             let (first, last) = (node.start?, node.end?);
             let wider = self.byte_range(first.saturating_sub(1).max(1), last + 1);
             for range in [Some((lo, hi)), wider] {
@@ -410,16 +364,10 @@ impl<'a> Mapper<'a> {
         self.fallback_lines(&node.pieces, node.start?, node.end?)
     }
 
-    /// The text of line `line` (1-based), without its terminator.
-    fn line_text(&self, line: usize) -> &'a str {
-        let src: &'a str = self.src;
-        &src[self.starts[line - 1]..self.line_end(line)]
-    }
-
-    /// Whether `line` is a table border. The line is charged before it is read.
+    /// Whether `line` is a table border.
     fn is_border(&mut self, line: usize) -> bool {
         let text = self.line_text(line);
-        self.charge(text.len().max(1)) && parse_border(text).is_some()
+        !self.m.exhausted() && parse_border(text).is_some()
     }
 
     /// The character columns `start..end` of the cell's columns, read from the nearest
@@ -449,7 +397,7 @@ impl<'a> Mapper<'a> {
                 break known;
             }
             let text = self.line_text(line);
-            if !self.charge(text.len().max(1)) {
+            if self.m.exhausted() {
                 return None;
             }
             if text.trim().is_empty() {
@@ -478,29 +426,17 @@ impl<'a> Mapper<'a> {
         // (start in the view, start in the source, length) of each line's piece.
         let mut pieces: Vec<(usize, usize, usize)> = Vec::new();
         for line in first..=last {
-            let text = self.line_text(line);
-            // Charge the scan before it happens.
-            if !self.charge(x1.min(text.len()).saturating_add(1)) {
+            let (a, b) = (self.starts[line - 1], self.line_end(line));
+            let Some((from, to)) = self.src.window(&mut self.m, a, b, x0, x1) else {
                 return self.fallback_lines(&node.pieces, first, last);
-            }
-            let mut from = text.len();
-            let mut to = text.len();
-            for (i, (byte, _)) in text.char_indices().enumerate() {
-                if i == x0 {
-                    from = byte;
-                }
-                if i == x1 {
-                    to = byte;
-                    break;
-                }
-            }
-            let from = from.min(to);
-            pieces.push((view.len(), self.starts[line - 1] + from, to - from));
-            view.push_str(&text[from..to]);
+            };
+            let text = self.src.slice(&mut self.m, from, to);
+            pieces.push((view.len(), from, to - from));
+            view.push_str(text);
             view.push('\n');
         }
-        let mut inner = Mapper::new(&view, vec![0], self.work, self.budget);
-        let placed = if inner.exhausted() {
+        let mut inner = Mapper::new(Src::new(&view), vec![0], self.m.child());
+        let placed = if inner.m.exhausted() {
             None
         } else {
             inner
@@ -508,7 +444,7 @@ impl<'a> Mapper<'a> {
                 .and_then(Self::finish)
         }
         .or_else(|| inner.fallback(&node.pieces, 0, view.len()));
-        self.work = inner.work;
+        self.m.absorb(&inner.m);
         let start_of = |v: usize| {
             let i = pieces
                 .partition_point(|&(at, _, _)| at <= v)
@@ -575,6 +511,7 @@ impl<'a> Mapper<'a> {
     }
 
     /// The prose of a node as plain text with its inline code as `\0`, whitespace collapsed.
+    /// The pieces are driver output, counted once when it was decoded.
     fn fallback_text(pieces: &[Piece]) -> Option<String> {
         let mut text = String::new();
         for piece in pieces {
@@ -604,10 +541,7 @@ impl<'a> Mapper<'a> {
     /// own text (a view), so trimming it is bounded by that text.
     fn fallback(&mut self, pieces: &[Piece], lo: usize, hi: usize) -> Option<Placed> {
         let text = Self::fallback_text(pieces)?;
-        let slice = &self.src[lo..hi];
-        let start = lo + (slice.len() - slice.trim_start().len());
-        let end = (lo + slice.trim_end().len()).max(start);
-        self.scan((start - lo) + (lo + slice.len() - end));
+        let (start, end) = self.src.trimmed(&mut self.m, lo, hi).unwrap_or((lo, lo));
         Some(Self::fallback_at(&text, start, end))
     }
 
@@ -618,7 +552,7 @@ impl<'a> Mapper<'a> {
         let last = last.min(self.starts.len());
         let mut start = None;
         for line in first..=last {
-            self.scan(1);
+            self.m.scan(1);
             if let Some((from, _)) = self.line_content(line) {
                 start = Some(from);
                 break;
@@ -626,7 +560,7 @@ impl<'a> Mapper<'a> {
         }
         let mut end = None;
         for line in (first..=last).rev() {
-            self.scan(1);
+            self.m.scan(1);
             if let Some((_, to)) = self.line_content(line) {
                 end = Some(to);
                 break;
@@ -645,14 +579,9 @@ impl<'a> Mapper<'a> {
         if let Some(known) = self.trims.get(&line) {
             return *known;
         }
-        let text = self.line_text(line);
-        self.scan(text.len());
-        let base = self.starts[line - 1];
-        let body = text.trim_start();
-        let found = (!body.is_empty()).then(|| {
-            let from = base + (text.len() - body.len());
-            (from, base + text.trim_end().len())
-        });
+        let (a, b) = (self.starts[line - 1], self.line_end(line));
+        self.src.slice_free(&mut self.m, a, b);
+        let found = self.src.trimmed(&mut self.m, a, b);
         self.trims.insert(line, found);
         found
     }
@@ -721,7 +650,7 @@ impl<'a> Mapper<'a> {
 
     /// Place the words of inline markup inside its own source text.
     fn inline(&mut self, piece: &Piece, begin: usize, end: usize, toks: &mut Vec<Tok>) {
-        let raw = &self.src[begin..end];
+        let raw = self.src.slice(&mut self.m, begin, end);
         let mut skip = 0;
         if raw.starts_with(':')
             && let Some(i) = raw[1..].find(':')
@@ -741,12 +670,12 @@ impl<'a> Mapper<'a> {
 
     /// Skip `\ ` and `\` + newline pairs, which docutils removes. Every pair is charged.
     fn skip_gap(&mut self, mut at: usize, hi: usize) -> Option<usize> {
-        while at + 1 < hi && self.src.as_bytes()[at] == b'\\' {
-            let next = self.src[at + 1..hi].chars().next()?;
+        while self.src.peek(&mut self.m, at, hi) == Some('\\') {
+            let next = self.src.peek(&mut self.m, at + 1, hi)?;
             if !next.is_whitespace() {
                 break;
             }
-            self.spend(1)?;
+            self.m.spend(1)?;
             at += 1 + next.len_utf8();
         }
         Some(at)
@@ -754,15 +683,11 @@ impl<'a> Mapper<'a> {
 
     /// The first position in `from..hi` where `raw` starts.
     fn find_raw(&mut self, from: usize, hi: usize, raw: &str) -> Option<usize> {
-        let first = raw.chars().next()?;
+        let first = Cur::new(raw).peek(&mut self.m)?;
         let mut at = from;
         while at < hi {
-            let Some(off) = self.src[at..hi].find(first) else {
-                // The search read to the end of the range.
-                self.charge(hi - at);
-                return None;
-            };
-            if !self.charge(off + 1) {
+            let (off, _) = self.src.find(&mut self.m, at, hi, |c| c == first)?;
+            if self.m.exhausted() {
                 return None;
             }
             at += off;
@@ -774,26 +699,23 @@ impl<'a> Mapper<'a> {
         None
     }
 
-    /// Match `raw` at `at`. Whitespace in `raw` matches any whitespace in the source,
-    /// because docutils strips the indentation of continuation lines. Returns the end.
+    /// Match `raw` at `at`. Whitespace in `raw` is one space, which matches any run of
+    /// whitespace in the source, because docutils strips the indentation of continuation
+    /// lines. Returns the end.
     fn eat_raw(&mut self, at: usize, hi: usize, raw: &str) -> Option<usize> {
         let mut p = at;
-        let mut chars = raw.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if !self.charge(1) {
+        let mut cur = Cur::new(raw);
+        while let Some(ch) = cur.bump(&mut self.m) {
+            if self.m.exhausted() {
                 return None;
             }
-            let c = self.src[p..hi].chars().next()?;
+            let c = self.src.peek(&mut self.m, p, hi)?;
             if ch.is_whitespace() {
                 if !c.is_whitespace() {
                     return None;
                 }
-                while chars.peek().is_some_and(|n| n.is_whitespace()) {
-                    chars.next();
-                }
-                let run = self.src[p..hi].len() - self.src[p..hi].trim_start().len();
-                self.spend(run)?;
-                p += run;
+                cur.skip_ws(&mut self.m);
+                p = self.src.skip_while(&mut self.m, p, hi, char::is_whitespace);
             } else if c == ch {
                 p += c.len_utf8();
             } else {
@@ -805,33 +727,36 @@ impl<'a> Mapper<'a> {
 
     /// The first position in `from..hi` where the first word of `text` starts as a word.
     fn find_word_start(&mut self, from: usize, hi: usize, text: &str) -> Option<usize> {
-        let word: String = text.chars().take_while(|c| !c.is_whitespace()).collect();
+        let mut cur = Cur::new(text);
+        let mut word = String::new();
+        while let Some(c) = cur.peek(&mut self.m) {
+            if c.is_whitespace() {
+                break;
+            }
+            word.push(c);
+            cur.bump(&mut self.m);
+        }
         let first = word.chars().next()?;
         let mut at = from;
         while at < hi {
-            let Some((off, ch)) = self.src[at..hi]
-                .char_indices()
-                .find(|&(_, c)| c == first || c == '\\')
-            else {
-                // The search read to the end of the range.
-                self.charge(hi - at);
-                return None;
-            };
-            if !self.charge(off + 1) {
+            let (off, ch) = self
+                .src
+                .find(&mut self.m, at, hi, |c| c == first || c == '\\')?;
+            if self.m.exhausted() {
                 return None;
             }
             at += off;
-            let before_ok = self.src[..at]
-                .chars()
-                .next_back()
+            let before_ok = self
+                .src
+                .before(&mut self.m, at)
                 .is_none_or(|c| !c.is_alphanumeric() || at == from);
             if before_ok {
                 let mut scratch = Vec::new();
                 if let Some(end) = self.text(&word, at, hi, &mut scratch) {
                     let after_ok = !word.chars().next_back().is_some_and(char::is_alphanumeric)
-                        || !self.src[end..]
-                            .chars()
-                            .next()
+                        || !self
+                            .src
+                            .peek(&mut self.m, end, self.src.len())
                             .is_some_and(char::is_alphanumeric);
                     if after_ok {
                         return Some(at);
@@ -849,7 +774,7 @@ impl<'a> Mapper<'a> {
         let mut p = at;
         let mut run = String::new();
         let mut run_start = at;
-        let mut chars = text.chars().peekable();
+        let mut cur = Cur::new(text);
         let flush = |toks: &mut Vec<Tok>, run: &mut String, start: usize, end: usize| {
             if !run.is_empty() {
                 push(
@@ -858,28 +783,23 @@ impl<'a> Mapper<'a> {
                 );
             }
         };
-        while let Some(ch) = chars.next() {
-            if !self.charge(1) {
+        while let Some(ch) = cur.bump(&mut self.m) {
+            if self.m.exhausted() {
                 return None;
             }
             if ch.is_whitespace() {
-                let mut next = None;
-                while let Some(&n) = chars.peek() {
-                    if n.is_whitespace() {
-                        chars.next();
-                    } else {
-                        next = Some(n);
-                        break;
-                    }
-                }
+                cur.skip_ws(&mut self.m);
+                let next = cur.peek(&mut self.m);
                 flush(toks, &mut run, run_start, p);
                 let begin = p;
                 // Table borders sit between the words of a cell.
-                while let Some(c) = self.src[p..hi].chars().next() {
+                while let Some(c) = self.src.peek(&mut self.m, p, hi) {
+                    if self.m.exhausted() {
+                        return None;
+                    }
                     if c.is_whitespace()
                         || (next.is_some() && matches!(c, '|' | '+') && next != Some(c))
                     {
-                        self.spend(1)?;
                         p += c.len_utf8();
                     } else {
                         break;
@@ -897,18 +817,18 @@ impl<'a> Mapper<'a> {
             // `\ ` and `\` + newline vanish from the text.
             let mut q = p;
             loop {
-                let c = self.src[q..hi].chars().next()?;
+                let c = self.src.peek(&mut self.m, q, hi)?;
                 if c != '\\' {
                     break;
                 }
-                let next = self.src[q + 1..hi].chars().next()?;
+                let next = self.src.peek(&mut self.m, q + 1, hi)?;
                 if next == ch {
                     break;
                 }
                 if !next.is_whitespace() {
                     return None;
                 }
-                self.spend(1)?;
+                self.m.spend(1)?;
                 q += 1 + next.len_utf8();
             }
             if q > p {
@@ -916,10 +836,10 @@ impl<'a> Mapper<'a> {
                 p = q;
                 run_start = p;
             }
-            let c = self.src[p..hi].chars().next()?;
+            let c = self.src.peek(&mut self.m, p, hi)?;
             if c == '\\' {
                 // An escape: the backslash and the character it protects.
-                let next = self.src[p + 1..hi].chars().next()?;
+                let next = self.src.peek(&mut self.m, p + 1, hi)?;
                 if next != ch {
                     return None;
                 }
@@ -959,6 +879,10 @@ fn push(toks: &mut Vec<Tok>, tok: Tok) {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::assert_is_empty)]
+
+    /// The most uncharged bytes a run may look at, per byte of input. The charged part is
+    /// capped by the budget itself.
+    const UNCHARGED_PER_BYTE: usize = 16;
 
     use super::*;
     use crate::rst::model::Output;
@@ -1217,7 +1141,7 @@ mod tests {
         assert_eq!(mapped.document.blocks.len(), 2 * rows);
         assert_eq!(mapped.notices, []);
         assert!(
-            mapped.work <= 8 * source.len(),
+            mapped.work <= 16 * source.len(),
             "{} for {}",
             mapped.work,
             source.len()
@@ -1261,10 +1185,6 @@ mod tests {
 
         use super::*;
 
-        /// The most uncharged bytes a run may look at, per byte of input. The charged part is
-        /// capped by the budget itself.
-        const UNCHARGED_PER_BYTE: usize = 16;
-
         fn line() -> impl Strategy<Value = String> {
             let words = prop::collection::vec("[a-z]{1,8}", 0..12).prop_map(|w| w.join(" "));
             prop_oneof![
@@ -1288,6 +1208,12 @@ mod tests {
                 words.prop_map(|w| format!(".. {w}")),
                 (1..400usize).prop_map(|n| format!("{}x", "\\ ".repeat(n))),
                 (1..2000usize).prop_map(|n| format!("{}b", "a".repeat(n))),
+                (1..60usize, 1..3000usize).prop_map(|(k, gap)| format!(
+                    ":{}: {}*x",
+                    "a".repeat(k),
+                    " ".repeat(gap)
+                )),
+                (1..500usize).prop_map(|k| "*x ".repeat(k)),
                 Just(String::new()),
             ]
         }
@@ -1314,6 +1240,10 @@ mod tests {
                         r#"{{"k":"c","t":{},"raw":{raw}}}"#,
                         serde_json::to_string(&w).unwrap()
                     )
+                }),
+                (1..3000usize).prop_map(|gap| {
+                    let raw = serde_json::to_string(&format!("*x{}y*", " ".repeat(gap))).unwrap();
+                    format!(r#"{{"k":"i","t":"x y","raw":{raw}}}"#)
                 }),
                 Just(r#"{"k":"o","raw":"[1]_"}"#.to_owned()),
             ]
@@ -1382,5 +1312,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_scans_of_a_cells_own_view_are_counted() {
+        let source = "+--+--+\n|ab|cd|\n+--+--+\n";
+        let cells = r#"[
+            {"tag":"paragraph","start":2,"end":2,"cell":[0,0,1],"pieces":[{"k":"t","t":"ab"}]},
+            {"tag":"paragraph","start":2,"end":2,"cell":[0,1,1],"pieces":[{"k":"t","t":"cd"}]}]"#;
+        let mapped = project(source, 0, &nodes(cells));
+        assert_eq!(mapped.document.blocks.len(), 2);
+        assert!(
+            mapped.scanned >= mapped.work,
+            "scanned {} is below the {} charged",
+            mapped.scanned,
+            mapped.work
+        );
+    }
+
+    #[test]
+    fn long_whitespace_in_an_inline_construct_is_not_rescanned_at_every_near_match() {
+        let near_matches = 2_000;
+        let gap = 20_000;
+        let source = format!("{}\n", "*x ".repeat(near_matches));
+        let raw = format!("*x{}y*", " ".repeat(gap));
+        let json = format!(
+            r#"[{{"tag":"paragraph","start":1,"end":1,"pieces":[{{"k":"i","t":"x y","raw":{}}}]}}]"#,
+            serde_json::to_string(&raw).unwrap()
+        );
+        let mapped = project(&source, 0, &nodes(&json));
+        let size = source.len() + raw.len() + 3;
+        let budget = WORK_PER_BYTE * size + WORK_BASE;
+        assert!(
+            mapped.scanned <= budget + UNCHARGED_PER_BYTE * size,
+            "scanned {} for an input of {size}",
+            mapped.scanned
+        );
+        assert_eq!(mapped.document.blocks.len(), 1);
     }
 }

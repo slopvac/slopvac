@@ -51,11 +51,31 @@ pub(super) struct Node {
 pub(super) struct Piece {
     /// `t` text, `i` inline markup, `c` inline code, `o` markup with no prose.
     pub(super) k: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "squash")]
     pub(super) t: String,
-    /// The inline node as written in the source.
-    #[serde(default)]
+    /// The inline node as written in the source, with each whitespace run as one space.
+    #[serde(default, deserialize_with = "squash")]
     pub(super) raw: String,
+}
+
+/// Collapse every whitespace run to one space, once, while the output is decoded. Matching
+/// then never walks a long run of whitespace in driver output again.
+fn squash<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    let mut out = String::with_capacity(text.len());
+    let mut blank = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            if !blank {
+                out.push(' ');
+            }
+            blank = true;
+        } else {
+            out.push(c);
+            blank = false;
+        }
+    }
+    Ok(out)
 }
 
 /// A list item or block quote around a node.
