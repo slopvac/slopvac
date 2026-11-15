@@ -119,8 +119,6 @@ ignored = [
   "pcre2-sys",
   "slopvac-agents",
   "slopvac-config",
-  "slopvac-engine",
-  "slopvac-lsp",
   "slopvac-plugins",
   "slopvac-styles",
 ]
