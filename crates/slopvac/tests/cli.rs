@@ -309,3 +309,32 @@ fn usage_errors_keep_clap_styling_when_colour_is_forced() {
         .stderr(predicate::str::contains("\u{1b}[").not())
         .stderr(predicate::str::starts_with("error[usage]:"));
 }
+
+#[test]
+fn version_json_prints_a_document_with_notices() {
+    let cache = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .env("SLOPVAC_OFFLINE", "1")
+        .args(["--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(doc["name"], "slopvac");
+    assert_eq!(doc["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(doc["notices"], serde_json::json!([]));
+}
+
+#[test]
+fn self_update_offline_exits_two_or_names_the_upgrade_command() {
+    // The test binary is not an installer install, so `self update` explains instead of fetching.
+    slopvac()
+        .env("SLOPVAC_OFFLINE", "1")
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[self-update-unmanaged]"));
+}

@@ -321,10 +321,7 @@ fn doctor() -> Command {
 }
 
 fn self_cmd() -> Command {
-    Command::new("self")
-        .about("Manage this installation.")
-        .subcommand_required(true)
-        .subcommand(Command::new("update").about("Update slopvac to the latest release."))
+    slopvac_update::command::command()
 }
 
 fn lsp() -> Command {

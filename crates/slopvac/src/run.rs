@@ -87,6 +87,17 @@ where
 {
     let tree = cli::command();
     let args = cli::insert_default_command(args.into_iter().map(Into::into).collect(), &tree);
+    if is_version_json(&args) {
+        let flag = args.iter().any(|a| a == "--offline");
+        let rt = update_runtime(env, offline::resolve(flag, env, None));
+        return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
+            Ok(code) => exit::code(code),
+            Err(failure) => {
+                let _ = writeln!(err_out, "{failure}");
+                exit::code(exit::INCOMPLETE)
+            }
+        };
+    }
     let early_color = color::resolve(scan_color_flag(&args), env);
     let tree = tree.color(if early_color {
         clap::ColorChoice::Always
@@ -128,7 +139,7 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, out, err_out) {
+    match dispatch(&matches, globals, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -139,10 +150,18 @@ where
 
 fn dispatch(
     matches: &ArgMatches,
+    globals: Globals,
+    env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
+        Some(("self", m)) => {
+            let rt = update_runtime(env, globals.offline);
+            let text = slopvac_update::command::run(m, &rt)
+                .map_err(|f| CliError::new(f.code, f.message))?;
+            write_stdout(out, text.as_bytes())
+        }
         Some(("lint", m)) => lint(m, err_out),
         Some(("completions", m)) => {
             let shell = *m
@@ -171,7 +190,6 @@ fn dispatch(
                 .or(match name {
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
                     "doctor" => Some("slopvac-8l4.12.5"),
-                    "self" => Some("slopvac-8l4.12.4"),
                     "lsp" => Some("slopvac-8l4.12.7"),
                     _ => None,
                 });
@@ -200,6 +218,34 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+/// Whether the arguments ask for `--version --json` and nothing else but global flags.
+fn is_version_json(args: &[OsString]) -> bool {
+    let tokens: Vec<&str> = args.iter().skip(1).filter_map(|a| a.to_str()).collect();
+    tokens.len() + 1 == args.len()
+        && tokens.iter().any(|t| matches!(*t, "--version" | "-V"))
+        && tokens.contains(&"--json")
+        && tokens.iter().all(|t| {
+            matches!(
+                *t,
+                "--version" | "-V" | "--json" | "--offline" | "--no-color"
+            )
+        })
+}
+
+/// Build the update runtime from the injected environment.
+fn update_runtime(env: &dyn Env, offline: bool) -> slopvac_update::command::Runtime {
+    let vars: std::collections::HashMap<&'static str, String> = slopvac_update::command::ENV_VARS
+        .iter()
+        .filter_map(|name| env.var(name).map(|v| (*name, v)))
+        .collect();
+    slopvac_update::command::Runtime::with_var(
+        offline,
+        env!("CARGO_PKG_VERSION"),
+        None,
+        Box::new(move |k| vars.get(k).cloned()),
+    )
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
