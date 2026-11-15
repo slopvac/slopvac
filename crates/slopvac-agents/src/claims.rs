@@ -12,8 +12,6 @@ use std::path::PathBuf;
 use clap::{Arg, ArgMatches, Command};
 use serde::Serialize;
 
-use slopvac_text::TextError;
-
 use crate::error::AgentsError;
 
 /// Pairs below this similarity are not aligned.
@@ -137,7 +135,7 @@ fn starts_block(line: &str) -> bool {
         || ordered
 }
 
-fn segments(text: &str) -> Result<Vec<Segment>, TextError> {
+fn segments(text: &str, engine: &dyn TextEngine) -> Result<Vec<Segment>, AgentsError> {
     let mut out = Vec::new();
     let mut lines = text.lines().enumerate().peekable();
     if lines.peek().is_some_and(|(_, l)| l.trim() == "---") {
@@ -151,11 +149,11 @@ fn segments(text: &str) -> Result<Vec<Segment>, TextError> {
     let mut para: Vec<String> = Vec::new();
     let mut para_line = 0;
     let flush =
-        |para: &mut Vec<String>, line: usize, out: &mut Vec<Segment>| -> Result<(), TextError> {
+        |para: &mut Vec<String>, line: usize, out: &mut Vec<Segment>| -> Result<(), AgentsError> {
             if !para.is_empty() {
-                for s in slopvac_text::split_sentences(&para.join(" "))? {
+                for s in engine.sentences(&para.join(" "))? {
                     out.push(Segment {
-                        text: s.text,
+                        text: s,
                         line,
                         kind: Kind::Prose,
                     });
@@ -201,28 +199,85 @@ const STOPWORDS: [&str; 34] = [
     "if", "then", "so", "do", "does", "has",
 ];
 
-/// Content tokens for alignment: `slopvac-text` word tokens, lowercased, without
-/// stopwords, with a plural `s` removed. Placeholders for collapsed spans are dropped.
-fn tokens(text: &str) -> Result<Vec<String>, TextError> {
-    Ok(slopvac_text::tokens(text)?
-        .into_iter()
+/// The sentence splitter and word tokenizer that claims builds on.
+///
+/// The one implementation is [`SlopvacText`]. The trait is the seam that lets a test
+/// make segmentation fail, which no input reaches with the current PCRE2 limits.
+trait TextEngine {
+    /// Sentences of one Markdown paragraph.
+    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, AgentsError>;
+    /// Word tokens of one sentence. Spans the tokenizer collapses appear as placeholders.
+    fn words(&self, text: &str) -> Result<Vec<String>, AgentsError>;
+}
+
+struct SlopvacText;
+
+impl TextEngine for SlopvacText {
+    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, AgentsError> {
+        Ok(slopvac_text::split_sentences(paragraph)?
+            .into_iter()
+            .map(|s| s.text)
+            .collect())
+    }
+
+    fn words(&self, text: &str) -> Result<Vec<String>, AgentsError> {
+        Ok(slopvac_text::tokens(text)?)
+    }
+}
+
+fn normalize(t: &str) -> String {
+    let t = t.to_lowercase();
+    if t.len() > 3 && t.ends_with('s') && !t.ends_with("ss") {
+        t[..t.len() - 1].to_owned()
+    } else {
+        t
+    }
+}
+
+/// Content tokens for alignment: the engine's word tokens, lowercased, without
+/// stopwords, with a plural `s` removed.
+///
+/// The tokenizer collapses names, numbers, identifiers and code spans into placeholders
+/// that depend on the sentence around them ("Alice Cooper" collapses mid-sentence but not
+/// at the start). A placeholder keeps its lexical identity here: every plain word of
+/// the text that no ordinary token already carries is added back, so one fact reads the
+/// same in both sentences.
+fn tokens(text: &str, engine: &dyn TextEngine) -> Result<Vec<String>, AgentsError> {
+    let raw = engine.words(text)?;
+    let collapsed = raw.iter().any(|t| !t.chars().any(char::is_alphanumeric));
+    let mut out: Vec<String> = raw
+        .iter()
+        .filter(|t| t.chars().any(char::is_alphanumeric))
         .map(|t| t.to_lowercase())
-        .filter(|t| t.chars().any(char::is_alphanumeric) && !STOPWORDS.contains(&t.as_str()))
-        .map(|t| {
-            if t.len() > 3 && t.ends_with('s') && !t.ends_with("ss") {
-                t[..t.len() - 1].to_owned()
-            } else {
-                t
-            }
-        })
-        .collect())
+        .filter(|t| !STOPWORDS.contains(&t.as_str()))
+        .map(|t| normalize(&t))
+        .collect();
+    if collapsed {
+        let known: HashSet<String> = raw
+            .iter()
+            .flat_map(|t| t.split(|c: char| !c.is_alphanumeric()))
+            .map(normalize)
+            .collect();
+        out.extend(
+            text.split(|c: char| !c.is_alphanumeric())
+                .map(str::to_lowercase)
+                .filter(|w| !w.is_empty() && !STOPWORDS.contains(&w.as_str()))
+                .map(|w| normalize(&w))
+                .filter(|w| !known.contains(w)),
+        );
+    }
+    Ok(out)
 }
 
 type Vector = HashMap<String, f64>;
 
-fn vectorize(text: &str, idf: &HashMap<String, f64>) -> Result<Vector, TextError> {
+fn vectorize(
+    text: &str,
+    idf: &HashMap<String, f64>,
+    engine: &dyn TextEngine,
+) -> Result<Vector, AgentsError> {
     let mut v = Vector::new();
-    for t in tokens(text)? {
+    for t in tokens(text, engine)? {
         *v.entry(t).or_insert(0.0) += 1.0;
     }
     for (t, w) in &mut v {
@@ -321,10 +376,14 @@ fn round(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
-fn idf_table(old: &[Segment], new: &[Segment]) -> Result<HashMap<String, f64>, TextError> {
+fn idf_table(
+    old: &[Segment],
+    new: &[Segment],
+    engine: &dyn TextEngine,
+) -> Result<HashMap<String, f64>, AgentsError> {
     let mut df: HashMap<String, usize> = HashMap::new();
     for s in old.iter().chain(new) {
-        for t in tokens(&s.text)?.into_iter().collect::<HashSet<_>>() {
+        for t in tokens(&s.text, engine)?.into_iter().collect::<HashSet<_>>() {
             *df.entry(t).or_insert(0) += 1;
         }
     }
@@ -342,16 +401,24 @@ fn idf_table(old: &[Segment], new: &[Segment]) -> Result<HashMap<String, f64>, T
 /// Returns `claims-text-failed` when `slopvac-text` fails to segment or tokenize, for example
 /// when a pattern exhausts PCRE2's match limit.
 pub fn compare(original: &str, revised: &str) -> Result<Report, AgentsError> {
-    let old = segments(original)?;
-    let new = segments(revised)?;
-    let idf = idf_table(&old, &new)?;
+    compare_with(original, revised, &SlopvacText)
+}
+
+fn compare_with(
+    original: &str,
+    revised: &str,
+    engine: &dyn TextEngine,
+) -> Result<Report, AgentsError> {
+    let old = segments(original, engine)?;
+    let new = segments(revised, engine)?;
+    let idf = idf_table(&old, &new, engine)?;
     let old_v = old
         .iter()
-        .map(|s| vectorize(&s.text, &idf))
+        .map(|s| vectorize(&s.text, &idf, engine))
         .collect::<Result<Vec<Vector>, _>>()?;
     let new_v = new
         .iter()
-        .map(|s| vectorize(&s.text, &idf))
+        .map(|s| vectorize(&s.text, &idf, engine))
         .collect::<Result<Vec<Vector>, _>>()?;
 
     let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
@@ -422,7 +489,7 @@ pub fn compare(original: &str, revised: &str) -> Result<Report, AgentsError> {
         });
     }
 
-    let dropped = dropped_facts(&old, &old_to_new, revised)?;
+    let dropped = dropped_facts(&old, &old_to_new, revised, engine)?;
     summary.dropped = dropped.len();
     Ok(Report {
         schema_version: 1,
@@ -441,9 +508,10 @@ fn dropped_facts(
     old: &[Segment],
     aligned: &HashMap<usize, (usize, f64)>,
     revised: &str,
-) -> Result<Vec<Dropped>, TextError> {
+    engine: &dyn TextEngine,
+) -> Result<Vec<Dropped>, AgentsError> {
     let revised_lower = revised.to_lowercase();
-    let revised_tokens: HashSet<String> = tokens(revised)?.into_iter().collect();
+    let revised_tokens: HashSet<String> = tokens(revised, engine)?.into_iter().collect();
     let mut dropped = Vec::new();
     for (i, seg) in old.iter().enumerate() {
         if aligned.contains_key(&i) {
@@ -453,7 +521,7 @@ fn dropped_facts(
             .into_iter()
             .filter(|l| !revised_lower.contains(&l.text.to_lowercase()))
             .collect();
-        let own = tokens(&seg.text)?;
+        let own = tokens(&seg.text, engine)?;
         let coverage = if own.is_empty() {
             1.0
         } else {
@@ -550,4 +618,33 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
         .map_err(|e| AgentsError::Usage(format!("claims json: {e}")))?;
     json.push('\n');
     Ok(json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failure() -> AgentsError {
+        AgentsError::Coded {
+            code: "claims-text-failed",
+            message: "text segmentation failed: injected".to_owned(),
+        }
+    }
+
+    struct Failing;
+
+    impl TextEngine for Failing {
+        fn sentences(&self, _: &str) -> Result<Vec<String>, AgentsError> {
+            Err(failure())
+        }
+        fn words(&self, _: &str) -> Result<Vec<String>, AgentsError> {
+            Err(failure())
+        }
+    }
+
+    #[test]
+    fn a_text_engine_failure_returns_its_code_and_no_report() {
+        let err = compare_with("One fact. Two facts.", "One fact.", &Failing).unwrap_err();
+        assert_eq!(err.code(), "claims-text-failed");
+    }
 }

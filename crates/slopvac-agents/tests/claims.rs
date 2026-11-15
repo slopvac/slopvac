@@ -313,3 +313,16 @@ fn signed_numbers_are_distinct_literals() {
     let same = compare("The delta is \u{2212}2 units.", "The delta is -2 units.").unwrap();
     assert!(same.claims[0].literals_added.is_empty() && same.claims[0].literals_removed.is_empty());
 }
+
+#[test]
+fn a_name_the_tokenizer_collapses_in_only_one_sentence_is_still_covered() {
+    // "Alice Cooper" opens the original sentence, so slopvac-text keeps it as two words;
+    // in the revision it follows other words and collapses into one placeholder.
+    let r = compare(
+        "Alice Cooper handles requests. The module handles routine requests.",
+        "The module handles routine requests for Alice Cooper.",
+    )
+    .unwrap();
+    assert_eq!(r.summary.dropped, 1, "{r:?}");
+    assert!(!r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
+}
