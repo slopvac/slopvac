@@ -21,6 +21,7 @@ use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, p
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
 use slopvac_text::{TextError, TextType};
 
+use crate::capitalization::{self, SentenceCase};
 use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite};
@@ -178,6 +179,41 @@ pub struct Engine {
     rst: RstAdapter,
 }
 
+/// Whether the engine matches rules of this kind in the text of a unit.
+fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
+    match kind {
+        MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => true,
+        MatchKind::Capitalization => {
+            matches!(m, Match::Capitalization(c) if capitalization::runs(c.style))
+        }
+        _ => false,
+    }
+}
+
+/// The `unrun` key of capitalization rules in a style the engine does not run.
+const CAPITALIZATION: &str = "capitalization";
+
+fn not_run_notice(kind: &str, count: usize) -> Result<Notice, EngineError> {
+    if kind == CAPITALIZATION {
+        // A style that cannot run would otherwise pass in silence, so the check is incomplete.
+        return notice(
+            "rule-style-not-implemented",
+            NoticeLevel::Warning,
+            format!(
+                "{count} active {kind} rule(s) did not run: the engine runs only the sentence \
+                 style"
+            ),
+        );
+    }
+    notice(
+        "rule-kind-not-implemented",
+        NoticeLevel::Info,
+        format!(
+            "{count} active {kind} rule(s) did not run: the engine does not run {kind} rules yet"
+        ),
+    )
+}
+
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
     settings
         .rule_levels
@@ -323,7 +359,7 @@ impl Engine {
                     }
                     self.running.insert(loaded.id().as_str().to_owned());
                     match loaded.kind() {
-                        MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => {
+                        kind if runs_lexically(kind, &rule.match_) => {
                             self.active.push(Active {
                                 set: s,
                                 category: c,
@@ -332,7 +368,10 @@ impl Engine {
                                 replacements: LazyReplacements::default(),
                             });
                         }
-                        MatchKind::Judgement => {}
+                        MatchKind::Judgement
+                        | MatchKind::Tokens
+                        | MatchKind::Pattern
+                        | MatchKind::Substitution => {}
                         MatchKind::Metric => {
                             let supported = matches!(
                                 &rule.match_,
@@ -353,7 +392,7 @@ impl Engine {
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => *unrun.entry("vocabulary").or_default() += 1,
                         MatchKind::Capitalization => {
-                            *unrun.entry("capitalization").or_default() += 1;
+                            *unrun.entry(CAPITALIZATION).or_default() += 1;
                         }
                     }
                 }
@@ -366,14 +405,7 @@ impl Engine {
             }
         }
         for (kind, count) in unrun {
-            self.notices.push(notice(
-                "rule-kind-not-implemented",
-                NoticeLevel::Info,
-                format!(
-                    "{count} active {kind} rule(s) did not run: the engine does not run {kind} \
-                     rules yet"
-                ),
-            )?);
+            self.notices.push(not_run_notice(kind, count)?);
         }
         Ok(())
     }
@@ -676,8 +708,18 @@ impl Run<'_> {
                 .iter()
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
+            let sentence_case = match &rule.match_ {
+                Match::Capitalization(m) => {
+                    Some(SentenceCase::new(m, &engine.settings.allowed_words))
+                }
+                _ => None,
+            };
             for unit in self.prepared.units(rule.scope)? {
-                for range in loaded.find_all(unit.text)? {
+                let ranges = match &sentence_case {
+                    Some(check) => check.find(unit.text)?.into_iter().collect(),
+                    None => loaded.find_all(unit.text)?,
+                };
+                for range in ranges {
                     if let Some(c) =
                         self.candidate(active, set, loaded, &unit, &range, skip, &detectors)?
                     {
