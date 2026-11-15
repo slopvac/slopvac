@@ -33,7 +33,7 @@ impl<'a> DocIndex<'a> {
     pub(crate) fn new(doc: &'a Document, sources: &'a dyn Sources, format: &'static str) -> Self {
         Self {
             doc,
-            index: sources.text(&doc.path).map(SourceIndex::disk),
+            index: sources.text(doc.path.as_str()).map(SourceIndex::disk),
             format,
         }
     }
@@ -43,13 +43,13 @@ impl<'a> DocIndex<'a> {
             .as_ref()
             .ok_or_else(|| RenderError::MissingSource {
                 format: self.format,
-                path: self.doc.path.clone(),
+                path: self.doc.path.as_str().to_owned(),
             })
     }
 
     fn position_error(&self, source: slopvac_model::PositionError) -> RenderError {
         RenderError::Position {
-            path: self.doc.path.clone(),
+            path: self.doc.path.as_str().to_owned(),
             source,
         }
     }
@@ -62,26 +62,23 @@ impl<'a> DocIndex<'a> {
         finding: &Finding,
         unit: ColumnUnit,
     ) -> Result<Located, RenderError> {
-        let Some(span) = finding.span else {
-            return Ok(Located {
-                start: Pos {
-                    line: finding.line,
-                    column: finding.column,
-                },
-                end: None,
-            });
+        let start = Pos {
+            line: finding.start.line(),
+            column: finding.start.column(),
         };
-        if let (None, ColumnUnit::CodePoint, Some(line), Some(column)) =
-            (&self.index, unit, finding.end_line, finding.end_column)
-        {
+        let Some(extent) = finding.extent else {
+            return Ok(Located { start, end: None });
+        };
+        if let (None, ColumnUnit::CodePoint) = (&self.index, unit) {
             return Ok(Located {
-                start: Pos {
-                    line: finding.line,
-                    column: finding.column,
-                },
-                end: Some(Pos { line, column }),
+                start,
+                end: Some(Pos {
+                    line: extent.end.line(),
+                    column: extent.end.column(),
+                }),
             });
         }
+        let span = extent.span;
         let (start, end) = self
             .need_index()?
             .locate_span(span, unit)

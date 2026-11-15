@@ -29,7 +29,7 @@ pub(crate) fn render(report: &Report) -> String {
         s.errors,
         s.warnings,
         s.suggestions,
-        s.score,
+        f64::from(s.score),
         if s.passed { "PASS" } else { "FAIL" }
     );
     out
@@ -41,8 +41,8 @@ fn document(out: &mut String, doc: &Document) {
             out,
             "{}:{}:{} {} {} {}",
             doc.path,
-            f.line,
-            f.column,
+            f.start.line(),
+            f.start.column(),
             severity_word(f.severity),
             f.rule_id,
             f.message
@@ -51,9 +51,14 @@ fn document(out: &mut String, doc: &Document) {
     for n in &doc.unchecked {
         let _ = writeln!(out, "{}: UNCHECKED [{}] {}", doc.path, n.code, n.message);
     }
-    let verdict = if doc.gate.passed { "PASS" } else { "FAIL" };
-    let _ = writeln!(out, "{}: {verdict} score {:.1}", doc.path, doc.score);
-    for reason in &doc.gate.reasons {
+    let verdict = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
+    let _ = writeln!(
+        out,
+        "{}: {verdict} score {:.1}",
+        doc.path,
+        f64::from(doc.score)
+    );
+    for reason in doc.gate.reasons() {
         let _ = writeln!(out, "{}: {reason}", doc.path);
     }
 }

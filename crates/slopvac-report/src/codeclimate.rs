@@ -34,7 +34,7 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
         let doc = DocIndex::new(document, sources, "codeclimate");
         for f in &document.findings {
             let at = doc.locate(f, ColumnUnit::CodePoint)?;
-            let lines_end = match f.span {
+            let lines_end = match f.extent.map(|e| e.span) {
                 Some(span) if !span.is_empty() => doc.last_included(span)?.line,
                 _ => at.start.line,
             };
@@ -47,10 +47,10 @@ pub(crate) fn render(report: &Report, sources: &dyn Sources) -> Result<String, R
             issues.push(json!({
                 "type": "issue",
                 "check_name": f.rule_id.as_str(),
-                "description": single_line(&f.message),
+                "description": single_line(f.message.as_str()),
                 "categories": ["Style"],
                 "severity": severity,
-                "fingerprint": fingerprint(&[&document.path, f.rule_id.as_str(), &key, &f.message]),
+                "fingerprint": fingerprint(&[document.path.as_str(), f.rule_id.as_str(), &key, f.message.as_str()]),
                 "location": {
                     "path": document.path,
                     "lines": {"begin": at.start.line, "end": lines_end},

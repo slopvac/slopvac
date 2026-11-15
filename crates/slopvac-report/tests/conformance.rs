@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use jsonschema::Registry;
 use scraper::{Html, Selector};
 use serde_json::{Value, json};
-use slopvac_model::Report;
+use slopvac_model::{Gate, Report};
 use slopvac_report::{Format, NoSources, RenderOptions, render, render_with};
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schemas/v3");
@@ -230,8 +230,7 @@ fn junit_failures_follow_the_gate_not_the_warnings() {
 #[test]
 fn junit_passes_when_every_gate_passes_even_with_warnings() {
     let mut r = report();
-    r.documents[0].gate.passed = true;
-    r.documents[0].gate.reasons.clear();
+    r.documents[0].gate = Gate::passed();
     let xml = render(Format::Junit, &r, &sources()).unwrap();
     let doc = roxmltree::Document::parse(&xml).unwrap();
     assert_eq!(doc.root_element().attribute("failures"), Some("0"));
@@ -382,7 +381,7 @@ fn default_docs_base_comes_from_docs_site_toml() {
 fn spanless_findings_need_no_source_in_sarif_and_rdjsonl() {
     let mut r = report();
     for doc in &mut r.documents {
-        doc.findings.retain(|f| f.span.is_none());
+        doc.findings.retain(|f| f.extent.is_none());
     }
     for format in [Format::Sarif, Format::Rdjsonl] {
         render(format, &r, &NoSources).unwrap();

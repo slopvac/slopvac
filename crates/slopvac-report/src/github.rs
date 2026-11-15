@@ -18,11 +18,11 @@ pub(crate) fn render(report: &Report) -> String {
             let _ = writeln!(
                 out,
                 "::{level} file={},line={},col={},title={}::{}",
-                github_property(&doc.path),
-                f.line,
-                f.column,
+                github_property(doc.path.as_str()),
+                f.start.line(),
+                f.start.column(),
                 github_property(f.rule_id.as_str()),
-                github_data(&f.message)
+                github_data(f.message.as_str())
             );
         }
     }

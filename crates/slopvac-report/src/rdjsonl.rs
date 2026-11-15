@@ -38,12 +38,12 @@ pub(crate) fn render(
                 "source": {"name": "slopvac"},
                 "code": {"value": f.rule_id.as_str()},
             });
-            if let Some(url) = options.rule_url(&f.category, f.rule_id.local()) {
+            if let Some(url) = options.rule_url(f.category.as_str(), f.rule_id.local()) {
                 diagnostic["code"]["url"] = json!(url);
             }
             if let Some(fix) = &f.fix {
                 let mut suggestions = Vec::new();
-                for edit in &fix.edits {
+                for edit in fix.edits() {
                     let (s, e) = doc.locate_edit(edit.span, ColumnUnit::Utf8)?;
                     suggestions.push(json!({
                         "range": {"start": pos(s), "end": pos(e)},

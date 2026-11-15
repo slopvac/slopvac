@@ -52,7 +52,7 @@ fn fix(doc: &DocIndex<'_>, path: &str, finding: &Finding) -> Result<Option<Value
         return Ok(None);
     };
     let mut replacements = Vec::new();
-    for edit in &fix.edits {
+    for edit in fix.edits() {
         let (s, e) = doc.locate_edit(edit.span, ColumnUnit::Utf16)?;
         replacements.push(json!({
             "deletedRegion": {
@@ -90,7 +90,7 @@ pub(crate) fn render(
                     "shortDescription": {"text": f.message},
                     "properties": {"category": f.category, "pack": f.pack.as_str()},
                 });
-                if let Some(url) = options.rule_url(&f.category, f.rule_id.local()) {
+                if let Some(url) = options.rule_url(f.category.as_str(), f.rule_id.local()) {
                     rule["helpUri"] = json!(url);
                 }
                 rules.push(rule);
@@ -102,11 +102,11 @@ pub(crate) fn render(
                 "level": level(f.severity),
                 "message": {"text": f.message},
                 "locations": [{"physicalLocation": {
-                    "artifactLocation": {"uri": uri(&document.path)},
+                    "artifactLocation": {"uri": uri(document.path.as_str())},
                     "region": region(&doc, f)?,
                 }}],
             });
-            if let Some(fix) = fix(&doc, &document.path, f)? {
+            if let Some(fix) = fix(&doc, document.path.as_str(), f)? {
                 result["fixes"] = json!([fix]);
             }
             results.push(result);

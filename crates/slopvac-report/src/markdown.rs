@@ -33,12 +33,12 @@ pub(crate) fn render(report: &Report) -> String {
         s.errors,
         s.warnings,
         s.suggestions,
-        s.score
+        f64::from(s.score)
     );
     if !report.notices.is_empty() {
         out.push_str("## Notices\n\n");
         for n in &report.notices {
-            let _ = writeln!(out, "- `{}`: {}", n.code, cell(&n.message));
+            let _ = writeln!(out, "- `{}`: {}", n.code, cell(n.message.as_str()));
         }
         out.push('\n');
     }
@@ -49,20 +49,27 @@ pub(crate) fn render(report: &Report) -> String {
 }
 
 fn document(out: &mut String, doc: &Document) {
-    let verdict = if doc.gate.passed { "PASS" } else { "FAIL" };
-    let _ = writeln!(out, "## {} {verdict}\n", cell(&doc.path));
+    let verdict = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
+    let _ = writeln!(out, "## {} {verdict}\n", cell(doc.path.as_str()));
     let _ = writeln!(
         out,
         "Score {:.1}, {} words, {} findings.\n",
-        doc.score, doc.words, doc.total_findings
+        f64::from(doc.score),
+        doc.words,
+        doc.total_findings
     );
-    for reason in &doc.gate.reasons {
+    for reason in doc.gate.reasons() {
         let _ = writeln!(out, "- {}", cell(reason));
     }
     for n in &doc.unchecked {
-        let _ = writeln!(out, "- UNCHECKED `{}`: {}", n.code, cell(&n.message));
+        let _ = writeln!(
+            out,
+            "- UNCHECKED `{}`: {}",
+            n.code,
+            cell(n.message.as_str())
+        );
     }
-    if !doc.gate.reasons.is_empty() || !doc.unchecked.is_empty() {
+    if !doc.gate.reasons().is_empty() || !doc.unchecked.is_empty() {
         out.push('\n');
     }
     if doc.findings.is_empty() {
@@ -73,11 +80,11 @@ fn document(out: &mut String, doc: &Document) {
         let _ = writeln!(
             out,
             "| {}:{} | {} | {} | {} |",
-            f.line,
-            f.column,
+            f.start.line(),
+            f.start.column(),
             severity_word(f.severity),
             cell(f.rule_id.as_str()),
-            cell(&f.message)
+            cell(f.message.as_str())
         );
     }
     out.push('\n');
