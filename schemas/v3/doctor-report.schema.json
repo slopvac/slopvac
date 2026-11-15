@@ -55,7 +55,7 @@
   "additionalProperties": false,
   "$defs": {
     "Path": {
-      "description": "A path made safe to print: relative to the working directory, or `<external>/<file name>` outside it.",
+      "description": "A path made safe to print: relative to the working directory (`.` for the directory itself), or `<external>/<file name>` outside it.",
       "type": "string",
       "minLength": 1
     },
@@ -120,7 +120,7 @@
           "enum": [null, "offline", "ci", "env", "config"]
         },
         "state": {
-          "description": "`available` when the cached latest release is newer than the running version, `current` when it is not, `unknown` when no cached answer exists.",
+          "description": "`available` when the cached latest release is newer than the running version, `current` when it is not, `unknown` when no cached answer exists or the cached version is not a semantic version.",
           "enum": ["available", "current", "unknown"]
         },
         "latest": {

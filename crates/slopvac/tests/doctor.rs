@@ -527,3 +527,170 @@ fn doctor_changes_nothing_on_disk() {
     w.doctor().assert().code(0);
     assert_eq!(snapshot(w.root.path()), before);
 }
+
+/// Both formats of a run, for leak checks.
+fn both_formats(w: &World) -> (Value, String) {
+    let (_, doc) = w.json(&[], |_| {});
+    let text = String::from_utf8(w.doctor().output().unwrap().stdout).unwrap();
+    (doc, text)
+}
+
+#[test]
+fn lockfile_errors_say_where_and_never_echo_file_content() {
+    const LEAK: &str = "LEAKME-4242";
+    let bad_digest = format!(
+        "schema_version = 3\n[[packs]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = \"oci://ghcr.io/acme/p:1\"\ndigest = \"sha256:{LEAK}\"\n"
+    );
+    let bad_id = format!("schema_version = 3\n[[packs]]\nid = \"{LEAK} BAD\"\n");
+    let unknown_key = format!("schema_version = 3\n[[packs]]\n{LEAK} = 1\n");
+    let syntax = format!("schema_version = 3\n{LEAK} = = =\n");
+    let w = World::new();
+    for (body, want) in [
+        (bad_digest, "invalid value at /packs/0/digest"),
+        (bad_id, "invalid value at /packs/0"),
+        (unknown_key, "invalid value at /packs/0"),
+        (syntax, "not a valid lockfile"),
+    ] {
+        w.write(".slopvac/packs.lock", &body);
+        let (doc, text) = both_formats(&w);
+        assert_eq!(doc["packs"]["lockfile"]["status"], "invalid", "{body}");
+        assert_eq!(doc["packs"]["lockfile"]["error"], want, "{body}");
+        assert!(!doc.to_string().contains(LEAK), "json leaked for {body}");
+        assert!(!text.contains(LEAK), "text leaked for {body}");
+        assert!(text.contains(want), "text: {text}");
+    }
+}
+
+/// A pack installed in the store the way `plugins sync` lays it out: a tree named by its hash
+/// and a ref from the locked digest to that tree.
+fn install_pack(data_root: &Path, lock_digest_hex: &str) -> PathBuf {
+    use slopvac_plugins::extract::tree_hash;
+    use slopvac_plugins::sync::Store;
+    let store = Store::new(data_root);
+    for dir in ["trees", "blobs", "refs"] {
+        fs::create_dir_all(data_root.join(dir)).unwrap();
+    }
+    let scratch = data_root.join("trees/scratch");
+    fs::create_dir_all(&scratch).unwrap();
+    fs::write(scratch.join("pack.toml"), "id = \"acme-docs\"\n").unwrap();
+    let hash = tree_hash(&scratch).unwrap();
+    let tree = store.tree_dir(&hash);
+    fs::rename(&scratch, &tree).unwrap();
+    fs::write(data_root.join("refs").join(lock_digest_hex), hash.hex()).unwrap();
+    tree
+}
+
+const ACME_DOCS_DIGEST_HEX: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn an_intact_installed_pack_is_recorded_and_a_tampered_one_fails_the_check() {
+    let w = World::new();
+    w.write(".slopvac/packs.lock", LOCK);
+    let data = w.root.path().join("data");
+    let tree = install_pack(&data.join("slopvac"), ACME_DOCS_DIGEST_HEX);
+    let with_data = |c: &mut Command| {
+        c.env("XDG_DATA_HOME", &data);
+    };
+    let state_of = |doc: &Value, id: &str| -> String {
+        doc["packs"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .unwrap()["state"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    let (code, doc) = w.json(&[], with_data);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&doc, "acme-docs"), "recorded");
+
+    fs::write(tree.join("pack.toml"), "id = \"evil\"\n").unwrap();
+    let (code, doc) = w.json(&[], with_data);
+    assert_eq!(code, 2);
+    assert_eq!(doc["ok"], false);
+    assert_eq!(state_of(&doc, "acme-docs"), "tampered");
+    // Doctor repairs nothing: the edited file is still there.
+    assert_eq!(
+        fs::read_to_string(tree.join("pack.toml")).unwrap(),
+        "id = \"evil\"\n"
+    );
+
+    let mut cmd = w.doctor();
+    with_data(&mut cmd);
+    cmd.assert()
+        .code(2)
+        .stdout(predicate::str::contains("acme-docs 1.2.0 (data) tampered"))
+        .stdout(predicate::str::ends_with("problems found\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_trust_store_is_reported_not_called_absent() {
+    use std::os::unix::fs::PermissionsExt;
+    if rustix::process::geteuid().is_root() {
+        return; // root ignores permission bits
+    }
+    let w = World::new();
+    let state = w.root.path().join("state");
+    let dir = state.join("slopvac");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("trust.json"), "{}").unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o000)).unwrap();
+    let result = w.json(&[], |c| {
+        c.env("XDG_STATE_HOME", &state);
+    });
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let (code, doc) = result;
+    assert_eq!(code, 2);
+    assert_eq!(doc["trust"]["status"], "unreadable");
+    assert_eq!(doc["ok"], false);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_trust_file_does_not_hang_doctor() {
+    let w = World::new();
+    let state = w.root.path().join("state");
+    fs::create_dir_all(state.join("slopvac")).unwrap();
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(state.join("slopvac/trust.json"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (code, doc) = w.json(&[], |c| {
+        c.env("XDG_STATE_HOME", &state)
+            .timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 2);
+    assert_eq!(doc["trust"]["status"], "unreadable");
+}
+
+#[test]
+fn a_directory_that_is_the_working_directory_is_shown_as_a_dot() {
+    let w = World::new();
+    let (code, doc) = w.json(&[], |c| {
+        c.env("SLOPVAC_CACHE_DIR", fs::canonicalize(w.project()).unwrap());
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["directories"]["cache"]["path"], ".");
+    assert_eq!(doc["directories"]["cache"]["exists"], true);
+}
+
+#[test]
+fn a_cached_version_that_is_not_semver_counts_as_unknown() {
+    let w = World::new();
+    for garbage in ["not-a-version", "99", "v3.0.0", ""] {
+        cache_entry(&w, garbage);
+        let (code, doc) = w.json(&[], |_| {});
+        assert_eq!(code, 0, "{garbage:?}");
+        assert_eq!(doc["update"]["state"], "unknown", "{garbage:?}");
+        assert_eq!(doc["update"]["latest"], Value::Null, "{garbage:?}");
+        assert_eq!(doc["update"]["checked_at"], Value::Null, "{garbage:?}");
+    }
+}

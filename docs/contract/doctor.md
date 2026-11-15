@@ -33,7 +33,7 @@ The 2.x report had its own `schema_version` of 1. The 3.0 report uses 3, like ev
 
 ### 2.1 Update state
 
-The `update.state` value comes from the cache file that the update check writes (policies.md, section 1.2). It is `available` when the cached release is newer than the running version, `current` when it is not, and `unknown` when no readable answer exists. Versions compare as semantic versions, so `3.10.0` is newer than `3.9.0`.
+The `update.state` value comes from the cache file that the update check writes (policies.md, section 1.2). It is `available` when the cached release is newer than the running version, `current` when it is not, and `unknown` when no readable answer exists or the cached version is not a semantic version. Doctor does not print an answer it cannot compare. Versions compare as semantic versions, so `3.10.0` is newer than `3.9.0`.
 
 `update.checks` is `disabled` when something in section 1.3 of the policies turns the check off. `disabled_by` names the first reason in this order: `offline`, `ci`, `env` (`NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK` or `DO_NOT_TRACK`) and `config` (`[network] update_check = false`). A disabled check still shows the cached answer.
 
@@ -59,17 +59,17 @@ The `error` text is a fixed message with no file content. `config.ok` is true wh
 
 ### 2.4 Packs and trust
 
-The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the pack store cannot be read.
+The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the pack store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
 
 Each entry in `packs.items` has the pack `id`, `version` and `kind`, and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered pack.
 
-`trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints fingerprints only.
+Doctor reads the trust file like every other project file: without blocking, only as a regular file, and under the 8 MiB limit of the store. A missing file is `absent`. A permission error, a non-regular file, an oversize file or a damaged file is `unreadable`. `trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints fingerprints only.
 
 `ok` is false when `config.ok` is false, the lockfile status is `invalid` or `unreadable`, any pack is `tampered`, or the trust store is `unreadable`.
 
 ### 2.5 Directories
 
-`directories` has `cache`, `data` and `state`. Each entry gives the `path`, the `source` of the choice (an environment variable name, `default` or `unresolved`), whether it exists, and the total size of the regular files below it. The size walk stops after 10000 entries. It then sets `truncated`, so `bytes` is a lower bound. Links are not followed. A directory shows `<unresolved>` when the environment has no home to derive it from.
+`directories` has `cache`, `data` and `state`. Each entry gives the `path`, the `source` of the choice (an environment variable name, `default` or `unresolved`), whether it exists, and the total size of the regular files below it. The size walk stops after 10000 entries. It then sets `truncated`, so `bytes` is a lower bound. Links are not followed. The working directory itself shows as `.`. A directory shows `<unresolved>` when the environment has no home to derive it from.
 
 The cache directory is `SLOPVAC_CACHE_DIR` when set. Otherwise all three follow the XDG layout on Unix (`XDG_CACHE_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME`, falling back to `~/.cache`, `~/.local/share` and `~/.local/state`, each with a `slopvac` subdirectory) and `%LOCALAPPDATA%\slopvac` on Windows. The data directory is the pack store, and the state directory holds the trust store.
 

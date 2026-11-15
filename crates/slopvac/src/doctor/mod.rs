@@ -10,9 +10,9 @@ pub mod stubs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use slopvac_plugins::lock::{Lockfile, PackKind};
+use slopvac_plugins::lock::{LockError, Lockfile, PackKind};
 use slopvac_plugins::sync::{PackState, Store, status};
-use slopvac_plugins::trust::TrustStore;
+use slopvac_plugins::trust::{MAX_STORE_FILE_BYTES, parse_store};
 
 use crate::env::Env;
 use crate::redact::path_for_log;
@@ -274,13 +274,19 @@ fn directory(located: &Located, cwd: &Path) -> Directory {
     };
     let exists = path.is_dir();
     let (bytes, truncated) = if exists {
-        let (b, t) = walk_size(path);
+        let (b, t) = walk_size(path, WALK_LIMIT);
         (Some(b), t)
     } else {
         (None, false)
     };
+    let shown = path_for_log(path, cwd);
     Directory {
-        path: path_for_log(path, cwd),
+        // The working directory itself is the empty relative path; the schema wants a name.
+        path: if shown.is_empty() {
+            ".".to_owned()
+        } else {
+            shown
+        },
         source: located.source.clone(),
         exists,
         bytes,
@@ -288,9 +294,9 @@ fn directory(located: &Located, cwd: &Path) -> Directory {
     }
 }
 
-/// Total size of regular files below `root`, visiting at most [`WALK_LIMIT`] entries. Links are
-/// not followed.
-fn walk_size(root: &Path) -> (u64, bool) {
+/// Total size of regular files below `root`, visiting at most `limit` entries. Links are not
+/// followed. The flag is true when the limit stopped the walk.
+fn walk_size(root: &Path, limit: usize) -> (u64, bool) {
     let mut total = 0u64;
     let mut visited = 0usize;
     let mut stack = vec![root.to_owned()];
@@ -300,7 +306,7 @@ fn walk_size(root: &Path) -> (u64, bool) {
         };
         for entry in entries.flatten() {
             visited += 1;
-            if visited > WALK_LIMIT {
+            if visited > limit {
                 return (total, true);
             }
             let Ok(meta) = entry.metadata() else { continue };
@@ -322,6 +328,47 @@ fn pack_state(state: &PackState) -> &'static str {
         PackState::InPlace(_) => "in-place",
         PackState::InPlaceChanged(_) => "changed",
     }
+}
+
+/// Keys a lockfile may hold. A pointer segment outside this set came from the file, so it is
+/// shown as `*`.
+const LOCK_KEYS: [&str; 12] = [
+    "schema_version",
+    "packs",
+    "id",
+    "kind",
+    "version",
+    "slopvac_api",
+    "source",
+    "digest",
+    "signature",
+    "key_id",
+    "not_before",
+    "requires",
+];
+
+/// Where a lockfile is wrong, with nothing the file said. The parser's own message can echo the
+/// rejected value, so it is dropped (CWE-209). Only the location survives, and only the segments
+/// that are known keys or array indexes.
+fn lock_diagnostic(e: &LockError) -> String {
+    if e.pointer.is_empty() {
+        return "not a valid lockfile".to_owned();
+    }
+    let shown: Vec<&str> = e
+        .pointer
+        .split('/')
+        .skip(1)
+        .map(|seg| {
+            if LOCK_KEYS.contains(&seg)
+                || (!seg.is_empty() && seg.len() <= 6 && seg.bytes().all(|b| b.is_ascii_digit()))
+            {
+                seg
+            } else {
+                "*"
+            }
+        })
+        .collect();
+    format!("invalid value at /{}", shown.join("/"))
 }
 
 fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> Packs {
@@ -350,7 +397,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
     };
     let parsed = match Lockfile::parse(&text) {
         Ok(l) => l,
-        Err(e) => return empty(lock("invalid", Some(e.to_string()))),
+        Err(e) => return empty(lock("invalid", Some(lock_diagnostic(&e)))),
     };
     let Some(root) = store_root else {
         return empty(lock(
@@ -393,36 +440,38 @@ fn trust_report(state_dir: Option<&Path>) -> Trust {
     let Some(dir) = state_dir else {
         return none("absent", None);
     };
-    // The file name is the trust store's own (`trust.json`); the store has no existence query.
-    if !dir.join("trust.json").exists() {
-        return none("absent", None);
-    }
-    let store = TrustStore::open(dir);
-    let unreadable = || {
-        none(
-            "unreadable",
-            Some("the trust store is damaged or unreadable"),
-        )
+    // The file name is the trust store's own (`trust.json`). The bytes come through doctor's
+    // bounded reader: a FIFO or device cannot hang it, and a permission error is not "absent".
+    let path = dir.join("trust.json");
+    let text = match read_bounded(&path, MAX_STORE_FILE_BYTES) {
+        Ok(None) => return none("absent", None),
+        Ok(Some(t)) => t,
+        Err(problem) => {
+            let why = match problem {
+                ReadProblem::NotRegular => "the trust store is not a regular file",
+                ReadProblem::TooLarge => "the trust store is larger than the reader accepts",
+                ReadProblem::Io => "the trust store cannot be read",
+            };
+            return none("unreadable", Some(why));
+        }
     };
-    let Ok(records) = store.records() else {
-        return unreadable();
+    let Ok(snapshot) = parse_store(text.as_bytes(), &path) else {
+        return none("unreadable", Some("the trust store is damaged"));
     };
-    let Ok(pins) = store.pinned_map() else {
-        return unreadable();
-    };
+    let mut pinned: Vec<PinnedKey> = snapshot
+        .pins
+        .into_iter()
+        .map(|p| PinnedKey {
+            namespace: p.namespace,
+            fingerprint: p.fingerprint,
+        })
+        .collect();
+    pinned.sort_by(|a, b| a.namespace.cmp(&b.namespace));
     Trust {
         status: "ok",
         error: None,
-        trusted_plugins: records.len(),
-        pinned_keys: pins
-            .iter()
-            .flat_map(|(namespace, keys)| {
-                keys.iter().map(|k| PinnedKey {
-                    namespace: namespace.clone(),
-                    fingerprint: k.fingerprint(),
-                })
-            })
-            .collect(),
+        trusted_plugins: snapshot.records.len(),
+        pinned_keys: pinned,
     }
 }
 
@@ -450,16 +499,20 @@ pub fn build(i: &Inputs<'_>) -> Report {
     let facts = i
         .update
         .facts(i.env, offline_on, scan.update_check, cache.path.as_deref());
-    let (update_state, latest, checked_at) = match &facts.cached_latest {
-        Some((latest, at)) => {
-            let newer = semver::Version::parse(latest)
-                .ok()
-                .zip(semver::Version::parse(i.version).ok())
-                .is_some_and(|(l, c)| l > c);
+    // A cached answer that is not a semantic version cannot be compared, so it counts as no
+    // answer, and the text is not echoed.
+    let cached = facts.cached_latest.as_ref().and_then(|(latest, at)| {
+        semver::Version::parse(latest)
+            .ok()
+            .map(|v| (latest.clone(), v, *at))
+    });
+    let (update_state, latest, checked_at) = match cached {
+        Some((latest, parsed, at)) => {
+            let newer = semver::Version::parse(i.version).is_ok_and(|current| parsed > current);
             (
                 if newer { "available" } else { "current" },
-                Some(latest.clone()),
-                Some(*at),
+                Some(latest),
+                Some(at),
             )
         }
         None => ("unknown", None, None),
@@ -659,12 +712,67 @@ mod tests {
             ("3.10.0", "3.9.0", "current"),
             ("3.0.0", "3.0.0", "current"),
             ("3.0.0-rc.1", "3.0.0", "available"),
-            ("3.0.0", "garbage", "current"),
+            ("3.0.0", "garbage", "unknown"),
         ] {
             let r = report(current, Some(cached));
             assert_eq!(r.update.state, state, "{current} vs {cached}");
         }
         assert_eq!(report("3.0.0", None).update.state, "unknown");
+    }
+
+    #[test]
+    fn the_walk_stops_at_the_entry_limit_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a", "b", "c", "d", "e"] {
+            std::fs::write(dir.path().join(name), b"xy").unwrap();
+        }
+        // Five entries of two bytes: a limit of five sees all, a limit of three stops early.
+        assert_eq!(walk_size(dir.path(), 5), (10, false));
+        let (bytes, truncated) = walk_size(dir.path(), 3);
+        assert!(truncated);
+        assert_eq!(bytes, 6, "three files were counted before the limit");
+    }
+
+    #[test]
+    fn directories_count_toward_the_limit_but_not_the_size() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("x/y")).unwrap();
+        std::fs::write(dir.path().join("x/y/f"), b"123").unwrap();
+        assert_eq!(walk_size(dir.path(), 3), (3, false));
+        assert!(walk_size(dir.path(), 2).1);
+    }
+
+    #[test]
+    fn the_documented_walk_limit_is_ten_thousand() {
+        // schemas/v3/doctor-report.schema.json and docs/contract/doctor.md say 10000.
+        assert_eq!(WALK_LIMIT, 10_000);
+    }
+
+    #[test]
+    fn the_working_directory_renders_as_a_dot() {
+        let dir = tempfile::tempdir().unwrap();
+        let located = Located::at(dir.path().to_owned(), "SLOPVAC_CACHE_DIR");
+        assert_eq!(directory(&located, dir.path()).path, ".");
+    }
+
+    #[test]
+    fn lock_diagnostics_keep_only_known_keys_and_indexes() {
+        let err = |pointer: &str| LockError {
+            pointer: pointer.to_owned(),
+            message: "echoes LEAK".to_owned(),
+        };
+        for (pointer, want) in [
+            ("", "not a valid lockfile"),
+            ("/packs/12/digest", "invalid value at /packs/12/digest"),
+            ("/packs/0/LEAK", "invalid value at /packs/0/*"),
+            (
+                "/packs/0/signature/key_id",
+                "invalid value at /packs/0/signature/key_id",
+            ),
+            ("/packs/9999999", "invalid value at /packs/*"),
+        ] {
+            assert_eq!(lock_diagnostic(&err(pointer)), want, "{pointer}");
+        }
     }
 
     #[test]
