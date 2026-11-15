@@ -337,3 +337,12 @@ fn overlapping_groups_keep_every_piece_they_share() {
     ]);
     assert_eq!(same.tags().len(), 1);
 }
+
+#[test]
+fn windows_style_paths_match_path_conditions_like_unix_paths() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let idx = run(y, "C:\\docs\\CHANGELOG.md", DOC);
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].kind, "change-note");
+    assert_eq!(idx.tags()[0].span, 0..DOC.len());
+}

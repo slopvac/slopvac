@@ -224,3 +224,13 @@ fn genre_command_parses_files_and_assignments() {
             .is_err()
     );
 }
+
+#[test]
+fn a_canceled_path_component_does_not_signal_a_genre() {
+    // `reference\..` cancels out, so the path is `proj/docs/a.md` and nothing detects.
+    let r = resolve("C:\\proj\\reference\\..\\docs\\a.md", "# T\n\nBody.\n");
+    assert_eq!(
+        (r.id.as_str(), r.source),
+        ("consumer", GenreSource::Default)
+    );
+}

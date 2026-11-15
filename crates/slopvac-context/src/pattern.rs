@@ -68,7 +68,8 @@ impl Pattern {
     }
 }
 
-/// A path as patterns see it: forward slashes, no drive prefix, no leading slash. Windows
+/// A path as patterns see it: forward slashes, no drive prefix, no leading slash, and `.` and
+/// `name/..` components collapsed lexically (a leading `..` stays). Windows
 /// paths then match the same patterns as Unix paths, and an absolute path never reaches a
 /// matcher that expects a path relative to a root.
 #[must_use]
@@ -80,5 +81,15 @@ pub fn normalize_path(path: &str) -> String {
     } else {
         forward.as_str()
     };
-    no_drive.trim_start_matches('/').to_string()
+    let mut parts: Vec<&str> = Vec::new();
+    for part in no_drive.split('/') {
+        match part {
+            "" | "." => {}
+            ".." if parts.last().is_some_and(|last| *last != "..") => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    parts.join("/")
 }
