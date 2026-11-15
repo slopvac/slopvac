@@ -16,7 +16,13 @@ use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind, RuleS
 
 use crate::errors::CliError;
 use crate::exit;
+use crate::redact;
 use crate::rule_catalog;
+
+/// Generated catalogue prose is not written to the lint profile, so Markdown output
+/// wraps it in these directives, as 2.x did.
+const DISABLE: &str = "<!-- slopvac-disable -->";
+const ENABLE: &str = "<!-- slopvac-enable -->";
 
 /// The `--kind` values and the match kinds they select.
 pub const KINDS: [(&str, MatchKind); 8] = [
@@ -66,7 +72,10 @@ fn load(m: &ArgMatches) -> Result<RuleSet, CliError> {
     {
         return Err(CliError::new(
             "config-not-found",
-            format!("--config {}: no such file", path.display()),
+            format!(
+                "--config {}: no such file",
+                redact::shown_path(path, &std::env::current_dir().unwrap_or_default())
+            ),
         ));
     }
     rule_catalog::core()
@@ -303,9 +312,7 @@ fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
     }
     if !body.is_empty() {
         body.pop();
-        out.push_str("\n<!-- slopvac-disable -->\n");
-        out.push_str(&body.join("\n"));
-        out.push_str("\n<!-- slopvac-enable -->\n");
+        let _ = write!(out, "\n{DISABLE}\n{}\n{ENABLE}\n", body.join("\n"));
     }
     out
 }
@@ -452,7 +459,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
             }
             pretty(&value)
         }
-        "md" => format!("{}\n", rule_block(rule).join("\n")),
+        "md" => format!("{DISABLE}\n{}\n{ENABLE}\n", rule_block(rule).join("\n")),
         _ => explain_text(rule),
     };
     emit(out, &text)

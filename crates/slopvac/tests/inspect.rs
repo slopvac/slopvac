@@ -172,14 +172,64 @@ fn explain_json_carries_the_rule_and_its_suppression_comment() {
 fn explain_markdown_is_the_block_rules_markdown_prints() {
     let block = stdout(&["explain", CHAT_LEAKAGE, "--format", "md"]);
     let listing = stdout(&["rules", "--category", "ai-residue", "--format", "md"]);
+    let inner = block
+        .strip_prefix("<!-- slopvac-disable -->\n")
+        .and_then(|b| b.strip_suffix("<!-- slopvac-enable -->\n"))
+        .unwrap_or_else(|| panic!("explain markdown lacks the lint wrapper: {block}"));
     assert!(
-        block.starts_with("### `core:ai-residue.chat-leakage`"),
-        "{block}"
+        inner.starts_with("### `core:ai-residue.chat-leakage`"),
+        "{inner}"
     );
     assert!(
-        listing.contains(block.trim_end()),
+        listing.contains(inner.trim_end()),
         "listing lacks the block"
     );
+}
+
+#[test]
+fn rules_markdown_body_sits_inside_one_lint_wrapper() {
+    let md = stdout(&["rules", "--category", "ai-residue", "--format", "md"]);
+    assert_eq!(md.matches("<!-- slopvac-disable -->").count(), 1, "{md}");
+    assert!(md.ends_with("<!-- slopvac-enable -->\n"), "{md}");
+    assert!(md.find("<!-- slopvac-disable -->") > md.find("# Slopvac rules"));
+}
+
+// The question text is from `orwell.json` (rule `concrete-floor`).
+const QUESTION: &str = "Does this paragraph name at least one number, identifier, path, command, or dated event? If the writer possesses a more specific term than the one used, did they use it?";
+const JUDGEMENT: &str = "core:orwell.concrete-floor";
+
+#[test]
+fn explain_text_shows_a_judgement_rules_question_and_who_applies_it() {
+    let text = stdout(&["explain", JUDGEMENT]);
+    assert!(
+        text.contains(&format!("Decide by asking: {QUESTION}\n")),
+        "{text}"
+    );
+    assert!(
+        text.contains("Lint never reports this rule; `slopvac prime review` applies it."),
+        "{text}"
+    );
+}
+
+#[test]
+fn explain_markdown_shows_a_judgement_rules_question_not_a_message() {
+    let md = stdout(&["explain", JUDGEMENT, "--format", "md"]);
+    assert!(md.contains(&format!("- Question: {QUESTION}\n")), "{md}");
+    assert!(!md.contains("- Message:"), "{md}");
+}
+
+#[test]
+fn rules_markdown_shows_a_judgement_rules_question() {
+    let md = stdout(&[
+        "rules",
+        "--category",
+        "orwell",
+        "--kind",
+        "judgement",
+        "--format",
+        "md",
+    ]);
+    assert!(md.contains(&format!("- Question: {QUESTION}\n")), "{md}");
 }
 
 #[test]
@@ -228,6 +278,25 @@ fn config_must_exist() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[config-not-found]: "));
+}
+
+#[test]
+fn a_missing_absolute_config_path_is_redacted() {
+    let out = slopvac()
+        .args([
+            "rules",
+            "--config",
+            "/home/SENTINEL-user-4471/proj/slopvac.toml",
+        ])
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.contains("--config <external>/slopvac.toml: no such file"),
+        "{err}"
+    );
+    assert!(!err.contains("SENTINEL-user-4471"), "{err}");
 }
 
 #[test]

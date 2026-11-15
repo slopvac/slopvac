@@ -3,7 +3,7 @@
 //! The CLI codes against [`Linter`]. The stub reads each target as bytes,
 //! rejects invalid UTF-8 as an incomplete run, and reports no findings.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::errors::CliError;
 use crate::redact;
@@ -50,7 +50,7 @@ impl Linter for StubLinter {
             check(redact::STDIN_NAME, bytes, &mut outcome);
         }
         for path in &request.targets {
-            let shown = shown_path(path, &request.root);
+            let shown = redact::shown_path(path, &request.root);
             match std::fs::read(path) {
                 Ok(bytes) => check(&shown, &bytes, &mut outcome),
                 Err(err) => outcome.incomplete.push(CliError::new(
@@ -60,14 +60,6 @@ impl Linter for StubLinter {
             }
         }
         outcome
-    }
-}
-
-fn shown_path(path: &Path, root: &Path) -> String {
-    if path.is_absolute() {
-        redact::path_for_log(path, root)
-    } else {
-        path.display().to_string()
     }
 }
 
