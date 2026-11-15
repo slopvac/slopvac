@@ -921,6 +921,54 @@ mod runaway {
         assert_gone(&read_pid(&shim.child_pid), "the child of git");
     }
 
+    /// Git exits at once and leaves a background child that holds its pipes. Whatever the
+    /// outcome, the leftover must be stopped before `changed_lines_with` returns.
+    #[test]
+    fn a_background_child_left_by_a_finished_git_is_stopped() {
+        let repo = repo!();
+        for tail in ["true", "false", "head -c 30000 /dev/zero"] {
+            let shim = shim(tail);
+            let limits = Limits {
+                max_stdout: 1024,
+                ..Limits::default()
+            };
+
+            let result = changed_lines_with(
+                &repo.root,
+                &DiffScope::WorkingTree,
+                &Options {
+                    limits,
+                    program: shim.program.clone().into_os_string(),
+                },
+            );
+
+            assert!(result.is_err(), "{tail}");
+            assert_gone(&read_pid(&shim.pid), "git");
+            assert_gone(&read_pid(&shim.child_pid), "the child of git");
+        }
+    }
+
+    /// Git exits at once after printing more than the cap. The reader may flag the
+    /// overflow before or after the exit, so a single run proves nothing; every run must
+    /// still leave nothing behind.
+    #[test]
+    fn a_fast_exit_with_oversized_output_still_stops_the_background_child() {
+        let repo = repo!();
+        for _ in 0..10 {
+            let shim = shim("head -c 300000 /dev/zero");
+            let limits = Limits {
+                max_stdout: 1024,
+                ..Limits::default()
+            };
+
+            let err = run(&repo, &shim, limits);
+
+            assert!(matches!(err, DiffError::OutputTooLarge(1024)), "{err}");
+            assert_gone(&read_pid(&shim.pid), "git");
+            assert_gone(&read_pid(&shim.child_pid), "the child of git");
+        }
+    }
+
     #[test]
     fn output_over_the_cap_kills_and_reaps_git_and_its_children() {
         let repo = repo!();
@@ -1088,4 +1136,27 @@ fn a_range_past_the_end_of_the_current_file_is_dropped_or_clipped() {
     assert_eq!(repo.ranges(&changed, "doc.md"), vec![4..=4]);
     repo.write("doc.md", "a\rb\n");
     assert_eq!(repo.ranges(&changed, "doc.md"), vec![]);
+}
+
+#[cfg(windows)]
+#[test]
+fn a_file_replaced_by_a_symlink_after_the_scope_was_built_is_refused_on_windows() {
+    let repo = repo!();
+    repo.write("doc.md", "a\n");
+    let base = repo.commit("base");
+    repo.write("doc.md", "a\nb\n");
+    repo.commit("edit");
+    let changed = repo.lines(&since(&base));
+    let secret = repo.root.parent().unwrap().join("secret.md");
+    fs::write(&secret, "outside\n").unwrap();
+    fs::remove_file(repo.path("doc.md")).unwrap();
+    if let Err(e) = std::os::windows::fs::symlink_file(&secret, repo.path("doc.md")) {
+        // Creating a symlink needs developer mode or an administrator.
+        eprintln!("skipped: this account cannot create symlinks ({e})");
+        return;
+    }
+
+    let err = changed.ranges_for(&repo.path("doc.md")).unwrap_err();
+
+    assert!(matches!(err, DiffError::Symlink(_)), "{err}");
 }

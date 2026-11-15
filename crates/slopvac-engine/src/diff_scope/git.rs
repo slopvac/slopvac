@@ -149,6 +149,7 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
 
     let mut child = command.spawn().map_err(DiffError::Spawn)?;
+    let group = child.id();
     let exceeded = Arc::new(AtomicBool::new(false));
     let stdout = spawn_reader(
         child.stdout.take(),
@@ -177,6 +178,9 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
         }
     };
 
+    // The child ended and is reaped. Whatever it left in its group is stopped before the
+    // result is chosen, so no outcome, including a late overflow, leaves a survivor.
+    kill_group(group);
     let out = stdout.recv_timeout(DRAIN_GRACE).ok().flatten();
     let err = stderr.recv_timeout(DRAIN_GRACE).ok().flatten();
     if exceeded.load(Ordering::Acquire) {
@@ -194,17 +198,26 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
 
 /// Kill the child and its process group, and wait for it, so no zombie is left.
 fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    if let Some(group) = i32::try_from(child.id())
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-    {
-        // The group may already be gone; the child itself is killed below either way.
-        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-    }
+    kill_group(child.id());
     // `kill` fails only when the child already ended; `wait` then reaps it.
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// Kill every process in the group that git leads. Git is its own group leader, so the
+/// group id is its pid, and the group lives as long as any member does. On other
+/// platforms there is no group and this does nothing.
+fn kill_group(leader: u32) {
+    #[cfg(unix)]
+    if let Some(group) = i32::try_from(leader)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        // The group may already be gone.
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
+    #[cfg(not(unix))]
+    let _ = leader;
 }
 
 /// Read a pipe on a helper thread. `Some(flag)` marks a pipe whose overflow is an error;
