@@ -320,23 +320,22 @@ fn an_autolink_inside_an_image_does_not_unprotect_the_image_destination() {
 #[test]
 fn a_regex_in_an_attribute_expression_never_exposes_the_attributes_after_it() {
     let raw = single("delta", "d", &json!({"scope": "raw"}));
-    let mut parsed = 0;
-    // Whatever the scanner makes of the regex, the later attribute stays protected. The MDX
-    // parser rejects some of these, and those are skipped.
-    for text in [
-        "<A b={/['{]\\}>/} c=\"delta\" />\n\ndelta\n",
-        "<A b={x / 2} c=\"delta\" />\n\ndelta\n",
-        "<A b={/}>/.test(s)} c=\"delta\" />\n\ndelta\n",
-        "<A b={/[}]>/} c=\"delta\" />\n\ndelta\n",
+    // Each regex holds a quoted `{`, an escaped `}` and a `>`, which a scanner that does not
+    // read regular expressions takes for the end of the expression and of the tag. The MDX
+    // parser accepts them, so both must parse. The attribute after the regex keeps `delta`,
+    // and the child prose on the same line is fixed.
+    for (text, want) in [
+        (
+            "<A b={/['{']\\}>/} c=\"delta\">delta</A>\n",
+            "<A b={/['{']\\}>/} c=\"delta\">d</A>\n",
+        ),
+        (
+            "<A b={/['{']\\}>/.test(x)} c=\"delta\">delta</A>\n",
+            "<A b={/['{']\\}>/.test(x)} c=\"delta\">d</A>\n",
+        ),
     ] {
-        let input = Input::mdx("doc.mdx", text);
-        let Ok(doc) = raw.lint(&input) else { continue };
-        parsed += 1;
-        let fixed = fix_document(&input, &doc, None).unwrap().text;
-        assert!(fixed.contains("c=\"delta\""), "{text:?} became {fixed:?}");
-        assert!(fixed.ends_with("\n\nd\n"), "{text:?} became {fixed:?}");
+        assert_eq!(fix_mdx(&raw, text), want, "{text:?}");
     }
-    assert!(parsed >= 2, "only {parsed} inputs parsed");
 }
 
 #[test]
