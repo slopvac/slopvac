@@ -25,6 +25,7 @@ slopvac-rules = { path = "crates/slopvac-rules" }
 slopvac-engine = { path = "crates/slopvac-engine" }
 slopvac-report = { path = "crates/slopvac-report" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }
+slopvac-sanitize = { path = "crates/slopvac-sanitize" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-context = { path = "crates/slopvac-context" }
 pcre2 = "0.2"

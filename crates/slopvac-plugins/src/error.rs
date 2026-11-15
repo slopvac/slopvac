@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 use crate::process::Teardown;
+use slopvac_sanitize::{line as esc, terminal};
 
 /// A JSON-RPC error object sent by a plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,15 +25,16 @@ pub struct RpcError {
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum PluginError {
     /// The content hash has no recorded trust.
-    #[error("plugin {0} is not trusted; run `slopvac plugins trust` for it")]
+    #[error("plugin {} is not trusted; run `slopvac plugins trust` for it", esc(.0))]
     Untrusted(String),
     /// The installed bytes differ from the hash that trust recorded.
     #[error(
-        "plugin {0} changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content"
+        "plugin {} changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content",
+        esc(.0)
     )]
     HashMismatch(String),
     /// A timer in section 6.3 expired.
-    #[error("plugin {plugin} timed out: {what}")]
+    #[error("plugin {} timed out: {}", esc(.plugin), esc(.what))]
     Timeout {
         /// Plugin name.
         plugin: String,
@@ -40,7 +42,7 @@ pub enum PluginError {
         what: String,
     },
     /// The process ended with requests pending.
-    #[error("plugin {plugin} exited ({status}){stderr}")]
+    #[error("plugin {} exited ({}){}", esc(.plugin), esc(.status), terminal(.stderr))]
     Exited {
         /// Plugin name.
         plugin: String,
@@ -50,22 +52,22 @@ pub enum PluginError {
         stderr: String,
     },
     /// A framing error, a limit breach or a duplicate key.
-    #[error("plugin protocol violation: {0}")]
+    #[error("plugin protocol violation: {}", esc(.0))]
     ProtocolViolation(String),
     /// A result does not match its schema or breaks a rule such as span bounds.
-    #[error("plugin output invalid: {0}")]
+    #[error("plugin output invalid: {}", esc(.0))]
     OutputInvalid(String),
     /// The program did not start.
-    #[error("plugin failed to start: {0}")]
+    #[error("plugin failed to start: {}", esc(.0))]
     SpawnFailed(String),
     /// The reply disagrees with the hashed manifest.
-    #[error("plugin declaration mismatch: {0}")]
+    #[error("plugin declaration mismatch: {}", esc(.0))]
     DeclarationMismatch(String),
     /// The request counter reached 2^53-1.
     #[error("request ids exhausted")]
     RequestIdExhausted,
     /// No common protocol version.
-    #[error("no common protocol version: host speaks {host}, plugin speaks {plugin}")]
+    #[error("no common protocol version: host speaks {}, plugin speaks {}", esc(.host), esc(.plugin))]
     ProtocolVersionUnsupported {
         /// Host range, for example `1..=1`.
         host: String,
@@ -73,22 +75,22 @@ pub enum PluginError {
         plugin: String,
     },
     /// The host lacks a feature the plugin requires.
-    #[error("plugin requires feature `{0}`, which the host does not offer")]
+    #[error("plugin requires feature `{}`, which the host does not offer", esc(.0))]
     RequiredFeatureMissing(String),
     /// The plugin needs the network and offline mode is on.
-    #[error("offline: {0} needs the network")]
+    #[error("offline: {} needs the network", esc(.0))]
     Offline(String),
     /// The plugin answered a request with an error object.
-    #[error("plugin error {}: {} ({})", .0.code, .0.message, .0.slopvac_code)]
+    #[error("plugin error {}: {} ({})", .0.code, esc(&.0.message), esc(&.0.slopvac_code))]
     Rpc(RpcError),
     /// The host cancelled the request and discarded the answer.
     #[error("request cancelled")]
     Cancelled,
     /// The hook or document does not fit a message and cannot be split.
-    #[error("message too large: {0}")]
+    #[error("message too large: {}", esc(.0))]
     MessageTooLarge(String),
     /// The caller used the plugin wrongly, for example an undeclared hook.
-    #[error("invalid use of plugin: {0}")]
+    #[error("invalid use of plugin: {}", esc(.0))]
     Usage(String),
 }
 

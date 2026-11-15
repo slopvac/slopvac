@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime};
 
 use flate2::read::MultiGzDecoder;
 use sha2::{Digest as _, Sha256};
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
@@ -108,19 +109,19 @@ fn new_parents(dirs: &HashSet<String>, rel: &str) -> Vec<String> {
 #[derive(Debug, Error)]
 pub enum ExtractError {
     /// The archive breaks a rule.
-    #[error("archive refused: {0}")]
+    #[error("archive refused: {}", esc(.0))]
     Refused(String),
     /// The archive is not valid gzip or tar.
-    #[error("archive is malformed: {0}")]
+    #[error("archive is malformed: {}", esc(.0))]
     Malformed(String),
     /// A cached tree differs from its recorded hash.
-    #[error("cached tree {path} does not match its hash")]
+    #[error("cached tree {} does not match its hash", esc(&.path.to_string_lossy()))]
     Tampered {
         /// The tree.
         path: PathBuf,
     },
     /// A file system operation failed.
-    #[error("{what}: {source}")]
+    #[error("{}: {}", esc(.what), esc(&.source.to_string()))]
     Io {
         /// The operation.
         what: String,

@@ -436,8 +436,10 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 | TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
 | TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
 | TM-5 limits, TM-4 on Linux (open, PR #389) | `limits.rs` | P5, P6 |
+| TM-11 | `sanitize.rs`, `host.rs`, `trust.rs` in `slopvac-plugins` | O1, P15 |
+| TM-11, TM-12, TM-13 (the escaping functions) | `crates/slopvac-sanitize/src/lib.rs` | O1 to O4, P15 |
 
-Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10 to TM-14, TM-19 to TM-21, TM-27, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-49 to TM-59. TM-49 to TM-53 belong to `slopvac-8l4.9.31`, TM-11 to TM-13 to `slopvac-8l4.9.32`, TM-27 to `slopvac-8l4.9.15`, and TM-54 to TM-58 to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat.
+Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10, TM-14, TM-19 to TM-21, TM-27, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-49 to TM-59. TM-49 to TM-53 belong to `slopvac-8l4.9.31`, TM-27 to `slopvac-8l4.9.15`, and TM-54 to TM-58 to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat. TM-11 to TM-13 pass at the component level (`slopvac-8l4.9.32`). The renderer and Action wiring is open in `slopvac-8l4.12.2` and `slopvac-8l4.13.6`, which add the end-to-end checks.
 
 ## 8. Work items from this model
 
@@ -449,7 +451,7 @@ Every work item of this model has a bead.
 | Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
 | Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
 | Rotation and the signed revocation list | `slopvac-8l4.9.15` | open | K5, K6 |
-| Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | open | O1 to O4, P15 |
+| Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | component done (crate `slopvac-sanitize`); renderer wiring open | O1 to O4, P15 |
 | Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged (PR #344) | E1 to E7 |
 | Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |
 

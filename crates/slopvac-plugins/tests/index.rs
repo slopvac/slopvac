@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use semver::Version;
 use slopvac_plugins::index::{
     Index, IndexEntry, Listing, MAX_DESCRIPTION_CHARS, MAX_ENTRIES, MAX_INDEX_BYTES, PackKind,
-    PublisherKey, build_index, sanitize_for_terminal, search,
+    PublisherKey, build_index, search,
 };
 
 fn key() -> PublisherKey {
@@ -313,7 +313,7 @@ fn rendered_hits_carry_no_control_characters_from_the_index() {
     let unsafe_left = text
         .chars()
         .filter(|&c| c != '\n')
-        .any(|c| c.is_control() || sanitize_for_terminal(&c.to_string()) != c.to_string());
+        .any(|c| c.is_control() || slopvac_sanitize::line(&c.to_string()) != c.to_string());
     assert!(!unsafe_left, "{text:?}");
     assert!(text.contains(
         "ok\\u{1b}]8;;http://evil\\u{7}x\\u{a}fake line\\u{202e}rtl\\u{200b}\\u{9b}31m\\u{7f}"
@@ -457,7 +457,7 @@ fn invisible_and_format_characters_are_escaped_in_output() {
     ];
     for c in cases {
         let want = format!("a\\u{{{:x}}}b", u32::from(c));
-        assert_eq!(sanitize_for_terminal(&format!("a{c}b")), want, "{c:?}");
+        assert_eq!(slopvac_sanitize::line(&format!("a{c}b")), want, "{c:?}");
     }
 }
 

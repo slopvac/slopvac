@@ -25,6 +25,7 @@ use std::fmt::Write as _;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 use crate::oci::{Client, Descriptor, Digest, Manifest, OciError, Reference};
@@ -55,14 +56,16 @@ pub enum SignError {
     #[error("the signed statement is larger than {MAX_STATEMENT_BYTES} bytes")]
     StatementTooLarge,
     /// The statement is not the canonical encoding of its own content.
-    #[error("the signed statement is not canonical JSON: {0}")]
+    #[error("the signed statement is not canonical JSON: {}", esc(.0))]
     NotCanonical(String),
     /// The statement does not parse or has unknown fields.
-    #[error("the signed statement is invalid: {0}")]
+    #[error("the signed statement is invalid: {}", esc(.0))]
     InvalidStatement(String),
     /// No pinned key has the statement's key id.
     #[error(
-        "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins trust --key <fingerprint>`"
+        "key {} is not pinned for namespace `{}`; pin it with `slopvac plugins trust --key <fingerprint>`",
+        esc(.key_id),
+        esc(.namespace)
     )]
     KeyNotPinned {
         /// Key id named by the statement.
@@ -74,16 +77,16 @@ pub enum SignError {
     #[error("the signature does not verify")]
     BadSignature,
     /// The statement and the manifest disagree.
-    #[error("the signed statement does not match the manifest: {0}")]
+    #[error("the signed statement does not match the manifest: {}", esc(.0))]
     Mismatch(String),
     /// An older version or an older `notBefore` than the lockfile holds.
-    #[error("rollback refused: {0}")]
+    #[error("rollback refused: {}", esc(.0))]
     Rollback(String),
     /// Fetching a signature blob failed.
     #[error(transparent)]
     Fetch(#[from] OciError),
     /// A public key does not parse.
-    #[error("invalid public key: {0}")]
+    #[error("invalid public key: {}", esc(.0))]
     InvalidKey(String),
 }
 

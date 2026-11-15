@@ -1071,6 +1071,32 @@ mod unix_only {
         );
     }
 
+    /// TM-11 for the cache: a planted entry with a hostile name reaches the
+    /// `HashMismatch` text through `tree_hash`, so the name must arrive escaped.
+    #[test]
+    fn tm11_a_hostile_file_name_in_a_trusted_tree_reaches_the_error_escaped() {
+        let s = Scratch::new("u-tm11");
+        let vp = install(&s, "1.0.0", "x");
+        let spec = spawn_spec(&vp);
+        let g = spawn_gate(&s, &vp);
+        trust(&g, &vp, &spec);
+        fs::set_permissions(&vp.root, fs::Permissions::from_mode(0o700)).unwrap();
+        let name = "a\u{202e}b\u{1b}]8;;x\u{7}c";
+        std::os::unix::fs::symlink("plugin.py", vp.root.join(name)).unwrap();
+        let err = Plugin::start(&spec, &cfg(), &g).unwrap_err().error;
+        assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
+        assert_eq!(
+            err.to_string()
+                .chars()
+                .find(|c| c.is_control() || *c == '\u{202e}'),
+            None
+        );
+        assert!(
+            err.to_string().contains("a\\u{202e}b\\u{1b}]8;;x\\u{7}c"),
+            "{err}"
+        );
+    }
+
     #[test]
     fn tm6_a_new_executable_bit_after_trust_stops_the_spawn() {
         let s = Scratch::new("u-tm6-exec");

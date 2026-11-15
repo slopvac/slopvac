@@ -2527,6 +2527,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slopvac-sanitize",
  "tar",
  "tempfile",
  "thiserror",
@@ -2564,6 +2565,10 @@ dependencies = [
  "thiserror",
  "toml",
 ]
+
+[[package]]
+name = "slopvac-sanitize"
+version = "0.0.0"
 
 [[package]]
 name = "slopvac-styles"

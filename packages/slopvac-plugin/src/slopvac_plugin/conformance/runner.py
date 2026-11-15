@@ -24,13 +24,15 @@ _IGNORABLE = (
     0x3164, 0xFFA0,
 )  # fmt: skip
 _IGNORABLE_RANGES = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
-_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Zl", "Zp"})
 
 
 def _unsafe(char: str) -> bool:
     code = ord(char)
     return (
         unicodedata.category(char) in _UNSAFE_CATEGORIES
+        or 0xFDD0 <= code <= 0xFDEF  # noncharacters
+        or code & 0xFFFE == 0xFFFE
         or code in _IGNORABLE
         or any(low <= code <= high for low, high in _IGNORABLE_RANGES)
     )
@@ -40,6 +42,10 @@ def escape_text(text: str) -> str:
     """Show control, format, bidi, zero-width and other invisible characters as escapes.
 
     Case details quote text the plugin chose, and a terminal acts on raw controls.
+    The set of characters matches the Rust crate `slopvac-sanitize` (the host's
+    sanitiser, threat model O1): Cc, Cf, Co, Zl, Zp, default-ignorable code points
+    and noncharacters. Unassigned code points stay as they are, since the set
+    changes with each Unicode version. The spelling of an escape is Python's.
     """
     out = []
     for char in text:

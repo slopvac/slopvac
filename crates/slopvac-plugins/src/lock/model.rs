@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fmt::{self, Write as _};
+use std::fmt;
 use std::str::FromStr;
 
 use semver::Version;
@@ -21,16 +21,6 @@ pub const MAX_STRING_BYTES: usize = 4096;
 #[error("{0}")]
 pub struct ValueError(String);
 
-/// True for characters that can forge or hide terminal output: C0, DEL and C1
-/// controls, bidirectional controls, zero-width and line/paragraph separators.
-fn is_unsafe(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{61c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}'
-        )
-}
-
 /// Longest message, in characters. A longer one is cut and ends in `...`, so a
 /// hostile value cannot flood the output.
 const MAX_MESSAGE_CHARS: usize = 512;
@@ -38,19 +28,10 @@ const MAX_MESSAGE_CHARS: usize = 512;
 /// Replaces unsafe characters (and newlines) with `\u{..}` so that text from a
 /// lock file cannot forge or hide output when it is printed, and cuts long text.
 pub(super) fn sanitize(text: &str) -> String {
-    let mut out = String::with_capacity(text.len().min(MAX_MESSAGE_CHARS * 2));
-    for (i, c) in text.chars().enumerate() {
-        if i == MAX_MESSAGE_CHARS {
-            out.push_str("...");
-            break;
-        }
-        if is_unsafe(c) {
-            let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
-        } else {
-            out.push(c);
-        }
+    match text.char_indices().nth(MAX_MESSAGE_CHARS) {
+        Some((cut, _)) => format!("{}...", slopvac_sanitize::line(&text[..cut])),
+        None => slopvac_sanitize::line(text),
     }
-    out
 }
 
 fn bad<T>(message: impl AsRef<str>) -> Result<T, ValueError> {
@@ -318,7 +299,7 @@ fn parse_kind(s: &str) -> Result<SourceKind, ValueError> {
     if s.len() > MAX_STRING_BYTES {
         return bad(format!("a source is longer than {MAX_STRING_BYTES} bytes"));
     }
-    if s.chars().any(is_unsafe) {
+    if s.chars().any(slopvac_sanitize::is_unsafe) {
         return bad("a source must not contain control, bidirectional or zero-width characters");
     }
     let no_space = |rest: &str| !rest.is_empty() && !rest.chars().any(char::is_whitespace);
