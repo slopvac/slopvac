@@ -4,7 +4,7 @@ use slopvac_pcre2::{MatchError, Options, Regex};
 
 use crate::Error;
 
-/// A compiled PCRE2 pattern (UTF mode, JIT when available, under the `slopvac-pcre2` limits).
+/// A compiled PCRE2 pattern (UTF mode, interpreter under the `slopvac-pcre2` limits).
 #[derive(Debug, Clone)]
 pub struct Pattern {
     source: String,

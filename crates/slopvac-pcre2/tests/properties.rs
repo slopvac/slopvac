@@ -65,8 +65,9 @@ proptest! {
         subject in subject(),
         caseless in any::<bool>(),
         ucp in any::<bool>(),
+        jit in any::<bool>(),
     ) {
-        let options = Options::new().caseless(caseless).ucp(ucp);
+        let options = Options::new().caseless(caseless).ucp(ucp).jit(jit);
         let Ok(re) = Regex::with_limits(&pattern, options, LIMITS) else {
             return Ok(());
         };

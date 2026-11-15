@@ -20,6 +20,10 @@ fn interpreter_only(pattern: &str, limits: Limits) -> Regex {
     Regex::with_limits(pattern, Options::new().jit(false), limits).unwrap()
 }
 
+fn jit(pattern: &str, limits: Limits) -> Regex {
+    Regex::with_limits(pattern, Options::new().jit(true), limits).unwrap()
+}
+
 #[test]
 fn the_policy_values_are_the_recorded_ones() {
     let policy = Limits::POLICY;
@@ -128,7 +132,7 @@ fn a_spent_jit_budget_is_retried_on_the_interpreter() {
         jit_match_limit: 1,
         ..Limits::POLICY
     };
-    let re = Regex::with_limits(r"(\w+) (\w+)", Options::new(), limits).unwrap();
+    let re = Regex::with_limits(r"(\w+) (\w+)", Options::new().jit(true), limits).unwrap();
     assert_eq!(re.find("hello big world").unwrap(), Some(0..9));
     assert_eq!(re.find_all("a b c d").unwrap(), [0..3, 4..7]);
 }
@@ -140,7 +144,7 @@ fn an_exhausted_jit_stack_is_retried_on_the_interpreter() {
         jit_stack_bytes: 1024,
         ..Limits::POLICY
     };
-    let re = Regex::with_limits(r"^(?:(a)|(b))*$", Options::new(), limits).unwrap();
+    let re = Regex::with_limits(r"^(?:(a)|(b))*$", Options::new().jit(true), limits).unwrap();
     assert_eq!(re.find(&"ab".repeat(5_000)).unwrap(), Some(0..10_000));
 }
 
@@ -152,7 +156,7 @@ fn the_jit_and_the_interpreter_agree_after_a_retry() {
     };
     let subject = "one two  three\nfour";
     let pattern = r"\b\w+\b";
-    let retried = Regex::with_limits(pattern, Options::new(), tight).unwrap();
+    let retried = Regex::with_limits(pattern, Options::new().jit(true), tight).unwrap();
     let plain = interpreter_only(pattern, Limits::POLICY);
     assert_eq!(
         retried.find_all(subject).unwrap(),
@@ -195,4 +199,49 @@ fn a_limit_error_on_one_thread_leaves_the_others_unaffected() {
             }
         });
     });
+}
+
+/// Overlapping greedy repetitions with a failing suffix, on a long run that matches the
+/// repetitions but never the suffix. The options switch off the start optimisations that
+/// would reject the subject at once. Backtracking is quadratic in the subject length; under
+/// the JIT that work does not count against the JIT match limit.
+const QUADRATIC: &str = r"(*NO_AUTO_POSSESS)(*NO_START_OPT)a*a*b";
+
+#[test]
+fn quadratic_backtracking_returns_a_limit_error_on_the_default_engine() {
+    let re = Regex::new(QUADRATIC, Options::new()).unwrap();
+    assert!(!re.is_jit());
+    // About 20,000^2 / 2 = 2e8 steps without a limit; the policy stops at 1e7.
+    let subject = "a".repeat(20_000);
+    assert_eq!(
+        re.is_match(&subject),
+        Err(MatchError::MatchLimit { limit: 10_000_000 })
+    );
+    assert_eq!(
+        re.find_all(&subject),
+        Err(MatchError::MatchLimit { limit: 10_000_000 })
+    );
+}
+
+#[test]
+fn the_default_engine_is_the_interpreter_for_every_pattern() {
+    for pattern in [r"\d+", CATASTROPHIC, QUADRATIC] {
+        assert!(!Regex::new(pattern, Options::new()).unwrap().is_jit());
+    }
+}
+
+#[test]
+fn a_no_jit_pattern_under_the_jit_option_runs_under_the_interpreter_limits() {
+    // `(*NO_JIT)` makes JIT compilation "succeed" with no JIT code. The wrapper must see
+    // that, so the heap limit applies instead of PCRE2's default of about 20 GB.
+    let limits = Limits {
+        heap_limit_kib: 1,
+        ..Limits::POLICY
+    };
+    let re = jit(r"(*NO_JIT)^(?:a|b)*$", limits);
+    assert!(!re.is_jit());
+    assert_eq!(
+        re.is_match(&format!("{}!", "ab".repeat(100_000))),
+        Err(MatchError::HeapLimit { kib: 1 })
+    );
 }

@@ -11,19 +11,21 @@
 //!   are used by one thread at a time (see their docs).
 #![allow(unsafe_code)]
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
 use pcre2_sys::{
-    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_JIT_COMPLETE, PCRE2_NO_JIT, PCRE2_NO_UTF_CHECK,
-    PCRE2_NOTEMPTY_ATSTART, PCRE2_UNSET, pcre2_code_8, pcre2_code_free_8, pcre2_compile_8,
-    pcre2_config_8, pcre2_get_error_message_8, pcre2_get_ovector_count_8,
-    pcre2_get_ovector_pointer_8, pcre2_jit_compile_8, pcre2_jit_stack_8, pcre2_jit_stack_assign_8,
-    pcre2_jit_stack_create_8, pcre2_jit_stack_free_8, pcre2_match_8, pcre2_match_context_8,
-    pcre2_match_context_create_8, pcre2_match_context_free_8, pcre2_match_data_8,
-    pcre2_match_data_create_from_pattern_8, pcre2_match_data_free_8, pcre2_set_depth_limit_8,
-    pcre2_set_heap_limit_8, pcre2_set_match_limit_8,
+    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_INFO_JITSIZE, PCRE2_JIT_COMPLETE, PCRE2_NO_JIT,
+    PCRE2_NO_UTF_CHECK, PCRE2_NOTEMPTY_ATSTART, PCRE2_UNSET, pcre2_code_8, pcre2_code_free_8,
+    pcre2_compile_8, pcre2_compile_context_8, pcre2_compile_context_create_8,
+    pcre2_compile_context_free_8, pcre2_config_8, pcre2_get_error_message_8,
+    pcre2_get_ovector_count_8, pcre2_get_ovector_pointer_8, pcre2_jit_compile_8, pcre2_jit_stack_8,
+    pcre2_jit_stack_assign_8, pcre2_jit_stack_create_8, pcre2_jit_stack_free_8, pcre2_match_8,
+    pcre2_match_context_8, pcre2_match_context_create_8, pcre2_match_context_free_8,
+    pcre2_match_data_8, pcre2_match_data_create_from_pattern_8, pcre2_match_data_free_8,
+    pcre2_pattern_info_8, pcre2_set_depth_limit_8, pcre2_set_heap_limit_8, pcre2_set_match_limit_8,
+    pcre2_set_max_pattern_length_8, pcre2_set_max_varlookbehind_8, pcre2_set_parens_nest_limit_8,
 };
 
 use crate::Limits;
@@ -56,14 +58,60 @@ unsafe impl Send for Code {}
 // SAFETY: see the `Send` impl; `&Code` only permits matching, which does not mutate it.
 unsafe impl Sync for Code {}
 
+/// Bounds on what the compiler may accept, set on the compile context.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CompileBounds {
+    pub(crate) max_pattern_bytes: usize,
+    pub(crate) parens_nest_limit: u32,
+    pub(crate) max_var_lookbehind: u32,
+}
+
+/// An owned compile context, freed on drop.
+struct CompileContext(NonNull<pcre2_compile_context_8>);
+
+impl CompileContext {
+    fn new(bounds: CompileBounds) -> Option<Self> {
+        // SAFETY: a null general context selects the default allocator.
+        let raw = unsafe { pcre2_compile_context_create_8(ptr::null_mut()) };
+        let context = Self(NonNull::new(raw)?);
+        // SAFETY: `context.0` is a live compile context. The setters fail only for a null
+        // context, so their results carry no information here.
+        unsafe { pcre2_set_max_pattern_length_8(context.0.as_ptr(), bounds.max_pattern_bytes) };
+        // SAFETY: as above.
+        unsafe { pcre2_set_parens_nest_limit_8(context.0.as_ptr(), bounds.parens_nest_limit) };
+        // SAFETY: as above.
+        unsafe { pcre2_set_max_varlookbehind_8(context.0.as_ptr(), bounds.max_var_lookbehind) };
+        Some(context)
+    }
+}
+
+impl Drop for CompileContext {
+    fn drop(&mut self) {
+        // SAFETY: created by `pcre2_compile_context_create_8`, freed only here.
+        unsafe { pcre2_compile_context_free_8(self.0.as_ptr()) }
+    }
+}
+
 impl Code {
-    /// Compile `pattern` with the given PCRE2 option bits, then try to JIT it if `jit`.
-    pub(crate) fn compile(pattern: &str, options: u32, jit: bool) -> Result<Self, CompileFailure> {
+    /// Compile `pattern` under `bounds` with the given PCRE2 option bits. When `jit` is
+    /// set, also try to JIT it; `is_jit` is true only if JIT code really exists.
+    pub(crate) fn compile(
+        pattern: &str,
+        options: u32,
+        bounds: CompileBounds,
+        jit: bool,
+    ) -> Result<Self, CompileFailure> {
+        let Some(context) = CompileContext::new(bounds) else {
+            return Err(CompileFailure {
+                code: pcre2_sys::PCRE2_ERROR_NOMEMORY,
+                offset: 0,
+            });
+        };
         let mut code = 0_i32;
         let mut offset = 0_usize;
         // SAFETY: `pattern` points to `pattern.len()` readable bytes (a dangling but
         // non-null pointer when the length is zero, which PCRE2 never reads); `code` and
-        // `offset` are valid for writes; a null compile context selects PCRE2's defaults.
+        // `offset` are valid for writes; `context` is a live compile context.
         let raw = unsafe {
             pcre2_compile_8(
                 pattern.as_ptr(),
@@ -71,7 +119,7 @@ impl Code {
                 options,
                 &raw mut code,
                 &raw mut offset,
-                ptr::null_mut(),
+                context.0.as_ptr(),
             )
         };
         let ptr = NonNull::new(raw).ok_or(CompileFailure { code, offset })?;
@@ -79,11 +127,27 @@ impl Code {
         if jit {
             // SAFETY: `code.ptr` is a live compiled pattern that no one else references yet.
             let rc = unsafe { pcre2_jit_compile_8(code.ptr.as_ptr(), PCRE2_JIT_COMPLETE) };
-            // A non-zero code means no JIT (unsupported target or out of memory); the
-            // pattern still works on the interpreter, so it is not an error.
-            code.jit = rc == 0;
+            // A non-zero code means no JIT (unsupported target or out of memory). A zero
+            // code does not prove JIT code exists: patterns that start with `(*NO_JIT)`
+            // "succeed" and keep running on the interpreter. Ask for the JIT code size.
+            code.jit = rc == 0 && code.jit_size() > 0;
         }
         Ok(code)
+    }
+
+    /// Size in bytes of the JIT code, or zero if there is none.
+    fn jit_size(&self) -> usize {
+        let mut size = 0_usize;
+        // SAFETY: `self.ptr` is a live compiled pattern; `PCRE2_INFO_JITSIZE` writes one
+        // `usize` to `where`, which is valid for it.
+        let rc = unsafe {
+            pcre2_pattern_info_8(
+                self.ptr.as_ptr(),
+                PCRE2_INFO_JITSIZE,
+                (&raw mut size).cast::<c_void>(),
+            )
+        };
+        if rc == 0 { size } else { 0 }
     }
 
     /// Whether JIT code exists for this pattern.
@@ -150,13 +214,84 @@ impl Drop for MatchData {
 /// Which engine a match call runs on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Engine {
-    /// The JIT, under the JIT match limit and JIT stack.
+    /// The JIT, under the JIT match limit and JIT stack. Opt-in; see `Options::jit`.
     Jit,
-    /// The interpreter, under the match, depth and heap limits.
+    /// The interpreter, under the match, depth and heap limits. The default.
     Interpreter,
 }
 
-/// The two match contexts (JIT and interpreter) and the JIT stack, for one thread.
+/// Why `exec` could not run a match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExecError {
+    /// The start offset is not a character boundary of the subject.
+    BadOffset,
+    /// PCRE2 could not allocate the JIT context or stack.
+    OutOfMemory,
+}
+
+/// The JIT match context and its stack: built on first use, because the interpreter is
+/// the default engine and most threads never need them.
+#[derive(Debug)]
+struct JitParts {
+    context: NonNull<pcre2_match_context_8>,
+    stack: NonNull<pcre2_jit_stack_8>,
+}
+
+impl JitParts {
+    fn new(limits: Limits) -> Option<Self> {
+        if !jit_supported() {
+            return None;
+        }
+        // SAFETY: a null general context selects the default allocator.
+        let context = NonNull::new(unsafe { pcre2_match_context_create_8(ptr::null_mut()) })?;
+        set_limits(context, limits);
+        // SAFETY: a null general context selects the default allocator; the sizes are
+        // plain numbers (PCRE2 returns null if they are inconsistent).
+        let raw = unsafe {
+            pcre2_jit_stack_create_8(
+                JIT_STACK_START.min(limits.jit_stack_bytes),
+                limits.jit_stack_bytes,
+                ptr::null_mut(),
+            )
+        };
+        let Some(stack) = NonNull::new(raw) else {
+            // SAFETY: `context` was just created and is not stored anywhere else.
+            unsafe { pcre2_match_context_free_8(context.as_ptr()) };
+            return None;
+        };
+        // SAFETY: `context` is live; with a null callback the third argument is the JIT
+        // stack itself, which the returned value keeps alive until after the context is
+        // freed.
+        unsafe {
+            pcre2_jit_stack_assign_8(context.as_ptr(), None, stack.as_ptr().cast::<c_void>());
+        };
+        Some(Self { context, stack })
+    }
+}
+
+impl Drop for JitParts {
+    fn drop(&mut self) {
+        // SAFETY: created by `pcre2_match_context_create_8`, freed only here. The context
+        // goes first: it refers to the stack, never the reverse.
+        unsafe { pcre2_match_context_free_8(self.context.as_ptr()) };
+        // SAFETY: created by `pcre2_jit_stack_create_8`, freed only here, after the context.
+        unsafe { pcre2_jit_stack_free_8(self.stack.as_ptr()) };
+    }
+}
+
+/// Apply the match, depth and heap limits to a match context. The JIT ignores the depth
+/// and heap limits for patterns it compiled, but PCRE2 runs the interpreter under the same
+/// context when it declines to JIT a call, so both contexts carry all three.
+fn set_limits(context: NonNull<pcre2_match_context_8>, limits: Limits) {
+    // SAFETY: `context` is a live match context owned by the caller.
+    unsafe { pcre2_set_match_limit_8(context.as_ptr(), limits.match_limit) };
+    // SAFETY: as above.
+    unsafe { pcre2_set_depth_limit_8(context.as_ptr(), limits.depth_limit) };
+    // SAFETY: as above.
+    unsafe { pcre2_set_heap_limit_8(context.as_ptr(), limits.heap_limit_kib) };
+}
+
+/// The match contexts for one thread: the interpreter's, plus the JIT's once asked for.
 ///
 /// A PCRE2 JIT stack must not be used by two matches at once, so a `Contexts` lives in a
 /// thread-local (see [`with_contexts`]); it holds raw pointers and is neither `Send`
@@ -164,73 +299,35 @@ pub(crate) enum Engine {
 #[derive(Debug)]
 pub(crate) struct Contexts {
     limits: Limits,
-    jit: NonNull<pcre2_match_context_8>,
     interpreter: NonNull<pcre2_match_context_8>,
-    stack: Option<NonNull<pcre2_jit_stack_8>>,
+    jit: OnceCell<Option<JitParts>>,
 }
 
 impl Contexts {
-    /// Build both contexts with the limits in `limits`. `None` means out of memory.
+    /// Build the interpreter context with the limits in `limits`. `None` means out of memory.
     fn new(limits: Limits) -> Option<Self> {
         // SAFETY: a null general context selects the default allocator.
         let interpreter = NonNull::new(unsafe { pcre2_match_context_create_8(ptr::null_mut()) })?;
-        // SAFETY: as above.
-        let Some(jit) = NonNull::new(unsafe { pcre2_match_context_create_8(ptr::null_mut()) })
-        else {
-            // SAFETY: `interpreter` was just created and is not stored anywhere else.
-            unsafe { pcre2_match_context_free_8(interpreter.as_ptr()) };
-            return None;
-        };
-        // From here on `Drop` releases everything, including on the early return below.
-        let mut contexts = Self {
+        set_limits(interpreter, limits);
+        Some(Self {
             limits,
-            jit,
             interpreter,
-            stack: None,
-        };
-        // SAFETY: `interpreter` is a live match context owned by `contexts`.
-        unsafe { pcre2_set_match_limit_8(interpreter.as_ptr(), limits.match_limit) };
-        // SAFETY: as above.
-        unsafe { pcre2_set_depth_limit_8(interpreter.as_ptr(), limits.depth_limit) };
-        // SAFETY: as above.
-        unsafe { pcre2_set_heap_limit_8(interpreter.as_ptr(), limits.heap_limit_kib) };
-        // SAFETY: `jit` is a live match context owned by `contexts`.
-        unsafe { pcre2_set_match_limit_8(jit.as_ptr(), limits.jit_match_limit) };
+            jit: OnceCell::new(),
+        })
+    }
 
-        if jit_supported() {
-            // SAFETY: a null general context selects the default allocator; the sizes are
-            // plain numbers (PCRE2 returns null if they are inconsistent).
-            let raw = unsafe {
-                pcre2_jit_stack_create_8(
-                    JIT_STACK_START.min(limits.jit_stack_bytes),
-                    limits.jit_stack_bytes,
-                    ptr::null_mut(),
-                )
-            };
-            let stack = NonNull::new(raw)?;
-            contexts.stack = Some(stack);
-            // SAFETY: `jit` is live; with a null callback, the third argument is the JIT
-            // stack itself, which `contexts` keeps alive until after the context is freed.
-            unsafe {
-                pcre2_jit_stack_assign_8(jit.as_ptr(), None, stack.as_ptr().cast::<c_void>());
-            }
-        }
-        Some(contexts)
+    fn jit_context(&self) -> Option<NonNull<pcre2_match_context_8>> {
+        self.jit
+            .get_or_init(|| JitParts::new(self.limits))
+            .as_ref()
+            .map(|parts| parts.context)
     }
 }
 
 impl Drop for Contexts {
     fn drop(&mut self) {
-        // SAFETY: both contexts were created by `pcre2_match_context_create_8` and are
-        // freed only here. Contexts go first: they refer to the stack, never the reverse.
-        unsafe { pcre2_match_context_free_8(self.jit.as_ptr()) };
-        // SAFETY: as above.
+        // SAFETY: created by `pcre2_match_context_create_8` and freed only here.
         unsafe { pcre2_match_context_free_8(self.interpreter.as_ptr()) };
-        if let Some(stack) = self.stack {
-            // SAFETY: created by `pcre2_jit_stack_create_8`, freed only here, after the
-            // context that referred to it.
-            unsafe { pcre2_jit_stack_free_8(stack.as_ptr()) };
-        }
     }
 }
 
@@ -265,8 +362,8 @@ pub(crate) fn with_contexts<R>(limits: Limits, f: impl FnOnce(&Contexts) -> R) -
 /// Run one `pcre2_match` call and return its raw result code (`> 0` matched, negative
 /// is an error such as `PCRE2_ERROR_NOMATCH`).
 ///
-/// Returns `None` if `start` is not a character boundary of `subject`, which would break
-/// the UTF-8 precondition that `PCRE2_NO_UTF_CHECK` relies on.
+/// Fails if `start` is not a character boundary of `subject`, which would break the UTF-8
+/// precondition that `PCRE2_NO_UTF_CHECK` relies on.
 pub(crate) fn exec(
     code: &Code,
     subject: &str,
@@ -275,16 +372,16 @@ pub(crate) fn exec(
     data: &mut MatchData,
     contexts: &Contexts,
     engine: Engine,
-) -> Option<i32> {
+) -> Result<i32, ExecError> {
     if !subject.is_char_boundary(start) {
-        return None;
+        return Err(ExecError::BadOffset);
     }
     let mut options = PCRE2_NO_UTF_CHECK;
     if not_empty_at_start {
         options |= PCRE2_NOTEMPTY_ATSTART;
     }
     let context = match engine {
-        Engine::Jit => contexts.jit,
+        Engine::Jit => contexts.jit_context().ok_or(ExecError::OutOfMemory)?,
         Engine::Interpreter => {
             options |= PCRE2_NO_JIT;
             contexts.interpreter
@@ -310,7 +407,7 @@ pub(crate) fn exec(
             context.as_ptr(),
         )
     };
-    Some(rc)
+    Ok(rc)
 }
 
 /// The linked library's version string, such as `10.46 2025-08-27`.

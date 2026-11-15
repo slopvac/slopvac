@@ -25,15 +25,15 @@ pub(crate) fn re_i(pattern: &str) -> Regex {
     build(pattern, true)
 }
 
-fn try_build(pattern: &str, caseless: bool) -> Result<Regex, CompileError> {
+fn try_build(pattern: &str, caseless: bool, jit: bool) -> Result<Regex, CompileError> {
     Regex::new(
         &compat(pattern),
-        Options::new().caseless(caseless).ucp(true),
+        Options::new().caseless(caseless).ucp(true).jit(jit),
     )
 }
 
 fn build(pattern: &str, caseless: bool) -> Regex {
-    try_build(pattern, caseless)
+    try_build(pattern, caseless, false)
         .unwrap_or_else(|e| panic!("built-in pattern {pattern:?} must compile: {e}"))
 }
 
@@ -51,9 +51,16 @@ pub struct PatternError(String);
 pub struct Pattern(Regex);
 
 impl Pattern {
-    /// Compile `source`; `caseless` turns on case-insensitive matching.
+    /// Compile `source`; `caseless` turns on case-insensitive matching. Matching runs on the
+    /// PCRE2 interpreter, whose limits bound the work of every call.
     pub fn new(source: &str, caseless: bool) -> Result<Self, PatternError> {
-        try_build(source, caseless)
+        Self::with_jit(source, caseless, false)
+    }
+
+    /// Like [`Pattern::new`], with the PCRE2 JIT switched on or off. The JIT is faster but
+    /// does not bound CPU time on hostile input, so use it only for patterns you trust.
+    pub fn with_jit(source: &str, caseless: bool, jit: bool) -> Result<Self, PatternError> {
+        try_build(source, caseless, jit)
             .map(Self)
             .map_err(|e| PatternError(e.to_string()))
     }
@@ -123,6 +130,13 @@ mod tests {
         let text = format!("{}b", "a".repeat(64));
         assert!(pattern.find_all(&text).is_err());
         assert!(pattern.is_match(&text).is_err());
+    }
+
+    #[test]
+    fn a_pattern_over_the_length_cap_is_a_compile_error() {
+        let long = "a".repeat(slopvac_pcre2::MAX_PATTERN_BYTES + 1);
+        let err = Pattern::new(&long, false).unwrap_err();
+        assert!(err.to_string().contains("over the limit"), "{err}");
     }
 
     #[test]

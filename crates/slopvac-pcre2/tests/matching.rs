@@ -118,3 +118,17 @@ fn a_regex_is_usable_from_many_threads_at_once() {
         }
     });
 }
+
+#[test]
+fn a_one_byte_match_may_end_inside_a_character_and_find_all_then_errors() {
+    // `\C` takes one byte of "é" (two bytes). `find` reports it; slicing needs `str::get`.
+    let re = regex(r"\C");
+    let found = re.find("é").unwrap().unwrap();
+    assert_eq!(found, 0..1);
+    assert_eq!("é".get(found), None);
+    // The next search would start inside the character.
+    assert_eq!(
+        re.find_all("é"),
+        Err(slopvac_pcre2::MatchError::InvalidOffsets)
+    );
+}

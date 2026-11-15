@@ -11,12 +11,21 @@
 //!   workspace pins `pcre2-sys` and `.cargo/config.toml` forces its vendored build;
 //!   [`ensure_supported_version`] fails at compile time of the first pattern if a system
 //!   library was linked anyway.
-//! * Patterns compile in UTF mode, optionally with Unicode properties ([`Options`]).
-//! * Matching is JIT-first under [`Limits::JIT_MATCH`] and a [`Limits::JIT_STACK`] byte
-//!   JIT stack. When the JIT hits its match or stack limit, the same call is redone on
-//!   the interpreter, which is bounded by [`Limits::MATCH`], [`Limits::DEPTH`] and
-//!   [`Limits::HEAP_KIB`]. Hitting an interpreter limit is a [`MatchError`], never a panic
-//!   and never "no match".
+//! * Patterns compile in UTF mode, optionally with Unicode properties ([`Options`]), under
+//!   a compile context that caps the pattern at [`MAX_PATTERN_BYTES`], the parenthesis
+//!   nesting at [`PARENS_NEST_LIMIT`] and variable-length lookbehind at
+//!   [`MAX_VAR_LOOKBEHIND`]. PCRE2's compiler memory is bounded by those caps; there is no
+//!   custom allocator.
+//! * **Every match runs on the interpreter** under [`Limits::MATCH`], [`Limits::DEPTH`] and
+//!   [`Limits::HEAP_KIB`]. The match limit counts each backtracking step, so the work of one
+//!   call is bounded. Hitting a limit is a [`MatchError`], never a panic and never "no
+//!   match".
+//! * The JIT is opt-in ([`Options::jit`]) and for trusted patterns only. Its match limit
+//!   does not count every step of every loop (overlapping greedy repetitions can backtrack
+//!   quadratically without touching it), so it does not bound CPU time. When on, a JIT
+//!   attempt runs under [`Limits::JIT_MATCH`] and a [`Limits::JIT_STACK`] byte stack, uses
+//!   the JIT only if PCRE2 really produced JIT code (`PCRE2_INFO_JITSIZE > 0`), and redoes
+//!   the call on the interpreter when the JIT gives up.
 //! * [`Regex::find_all`] follows Python's `re.finditer`: an empty match may follow a
 //!   non-empty one, but not another empty match at the same position.
 
@@ -29,11 +38,12 @@ use std::sync::Arc;
 pub use version::{VersionError, ensure_supported_version, linked_version};
 
 use pcre2_sys::{
-    PCRE2_CASELESS, PCRE2_ERROR_DEPTHLIMIT, PCRE2_ERROR_HEAPLIMIT, PCRE2_ERROR_JIT_STACKLIMIT,
-    PCRE2_ERROR_MATCHLIMIT, PCRE2_ERROR_NOMATCH, PCRE2_UCP, PCRE2_UTF,
+    PCRE2_CASELESS, PCRE2_ERROR_DEPTHLIMIT, PCRE2_ERROR_HEAP_FAILED, PCRE2_ERROR_HEAPLIMIT,
+    PCRE2_ERROR_JIT_STACKLIMIT, PCRE2_ERROR_MATCHLIMIT, PCRE2_ERROR_NOMATCH, PCRE2_ERROR_NOMEMORY,
+    PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP, PCRE2_UCP, PCRE2_UTF,
 };
 
-use ffi::{Code, Contexts, Engine, MatchData};
+use ffi::{Code, Contexts, Engine, ExecError, MatchData};
 
 /// Resource limits for one [`Regex`].
 ///
@@ -47,8 +57,9 @@ pub struct Limits {
     pub depth_limit: u32,
     /// Interpreter heap limit in KiB (PCRE2's default is about 20 GB).
     pub heap_limit_kib: u32,
-    /// JIT match limit. It counts differently from the interpreter's and does not bound
-    /// CPU time on its own, so reaching it only triggers the interpreter retry.
+    /// JIT match limit, used only when the JIT is on. It counts differently from the
+    /// interpreter's and does not bound CPU time, so reaching it only triggers the
+    /// interpreter retry.
     pub jit_match_limit: u32,
     /// Maximum JIT stack size in bytes.
     pub jit_stack_bytes: usize,
@@ -82,7 +93,14 @@ impl Default for Limits {
     }
 }
 
-/// Compile options. UTF mode is always on.
+/// Maximum pattern length in bytes. Longer patterns fail with [`CompileError::TooLong`].
+pub const MAX_PATTERN_BYTES: usize = 64 * 1024;
+/// Maximum nesting depth of parentheses (PCRE2's default, set explicitly).
+pub const PARENS_NEST_LIMIT: u32 = 250;
+/// Maximum length of a variable-length lookbehind branch (PCRE2's default, set explicitly).
+pub const MAX_VAR_LOOKBEHIND: u32 = 255;
+
+/// Compile options. UTF mode is always on; the JIT is off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Options {
     caseless: bool,
@@ -97,18 +115,18 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Case-sensitive, no Unicode properties for `\d`, `\w` and POSIX classes, JIT on.
+    /// Case-sensitive, no Unicode properties for `\d`, `\w` and POSIX classes, no JIT.
     #[must_use]
     pub const fn new() -> Self {
         Self {
             caseless: false,
             ucp: false,
-            jit: true,
+            jit: false,
         }
     }
 
-    /// Try to JIT-compile the pattern (the default). Turning it off runs the interpreter
-    /// only, which tests use to reach the interpreter limits and to compare both engines.
+    /// Try to JIT-compile the pattern (off by default). The JIT is faster but does not
+    /// bound CPU time (see the crate docs), so enable it only for patterns you wrote.
     #[must_use]
     pub const fn jit(mut self, on: bool) -> Self {
         self.jit = on;
@@ -153,6 +171,25 @@ pub enum CompileError {
         /// Byte offset in the pattern where PCRE2 gave up.
         offset: usize,
     },
+    /// The pattern is longer than [`MAX_PATTERN_BYTES`].
+    #[error("pattern is {len} bytes, over the limit of {max}")]
+    TooLong {
+        /// Length of the pattern in bytes.
+        len: usize,
+        /// The limit, [`MAX_PATTERN_BYTES`].
+        max: usize,
+    },
+    /// Parentheses nest deeper than [`PARENS_NEST_LIMIT`].
+    #[error("parentheses nest deeper than {limit} levels (at pattern offset {offset})")]
+    TooDeeplyNested {
+        /// The limit, [`PARENS_NEST_LIMIT`].
+        limit: u32,
+        /// Byte offset in the pattern where PCRE2 gave up.
+        offset: usize,
+    },
+    /// PCRE2 could not allocate memory to compile the pattern.
+    #[error("PCRE2 ran out of memory compiling the pattern")]
+    OutOfMemory,
     /// The linked PCRE2 is older than the policy minimum.
     #[error(transparent)]
     Version(#[from] VersionError),
@@ -252,12 +289,19 @@ impl Regex {
         limits: Limits,
     ) -> Result<Self, CompileError> {
         ensure_supported_version()?;
-        let code = Code::compile(pattern, options.bits(), options.jit).map_err(|f| {
-            CompileError::Syntax {
-                message: ffi::error_message(f.code),
-                offset: f.offset,
-            }
-        })?;
+        if pattern.len() > MAX_PATTERN_BYTES {
+            return Err(CompileError::TooLong {
+                len: pattern.len(),
+                max: MAX_PATTERN_BYTES,
+            });
+        }
+        let bounds = ffi::CompileBounds {
+            max_pattern_bytes: MAX_PATTERN_BYTES,
+            parens_nest_limit: PARENS_NEST_LIMIT,
+            max_var_lookbehind: MAX_VAR_LOOKBEHIND,
+        };
+        let code = Code::compile(pattern, options.bits(), bounds, options.jit)
+            .map_err(|f| compile_error(&f))?;
         Ok(Self {
             code: Arc::new(code),
             limits,
@@ -351,7 +395,10 @@ impl Regex {
                 contexts,
                 engine,
             )
-            .ok_or(MatchError::InvalidOffsets)
+            .map_err(|e| match e {
+                ExecError::BadOffset => MatchError::InvalidOffsets,
+                ExecError::OutOfMemory => MatchError::OutOfMemory,
+            })
         };
         let mut rc = call(data, engine)?;
         if engine == Engine::Jit
@@ -368,6 +415,7 @@ impl Regex {
         match rc {
             rc if rc > 0 => Ok(true),
             PCRE2_ERROR_NOMATCH => Ok(false),
+            PCRE2_ERROR_NOMEMORY => Err(MatchError::OutOfMemory),
             PCRE2_ERROR_MATCHLIMIT => Err(MatchError::MatchLimit {
                 limit: self.limits.match_limit,
             }),
@@ -385,8 +433,12 @@ impl Regex {
     }
 }
 
-/// Turn PCRE2 byte offsets into a range, checking they are ordered, inside the subject
-/// and on character boundaries, so callers can slice with them without panicking.
+/// Turn PCRE2 byte offsets into a range, checking they are ordered and inside the subject.
+///
+/// Boundaries are not checked: `\C` matches one byte in UTF mode, so a span may end inside
+/// a character, and callers that slice must use `str::get`. [`Regex::find_all`] still
+/// cannot continue from such a span, because the next search must start on a boundary; it
+/// returns [`MatchError::InvalidOffsets`] then.
 fn span(
     subject: &str,
     offsets: Option<(usize, usize)>,
@@ -394,9 +446,49 @@ fn span(
     let Some((start, end)) = offsets else {
         return Ok(None);
     };
-    if start <= end && subject.is_char_boundary(start) && subject.is_char_boundary(end) {
+    if start <= end && end <= subject.len() {
         Ok(Some(start..end))
     } else {
         Err(MatchError::InvalidOffsets)
+    }
+}
+
+/// Map a PCRE2 compile failure to a typed error.
+fn compile_error(failure: &ffi::CompileFailure) -> CompileError {
+    let code = failure.code;
+    if code == PCRE2_ERROR_NOMEMORY || code == PCRE2_ERROR_HEAP_FAILED.cast_signed() {
+        CompileError::OutOfMemory
+    } else if code == PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP.cast_signed() {
+        CompileError::TooDeeplyNested {
+            limit: PARENS_NEST_LIMIT,
+            offset: failure.offset,
+        }
+    } else {
+        CompileError::Syntax {
+            message: ffi::error_message(code),
+            offset: failure.offset,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allocation_failures_are_out_of_memory_not_syntax_errors() {
+        for code in [PCRE2_ERROR_NOMEMORY, PCRE2_ERROR_HEAP_FAILED.cast_signed()] {
+            let failure = ffi::CompileFailure { code, offset: 0 };
+            assert_eq!(compile_error(&failure), CompileError::OutOfMemory);
+        }
+    }
+
+    #[test]
+    fn a_match_that_runs_out_of_memory_is_out_of_memory() {
+        let re = Regex::new("a", Options::new()).unwrap();
+        assert_eq!(
+            re.classify(PCRE2_ERROR_NOMEMORY),
+            Err(MatchError::OutOfMemory)
+        );
     }
 }

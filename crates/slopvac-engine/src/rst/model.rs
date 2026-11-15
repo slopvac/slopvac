@@ -40,6 +40,10 @@ pub(super) struct Node {
     /// Whether the node is a table. Its lines run from its first to its last cell.
     #[serde(default)]
     pub(super) table: bool,
+    /// A construct with no prose whose source must not change (a field name). The line
+    /// range is where it starts, and `text` is its name.
+    #[serde(default)]
+    pub(super) mark: bool,
     #[serde(default)]
     pub(super) pieces: Vec<Piece>,
     #[serde(default)]
@@ -56,6 +60,11 @@ pub(super) struct Piece {
     /// The inline node as written in the source, with each whitespace run as one space.
     #[serde(default, deserialize_with = "squash")]
     pub(super) raw: String,
+    /// The text names or locates a link target, so a fix there would change where the link
+    /// goes: a named reference, an embedded address another reference also names, a bare
+    /// URL.
+    #[serde(default)]
+    pub(super) lock: bool,
 }
 
 /// Collapse every whitespace run to one space, once, while the output is decoded. Matching

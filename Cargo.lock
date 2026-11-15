@@ -2364,6 +2364,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-migrate",
+ "slopvac-text",
  "tempfile",
  "thiserror",
 ]
@@ -2371,17 +2372,30 @@ dependencies = [
 [[package]]
 name = "slopvac-config"
 version = "0.0.0"
+dependencies = [
+ "annotate-snippets",
+ "insta",
+ "saphyr",
+ "serde_json",
+ "strsim",
+ "thiserror",
+ "toml_edit",
+]
 
 [[package]]
 name = "slopvac-context"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "globset",
  "ignore",
+ "jsonschema",
  "serde",
  "serde-saphyr",
+ "serde_json",
  "slopvac-pcre2",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
