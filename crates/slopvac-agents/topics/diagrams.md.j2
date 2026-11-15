@@ -1,0 +1,21 @@
+<!-- summary: Lint diagrams -->
+# Prime: diagrams
+
+Diagram linting is experimental. Lint the diagram file itself. Do not extract its text first.
+
+Run `slopvac lint <paths> --format json` with the diagram paths. Slopvac picks the format from the file name and lints each label as a label, not as a sentence.
+
+| Format | File names |
+|---|---|
+| Mermaid | `.mmd`, `.mermaid` |
+| PlantUML | `.puml`, `.plantuml`, `.pu`, `.wsd`, `.iuml` |
+| draw.io | `.drawio`, `.dio`, `.drawio.svg` |
+| Excalidraw | `.excalidraw` |
+
+- Mermaid and PlantUML fences inside a Markdown file are linted with that file.
+- A finding points at a span in the diagram file, not in an extracted copy.
+- Handle exit codes as for prose: exit 2 is incomplete, never clean.
+{% if level != "minimal" %}
+- A text copy loses the diagram format and the label context that diagram rules use.
+- Diagram findings carry no fix. Edit the labels by hand.
+{% endif %}

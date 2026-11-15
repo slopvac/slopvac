@@ -87,7 +87,7 @@ fn spans_match_vectors() {
 }
 
 #[test]
-fn code_climate_inclusive_end_matches() {
+fn code_climate_inclusive_end_line_matches() {
     let v = vectors();
     for s in v["spans"].as_array().unwrap() {
         let text = doc(&v, s["document"].as_str().unwrap());
@@ -96,9 +96,42 @@ fn code_climate_inclusive_end_matches() {
         let last = idx
             .locate_last_included(span(&s["span"]), ColumnUnit::CodePoint)
             .unwrap();
-        let id = &s["id"];
-        assert_eq!(last.line(), n(&cc["lines"]["end"]), "{id}");
-        assert_eq!(last.column(), n(&cc["positions"]["end"]["column"]), "{id}");
+        assert_eq!(last.line(), n(&cc["lines"]["end"]), "{}", s["id"]);
+        assert!(cc.get("positions").is_none(), "{}: lines only", s["id"]);
+    }
+}
+
+/// The column of the last included character, worked out by hand from the span and text.
+/// Code Climate output no longer carries it; the helper still serves other callers.
+#[test]
+fn last_included_character_columns() {
+    // (document, span, line, column in code points)
+    let cases = [
+        ("emoji", (1, 5), 1, 2),
+        ("emoji", (1, 6), 1, 3),
+        ("emoji", (5, 5), 1, 3),
+        ("combining", (0, 3), 1, 2),
+        ("tabs", (4, 6), 2, 2),
+        ("crlf", (0, 5), 1, 4),
+        ("crlf", (5, 16), 4, 4),
+        ("crlf", (10, 12), 3, 1),
+        ("lone_cr", (1, 2), 1, 2),
+        ("eof_newline", (0, 2), 1, 2),
+        ("zwj", (1, 19), 1, 6),
+        ("bom", (0, 5), 1, 2),
+    ];
+    let v = vectors();
+    for (document, (start, end), line, column) in cases {
+        let text = doc(&v, document);
+        let idx = SourceIndex::disk(&text);
+        let last = idx
+            .locate_last_included(Span::new(start, end).unwrap(), ColumnUnit::CodePoint)
+            .unwrap();
+        assert_eq!(
+            (last.line(), last.column()),
+            (line, column),
+            "{document} {start}..{end}"
+        );
     }
 }
 

@@ -1,0 +1,975 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.187,
+        "over_budget": false,
+        "per_100_words": 0.375,
+        "score": 93.0,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 7,
+        "gating_per_100_words": 0.562,
+        "over_budget": false,
+        "per_100_words": 2.622,
+        "score": 85.0,
+        "suggestions": 4,
+        "warnings": 3
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 1,
+        "findings": 2,
+        "gating_per_100_words": 0.375,
+        "over_budget": false,
+        "per_100_words": 0.749,
+        "score": 80.3,
+        "suggestions": 1,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 8,
+        "gating_per_100_words": 1.124,
+        "over_budget": true,
+        "per_100_words": 2.996,
+        "score": 65.2,
+        "suggestions": 2,
+        "warnings": 6
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 5,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.873,
+        "score": 95.3,
+        "suggestions": 5,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.749,
+        "score": 98.1,
+        "suggestions": 2,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 11,
+        "gating_per_100_words": 1.685,
+        "over_budget": true,
+        "per_100_words": 4.12,
+        "score": 65.2,
+        "suggestions": 2,
+        "warnings": 9
+      }
+    ],
+    "errors": 1,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 26,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "The operator will utilize",
+        "message": "This step is not in the imperative (\"The operator will utilize\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 25,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 14,
+        "end_column": 19,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "will ",
+        "message": "future tense: will  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 18,
+          "start": 13
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 19,
+        "end_column": 26,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "utilize",
+        "message": "wordy: use 'use' instead of 'utilize'",
+        "replacement": "use",
+        "rule_id": "core:prose-craft.wordiness",
+        "severity": "warning",
+        "span": {
+          "end": 25,
+          "start": 18
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 19,
+        "end_column": 26,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "utilize",
+        "message": "Use \"use\" rather than \"utilize\".",
+        "replacement": "use",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "warning",
+        "span": {
+          "end": 25,
+          "start": 18
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 12,
+        "end_column": 20,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "utilizes",
+        "message": "wordy: use 'use' instead of 'utilizes'",
+        "replacement": "use",
+        "rule_id": "core:prose-craft.wordiness",
+        "severity": "warning",
+        "span": {
+          "end": 165,
+          "start": 157
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "orwell",
+        "column": 41,
+        "end_column": 49,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "prior to",
+        "message": "Use \"before\" rather than \"prior to\".",
+        "replacement": "before",
+        "rule_id": "core:orwell.compound-preposition",
+        "severity": "warning",
+        "span": {
+          "end": 194,
+          "start": 186
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 41,
+        "end_column": 49,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "prior to",
+        "message": "wordy: use 'before' instead of 'prior to'",
+        "replacement": "before",
+        "rule_id": "core:prose-craft.wordiness",
+        "severity": "warning",
+        "span": {
+          "end": 194,
+          "start": 186
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 41,
+        "end_column": 49,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "prior to",
+        "message": "Use \"before\" rather than \"prior to\".",
+        "replacement": "before",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "warning",
+        "span": {
+          "end": 194,
+          "start": 186
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 1,
+        "end_column": 7,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "Ensure",
+        "message": "Use \"make sure\" rather than \"Ensure\".",
+        "replacement": "make sure",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "warning",
+        "span": {
+          "end": 280,
+          "start": 274
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 67,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "Ensure that the migration completed before you restart the worker.",
+        "message": "The condition follows the command (\"Ensure that the migration completed before you restart the worker.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 340,
+          "start": 274
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 70,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "Make sure that the migration completed before you restart the worker.",
+        "message": "The condition follows the command (\"Make sure that the migration completed before you restart the worker.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 411,
+          "start": 342
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "The worker",
+        "message": "Missing article before \"The worker\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 423,
+          "start": 413
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "The worker should",
+        "message": "This step is not in the imperative (\"The worker should\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 430,
+          "start": 413
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 12,
+        "end_column": 18,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "suggestion",
+        "span": {
+          "end": 430,
+          "start": 424
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 16,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "The worker must",
+        "message": "This step is not in the imperative (\"The worker must\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 494,
+          "start": 479
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 9,
+        "end_column": 14,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "shall",
+        "message": "Use \"must\" rather than \"shall\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "suggestion",
+        "span": {
+          "end": 556,
+          "start": 551
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 9,
+        "end_column": 15,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "shall ",
+        "message": "future tense: shall  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 557,
+          "start": 551
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 15,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "You can delete",
+        "message": "This step is not in the imperative (\"You can delete\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 768,
+          "start": 754
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 31,
+        "end_column": 37,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "easily",
+        "message": "borderline hype: easily -- keep it only if a number or example backs it",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.borderline-hype",
+        "severity": "suggestion",
+        "span": {
+          "end": 790,
+          "start": 784
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 832,
+          "start": 822
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 12,
+        "end_column": 19,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "emailed",
+        "message": "Do not use \"emailed\" as a verb. Use \"sent by email\".",
+        "replacement": "sent by email",
+        "rule_id": "core:ste-words.noun-used-as-verb",
+        "severity": "warning",
+        "span": {
+          "end": 840,
+          "start": 833
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 890,
+          "start": 880
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "suggestion",
+        "span": {
+          "end": 947,
+          "start": 944
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 4,
+        "end_column": 15,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "architected",
+        "message": "business jargon: architected -- use the plain verb",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.business-jargon",
+        "severity": "error",
+        "span": {
+          "end": 958,
+          "start": 947
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 4,
+        "end_column": 15,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "architected",
+        "message": "Do not use \"architected\" as a verb. Use \"designed\".",
+        "replacement": "designed",
+        "rule_id": "core:ste-words.noun-used-as-verb",
+        "severity": "warning",
+        "span": {
+          "end": 958,
+          "start": 947
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "suggestion",
+        "span": {
+          "end": 1001,
+          "start": 998
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 22,
+        "end_column": 28,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "gotcha",
+        "message": "\"gotcha\" is slang or jargon. Use a plain term.",
+        "replacement": null,
+        "rule_id": "core:ste-words.slang-or-jargon-term",
+        "severity": "warning",
+        "span": {
+          "end": 1076,
+          "start": 1070
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 1,
+        "end_column": 5,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "Nuke",
+        "message": "\"Nuke\" is slang or jargon. Use a plain term.",
+        "replacement": null,
+        "rule_id": "core:ste-words.slang-or-jargon-term",
+        "severity": "warning",
+        "span": {
+          "end": 1181,
+          "start": 1177
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 35,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "Nuke the cache directory and start",
+        "message": "This step carries more than one instruction (\"Nuke the cache directory and start\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 1211,
+          "start": 1177
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 37,
+        "end_line": 43,
+        "line": 43,
+        "matched_text": "Delete the cache directory and start",
+        "message": "This step carries more than one instruction (\"Delete the cache directory and start\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 1256,
+          "start": 1220
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "The worker",
+        "message": "Missing article before \"The worker\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 1275,
+          "start": 1265
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "The worker",
+        "message": "Missing article before \"The worker\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 1353,
+          "start": 1343
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "The deploy",
+        "message": "Do not use \"The deploy\" as a noun. Use the noun form.",
+        "replacement": null,
+        "rule_id": "core:ste-words.verb-used-as-noun",
+        "severity": "warning",
+        "span": {
+          "end": 1428,
+          "start": 1418
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 41,
+        "end_column": 52,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "was missing",
+        "message": "Complex verb construction \"was missing\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 1469,
+          "start": 1458
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 45,
+        "end_column": 56,
+        "end_line": 51,
+        "line": 51,
+        "matched_text": "was missing",
+        "message": "Complex verb construction \"was missing\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 1527,
+          "start": 1516
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 7,
+        "end_column": 14,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "a rerun",
+        "message": "Do not use \"a rerun\" as a noun. Use the noun form.",
+        "replacement": null,
+        "rule_id": "core:ste-words.verb-used-as-noun",
+        "severity": "warning",
+        "span": {
+          "end": 1543,
+          "start": 1536
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "1 error(s), limit 0",
+        "3.93 severity-weighted findings per 100 words, budget 3.0",
+        "score 47.8, minimum 70.0",
+        "ste-procedural at 1.12 severity-weighted findings per 100 words, budget 1.0",
+        "ste-words at 1.69 severity-weighted findings per 100 words, budget 1.5"
+      ]
+    },
+    "paragraphs": 28,
+    "path": "rule-examples-ste-words.md",
+    "per_100_words": 13.483,
+    "profile": "normal",
+    "prose": {
+      "errors": 1,
+      "findings": 36,
+      "per_100_words": 13.483,
+      "warnings": 19
+    },
+    "score": 47.8,
+    "sentences": 30,
+    "suggestions": 16,
+    "total_findings": 36,
+    "unchecked": [],
+    "warnings": 19,
+    "words": 267
+  },
+  "exit_code": 1
+}

@@ -1,6 +1,7 @@
 //! Context taggers, the tag registry and genres.
 
 mod builtin;
+mod checklist;
 mod cli;
 mod declarative;
 mod declared;
@@ -12,6 +13,7 @@ mod view;
 pub use builtin::{
     EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_genres, builtin_registry,
 };
+pub use checklist::{ChecklistEntry, ChecklistRule, checklist, effective_gates, rule_allows};
 pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, FrontmatterCondition, Scope, TaggerSpec, When};
 pub use declared::{DeclaredContextTagger, context_hint};
