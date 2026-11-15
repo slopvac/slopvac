@@ -1,0 +1,80 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Examples"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Call it like this:"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "literal_block",
+   "code": true,
+   "start": 6,
+   "end": 7,
+   "text": "run --fast\nrun --slow",
+   "lang": null,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 9,
+   "end": 9,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Then read the output."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "admonition",
+   "adm": "note",
+   "start": 11,
+   "end": 13,
+   "title": null,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 13,
+   "end": 13,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Keep the directive body in mind."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "literal_block",
+   "code": true,
+   "start": 17,
+   "end": 17,
+   "text": "print(\"hello\")",
+   "lang": "python",
+   "containers": []
+  }
+ ]
+}

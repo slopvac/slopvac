@@ -20,8 +20,10 @@
 //! The text of an edit is written verbatim, so CRLF line endings and every byte outside the
 //! edits stay as they were.
 //!
-//! Comments in source code are not fixed yet: the engine lints Markdown, MDX and diagrams
-//! only (slopvac-8l4.3.14 adds code comments).
+//! Comments in source code are not fixed yet: the engine lints Markdown, MDX, RST and
+//! diagrams only (slopvac-8l4.3.14 adds code comments). RST findings are reported with their
+//! fixes, but no fix is applied: each is refused as protected until the RST adapter can tell
+//! code and literals apart for this step.
 
 use std::ops::RangeInclusive;
 
@@ -109,22 +111,33 @@ pub fn fix_document(
     doc: &Document,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FixReport, FixError> {
-    let protected = protected_spans(input)?;
+    // RST is not fixed yet: its code and literals are known only to the docutils run that
+    // linted it, so every fix is refused as protected rather than guessed.
+    let rst = input.kind == Kind::Rst;
+    let protected = if rst {
+        Vec::new()
+    } else {
+        protected_spans(input)?
+    };
     let index = SourceIndex::new(input.source, input.bom);
     let mut edits: Vec<Edit> = Vec::new();
     let mut applied = 0;
     let mut skipped = Vec::new();
     for finding in &doc.findings {
         let Some(fix) = &finding.fix else { continue };
-        let reason = refusal(
-            finding,
-            fix.edits(),
-            input.source,
-            &index,
-            &protected,
-            &edits,
-            changed_lines,
-        );
+        let reason = if rst {
+            Some(SkipReason::Protected)
+        } else {
+            refusal(
+                finding,
+                fix.edits(),
+                input.source,
+                &index,
+                &protected,
+                &edits,
+                changed_lines,
+            )
+        };
         if let Some(reason) = reason {
             skipped.push(Skipped {
                 rule_id: finding.rule_id.clone(),
@@ -217,7 +230,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     let parsed: Parsed = match input.kind {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,
-        Kind::Diagram(_) => Parsed::default(),
+        Kind::Diagram(_) | Kind::Rst => Parsed::default(),
     };
     spans.extend(parsed.code_spans.iter().copied());
     spans.extend(destinations(input.source, body_start));

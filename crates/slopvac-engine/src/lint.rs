@@ -31,6 +31,7 @@ use crate::matching::{
 };
 use crate::metrics::{self, Subject};
 use crate::prepare::{Prepared, Unit};
+use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
@@ -52,6 +53,8 @@ pub enum Kind {
     Markdown,
     /// MDX.
     Mdx,
+    /// reStructuredText, read through docutils (see [`crate::rst`]).
+    Rst,
     /// A diagram file. Only diagram rules read it.
     Diagram(DiagramFormat),
 }
@@ -86,6 +89,15 @@ impl<'a> Input<'a> {
     pub const fn mdx(path: &'a str, source: &'a str) -> Self {
         Self {
             kind: Kind::Mdx,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// An RST file read from disk.
+    #[must_use]
+    pub const fn rst(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Rst,
             ..Self::markdown(path, source)
         }
     }
@@ -181,6 +193,10 @@ pub struct Engine {
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
+    /// How RST files are read, and the adapter built from it. The adapter finds its
+    /// interpreter on the first file.
+    rst_options: RstOptions,
+    rst: RstAdapter,
 }
 
 /// Whether the engine matches rules of this kind in the text of a unit.
@@ -261,6 +277,8 @@ impl Engine {
             running: HashSet::new(),
             notices: Vec::new(),
             categories: std::collections::BTreeMap::new(),
+            rst_options: RstOptions::from_env(),
+            rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
         engine.plan_vocabulary(&Blocklist::default())?;
@@ -285,6 +303,25 @@ impl Engine {
     #[must_use]
     pub fn with_taggers(mut self, tagger: TagRegistry) -> Self {
         self.tagger = tagger;
+        self
+    }
+
+    /// Replace how RST files are read: the interpreter, the project roots it must stay
+    /// out of, and the limits. The default reads `SLOPVAC_RST_CONVERTER`.
+    #[must_use]
+    pub fn with_rst(mut self, options: RstOptions) -> Self {
+        self.rst = RstAdapter::new(options.clone());
+        self.rst_options = options;
+        self
+    }
+
+    /// Tell the engine where the project is: the repository and the targets of the run.
+    /// An RST interpreter is never taken from inside these directories. Until they are
+    /// given, no interpreter is found on `PATH` and RST files are an incomplete check.
+    #[must_use]
+    pub fn with_project_roots(mut self, roots: Vec<std::path::PathBuf>) -> Self {
+        self.rst_options.project_roots = roots;
+        self.rst = RstAdapter::new(self.rst_options.clone());
         self
     }
 
@@ -412,7 +449,7 @@ impl Engine {
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) => None,
+            Kind::Diagram(_) | Kind::Rst => None,
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
@@ -422,9 +459,11 @@ impl Engine {
             .filter(|s| !s.is_empty());
         let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
         let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
+        let mut extra = Vec::new();
         let parsed = match input.kind {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
+            Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
         };
         let prepared = Prepared::new(input.source, &parsed)?;
@@ -481,7 +520,43 @@ impl Engine {
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
-        Ok(self.document(input, &prepared, &tags, findings))
+        Ok(self.document(input, &prepared, &tags, findings, extra))
+    }
+
+    /// Read an RST file. A file that cannot be read is an empty document with a warning
+    /// notice, so the run is incomplete and the file is never skipped silently.
+    fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Result<Parsed, EngineError> {
+        let make = |code: &str, level, message: String| -> Result<Notice, EngineError> {
+            let mut notice = notice(code, level, message)?;
+            notice.path = Some(input.path.to_owned());
+            Ok(notice)
+        };
+        match self.rst.parse(input.source) {
+            Ok(parsed) => {
+                for n in parsed.notices {
+                    let level = if n.warning {
+                        NoticeLevel::Warning
+                    } else {
+                        NoticeLevel::Info
+                    };
+                    extra.push(make(n.code, level, n.message)?);
+                }
+                Ok(parsed.document)
+            }
+            Err(error) => {
+                let code = if error.is_missing() {
+                    "rst-converter-missing"
+                } else {
+                    "rst-unchecked"
+                };
+                extra.push(make(
+                    code,
+                    NoticeLevel::Warning,
+                    RstError::message(&error, &[std::path::Path::new(input.path)]),
+                )?);
+                Ok(Parsed::default())
+            }
+        }
     }
 
     fn document(
@@ -490,9 +565,11 @@ impl Engine {
         prepared: &Prepared<'_>,
         tags: &TagIndex,
         findings: Vec<Finding>,
+        extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
         let mut unchecked = self.notices.clone();
+        unchecked.extend(extra);
         unchecked.extend(self.vocabulary.notices().iter().cloned());
         let scoring = score_document(
             &findings,
@@ -525,6 +602,16 @@ impl Engine {
             ai_register: scoring.ai_register,
             prose: scoring.prose,
         }
+    }
+}
+
+/// The context kinds that hold at a match: those of the tags that cover every source range it
+/// is made of, or the tags around its span when it has one range.
+fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Vec<&'t str> {
+    if covering.len() > 1 {
+        tags.kinds_covering(covering)
+    } else {
+        tags.kinds_at(&(span.start()..span.end()))
     }
 }
 
@@ -586,13 +673,16 @@ struct Candidate<'r> {
     ai_signal: AiSignal,
     fix: Option<Fix>,
     extra_context: Option<&'static str>,
+    /// The source ranges the match is made of, when it reads out of source order. Empty
+    /// means the span.
+    covering: Vec<Range<usize>>,
 }
 
 impl Run<'_> {
     fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
         let start = self.index.line_col(c.span.start())?;
         let end = self.index.line_col(c.span.end())?;
-        let mut kinds = self.tags.kinds_at(&(c.span.start()..c.span.end()));
+        let mut kinds = kinds_of(self.tags, c.span, &c.covering);
         if let Some(extra) = c.extra_context
             && !kinds.contains(&extra)
         {
@@ -691,8 +781,18 @@ impl Run<'_> {
         text: &str,
         range: &Range<usize>,
         span: Span,
+        covering: &[Range<usize>],
     ) -> bool {
-        self.guarded_in(self.tags, self.parsed, rule, detectors, text, range, span)
+        self.guarded_in(
+            self.tags,
+            self.parsed,
+            rule,
+            detectors,
+            text,
+            range,
+            span,
+            covering,
+        )
     }
 
     /// [`Self::guarded`] for text of another parse of the file, with that parse's context
@@ -707,10 +807,11 @@ impl Run<'_> {
         text: &str,
         range: &Range<usize>,
         span: Span,
+        covering: &[Range<usize>],
     ) -> bool {
         let gate = rule.contexts.as_ref();
         let kinds = if gate.is_some() || !detectors.is_empty() {
-            tags.kinds_at(&(span.start()..span.end()))
+            kinds_of(tags, span, covering)
         } else {
             Vec::new()
         };
@@ -770,7 +871,7 @@ impl Run<'_> {
                 // measurement has no unit to guard.
                 if let Some(unit) = &hit.unit
                     && (skip.hides(unit.span)
-                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span))
+                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span, &[]))
                 {
                     continue;
                 }
@@ -844,7 +945,8 @@ impl Run<'_> {
         if skip.hides(span) {
             return Ok(None);
         }
-        if self.guarded(rule, detectors, unit.text, range, span) {
+        let covering = unit.ranges(range);
+        if self.guarded(rule, detectors, unit.text, range, span, &covering) {
             return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
@@ -887,6 +989,7 @@ impl Run<'_> {
             ai_signal: rule.ai_signal,
             fix,
             extra_context: None,
+            covering,
         }))
     }
 
@@ -1042,6 +1145,7 @@ impl Run<'_> {
             ai_signal: AiSignal::None,
             fix: None,
             extra_context: Some(slopvac_diagrams::CONTEXT),
+            covering: Vec::new(),
         })
         .map(Some)
     }
@@ -1068,6 +1172,7 @@ impl Run<'_> {
                     ai_signal: AiSignal::None,
                     fix: None,
                     extra_context: None,
+                    covering: Vec::new(),
                 })
             })
             .collect()

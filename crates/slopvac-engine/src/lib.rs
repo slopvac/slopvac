@@ -48,6 +48,7 @@ mod matching;
 mod metrics;
 mod prepare;
 mod protect;
+pub mod rst;
 mod score;
 mod settings;
 mod skip;
