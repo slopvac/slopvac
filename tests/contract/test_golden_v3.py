@@ -480,3 +480,32 @@ def test_every_recorded_delta_has_a_reason_and_an_approver():
     for delta in golden.load_deltas():
         assert delta["reason"].strip()
         assert delta["approved_by"].strip()
+
+
+def test_vale_is_resolved_on_the_path_a_run_uses(tmp_path, monkeypatch):
+    python_dir = tmp_path / "py"
+    other_dir = tmp_path / "other"
+    for directory, version in ((python_dir, "1.2.3"), (other_dir, "9.9.9")):
+        directory.mkdir()
+        vale = directory / "vale"
+        vale.write_text(f"#!/bin/sh\necho 'vale version {version}'\n", encoding="utf-8")
+        vale.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(python_dir / "python"))
+    monkeypatch.setenv("PATH", f"{other_dir}:/usr/bin:/bin")
+    assert golden.vale_version() == "1.2.3"
+    assert golden.execution_env()["PATH"].split(":")[0] == str(python_dir)
+
+
+def test_vale_falls_back_to_the_original_path_when_the_python_dir_has_none(
+    tmp_path, monkeypatch
+):
+    python_dir = tmp_path / "py"
+    other_dir = tmp_path / "other"
+    python_dir.mkdir()
+    other_dir.mkdir()
+    vale = other_dir / "vale"
+    vale.write_text("#!/bin/sh\necho 'vale version 9.9.9'\n", encoding="utf-8")
+    vale.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(python_dir / "python"))
+    monkeypatch.setenv("PATH", f"{other_dir}:/usr/bin:/bin")
+    assert golden.vale_version() == "9.9.9"

@@ -256,7 +256,9 @@ def _finding_3(f: dict) -> dict:
         "severity": f["severity"],
         "line": f["line"],
         "column": f["column"],
-        "end_line": f.get("end_line", f["line"]) if f.get("end_column") is not None else None,
+        "end_line": f.get("end_line", f["line"])
+        if f.get("end_column") is not None
+        else None,
         "end_column": f.get("end_column"),
         "span": f.get("span"),
         "matched_text": f["matched_text"],
@@ -355,7 +357,9 @@ def config_text(mode: str, profile: str) -> str:
 def config_for(mode: str, profile: str, flavor: str, scratch: Path) -> Path:
     """Write the run's config. A 2.x binary takes an empty config and ``--profile``."""
     path = scratch / f"{flavor}-{mode}-{profile}.toml"
-    path.write_text(config_text(mode, profile) if flavor == "3x" else "", encoding="utf-8")
+    path.write_text(
+        config_text(mode, profile) if flavor == "3x" else "", encoding="utf-8"
+    )
     return path
 
 
@@ -407,12 +411,13 @@ def run_binary(
             ]
             if flavor == "2x":
                 argv += ["--profile", profile]
-            env = {
-                **os.environ,
-                "PATH": os.pathsep.join([str(Path(sys.executable).parent), os.environ["PATH"]]),
-            }
             proc = subprocess.run(
-                argv, cwd=scratch, capture_output=True, text=True, check=False, env=env
+                argv,
+                cwd=scratch,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=execution_env(),
             )
             if proc.returncode not in (0, 1, 2) or not proc.stdout.strip():
                 raise SystemExit(f"{command}: exit {proc.returncode}\n{proc.stderr}")
@@ -534,9 +539,24 @@ def reference_tree_hash(src: Path) -> str:
     return digest.hexdigest()
 
 
+def execution_env() -> dict[str, str]:
+    """The environment every reference and candidate run uses.
+
+    The Python directory comes first, so the entry points of the reference (and
+    ``rst2html`` from docutils) resolve there before anything else on ``PATH``.
+    """
+    path = os.pathsep.join([str(Path(sys.executable).parent), os.environ["PATH"]])
+    return {**os.environ, "PATH": path}
+
+
 def vale_version() -> str:
+    """The version of the ``vale`` that a run would execute, found on the run PATH."""
+    env = execution_env()
+    binary = shutil.which("vale", path=env["PATH"])
+    if binary is None:
+        return ""
     proc = subprocess.run(
-        ["vale", "--version"], capture_output=True, text=True, check=False
+        [binary, "--version"], capture_output=True, text=True, check=False, env=env
     )
     return proc.stdout.strip().removeprefix("vale version ")
 
@@ -581,7 +601,9 @@ def verify_pin(src: Path = REFERENCE_SRC) -> list[str]:
         if key == "python_commit" and (shallow or not value):
             continue
         if recorded.get(key) != value:
-            problems.append(f"{key}: pinned {recorded.get(key)!r}, checkout has {value!r}")
+            problems.append(
+                f"{key}: pinned {recorded.get(key)!r}, checkout has {value!r}"
+            )
     return problems
 
 
@@ -603,7 +625,10 @@ def cmd_record(args: argparse.Namespace) -> int:
         print("the reference checkout does not match pin.toml:", file=sys.stderr)
         for line in problems:
             print(f"  {line}", file=sys.stderr)
-        print("Run `golden.py pin` to move the pin, with an approved reason.", file=sys.stderr)
+        print(
+            "Run `golden.py pin` to move the pin, with an approved reason.",
+            file=sys.stderr,
+        )
         return 2
     inputs = load_inputs()
     for profile in PROFILES:
@@ -644,14 +669,20 @@ def describe_runs(where: str, want: dict, got: dict) -> list[str]:
     for key in sorted(set(want) | set(got)):
         w, g = want.get(key), got.get(key)
         if w is None or g is None:
-            problems.append(f"{where}: run {key} is {'missing' if g is None else 'unexpected'}")
+            problems.append(
+                f"{where}: run {key} is {'missing' if g is None else 'unexpected'}"
+            )
             continue
         if w["exit_code"] != g["exit_code"]:
             problems.append(
                 f"{where}: run {key} exit status {g['exit_code']}, expected {w['exit_code']}"
             )
         if w["summary"] != g["summary"]:
-            keys = sorted(k for k in set(w["summary"]) | set(g["summary"]) if w["summary"].get(k) != g["summary"].get(k))
+            keys = sorted(
+                k
+                for k in set(w["summary"]) | set(g["summary"])
+                if w["summary"].get(k) != g["summary"].get(k)
+            )
             problems.append(f"{where}: run {key} summary differs in {keys}")
     return problems
 

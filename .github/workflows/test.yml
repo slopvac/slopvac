@@ -315,7 +315,8 @@ jobs:
           ast-grep --version
 
       - name: Install package and test dependencies
-        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]"
+        # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
+        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
       - name: Run every discovered pytest suite
         run: python3 -m pytest
