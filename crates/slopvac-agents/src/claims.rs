@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use clap::{Arg, ArgMatches, Command};
 use serde::Serialize;
 
+use slopvac_text::TextError;
+
 use crate::error::AgentsError;
 
 /// Pairs below this similarity are not aligned.
@@ -205,23 +207,23 @@ const STOPWORDS: [&str; 34] = [
 /// make segmentation fail, which no input reaches with the current PCRE2 limits.
 trait TextEngine {
     /// Sentences of one Markdown paragraph.
-    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, AgentsError>;
+    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, TextError>;
     /// Word tokens of one sentence. Spans the tokenizer collapses appear as placeholders.
-    fn words(&self, text: &str) -> Result<Vec<String>, AgentsError>;
+    fn words(&self, text: &str) -> Result<Vec<String>, TextError>;
 }
 
 struct SlopvacText;
 
 impl TextEngine for SlopvacText {
-    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, AgentsError> {
+    fn sentences(&self, paragraph: &str) -> Result<Vec<String>, TextError> {
         Ok(slopvac_text::split_sentences(paragraph)?
             .into_iter()
             .map(|s| s.text)
             .collect())
     }
 
-    fn words(&self, text: &str) -> Result<Vec<String>, AgentsError> {
-        Ok(slopvac_text::tokens(text)?)
+    fn words(&self, text: &str) -> Result<Vec<String>, TextError> {
+        slopvac_text::tokens(text)
     }
 }
 
@@ -240,7 +242,7 @@ fn normalize(t: &str) -> String {
 /// The tokenizer collapses names, numbers, identifiers and code spans into placeholders
 /// that depend on the sentence around them ("Alice Cooper" collapses mid-sentence but not
 /// at the start). A placeholder keeps its lexical identity here: every plain word of
-/// the text that no ordinary token already carries is added back, so one fact reads the
+/// the text, beyond the occurrences the ordinary tokens already carry, is added back, so one fact reads the
 /// same in both sentences.
 fn tokens(text: &str, engine: &dyn TextEngine) -> Result<Vec<String>, AgentsError> {
     let raw = engine.words(text)?;
@@ -253,18 +255,25 @@ fn tokens(text: &str, engine: &dyn TextEngine) -> Result<Vec<String>, AgentsErro
         .map(|t| normalize(&t))
         .collect();
     if collapsed {
-        let known: HashSet<String> = raw
+        // Occurrence counts of the words the ordinary tokens already carry.
+        let mut carried: HashMap<String, usize> = HashMap::new();
+        for part in raw
             .iter()
             .flat_map(|t| t.split(|c: char| !c.is_alphanumeric()))
-            .map(normalize)
-            .collect();
-        out.extend(
-            text.split(|c: char| !c.is_alphanumeric())
-                .map(str::to_lowercase)
-                .filter(|w| !w.is_empty() && !STOPWORDS.contains(&w.as_str()))
-                .map(|w| normalize(&w))
-                .filter(|w| !known.contains(w)),
-        );
+            .filter(|w| !w.is_empty())
+        {
+            *carried.entry(normalize(part)).or_insert(0) += 1;
+        }
+        for word in text.split(|c: char| !c.is_alphanumeric()) {
+            let word = normalize(word);
+            if word.is_empty() || STOPWORDS.contains(&word.as_str()) {
+                continue;
+            }
+            match carried.get_mut(&word) {
+                Some(n) if *n > 0 => *n -= 1,
+                _ => out.push(word),
+            }
+        }
     }
     Ok(out)
 }
@@ -603,11 +612,7 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
         let path = matches.get_one::<PathBuf>(id).cloned().unwrap_or_default();
         std::fs::read_to_string(&path).map_err(|e| AgentsError::io(path, e))
     };
-    let report =
-        compare(&read("original")?, &read("revised")?).map_err(|e| AgentsError::Coded {
-            code: "claims-text-failed",
-            message: format!("claims: {e}"),
-        })?;
+    let report = compare(&read("original")?, &read("revised")?)?;
     if matches
         .get_one::<String>("format")
         .is_some_and(|f| f == "text")
@@ -622,29 +627,58 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
 
 #[cfg(test)]
 mod tests {
+    use slopvac_text::Pattern;
+
     use super::*;
 
-    fn failure() -> AgentsError {
-        AgentsError::Coded {
-            code: "claims-text-failed",
-            message: "text segmentation failed: injected".to_owned(),
-        }
+    /// A real `TextError`: a backtracking pattern that exhausts PCRE2's match limit.
+    fn real_text_error() -> TextError {
+        let pattern = Pattern::new(r"(a+)+$", false).expect("pattern compiles");
+        pattern
+            .is_match(&format!("{}!", "a".repeat(64)))
+            .expect_err("the match limit stops the search")
     }
 
-    struct Failing;
+    /// Fails like the production engine does, with a real error, on one step only.
+    struct Failing {
+        sentences: bool,
+        words: bool,
+    }
 
     impl TextEngine for Failing {
-        fn sentences(&self, _: &str) -> Result<Vec<String>, AgentsError> {
-            Err(failure())
+        fn sentences(&self, paragraph: &str) -> Result<Vec<String>, TextError> {
+            if self.sentences {
+                Err(real_text_error())
+            } else {
+                SlopvacText.sentences(paragraph)
+            }
         }
-        fn words(&self, _: &str) -> Result<Vec<String>, AgentsError> {
-            Err(failure())
+        fn words(&self, text: &str) -> Result<Vec<String>, TextError> {
+            if self.words {
+                Err(real_text_error())
+            } else {
+                SlopvacText.words(text)
+            }
         }
     }
 
     #[test]
-    fn a_text_engine_failure_returns_its_code_and_no_report() {
-        let err = compare_with("One fact. Two facts.", "One fact.", &Failing).unwrap_err();
+    fn a_sentence_split_failure_returns_the_stable_code() {
+        let engine = Failing {
+            sentences: true,
+            words: false,
+        };
+        let err = compare_with("One fact. Two facts.", "One fact.", &engine).unwrap_err();
+        assert_eq!(err.code(), "claims-text-failed");
+    }
+
+    #[test]
+    fn a_tokenizer_only_failure_returns_the_stable_code() {
+        let engine = Failing {
+            sentences: false,
+            words: true,
+        };
+        let err = compare_with("One fact. Two facts.", "One fact.", &engine).unwrap_err();
         assert_eq!(err.code(), "claims-text-failed");
     }
 }

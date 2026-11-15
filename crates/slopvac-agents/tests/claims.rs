@@ -326,3 +326,16 @@ fn a_name_the_tokenizer_collapses_in_only_one_sentence_is_still_covered() {
     assert_eq!(r.summary.dropped, 1, "{r:?}");
     assert!(!r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
 }
+
+#[test]
+fn a_repeated_collapsed_phrase_does_not_count_as_covered() {
+    // The quoted span repeats words ("normal jobs", "unique"). Each occurrence is a
+    // token the revision lacks, so coverage is 6/12 and the sentence is a dropped fact.
+    let r = compare(
+        "The processor serves normal jobs. The processor serves 'normal jobs normal jobs unique unique unique' unique duties separately.",
+        "The processor serves normal jobs.",
+    )
+    .unwrap();
+    assert_eq!(r.summary.dropped, 1, "{r:?}");
+    assert!(r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
+}
