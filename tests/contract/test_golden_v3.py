@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -20,7 +20,6 @@ sys.modules["golden"] = golden
 _spec.loader.exec_module(golden)
 
 REFERENCE = str(Path(sys.executable).parent / "slopvac")
-SRC = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac"
 INPUTS = golden.load_inputs()
 IDS = [i["id"] for i in INPUTS]
 
@@ -49,10 +48,25 @@ def test_rule_example_inputs_equal_regenerated_output():
         assert path.read_text("utf-8") == text
 
 
+def test_format_fixtures_cover_mdx_html_rst_and_two_comment_languages():
+    formats = {i["language"]: i for i in INPUTS if i["tier"] == "formats"}
+    assert set(formats) == {"mdx", "html", "rst", "python", "javascript"}
+    assert {formats[k]["surface"] for k in ("python", "javascript")} == {
+        "code-comments"
+    }
+    assert {formats[k]["surface"] for k in ("mdx", "html", "rst")} == {"prose"}
+
+
 @pytest.mark.parametrize("profile", golden.PROFILES)
 def test_every_input_has_a_golden_file(profile):
     missing = [i for i in IDS if not golden.golden_path(profile, i).is_file()]
     assert missing == []
+
+
+@pytest.mark.parametrize("profile", golden.PROFILES)
+def test_every_run_group_has_a_run_record(profile):
+    groups = {golden.group_key(i) for i in INPUTS}
+    assert set(json.loads(golden.runs_path(profile).read_text("utf-8"))) == groups
 
 
 def test_no_golden_file_lacks_an_input():
@@ -62,8 +76,111 @@ def test_no_golden_file_lacks_an_input():
 
 
 def test_pin_matches_the_reference_in_use():
+    assert golden.verify_pin() == []
+
+
+def test_pin_records_the_reference_commit():
     recorded = tomllib.loads(golden.PIN_TOML.read_text("utf-8"))
-    assert recorded == golden.current_pin(SRC)
+    assert re.fullmatch(r"[0-9a-f]{40}", recorded["python_commit"])
+
+
+def test_verify_pin_names_a_source_hash_mismatch(monkeypatch):
+    real = golden.current_pin
+    monkeypatch.setattr(
+        golden, "current_pin", lambda src: {**real(src), "python_src_sha256": "0" * 64}
+    )
+    assert any(p.startswith("python_src_sha256") for p in golden.verify_pin())
+
+
+def test_verify_pin_names_a_vale_mismatch(monkeypatch):
+    monkeypatch.setattr(golden, "vale_version", lambda: "0.0.1")
+    assert any(p.startswith("vale") for p in golden.verify_pin())
+
+
+def test_record_refuses_a_checkout_that_does_not_match_the_pin(monkeypatch, capsys):
+    monkeypatch.setattr(
+        golden, "verify_pin", lambda: ["vale: pinned '3.24.0', checkout has '9'"]
+    )
+    ran = []
+    monkeypatch.setattr(golden, "run_binary", lambda *a, **k: ran.append(a))
+    assert golden.main(["record", "--reference", REFERENCE]) == 2
+    assert ran == []
+    assert "does not match pin.toml" in capsys.readouterr().err
+
+
+# --- how a binary is run ---------------------------------------------------
+
+FAKE = (
+    "import json, os, sys\n"
+    "json.dump({'argv': sys.argv[1:], 'files': sorted(os.listdir('.')),\n"
+    "           'config': open(sys.argv[sys.argv.index('--config') + 1]).read()},\n"
+    "          open(os.environ['GOLDEN_CAPTURE'] + '/' + str(len(os.listdir(os.environ['GOLDEN_CAPTURE']))) + '.json', 'w'))\n"
+    "print(json.dumps({'schema_version': 3, 'summary': {}, 'documents': []}))\n"
+)
+
+
+@pytest.fixture
+def captured(tmp_path, monkeypatch):
+    shim = tmp_path / "fake.py"
+    shim.write_text(FAKE, encoding="utf-8")
+    out = tmp_path / "captures"
+    out.mkdir()
+    monkeypatch.setenv("GOLDEN_CAPTURE", str(out))
+
+    def run(mode, flavor, profile="normal"):
+        for old in out.iterdir():
+            old.unlink()
+        golden.run_binary(f"{sys.executable} {shim}", mode, profile, INPUTS, flavor)
+        return [json.loads(p.read_text("utf-8")) for p in sorted(out.iterdir())]
+
+    return run
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve"])
+def test_a_3x_candidate_runs_the_legacy_style_in_parity_and_preserve(captured, mode):
+    for call in captured(mode, "3x"):
+        assert 'styles = ["core:legacy-normal"]' in call["config"]
+        assert 'profile = "normal"' in call["config"]
+        assert "--profile" not in call["argv"]
+
+
+def test_a_3x_candidate_runs_the_default_styles_in_policy_mode(captured):
+    for call in captured("policy", "3x"):
+        assert "styles" not in call["config"]
+        assert 'profile = "normal"' in call["config"]
+        assert "--profile" not in call["argv"]
+
+
+def test_a_2x_reference_gets_a_profile_flag_and_an_empty_config(captured):
+    for call in captured("parity", "2x", "strict"):
+        assert call["config"] == ""
+        assert call["argv"][call["argv"].index("--profile") + 1] == "strict"
+
+
+def test_each_surface_runs_once_and_code_comments_are_selected_explicitly(captured):
+    modes = sorted(
+        c["argv"][c["argv"].index("--mode") + 1] for c in captured("parity", "3x")
+    )
+    assert modes == [
+        "code-comments",
+        "code-comments",
+        "prose",
+        "prose",
+        "prose",
+        "prose",
+    ]
+
+
+def test_staged_files_keep_their_real_extension(captured):
+    staged = {f for c in captured("parity", "3x") for f in c["files"]}
+    for name in (
+        "format-mdx.mdx",
+        "format-html.html",
+        "format-rst.rst",
+        "format-python-comments.py",
+        "format-javascript-comments.js",
+    ):
+        assert name in staged
 
 
 # --- replay and runner -----------------------------------------------------
@@ -71,53 +188,69 @@ def test_pin_matches_the_reference_in_use():
 
 @pytest.mark.parametrize("mode", ["parity", "policy"])
 def test_the_python_reference_matches_its_golden(mode):
-    assert golden.compare(mode, REFERENCE) == []
+    assert golden.compare(mode, REFERENCE, flavor="2x") == []
 
 
 def test_diff_of_a_binary_with_itself_is_empty():
-    assert golden.main(["diff", "--a", REFERENCE, "--b", REFERENCE]) == 0
+    assert (
+        golden.main(["diff", "--a", REFERENCE, "--b", REFERENCE, "--flavor", "2x"]) == 0
+    )
 
 
-def test_diff_reports_a_changed_severity(tmp_path, capsys):
+def _shim(tmp_path, body):
     shim = tmp_path / "shim.py"
     shim.write_text(
         "import json, subprocess, sys\n"
         f"p = subprocess.run([{REFERENCE!r}, *sys.argv[1:]], capture_output=True, text=True)\n"
-        "r = json.loads(p.stdout)\n"
+        "r = json.loads(p.stdout)\n" + body,
+        encoding="utf-8",
+    )
+    return f"{sys.executable} {shim}"
+
+
+def test_diff_reports_a_changed_severity(tmp_path, capsys):
+    shim = _shim(
+        tmp_path,
         "f = r['documents'][0]['findings'][0]\n"
         "f['severity'] = 'suggestion' if f['severity'] == 'error' else 'error'\n"
         "print(json.dumps(r))\n"
         "sys.exit(p.returncode)\n",
-        encoding="utf-8",
     )
-    code = golden.main(
-        [
-            "diff",
-            "--a",
-            REFERENCE,
-            "--b",
-            f"{sys.executable} {shim}",
-            "--mode",
-            "parity",
-        ]
-    )
+    code = golden.main(["diff", "--a", REFERENCE, "--b", shim, "--flavor", "2x"])
     assert code == 1
     assert "differs in" in capsys.readouterr().out
 
 
-def test_check_fails_for_a_candidate_with_a_different_exit_status(tmp_path, capsys):
-    shim = tmp_path / "shim.py"
-    shim.write_text(
-        "import json, subprocess, sys\n"
-        f"p = subprocess.run([{REFERENCE!r}, *sys.argv[1:]], capture_output=True, text=True)\n"
-        "r = json.loads(p.stdout)\n"
-        "for d in r['documents']:\n"
-        "    d['passed'] = not d['passed']\n"
+def test_check_fails_for_a_candidate_with_a_different_gate(tmp_path, capsys):
+    shim = _shim(
+        tmp_path,
+        "for d in r['documents']:\n    d['passed'] = not d['passed']\n"
         "print(json.dumps(r))\n",
-        encoding="utf-8",
     )
-    assert golden.main(["check", "--candidate", f"{sys.executable} {shim}"]) == 1
+    assert golden.main(["check", "--candidate", shim, "--flavor", "2x"]) == 1
     assert "differs in" in capsys.readouterr().err
+
+
+def test_check_fails_when_only_the_run_summary_differs(tmp_path, capsys):
+    shim = _shim(
+        tmp_path,
+        "r['summary']['score'] = r['summary']['score'] - 1\n"
+        "print(json.dumps(r))\n"
+        "sys.exit(p.returncode)\n",
+    )
+    assert golden.main(["check", "--candidate", shim, "--flavor", "2x"]) == 1
+    err = capsys.readouterr().err
+    assert "summary differs in ['score']" in err
+    assert "differs in ['" not in err.replace("summary differs in", "")
+
+
+def test_check_fails_when_only_the_process_exit_status_differs(tmp_path, capsys):
+    shim = _shim(
+        tmp_path,
+        "print(json.dumps(r))\nsys.exit(0 if p.returncode == 1 else p.returncode)\n",
+    )
+    assert golden.main(["check", "--candidate", shim, "--flavor", "2x"]) == 1
+    assert "exit status 0, expected 1" in capsys.readouterr().err
 
 
 # --- projection ------------------------------------------------------------
@@ -162,8 +295,7 @@ def _doc_2x(**finding):
 
 
 def test_2x_finding_gets_a_byte_span_for_code_point_columns():
-    doc = _doc_2x()
-    projected = golden.project_document(doc, SOURCE, 1)
+    projected = golden.project_document(_doc_2x(), SOURCE, 1)
     # "Café ok. " is 9 code points and 10 bytes, so the match starts at byte 10.
     assert projected["findings"][0]["span"] == {"start": 10, "end": 19}
 
@@ -205,32 +337,42 @@ def test_multi_edit_fix_has_no_2x_replacement():
         golden.project_document(doc, SOURCE, 3)
 
 
+def test_a_document_with_an_unchecked_note_exits_2_whatever_its_gate():
+    assert golden.exit_for({"unchecked": ["x"], "gate": {"passed": False}}) == 2
+    assert golden.exit_for({"unchecked": [], "gate": {"passed": False}}) == 1
+    assert golden.exit_for({"unchecked": [], "gate": {"passed": True}}) == 0
+
+
 # --- policy deltas ---------------------------------------------------------
 
-BASE = {
-    "exit_code": 0,
-    "document": {
-        "score": 90.0,
-        "findings": [
-            {
-                "rule_id": "core:a.b",
-                "line": 3,
-                "column": 1,
-                "end_line": 3,
-                "severity": "warning",
-                "end_column": 5,
-            },
-            {
-                "rule_id": "core:a.c",
-                "line": 5,
-                "column": 1,
-                "end_line": 5,
-                "severity": "error",
-                "end_column": 5,
-            },
-        ],
-    },
-}
+
+def _finding(rule_id, line, column, **kw):
+    return {
+        "rule_id": rule_id,
+        "line": line,
+        "column": column,
+        "end_line": line,
+        "end_column": column + 4,
+        "severity": "warning",
+        **kw,
+    }
+
+
+def _base(passed=True):
+    return {
+        "exit_code": 0 if passed else 1,
+        "document": {
+            "score": 90.0,
+            "unchecked": [],
+            "gate": {"passed": passed, "reasons": [] if passed else ["x"]},
+            "findings": [
+                _finding("core:a.b", 3, 1),
+                _finding("core:a.c", 5, 1, severity="error"),
+                _finding("core:ste-verbs.complex-tense", 5, 10),
+                _finding("core:ste-verbs.complex-tense", 5, 30),
+            ],
+        },
+    }
 
 
 def _delta(**kw):
@@ -239,19 +381,26 @@ def _delta(**kw):
         "profile": "normal",
         "rule_id": "core:a.b",
         "line": 3,
+        "column": 1,
         "kind": "removed",
         **kw,
     }
 
 
+def _rules(result):
+    return [
+        (f["rule_id"], f["line"], f["column"]) for f in result["document"]["findings"]
+    ]
+
+
 def test_removed_delta_drops_the_finding():
-    out = golden.apply_deltas(BASE, "normal", "x", [_delta()])
-    assert [f["rule_id"] for f in out["document"]["findings"]] == ["core:a.c"]
+    out = golden.apply_deltas(_base(), "normal", "x", [_delta()])
+    assert ("core:a.b", 3, 1) not in _rules(out)
 
 
 def test_changed_delta_patches_the_finding_and_the_document():
     out = golden.apply_deltas(
-        BASE,
+        _base(),
         "normal",
         "x",
         [
@@ -265,12 +414,66 @@ def test_changed_delta_patches_the_finding_and_the_document():
 
 
 def test_delta_for_another_input_is_ignored():
-    assert golden.apply_deltas(BASE, "normal", "y", [_delta()]) == BASE
+    base = _base()
+    assert golden.apply_deltas(base, "normal", "y", [_delta()]) == base
 
 
 def test_delta_that_matches_no_finding_is_an_error():
     with pytest.raises(ValueError, match="one finding"):
-        golden.apply_deltas(BASE, "normal", "x", [_delta(line=99)])
+        golden.apply_deltas(_base(), "normal", "x", [_delta(line=99)])
+
+
+def test_delta_without_a_column_is_an_error():
+    d = _delta()
+    del d["column"]
+    with pytest.raises(ValueError, match="needs a column"):
+        golden.apply_deltas(_base(), "normal", "x", [d])
+
+
+def test_delta_picks_one_of_two_matches_of_one_rule_on_one_line_by_column():
+    out = golden.apply_deltas(
+        _base(),
+        "normal",
+        "x",
+        [_delta(rule_id="core:ste-verbs.complex-tense", line=5, column=30)],
+    )
+    assert _rules(out).count(("core:ste-verbs.complex-tense", 5, 10)) == 1
+    assert ("core:ste-verbs.complex-tense", 5, 30) not in _rules(out)
+
+
+def test_a_delta_that_fails_the_gate_changes_the_expected_exit_status():
+    gate = {"passed": False, "reasons": ["1 error(s), limit 0"]}
+    out = golden.apply_deltas(
+        _base(passed=True), "normal", "x", [_delta(document={"gate": gate})]
+    )
+    assert (out["document"]["gate"]["passed"], out["exit_code"]) == (False, 1)
+
+
+def test_a_delta_that_passes_the_gate_changes_the_expected_exit_status():
+    gate = {"passed": True, "reasons": []}
+    out = golden.apply_deltas(
+        _base(passed=False), "normal", "x", [_delta(document={"gate": gate})]
+    )
+    assert (out["document"]["gate"]["passed"], out["exit_code"]) == (True, 0)
+
+
+def test_a_run_delta_patches_the_run_summary_and_exit_status():
+    base = {
+        "prose:markdown": {"exit_code": 0, "summary": {"score": 90.0, "passed": True}}
+    }
+    delta = {
+        "profile": "normal",
+        "run": {
+            "group": "prose:markdown",
+            "exit_code": 1,
+            "summary": {"passed": False},
+        },
+    }
+    out = golden.apply_run_deltas(base, "normal", [delta])
+    assert out["prose:markdown"] == {
+        "exit_code": 1,
+        "summary": {"score": 90.0, "passed": False},
+    }
 
 
 def test_every_recorded_delta_has_a_reason_and_an_approver():
