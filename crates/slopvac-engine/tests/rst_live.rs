@@ -1,21 +1,26 @@
 //! The RST adapter against a real docutils.
 //!
-//! These tests need `rst2html` or `rst2html.py` on `PATH` (`pip install docutils`) and
-//! return early without it. The always-on tests are in `rst_fake.rs`.
+//! These tests need a `python3` or `python` on `PATH` that imports docutils 0.21 or later,
+//! and return early without one. The always-on tests are in `rst_fake.rs`.
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    clippy::cloned_ref_to_slice_refs
+)]
 
 use std::fs;
-use std::path::PathBuf;
 
-use slopvac_engine::rst::{RstError, RstOptions, RstParse, find_converter, parse_rst};
+use slopvac_engine::rst::{RstAdapter, RstOptions, RstParse};
 use slopvac_model::Span;
 
-/// The converter on `PATH`, or `None` after a note that the test was skipped.
-fn installed() -> Option<PathBuf> {
-    let found = find_converter(None);
-    if found.is_none() {
-        eprintln!("skipped: rst2html is not on PATH");
+/// An adapter over the interpreter on `PATH`, or `None` after a note that the test skipped.
+fn installed() -> Option<RstAdapter> {
+    let adapter = RstAdapter::new(RstOptions::default());
+    if let Err(error) = adapter.interpreter() {
+        eprintln!("skipped: {error}");
+        return None;
     }
-    found
+    Some(adapter)
 }
 
 fn slice(source: &str, span: Span) -> &str {
@@ -32,22 +37,12 @@ fn texts(parsed: &RstParse) -> Vec<String> {
 }
 
 #[test]
-fn an_empty_search_path_has_no_converter() {
-    let empty = tempfile::tempdir().unwrap();
-    let mut options = RstOptions::default();
-    options.search_path = Some(empty.path().as_os_str().to_owned());
-    let error = parse_rst("Title\n=====\n", &options).unwrap_err();
-    assert!(matches!(error, RstError::ConverterMissing), "{error}");
-}
-
-#[test]
 fn docutils_output_maps_back_to_the_source() {
-    let Some(converter) = installed() else {
+    let Some(adapter) = installed() else {
         return;
     };
     let source = "Title\n=====\n\nSome *emphasis*, **strong** words and ``code``.\n";
-    let parsed = parse_rst(source, &RstOptions::default()).unwrap();
-    assert_eq!(parsed.converter, converter);
+    let parsed = adapter.parse(source).unwrap();
     let blocks: Vec<_> = parsed
         .document
         .blocks
@@ -69,13 +64,14 @@ fn docutils_output_maps_back_to_the_source() {
         .map(|&s| slice(source, s))
         .collect();
     assert_eq!(spans, ["``code``"]);
+    assert!(parsed.notices.is_empty(), "{:?}", parsed.notices);
 }
 
 #[test]
 fn include_and_raw_directives_read_nothing() {
-    if installed().is_none() {
+    let Some(adapter) = installed() else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let secret = dir.path().join("secret.txt");
     fs::write(&secret, "INCLUDESENTINEL\n").unwrap();
@@ -83,7 +79,17 @@ fn include_and_raw_directives_read_nothing() {
         "Title\n=====\n\nBefore.\n\n.. include:: {}\n\n.. raw:: html\n\n   <p>RAWSENTINEL</p>\n\nAfter.\n",
         secret.display()
     );
-    let parsed = parse_rst(&source, &RstOptions::default()).unwrap();
-    let all = texts(&parsed);
-    assert_eq!(all, ["Title", "Before.", "After."]);
+    let parsed = adapter.parse(&source).unwrap();
+    assert_eq!(texts(&parsed), ["Title", "Before.", "After."]);
+}
+
+#[test]
+fn a_comment_that_repeats_the_next_paragraph_does_not_take_its_position() {
+    let Some(adapter) = installed() else {
+        return;
+    };
+    let source = "Intro text.\n\n.. Repeated paragraph words.\n\nRepeated paragraph words.\n";
+    let parsed = adapter.parse(source).unwrap();
+    let last = &parsed.document.blocks[1];
+    assert_eq!(last.span.start(), source.rfind("Repeated").unwrap());
 }

@@ -1,0 +1,42 @@
+{
+ "docutils": "0.23",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Safe"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Before the include."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 12,
+   "end": 12,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "After the include."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

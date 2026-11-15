@@ -28,6 +28,7 @@ use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
 use crate::prepare::{Prepared, Unit};
+use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
@@ -46,6 +47,8 @@ pub enum Kind {
     Markdown,
     /// MDX.
     Mdx,
+    /// reStructuredText, read through docutils (see [`crate::rst`]).
+    Rst,
     /// A diagram file. Only diagram rules read it.
     Diagram(DiagramFormat),
 }
@@ -80,6 +83,15 @@ impl<'a> Input<'a> {
     pub const fn mdx(path: &'a str, source: &'a str) -> Self {
         Self {
             kind: Kind::Mdx,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// An RST file read from disk.
+    #[must_use]
+    pub const fn rst(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Rst,
             ..Self::markdown(path, source)
         }
     }
@@ -157,6 +169,8 @@ pub struct Engine {
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
+    /// Reads RST files. Finds its interpreter on the first file.
+    rst: RstAdapter,
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
@@ -198,6 +212,7 @@ impl Engine {
             running: HashSet::new(),
             notices: Vec::new(),
             categories: std::collections::BTreeMap::new(),
+            rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
         Ok(engine)
@@ -214,6 +229,14 @@ impl Engine {
     #[must_use]
     pub fn with_taggers(mut self, tagger: TagRegistry) -> Self {
         self.tagger = tagger;
+        self
+    }
+
+    /// Replace how RST files are read: the interpreter, the project roots it must stay
+    /// out of, and the limits. The default reads `SLOPVAC_RST_CONVERTER`.
+    #[must_use]
+    pub fn with_rst(mut self, options: RstOptions) -> Self {
+        self.rst = RstAdapter::new(options);
         self
     }
 
@@ -339,7 +362,7 @@ impl Engine {
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) => None,
+            Kind::Diagram(_) | Kind::Rst => None,
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
@@ -349,9 +372,11 @@ impl Engine {
             .filter(|s| !s.is_empty());
         let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
         let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
+        let mut extra = Vec::new();
         let parsed = match input.kind {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
+            Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
         };
         let prepared = Prepared::new(input.source, &parsed)?;
@@ -403,7 +428,43 @@ impl Engine {
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
-        Ok(self.document(input, &prepared, &tags, findings))
+        Ok(self.document(input, &prepared, &tags, findings, extra))
+    }
+
+    /// Read an RST file. A file that cannot be read is an empty document with a warning
+    /// notice, so the run is incomplete and the file is never skipped silently.
+    fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Result<Parsed, EngineError> {
+        let make = |code: &str, level, message: String| -> Result<Notice, EngineError> {
+            let mut notice = notice(code, level, message)?;
+            notice.path = Some(input.path.to_owned());
+            Ok(notice)
+        };
+        match self.rst.parse(input.source) {
+            Ok(parsed) => {
+                for n in parsed.notices {
+                    let level = if n.warning {
+                        NoticeLevel::Warning
+                    } else {
+                        NoticeLevel::Info
+                    };
+                    extra.push(make(n.code, level, n.message)?);
+                }
+                Ok(parsed.document)
+            }
+            Err(error) => {
+                let code = if error.is_missing() {
+                    "rst-converter-missing"
+                } else {
+                    "rst-unchecked"
+                };
+                extra.push(make(
+                    code,
+                    NoticeLevel::Warning,
+                    RstError::message(&error, &[std::path::Path::new(input.path)]),
+                )?);
+                Ok(Parsed::default())
+            }
+        }
     }
 
     fn document(
@@ -412,9 +473,11 @@ impl Engine {
         prepared: &Prepared<'_>,
         tags: &TagIndex,
         findings: Vec<Finding>,
+        extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let unchecked = self.notices.clone();
+        let mut unchecked = self.notices.clone();
+        unchecked.extend(extra);
         let scoring = score_document(
             &findings,
             words,

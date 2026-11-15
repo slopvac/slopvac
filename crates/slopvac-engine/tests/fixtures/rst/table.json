@@ -1,0 +1,126 @@
+{
+ "docutils": "0.23",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Options"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "paragraph",
+   "start": 5,
+   "end": 5,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Flag"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    0
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 5,
+   "end": 5,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Meaning"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 7,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "-q"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    0
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 7,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Quiet mode"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 8,
+   "end": 8,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "-v"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    2,
+    0
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 8,
+   "end": 8,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Verbose mode"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    2,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "After the table."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

@@ -1,530 +1,814 @@
-//! Map the HTML docutils wrote back to positions in the RST source.
+//! Place the prose of a docutils tree in the RST source.
 //!
-//! docutils drops markup, decodes escapes and joins soft-wrapped lines, so the HTML text
-//! is not the source text. The mapper walks the two together. The HTML blocks come in
-//! document order, and so do their words, so a cursor moves forward through the RST source
-//! and each word is looked for after it.
+//! docutils records the source lines of every block, and keeps the source text of every
+//! inline construct (`rawsource`). So the mapper never searches the whole file. Each node is
+//! placed inside its own lines, one piece after the other:
 //!
-//! # Precision
+//! - Text is matched character by character. A `\x` escape becomes a `backslash` token, an
+//!   escaped space is a gap, and a run of whitespace becomes a `collapse` token that covers
+//!   the newline and the indentation.
+//! - An inline construct (emphasis, a link, a role) must start where the text before it
+//!   ended. Its words are matched inside its own source text, so the markup
+//!   around them stays a gap.
+//! - Inline literals become `masked` tokens over the literal with its backquotes.
 //!
-//! Positions are exact to the byte wherever a word of the HTML text is found in the RST
-//! source:
+//! The first piece of a node may follow a list marker, a directive header or a table
+//! border, so the mapper looks for its first word inside the node's lines only.
 //!
-//! - A run of characters that appear in the source as they are becomes an `Identity`
-//!   token.
-//! - `\x` in the source becomes a `Backslash` token that covers both bytes, and `\ `
-//!   (an escaped space) is a gap.
-//! - Inline markup characters (`*` and a backquote) inside a word, as in `foo\ *bar*`,
-//!   are gaps. Markup around a word is a gap too.
-//! - The whitespace run that follows a word becomes a `Collapse` token, newline and
-//!   indentation included.
-//! - An inline literal becomes a `Masked` token over the literal and its backquotes, and
-//!   is listed in [`Document::code_spans`].
+//! When a node cannot be placed word by word, its prose is kept and maps to the whole
+//! trimmed lines of the node (an `opaque` token): the position is line-precise. A first
+//! attempt allows one line of slack on each side, because docutils 0.21 puts the line of
+//! some directive output (`rubric`) one line late. A node with no usable lines is reported
+//! in a notice. No prose is dropped.
 //!
-//! Text that is not in the source, such as a number docutils generates, is a synthetic
-//! `Wrap` space. A word whose position cannot be found never receives a guessed one, so
-//! a rule never reports a location that is wrong. A block with no findable word is left out.
-//! The known cases:
-//!
-//! - The generated table of contents (`.. contents::`) repeats the section titles, so the
-//!   mapper skips it. The titles themselves are mapped where they are written.
-//! - Grid and simple tables whose cells span several lines have their text in source order
-//!   that differs from the cell order of the HTML. Their words may not be found.
-//! - A block's span covers the findable text, not the underline of a title or the
-//!   markup of a directive.
+//! The work is bounded. Every character looked at is charged to one budget that grows with
+//! the size of the source and the text. Past it, nodes fall back to line precision without
+//! any more matching, so the cost stays linear.
 
 use slopvac_model::Span;
-use slopvac_parse::{Block, BlockKind, Document, Projection, TokenKind, parse_html};
+use slopvac_parse::{
+    Admonition, AdmonitionSyntax, Block, BlockKind, Container as ParseContainer, Document,
+    Projection, TokenKind,
+};
 
-use super::{RstError, span};
+use super::model::{Container, Node, Piece};
+use super::{RstNotice, span};
 
-/// How far ahead the first word of a block may be, in bytes. Directive headers, comments
-/// and literal blocks sit between blocks.
-const FAR: usize = 16 * 1024;
-
-/// How far ahead a later word of the same block may be, in bytes. A link target or an
-/// inline literal can sit between two words.
-const NEAR: usize = 1024;
-
-/// Work, in characters looked at, per byte of source, plus a base for small documents.
-const WORK_PER_BYTE: usize = 64;
-const WORK_BASE: usize = 8 * 1024 * 1024;
+/// Characters looked at per byte of source and text, plus a base for small documents.
+pub(super) const WORK_PER_BYTE: usize = 64;
+/// See [`WORK_PER_BYTE`].
+pub(super) const WORK_BASE: usize = 1 << 20;
 
 /// A projection token before it is pushed.
 type Tok = (TokenKind, String, Span);
 
-/// A piece of the projected text of one block.
-enum Item {
-    Word(String),
-    Space,
-    Mask(Span),
+/// The result of mapping one document.
+pub(super) struct Mapped {
+    pub(super) document: Document,
+    pub(super) notices: Vec<RstNotice>,
+    /// Characters charged to the budget.
+    pub(super) work: usize,
 }
 
-/// Parse `html` and map the result into `rst`. Offsets below `bom` are the byte order mark.
-pub(super) fn project(rst: &str, bom: usize, html: &str) -> Result<Document, RstError> {
-    // The HTML parser masks `<code>`. The HTML 4 writer of docutils writes `<tt>`.
-    let html = html
-        .replace("<tt>", "<code>")
-        .replace("<tt ", "<code ")
-        .replace("</tt>", "</code>");
-    let parsed = parse_html(&html, span(0, html.len()))?;
-    let generated = generated_ranges(&html);
+/// Map `nodes` into `source`. `bom` is the byte length of a leading byte order mark.
+pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
+    let text_bytes: usize = nodes
+        .iter()
+        .map(|n| {
+            n.text.len()
+                + n.pieces
+                    .iter()
+                    .map(|p| p.t.len() + p.raw.len())
+                    .sum::<usize>()
+        })
+        .sum();
     let mut mapper = Mapper {
-        src: rst,
-        html: &html,
-        cursor: bom,
+        src: source,
+        starts: line_starts(source, bom),
         work: 0,
         budget: WORK_PER_BYTE
-            .saturating_mul(rst.len())
+            .saturating_mul(source.len().saturating_add(text_bytes))
             .saturating_add(WORK_BASE),
-        code_spans: Vec::new(),
     };
-    let mut blocks: Vec<Block> = Vec::new();
-    for block in &parsed.blocks {
-        if generated
-            .iter()
-            .any(|&(a, b)| block.span.start() >= a && block.span.start() < b)
-        {
-            continue;
-        }
-        let found_block = match &block.kind {
-            BlockKind::CodeBlock {
-                lang, info, fenced, ..
-            } => mapper.code_block(block.span)?.map(|body| Block {
-                kind: BlockKind::CodeBlock {
-                    lang: lang.clone(),
-                    info: info.clone(),
-                    body,
-                    fenced: *fenced,
-                },
-                span: body,
-                projection: None,
-            }),
-            BlockKind::Paragraph | BlockKind::Heading { .. } | BlockKind::TableCell { .. } => {
-                match &block.projection {
-                    Some(projection) => mapper.prose(projection)?.map(|(projection, at)| Block {
-                        kind: block.kind.clone(),
-                        span: at,
-                        projection: Some(projection),
-                    }),
-                    None => None,
-                }
+    let mut blocks = Vec::new();
+    let mut code_spans = Vec::new();
+    let mut unplaced: Vec<&str> = Vec::new();
+    let mut line_precise = 0_usize;
+    for node in nodes {
+        match mapper.block(node) {
+            Outcome::Unplaced => unplaced.push(&node.tag),
+            Outcome::Empty => {}
+            Outcome::Block {
+                block,
+                codes,
+                precise,
+            } => {
+                line_precise += usize::from(precise);
+                code_spans.extend(codes);
+                blocks.push(block);
             }
-            _ => None,
-        };
-        if let Some(done) = found_block {
-            blocks.push(done);
         }
     }
     blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
-    let mut code_spans = mapper.code_spans;
     code_spans.sort_by_key(Span::start);
-    Ok(Document { blocks, code_spans })
+    let mut notices = Vec::new();
+    if !unplaced.is_empty() {
+        notices.push(RstNotice {
+            code: "rst-prose-unplaced",
+            warning: true,
+            message: format!(
+                "{} RST node(s) have no usable source lines, so their prose was not checked \
+                 (first: {})",
+                unplaced.len(),
+                unplaced[0]
+            ),
+        });
+    }
+    if line_precise > 0 {
+        notices.push(RstNotice {
+            code: "rst-line-precise",
+            warning: false,
+            message: format!(
+                "{line_precise} RST block(s) could not be matched word by word, so findings in \
+                 them point at the whole block"
+            ),
+        });
+    }
+    Mapped {
+        document: Document { blocks, code_spans },
+        notices,
+        work: mapper.work,
+    }
+}
+
+/// Start offsets of the lines: LF, CRLF and a lone CR end a line.
+fn line_starts(source: &str, bom: usize) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let mut starts = vec![bom];
+    let mut i = bom;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => starts.push(i + 1),
+            b'\r' => {
+                if bytes.get(i + 1) == Some(&b'\n') {
+                    i += 1;
+                }
+                starts.push(i + 1);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    starts
+}
+
+/// What became of a node.
+enum Outcome {
+    /// Its lines are missing or outside the file.
+    Unplaced,
+    /// It holds no prose.
+    Empty,
+    /// A block, with the spans of its inline code and whether it is line-precise.
+    Block {
+        block: Block,
+        codes: Vec<Span>,
+        precise: bool,
+    },
+}
+
+/// A node placed in the source.
+struct Placed {
+    projection: Projection,
+    span: Span,
+    codes: Vec<Span>,
+    line_precise: bool,
+}
+
+/// Tokens of one attempt.
+struct Attempt {
+    toks: Vec<Tok>,
+    codes: Vec<Span>,
 }
 
 struct Mapper<'a> {
     src: &'a str,
-    html: &'a str,
-    cursor: usize,
+    starts: Vec<usize>,
     work: usize,
     budget: usize,
-    code_spans: Vec<Span>,
 }
 
 impl Mapper<'_> {
-    fn charge(&mut self, units: usize) -> Result<(), RstError> {
+    /// The block for `node`.
+    fn block(&mut self, node: &Node) -> Outcome {
+        let Some((lo, hi)) = node
+            .start
+            .zip(node.end)
+            .and_then(|(s, e)| self.byte_range(s, e))
+        else {
+            return Outcome::Unplaced;
+        };
+        let containers: Vec<ParseContainer> = node
+            .containers
+            .iter()
+            .map(|c| match *c {
+                Container::Item { ordered, depth } => ParseContainer::ListItem { ordered, depth },
+                Container::Quote => ParseContainer::BlockQuote,
+            })
+            .collect();
+        let structural = |kind| Outcome::Block {
+            block: Block {
+                kind,
+                span: span(lo, hi),
+                projection: None,
+                containers: containers.clone(),
+            },
+            codes: Vec::new(),
+            precise: false,
+        };
+        if node.code {
+            return structural(BlockKind::CodeBlock {
+                lang: node.lang.clone(),
+                info: None,
+                body: span(lo, hi),
+                fenced: false,
+            });
+        }
+        if let Some(kind) = &node.adm {
+            return structural(BlockKind::Admonition(Admonition {
+                kind: kind.clone(),
+                title: node.title.clone(),
+                title_span: None,
+                syntax: AdmonitionSyntax::Directive,
+            }));
+        }
+        let Some(placed) = self.place(node, lo, hi) else {
+            return Outcome::Empty;
+        };
+        let kind = match (node.level, node.cell) {
+            (Some(level), _) => BlockKind::Heading { level },
+            (None, Some((row, column))) => BlockKind::TableCell { row, column },
+            _ => BlockKind::Paragraph,
+        };
+        Outcome::Block {
+            block: Block {
+                kind,
+                span: placed.span,
+                projection: Some(placed.projection),
+                containers,
+            },
+            codes: placed.codes,
+            precise: placed.line_precise,
+        }
+    }
+
+    /// Byte range of lines `first..=last` (1-based), without the final terminator.
+    fn byte_range(&self, first: usize, last: usize) -> Option<(usize, usize)> {
+        let lines = self.starts.len();
+        if first == 0 || first > lines || last < first {
+            return None;
+        }
+        let last = last.min(lines);
+        Some((self.starts[first - 1], self.line_end(last)))
+    }
+
+    /// End of line `line` (1-based) before its terminator.
+    fn line_end(&self, line: usize) -> usize {
+        if line >= self.starts.len() {
+            return self.src.len();
+        }
+        let next = self.starts[line];
+        let bytes = self.src.as_bytes();
+        if next >= 2 && bytes[next - 2] == b'\r' && bytes[next - 1] == b'\n' {
+            next - 2
+        } else {
+            next - 1
+        }
+    }
+
+    /// Charge `units` of work. False once the budget is spent.
+    fn charge(&mut self, units: usize) -> bool {
         self.work = self.work.saturating_add(units);
-        if self.work > self.budget {
-            return Err(RstError::MappingBudget);
-        }
-        Ok(())
+        self.work <= self.budget
     }
 
-    /// The end of the search window that starts at the cursor.
-    fn limit(&self, window: usize) -> usize {
-        let mut limit = self.cursor.saturating_add(window).min(self.src.len());
-        while !self.src.is_char_boundary(limit) {
-            limit += 1;
-        }
-        limit
+    const fn exhausted(&self) -> bool {
+        self.work > self.budget
     }
 
-    /// Map the projection of one prose block.
-    fn prose(&mut self, projection: &Projection) -> Result<Option<(Projection, Span)>, RstError> {
-        let items = items(projection);
-        let mut toks: Vec<Tok> = Vec::new();
-        let mut located = false;
-        let mut codes: Vec<Span> = Vec::new();
-        for (i, item) in items.iter().enumerate() {
-            let window = if located { NEAR } else { FAR };
-            match item {
-                Item::Space => {
-                    if located && !ends_with_space(&toks) {
-                        self.space(&mut toks);
-                    }
-                }
-                Item::Word(word) => {
-                    let glued_left = i > 0 && matches!(items[i - 1], Item::Mask(_));
-                    let glued_right = matches!(items.get(i + 1), Some(Item::Mask(_)));
-                    if let Some((found, end)) =
-                        self.find_word(word, window, glued_left, glued_right)?
-                    {
-                        toks.extend(found);
-                        self.cursor = end;
-                        located = true;
-                    } else if located && !ends_with_space(&toks) {
-                        synthetic(&mut toks, self.cursor);
-                    }
-                }
-                Item::Mask(at) => {
-                    let literal = html_text(&self.html[at.start()..at.end()]);
-                    if let Some(found) = self.find_literal(&literal, window)? {
-                        toks.push((TokenKind::Masked, "\0".to_owned(), found));
-                        codes.push(found);
-                        self.cursor = found.end();
-                        located = true;
-                    } else if located && !ends_with_space(&toks) {
-                        synthetic(&mut toks, self.cursor);
-                    }
+    /// Place a prose node inside lines `lo..hi`.
+    fn place(&mut self, node: &Node, lo: usize, hi: usize) -> Option<Placed> {
+        if !self.exhausted() {
+            let (first, last) = (node.start?, node.end?);
+            let wider = self.byte_range(first.saturating_sub(1).max(1), last + 1);
+            for range in [Some((lo, hi)), wider] {
+                let Some((a, b)) = range else { continue };
+                if let Some(done) = self.align(&node.pieces, a, b) {
+                    return Self::finish(done);
                 }
             }
         }
-        while ends_with_space(&toks) {
+        self.fallback(&node.pieces, lo, hi)
+    }
+
+    fn finish(done: Attempt) -> Option<Placed> {
+        let Attempt { mut toks, codes } = done;
+        while toks
+            .last()
+            .is_some_and(|t| t.1.ends_with(char::is_whitespace))
+        {
             toks.pop();
         }
-        let (Some(lo), Some(hi)) = (
-            toks.iter()
-                .filter(|t| t.0.is_real())
-                .map(|t| t.2.start())
-                .min(),
-            toks.iter()
-                .filter(|t| t.0.is_real())
-                .map(|t| t.2.end())
-                .max(),
-        ) else {
-            return Ok(None);
-        };
-        let mut out = Projection::new();
+        let lo = toks
+            .iter()
+            .filter(|t| t.0.is_real())
+            .map(|t| t.2.start())
+            .min()?;
+        let hi = toks
+            .iter()
+            .filter(|t| t.0.is_real())
+            .map(|t| t.2.end())
+            .max()?;
+        let mut projection = Projection::new();
         for (kind, text, at) in &toks {
-            out.push(*kind, text, *at);
+            projection.push(*kind, text, *at);
         }
-        self.code_spans.extend(codes);
-        Ok(Some((out, span(lo, hi))))
+        Some(Placed {
+            projection,
+            span: span(lo, hi),
+            codes,
+            line_precise: false,
+        })
     }
 
-    /// The whitespace after the cursor as a `Collapse` token, or a synthetic space.
-    fn space(&mut self, toks: &mut Vec<Tok>) {
-        let mut at = self.cursor;
-        let rest = &self.src[at..];
-        let closers = rest.len() - rest.trim_start_matches(['*', '`', '_']).len();
-        let after = at + closers;
-        let run = self.src[after..].len() - self.src[after..].trim_start().len();
-        if run > 0 {
-            at = after;
-            toks.push((TokenKind::Collapse, " ".to_owned(), span(at, at + run)));
-            self.cursor = at + run;
-        } else {
-            synthetic(toks, self.cursor);
+    /// The prose of the node as one token over its lines.
+    fn fallback(&self, pieces: &[Piece], lo: usize, hi: usize) -> Option<Placed> {
+        let mut text = String::new();
+        for piece in pieces {
+            match piece.k.as_str() {
+                "t" | "i" => text.push_str(&piece.t),
+                "c" => text.push('\0'),
+                _ => {}
+            }
         }
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.is_empty() {
+            return None;
+        }
+        let slice = &self.src[lo..hi];
+        let start = lo + (slice.len() - slice.trim_start().len());
+        let end = (lo + slice.trim_end().len()).max(start);
+        let at = span(start, end);
+        let mut projection = Projection::new();
+        projection.push(TokenKind::Opaque, &text, at);
+        Some(Placed {
+            projection,
+            span: at,
+            codes: Vec::new(),
+            line_precise: true,
+        })
     }
 
-    /// Find `word` after the cursor. Returns the tokens and the source end.
-    fn find_word(
-        &mut self,
-        word: &str,
-        window: usize,
-        glued_left: bool,
-        glued_right: bool,
-    ) -> Result<Option<(Vec<Tok>, usize)>, RstError> {
-        let Some(first) = word.chars().next() else {
-            return Ok(None);
+    /// Match all pieces of a node inside `lo..hi`.
+    fn align(&mut self, pieces: &[Piece], lo: usize, hi: usize) -> Option<Attempt> {
+        let mut out = Attempt {
+            toks: Vec::new(),
+            codes: Vec::new(),
         };
-        let limit = self.limit(window);
-        let from = self.cursor;
-        for (offset, ch) in self.src[from..limit].char_indices() {
-            self.charge(1)?;
-            if ch != first && ch != '\\' {
-                continue;
-            }
-            let at = from + offset;
-            if !glued_left
-                && self.src[..at]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_alphanumeric)
-            {
-                continue;
-            }
-            if let Some((toks, end)) = match_word(self.src, at, word) {
-                let boundary_ok = glued_right
-                    || !word.chars().next_back().is_some_and(char::is_alphanumeric)
-                    || !self.src[end..]
-                        .chars()
-                        .next()
-                        .is_some_and(char::is_alphanumeric);
-                if boundary_ok {
-                    return Ok(Some((toks, end)));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    /// Find an inline literal after the cursor, with its backquotes.
-    fn find_literal(&mut self, literal: &str, window: usize) -> Result<Option<Span>, RstError> {
-        if literal.is_empty() {
-            return Ok(None);
-        }
-        let from = self.cursor;
-        let mut limit = self
-            .limit(window)
-            .saturating_add(literal.len())
-            .min(self.src.len());
-        while !self.src.is_char_boundary(limit) {
-            limit += 1;
-        }
-        let Some(offset) = self.src[from..limit].find(literal) else {
-            self.charge(limit - from)?;
-            return Ok(None);
-        };
-        self.charge(offset + 1)?;
-        let (start, end) = (from + offset, from + offset + literal.len());
-        let before = self.src[..start]
-            .bytes()
-            .rev()
-            .take(2)
-            .take_while(|&b| b == b'`')
-            .count();
-        let after = self.src[end..]
-            .bytes()
-            .take(2)
-            .take_while(|&b| b == b'`')
-            .count();
-        let ticks = before.min(after);
-        Ok(Some(span(start - ticks, end + ticks)))
-    }
-
-    /// Map a `<pre>` block to the source span of its first and last findable lines.
-    fn code_block(&mut self, html_span: Span) -> Result<Option<Span>, RstError> {
-        let text = html_text(&self.html[html_span.start()..html_span.end()]);
-        let mut first = None;
-        let mut last = 0;
-        for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
-            let window = if first.is_some() { NEAR } else { FAR };
-            let Some(found) = self.find_literal_plain(line, window)? else {
-                continue;
-            };
-            first.get_or_insert(found.start());
-            last = found.end();
-            self.cursor = found.end();
-        }
-        Ok(first.map(|start| span(start, last)))
-    }
-
-    /// Like [`Self::find_literal`], without the backquotes.
-    fn find_literal_plain(&mut self, text: &str, window: usize) -> Result<Option<Span>, RstError> {
-        let from = self.cursor;
-        let mut limit = self
-            .limit(window)
-            .saturating_add(text.len())
-            .min(self.src.len());
-        while !self.src.is_char_boundary(limit) {
-            limit += 1;
-        }
-        if let Some(offset) = self.src[from..limit].find(text) {
-            self.charge(offset + 1)?;
-            Ok(Some(span(from + offset, from + offset + text.len())))
-        } else {
-            self.charge(limit - from)?;
-            Ok(None)
-        }
-    }
-}
-
-fn ends_with_space(toks: &[Tok]) -> bool {
-    toks.last()
-        .is_some_and(|t| t.1.ends_with(char::is_whitespace))
-}
-
-/// A synthetic space at the end of the last token, or at `fallback`.
-fn synthetic(toks: &mut Vec<Tok>, fallback: usize) {
-    let at = toks.last().map_or(fallback, |t| t.2.end());
-    toks.push((TokenKind::Wrap, " ".to_owned(), Span::empty(at)));
-}
-
-/// Split the projected text into words, spaces and masked spans.
-fn items(projection: &Projection) -> Vec<Item> {
-    let mut items = Vec::new();
-    let mut word = String::new();
-    let flush = |items: &mut Vec<Item>, word: &mut String| {
-        if !word.is_empty() {
-            items.push(Item::Word(std::mem::take(word)));
-        }
-    };
-    for token in projection.tokens() {
-        if token.kind == TokenKind::Masked {
-            flush(&mut items, &mut word);
-            items.push(Item::Mask(token.src));
-            continue;
-        }
-        for ch in token.text.chars() {
-            if ch.is_whitespace() {
-                flush(&mut items, &mut word);
-                if !matches!(items.last(), Some(Item::Space)) {
-                    items.push(Item::Space);
-                }
-            } else {
-                word.push(ch);
-            }
-        }
-    }
-    flush(&mut items, &mut word);
-    items
-}
-
-/// Match `word` at byte `at` of `src`, allowing escapes and inline markup characters.
-fn match_word(src: &str, at: usize, word: &str) -> Option<(Vec<Tok>, usize)> {
-    let mut toks: Vec<Tok> = Vec::new();
-    let mut run = String::new();
-    let mut run_start = at;
-    let mut q = at;
-    let flush = |toks: &mut Vec<Tok>, run: &mut String, run_start: usize, end: usize| {
-        if !run.is_empty() {
-            toks.push((
-                TokenKind::Identity,
-                std::mem::take(run),
-                span(run_start, end),
-            ));
-        }
-    };
-    for (index, ch) in word.chars().enumerate() {
-        loop {
-            let c = src[q..].chars().next()?;
-            if c == ch {
-                if run.is_empty() {
-                    run_start = q;
-                }
-                run.push(c);
-                q += c.len_utf8();
-                break;
-            }
-            match c {
-                '\\' => {
-                    let next = src[q + 1..].chars().next()?;
-                    flush(&mut toks, &mut run, run_start, q);
-                    if next == ch {
-                        let end = q + 1 + next.len_utf8();
-                        toks.push((TokenKind::Backslash, ch.to_string(), span(q, end)));
-                        q = end;
-                        break;
-                    } else if next.is_whitespace() && index > 0 {
-                        q += 1 + next.len_utf8();
+        let mut cursor = lo;
+        let mut first = true;
+        for piece in pieces {
+            match piece.k.as_str() {
+                "t" => {
+                    let text = if first {
+                        piece.t.trim_start()
                     } else {
-                        return None;
+                        &piece.t
+                    };
+                    if text.is_empty() {
+                        continue;
                     }
+                    if first {
+                        cursor = self.find_word_start(cursor, hi, text)?;
+                    }
+                    cursor = self.text(text, cursor, hi, &mut out.toks)?;
+                    first = false;
                 }
-                '*' | '`' if index > 0 => {
-                    flush(&mut toks, &mut run, run_start, q);
-                    q += 1;
+                "c" | "i" | "o" => {
+                    if piece.raw.is_empty() {
+                        // Nothing to anchor on: treat the text as plain text.
+                        if piece.k == "o" || piece.t.is_empty() {
+                            continue;
+                        }
+                        if first {
+                            cursor = self.find_word_start(cursor, hi, &piece.t)?;
+                        }
+                        cursor = self.text(&piece.t, cursor, hi, &mut out.toks)?;
+                        first = false;
+                        continue;
+                    }
+                    let begin = if first {
+                        self.find_raw(cursor, hi, &piece.raw)?
+                    } else {
+                        self.skip_gap(cursor, hi)
+                    };
+                    let end = self.eat_raw(begin, hi, &piece.raw)?;
+                    first = false;
+                    match piece.k.as_str() {
+                        "c" => {
+                            let at = span(begin, end);
+                            push(&mut out.toks, (TokenKind::Masked, "\0".to_owned(), at));
+                            out.codes.push(at);
+                        }
+                        "i" => self.inline(piece, begin, end, &mut out.toks),
+                        _ => {}
+                    }
+                    cursor = end;
                 }
                 _ => return None,
             }
         }
+        Some(out)
     }
-    flush(&mut toks, &mut run, run_start, q);
-    Some((toks, q))
-}
 
-/// The text of an HTML fragment: tags removed and entities decoded.
-fn html_text(fragment: &str) -> String {
-    let mut out = String::with_capacity(fragment.len());
-    let mut rest = fragment;
-    while let Some(i) = rest.find(['<', '&']) {
-        out.push_str(&rest[..i]);
-        rest = &rest[i..];
-        if rest.starts_with('<') {
-            rest = rest.find('>').map_or("", |j| &rest[j + 1..]);
-            continue;
-        }
-        let decoded = rest[1..]
-            .find(';')
-            .filter(|&j| j <= 10)
-            .and_then(|j| entity(&rest[1..j + 2]).map(|c| (c, j + 2)));
-        if let Some((c, used)) = decoded {
-            out.push(c);
-            rest = &rest[used..];
-        } else {
-            out.push('&');
-            rest = &rest[1..];
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// The character of an entity name such as `amp;`, or `None`.
-fn entity(name_semicolon: &str) -> Option<char> {
-    let name = name_semicolon.strip_suffix(';')?;
-    match name {
-        "amp" => Some('&'),
-        "lt" => Some('<'),
-        "gt" => Some('>'),
-        "quot" => Some('"'),
-        "apos" => Some('\''),
-        "nbsp" => Some('\u{a0}'),
-        _ => {
-            let digits = name.strip_prefix('#')?;
-            let value = match digits.strip_prefix(['x', 'X']) {
-                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-                None => digits.parse().ok()?,
-            };
-            char::from_u32(value)
-        }
-    }
-}
-
-/// Byte ranges of the HTML that docutils generated from the source, so no source text
-/// stands behind them. Today that is the table of contents.
-fn generated_ranges(html: &str) -> Vec<(usize, usize)> {
-    let mut ranges = Vec::new();
-    let mut from = 0;
-    while let Some(i) = html[from..].find("class=\"contents") {
-        let at = from + i;
-        let Some(open) = html[..at].rfind('<') else {
-            break;
-        };
-        let name: String = html[open + 1..]
-            .chars()
-            .take_while(char::is_ascii_alphanumeric)
-            .collect();
-        let end = element_end(html, open, &name);
-        ranges.push((open, end));
-        from = end.max(at + 1);
-    }
-    ranges
-}
-
-/// The end of the element that opens at `open`, counting nested elements of one name.
-fn element_end(html: &str, open: usize, name: &str) -> usize {
-    let opener = format!("<{name}");
-    let closer = format!("</{name}>");
-    let mut depth = 0_usize;
-    let mut at = open;
-    while let Some(i) = html[at..].find('<') {
-        let tag = &html[at + i..];
-        if tag.starts_with(&closer) {
-            depth = depth.saturating_sub(1);
-            at += i + closer.len();
-            if depth == 0 {
-                return at;
-            }
-        } else if tag.starts_with(&opener) && tag[opener.len()..].starts_with([' ', '>', '/', '\n'])
+    /// Place the words of inline markup inside its own source text.
+    fn inline(&mut self, piece: &Piece, begin: usize, end: usize, toks: &mut Vec<Tok>) {
+        let raw = &self.src[begin..end];
+        let mut skip = 0;
+        if raw.starts_with(':')
+            && let Some(i) = raw[1..].find(':')
         {
-            depth += 1;
-            at += i + opener.len();
+            skip = i + 2;
+        }
+        skip += raw[skip..].len() - raw[skip..].trim_start_matches(['*', '`', '_']).len();
+        let mut inner = Vec::new();
+        if self.text(&piece.t, begin + skip, end, &mut inner).is_some() {
+            for tok in inner {
+                push(toks, tok);
+            }
         } else {
-            at += i + 1;
+            push(toks, (TokenKind::Opaque, piece.t.clone(), span(begin, end)));
         }
     }
-    html.len()
+
+    /// Skip `\ ` and `\` + newline pairs, which docutils removes.
+    fn skip_gap(&mut self, mut at: usize, hi: usize) -> usize {
+        let bytes = self.src.as_bytes();
+        while at + 1 < hi && bytes[at] == b'\\' {
+            let Some(next) = self.src[at + 1..hi].chars().next() else {
+                break;
+            };
+            if !next.is_whitespace() {
+                break;
+            }
+            at += 1 + next.len_utf8();
+        }
+        at
+    }
+
+    /// The first position in `from..hi` where `raw` starts.
+    fn find_raw(&mut self, from: usize, hi: usize, raw: &str) -> Option<usize> {
+        let first = raw.chars().next()?;
+        let mut at = from;
+        while at < hi {
+            let off = self.src[at..hi].find(first)?;
+            if !self.charge(off + 1) {
+                return None;
+            }
+            at += off;
+            if self.eat_raw(at, hi, raw).is_some() {
+                return Some(at);
+            }
+            at += first.len_utf8();
+        }
+        None
+    }
+
+    /// Match `raw` at `at`. Whitespace in `raw` matches any whitespace in the source,
+    /// because docutils strips the indentation of continuation lines. Returns the end.
+    fn eat_raw(&mut self, at: usize, hi: usize, raw: &str) -> Option<usize> {
+        let mut p = at;
+        let mut chars = raw.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if !self.charge(1) {
+                return None;
+            }
+            let c = self.src[p..hi].chars().next()?;
+            if ch.is_whitespace() {
+                if !c.is_whitespace() {
+                    return None;
+                }
+                while chars.peek().is_some_and(|n| n.is_whitespace()) {
+                    chars.next();
+                }
+                p += self.src[p..hi].len() - self.src[p..hi].trim_start().len();
+            } else if c == ch {
+                p += c.len_utf8();
+            } else {
+                return None;
+            }
+        }
+        Some(p)
+    }
+
+    /// The first position in `from..hi` where the first word of `text` starts as a word.
+    fn find_word_start(&mut self, from: usize, hi: usize, text: &str) -> Option<usize> {
+        let word: String = text.chars().take_while(|c| !c.is_whitespace()).collect();
+        let first = word.chars().next()?;
+        let mut at = from;
+        while at < hi {
+            let (off, ch) = self.src[at..hi]
+                .char_indices()
+                .find(|&(_, c)| c == first || c == '\\')?;
+            if !self.charge(off + 1) {
+                return None;
+            }
+            at += off;
+            let before_ok = self.src[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric() || at == from);
+            if before_ok {
+                let mut scratch = Vec::new();
+                if let Some(end) = self.text(&word, at, hi, &mut scratch) {
+                    let after_ok = !word.chars().next_back().is_some_and(char::is_alphanumeric)
+                        || !self.src[end..]
+                            .chars()
+                            .next()
+                            .is_some_and(char::is_alphanumeric);
+                    if after_ok {
+                        return Some(at);
+                    }
+                }
+            }
+            at += ch.len_utf8();
+        }
+        None
+    }
+
+    /// Match `text` at `at`, inside `..hi`. Pushes tokens and returns the end. Source left
+    /// over after the last character is a gap.
+    fn text(&mut self, text: &str, at: usize, hi: usize, toks: &mut Vec<Tok>) -> Option<usize> {
+        let mut p = at;
+        let mut run = String::new();
+        let mut run_start = at;
+        let mut chars = text.chars().peekable();
+        let flush = |toks: &mut Vec<Tok>, run: &mut String, start: usize, end: usize| {
+            if !run.is_empty() {
+                push(
+                    toks,
+                    (TokenKind::Identity, std::mem::take(run), span(start, end)),
+                );
+            }
+        };
+        while let Some(ch) = chars.next() {
+            if !self.charge(1) {
+                return None;
+            }
+            if ch.is_whitespace() {
+                let mut next = None;
+                while let Some(&n) = chars.peek() {
+                    if n.is_whitespace() {
+                        chars.next();
+                    } else {
+                        next = Some(n);
+                        break;
+                    }
+                }
+                flush(toks, &mut run, run_start, p);
+                let begin = p;
+                // Table borders sit between the words of a cell.
+                while let Some(c) = self.src[p..hi].chars().next() {
+                    if c.is_whitespace()
+                        || (next.is_some() && matches!(c, '|' | '+') && next != Some(c))
+                    {
+                        p += c.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                if p > begin {
+                    push(toks, (TokenKind::Collapse, " ".to_owned(), span(begin, p)));
+                } else {
+                    let end = toks.last().map_or(begin, |t| t.2.end());
+                    push(toks, (TokenKind::Wrap, " ".to_owned(), Span::empty(end)));
+                }
+                run_start = p;
+                continue;
+            }
+            // `\ ` and `\` + newline vanish from the text.
+            let mut q = p;
+            loop {
+                let c = self.src[q..hi].chars().next()?;
+                if c != '\\' {
+                    break;
+                }
+                let next = self.src[q + 1..hi].chars().next()?;
+                if next == ch {
+                    break;
+                }
+                if !next.is_whitespace() {
+                    return None;
+                }
+                q += 1 + next.len_utf8();
+            }
+            if q > p {
+                flush(toks, &mut run, run_start, p);
+                p = q;
+                run_start = p;
+            }
+            let c = self.src[p..hi].chars().next()?;
+            if c == '\\' {
+                // An escape: the backslash and the character it protects.
+                let next = self.src[p + 1..hi].chars().next()?;
+                if next != ch {
+                    return None;
+                }
+                flush(toks, &mut run, run_start, p);
+                let end = p + 1 + next.len_utf8();
+                push(toks, (TokenKind::Backslash, ch.to_string(), span(p, end)));
+                p = end;
+                run_start = p;
+            } else if c == ch {
+                if run.is_empty() {
+                    run_start = p;
+                }
+                run.push(c);
+                p += c.len_utf8();
+            } else {
+                return None;
+            }
+        }
+        flush(toks, &mut run, run_start, p);
+        Some(p)
+    }
+}
+
+/// Push a token. Whitespace that follows whitespace, or opens the list, is dropped.
+fn push(toks: &mut Vec<Tok>, tok: Tok) {
+    let blank = tok.1.chars().all(char::is_whitespace);
+    if blank
+        && toks
+            .last()
+            .is_none_or(|t| t.1.ends_with(char::is_whitespace))
+    {
+        return;
+    }
+    toks.push(tok);
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::assert_is_empty)]
+
+    use super::*;
+    use crate::rst::model::Output;
+
+    fn nodes(json: &str) -> Vec<Node> {
+        serde_json::from_str::<Output>(&format!(r#"{{"docutils":"0.23","nodes":{json}}}"#))
+            .unwrap()
+            .nodes
+    }
+
+    fn paragraph(start: usize, end: usize, text: &str) -> String {
+        format!(
+            r#"{{"tag":"paragraph","start":{start},"end":{end},"pieces":[{{"k":"t","t":{}}}]}}"#,
+            serde_json::to_string(text).unwrap()
+        )
+    }
+
+    fn first_prose(mapped: &Mapped) -> (String, Span) {
+        let block = &mapped.document.blocks[0];
+        (
+            block.projection.as_ref().unwrap().text().to_owned(),
+            block.span,
+        )
+    }
+
+    #[test]
+    fn a_line_off_by_one_is_found_with_slack() {
+        // docutils 0.21 reports a rubric one line late: the text is on line 2, not 3.
+        let source = "Intro\n\nA rubric\n\nAfter.\n";
+        let line_of_rubric = 3;
+        let mapped = project(
+            source,
+            0,
+            &nodes(&format!(
+                "[{}]",
+                paragraph(line_of_rubric + 1, line_of_rubric + 1, "A rubric")
+            )),
+        );
+        let (text, at) = first_prose(&mapped);
+        assert_eq!(text, "A rubric");
+        assert_eq!(&source[at.start()..at.end()], "A rubric");
+        assert!(mapped.notices.is_empty());
+    }
+
+    #[test]
+    fn text_that_cannot_be_matched_keeps_its_prose_at_line_precision() {
+        let source = "One\n\n  Words that docutils changed.  \n\nTwo\n";
+        let mapped = project(
+            source,
+            0,
+            &nodes(&format!(
+                "[{}]",
+                paragraph(3, 3, "Words that docutils rewrote.")
+            )),
+        );
+        let (text, at) = first_prose(&mapped);
+        assert_eq!(text, "Words that docutils rewrote.");
+        assert_eq!(
+            &source[at.start()..at.end()],
+            "Words that docutils changed."
+        );
+        let codes: Vec<_> = mapped.notices.iter().map(|n| (n.code, n.warning)).collect();
+        assert_eq!(codes, [("rst-line-precise", false)]);
+    }
+
+    #[test]
+    fn a_node_without_lines_is_reported_not_dropped_silently() {
+        let mapped = project(
+            "Text\n",
+            0,
+            &nodes(
+                r#"[{"tag":"classifier","start":null,"end":null,"pieces":[{"k":"t","t":"Text"}]}]"#,
+            ),
+        );
+        assert!(mapped.document.blocks.is_empty());
+        assert_eq!(mapped.notices.len(), 1);
+        assert_eq!(mapped.notices[0].code, "rst-prose-unplaced");
+        assert!(mapped.notices[0].warning);
+        assert!(mapped.notices[0].message.contains("classifier"));
+    }
+
+    #[test]
+    fn a_line_past_the_end_is_reported() {
+        let mapped = project(
+            "Text\n",
+            0,
+            &nodes(&format!("[{}]", paragraph(9, 9, "Text"))),
+        );
+        assert!(mapped.document.blocks.is_empty());
+        assert_eq!(mapped.notices[0].code, "rst-prose-unplaced");
+    }
+
+    #[test]
+    fn an_escaped_space_is_a_gap_inside_a_word() {
+        let source = "foo\\ bar\n";
+        let mapped = project(
+            source,
+            0,
+            &nodes(&format!("[{}]", paragraph(1, 1, "foobar"))),
+        );
+        let (text, at) = first_prose(&mapped);
+        assert_eq!(text, "foobar");
+        assert_eq!(&source[at.start()..at.end()], "foo\\ bar");
+        assert!(mapped.notices.is_empty());
+    }
+
+    #[test]
+    fn crlf_and_lone_cr_end_lines() {
+        let source = "one\r\ntwo\rthree\n";
+        let mapped = project(
+            source,
+            0,
+            &nodes(&format!(
+                "[{},{}]",
+                paragraph(2, 2, "two"),
+                paragraph(3, 3, "three")
+            )),
+        );
+        let got: Vec<_> = mapped
+            .document
+            .blocks
+            .iter()
+            .map(|b| &source[b.span.start()..b.span.end()])
+            .collect();
+        assert_eq!(got, ["two", "three"]);
+    }
+
+    #[test]
+    fn a_hostile_prefix_costs_bounded_deterministic_work() {
+        // The first word is almost the text on its line: every start position matches for
+        // thousands of characters before it fails.
+        let run = 4_000;
+        let source = format!("{}b\n", "a".repeat(run));
+        let word = format!("{}c", "a".repeat(run));
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", paragraph(1, 1, &word))));
+        let budget = WORK_PER_BYTE * (source.len() + word.len()) + WORK_BASE;
+        assert!(
+            mapped.work <= budget + run,
+            "work {} over budget {budget}",
+            mapped.work
+        );
+        // The prose is kept, at line precision.
+        let (text, at) = first_prose(&mapped);
+        assert_eq!(text, word);
+        assert_eq!(
+            &source[at.start()..at.end()],
+            format!("{}b", "a".repeat(run))
+        );
+    }
+
+    #[test]
+    fn ordinary_prose_costs_a_few_characters_of_work_per_byte() {
+        let mut source = String::new();
+        let mut json = Vec::new();
+        for i in 0..2_000 {
+            let line = format!("Paragraph number {i} has some ordinary words in it.");
+            source.push_str(&line);
+            source.push_str("\n\n");
+            json.push(paragraph(2 * i + 1, 2 * i + 1, &line));
+        }
+        let mapped = project(&source, 0, &nodes(&format!("[{}]", json.join(","))));
+        assert_eq!(mapped.document.blocks.len(), 2_000);
+        assert!(mapped.notices.is_empty());
+        // Each character is compared once: the work is about twice the text, never more
+        // than four times.
+        assert!(
+            mapped.work <= 4 * source.len(),
+            "{} for {}",
+            mapped.work,
+            source.len()
+        );
+    }
 }

@@ -1,78 +1,109 @@
-//! reStructuredText through a docutils adapter.
+//! reStructuredText through docutils.
 //!
-//! RST has no Rust parser. The adapter hands the document to docutils, which renders it as
-//! HTML, reads that HTML with [`slopvac_parse::parse_html`], and then maps every position
-//! back into the RST source. The result is the [`Document`] type the other parsers return,
-//! with source offsets into the RST file.
+//! RST has no Rust parser. The adapter runs a small fixed Python driver on the document.
+//! The driver parses the RST with docutils and writes the prose nodes, with the source
+//! lines docutils recorded for each, as JSON. The Rust side places the words of each node
+//! inside that node's own lines and returns the same [`Document`] the other parsers
+//! return, with byte offsets into the RST file.
 //!
-//! # Converter
+//! # Interpreter
 //!
-//! The 2.x release looked for `rst2html` and then `rst2html.py` on `PATH`. So does
-//! [`find_converter`]. A caller may name a converter in [`RstOptions::converter`]; that
-//! value comes from the user's own configuration or command line, never from the document.
-//! [`RstParse::converter`] reports which executable ran. No converter is an
-//! [`RstError::ConverterMissing`], which the caller reports as an incomplete check (exit 2).
-//! A file is never skipped without a word.
+//! The driver runs in the first `python3`, then `python`, that can import docutils 0.21 or
+//! later. [`trust`] explains which directories the search trusts. `SLOPVAC_RST_CONVERTER`
+//! names an interpreter by absolute path ([`RstOptions::from_env`]). No interpreter is an
+//! [`RstError::ConverterMissing`], which the engine reports as an incomplete check. A file
+//! is never skipped without a word. [`RstAdapter`] resolves the interpreter once.
 //!
 //! # Security
 //!
-//! The document is untrusted. The converter runs without a shell, with a fixed argument
-//! list that turns off `include`, `raw` and every other directive that reads a file or a
-//! URL, with the repository's `docutils.conf` out of reach, with a short list of inherited
-//! environment variables, a time limit and a cap on the output.
+//! The document is untrusted. The interpreter is chosen from user-controlled places only.
+//! It runs without a shell, with a fixed argument list ([`ARGS_BEFORE_DRIVER`]), the
+//! embedded [`DRIVER`], a short allow-list of environment variables
+//! ([`INHERITED_ENV`]), a `PATH` made of the interpreter's directory and the system
+//! directories ([`restricted_path`]), an empty private working directory, a time limit and
+//! a cap on the output. The driver turns off file insertion and `raw`, and reads no
+//! configuration file.
 //!
 //! # Position precision
 //!
-//! Positions are byte exact where the text of the HTML can be found in the RST source.
-//! The private `map` module documents the matching rules and what falls back to a synthetic
-//! space.
+//! The private `map` module documents it: byte exact where the words are found inside the
+//! node's lines, line-precise where they are not, never dropped.
 
 mod map;
+mod model;
 mod run;
+pub mod trust;
 
-pub use run::ARGS as CONVERTER_ARGS;
-
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use slopvac_model::Span;
-use slopvac_parse::{Document, ParseError};
+use slopvac_parse::Document;
 
-/// Converter names, in the order 2.x tried them.
-pub const CONVERTER_NAMES: [&str; 2] = ["rst2html", "rst2html.py"];
+pub use run::{ARGS_BEFORE_DRIVER, DRIVER, INHERITED_ENV, restricted_path};
+use trust::{Discovery, OVERRIDE_VARIABLE, OverrideError, SkipReason, Skipped};
 
 /// The longest conversion the adapter waits for.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The most HTML the adapter accepts from the converter, in bytes. It equals the HTML
-/// parser's own limit.
+/// The most output the driver may write, in bytes.
 pub const DEFAULT_MAX_OUTPUT: usize = 16 * 1024 * 1024;
 
-/// How to find and run the converter.
+/// How to find and run the interpreter.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct RstOptions {
-    /// An executable to use instead of searching `PATH`. Only the user's configuration or
-    /// command line may set it.
-    pub converter: Option<PathBuf>,
+    /// An interpreter to use instead of searching `PATH`. Only the user may set it:
+    /// [`RstOptions::from_env`] reads it from `SLOPVAC_RST_CONVERTER`, and project files
+    /// never reach it.
+    pub interpreter: Option<PathBuf>,
     /// The directories to search, in `PATH` syntax. `None` reads the `PATH` variable.
     pub search_path: Option<OsString>,
-    /// How long the converter may run.
+    /// Directories whose content the interpreter must not come from: the project being
+    /// linted and the targets of the run.
+    pub project_roots: Vec<PathBuf>,
+    /// How long the driver may run.
     pub timeout: Duration,
-    /// How many bytes of HTML the converter may write.
+    /// How many bytes the driver may write.
     pub max_output_bytes: usize,
 }
 
 impl Default for RstOptions {
     fn default() -> Self {
         Self {
-            converter: None,
+            interpreter: None,
             search_path: None,
+            project_roots: Vec::new(),
             timeout: DEFAULT_TIMEOUT,
             max_output_bytes: DEFAULT_MAX_OUTPUT,
         }
     }
+}
+
+impl RstOptions {
+    /// The defaults, with the interpreter from `SLOPVAC_RST_CONVERTER` when it is set.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            interpreter: std::env::var_os(OVERRIDE_VARIABLE)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
+            ..Self::default()
+        }
+    }
+}
+
+/// A fact about a parsed file that the engine reports with the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RstNotice {
+    /// Stable kebab-case code.
+    pub code: &'static str,
+    /// Whether the check is incomplete (a warning), or the notice only informs.
+    pub warning: bool,
+    /// The message.
+    pub message: String,
 }
 
 /// An RST file, parsed.
@@ -80,156 +111,210 @@ impl Default for RstOptions {
 pub struct RstParse {
     /// Blocks and code spans with byte offsets into the RST source.
     pub document: Document,
-    /// The converter that ran.
-    pub converter: PathBuf,
+    /// The interpreter that ran.
+    pub interpreter: PathBuf,
+    /// The docutils version that ran.
+    pub docutils: String,
+    /// Facts about the precision or completeness of the result.
+    pub notices: Vec<RstNotice>,
+    /// Characters the position mapper looked at. It stays under a budget that grows
+    /// linearly with the size of the document.
+    pub work: usize,
 }
 
 /// Why an RST file was not parsed. Every variant makes the check incomplete (exit 2).
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RstError {
-    /// Neither `rst2html` nor `rst2html.py` is on the search path.
-    #[error("rst2html or rst2html.py not found on PATH; install with `pip install docutils`")]
-    ConverterMissing,
-    /// The converter could not start, or its pipes failed.
+    /// No trusted interpreter can import docutils.
+    #[error("no Python interpreter with docutils 0.21 or later: {detail}")]
+    ConverterMissing {
+        /// What was searched and what was passed over.
+        detail: String,
+    },
+    /// The interpreter could not start, or its pipes failed.
     #[error("cannot run the RST converter {}: {source}", .converter.display())]
     Spawn {
-        /// The executable.
+        /// The interpreter.
         converter: PathBuf,
         /// The cause.
         source: std::io::Error,
     },
-    /// The converter did not finish in time.
+    /// The driver did not finish in time.
     #[error("the RST converter {} took longer than {timeout:?}", .converter.display())]
     Timeout {
-        /// The executable.
+        /// The interpreter.
         converter: PathBuf,
         /// The limit.
         timeout: Duration,
     },
-    /// The converter wrote more HTML than allowed.
+    /// The driver wrote more output than allowed.
     #[error("the RST converter {} wrote more than {limit} bytes", .converter.display())]
     OutputTooLarge {
-        /// The executable.
+        /// The interpreter.
         converter: PathBuf,
         /// The limit.
         limit: usize,
     },
-    /// The converter exited with an error.
+    /// The driver exited with an error.
     #[error("the RST converter {} failed ({status}): {stderr}", .converter.display())]
     Failed {
-        /// The executable.
+        /// The interpreter.
         converter: PathBuf,
         /// How it ended.
         status: String,
         /// The start of its error output.
         stderr: String,
     },
-    /// The converter wrote output that is not UTF-8.
-    #[error("the RST converter {} wrote output that is not UTF-8", .converter.display())]
+    /// The driver wrote output that is not the expected JSON.
+    #[error("the RST converter {} wrote output that is not valid: {reason}", .converter.display())]
     InvalidOutput {
-        /// The executable.
+        /// The interpreter.
         converter: PathBuf,
+        /// What is wrong.
+        reason: String,
     },
-    /// The HTML was too large or too costly to read.
-    #[error("cannot read the converted HTML: {0}")]
-    Html(#[from] ParseError),
-    /// Mapping positions back to the RST source needed more work than allowed.
-    #[error("the document needs more work than the position mapping allows")]
-    MappingBudget,
 }
 
 impl RstError {
     /// The incomplete-check message for `paths`.
     ///
-    /// A missing converter keeps the 2.x text, so that scripts that match it keep working.
+    /// A missing converter keeps the first sentence of the 2.x text, so that scripts that
+    /// match it keep working, and adds the 3.0 requirement.
     #[must_use]
     pub fn message(&self, paths: &[&Path]) -> String {
+        let list: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+        let list = list.join(", ");
         match self {
-            Self::ConverterMissing => {
-                let list: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
-                format!(
-                    "RST target(s) skipped: rst2html or rst2html.py not found on PATH ({}); install with `pip install docutils`.",
-                    list.join(", ")
-                )
-            }
-            other => {
-                let list: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
-                format!("RST target(s) not checked ({}): {other}", list.join(", "))
-            }
+            Self::ConverterMissing { detail } => format!(
+                "RST target(s) skipped: rst2html or rst2html.py not found on PATH ({list}); \
+                 install with `pip install docutils`. slopvac 3.0 reads RST through a Python \
+                 interpreter that can import docutils 0.21 or later ({detail}). Set \
+                 {OVERRIDE_VARIABLE} to an absolute interpreter path to choose one."
+            ),
+            other => format!("RST target(s) not checked ({list}): {other}"),
         }
+    }
+
+    /// Whether the cause is a missing interpreter or docutils, as opposed to a failure.
+    #[must_use]
+    pub const fn is_missing(&self) -> bool {
+        matches!(self, Self::ConverterMissing { .. })
     }
 }
 
-/// Find the first of [`CONVERTER_NAMES`] in `search_path`, or in the `PATH` variable.
-#[must_use]
-pub fn find_converter(search_path: Option<&OsStr>) -> Option<PathBuf> {
-    let from_env;
-    let search_path = if let Some(path) = search_path {
-        path
-    } else {
-        from_env = std::env::var_os("PATH")?;
-        &from_env
-    };
-    let dirs: Vec<PathBuf> = std::env::split_paths(search_path).collect();
-    CONVERTER_NAMES.iter().find_map(|name| {
-        dirs.iter()
-            .filter(|dir| !dir.as_os_str().is_empty())
-            .find_map(|dir| executable_in(dir, name))
-    })
+/// The interpreter, found once.
+#[derive(Debug)]
+struct Resolved {
+    interpreter: Result<PathBuf, String>,
 }
 
-/// `dir/name` when it is an executable file.
-fn executable_in(dir: &Path, name: &str) -> Option<PathBuf> {
-    let candidates: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
-    candidates.iter().find_map(|extension| {
-        let path = dir.join(format!("{name}{extension}"));
-        is_executable(&path).then_some(path)
-    })
+/// Parses RST files. The interpreter is resolved on the first file and reused.
+#[derive(Debug)]
+pub struct RstAdapter {
+    options: RstOptions,
+    resolved: OnceLock<Resolved>,
 }
 
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+impl RstAdapter {
+    /// An adapter for `options`.
+    #[must_use]
+    pub const fn new(options: RstOptions) -> Self {
+        Self {
+            options,
+            resolved: OnceLock::new(),
+        }
+    }
+
+    /// The interpreter that runs, or why there is none. Resolved once per adapter.
+    ///
+    /// # Errors
+    /// Returns [`RstError::ConverterMissing`] when no trusted interpreter has docutils.
+    pub fn interpreter(&self) -> Result<&Path, RstError> {
+        let resolved = self.resolved.get_or_init(|| Resolved {
+            interpreter: self.resolve(),
+        });
+        match &resolved.interpreter {
+            Ok(path) => Ok(path),
+            Err(detail) => Err(RstError::ConverterMissing {
+                detail: detail.clone(),
+            }),
+        }
+    }
+
+    fn resolve(&self) -> Result<PathBuf, String> {
+        if let Some(path) = &self.options.interpreter {
+            return trust::check_override(path, &self.options.project_roots)
+                .map_err(|e: OverrideError| format!("{OVERRIDE_VARIABLE} is unusable: {e}"));
+        }
+        let from_env;
+        let search = if let Some(path) = &self.options.search_path {
+            path
+        } else {
+            from_env = std::env::var_os("PATH").unwrap_or_default();
+            &from_env
+        };
+        let Discovery {
+            interpreter,
+            skipped,
+        } = trust::discover(search, &self.options.project_roots, run::probe);
+        interpreter.ok_or_else(|| describe(&skipped))
+    }
+
+    /// Parse the RST `source`. Every position in the result is a byte offset into it.
+    ///
+    /// # Errors
+    /// Returns an [`RstError`] when no interpreter is available, when the driver fails, or
+    /// when it exceeds a limit. Each one makes the check incomplete.
+    pub fn parse(&self, source: &str) -> Result<RstParse, RstError> {
+        let interpreter = self.interpreter()?;
+        let bom = if source.starts_with('\u{feff}') {
+            '\u{feff}'.len_utf8()
+        } else {
+            0
+        };
+        let bytes = run::run(
+            interpreter,
+            &source.as_bytes()[bom..],
+            self.options.timeout,
+            self.options.max_output_bytes,
+        )?;
+        let output: model::Output =
+            serde_json::from_slice(&bytes).map_err(|e| RstError::InvalidOutput {
+                converter: interpreter.to_owned(),
+                reason: e.to_string(),
+            })?;
+        let mapped = map::project(source, bom, &output.nodes);
+        Ok(RstParse {
+            document: mapped.document,
+            interpreter: interpreter.to_owned(),
+            docutils: output.docutils,
+            notices: mapped.notices,
+            work: mapped.work,
+        })
+    }
 }
 
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    std::fs::metadata(path).is_ok_and(|m| m.is_file())
+/// Why the search found nothing.
+fn describe(skipped: &[Skipped]) -> String {
+    let mut text = String::from("no python3 or python with docutils on a trusted PATH entry");
+    for item in skipped {
+        let note = match &item.reason {
+            SkipReason::NoDocutils => format!("{} has no docutils", item.path.display()),
+            other => format!("skipped {}: {other}", item.path.display()),
+        };
+        text.push_str("; ");
+        text.push_str(&note);
+    }
+    text
 }
 
-/// Parse the RST `source`.
-///
-/// Every position in the result is a byte offset into `source`.
+/// Parse the RST `source` with a fresh adapter. Use [`RstAdapter`] to parse many files.
 ///
 /// # Errors
-/// Returns an [`RstError`] when no converter is available, when it fails, or when the
-/// document exceeds a limit. Each one makes the check incomplete.
+/// See [`RstAdapter::parse`].
 pub fn parse_rst(source: &str, options: &RstOptions) -> Result<RstParse, RstError> {
-    let converter = match &options.converter {
-        Some(path) => path.clone(),
-        None => find_converter(options.search_path.as_deref()).ok_or(RstError::ConverterMissing)?,
-    };
-    let bom = if source.starts_with('\u{feff}') {
-        '\u{feff}'.len_utf8()
-    } else {
-        0
-    };
-    let output = run::run(
-        &converter,
-        &source.as_bytes()[bom..],
-        options.timeout,
-        options.max_output_bytes,
-    )?;
-    let html = String::from_utf8(output).map_err(|_| RstError::InvalidOutput {
-        converter: converter.clone(),
-    })?;
-    let document = map::project(source, bom, &html)?;
-    Ok(RstParse {
-        document,
-        converter,
-    })
+    RstAdapter::new(options.clone()).parse(source)
 }
 
 /// A span for `start..end`, which callers guarantee ascend.

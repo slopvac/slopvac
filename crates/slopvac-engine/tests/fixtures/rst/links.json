@@ -1,0 +1,131 @@
+{
+ "docutils": "0.23",
+ "nodes": [
+  {
+   "tag": "paragraph",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Links"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 3,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "See "
+    },
+    {
+     "k": "i",
+     "t": "the guide",
+     "raw": "`the guide`_"
+    },
+    {
+     "k": "t",
+     "t": ", then "
+    },
+    {
+     "k": "i",
+     "t": "another one",
+     "raw": "`another one <https://example.com/a>`_"
+    },
+    {
+     "k": "t",
+     "t": ", and read more.\nFootnote ref "
+    },
+    {
+     "k": "o",
+     "raw": "[1]_"
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "i",
+     "t": "stress",
+     "raw": ":emphasis:`stress`"
+    },
+    {
+     "k": "t",
+     "t": ", plus "
+    },
+    {
+     "k": "o",
+     "raw": "|name|"
+    },
+    {
+     "k": "t",
+     "t": " inside prose."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "c",
+     "t": "solo_code",
+     "raw": "``solo_code``"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 8,
+   "end": 8,
+   "pieces": [
+    {
+     "k": "c",
+     "t": "one_code",
+     "raw": "``one_code``"
+    },
+    {
+     "k": "t",
+     "t": " and "
+    },
+    {
+     "k": "c",
+     "t": "two_code",
+     "raw": "``two_code``"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "substitution_definition",
+   "start": 10,
+   "end": 10,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "a substitution"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 12,
+   "end": 12,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "The footnote text."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

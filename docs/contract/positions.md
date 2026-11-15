@@ -151,15 +151,17 @@ Three consequences follow:
   Inline code is `masked`.
 - **HTML.** Entities are `entity`. Tags and comments are gaps. A run of whitespace, with
   or without newlines, is one `collapse` token.
-- **reStructuredText.** Backslash escapes are `backslash`. Emphasis and strong markers
-  are gaps. RST has no HTML entities. The core converts the document to HTML with docutils
-  and maps the HTML text back, word by word, so positions are byte exact for every word
-  that appears in the source. Whitespace between words is `collapse` when the source has
-  it at that point. Text that docutils generates, such as a footnote number, is a
-  synthetic `wrap` space, and a word whose position cannot be found never receives a
-  guessed one. The generated table of contents is skipped. A block span covers the
-  findable text and leaves out title underlines and directive markup. Cells of a
-  multi-line grid table may not be found.
+- **reStructuredText.** The core parses the document with docutils. docutils records the
+  source lines of every block and keeps the source text of every inline construct, and the
+  core places each node's words inside that node's own lines, never elsewhere in the file.
+  Backslash escapes are `backslash`. Emphasis, strong, link and role markers are gaps. RST
+  has no HTML entities. An inline literal is `masked`, and the whitespace between words is
+  `collapse` when the source has it there. Positions are byte exact for every word that is
+  found inside its node. When a node's words cannot be matched, its prose is kept and maps
+  to the node's whole trimmed lines (`opaque`), so the position is line-precise, and the
+  document carries an `info` notice. A node with no usable source lines makes the check
+  incomplete. docutils 0.21 puts the line of some directive output one line late, so the
+  mapper retries with one line of slack before it falls back.
 - **Code comments.** The delimiters (`//`, `#`, `/*`, `*/`, a leading `*`) are gaps.
   Consecutive comment lines join with `wrap`. Comment text is not decoded.
 
