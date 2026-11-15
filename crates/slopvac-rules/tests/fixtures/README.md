@@ -6,7 +6,6 @@
 | `pattern-parity.json` | A frozen corpus and the spans Python's `regex` module finds in it for every lexical rule. Written by `generate.py`. |
 | `divergences.md` | Where PCRE2 and Python differ, and why. |
 | `generate.py` | Writes the two files above. `--check` fails when they are stale. |
-| `stub-3.28/` | `STUB(slopvac-8l4.3.28)`: copies of `rule.schema.json`, `category.schema.json`, their conformance corpora and the 2.x converter from PR #281. Delete them when #281 lands and point the tests at `schemas/v3`. |
 
 Regenerate from the repository root:
 
