@@ -3,7 +3,7 @@
 
 use std::sync::LazyLock;
 
-use pcre2::bytes::Regex;
+use slopvac_pcre2::Regex;
 
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
@@ -73,7 +73,7 @@ fn terminal_cut(
         }
         protected_end = Some(end);
     }
-    if text.as_bytes()[index] == b'.' && DOTTED_INITIALISM.is_match(&text.as_bytes()[..=index])? {
+    if text.as_bytes()[index] == b'.' && DOTTED_INITIALISM.is_match(&text[..=index])? {
         // Python measures this gap with `re.match(r"\s*", ...)`: regex whitespace.
         let rest = &text[index + 1..];
         let gap_len = rest.find(|c| !regex_space(c)).unwrap_or(rest.len());
@@ -141,7 +141,7 @@ fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
     }
     for (index, (_, line)) in lines.iter().enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
-        if !COLON_END.is_match(body.as_bytes())? {
+        if !COLON_END.is_match(body)? {
             continue;
         }
         let mut tail: Vec<(usize, &str)> = Vec::new();
@@ -209,7 +209,7 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
             let leading = raw.len() - py_lstrip(raw).len();
             let absolute = chunk_offset + start + leading;
             start = end;
-            if part.is_empty() || !WORDLIKE.is_match(part.as_bytes())? {
+            if part.is_empty() || !WORDLIKE.is_match(part)? {
                 continue;
             }
             out.push(Sentence {

@@ -1,14 +1,15 @@
-use pcre2::bytes::{Regex, RegexBuilder};
+use slopvac_pcre2::{CompileError, MatchError, Options, Regex};
 
 use crate::rewrite::compat;
 
-/// A pattern failed at match time, for example by exhausting PCRE2's match limit.
+/// A pattern failed at match time, for example by exhausting a PCRE2 match, depth or
+/// heap limit. The text is then not fully analysed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("pattern match failed: {0}")]
 pub struct TextError(String);
 
-impl From<pcre2::Error> for TextError {
-    fn from(e: pcre2::Error) -> Self {
+impl From<MatchError> for TextError {
+    fn from(e: MatchError) -> Self {
         Self(e.to_string())
     }
 }
@@ -24,13 +25,11 @@ pub(crate) fn re_i(pattern: &str) -> Regex {
     build(pattern, true)
 }
 
-// STUB(slopvac-8l4.3.25): pcre2 crate defaults; apply the build and limits policy from slopvac-8l4.3.20.
-fn try_build(pattern: &str, caseless: bool) -> Result<Regex, pcre2::Error> {
-    RegexBuilder::new()
-        .utf(true)
-        .ucp(true)
-        .caseless(caseless)
-        .build(&compat(pattern))
+fn try_build(pattern: &str, caseless: bool) -> Result<Regex, CompileError> {
+    Regex::new(
+        &compat(pattern),
+        Options::new().caseless(caseless).ucp(true),
+    )
 }
 
 fn build(pattern: &str, caseless: bool) -> Regex {
@@ -46,7 +45,8 @@ pub struct PatternError(String);
 /// A PCRE2 pattern compiled in UTF and Unicode-property mode, for rule data.
 ///
 /// `\w`, `\W`, `\b` and `\B` follow the Python `regex` module (UTS #18), as in the
-/// built-in patterns. Offsets are UTF-8 byte offsets.
+/// built-in patterns. Offsets are UTF-8 byte offsets. Matching runs under the limits
+/// policy of `slopvac-pcre2`: reaching a limit is a [`TextError`], never a panic.
 #[derive(Debug)]
 pub struct Pattern(Regex);
 
@@ -60,28 +60,27 @@ impl Pattern {
 
     /// Byte ranges of every non-overlapping match, left to right.
     pub fn find_all(&self, text: &str) -> Result<Vec<std::ops::Range<usize>>, TextError> {
-        Ok(find_all(&self.0, text)?
-            .into_iter()
-            .map(|(s, e)| s..e)
-            .collect())
+        Ok(self.0.find_all(text)?)
     }
 
     /// Whether the pattern matches anywhere in `text`.
     pub fn is_match(&self, text: &str) -> Result<bool, TextError> {
-        Ok(self.0.is_match(text.as_bytes())?)
+        Ok(self.0.is_match(text)?)
     }
 }
 
 /// Byte ranges of every non-overlapping match.
 pub(crate) fn find_all(re: &Regex, text: &str) -> Result<Vec<(usize, usize)>, TextError> {
-    re.find_iter(text.as_bytes())
-        .map(|m| m.map(|m| (m.start(), m.end())).map_err(TextError::from))
-        .collect()
+    Ok(re
+        .find_all(text)?
+        .into_iter()
+        .map(|m| (m.start, m.end))
+        .collect())
 }
 
 /// Whether `re` matches in `text`. Patterns passed here begin with `^`.
 pub(crate) fn matches_start(re: &Regex, text: &str) -> Result<bool, TextError> {
-    Ok(re.is_match(text.as_bytes())?)
+    Ok(re.is_match(text)?)
 }
 
 /// Replace each match with the result of `f(range)`.
@@ -111,7 +110,25 @@ mod tests {
     fn exhausting_the_match_limit_is_an_error_not_a_panic() {
         let re = re(r"^(a|aa)+$");
         let text = format!("{}b", "a".repeat(64));
-        assert!(find_all(&re, &text).is_err());
+        let err = find_all(&re, &text).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "pattern match failed: match limit of 10000000 exceeded"
+        );
+    }
+
+    #[test]
+    fn rule_data_that_exhausts_a_limit_is_a_text_error_on_every_entry_point() {
+        let pattern = Pattern::new(r"^(a|aa)+$", false).unwrap();
+        let text = format!("{}b", "a".repeat(64));
+        assert!(pattern.find_all(&text).is_err());
+        assert!(pattern.is_match(&text).is_err());
+    }
+
+    #[test]
+    fn an_empty_match_may_follow_a_match_like_python() {
+        // Python: re.finditer("a*", "baac") yields '', 'aa', '', ''.
+        assert_eq!(spans("a*", "baac"), [0..0, 1..3, 3..3, 4..4]);
     }
 
     #[test]

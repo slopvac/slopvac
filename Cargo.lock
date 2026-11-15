@@ -1478,17 +1478,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pcre2"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e970b0fcce0c7ee6ef662744ff711f21ccd6f11b7cf03cd187a80e89797fc67"
-dependencies = [
- "libc",
- "log",
- "pcre2-sys",
-]
-
-[[package]]
 name = "pcre2-sys"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2389,9 +2378,9 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "ignore",
- "pcre2",
  "serde",
  "serde-saphyr",
+ "slopvac-pcre2",
  "thiserror",
 ]
 
@@ -2476,6 +2465,16 @@ dependencies = [
  "pulldown-cmark",
  "serde_json",
  "slopvac-model",
+ "thiserror",
+]
+
+[[package]]
+name = "slopvac-pcre2"
+version = "0.0.0"
+dependencies = [
+ "pcre2-sys",
+ "proptest",
+ "rstest",
  "thiserror",
 ]
 
@@ -2568,11 +2567,10 @@ dependencies = [
 name = "slopvac-text"
 version = "0.0.0"
 dependencies = [
- "pcre2",
- "pcre2-sys",
  "proptest",
  "serde",
  "serde_json",
+ "slopvac-pcre2",
  "thiserror",
 ]
 
