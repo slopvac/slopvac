@@ -408,6 +408,17 @@ mod unix {
         }
     }
 
+    /// The ACL check reads attributes through descriptors, and Linux rejects some kinds of
+    /// descriptor. A plain file in a plain directory must pass it, not fail with an error.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_acl_check_passes_a_file_and_directory_without_acls() {
+        let root = project();
+        let out = done(run(root.path(), "doc.md", false));
+        assert!(out.written);
+        assert_eq!(read(root.path().join("doc.md")), FIXED);
+    }
+
     #[test]
     fn a_write_keeps_the_mode() {
         let root = project();

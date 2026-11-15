@@ -345,8 +345,12 @@ mod unix {
             }
             // A replacement is a new file: it gets none of the original's ACL, and the
             // directory's default ACL could add readers once the mode is applied.
+            // The directory handle may be a path-only descriptor on Linux, which the
+            // attribute calls reject with EBADF. A readable handle to the same directory,
+            // opened relative to it, does not have that limit.
+            let readable_parent = self.parent.open(".")?;
             if has_acl(&self.file, "system.posix_acl_access")?
-                || has_acl(&self.parent, "system.posix_acl_default")?
+                || has_acl(&readable_parent, "system.posix_acl_default")?
             {
                 return Ok(Some(Refusal::AclPresent));
             }
