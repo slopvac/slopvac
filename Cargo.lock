@@ -2561,6 +2561,8 @@ dependencies = [
  "base64",
  "flate2",
  "roxmltree",
+ "slopvac-model",
+ "slopvac-parse",
 ]
 
 [[package]]

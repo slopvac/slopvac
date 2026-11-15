@@ -14,4 +14,6 @@ workspace = true
 [dependencies]
 base64.workspace = true
 flate2.workspace = true
+slopvac-model.workspace = true
+slopvac-parse.workspace = true
 roxmltree.workspace = true
