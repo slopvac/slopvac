@@ -166,23 +166,16 @@ fn plan_dir(
     let rewrite = match migrate_config(&old, &label, renames, options) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
-        Err(Error::Dropped(d)) => {
-            let lines = py_text
-                .as_deref()
-                .filter(|_| origin == Origin::Pyproject)
-                .and_then(|t| key_lines(t).ok());
-            dropped.extend(d.into_iter().map(|mut x| {
-                if let Some(l) = lines
-                    .as_ref()
-                    .and_then(|m| m.get(&format!("tool.slopvac.{}", x.key)))
-                {
-                    x.line = *l;
+        Err(e) => {
+            let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
+            return match pyproject_lines(e, py) {
+                Error::Dropped(d) => {
+                    dropped.extend(d);
+                    Ok(())
                 }
-                x
-            }));
-            return Ok(());
+                e => Err(e),
+            };
         }
-        Err(e) => return Err(e),
     };
     plan.notes
         .extend(rewrite.notes.into_iter().map(|n| format!("{label}: {n}")));
@@ -234,6 +227,39 @@ enum Origin {
     InPlace,
     Dotfile,
     Pyproject,
+}
+
+/// Point the lines of a config error at `pyproject.toml` when the config came from
+/// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
+fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
+    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
+        return e;
+    };
+    let line_of = |key: &str| lines.get(&format!("tool.slopvac.{key}")).copied();
+    match e {
+        Error::Dropped(d) => Error::Dropped(
+            d.into_iter()
+                .map(|mut x| {
+                    if let Some(l) = line_of(&x.key) {
+                        x.line = l;
+                    }
+                    x
+                })
+                .collect(),
+        ),
+        Error::OverrideOverlap {
+            file,
+            line,
+            block,
+            reason,
+        } => Error::OverrideOverlap {
+            line: line_of(&format!("overrides[{block}]")).unwrap_or(line),
+            file,
+            block,
+            reason,
+        },
+        e => e,
+    }
 }
 
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text

@@ -34,7 +34,7 @@ pub fn command() -> Command {
             Arg::new("preserve-behavior")
                 .long("preserve-behavior")
                 .action(ArgAction::SetTrue)
-                .help("Keep the 2.x vocabulary behavior by adding the STE style"),
+                .help("Reproduce the 2.x profile gates with the core:legacy-<profile> style"),
         )
         .arg(
             Arg::new("restore")
