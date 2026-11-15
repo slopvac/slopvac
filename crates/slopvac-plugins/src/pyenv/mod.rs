@@ -72,7 +72,9 @@ pub use lock::{LockedPackage, LockedWheel, PyLock};
 use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
 use crate::sign::canonical_json;
-use listing::{Entry, compare, digest_input, make_read_only, mtime_of, scan, sha256_file};
+use listing::{
+    Entry, WalkBounds, compare, digest_input, make_read_only, mtime_of, scan, sha256_file,
+};
 
 /// Name of the lock at the root of a Python plugin tree.
 pub const LOCK_FILE: &str = "pylock.toml";
@@ -396,7 +398,11 @@ impl ManagedEnv {
     pub fn check_quick(&self) -> Result<(), PyEnvError> {
         supported_platform()?;
         self.check_interpreter(false)?;
-        compare(&self.record.entries, &scan(&self.root, false)?, false)
+        compare(
+            &self.record.entries,
+            &scan(&self.root, false, WalkBounds::default())?,
+            false,
+        )
     }
 
     /// The full check for `plugins trust`, `plugins status` and `doctor`:
@@ -408,7 +414,11 @@ impl ManagedEnv {
     pub fn verify_full(&self) -> Result<(), PyEnvError> {
         supported_platform()?;
         self.check_interpreter(true)?;
-        compare(&self.record.entries, &scan(&self.root, true)?, true)
+        compare(
+            &self.record.entries,
+            &scan(&self.root, true, WalkBounds::default())?,
+            true,
+        )
     }
 
     fn check_interpreter(&self, full: bool) -> Result<(), PyEnvError> {
@@ -432,8 +442,7 @@ impl ManagedEnv {
                 return Err(changed("changed size or modification time"));
             }
             if full {
-                let mut budget = u64::MAX - 1;
-                let (sha, _) = sha256_file(Path::new(&f.path), &mut budget)?;
+                let sha = sha256_file(Path::new(&f.path))?;
                 if sha != f.sha256 {
                     return Err(changed("changed content"));
                 }
@@ -461,6 +470,14 @@ pub struct EnvSummary {
 pub struct EnvStore {
     root: PathBuf,
     fail_record_writes: bool,
+    limits: Limits,
+}
+
+/// The walk bounds and the per-run deadline of a build.
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    walk: WalkBounds,
+    step: Duration,
 }
 
 impl EnvStore {
@@ -470,6 +487,10 @@ impl EnvStore {
         Self {
             root: root.into(),
             fail_record_writes: false,
+            limits: Limits {
+                walk: WalkBounds::default(),
+                step: STEP_DEADLINE,
+            },
         }
     }
 
@@ -478,6 +499,26 @@ impl EnvStore {
     #[must_use]
     pub fn failing_record_writes(mut self) -> Self {
         self.fail_record_writes = true;
+        self
+    }
+
+    /// Test seam: smaller environment bounds (entries, directory levels,
+    /// file bytes) and a shorter deadline for each uv or interpreter run.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_test_bounds(
+        mut self,
+        entries: usize,
+        depth: usize,
+        bytes: u64,
+        step: Duration,
+    ) -> Self {
+        self.limits.walk = WalkBounds {
+            nodes: entries,
+            depth,
+            bytes,
+        };
+        self.limits.step = step;
         self
     }
 
@@ -580,11 +621,19 @@ impl EnvStore {
         let env = staging.0.join("env");
 
         let final_root = self.root.join(&key);
-        let (python, pin) = install(installer, plugin_root, &lock, &staging.0, &env, &final_root)?;
+        let (python, pin) = install(
+            installer,
+            plugin_root,
+            &lock,
+            &staging.0,
+            &env,
+            &final_root,
+            self.limits,
+        )?;
         pin.verify(&env)?;
-        let probe = probe(&python, &staging.0)?;
-        make_read_only(&env)?;
-        let entries = scan(&env, true)?;
+        let probe = probe(&python, &staging.0, self.limits.step)?;
+        make_read_only(&env, &scan(&env, false, self.limits.walk)?)?;
+        let entries = scan(&env, true, self.limits.walk)?;
 
         let record_path = self.record_path(&key);
         remove_file_if_exists(&record_path)?;
@@ -680,7 +729,9 @@ fn install(
     scratch: &Path,
     env: &Path,
     final_root: &Path,
+    limits: Limits,
 ) -> Result<(PathBuf, Pin), PyEnvError> {
+    let Limits { walk, step } = limits;
     if installer.network == InstallNetwork::Offline {
         let mut find = installer.uv(scratch);
         find.args([
@@ -692,7 +743,7 @@ fn install(
         ])
         .args(["--offline", "--no-python-downloads", "--quiet"])
         .arg(&installer.python);
-        if run(find, scratch, "uv python find").is_err() {
+        if run(find, scratch, "uv python find", step).is_err() {
             return Err(PyEnvError::OfflinePythonMissing(installer.python.clone()));
         }
     }
@@ -704,7 +755,7 @@ fn install(
         venv.args(["--offline", "--no-python-downloads"]);
     }
     venv.arg(env);
-    run(venv, scratch, "uv venv")?;
+    run(venv, scratch, "uv venv", step)?;
     // Taken before any wheel is installed: a wheel must not replace what the build runs.
     let pin = Pin::take(env)?;
 
@@ -724,11 +775,11 @@ fn install(
             pip.arg("--find-links").arg(dir);
         }
         pip.arg("-r").arg(&req);
-        run(pip, scratch, "uv pip install")?;
+        run(pip, scratch, "uv pip install", step)?;
     }
 
     // Bound the tree uv wrote before anything walks it again.
-    scan(env, false)?;
+    scan(env, false, walk)?;
     let mut compile = Command::new(&python);
     compile
         .env_clear()
@@ -741,7 +792,7 @@ fn install(
         .arg(env);
     windows_env(&mut compile);
     pin.verify(env)?;
-    run(compile, scratch, "bytecode compilation")?;
+    run(compile, scratch, "bytecode compilation", step)?;
     Ok((python, pin))
 }
 
@@ -755,12 +806,11 @@ struct Pin {
 
 impl Pin {
     fn take(env: &Path) -> Result<Self, PyEnvError> {
-        let mut budget = u64::MAX - 1;
         let interpreter = fs::canonicalize(env_python(env)).map_err(PyEnvError::io(
             "resolving the new environment's interpreter",
         ))?;
-        let (interpreter_sha256, _) = sha256_file(&interpreter, &mut budget)?;
-        let (config_sha256, _) = sha256_file(&env.join("pyvenv.cfg"), &mut budget)?;
+        let interpreter_sha256 = sha256_file(&interpreter)?;
+        let config_sha256 = sha256_file(&env.join("pyvenv.cfg"))?;
         Ok(Self {
             interpreter,
             interpreter_sha256,
@@ -797,7 +847,12 @@ impl Drop for Staging {
 }
 
 /// Run `cmd` to completion under the step deadline, its output in files.
-fn run(mut cmd: Command, scratch: &Path, step: &str) -> Result<PathBuf, PyEnvError> {
+fn run(
+    mut cmd: Command,
+    scratch: &Path,
+    step: &str,
+    limit: Duration,
+) -> Result<PathBuf, PyEnvError> {
     let tag: String = step
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
@@ -816,7 +871,7 @@ fn run(mut cmd: Command, scratch: &Path, step: &str) -> Result<PathBuf, PyEnvErr
             status: "did not start".into(),
             output: e.to_string(),
         })?;
-    let deadline = Instant::now() + STEP_DEADLINE;
+    let deadline = Instant::now() + limit;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
@@ -852,13 +907,13 @@ fn tail(path: &Path) -> String {
     crate::process::sanitize_display(&String::from_utf8_lossy(&bytes[start..]))
 }
 
-fn probe(python: &Path, scratch: &Path) -> Result<Probe, PyEnvError> {
+fn probe(python: &Path, scratch: &Path, limit: Duration) -> Result<Probe, PyEnvError> {
     let mut cmd = Command::new(python);
     cmd.env_clear()
         .current_dir(scratch)
         .args(["-I", "-S", "-B", "-c", PROBE]);
     windows_env(&mut cmd);
-    let out = run(cmd, scratch, "interpreter probe")?;
+    let out = run(cmd, scratch, "interpreter probe", limit)?;
     let mut raw = Vec::new();
     File::open(&out)
         .and_then(|f| f.take(MAX_PROBE_BYTES).read_to_end(&mut raw))
@@ -885,8 +940,7 @@ fn interpreter(python: &Path, p: Probe) -> Result<Interpreter, PyEnvError> {
             .ok_or_else(|| PyEnvError::Refused("the interpreter path is not UTF-8".into()))?
             .to_owned();
         let meta = fs::metadata(&path).map_err(PyEnvError::io("inspecting the interpreter"))?;
-        let mut budget = u64::MAX - 1;
-        let (sha256, _) = sha256_file(&path, &mut budget)?;
+        let sha256 = sha256_file(&path)?;
         files.push(InterpFile {
             path: text,
             size: meta.len(),

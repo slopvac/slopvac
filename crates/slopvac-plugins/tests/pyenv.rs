@@ -608,6 +608,7 @@ fn wheels_that_would_expand_past_the_environment_bounds_are_refused_before_the_i
 mod unix_only {
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
+    use std::time::Duration;
 
     use super::*;
     use crate::common::{cfg, decl, docs, python};
@@ -631,6 +632,13 @@ mod unix_only {
         /// interpreter (`Tamper::Python`, whose replacement touches the
         /// marker) or `pyvenv.cfg` (`Tamper::Config`).
         tamper: Option<Tamper>,
+        /// Shell run at the end of `pip install`, with `$site` set: extra output.
+        pip_extra: &'a str,
+        /// `uv venv` hangs instead of creating the environment.
+        hang: bool,
+        /// Exit 99 when a run could download: any call without both
+        /// `--offline` and `--no-python-downloads`, or with `--python-downloads`.
+        offline_only: bool,
     }
 
     #[derive(Clone)]
@@ -647,6 +655,9 @@ mod unix_only {
                 find_exit: 0,
                 hook: None,
                 tamper: None,
+                pip_extra: "",
+                hang: false,
+                offline_only: false,
             }
         }
     }
@@ -670,9 +681,11 @@ mod unix_only {
 log='{log}'
 {{ printf 'ARGS'; for a; do printf ' %s' "$a"; done; printf '\n'; env | sed 's/^/ENV /'; }} >> "$log"
 ver=$('{py}' -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+{offline}
 case "$1" in
 python) exit {find} ;;
 venv)
+  {hang}
   for a; do dir=$a; done
   mkdir -p "$dir/bin" "$dir/lib/python$ver/site-packages"
   ln -s '{py}' "$dir/bin/python"
@@ -689,10 +702,20 @@ pip)
   # Like uv: --compile-bytecode starts the environment's interpreter with site
   # enabled, so a .pth file in it runs.
   case " $* " in *" --compile-bytecode "*) "$py" -c pass ;; esac
+  {pip_extra}
   ;;
 esac
 "#,
                 log = dir.join("uv.log").display(),
+                offline = if fake.offline_only {
+                    r#"case " $* " in *" --python-downloads"*) echo "download-capable: $*" >&2; exit 99 ;; esac
+case " $* " in *" --offline "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac
+case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac"#
+                } else {
+                    ""
+                },
+                hang = if fake.hang { "exec sleep 30" } else { "" },
+                pip_extra = fake.pip_extra,
                 find = fake.find_exit,
                 py = fake.interpreter.display(),
                 home = home.display(),
@@ -1333,6 +1356,114 @@ esac
             let mode = fs::metadata(&p).unwrap().permissions().mode();
             assert_eq!(mode & 0o222, 0, "{} is writable", p.display());
         }
+    }
+
+    #[test]
+    fn an_offline_build_succeeds_and_never_offers_uv_a_download() {
+        let s = Scratch::new("u-offline-ok");
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(
+            &s.dir("envs-bin"),
+            &Fake {
+                offline_only: true,
+                ..Fake::real()
+            },
+        );
+        let env = EnvStore::open(s.dir("envs"))
+            .build(&installer(uv, InstallNetwork::Offline), &vp.root, &vp.tree)
+            .unwrap();
+        env.verify_full().unwrap();
+        let log = log(&s, "envs");
+        let runs: Vec<&str> = log
+            .lines()
+            .filter_map(|l| l.strip_prefix("ARGS "))
+            .map(|a| a.split(' ').next().unwrap_or(""))
+            .collect();
+        assert_eq!(runs, ["python", "venv", "pip"], "{log}");
+    }
+
+    /// Build with tiny bounds and a fake whose `pip install` runs `extra`.
+    fn build_bounded(s: &Scratch, extra: &str) -> Result<ManagedEnv, PyEnvError> {
+        let wheels = demo();
+        let vp = install(s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(
+            &s.dir("envs-bin"),
+            &Fake {
+                pip_extra: extra,
+                ..Fake::real()
+            },
+        );
+        // The plain fake environment has about 10 entries, 5 levels and 2 KB.
+        EnvStore::open(s.dir("envs"))
+            .with_test_bounds(40, 8, 100_000, Duration::from_secs(60))
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+    }
+
+    #[test]
+    fn an_environment_within_the_bounds_builds() {
+        let s = Scratch::new("u-bounds-ok");
+        build_bounded(&s, "").unwrap();
+    }
+
+    #[test]
+    fn an_environment_past_the_entry_depth_or_byte_bound_is_refused() {
+        let cases = [
+            (
+                "entries",
+                r#"i=0; while [ $i -lt 60 ]; do : > "$site/f$i"; i=$((i+1)); done"#,
+                "more than 40 entries",
+            ),
+            (
+                "depth",
+                r#"mkdir -p "$site/d/d/d/d/d/d/d/d/d/d""#,
+                "deeper than 8 levels",
+            ),
+            (
+                "bytes",
+                r#"head -c 200000 /dev/zero > "$site/big""#,
+                "more than 100000 bytes",
+            ),
+        ];
+        for (what, extra, message) in cases {
+            let s = Scratch::new(&format!("u-bounds-{what}"));
+            let err = build_bounded(&s, extra).unwrap_err();
+            assert!(
+                matches!(&err, PyEnvError::Refused(m) if m.contains(message)),
+                "{what}: {err:?}"
+            );
+            assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), [], "{what}");
+            let staging: Vec<_> = fs::read_dir(s.dir("envs/.staging")).unwrap().collect();
+            assert!(staging.is_empty(), "{what}: staging left behind");
+        }
+    }
+
+    #[test]
+    fn a_step_past_its_deadline_is_killed_and_fails_the_build() {
+        let s = Scratch::new("u-deadline");
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(
+            &s.dir("envs-bin"),
+            &Fake {
+                hang: true,
+                ..Fake::real()
+            },
+        );
+        let started = std::time::Instant::now();
+        let err = EnvStore::open(s.dir("envs"))
+            .with_test_bounds(20_000, 32, 1 << 30, Duration::from_secs(1))
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(
+            matches!(&err, PyEnvError::Step { step, status, .. } if step == "uv venv" && status == "timed out"),
+            "{err:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(15),
+            "the build waited {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

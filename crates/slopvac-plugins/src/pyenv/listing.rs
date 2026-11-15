@@ -22,6 +22,24 @@ pub(super) const MAX_NODES: usize = 20_000;
 pub(super) const MAX_DEPTH: usize = 32;
 pub(super) const MAX_BYTES: u64 = 1 << 30;
 
+/// The walk bounds in force: the constants above, or a test's smaller ones.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct WalkBounds {
+    pub nodes: usize,
+    pub depth: usize,
+    pub bytes: u64,
+}
+
+impl Default for WalkBounds {
+    fn default() -> Self {
+        Self {
+            nodes: MAX_NODES,
+            depth: MAX_DEPTH,
+            bytes: MAX_BYTES,
+        }
+    }
+}
+
 /// What an entry is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -101,24 +119,25 @@ fn is_exec(_: &fs::Metadata) -> bool {
     false
 }
 
-pub(super) fn sha256_file(path: &Path, budget: &mut u64) -> Result<(String, u64), PyEnvError> {
+/// The sha256 of a file and the bytes read, reading at most `max + 1` bytes.
+pub(super) fn sha256_upto(path: &Path, max: u64) -> Result<(String, u64), PyEnvError> {
     let mut f = File::open(path).map_err(PyEnvError::io(format!("reading {}", path.display())))?;
     let mut h = Sha256::new();
-    let n = io::copy(&mut io::Read::take(&mut f, *budget + 1), &mut h)
+    let n = io::copy(&mut io::Read::take(&mut f, max.saturating_add(1)), &mut h)
         .map_err(PyEnvError::io(format!("reading {}", path.display())))?;
-    if n > *budget {
-        return Err(PyEnvError::Refused(
-            "the environment is larger than 1 GiB".into(),
-        ));
-    }
-    *budget -= n;
     Ok((hex(&h.finalize()), n))
+}
+
+/// The sha256 of a whole file the walk bounds do not cover (an interpreter).
+pub(super) fn sha256_file(path: &Path) -> Result<String, PyEnvError> {
+    Ok(sha256_upto(path, u64::MAX - 1)?.0)
 }
 
 /// Walk `root` and list it, hashing file contents when `hash` is set.
 ///
-/// Refuses special files, names that are not UTF-8 and trees past the bounds.
-pub(super) fn scan(root: &Path, hash: bool) -> Result<Vec<Entry>, PyEnvError> {
+/// Refuses special files, names that are not UTF-8 and trees past `bounds`:
+/// more entries, more directory levels, or more file bytes in total.
+pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<Entry>, PyEnvError> {
     let meta = fs::symlink_metadata(root)
         .map_err(PyEnvError::io(format!("inspecting {}", root.display())))?;
     if !meta.is_dir() {
@@ -128,16 +147,17 @@ pub(super) fn scan(root: &Path, hash: bool) -> Result<Vec<Entry>, PyEnvError> {
         )));
     }
     let mut out = Vec::new();
-    let mut budget = MAX_BYTES;
+    let mut total = 0u64;
     let mut stack = vec![(root.to_owned(), String::new(), 0usize)];
     while let Some((dir, prefix, depth)) = stack.pop() {
         let rd =
             fs::read_dir(&dir).map_err(PyEnvError::io(format!("reading {}", dir.display())))?;
         for e in rd {
             let e = e.map_err(PyEnvError::io(format!("reading {}", dir.display())))?;
-            if out.len() >= MAX_NODES {
+            if out.len() >= bounds.nodes {
                 return Err(PyEnvError::Refused(format!(
-                    "the environment has more than {MAX_NODES} entries"
+                    "the environment has more than {} entries",
+                    bounds.nodes
                 )));
             }
             let name = e
@@ -154,24 +174,12 @@ pub(super) fn scan(root: &Path, hash: bool) -> Result<Vec<Entry>, PyEnvError> {
                 .map_err(PyEnvError::io(format!("inspecting {}", path.display())))?;
             let ft = m.file_type();
             let entry = if ft.is_symlink() {
-                let t = fs::read_link(&path)
-                    .map_err(PyEnvError::io(format!("reading link {}", path.display())))?;
-                let t = t.into_os_string().into_string().map_err(|_| {
-                    PyEnvError::Refused(format!("`{rel}` has a link target that is not UTF-8"))
-                })?;
-                Entry {
-                    path: rel,
-                    kind: Kind::Link,
-                    size: 0,
-                    mtime: None,
-                    exec: false,
-                    sha256: None,
-                    target: Some(t),
-                }
+                link_entry(&path, rel)?
             } else if ft.is_dir() {
-                if depth + 1 >= MAX_DEPTH {
+                if depth + 1 >= bounds.depth {
                     return Err(PyEnvError::Refused(format!(
-                        "the environment is deeper than {MAX_DEPTH} levels"
+                        "the environment is deeper than {} levels",
+                        bounds.depth
                     )));
                 }
                 stack.push((path, rel.clone(), depth + 1));
@@ -185,30 +193,14 @@ pub(super) fn scan(root: &Path, hash: bool) -> Result<Vec<Entry>, PyEnvError> {
                     target: None,
                 }
             } else if ft.is_file() {
-                let sha = if hash {
-                    let (sha, n) = sha256_file(&path, &mut budget)?;
-                    if n != m.len() {
-                        return Err(PyEnvError::Changed {
-                            path: rel,
-                            why: "changed while it was read".into(),
-                        });
-                    }
-                    Some(sha)
-                } else {
-                    None
-                };
-                Entry {
-                    size: m.len(),
-                    mtime: Some(
-                        mtime_of(&m)
-                            .map_err(PyEnvError::io(format!("inspecting {}", path.display())))?,
-                    ),
-                    exec: is_exec(&m),
-                    sha256: sha,
-                    target: None,
-                    kind: Kind::File,
-                    path: rel,
+                total = total.saturating_add(m.len());
+                if total > bounds.bytes {
+                    return Err(PyEnvError::Refused(format!(
+                        "the environment holds more than {} bytes",
+                        bounds.bytes
+                    )));
                 }
+                file_entry(&path, rel, &m, hash)?
             } else {
                 return Err(PyEnvError::Refused(format!("`{rel}` is a special file")));
             };
@@ -217,6 +209,48 @@ pub(super) fn scan(root: &Path, hash: bool) -> Result<Vec<Entry>, PyEnvError> {
     }
     out.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
     Ok(out)
+}
+
+fn link_entry(path: &Path, rel: String) -> Result<Entry, PyEnvError> {
+    let t =
+        fs::read_link(path).map_err(PyEnvError::io(format!("reading link {}", path.display())))?;
+    let t = t
+        .into_os_string()
+        .into_string()
+        .map_err(|_| PyEnvError::Refused(format!("`{rel}` has a link target that is not UTF-8")))?;
+    Ok(Entry {
+        path: rel,
+        kind: Kind::Link,
+        size: 0,
+        mtime: None,
+        exec: false,
+        sha256: None,
+        target: Some(t),
+    })
+}
+
+fn file_entry(path: &Path, rel: String, m: &fs::Metadata, hash: bool) -> Result<Entry, PyEnvError> {
+    let sha = if hash {
+        let (sha, n) = sha256_upto(path, m.len())?;
+        if n != m.len() {
+            return Err(PyEnvError::Changed {
+                path: rel,
+                why: "changed while it was read".into(),
+            });
+        }
+        Some(sha)
+    } else {
+        None
+    };
+    Ok(Entry {
+        size: m.len(),
+        mtime: Some(mtime_of(m).map_err(PyEnvError::io(format!("inspecting {}", path.display())))?),
+        exec: is_exec(m),
+        sha256: sha,
+        target: None,
+        kind: Kind::File,
+        path: rel,
+    })
 }
 
 /// Compare a fresh scan with the recorded listing. `full` also compares content hashes.
@@ -262,34 +296,16 @@ pub(super) fn digest_input(entries: &[Entry]) -> serde_json::Value {
     )
 }
 
-/// Make the tree below `root` read-only. `root` itself is left for the caller.
-pub(super) fn make_read_only(root: &Path) -> Result<(), PyEnvError> {
-    let mut stack = vec![root.to_owned()];
-    let mut dirs = Vec::new();
-    let mut nodes = 0usize;
-    while let Some(dir) = stack.pop() {
-        for e in fs::read_dir(&dir).map_err(PyEnvError::io(format!("reading {}", dir.display())))? {
-            let e = e.map_err(PyEnvError::io(format!("reading {}", dir.display())))?;
-            nodes += 1;
-            if nodes > MAX_NODES {
-                return Err(PyEnvError::Refused(format!(
-                    "the environment has more than {MAX_NODES} entries"
-                )));
-            }
-            let ft = e
-                .file_type()
-                .map_err(PyEnvError::io("inspecting an entry"))?;
-            if ft.is_dir() {
-                stack.push(e.path());
-                dirs.push(e.path());
-            } else if ft.is_file() {
-                set_read_only(&e.path(), false)?;
-            }
-        }
+/// Make the listed entries below `root` read-only. `root` itself is left for
+/// the caller. The listing comes from [`scan`], so the walk bounds apply.
+pub(super) fn make_read_only(root: &Path, entries: &[Entry]) -> Result<(), PyEnvError> {
+    for e in entries.iter().filter(|e| e.kind == Kind::File) {
+        set_read_only(&root.join(&e.path), false)?;
     }
-    // Directories last, deepest first, so their contents stay reachable.
-    for d in dirs.iter().rev() {
-        set_read_only(d, true)?;
+    // Directories last, deepest first (reverse path order puts `a/b` before
+    // `a`), so their contents stay reachable.
+    for e in entries.iter().rev().filter(|e| e.kind == Kind::Dir) {
+        set_read_only(&root.join(&e.path), true)?;
     }
     Ok(())
 }
