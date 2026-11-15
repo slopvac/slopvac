@@ -3,12 +3,13 @@
 
 use std::fmt::Write as _;
 use std::fs::File;
-use std::io::Read as _;
+use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
 
 use super::PyEnvError;
+use super::listing::{MAX_BYTES, MAX_NODES};
 use crate::hooks::check_relative_path;
 use crate::oci::Digest;
 
@@ -112,13 +113,22 @@ impl PyLock {
     }
 
     /// Check every wheel against the plugin tree at `root`: a regular `.whl`
-    /// file named for its package whose sha256 matches the lock. Runs before
-    /// the installer, which checks the hashes again.
+    /// file named for its package whose sha256 matches the lock, and a plain
+    /// (not ZIP64) archive. Runs before the installer, which checks the hashes
+    /// again.
+    ///
+    /// The sizes and entry counts the archives declare must fit the
+    /// environment bounds (threat model section 5.5), counting the largest
+    /// wheel of each package, so a decompression bomb is refused before it is
+    /// expanded.
     ///
     /// # Errors
-    /// [`PyEnvError::Wheel`] naming the package and the problem.
+    /// [`PyEnvError::Wheel`] naming the package and the problem,
+    /// [`PyEnvError::Refused`] when the wheels would expand past the bounds.
     pub fn verify_wheels(&self, root: &Path) -> Result<(), PyEnvError> {
+        let (mut entries, mut bytes) = (0u64, 0u64);
         for p in &self.packages {
+            let (mut pkg_entries, mut pkg_bytes) = (0u64, 0u64);
             for w in &p.wheels {
                 let file = root.join(&w.path);
                 let wrong = |why: String| PyEnvError::Wheel {
@@ -140,7 +150,18 @@ impl PyLock {
                         w.path, w.sha256
                     )));
                 }
+                let (n, size) =
+                    zip_extent(&file).map_err(|why| wrong(format!("`{}`: {why}", w.path)))?;
+                pkg_entries = pkg_entries.max(n);
+                pkg_bytes = pkg_bytes.max(size);
             }
+            entries += pkg_entries;
+            bytes += pkg_bytes;
+        }
+        if entries > MAX_NODES as u64 || bytes > MAX_BYTES {
+            return Err(PyEnvError::Refused(format!(
+                "the wheels declare {entries} entries and {bytes} bytes; an environment holds at most {MAX_NODES} entries and 1 GiB"
+            )));
         }
         Ok(())
     }
@@ -337,6 +358,58 @@ fn normalise(name: &str) -> String {
         }
     }
     out
+}
+
+/// Entries and declared uncompressed bytes of a ZIP archive, read from its
+/// central directory. ZIP64 archives are refused: no wheel within the bounds
+/// needs one.
+fn zip_extent(path: &Path) -> Result<(u64, u64), String> {
+    const EOCD: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    const CDH: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+    const LOC64: [u8; 4] = [0x50, 0x4b, 0x06, 0x07];
+    let u16_at = |b: &[u8], i: usize| u64::from(u16::from_le_bytes([b[i], b[i + 1]]));
+    let u32_at =
+        |b: &[u8], i: usize| u64::from(u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]));
+    let mut f = File::open(path).map_err(|e| e.to_string())?;
+    let len = f.metadata().map_err(|e| e.to_string())?.len();
+    let tail_len = len.min(22 + 65_535 + 20);
+    f.seek(SeekFrom::Start(len - tail_len))
+        .map_err(|e| e.to_string())?;
+    let mut tail = vec![0; usize::try_from(tail_len).map_err(|e| e.to_string())?];
+    f.read_exact(&mut tail).map_err(|e| e.to_string())?;
+    let at = (0..tail.len().saturating_sub(21))
+        .rev()
+        .find(|&i| tail[i..i + 4] == EOCD)
+        .ok_or("not a ZIP archive")?;
+    let e = &tail[at..];
+    if at >= 20 && tail[at - 20..at - 16] == LOC64 {
+        return Err("a ZIP64 archive".into());
+    }
+    let (count, cd_size, cd_off) = (u16_at(e, 10), u32_at(e, 12), u32_at(e, 16));
+    if count == 0xffff || cd_size == 0xffff_ffff || cd_off == 0xffff_ffff {
+        return Err("a ZIP64 archive".into());
+    }
+    if cd_off + cd_size > len {
+        return Err("a central directory outside the file".into());
+    }
+    f.seek(SeekFrom::Start(cd_off)).map_err(|e| e.to_string())?;
+    let mut cd = vec![0; usize::try_from(cd_size).map_err(|e| e.to_string())?];
+    f.read_exact(&mut cd).map_err(|e| e.to_string())?;
+    let (mut i, mut n, mut bytes) = (0usize, 0u64, 0u64);
+    while n < count {
+        if i + 46 > cd.len() || cd[i..i + 4] != CDH {
+            return Err("a damaged central directory".into());
+        }
+        let size = u32_at(&cd, i + 24);
+        if size == 0xffff_ffff {
+            return Err("a ZIP64 entry".into());
+        }
+        bytes += size;
+        n += 1;
+        let skip = 46 + u16_at(&cd, i + 28) + u16_at(&cd, i + 30) + u16_at(&cd, i + 32);
+        i += usize::try_from(skip).map_err(|e| e.to_string())?;
+    }
+    Ok((n, bytes))
 }
 
 pub(super) fn hex(bytes: &[u8]) -> String {

@@ -83,6 +83,96 @@ impl<'a> Wheel<'a> {
     }
 }
 
+/// A stored (uncompressed) ZIP archive. `declared` overrides the
+/// uncompressed size the central directory states for every entry.
+fn zip_with(files: &[(&str, &[u8])], declared: Option<u32>) -> Vec<u8> {
+    let (mut out, mut cd) = (Vec::new(), Vec::new());
+    for (name, data) in files {
+        let mut crc = flate2::Crc::new();
+        crc.update(data);
+        let len = u32::try_from(data.len()).unwrap();
+        let name_len = u16::try_from(name.len()).unwrap();
+        let offset = u32::try_from(out.len()).unwrap();
+        // Version 20, no flags, stored, 1980-01-01 00:00.
+        let common = |v: &mut Vec<u8>, size: u32| {
+            for x in [20u16, 0, 0, 0, 0x21] {
+                v.extend(x.to_le_bytes());
+            }
+            v.extend(crc.sum().to_le_bytes());
+            v.extend(len.to_le_bytes());
+            v.extend(size.to_le_bytes());
+            v.extend(name_len.to_le_bytes());
+            v.extend(0u16.to_le_bytes());
+        };
+        out.extend(0x0403_4b50u32.to_le_bytes());
+        common(&mut out, len);
+        out.extend(name.as_bytes());
+        out.extend(*data);
+        cd.extend(0x0201_4b50u32.to_le_bytes());
+        cd.extend(20u16.to_le_bytes());
+        common(&mut cd, declared.unwrap_or(len));
+        for x in [0u16, 0, 0] {
+            cd.extend(x.to_le_bytes());
+        }
+        cd.extend(0u32.to_le_bytes());
+        cd.extend(offset.to_le_bytes());
+        cd.extend(name.as_bytes());
+    }
+    let n = u16::try_from(files.len()).unwrap();
+    let cd_offset = u32::try_from(out.len()).unwrap();
+    let cd_len = u32::try_from(cd.len()).unwrap();
+    out.extend(cd);
+    out.extend(0x0605_4b50u32.to_le_bytes());
+    for x in [0u16, 0, n, n] {
+        out.extend(x.to_le_bytes());
+    }
+    out.extend(cd_len.to_le_bytes());
+    out.extend(cd_offset.to_le_bytes());
+    out.extend(0u16.to_le_bytes());
+    out
+}
+
+/// A pure-Python wheel of `name` with a module whose `VALUE` is `value`,
+/// plus `extra` files in its root.
+#[cfg(unix)]
+fn wheel<'a>(name: &'a str, version: &'a str, value: &str, extra: &[(&str, &str)]) -> Wheel<'a> {
+    use base64::Engine as _;
+    let module = name.replace('-', "_");
+    let info = format!("{module}-{version}.dist-info");
+    let mut files: Vec<(String, String)> = vec![
+        (
+            format!("{module}/__init__.py"),
+            format!("VALUE = {value:?}\n"),
+        ),
+        (
+            format!("{info}/METADATA"),
+            format!("Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"),
+        ),
+        (
+            format!("{info}/WHEEL"),
+            "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
+                .into(),
+        ),
+    ];
+    files.extend(
+        extra
+            .iter()
+            .map(|(n, t)| ((*n).to_owned(), (*t).to_owned())),
+    );
+    let mut record = String::new();
+    for (n, t) in &files {
+        let digest = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(t));
+        let _ = writeln!(record, "{n},sha256={digest},{}", t.len());
+    }
+    let _ = writeln!(record, "{info}/RECORD,,");
+    files.push((format!("{info}/RECORD"), record));
+    let refs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(n, t)| (n.as_str(), t.as_bytes()))
+        .collect();
+    Wheel::new(name, version, zip_with(&refs, None))
+}
+
 fn lock_text(wheels: &[Wheel<'_>]) -> String {
     let mut out = String::from("lock-version = \"1.0\"\ncreated-by = \"test\"\n");
     for w in wheels {
@@ -315,11 +405,71 @@ fn tm50_a_swapped_wheel_is_refused_before_the_installer_runs() {
         matches!(&err, PyEnvError::Wheel { why, .. } if why.contains(&sha256_hex(b"another wheel"))),
         "{err:?}"
     );
-    let missing = install(&Scratch::new("swap-missing"), &lock, &[]);
-    assert!(matches!(
-        parsed.verify_wheels(&missing.root),
-        Err(PyEnvError::Wheel { .. })
-    ));
+    let s2 = Scratch::new("swap-missing");
+    let missing = install(&s2, &lock, &[]);
+    assert!(missing.root.join("pylock.toml").is_file());
+    let err = parsed.verify_wheels(&missing.root).unwrap_err();
+    assert!(matches!(err, PyEnvError::Wheel { .. }), "{err:?}");
+}
+
+#[test]
+fn wheels_that_would_expand_past_the_environment_bounds_are_refused_before_the_installer_runs() {
+    type Expect = fn(&PyEnvError) -> bool;
+    let bomb = zip_with(&[("a.py", b"x"), ("b.py", b"y")], Some(600 << 20));
+    let not_zip = b"not a zip archive".to_vec();
+    let mut zip64 = zip_with(&[("a.py", b"x")], None);
+    // Mark the central directory offset as stored in a ZIP64 record.
+    let at = zip64.len() - 6;
+    zip64[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    let cases: [(&str, Vec<u8>, Expect); 3] = [
+        ("bomb", bomb, |e| matches!(e, PyEnvError::Refused(_))),
+        ("not a zip", not_zip, |e| {
+            matches!(e, PyEnvError::Wheel { .. })
+        }),
+        (
+            "zip64",
+            zip64,
+            |e| matches!(e, PyEnvError::Wheel { why, .. } if why.contains("ZIP64")),
+        ),
+    ];
+    for (what, bytes, expected) in cases {
+        let s = Scratch::new(&format!("bounds-{}", what.replace(' ', "-")));
+        let w = Wheel::new("demo-pkg", "1.0", bytes);
+        let lock = lock_text(std::slice::from_ref(&w));
+        let vp = install(&s, &lock, std::slice::from_ref(&w));
+        let err = PyLock::parse(&lock)
+            .unwrap()
+            .verify_wheels(&vp.root)
+            .unwrap_err();
+        assert!(expected(&err), "{what}: {err:?}");
+    }
+    // One 600 MiB wheel fits; two packages of 600 MiB each do not.
+    let s = Scratch::new("bounds-sum");
+    let one = Wheel::new(
+        "demo-pkg",
+        "1.0",
+        zip_with(&[("a.py", b"x")], Some(600 << 20)),
+    );
+    let two = Wheel::new(
+        "other-pkg",
+        "1.0",
+        zip_with(&[("b.py", b"y")], Some(600 << 20)),
+    );
+    let lock = lock_text(std::slice::from_ref(&one));
+    let vp = install(&s, &lock, std::slice::from_ref(&one));
+    PyLock::parse(&lock)
+        .unwrap()
+        .verify_wheels(&vp.root)
+        .unwrap();
+    let both = [one, two];
+    let lock = lock_text(&both);
+    let s2 = Scratch::new("bounds-sum2");
+    let vp = install(&s2, &lock, &both);
+    let err = PyLock::parse(&lock)
+        .unwrap()
+        .verify_wheels(&vp.root)
+        .unwrap_err();
+    assert!(matches!(err, PyEnvError::Refused(_)), "{err:?}");
 }
 
 /// Environments built with a scripted fake uv. The fake lays out a venv
@@ -345,6 +495,8 @@ mod unix_only {
         payload: &'a str,
         /// Exit status of `uv python find`.
         find_exit: i32,
+        /// When set, `pip install` also writes a `.pth` file that appends to this marker.
+        hook: Option<PathBuf>,
     }
 
     impl Fake<'_> {
@@ -353,6 +505,7 @@ mod unix_only {
                 interpreter: python(),
                 payload: "VALUE = 1",
                 find_exit: 0,
+                hook: None,
             }
         }
     }
@@ -375,20 +528,22 @@ mod unix_only {
                 r#"#!/bin/sh
 log='{log}'
 {{ printf 'ARGS'; for a; do printf ' %s' "$a"; done; printf '\n'; env | sed 's/^/ENV /'; }} >> "$log"
+ver=$('{py}' -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 case "$1" in
 python) exit {find} ;;
 venv)
   for a; do dir=$a; done
-  mkdir -p "$dir/bin" "$dir/lib/site-packages"
+  mkdir -p "$dir/bin" "$dir/lib/python$ver/site-packages"
   ln -s '{py}' "$dir/bin/python"
   printf 'home = %s\ninclude-system-site-packages = false\n' '{home}' > "$dir/pyvenv.cfg"
   ;;
 pip)
   prev=; py=; req=
   for a; do case "$prev" in --python) py=$a ;; -r) req=$a ;; esac; prev=$a; done
-  site="${{py%/bin/python}}/lib/site-packages"
+  site="${{py%/bin/python}}/lib/python$ver/site-packages"
   cp "$req" "$site/installed.txt"
   printf '%s\n' '{payload}' > "$site/payload.py"
+  {hook}
   ;;
 esac
 "#,
@@ -397,6 +552,10 @@ esac
                 py = fake.interpreter.display(),
                 home = home.display(),
                 payload = fake.payload,
+                hook = fake.hook.as_ref().map_or(String::new(), |m| format!(
+                    r#"printf '%s\n' "import os; open('{}', 'a').write('x')" > "$site/hook.pth""#,
+                    m.display()
+                )),
             ),
         );
         uv
@@ -412,7 +571,7 @@ esac
     }
 
     fn demo() -> Vec<Wheel<'static>> {
-        vec![Wheel::new("demo-pkg", "1.0", b"demo wheel".to_vec())]
+        vec![wheel("demo-pkg", "1.0", "one", &[])]
     }
 
     struct Built {
@@ -459,8 +618,20 @@ esac
         (g, sp)
     }
 
+    /// `lib/pythonX.Y/site-packages` of an environment.
+    fn site_dir(b: &Built) -> PathBuf {
+        let lib = fs::read_dir(b.env.root().join("lib"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        lib.join("site-packages")
+    }
+
+    /// [`site_dir`], made writable again.
     fn site(b: &Built) -> PathBuf {
-        let site = b.env.root().join("lib/site-packages");
+        let site = site_dir(b);
         fs::set_permissions(&site, fs::Permissions::from_mode(0o755)).unwrap();
         site
     }
@@ -527,6 +698,28 @@ esac
         assert!(matches!(err, PyEnvError::SourceOnly { .. }), "{err:?}");
         assert_eq!(log(&s, "envs"), "", "uv never ran");
         assert_eq!(EnvStore::open(s.dir("envs")).list().unwrap(), []);
+    }
+
+    #[test]
+    fn tm49_a_startup_hook_from_a_wheel_does_not_run_during_the_build() {
+        let s = Scratch::new("u-tm49-hook");
+        let marker = s.dir("hook-ran");
+        let b = build_with(
+            &s,
+            &Fake {
+                hook: Some(marker.clone()),
+                ..Fake::real()
+            },
+            "envs",
+        );
+        assert!(site_dir(&b).join("hook.pth").is_file());
+        assert!(!marker.exists(), "the hook ran before trust");
+        // Positive control: once trusted, the plugin's interpreter loads it.
+        let (g, sp) = trusted(&s, &b);
+        assert!(!marker.exists(), "the hook ran while recording trust");
+        let p = Plugin::start(&sp, &cfg(), &g).unwrap();
+        assert!(p.shutdown().clean());
+        assert!(marker.exists(), "the hook is not live in the environment");
     }
 
     #[test]
@@ -806,8 +999,9 @@ esac
                 store,
             )
         };
+        // The same store, so the bytecode names the same paths; the second build replaces the first.
         let interp_a = interp_build("a", "c");
-        let interp_b = interp_build("b", "d");
+        let interp_b = interp_build("b", "c");
         assert_eq!(base.vp.tree, other_content.vp.tree, "same plugin tree");
         assert_ne!(
             base.env.environment_digest(),
@@ -864,8 +1058,8 @@ esac
         let b = build(&s);
         for p in [
             b.env.root().to_owned(),
-            b.env.root().join("lib/site-packages"),
-            b.env.root().join("lib/site-packages/payload.py"),
+            site_dir(&b),
+            site_dir(&b).join("payload.py"),
         ] {
             let mode = fs::metadata(&p).unwrap().permissions().mode();
             assert_eq!(mode & 0o222, 0, "{} is writable", p.display());
@@ -923,7 +1117,7 @@ esac
                 &b.vp.tree,
             )
             .unwrap();
-        assert!(!again.root().join("lib/site-packages/evil.pth").exists());
+        assert!(!site_dir(&b).join("evil.pth").exists());
         again.verify_full().unwrap();
     }
 }
@@ -934,7 +1128,7 @@ mod live {
     use std::process::Command;
 
     use super::*;
-    use crate::common::{cfg, decl, docs, python};
+    use crate::common::{cfg, decl, docs};
     use slopvac_plugins::pyenv::{EnvStore, InstallNetwork, Installer, ManagedEnv};
     use slopvac_plugins::trust::{TrustGate, TrustStore};
     use slopvac_plugins::{Plugin, PluginError, PluginSpec, SpawnGate};
@@ -976,39 +1170,6 @@ mod live {
             python: ">=3.11".into(),
             network: InstallNetwork::Online,
         }
-    }
-
-    /// A real pure-Python wheel, written by the system interpreter.
-    fn wheel(name: &'static str, version: &'static str, value: &str) -> Wheel<'static> {
-        const SCRIPT: &str = r#"
-import base64, hashlib, io, sys, zipfile
-name, version, value = sys.argv[1:4]
-mod = name.replace('-', '_')
-info = f"{mod}-{version}.dist-info"
-files = {
-    f"{mod}/__init__.py": f"VALUE = {value!r}\n",
-    f"{info}/METADATA": f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
-    f"{info}/WHEEL": "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
-}
-rec = [f"{k},sha256={base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b'=').decode()},{len(v.encode())}" for k, v in files.items()]
-files[f"{info}/RECORD"] = "\n".join(rec + [f"{info}/RECORD,,"]) + "\n"
-buf = io.BytesIO()
-with zipfile.ZipFile(buf, "w") as z:
-    for k, v in files.items():
-        z.writestr(zipfile.ZipInfo(k, date_time=(2020, 1, 1, 0, 0, 0)), v)
-sys.stdout.buffer.write(buf.getvalue())
-"#;
-        let out = Command::new(python())
-            .env_clear()
-            .args(["-c", SCRIPT, name, version, value])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        Wheel::new(name, version, out.stdout)
     }
 
     struct Built {
@@ -1060,7 +1221,7 @@ sys.stdout.buffer.write(buf.getvalue())
     fn live_a_locked_wheel_environment_builds_verifies_and_runs() {
         let Some(uv) = uv() else { return };
         let s = Scratch::new("live-run");
-        let b = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one")]);
+        let b = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one", &[])]);
         assert_eq!(import_value(&b.env, "demo_pkg"), "one");
         b.env.check_quick().unwrap();
         b.env.verify_full().unwrap();
@@ -1078,20 +1239,20 @@ sys.stdout.buffer.write(buf.getvalue())
     fn live_tm50_each_dependency_change_changes_the_trust_hash() {
         let Some(uv) = uv() else { return };
         let s = Scratch::new("live-tm50");
-        let base = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one")]);
+        let base = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one", &[])]);
         let g = gate(&s, &base);
         g.record_trust(&base.vp, &spec(&base), NOW).unwrap();
         let trusted = g.state(&base.vp, &spec(&base)).unwrap().0;
         let variants: [(&str, Vec<Wheel<'static>>); 3] = [
-            ("edit one pin", vec![wheel("demo-pkg", "1.1", "one")]),
+            ("edit one pin", vec![wheel("demo-pkg", "1.1", "one", &[])]),
             (
                 "add a package",
                 vec![
-                    wheel("demo-pkg", "1.0", "one"),
-                    wheel("extra-pkg", "1.0", "x"),
+                    wheel("demo-pkg", "1.0", "one", &[]),
+                    wheel("extra-pkg", "1.0", "x", &[]),
                 ],
             ),
-            ("swap a wheel", vec![wheel("demo-pkg", "1.0", "two")]),
+            ("swap a wheel", vec![wheel("demo-pkg", "1.0", "two", &[])]),
         ];
         for (what, wheels) in variants {
             let s2 = Scratch::new(&format!("live-tm50-{}", what.replace(' ', "-")));
@@ -1112,11 +1273,36 @@ sys.stdout.buffer.write(buf.getvalue())
     }
 
     #[test]
+    fn live_tm49_a_startup_hook_from_a_wheel_does_not_run_during_the_build() {
+        let Some(uv) = uv() else { return };
+        let s = Scratch::new("live-tm49-hook");
+        let marker = s.dir("hook-ran");
+        let hook = format!(
+            "import os; open({:?}, 'a').write('x')\n",
+            marker.display().to_string()
+        );
+        let b = build(
+            &s,
+            &uv,
+            &[wheel("demo-pkg", "1.0", "one", &[("demo_hook.pth", &hook)])],
+        );
+        assert!(!marker.exists(), "the hook ran before trust");
+        let g = gate(&s, &b);
+        let sp = spec(&b);
+        g.record_trust(&b.vp, &sp, NOW).unwrap();
+        assert!(!marker.exists(), "the hook ran while recording trust");
+        // Positive control: the trusted plugin's interpreter loads it.
+        let p = Plugin::start(&sp, &cfg(), &g).unwrap();
+        assert!(p.shutdown().clean());
+        assert!(marker.exists(), "the hook is not live in the environment");
+    }
+
+    #[test]
     fn live_tm52_a_modified_file_in_a_real_environment_refuses_the_spawn() {
         use std::os::unix::fs::PermissionsExt;
         let Some(uv) = uv() else { return };
         let s = Scratch::new("live-tm52");
-        let b = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one")]);
+        let b = build(&s, &uv, &[wheel("demo-pkg", "1.0", "one", &[])]);
         let g = gate(&s, &b);
         let sp = spec(&b);
         g.record_trust(&b.vp, &sp, NOW).unwrap();

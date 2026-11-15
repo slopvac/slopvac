@@ -18,15 +18,18 @@
 //!    `--offline --no-python-downloads`.
 //! 2. `uv pip install --offline --no-index --find-links <wheel dirs>
 //!    --no-build --no-deps --require-hashes --link-mode copy
-//!    --compile-bytecode -r <requirements>`. The requirements file pins each
-//!    package to its exact version and locked hashes, so no resolver picks
-//!    anything, and no build backend can run.
+//!    -r <requirements>`. The requirements file pins each package to its
+//!    exact version and locked hashes, so no resolver picks anything, and no
+//!    build backend can run.
 //!
-//! The build then probes the interpreter with `-I -S -B`, records its identity
-//! (version, build and the sha256 of its executable), makes the environment
-//! read-only, lists every entry with its size, modification time and sha256,
-//! and moves the environment into place. The record sits beside it in
-//! `<key>.json`.
+//! The build then compiles bytecode and probes the interpreter, both with
+//! `-I -S`, so no `.pth` file or `sitecustomize` from a wheel runs before the
+//! user trusts the plugin. uv's own `--compile-bytecode` starts the
+//! interpreter with `site` enabled, so the build does not use it. The build
+//! records the interpreter identity (version, build and the sha256 of each
+//! executable), makes the environment read-only, lists every entry with its
+//! size, modification time and sha256, and moves the environment into place.
+//! The record sits beside it in `<key>.json`.
 //!
 //! # Trust and verification (Y5)
 //!
@@ -39,8 +42,9 @@
 //! walks the environment and compares paths, kinds, sizes, modification times,
 //! executable bits and link targets with the record, and the interpreter's
 //! size and modification time. It hashes nothing. [`ManagedEnv::verify_full`]
-//! hashes every file and the interpreter; `plugins status`, `doctor` and
-//! `plugins trust` run it. An edit that keeps the size and restores the
+//! hashes every file and the interpreter. `plugins trust` runs it
+//! ([`crate::trust::TrustGate::record_trust`]), and it is the check for
+//! `plugins status` and `doctor`. An edit that keeps the size and restores the
 //! modification time passes the quick check and fails the full one. Writing
 //! the environment needs the user's own rights, so that gap is residual risk
 //! R6.
@@ -60,7 +64,7 @@ use thiserror::Error;
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
 
-use crate::extract::{ExtractError, TreeHash, evict, verify_tree};
+use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
 use crate::sign::canonical_json;
 use listing::{Entry, compare, digest_input, make_read_only, mtime_of, scan, sha256_file};
@@ -375,7 +379,7 @@ impl ManagedEnv {
         compare(&self.record.entries, &scan(&self.root, false)?, false)
     }
 
-    /// The full check for `plugins status`, `doctor` and `plugins trust`:
+    /// The full check for `plugins trust`, `plugins status` and `doctor`:
     /// everything the quick check does, plus the sha256 of every file and of
     /// the interpreter.
     ///
@@ -536,58 +540,16 @@ impl EnvStore {
                 .tempdir_in(&staging_parent)
                 .map_err(PyEnvError::io("creating a staging directory"))?
                 .keep(),
+            true,
         );
         let env = staging.0.join("env");
 
-        if installer.network == InstallNetwork::Offline {
-            let mut find = installer.uv(&staging.0);
-            find.args([
-                "python",
-                "find",
-                "--no-config",
-                "--no-project",
-                "--managed-python",
-            ])
-            .args(["--offline", "--no-python-downloads", "--quiet"])
-            .arg(&installer.python);
-            if run(find, &staging.0, "uv python find").is_err() {
-                return Err(PyEnvError::OfflinePythonMissing(installer.python.clone()));
-            }
-        }
-        let mut venv = installer.uv(&staging.0);
-        venv.args(["venv", "--no-config", "--no-project", "--managed-python"])
-            .args(["--relocatable", "--no-cache", "--quiet", "--python"])
-            .arg(&installer.python);
-        if installer.network == InstallNetwork::Offline {
-            venv.args(["--offline", "--no-python-downloads"]);
-        }
-        venv.arg(&env);
-        run(venv, &staging.0, "uv venv")?;
-
-        let python = env_python(&env);
-        if !lock.packages.is_empty() {
-            let req = staging.0.join("requirements.txt");
-            fs::write(&req, lock.requirements())
-                .map_err(PyEnvError::io("writing the requirements file"))?;
-            let mut pip = installer.uv(&staging.0);
-            pip.args(["pip", "install", "--no-config", "--offline", "--no-index"])
-                .args(["--no-cache", "--managed-python", "--no-python-downloads"])
-                .args(["--no-build", "--no-deps", "--require-hashes"])
-                .args(["--link-mode", "copy", "--compile-bytecode", "--quiet"])
-                .arg("--python")
-                .arg(&python);
-            for dir in lock.wheel_dirs(plugin_root) {
-                pip.arg("--find-links").arg(dir);
-            }
-            pip.arg("-r").arg(&req);
-            run(pip, &staging.0, "uv pip install")?;
-        }
-
+        let final_root = self.root.join(&key);
+        let python = install(installer, plugin_root, &lock, &staging.0, &env, &final_root)?;
         let probe = probe(&python, &staging.0)?;
         make_read_only(&env)?;
         let entries = scan(&env, true)?;
 
-        let final_root = self.root.join(&key);
         let record_path = self.record_path(&key);
         remove_file_if_exists(&record_path)?;
         if fs::symlink_metadata(&final_root).is_ok() {
@@ -595,6 +557,8 @@ impl EnvStore {
         }
         fs::rename(&env, &final_root)
             .map_err(PyEnvError::io("moving the environment into place"))?;
+        // Until the record exists, nothing can load the environment: remove it on failure.
+        let mut placed = Staging(final_root.clone(), true);
         listing::set_read_only(&final_root, true)?;
         let interpreter = interpreter(&env_python(&final_root), probe)?;
         let record = EnvRecord {
@@ -606,6 +570,7 @@ impl EnvStore {
             entries,
         };
         write_record(&self.root, &record_path, &record)?;
+        placed.1 = false;
         drop(staging);
         drop(guard);
         Ok(ManagedEnv {
@@ -644,11 +609,13 @@ impl EnvStore {
         Ok(out)
     }
 
-    /// Remove an environment and its record.
+    /// Remove an environment and its record. An environment past the walk
+    /// bounds is renamed aside instead ([`Evicted::Quarantined`]), and the
+    /// caller reports the path it kept.
     ///
     /// # Errors
     /// Removal failures.
-    pub fn remove(&self, key: &str) -> Result<(), PyEnvError> {
+    pub fn remove(&self, key: &str) -> Result<Evicted, PyEnvError> {
         if key.len() != 64 || !key.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             return Err(PyEnvError::Refused(format!(
                 "`{}` is not a store key",
@@ -656,17 +623,91 @@ impl EnvStore {
             )));
         }
         remove_file_if_exists(&self.record_path(key))?;
-        evict(&self.root.join(key))?;
-        Ok(())
+        Ok(evict(&self.root.join(key))?)
     }
 }
 
-/// Removes a staging directory on every exit path.
-struct Staging(PathBuf);
+/// Create the environment at `env` and install the lock into it: the uv runs
+/// and the bytecode compilation of [`EnvStore::build`]. Bytecode is hash-checked
+/// and names the files at `final_root`, so a rebuild of the same content
+/// writes the same bytes. Returns the environment's interpreter.
+fn install(
+    installer: &Installer,
+    plugin_root: &Path,
+    lock: &PyLock,
+    scratch: &Path,
+    env: &Path,
+    final_root: &Path,
+) -> Result<PathBuf, PyEnvError> {
+    if installer.network == InstallNetwork::Offline {
+        let mut find = installer.uv(scratch);
+        find.args([
+            "python",
+            "find",
+            "--no-config",
+            "--no-project",
+            "--managed-python",
+        ])
+        .args(["--offline", "--no-python-downloads", "--quiet"])
+        .arg(&installer.python);
+        if run(find, scratch, "uv python find").is_err() {
+            return Err(PyEnvError::OfflinePythonMissing(installer.python.clone()));
+        }
+    }
+    let mut venv = installer.uv(scratch);
+    venv.args(["venv", "--no-config", "--no-project", "--managed-python"])
+        .args(["--relocatable", "--no-cache", "--quiet", "--python"])
+        .arg(&installer.python);
+    if installer.network == InstallNetwork::Offline {
+        venv.args(["--offline", "--no-python-downloads"]);
+    }
+    venv.arg(env);
+    run(venv, scratch, "uv venv")?;
+
+    let python = env_python(env);
+    if !lock.packages.is_empty() {
+        let req = scratch.join("requirements.txt");
+        fs::write(&req, lock.requirements())
+            .map_err(PyEnvError::io("writing the requirements file"))?;
+        let mut pip = installer.uv(scratch);
+        pip.args(["pip", "install", "--no-config", "--offline", "--no-index"])
+            .args(["--no-cache", "--managed-python", "--no-python-downloads"])
+            .args(["--no-build", "--no-deps", "--require-hashes"])
+            .args(["--link-mode", "copy", "--quiet"])
+            .arg("--python")
+            .arg(&python);
+        for dir in lock.wheel_dirs(plugin_root) {
+            pip.arg("--find-links").arg(dir);
+        }
+        pip.arg("-r").arg(&req);
+        run(pip, scratch, "uv pip install")?;
+    }
+
+    // Bound the tree uv wrote before anything walks it again.
+    scan(env, false)?;
+    let mut compile = Command::new(&python);
+    compile
+        .env_clear()
+        .current_dir(scratch)
+        .args(["-I", "-S", "-B", "-m", "compileall", "-q"])
+        .args(["--invalidation-mode", "checked-hash", "-s"])
+        .arg(env)
+        .arg("-p")
+        .arg(final_root)
+        .arg(env);
+    windows_env(&mut compile);
+    run(compile, scratch, "bytecode compilation")?;
+    Ok(python)
+}
+
+/// Removes a directory on every exit path while armed.
+struct Staging(PathBuf, bool);
 
 impl Drop for Staging {
     fn drop(&mut self) {
-        let _ = evict(&self.0);
+        if self.1 {
+            let _ = evict(&self.0);
+        }
     }
 }
 

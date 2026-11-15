@@ -311,7 +311,7 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 **Environment verification cost (Y5), decided 2026-11-15.** Slopvac checks an environment at these points:
 
 - **At every spawn.** The spawn gate reads every directory of the environment and the metadata of each entry, and hashes nothing, so file sizes do not add to its cost. The check refuses an added, removed or retyped entry, such as a new `.pth` file. It also refuses a change in size, modification time, executable bit or link target, and a change in the interpreter's size or modification time.
-- **In `plugins status`, `doctor` and `plugins trust`.** The full check hashes every file and every interpreter executable. Trust is never recorded for an environment that fails it.
+- **In `plugins status`, `doctor` and `plugins trust`.** The full check hashes every file and every interpreter executable. Trust is never recorded for an environment that fails it. `plugins trust` runs it now. `slopvac-8l4.9.34` wires it into `plugins status` and `doctor`.
 
 The spawn check misses an edit that keeps the size and restores the modification time. That edit needs write access as the user, which is residual risk R6, and the next full check reports it. The environment is read-only after the build, so a plugin must change file modes before it can write there. The test `tm52_a_same_size_edit_with_the_old_mtime_is_caught_by_the_full_check` records this gap.
 
@@ -319,12 +319,17 @@ The spawn check misses an edit that keeps the size and restores the modification
 
 - A plugin ships a PEP 751 `pylock.toml` and its wheels inside the signed tree.
 - Before any installer runs, slopvac refuses a package with an `sdist`, `vcs`, `directory` or `archive` source. It also refuses a wheel without a path in the tree and a wheel whose sha256 differs from the lock.
+- Before any installer runs, slopvac also reads each wheel's ZIP central directory. It refuses a ZIP64 archive and a lock whose wheels declare more entries or bytes than the environment bounds of section 5.5.
 - uv runs with an empty environment except for `UV_PYTHON_INSTALL_DIR`, plus `SystemRoot` on Windows. The flags `--no-config` and `--no-project` turn off configuration discovery.
 - `uv venv --managed-python` uses only a uv-managed interpreter, never one found on `PATH`. Offline mode adds `--offline --no-python-downloads`.
 - `uv pip install --offline --no-index --no-build --no-deps --require-hashes` installs from the tree's wheel directories only. Each package is pinned to its exact version and locked hashes.
+- No code from a wheel runs during the build. uv's `--compile-bytecode` starts the interpreter with `site` enabled, which runs any `.pth` file, so the build does not use it. The build compiles bytecode and probes the interpreter with `-I -S` instead.
 - The plugin runs as `<env>/bin/python -I -B`, by absolute path. `TrustGate` returns an error for any other program or first arguments of a managed plugin.
 
 **Residual gaps.**
+
+- The bounds check reads the sizes that a wheel declares. uv expands the wheel, and slopvac checks the bounds of the result only after the install.
+- The build and spawn tests with a fake uv and the tests with a real uv run on Unix only. Windows has the lock tests and a compile check of its code paths.
 
 - The interpreter identity covers the interpreter executables. The standard library of the uv-managed installation sits outside the environment, and a change there needs write access as the user (R6).
 - uv writes install times into the environment, so a rebuilt environment gets a new trust hash and the user must trust the plugin again.

@@ -266,9 +266,16 @@ pub(super) fn digest_input(entries: &[Entry]) -> serde_json::Value {
 pub(super) fn make_read_only(root: &Path) -> Result<(), PyEnvError> {
     let mut stack = vec![root.to_owned()];
     let mut dirs = Vec::new();
+    let mut nodes = 0usize;
     while let Some(dir) = stack.pop() {
         for e in fs::read_dir(&dir).map_err(PyEnvError::io(format!("reading {}", dir.display())))? {
             let e = e.map_err(PyEnvError::io(format!("reading {}", dir.display())))?;
+            nodes += 1;
+            if nodes > MAX_NODES {
+                return Err(PyEnvError::Refused(format!(
+                    "the environment has more than {MAX_NODES} entries"
+                )));
+            }
             let ft = e
                 .file_type()
                 .map_err(PyEnvError::io("inspecting an entry"))?;
