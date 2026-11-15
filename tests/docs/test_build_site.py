@@ -299,11 +299,21 @@ def test_built_in_terms_page_is_generated_and_linked_from_the_root_index(
     assert "(terms/index.md)" in _read(sources, "index.md")
 
 
-def test_a_failing_reference_example_stops_the_build(
-    sources: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_a_failing_reference_example_stops_the_build_and_reports_its_stderr(
+    sources: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    fake_cargo = tmp_path / "fake-cargo"
+    fake_cargo.write_text(
+        "#!/bin/sh\necho 'boom: no such example xyzzy' >&2\nexit 101\n"
+    )
+    fake_cargo.chmod(0o755)
     build_site.rust_reference.cache_clear()
-    monkeypatch.setattr(build_site, "CARGO", "false")
-    with pytest.raises(SystemExit, match="slopvac-styles"):
-        _run(sources)
-    build_site.rust_reference.cache_clear()
+    monkeypatch.setattr(build_site, "CARGO", str(fake_cargo))
+    try:
+        with pytest.raises(SystemExit) as failure:
+            _run(sources)
+    finally:
+        build_site.rust_reference.cache_clear()
+    message = str(failure.value)
+    assert "slopvac-styles" in message
+    assert "boom: no such example xyzzy" in message
