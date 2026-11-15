@@ -64,9 +64,6 @@ impl Level {
 pub struct Settings {
     /// Detail level.
     pub level: Level,
-    /// The migration guide for `prime migrate`; `None` uses the built-in short text.
-    // STUB(slopvac-8l4.11.9): the CLI passes slopvac_migrate::prime_migrate() here.
-    pub migrate_guide: Option<String>,
     /// Render the review topic for one type; `None` shows how to pick.
     pub review_type: Option<ReviewType>,
     /// `review_approval` from the config.
@@ -195,7 +192,7 @@ fn render_template(
         schema_version => SCHEMA_VERSION,
         harnesses => harness::names(),
         model_guidance => models::prime_guidance(&Evals::embedded()?, settings.review_type),
-        migrate_guide => settings.migrate_guide.clone().unwrap_or_default(),
+        migrate_guide => slopvac_migrate::prime_migrate(),
         review_type => settings.review_type.map_or("auto", ReviewType::name),
         review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },
         commands => commands,

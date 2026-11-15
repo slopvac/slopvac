@@ -8,7 +8,9 @@ The site is served from GitHub Pages. The address, including the base path, is o
 
 The committed schemas under `schemas/v3/` carry an author-side `$id` prefix. Every schema must use the same prefix and end its `$id` with its own file name. Publishing rewrites that prefix, in `$id` and in cross-schema `$ref` values, to `site_url` followed by `schemas/v3/`. A published schema file is therefore at the path that its `$id` names. `just docs-check` and the test suite fail when a published `$id` does not equal the site URL plus the file path.
 
-The site generator is Starlight. The build first writes plain Markdown with no framework front matter into a neutral directory. A separate step adapts that tree for Starlight.
+The site generator is Starlight (Astro), in `site/`. The build first writes plain Markdown with no framework front matter into a neutral directory. `--starlight site` then adapts that tree: the title moves into front matter, and links become route-relative so that they work under any base path. Generated content goes to `site/src/content/docs/v3/` and raw schemas to `site/public/schemas/v3/`. Both are ignored by git.
+
+The base path comes from `site_url`. `DOCS_BASE` overrides it for a preview build.
 
 ## URL layout
 
@@ -16,11 +18,11 @@ Everything below the API major lives under `/v3/`, so a future major version get
 
 | Path | Content |
 | --- | --- |
-| `/v3/rules/<category>/<rule>.html` | One page per rule. Outputs link here. |
+| `/v3/rules/<category>/<rule>/` | One page per rule. Outputs link here. |
 | `/v3/rules/<category>/` | Category index. |
 | `/v3/styles/`, `/v3/genres/` | Style presets and genres. |
-| `/v3/plugins/protocol.html` | Plugin protocol v1 reference. |
-| `/v3/plugins/packs.html` | Pack reference. |
+| `/v3/plugins/protocol/` | Plugin protocol v1 reference. |
+| `/v3/plugins/packs/` | Pack reference. |
 | `/schemas/v3/<name>.schema.json` | Published JSON Schema files. |
 | `/api/` | Rustdoc for the workspace crates. |
 
@@ -29,5 +31,9 @@ Everything below the API major lives under `/v3/`, so a future major version get
 Run `just docs` to write the Markdown source tree to `build/site-src`. Nothing generated is committed. CI generates the pages, lints that Markdown with slopvac, builds the site from it, and publishes that same artifact.
 
 Run `just docs-check` locally after `just docs` to check that `build/site-src` matches a fresh build. It builds the tree in memory, compares paths and contents, and reports each missing, changed, or obsolete file. It changes nothing. It is a local consistency check, not protection against drift in committed output, because no generated output is committed. Both commands fail on a broken link or a schema with the wrong `$id`.
+
+Run `just docs-site` to build the Starlight site in `site/dist` and copy the rustdoc output to `site/dist/api`. It needs Node from `mise.toml`. Dependabot watches `site/package.json`.
+
+Publishing to GitHub Pages is a workflow step that the Rust CI epic owns: generate, lint the generated Markdown with slopvac, build the site, build rustdoc, copy it, check links, then upload and deploy the Pages artifact. A repository owner must enable GitHub Pages with the Actions source in the repository settings.
 
 The styles, genres, and pack pages are placeholders until the style, genre, and pack code exists. The rules page generator reads the Python rule data until the Rust rule loader replaces it.

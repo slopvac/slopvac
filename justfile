@@ -122,3 +122,10 @@ eval-baseline:
     uv run python -m evals.build_derived --materialise --cache "$cache"
     uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
     uv run python -m evals baseline "$out/results.json" --out evals/baselines/python.json
+
+# Build the Starlight site into site/dist, then copy rustdoc to dist/api.
+docs-site:
+    uv run python scripts/docs/build_site.py --starlight site
+    cd site && npm ci && npm run build
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    rm -rf site/dist/api && cp -R target/doc site/dist/api
