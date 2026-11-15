@@ -339,3 +339,16 @@ fn a_repeated_collapsed_phrase_does_not_count_as_covered() {
     assert_eq!(r.summary.dropped, 1, "{r:?}");
     assert!(r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
 }
+
+#[test]
+fn stopwords_inside_a_collapsed_span_do_not_count_as_content() {
+    // The quoted span holds six "this", all stopwords. Coverage counts only the three
+    // content words, which the revision keeps, so the sentence is covered.
+    let r = compare(
+        "Keep alpha beta gamma. Check 'this this this this this this' alpha beta gamma.",
+        "Keep alpha beta gamma.",
+    )
+    .unwrap();
+    assert_eq!(r.summary.dropped, 1, "{r:?}");
+    assert!(!r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
+}

@@ -265,10 +265,11 @@ fn tokens(text: &str, engine: &dyn TextEngine) -> Result<Vec<String>, AgentsErro
             *carried.entry(normalize(part)).or_insert(0) += 1;
         }
         for word in text.split(|c: char| !c.is_alphanumeric()) {
-            let word = normalize(word);
+            let word = word.to_lowercase();
             if word.is_empty() || STOPWORDS.contains(&word.as_str()) {
                 continue;
             }
+            let word = normalize(&word);
             match carried.get_mut(&word) {
                 Some(n) if *n > 0 => *n -= 1,
                 _ => out.push(word),
