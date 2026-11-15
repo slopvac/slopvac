@@ -5,7 +5,8 @@
 //! `fixtures/divergences.json` lists the documents that differ on purpose. Each entry gives
 //! the reason and the facts that are not compared for it (`position`, `end`, `words`, `sentences`, `paragraphs`,
 //! `score`, `gate`). Everything else is still compared. A listed fact must still differ, so
-//! the list cannot go stale.
+//! the list cannot go stale. `fewer` names rules for which Rust reports exactly that many
+//! findings fewer than 2.x; the rest of the findings are still compared.
 
 #![allow(
     missing_docs,
@@ -99,6 +100,9 @@ struct Divergence {
     #[allow(dead_code)]
     reason: String,
     ignore: Vec<String>,
+    /// Findings per rule that 2.x reports and Rust does not.
+    #[serde(default)]
+    fewer: BTreeMap<String, usize>,
 }
 
 /// Findings reduced to what one comparison reads: `0` keeps everything, `1` drops the end
@@ -136,14 +140,31 @@ fn rows_expected(expected: &Value) -> Vec<Row> {
         .collect()
 }
 
+/// The rows of `a` that `b` does not account for, counting repeats.
+fn multiset_minus<'a>(a: &'a [Row], b: &[Row]) -> Vec<&'a Row> {
+    let mut left = b.to_vec();
+    a.iter()
+        .filter(|row| match left.iter().position(|r| r == *row) {
+            Some(i) => {
+                left.swap_remove(i);
+                false
+            }
+            None => true,
+        })
+        .collect()
+}
+
 /// Findings as the reference reports them. 2.x ends a finding that spans lines at the end of
 /// its first line, so Rust's exact end is converted to that for the comparison.
 fn rows_actual(doc: &Document, text: &str) -> Vec<Row> {
     doc.findings
         .iter()
         .map(|f| {
-            let end = f.extent.unwrap().end;
-            let end_column = if end.line() == f.start.line() {
+            // A metric finding has a line and no range: the fixture records its end as 0.
+            let end = f.extent.map_or(f.start, |e| e.end);
+            let end_column = if f.extent.is_none() {
+                0
+            } else if end.line() == f.start.line() {
                 end.column()
             } else {
                 text.lines()
@@ -164,7 +185,12 @@ fn rows_actual(doc: &Document, text: &str) -> Vec<Row> {
 }
 
 /// The facts on which Rust and the reference differ for one document, by name.
-fn differences(doc: &Document, text: &str, expected: &Value) -> BTreeMap<&'static str, String> {
+fn differences(
+    doc: &Document,
+    text: &str,
+    expected: &Value,
+    fewer: &BTreeMap<String, usize>,
+) -> BTreeMap<&'static str, String> {
     let mut out = BTreeMap::new();
     let (want, got) = (rows_expected(expected), rows_actual(doc, text));
     // `end` is only reported when the start agrees, so it names the end column alone.
@@ -173,10 +199,21 @@ fn differences(doc: &Document, text: &str, expected: &Value) -> BTreeMap<&'stati
         if name == "end" && !start_agrees {
             continue;
         }
-        let (w, g) = (keyed(want.clone(), level), keyed(got.clone(), level));
+        let (mut w, g) = (keyed(want.clone(), level), keyed(got.clone(), level));
+        if name == "findings" {
+            if !fewer.is_empty() && w == g {
+                out.insert("fewer", "the findings now agree without it".to_owned());
+            }
+            for (rule, count) in fewer {
+                for _ in 0..*count {
+                    if let Some(i) = w.iter().position(|r| &r.0 == rule) {
+                        w.remove(i);
+                    }
+                }
+            }
+        }
         if w != g {
-            let missing: Vec<_> = w.iter().filter(|r| !g.contains(r)).collect();
-            let extra: Vec<_> = g.iter().filter(|r| !w.contains(r)).collect();
+            let (missing, extra) = (multiset_minus(&w, &g), multiset_minus(&g, &w));
             out.insert(name, format!("missing {missing:?}, extra {extra:?}"));
         }
     }
@@ -226,7 +263,9 @@ fn rust_matches_the_2x_engine_on_the_interim_fixture() {
         let name = entry["name"].as_str().unwrap();
         let text = entry["text"].as_str().unwrap();
         let doc = engine.lint(&Input::markdown(name, text)).unwrap();
-        let diff = differences(&doc, text, &entry["expected"]);
+        let no_fewer = BTreeMap::new();
+        let fewer = divergences.get(name).map_or(&no_fewer, |d| &d.fewer);
+        let diff = differences(&doc, text, &entry["expected"], fewer);
         let allowed: &[String] = divergences.get(name).map_or(&[], |d| &d.ignore);
         // `position` is the exact comparison. `findings` ignores positions, so ignoring
         // `position` still compares which rules matched which text.
@@ -266,7 +305,9 @@ fn findings_point_at_their_matched_text() {
         let text = entry["text"].as_str().unwrap();
         let doc = engine.lint(&Input::markdown(name, text)).unwrap();
         for f in &doc.findings {
-            let span = f.extent.unwrap().span;
+            // A metric finding has a line and no range.
+            let Some(extent) = f.extent else { continue };
+            let span = extent.span;
             let source = &text[span.start()..span.end()];
             // Projected text differs from the source for entities, markup and soft wraps.
             // A match that holds none of them reads back exactly.

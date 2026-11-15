@@ -223,13 +223,7 @@ impl Run<'_> {
                 let range: Range<usize> = token.span.clone();
                 let span = unit.span(&range);
                 if skip.hides(span)
-                    || !self.passes_context(
-                        rule.contexts.as_ref(),
-                        &sweep.detectors,
-                        unit.text,
-                        &range,
-                        span,
-                    )
+                    || self.guarded(rule, &sweep.detectors, unit.text, &range, span)
                     || self.suppressed(sweep.loaded.id().as_str(), &sweep.exceptions, span)
                 {
                     continue;

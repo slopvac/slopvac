@@ -15,9 +15,12 @@
 //! [`Engine::lint_all`] runs many inputs with rayon and keeps their order. Output is
 //! deterministic: findings sort by position and rule id.
 //!
+//! Metric rules measure a sentence, a paragraph or the document and report a finding with a
+//! line and no source range, as 2.x did.
+//!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (metrics, structure checks and capitalization) are
-//! skipped, and each document says so in an `info` notice.
+//! kinds the engine does not run yet (structure checks, capitalization and the metrics it
+//! does not measure) are skipped, and each document says so in an `info` notice.
 //!
 //! Vocabulary rules enforce a word blocklist ([`Engine::with_blocklist`]) on the
 //! part-of-speech tagger of `slopvac-pos`. One rule owns the sweep. Without a blocklist
@@ -32,6 +35,7 @@ pub mod discover;
 mod exceptions;
 mod lint;
 mod matching;
+mod metrics;
 mod prepare;
 mod score;
 mod settings;
