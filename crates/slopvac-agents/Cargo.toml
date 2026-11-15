@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
+slopvac-migrate.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 minijinja.workspace = true
