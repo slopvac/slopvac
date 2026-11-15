@@ -443,3 +443,102 @@ fn an_inactive_rule_does_not_hide_a_later_rule_with_the_same_check() {
         ["core:extra.long-label"]
     );
 }
+fn one_rule_engine(rules: Vec<(&str, &serde_json::Value)>) -> Engine {
+    let sets = rules
+        .into_iter()
+        .map(|(category_id, rule)| ruleset(vec![category(category_id, &[rule.clone()])]))
+        .collect();
+    Engine::new(sets, settings()).unwrap()
+}
+
+#[test]
+fn a_replaced_rule_id_reports_once_under_the_last_definition() {
+    let run_on = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &run_on), ("diagram", &run_on)]);
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        ["core:diagram.label-run-on"]
+    );
+}
+
+#[test]
+fn a_replaced_rule_id_does_not_keep_reporting_its_old_signal() {
+    let run_on = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({}),
+    );
+    let note = signal_rule("label-run-on", "diagram-note-long", &serde_json::json!({}));
+    let engine = one_rule_engine(vec![("diagram", &run_on), ("diagram", &note)]);
+    assert_eq!(
+        found(&engine, &Input::markdown("a.md", MERMAID)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_detector_exception_drops_a_quoted_diagram_reference() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"exceptions": [{"name": "quotation", "detector": "quotation"}]}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let lint = |text: &str| {
+        found(
+            &engine,
+            &Input::markdown("a.md", &format!("{text}\n\n{DIAGRAM}")),
+        )
+    };
+    assert_eq!(
+        lint("Never write \"the diagram below\" in a doc."),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        lint("See the diagram below for details."),
+        ["core:diagram.meta-reference"]
+    );
+}
+
+#[test]
+fn a_context_gate_drops_a_diagram_reference_in_a_quote_block() {
+    let rule = signal_rule(
+        "meta-reference",
+        "diagram-meta-reference",
+        &serde_json::json!({"contexts": {"skip": ["quote"]}}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let lint = |text: &str| {
+        found(
+            &engine,
+            &Input::markdown("a.md", &format!("{text}\n\n{DIAGRAM}")),
+        )
+    };
+    assert_eq!(
+        lint("> See the diagram below for details."),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        lint("See the diagram below for details."),
+        ["core:diagram.meta-reference"]
+    );
+}
+
+#[test]
+fn a_finding_carries_the_message_of_the_loaded_rule() {
+    let rule = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({"message": "Shorten {match}."}),
+    );
+    let engine = one_rule_engine(vec![("diagram", &rule)]);
+    let doc = engine.lint(&Input::markdown("a.md", MERMAID)).unwrap();
+    assert_eq!(
+        doc.findings[0].message.as_str(),
+        "Shorten This label has far too many words in it."
+    );
+}

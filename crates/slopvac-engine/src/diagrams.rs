@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use slopvac_diagrams::{Extraction, ProseBlock, Signal, SignalHit};
 use slopvac_model::{PackId, RuleId, Severity};
-use slopvac_rules::{CompileOptions, LoadErrors, Match, RuleSet, StructureMatch};
+use slopvac_rules::{CompileOptions, LoadErrors, RuleSet, StructureMatch};
 
 /// A rule a checker reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,34 +82,22 @@ pub(crate) fn signal_of(m: &StructureMatch) -> Option<Signal> {
     Signal::from_check(m.check.as_str())
 }
 
-/// The deterministic signals of `slopvac-diagrams` as one checker, for the rules of a
-/// [`RuleSet`] that name them in `match.check`.
+/// The deterministic signals of `slopvac-diagrams` as one checker, for the rules that name
+/// them in `match.check`.
 ///
-/// [`crate::Engine::new`] builds one for each set that has such rules, so callers rarely
-/// need this.
+/// [`crate::Engine::new`] builds one from the rules that run, so callers rarely need this.
+/// A hit carries the signal's own message. The engine reports the message of the loaded rule
+/// instead.
 #[derive(Debug, Clone)]
 pub struct SignalChecker {
     rules: Vec<(Signal, DiagramRule)>,
 }
 
 impl SignalChecker {
-    /// A checker for the signal rules of `set`, or `None` when it has none.
+    /// A checker that reports each signal under every rule listed for it.
     #[must_use]
-    pub fn from_rule_set(set: &RuleSet) -> Option<Self> {
-        let rules: Vec<_> = set
-            .rules()
-            .filter_map(|loaded| {
-                let Match::Structure(m) = &loaded.rule().match_ else {
-                    return None;
-                };
-                let rule = DiagramRule {
-                    id: loaded.id().clone(),
-                    severity: loaded.rule().severity,
-                };
-                Some((signal_of(m)?, rule))
-            })
-            .collect();
-        (!rules.is_empty()).then_some(Self { rules })
+    pub const fn from_rules(rules: Vec<(Signal, DiagramRule)>) -> Self {
+        Self { rules }
     }
 }
 

@@ -11,7 +11,7 @@ use std::ops::Range;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_context::{TagIndex, TagRegistry};
-use slopvac_diagrams::{Extraction, Format as DiagramFormat, extract};
+use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
     KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
@@ -161,8 +161,9 @@ impl Active {
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
-    /// The names a `slopvac-allow` may cite for the rule.
-    exceptions: Vec<String>,
+    /// Where the loaded rule is, as set, category and rule. A rule of a custom checker has no
+    /// loaded rule.
+    at: Option<(usize, usize, usize)>,
 }
 
 /// Where a rule id points.
@@ -188,6 +189,8 @@ pub struct Engine {
     metrics: Vec<Active>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
+    /// The rules that run a signal of `slopvac-diagrams`.
+    signal_rules: Vec<(Signal, DiagramRule)>,
     /// Every known rule id.
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
@@ -275,6 +278,7 @@ impl Engine {
             vocabulary: Vocabulary::default(),
             metrics: Vec::new(),
             diagram_rules: HashMap::new(),
+            signal_rules: Vec::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
             notices: Vec::new(),
@@ -283,6 +287,7 @@ impl Engine {
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
+        engine.add_signal_checker();
         engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
     }
@@ -336,54 +341,25 @@ impl Engine {
             self.catalog.insert(key.clone(), Catalog::Diagram);
             if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
                 self.running.insert(key);
-                self.diagram_rules.insert(
-                    id,
-                    ActiveDiagram {
-                        severity,
-                        exceptions: Vec::new(),
-                    },
-                );
+                self.diagram_rules
+                    .insert(id, ActiveDiagram { severity, at: None });
             }
         }
         self.checkers.push(checker);
         self
     }
 
-    /// A checker for each set that has a rule for a signal of `slopvac-diagrams`.
-    fn add_signal_checkers(&mut self) {
-        let checkers = self.sets.iter().filter_map(SignalChecker::from_rule_set);
-        let checkers: Vec<Box<dyn DiagramChecker>> = checkers
-            .map(|c| Box::new(c) as Box<dyn DiagramChecker>)
-            .collect();
-        self.checkers.extend(checkers);
-    }
-
-    /// Run `loaded` as a diagram rule when it names a signal of `slopvac-diagrams`.
-    fn add_signal_rule(
-        rules: &mut HashMap<RuleId, ActiveDiagram>,
-        loaded: &LoadedRule,
-        severity: Severity,
-    ) -> bool {
-        let rule = loaded.rule();
-        if !matches!(&rule.match_, Match::Structure(m) if diagrams::signal_of(m).is_some()) {
-            return false;
+    /// One checker for the signal rules that run.
+    fn add_signal_checker(&mut self) {
+        if !self.signal_rules.is_empty() {
+            let rules = std::mem::take(&mut self.signal_rules);
+            self.checkers
+                .push(Box::new(SignalChecker::from_rules(rules)));
         }
-        let exceptions = rule
-            .exceptions()
-            .iter()
-            .map(|e| e.name.to_string())
-            .collect();
-        rules.insert(
-            loaded.id().clone(),
-            ActiveDiagram {
-                severity,
-                exceptions,
-            },
-        );
-        true
     }
 
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
+    #[allow(clippy::too_many_lines)]
     fn resolve(&mut self) -> Result<(), EngineError> {
         let mut unrun: std::collections::BTreeMap<&'static str, usize> =
             std::collections::BTreeMap::new();
@@ -460,10 +436,21 @@ impl Engine {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
-                        MatchKind::Structure
-                            if Self::add_signal_rule(&mut self.diagram_rules, loaded, severity) => {
+                        MatchKind::Structure => {
+                            if let Some(signal) = signal_of_rule(loaded) {
+                                let id = loaded.id().clone();
+                                let rule = DiagramRule {
+                                    id: id.clone(),
+                                    severity,
+                                };
+                                let at = Some((s, c, r));
+                                self.diagram_rules
+                                    .insert(id, ActiveDiagram { severity, at });
+                                self.signal_rules.push((signal, rule));
+                            } else {
+                                *unrun.entry("structure").or_default() += 1;
+                            }
                         }
-                        MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => {
                             self.vocabulary_rules.push(Active::new(s, c, r, severity));
                         }
@@ -474,7 +461,6 @@ impl Engine {
                 }
             }
         }
-        self.add_signal_checkers();
         for (s, set) in self.sets.iter().enumerate() {
             for rule in set.rules() {
                 self.catalog
@@ -669,6 +655,14 @@ fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Ve
         tags.kinds_covering(covering)
     } else {
         tags.kinds_at(&(span.start()..span.end()))
+    }
+}
+
+/// The signal a loaded rule runs, if it runs one.
+fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
+    match &loaded.rule().match_ {
+        Match::Structure(m) => diagrams::signal_of(m),
+        _ => None,
     }
 }
 
@@ -1184,23 +1178,51 @@ impl Run<'_> {
             return Ok(None);
         };
         let span = self.source_span(&hit.span, nearby)?;
-        let exceptions: Vec<&str> = active.exceptions.iter().map(String::as_str).collect();
+        let loaded = active
+            .at
+            .map(|(s, c, r)| &self.engine.sets[s].categories()[c].rules()[r]);
+        let rule = loaded.map(LoadedRule::rule);
+        let exceptions: Vec<&str> = rule.map_or_else(Vec::new, |r| {
+            r.exceptions().iter().map(|e| e.name.as_str()).collect()
+        });
+        let detectors: Vec<&str> = rule.map_or_else(Vec::new, |r| {
+            r.exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect()
+        });
+        let matched = self.input.source[span.start()..span.end()].to_owned();
+        if let Some(rule) = rule
+            && self.guarded(
+                rule,
+                &detectors,
+                self.input.source,
+                &(span.start()..span.end()),
+                span,
+                &[],
+            )
+        {
+            return Ok(None);
+        }
         if self.suppressed(hit.rule.as_str(), &exceptions, span) {
             return Ok(None);
         }
         let pack =
             PackId::new(hit.rule.pack()).map_err(|e| EngineError::Internal(e.to_string()))?;
         let rule_id = hit.rule.clone();
-        let matched = self.input.source[span.start()..span.end()].to_owned();
+        let message = rule.map_or_else(
+            || hit.message.clone(),
+            |r| format_message(r.message.as_str(), &matched, ""),
+        );
         self.finding(Candidate {
             rule_id: &rule_id,
             pack: &pack,
             category: category_of(&rule_id),
             severity: active.severity,
-            message: hit.message.clone(),
+            message,
             span,
             matched_text: matched,
-            ai_signal: AiSignal::None,
+            ai_signal: rule.map_or(AiSignal::None, |r| r.ai_signal),
             fix: None,
             extra_context: Some(slopvac_diagrams::CONTEXT),
             covering: Vec::new(),
