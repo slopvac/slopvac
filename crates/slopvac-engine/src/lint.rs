@@ -133,6 +133,18 @@ struct Active {
     replacements: LazyReplacements,
 }
 
+impl Active {
+    fn new(set: usize, category: usize, rule: usize, severity: Severity) -> Self {
+        Self {
+            set,
+            category,
+            rule,
+            severity,
+            replacements: LazyReplacements::default(),
+        }
+    }
+}
+
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
@@ -305,13 +317,7 @@ impl Engine {
                     self.running.insert(loaded.id().as_str().to_owned());
                     match loaded.kind() {
                         MatchKind::Tokens | MatchKind::Pattern | MatchKind::Substitution => {
-                            self.active.push(Active {
-                                set: s,
-                                category: c,
-                                rule: r,
-                                severity,
-                                replacements: LazyReplacements::default(),
-                            });
+                            self.active.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Judgement => {}
                         MatchKind::Metric => {
@@ -320,25 +326,15 @@ impl Engine {
                                 Match::Metric(m) if metrics::supported(m.metric.as_str())
                             );
                             if supported {
-                                self.metrics.push(Active {
-                                    set: s,
-                                    category: c,
-                                    rule: r,
-                                    severity,
-                                    replacements: LazyReplacements::default(),
-                                });
+                                self.metrics.push(Active::new(s, c, r, severity));
                             } else {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
                         MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
-                        MatchKind::Vocabulary => self.vocabulary_rules.push(Active {
-                            set: s,
-                            category: c,
-                            rule: r,
-                            severity,
-                            replacements: LazyReplacements::default(),
-                        }),
+                        MatchKind::Vocabulary => {
+                            self.vocabulary_rules.push(Active::new(s, c, r, severity));
+                        }
                         MatchKind::Capitalization => {
                             *unrun.entry("capitalization").or_default() += 1;
                         }

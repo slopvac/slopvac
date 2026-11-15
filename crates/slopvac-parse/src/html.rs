@@ -175,6 +175,19 @@ pub fn parse_html_segments(
     index: &SourceIndex<'_>,
     segments: &[Span],
 ) -> Result<Document, ParseError> {
+    parse_html_segments_stats(source, index, segments).map(|(document, _)| document)
+}
+
+/// [`parse_html_segments`], and counters for the work the parse did.
+///
+/// # Errors
+/// As [`parse_html_segments`].
+#[doc(hidden)]
+pub fn parse_html_segments_stats(
+    source: &str,
+    index: &SourceIndex<'_>,
+    segments: &[Span],
+) -> Result<(Document, Stats), ParseError> {
     let mut previous_end = 0;
     for segment in segments {
         index.check_span(*segment)?;
@@ -198,7 +211,7 @@ pub fn parse_html_segments(
             .collect();
         &joined
     };
-    parse_stream(text, map, WORK_PER_BYTE, WORK_BASE).map(|(document, _)| document)
+    parse_stream(text, map, WORK_PER_BYTE, WORK_BASE)
 }
 
 fn parse_stream(
@@ -229,6 +242,8 @@ struct Mapper {
     /// `(stream start, source start, length)` of each segment, ascending.
     pieces: Vec<(usize, usize, usize)>,
     total: usize,
+    /// Segment boundaries looked at since the work budget was last charged.
+    visits: std::cell::Cell<usize>,
 }
 
 impl Mapper {
@@ -241,7 +256,11 @@ impl Mapper {
                 at += len;
             }
         }
-        Self { pieces, total: at }
+        Self {
+            pieces,
+            total: at,
+            visits: std::cell::Cell::new(0),
+        }
     }
 
     /// The source offset of the stream byte at `offset`. At or past the end of the stream it
@@ -274,12 +293,22 @@ impl Mapper {
         Span::new(from, to).expect("a stream range maps to an ascending source range")
     }
 
-    /// The end offsets, in the stream, of the segments that end inside `start..end`.
-    fn cuts(&self, start: usize, end: usize) -> impl Iterator<Item = usize> + '_ {
-        self.pieces
+    /// The end offsets, in the stream, of the segments that end inside `start..end`. Found
+    /// by binary search, so the cost is the number of cuts and not the number of segments.
+    fn cuts(&self, start: usize, end: usize) -> Vec<usize> {
+        let first = self.pieces.partition_point(|p| p.0 + p.2 <= start);
+        let cuts: Vec<usize> = self.pieces[first..]
             .iter()
             .map(|p| p.0 + p.2)
-            .filter(move |&e| e > start && e < end)
+            .take_while(|&e| e < end)
+            .collect();
+        self.visits.set(self.visits.get() + 1 + cuts.len());
+        cuts
+    }
+
+    /// The boundary visits since the last call, for the work budget.
+    fn take_visits(&self) -> usize {
+        self.visits.replace(0)
     }
 }
 
@@ -338,6 +367,7 @@ impl<'a> Walker<'a> {
                 Step::Enter(id) => self.enter(dom, id, &mut stack),
                 Step::Exit(id) => self.exit(dom, id),
             }
+            dom.charge(self.map.take_visits());
         }
         self.flush();
         let Self {
@@ -721,7 +751,7 @@ impl Prose {
             // The text is the source itself, so it splits where the source does.
             let mut from = start;
             let mut offset = 0;
-            let cuts: Vec<usize> = self.map.cuts(start, end).collect();
+            let cuts = self.map.cuts(start, end);
             for cut in cuts.into_iter().chain(std::iter::once(end)) {
                 let src = self.map.span(from, cut);
                 self.projection

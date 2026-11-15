@@ -2,8 +2,13 @@
 //! `parse_html_segments`: several source ranges read as one HTML stream. Expected values
 //! are the source text each range covers, worked out from the input.
 
+use std::fmt::Write as _;
+
 use slopvac_model::{SourceIndex, Span};
-use slopvac_parse::{BlockKind, Document, ParseError, Projection, parse_html, parse_html_segments};
+use slopvac_parse::{
+    BlockKind, Document, ParseError, Projection, parse_html, parse_html_segments,
+    parse_html_segments_stats,
+};
 
 fn spans(source: &str, parts: &[&str]) -> Vec<Span> {
     let mut from = 0;
@@ -115,4 +120,34 @@ fn a_segment_outside_the_source_is_refused() {
         parse_html_segments(source, &SourceIndex::disk(source), &[past]),
         Err(ParseError::Body(_))
     ));
+}
+/// The work of reading one paragraph of `lines` one-word lines, each its own segment.
+fn work_for(lines: usize) -> usize {
+    let mut source = String::from("<p>\n");
+    let mut parts = vec![(0, source.len())];
+    for i in 0..lines {
+        let start = source.len();
+        let _ = writeln!(source, "w{i}");
+        parts.push((start, source.len()));
+    }
+    let segments: Vec<Span> = parts
+        .into_iter()
+        .map(|(a, b)| Span::new(a, b).unwrap())
+        .collect();
+    let (document, stats) =
+        parse_html_segments_stats(&source, &SourceIndex::disk(&source), &segments).unwrap();
+    assert_eq!(document.blocks.len(), 1, "one paragraph");
+    stats.work
+}
+
+#[test]
+fn the_work_grows_linearly_with_the_lines_of_one_block() {
+    // Counted units of work, not time. Walking every segment boundary for every word would
+    // make the second figure about four times the first.
+    let small = work_for(2_000);
+    let large = work_for(4_000);
+    assert!(
+        large * 10 <= small * 25,
+        "doubling the lines took {small} to {large} units of work"
+    );
 }

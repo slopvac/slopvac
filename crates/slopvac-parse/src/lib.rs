@@ -26,7 +26,8 @@ pub use document::{
 };
 #[doc(hidden)]
 pub use html::{
-    MAX_HTML_BYTES, Stats, WORK_BASE, WORK_PER_BYTE, parse_html_budget, parse_html_stats,
+    MAX_HTML_BYTES, Stats, WORK_BASE, WORK_PER_BYTE, parse_html_budget, parse_html_segments_stats,
+    parse_html_stats,
 };
 pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
