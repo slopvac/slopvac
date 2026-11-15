@@ -282,8 +282,8 @@ impl<'a> Subject<'a> {
         count: impl Fn(&slopvac_text::Sentence) -> Result<Option<usize>, TextError>,
     ) -> Result<Vec<Hit<'a>>, TextError> {
         let mut hits = Vec::new();
-        for block in self.prepared.blocks() {
-            for sentence in &block.sentences {
+        for block in self.prepared.sentence_sources() {
+            for sentence in block.sentences {
                 let Some(n) = count(sentence)? else { continue };
                 let limit = limit(sentence);
                 if exceeds(float(n), cmp, limit) {

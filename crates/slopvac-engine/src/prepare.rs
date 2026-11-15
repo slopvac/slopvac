@@ -5,7 +5,9 @@ use std::ops::Range;
 
 use slopvac_model::SourceIndex;
 use slopvac_model::Span;
-use slopvac_parse::{BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments};
+use slopvac_parse::{
+    Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
+};
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, split_sentences};
 
@@ -16,11 +18,14 @@ use crate::directives::Lines;
 /// text: rules of every kind, the counts, the metrics, the context tags and the skip ranges.
 ///
 /// An extracted block sits in the containers of the Markdown block it came from, outside
-/// any ancestry of its own. Inline code in the HTML (`<code>`) joins the code spans.
+/// any ancestry of its own. Inline code in the HTML (`<code>`) joins the code spans. A
+/// Markdown fence inside the block is code, not prose: it becomes a code block and is not
+/// shown to the HTML parser.
 ///
-/// `html_blocks` of the result lists only the blocks that added prose. Each counts as one
-/// paragraph, as in 2.x, whatever elements it holds. Call this once for a document: the
-/// blocks it lists are already read.
+/// `html_blocks` of the result lists only the blocks that added prose. [`Prepared`] reads
+/// the sentences, the counts and the paragraph metrics of such a block as 2.x does, over
+/// the prose of the whole block. Call this once for a document: the blocks it lists are
+/// already read.
 ///
 /// # Errors
 /// Returns a [`ParseError`] when an HTML block is too large or its segments are invalid.
@@ -34,7 +39,24 @@ pub(crate) fn with_html_prose(
         return Ok(doc);
     }
     for block in html_blocks {
-        let html = parse_html_segments(source, index, &block.segments)?;
+        let (segments, fences) = split_fences(source, &block.segments);
+        for fence in fences {
+            doc.blocks.push(Block {
+                kind: BlockKind::CodeBlock {
+                    lang: None,
+                    info: None,
+                    body: fence,
+                    fenced: true,
+                },
+                span: fence,
+                projection: None,
+                containers: block.containers.clone(),
+            });
+        }
+        if segments.is_empty() {
+            continue;
+        }
+        let html = parse_html_segments(source, index, &segments)?;
         doc.code_spans.extend(html.code_spans);
         let before = doc.blocks.len();
         for mut inner in html.blocks {
@@ -54,7 +76,76 @@ pub(crate) fn with_html_prose(
     Ok(doc)
 }
 
-fn has_prose(block: &slopvac_parse::Block) -> bool {
+/// The fence character and marker length when `line` opens or closes a Markdown fence:
+/// 2.x's `_FENCE_START`, up to three spaces of indent and three or more of `` ` `` or `~`.
+fn fence_marker(line: &str) -> Option<(char, usize)> {
+    let rest = line.trim_start_matches(' ');
+    if line.len() - rest.len() > 3 {
+        return None;
+    }
+    let ch = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let run = rest.chars().take_while(|&c| c == ch).count();
+    (run >= 3).then_some((ch, run))
+}
+
+/// The segments of an HTML block without the lines of Markdown fences inside it, and the
+/// source span of each fence (an unclosed one runs to the end of the block), as 2.x's
+/// `_html_fence_lines` finds them. The HTML parser does not know Markdown fences, so it
+/// would read their contents as prose.
+fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
+    // Each line: where it starts, where it ends with its terminator, and its text without.
+    let mut lines: Vec<(usize, usize, &str)> = Vec::new();
+    for segment in segments {
+        let mut at = segment.start();
+        for line in source[segment.start()..segment.end()].split_inclusive('\n') {
+            lines.push((at, at + line.len(), line.trim_end_matches(['\r', '\n'])));
+            at += line.len();
+        }
+    }
+    let mut fenced = vec![false; lines.len()];
+    let mut fences = Vec::new();
+    let mut open: Option<(char, usize, usize)> = None;
+    for (i, (_, _, text)) in lines.iter().enumerate() {
+        let marker = fence_marker(text);
+        match open {
+            None => {
+                if let Some((ch, run)) = marker {
+                    open = Some((ch, run, i));
+                }
+            }
+            Some((ch, run, from)) => {
+                if marker.is_some_and(|(c, n)| c == ch && n >= run) {
+                    fenced[from..=i].fill(true);
+                    fences.push((from, i));
+                    open = None;
+                }
+            }
+        }
+    }
+    if let Some((_, _, from)) = open {
+        fenced[from..].fill(true);
+        fences.push((from, lines.len() - 1));
+    }
+    let span =
+        |start: usize, end: usize| Span::new(start, end).expect("a line ends after it starts");
+    let fence_spans = fences
+        .into_iter()
+        .map(|(from, to)| span(lines[from].0, lines[to].0 + lines[to].2.len()))
+        .collect();
+    let mut kept: Vec<Span> = Vec::new();
+    for (i, &(start, end, _)) in lines.iter().enumerate() {
+        if fenced[i] {
+            continue;
+        }
+        match kept.last_mut() {
+            Some(last) if last.end() == start => *last = span(last.start(), end),
+            _ => kept.push(span(start, end)),
+        }
+    }
+    (kept, fence_spans)
+}
+
+fn has_prose(block: &Block) -> bool {
     block
         .projection
         .as_ref()
@@ -134,10 +225,21 @@ pub(crate) struct Paragraph<'p> {
     pub(crate) sentences: &'p [Sentence],
 }
 
-/// The prose of one raw HTML block, joined as one paragraph as 2.x reads it.
+/// The prose of one raw HTML block, joined as one paragraph as 2.x reads it: a sentence
+/// can run across elements.
 struct HtmlParagraph {
     projection: Projection,
     sentences: Vec<Sentence>,
+}
+
+/// Text with its sentences: a Markdown block, or the prose of a raw HTML block.
+pub(crate) struct Sentences<'p> {
+    /// The kind of the Markdown block. A raw HTML block has none.
+    pub(crate) kind: Option<&'p BlockKind>,
+    /// Whether a list item or a block quote holds the Markdown block.
+    pub(crate) contained: bool,
+    pub(crate) projection: &'p Projection,
+    pub(crate) sentences: &'p [Sentence],
 }
 
 /// `projections` as one text, with a synthetic space between them.
@@ -233,17 +335,45 @@ impl<'a> Prepared<'a> {
         &self.blocks
     }
 
+    /// The text with sentences to count and measure, in document order. A raw HTML block is
+    /// one text, as in 2.x, however many elements it holds.
+    pub(crate) fn sentence_sources(&self) -> Vec<Sentences<'_>> {
+        let mut seen = vec![false; self.html.len()];
+        let mut out = Vec::new();
+        for block in &self.blocks {
+            match block.html {
+                None => out.push(Sentences {
+                    kind: Some(block.kind),
+                    contained: block.contained,
+                    projection: block.projection,
+                    sentences: &block.sentences,
+                }),
+                Some(i) if !std::mem::replace(&mut seen[i], true) => out.push(Sentences {
+                    kind: None,
+                    contained: false,
+                    projection: &self.html[i].projection,
+                    sentences: &self.html[i].sentences,
+                }),
+                Some(_) => {}
+            }
+        }
+        out
+    }
+
     /// Words in the sentences of every prose block.
     pub(crate) fn words(&self) -> usize {
-        self.blocks
+        self.sentence_sources()
             .iter()
-            .flat_map(|b| &b.sentences)
+            .flat_map(|b| b.sentences)
             .map(|s| s.word_count)
             .sum()
     }
 
     pub(crate) fn sentence_count(&self) -> usize {
-        self.blocks.iter().map(|b| b.sentences.len()).sum()
+        self.sentence_sources()
+            .iter()
+            .map(|b| b.sentences.len())
+            .sum()
     }
 
     pub(crate) fn paragraph_count(&self) -> usize {
@@ -254,24 +384,17 @@ impl<'a> Prepared<'a> {
     /// in 2.x, however many elements it holds, so the paragraphs read out of it are not
     /// counted one by one.
     pub(crate) fn paragraphs(&self) -> Vec<Paragraph<'_>> {
-        let mut seen = vec![false; self.html.len()];
-        let mut out = Vec::new();
-        for block in &self.blocks {
-            if let Some(i) = block.html {
-                if !std::mem::replace(&mut seen[i], true) {
-                    out.push(Paragraph {
-                        projection: &self.html[i].projection,
-                        sentences: &self.html[i].sentences,
-                    });
-                }
-            } else if matches!(block.kind, BlockKind::Paragraph) && !block.contained {
-                out.push(Paragraph {
-                    projection: block.projection,
-                    sentences: &block.sentences,
-                });
-            }
-        }
-        out
+        self.sentence_sources()
+            .into_iter()
+            .filter(|b| match b.kind {
+                None => true,
+                Some(kind) => matches!(kind, BlockKind::Paragraph) && !b.contained,
+            })
+            .map(|b| Paragraph {
+                projection: b.projection,
+                sentences: b.sentences,
+            })
+            .collect()
     }
 
     /// The whole document as one projection, with a synthetic space between blocks.
@@ -335,21 +458,21 @@ impl<'a> Prepared<'a> {
                 }
             }
             Scope::Sentence | Scope::BodySentence => {
-                for block in &self.blocks {
+                for block in self.sentence_sources() {
                     if scope == Scope::BodySentence
                         && matches!(
                             block.kind,
-                            BlockKind::Heading { .. } | BlockKind::TableCell { .. }
+                            Some(BlockKind::Heading { .. } | BlockKind::TableCell { .. })
                         )
                     {
                         continue;
                     }
-                    for s in &block.sentences {
+                    for s in block.sentences {
                         units.push(Unit {
                             text: &block.projection.text()[s.start..s.end],
                             base: s.start,
                             map: Map::Projected(block.projection),
-                            sentences: Some(&block.sentences),
+                            sentences: Some(block.sentences),
                         });
                     }
                 }

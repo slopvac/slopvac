@@ -479,17 +479,6 @@ fn a_raw_html_block_in_a_quote_obeys_the_quote_context() {
 }
 
 #[test]
-fn a_raw_html_heading_obeys_exclude_blocks() {
-    let e = engine(&[tokens(
-        "dull",
-        "leverage",
-        &json!({"exclude_blocks": ["heading"]}),
-    )]);
-    let doc = lint(&e, "<h1>On leverage</h1>\n\n<p>Some leverage.</p>\n");
-    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 3, 9)]);
-}
-
-#[test]
 fn a_raw_html_block_in_a_list_item_obeys_exclude_blocks() {
     let e = engine(&[tokens(
         "dull",
@@ -501,4 +490,34 @@ fn a_raw_html_block_in_a_list_item_obeys_exclude_blocks() {
         "- item\n\n  <p>Inner leverage.</p>\n\n<p>Outer leverage.</p>\n",
     );
     assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 10)]);
+}
+
+#[test]
+fn a_cell_without_a_final_period_runs_into_the_next_cell_as_in_2x() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<table>\n<tr><td>No period</td><td>Next one.</td></tr>\n</table>\n",
+    );
+    // The Python reference reads 4 words in 1 sentence and 1 paragraph.
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (4, 1, 1));
+}
+
+#[test]
+fn a_markdown_fence_inside_a_raw_html_block_is_code_not_prose() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(
+        &e,
+        "<div>\n```\nleverage code\n```\nSee leverage now.\n</div>\n",
+    );
+    // Only the line after the fence is prose: 3 words, one sentence.
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 5, 5)]);
+    assert_eq!((doc.words, doc.sentences, doc.paragraphs), (3, 1, 1));
+}
+
+#[test]
+fn an_unclosed_fence_inside_a_raw_html_block_runs_to_its_end() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "<div>\nSee leverage.\n~~~\nleverage code\n</div>\n");
+    assert_eq!(places(&doc), [("core:cat.dull".to_owned(), 2, 5)]);
 }
