@@ -23,14 +23,20 @@ const WAIT: Duration = Duration::from_secs(20);
 
 /// `utilize` becomes `use`; the rule lists one exception.
 fn engine_linter() -> EngineLinter {
+    engine_linter_with(Vec::new())
+}
+
+/// [`engine_linter`] plus `extra` rules in the same category.
+fn engine_linter_with(extra: Vec<Value>) -> EngineLinter {
     let rule = json!({
         "id": "swap", "name": "n", "message": "Found {match}.", "severity": "warning",
         "match": {"kind": "substitution", "substitutions": {"utilize": "use"}},
         "exceptions": [{"name": "dead-metaphor"}],
         "citation": {"source": "s"}
     });
+    let rules = [vec![rule], extra].concat();
     let category = json!({
-        "schema_version": 3, "id": "cat", "title": "t", "description": "d", "rules": [rule]
+        "schema_version": 3, "id": "cat", "title": "t", "description": "d", "rules": rules
     });
     let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
@@ -271,7 +277,7 @@ impl Linter for Revised {
         )))
     }
 
-    fn allow_reasons(&self, _path: &str, _rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
         Vec::new()
     }
 }
@@ -434,7 +440,7 @@ impl Linter for Failing {
         Err(LintError("the engine broke".to_owned()))
     }
 
-    fn allow_reasons(&self, _path: &str, _rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
         Vec::new()
     }
 }
@@ -481,7 +487,7 @@ impl Linter for Gated {
         Err(LintError(format!("linted {}", text.trim_end())))
     }
 
-    fn allow_reasons(&self, _path: &str, _rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
         Vec::new()
     }
 }
@@ -556,7 +562,7 @@ impl Linter for Unchecked {
         })
     }
 
-    fn allow_reasons(&self, _path: &str, _rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
         Vec::new()
     }
 }
@@ -647,13 +653,163 @@ fn no_allow_action_is_offered_for_mdx_which_rejects_html_comments() {
 fn only_markdown_files_get_allow_reasons() {
     let linter = engine_linter();
     let rule = RuleId::new("core:cat.swap").unwrap();
-    assert_eq!(linter.allow_reasons("/w/a.md", &rule), ["dead-metaphor"]);
+    let text = "We utilize it.\n";
     assert_eq!(
-        linter.allow_reasons("/w/a.mdx", &rule),
+        linter.allow_reasons("/w/a.md", text, 0, &rule),
+        ["dead-metaphor"]
+    );
+    assert_eq!(
+        linter.allow_reasons("/w/a.mdx", text, 0, &rule),
         Vec::<String>::new()
     );
     assert_eq!(
-        linter.allow_reasons("/w/a.rst", &rule),
+        linter.allow_reasons("/w/a.rst", text, 0, &rule),
         Vec::<String>::new()
     );
+}
+
+#[test]
+fn no_allow_reasons_where_the_scanner_ignores_directives() {
+    let linter = engine_linter();
+    let rule = RuleId::new("core:cat.swap").unwrap();
+    let reasons = |text: &str, line: &str| {
+        let site = text.find(line).unwrap();
+        linter.allow_reasons("/w/a.md", text, site, &rule)
+    };
+    let front = "---\ntitle: x\n---\nWe utilize it.\n";
+    assert!(reasons(front, "title").is_empty(), "front matter");
+    assert_eq!(reasons(front, "We utilize"), ["dead-metaphor"]);
+    let fence = "```\ncode here\n```\n\nWe utilize it.\n";
+    assert!(reasons(fence, "code here").is_empty(), "fenced code");
+    assert_eq!(reasons(fence, "We utilize"), ["dead-metaphor"]);
+}
+
+fn metric_rule() -> Value {
+    json!({
+        "id": "long", "name": "n", "message": "Too long.", "severity": "warning",
+        "match": {"kind": "metric", "metric": "syllables_per_word", "threshold": 2,
+                  "comparison": "gt"},
+        "scope": "sentence",
+        "citation": {"source": "s"}
+    })
+}
+
+#[test]
+fn a_skipped_rule_kind_of_the_real_engine_shows_as_a_diagnostic() {
+    // The engine does not run metric rules yet and says so in `Document.unchecked`.
+    let linter = engine_linter_with(vec![metric_rule()]);
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    let published = client.open("Clean prose.\n");
+    let d = &published["diagnostics"][0];
+    assert_eq!(d["code"], "rule-kind-not-implemented");
+    assert_eq!(d["severity"], 3);
+    assert!(
+        d["message"]
+            .as_str()
+            .unwrap()
+            .contains("1 active metric rule(s) did not run")
+    );
+    client.finish().unwrap();
+}
+
+/// Publishes in the order the document lock decided: a message found fresh stays ahead of
+/// the clear that a close queues while it waits.
+#[test]
+fn a_close_during_publication_is_never_followed_by_stale_diagnostics() {
+    let (reached_tx, reached) = crossbeam_channel::unbounded::<()>();
+    let (release, release_rx) = crossbeam_channel::unbounded::<()>();
+    let first = std::sync::atomic::AtomicBool::new(true);
+    let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(7)))))
+        .with_pre_publish_hook(Arc::new(move |_uri| {
+            if first.swap(false, Ordering::SeqCst) {
+                reached_tx.send(()).unwrap();
+                release_rx.recv_timeout(WAIT).unwrap();
+            }
+        }));
+    let mut client = Client::start(server, None);
+    client.open_at(URI, "text");
+    // The worker has found the diagnostics fresh and is about to queue them.
+    reached.recv_timeout(WAIT).unwrap();
+    client.close(URI);
+    release.send(()).unwrap();
+    let first_message = client.diagnostics();
+    assert_eq!(first_message["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+    // Nothing stale follows: the next message is for the next document.
+    let other = "file:///work/other.md";
+    client.open_at(other, "more");
+    assert_eq!(client.diagnostics()["uri"], other);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_client_that_stops_reading_does_not_stall_document_updates() {
+    // Both directions are zero-capacity, like the stdio transport: a send completes only
+    // when the other side receives.
+    let (to_client, from_server) = crossbeam_channel::bounded::<Message>(0);
+    let (to_server, from_client) = crossbeam_channel::bounded::<Message>(0);
+    let (reached_tx, reached) = crossbeam_channel::unbounded::<()>();
+    let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(0)))))
+        .with_pre_publish_hook(Arc::new(move |_uri| {
+            let _ = reached_tx.send(());
+        }));
+    let connection = Connection {
+        sender: to_client,
+        receiver: from_client,
+    };
+    let handle = std::thread::spawn(move || server.serve(&connection));
+    let send = |message: Message| {
+        to_server
+            .send_timeout(message, Duration::from_secs(5))
+            .expect("the server keeps reading");
+    };
+    let note = |method: &str, params: &Value| {
+        Message::Notification(Notification::new(method.to_owned(), params))
+    };
+    send(Message::Request(Request::new(
+        RequestId::from(1),
+        "initialize".to_owned(),
+        json!({"processId": null, "rootUri": null, "capabilities": {}}),
+    )));
+    from_server.recv_timeout(WAIT).expect("initialize response");
+    send(note("initialized", &json!({})));
+    let open =
+        json!({"textDocument": {"uri": URI, "languageId": "markdown", "version": 1, "text": "a"}});
+    send(note("textDocument/didOpen", &open));
+    // From here the client reads nothing. The worker queues its diagnostics, and the
+    // transport blocks. Each change makes the worker publish again, so by the second
+    // `reached` the transport has been blocked for a full message.
+    reached.recv_timeout(WAIT).unwrap();
+    let change = |version: i32| {
+        note(
+            "textDocument/didChange",
+            &json!({"textDocument": {"uri": URI, "version": version},
+                    "contentChanges": [{"text": format!("v{version}")}]}),
+        )
+    };
+    send(change(2));
+    reached.recv_timeout(WAIT).unwrap();
+    for version in 3..=5 {
+        send(change(version));
+    }
+    // The client reads again and gets the latest diagnostics.
+    loop {
+        match from_server.recv_timeout(WAIT).expect("latest diagnostics") {
+            Message::Notification(n) if n.params["version"] == 5 => break,
+            _ => {}
+        }
+    }
+    send(Message::Request(Request::new(
+        RequestId::from(2),
+        "shutdown".to_owned(),
+        Value::Null,
+    )));
+    loop {
+        if let Message::Response(r) = from_server.recv_timeout(WAIT).expect("shutdown response") {
+            assert_eq!(r.id, RequestId::from(2));
+            break;
+        }
+    }
+    send(note("exit", &Value::Null));
+    assert_eq!(handle.join().unwrap().unwrap(), Exit::AfterShutdown);
 }

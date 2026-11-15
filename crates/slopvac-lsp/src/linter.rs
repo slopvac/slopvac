@@ -2,8 +2,10 @@
 
 use std::collections::HashMap;
 
+use frontmatter_spans::detect;
 use slopvac_engine::{Engine, EngineError, Input, Kind, Settings};
 use slopvac_model::{BomMode, Finding, Notice, RuleId, Span};
+use slopvac_parse::{BlockKind, parse_markdown};
 use slopvac_rules::RuleSet;
 
 /// Why a buffer could not be linted.
@@ -31,9 +33,11 @@ pub trait Linter: Send + Sync {
     fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError>;
 
     /// The exception names `rule` lists, which `reason=` in an allow directive may use, for
-    /// a document at `path`. Empty when the document's format has no directive syntax the
-    /// engine reads: only Markdown files do.
-    fn allow_reasons(&self, path: &str, rule: &RuleId) -> Vec<String>;
+    /// a directive inserted on its own line at byte offset `site` of `text`, the start of
+    /// the line it would cover. Empty when the engine would not read a directive there:
+    /// the document's format has no directive syntax the engine reads (only Markdown does),
+    /// or `site` is in front matter or a fenced code block.
+    fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String>;
 }
 
 /// A problem found by a [`Check`], shown as a diagnostic.
@@ -86,6 +90,28 @@ impl EngineLinter {
     }
 }
 
+/// Whether the directive scanner reads a directive on the line that starts at `site`: not
+/// in front matter and not in a code block, where directives are examples.
+fn scanner_reads_line(text: &str, site: usize) -> bool {
+    let front = detect(text);
+    let body_start = front.as_ref().map_or(0, |b| b.body_start);
+    if site < body_start {
+        return false;
+    }
+    let Ok(body) = Span::new(body_start, text.len()) else {
+        return false;
+    };
+    // A document that does not parse has no findings to allow.
+    let Ok(parsed) = parse_markdown(text, body) else {
+        return false;
+    };
+    !parsed.blocks.iter().any(|block| {
+        matches!(block.kind, BlockKind::CodeBlock { .. })
+            && block.span.start() <= site
+            && site < block.span.end()
+    })
+}
+
 /// The kind of file at `path`.
 fn kind_of(path: &str) -> Kind {
     match path.rsplit('.').next() {
@@ -112,10 +138,10 @@ impl Linter for EngineLinter {
             .map_err(|e| LintError(e.to_string()))
     }
 
-    fn allow_reasons(&self, path: &str, rule: &RuleId) -> Vec<String> {
+    fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String> {
         // The engine's directive scanner reads `<!-- slopvac-allow: ... -->` only. MDX
         // rejects that comment and RST has no equivalent, so no action is offered there.
-        if kind_of(path) != Kind::Markdown {
+        if kind_of(path) != Kind::Markdown || !scanner_reads_line(text, site) {
             return Vec::new();
         }
         self.reasons.get(rule).cloned().unwrap_or_default()

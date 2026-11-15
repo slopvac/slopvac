@@ -61,7 +61,12 @@ pub enum Exit {
 pub struct Server {
     linter: Arc<dyn Linter>,
     checks: Vec<Arc<dyn Check>>,
+    hook: Option<PublishHook>,
 }
+
+/// Called with the document uri while the document lock is held, after a diagnostics
+/// message was found fresh and before it is queued.
+type PublishHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 impl Server {
     /// A server that lints with `linter`.
@@ -70,7 +75,18 @@ impl Server {
         Self {
             linter,
             checks: Vec::new(),
+            hook: None,
         }
+    }
+
+    /// Run `hook` with the document uri between the freshness check and queueing a
+    /// diagnostics message, with the document lock held. Tests use it to interleave a close
+    /// at the worst moment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_pre_publish_hook(mut self, hook: PublishHook) -> Self {
+        self.hook = Some(hook);
+        self
     }
 
     /// Run an extra [`Check`] on every buffer, such as the terms check or front-matter
@@ -99,19 +115,41 @@ impl Server {
             encoding,
             docs: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(1),
+            hook: self.hook,
         });
+        // Diagnostics are queued here under the document lock, in the order the lock
+        // decided, and a writer thread sends them. The transport may block when the client
+        // reads slowly, and that must never hold up the document lock.
+        let (queue_tx, queue_rx) = crossbeam_channel::unbounded::<Message>();
+        let transport = connection.sender.clone();
+        let writer = std::thread::Builder::new()
+            .name("slopvac-lsp-write".to_owned())
+            .spawn(move || {
+                for message in queue_rx {
+                    if transport.send(message).is_err() {
+                        break;
+                    }
+                }
+            })
+            .map_err(|_| ServerError::WorkerPanicked)?;
         let (jobs_tx, jobs_rx) = crossbeam_channel::unbounded::<String>();
         let worker = {
             let shared = Arc::clone(&shared);
-            let out = connection.sender.clone();
+            let out = queue_tx.clone();
             std::thread::Builder::new()
                 .name("slopvac-lsp-lint".to_owned())
                 .spawn(move || worker(&shared, &jobs_rx, &out))
                 .map_err(|_| ServerError::WorkerPanicked)?
         };
-        let result = main_loop(&shared, connection, &jobs_tx);
+        let result = main_loop(&shared, connection, &jobs_tx, &queue_tx);
         drop(jobs_tx);
         worker.join().map_err(|_| ServerError::WorkerPanicked)?;
+        drop(queue_tx);
+        if result.is_ok() {
+            // Flush what is queued. After an error the transport may be stuck, so the
+            // writer is left to end with the process.
+            writer.join().map_err(|_| ServerError::WorkerPanicked)?;
+        }
         result
     }
 }
@@ -163,6 +201,7 @@ struct Shared {
     /// freshness check and the publish.
     docs: Mutex<HashMap<String, Doc>>,
     next_generation: AtomicU64,
+    hook: Option<PublishHook>,
 }
 
 impl Shared {
@@ -265,13 +304,17 @@ fn worker(shared: &Shared, jobs: &Receiver<String>, out: &Sender<Message>) {
                 continue;
             };
             let diagnostics = shared.diagnostics(&text, &analysis);
-            // Check and send under one lock: a close that follows waits for the send, and a
-            // close that came first has removed the document.
+            // Check and queue under one lock: a close that follows queues its clear after
+            // this message, and a close that came first has removed the document. Only the
+            // queue is touched here, never the transport.
             let docs = shared.docs();
             if docs
                 .get(&uri)
                 .is_some_and(|d| d.generation == analysis.generation)
             {
+                if let Some(hook) = &shared.hook {
+                    hook(&uri);
+                }
                 publish(out, &uri, Some(analysis.version), diagnostics);
             }
         }
@@ -282,6 +325,7 @@ fn main_loop(
     shared: &Shared,
     connection: &Connection,
     jobs: &Sender<String>,
+    queue: &Sender<Message>,
 ) -> Result<Exit, ServerError> {
     for message in &connection.receiver {
         match message {
@@ -299,7 +343,7 @@ fn main_loop(
                 return Ok(Exit::WithoutShutdown);
             }
             Message::Notification(note) => {
-                handle_notification(shared, note, jobs, &connection.sender);
+                handle_notification(shared, note, jobs, queue);
             }
             Message::Response(_) => {}
         }
@@ -441,11 +485,14 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
             ));
         }
         if let Some(rule) = &item.rule {
-            for reason in shared
-                .linter
-                .allow_reasons(&path_of(p.text_document.uri.as_str()), rule)
-            {
-                let line = range.start.line;
+            let line = range.start.line;
+            let site = line_start_offset(&text, line);
+            for reason in shared.linter.allow_reasons(
+                &path_of(p.text_document.uri.as_str()),
+                &text,
+                site,
+                rule,
+            ) {
                 let at = Position::new(line, 0);
                 let directive =
                     format!("<!-- slopvac-allow: rule={rule} reason={reason} -->{newline}");
@@ -460,6 +507,30 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
         }
     }
     actions
+}
+
+/// Byte offset of the start of zero-based `line`. Lines end at LF, CRLF or a lone CR.
+fn line_start_offset(text: &str, line: u32) -> usize {
+    let bytes = text.as_bytes();
+    let (mut start, mut i, mut seen) = (0, 0, 0);
+    while seen < line && i < bytes.len() {
+        match bytes[i] {
+            b'\n' => {
+                seen += 1;
+                start = i + 1;
+            }
+            b'\r' => {
+                if bytes.get(i + 1) == Some(&b'\n') {
+                    i += 1;
+                }
+                seen += 1;
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    start
 }
 
 fn fix_edits(
