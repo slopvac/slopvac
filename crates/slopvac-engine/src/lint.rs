@@ -349,6 +349,15 @@ impl Engine {
         self
     }
 
+    /// A checker for each set that has a rule for a signal of `slopvac-diagrams`.
+    fn add_signal_checkers(&mut self) {
+        let checkers = self.sets.iter().filter_map(SignalChecker::from_rule_set);
+        let checkers: Vec<Box<dyn DiagramChecker>> = checkers
+            .map(|c| Box::new(c) as Box<dyn DiagramChecker>)
+            .collect();
+        self.checkers.extend(checkers);
+    }
+
     /// Run `loaded` as a diagram rule when it names a signal of `slopvac-diagrams`.
     fn add_signal_rule(
         rules: &mut HashMap<RuleId, ActiveDiagram>,
@@ -386,8 +395,6 @@ impl Engine {
                 owner.insert(rule.id(), s);
             }
         }
-        // Sets that have a rule for a signal of `slopvac-diagrams`.
-        let mut signal_sets = std::collections::BTreeSet::new();
         for (s, set) in self.sets.iter().enumerate() {
             for (c, category) in set.categories().iter().enumerate() {
                 let meta = self.settings.categories.get(category.id());
@@ -453,13 +460,10 @@ impl Engine {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
-                        MatchKind::Structure => {
-                            if Self::add_signal_rule(&mut self.diagram_rules, loaded, severity) {
-                                signal_sets.insert(s);
-                            } else {
-                                *unrun.entry("structure").or_default() += 1;
-                            }
+                        MatchKind::Structure
+                            if Self::add_signal_rule(&mut self.diagram_rules, loaded, severity) => {
                         }
+                        MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
                         MatchKind::Vocabulary => {
                             self.vocabulary_rules.push(Active::new(s, c, r, severity));
                         }
@@ -470,11 +474,7 @@ impl Engine {
                 }
             }
         }
-        for s in signal_sets {
-            if let Some(checker) = SignalChecker::from_rule_set(&self.sets[s]) {
-                self.checkers.push(Box::new(checker));
-            }
-        }
+        self.add_signal_checkers();
         for (s, set) in self.sets.iter().enumerate() {
             for rule in set.rules() {
                 self.catalog
