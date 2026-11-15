@@ -1,0 +1,3 @@
+# cargo-sort formatting; keep in step with Taplo (2-space indent) so both agree.
+indent_count = 2
+indent_style = "Space"
