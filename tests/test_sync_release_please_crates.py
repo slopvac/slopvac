@@ -16,8 +16,13 @@ def _lock_entry(name: str) -> dict:
     }
 
 
-def _write_workspace(root: Path, crates: list[str], entries: list[str]) -> None:
-    (root / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/*"]\n')
+def _write_workspace(
+    root: Path, crates: list[str], entries: list[str], exclude: list[str] = ()
+) -> None:
+    excluded = ", ".join(f'"crates/{name}"' for name in exclude)
+    (root / "Cargo.toml").write_text(
+        f'[workspace]\nmembers = ["crates/*"]\nexclude = [{excluded}]\n'
+    )
     for name in crates:
         crate = root / "crates" / name
         crate.mkdir(parents=True)
@@ -80,3 +85,20 @@ def test_regenerate_drops_entry_for_removed_crate(tmp_path: Path) -> None:
 
 def test_repository_config_is_in_sync() -> None:
     assert sync.main(["--check"]) == 0
+
+
+def test_excluded_crate_matched_by_member_glob_gets_no_entry(tmp_path: Path) -> None:
+    _write_workspace(tmp_path, ["a", "skipped"], [], exclude=["skipped"])
+    assert sync.main(["--root", str(tmp_path)]) == 0
+    assert _lock_names(tmp_path) == ["a"]
+
+
+def test_generated_entry_has_the_shape_release_please_expects(tmp_path: Path) -> None:
+    _write_workspace(tmp_path, ["frontmatter-spans"], [])
+    assert sync.main(["--root", str(tmp_path)]) == 0
+    config = json.loads((tmp_path / sync.CONFIG).read_text())
+    assert config["packages"]["."]["extra-files"][1] == {
+        "type": "toml",
+        "path": "Cargo.lock",
+        "jsonpath": "$.package[?(@.name.value=='frontmatter-spans')].version",
+    }
