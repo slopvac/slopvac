@@ -11,7 +11,7 @@
 //! program and its arguments, the environment names and values and the `PATH`
 //! passed to the plugin, the manifest digest and the publisher key, plus the
 //! interpreter identity and environment listing of a managed Python
-//! environment once that exists. Any change revokes trust.
+//! environment ([`crate::pyenv`]). Any change revokes trust.
 //!
 //! Do not pass secrets through a plugin's declared environment; values are part
 //! of the public trust hash.
@@ -27,6 +27,12 @@
 //! an explicit allowlist entry ([`TrustGate::with_external_programs`]); the hash
 //! then carries `external:<absolute path>`. Variables that load code into the
 //! child (see [`is_forbidden_env_name`]) are refused outright.
+//!
+//! A Python plugin with a managed environment ([`TrustGate::with_managed_python`])
+//! must run that environment's interpreter with [`crate::pyenv::PYTHON_FLAGS`]
+//! first. The hash then carries `managed-python`, the interpreter identity and
+//! the environment digest, and every spawn runs the quick environment check
+//! (threat model Y5).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
@@ -42,6 +48,7 @@ use crate::extract::{ExtractError, TreeHash, tree_hash, verify_tree};
 use crate::host::{PluginSpec, SpawnGate};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
+use crate::pyenv::{ManagedEnv, PYTHON_FLAGS, PyEnvError};
 use crate::sign::{PublicKey, canonical_json};
 
 const FILE_NAME: &str = "trust.json";
@@ -92,6 +99,9 @@ pub enum TrustError {
     /// The environment or `PATH` handed to the plugin is not allowed.
     #[error("environment refused: {0}")]
     Environment(String),
+    /// The managed Python environment failed its full check.
+    #[error(transparent)]
+    PythonEnv(#[from] PyEnvError),
     /// A write would push the store past the size the reader accepts.
     #[error("the trust store would reach {bytes} bytes; the reader accepts at most 8 MiB")]
     TooLarge {
@@ -640,9 +650,31 @@ fn hash_for(
     vp: &VerifiedPlugin,
     spec: &PluginSpec,
     external: &HashSet<PathBuf>,
+    python: Option<&ManagedEnv>,
 ) -> Result<Digest, TrustError> {
     check_environment(spec)?;
-    let program = program_id(&vp.root, &spec.program, external)?;
+    let (program, interpreter, environment) = match python {
+        None => (program_id(&vp.root, &spec.program, external)?, None, None),
+        Some(env) => {
+            if spec.program != env.python() {
+                return Err(TrustError::Program(format!(
+                    "`{}` is not the managed interpreter `{}`",
+                    spec.program.display(),
+                    env.python().display()
+                )));
+            }
+            if !spec.args.starts_with(&PYTHON_FLAGS.map(String::from)) {
+                return Err(TrustError::Program(
+                    "a managed interpreter must run with `-I -B` first".into(),
+                ));
+            }
+            (
+                "managed-python".to_owned(),
+                Some(env.interpreter_identity()),
+                Some(env.environment_digest().to_string()),
+            )
+        }
+    };
     Ok(trust_hash(&TrustInputs {
         name: &vp.name,
         tree: &vp.tree,
@@ -653,8 +685,8 @@ fn hash_for(
         path_env: &spec.path_env,
         manifest_digest: vp.manifest_digest.as_deref(),
         key_fingerprint: vp.key_fingerprint.as_deref(),
-        interpreter: None,
-        environment: None,
+        interpreter: interpreter.as_deref(),
+        environment: environment.as_deref(),
     }))
 }
 
@@ -695,6 +727,7 @@ pub struct TrustGate {
     revoked_manifests: HashSet<String>,
     revoked_keys: HashSet<String>,
     external: HashSet<PathBuf>,
+    python: HashMap<String, ManagedEnv>,
     plugins: HashMap<String, VerifiedPlugin>,
 }
 
@@ -709,6 +742,7 @@ impl TrustGate {
             revoked_manifests: HashSet::new(),
             revoked_keys: HashSet::new(),
             external: HashSet::new(),
+            python: HashMap::new(),
             plugins: plugins.into_iter().map(|p| (p.name.clone(), p)).collect(),
         }
     }
@@ -729,10 +763,20 @@ impl TrustGate {
 
     /// Allow programs outside the verified tree, by absolute path. Such a path
     /// goes into the trust hash as `external:<path>`. Nothing is allowed by
-    /// default; a managed interpreter needs its own policy (not built yet).
+    /// default; a managed interpreter uses [`Self::with_managed_python`].
     #[must_use]
     pub fn with_external_programs(mut self, paths: impl IntoIterator<Item = PathBuf>) -> Self {
         self.external.extend(paths);
+        self
+    }
+
+    /// Run `plugin` in its managed Python environment. Its spec must name
+    /// [`ManagedEnv::python`] as the program and start its arguments with
+    /// [`PYTHON_FLAGS`]; the interpreter identity and environment digest join
+    /// the trust hash, and [`ManagedEnv::check_quick`] runs before every spawn.
+    #[must_use]
+    pub fn with_managed_python(mut self, plugin: impl Into<String>, env: ManagedEnv) -> Self {
+        self.python.insert(plugin.into(), env);
         self
     }
 
@@ -758,7 +802,7 @@ impl TrustGate {
         vp: &VerifiedPlugin,
         spec: &PluginSpec,
     ) -> Result<(Digest, TrustState), TrustError> {
-        let hash = hash_for(vp, spec, &self.external)?;
+        let hash = hash_for(vp, spec, &self.external, self.python.get(&vp.name))?;
         if self.revoked(vp, &hash) {
             return Ok((hash, TrustState::Revoked));
         }
@@ -788,10 +832,13 @@ impl TrustGate {
         ))
     }
 
-    /// What `slopvac plugins trust` does: verify the tree, then record the hash.
+    /// What `slopvac plugins trust` does: verify the tree and, for a managed
+    /// Python environment, run its full check, then record the hash.
     ///
     /// # Errors
-    /// [`TrustError::Tree`] when the tree no longer matches, a refused spec, plus store failures.
+    /// [`TrustError::Tree`] when the tree no longer matches,
+    /// [`TrustError::PythonEnv`] when the environment does not, a refused
+    /// spec, plus store failures.
     pub fn record_trust(
         &self,
         vp: &VerifiedPlugin,
@@ -799,7 +846,11 @@ impl TrustGate {
         now: &str,
     ) -> Result<TrustRecord, TrustError> {
         verify_tree(&vp.root, &vp.tree)?;
-        let hash = hash_for(vp, spec, &self.external)?;
+        let python = self.python.get(&vp.name);
+        if let Some(env) = python {
+            env.verify_full()?;
+        }
+        let hash = hash_for(vp, spec, &self.external, python)?;
         let rec = TrustRecord {
             hash: hash.to_string(),
             name: vp.name.clone(),
@@ -841,6 +892,12 @@ impl SpawnGate for TrustGate {
                     "{name} (tree refused: {e})"
                 )));
             }
+        }
+        // The Y5 trade-off: metadata only here, content hashes in `plugins status` and `doctor`.
+        if let Some(env) = self.python.get(name)
+            && let Err(e) = env.check_quick()
+        {
+            return Err(PluginError::HashMismatch(format!("{name} ({e})")));
         }
         let (hash, state) = match self.state(vp, spec) {
             Ok(x) => x,

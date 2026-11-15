@@ -1,0 +1,347 @@
+//! The dependency lock a Python plugin ships: a PEP 751 `pylock.toml` whose
+//! every package is a hash-pinned wheel inside the signed artifact (Y1, Y2).
+
+use std::fmt::Write as _;
+use std::fs::File;
+use std::io::Read as _;
+use std::path::{Path, PathBuf};
+
+use sha2::{Digest as _, Sha256};
+
+use super::PyEnvError;
+use crate::hooks::check_relative_path;
+use crate::oci::Digest;
+
+/// Largest lock file read.
+const MAX_LOCK_BYTES: u64 = 4 << 20;
+/// Most packages in one lock.
+const MAX_PACKAGES: usize = 2_000;
+/// Package keys that name something other than a vendored wheel. Each needs a
+/// build backend, a download or a local project, so each is refused (Y1).
+const NOT_A_WHEEL: [&str; 4] = ["sdist", "vcs", "directory", "archive"];
+
+/// One wheel of a locked package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedWheel {
+    /// Path relative to the plugin tree, with `/` separators.
+    pub path: String,
+    /// Lowercase hex sha256 from the lock.
+    pub sha256: String,
+}
+
+/// One locked package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedPackage {
+    /// Distribution name as written in the lock.
+    pub name: String,
+    /// Exact version.
+    pub version: String,
+    /// Environment marker, passed to the installer unchanged.
+    pub marker: Option<String>,
+    /// The wheels the installer may pick from, one per platform.
+    pub wheels: Vec<LockedWheel>,
+}
+
+/// A parsed and checked `pylock.toml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PyLock {
+    /// The packages in lock order.
+    pub packages: Vec<LockedPackage>,
+    /// sha256 of the lock file bytes.
+    pub digest: Digest,
+}
+
+impl PyLock {
+    /// Read and check the lock at `path`.
+    ///
+    /// # Errors
+    /// [`PyEnvError::Io`] for a read failure, otherwise as [`Self::parse`].
+    pub fn read(path: &Path) -> Result<Self, PyEnvError> {
+        let mut raw = Vec::new();
+        File::open(path)
+            .and_then(|f| f.take(MAX_LOCK_BYTES + 1).read_to_end(&mut raw))
+            .map_err(PyEnvError::io(format!("reading {}", path.display())))?;
+        if raw.len() as u64 > MAX_LOCK_BYTES {
+            return Err(PyEnvError::Lock("larger than 4 MiB".into()));
+        }
+        let text = String::from_utf8(raw).map_err(|_| PyEnvError::Lock("not UTF-8".into()))?;
+        Self::parse(&text)
+    }
+
+    /// Parse and check lock text.
+    ///
+    /// Every package must have an exact version and at least one wheel, and each
+    /// wheel a relative `path` inside the tree and a sha256. A package with an
+    /// `sdist`, `vcs`, `directory` or `archive` source is refused, as is a wheel
+    /// with only a `url`: the build runs no backend and fetches nothing. Other
+    /// PEP 751 keys are ignored.
+    ///
+    /// # Errors
+    /// [`PyEnvError::SourceOnly`] for a package that is not a vendored wheel,
+    /// [`PyEnvError::Lock`] or [`PyEnvError::Wheel`] for anything else.
+    pub fn parse(text: &str) -> Result<Self, PyEnvError> {
+        let bad = |why: &str| PyEnvError::Lock(why.to_owned());
+        let doc: toml::Table = text.parse().map_err(|e| PyEnvError::Lock(format!("{e}")))?;
+        let version = doc
+            .get("lock-version")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| bad("`lock-version` is missing"))?;
+        if version.split('.').next() != Some("1") {
+            return Err(PyEnvError::Lock(format!(
+                "lock-version {version} is not supported; 1.x is"
+            )));
+        }
+        let packages = match doc.get("packages") {
+            None => &[][..],
+            Some(v) => v
+                .as_array()
+                .ok_or_else(|| bad("`packages` is not an array"))?
+                .as_slice(),
+        };
+        if packages.len() > MAX_PACKAGES {
+            return Err(bad("more than 2000 packages"));
+        }
+        let packages = packages
+            .iter()
+            .map(package)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            packages,
+            digest: Digest::of(text.as_bytes()),
+        })
+    }
+
+    /// Check every wheel against the plugin tree at `root`: a regular `.whl`
+    /// file named for its package whose sha256 matches the lock. Runs before
+    /// the installer, which checks the hashes again.
+    ///
+    /// # Errors
+    /// [`PyEnvError::Wheel`] naming the package and the problem.
+    pub fn verify_wheels(&self, root: &Path) -> Result<(), PyEnvError> {
+        for p in &self.packages {
+            for w in &p.wheels {
+                let file = root.join(&w.path);
+                let wrong = |why: String| PyEnvError::Wheel {
+                    package: p.name.clone(),
+                    why,
+                };
+                let meta = std::fs::symlink_metadata(&file)
+                    .map_err(|e| wrong(format!("`{}`: {e}", w.path)))?;
+                if !meta.is_file() {
+                    return Err(wrong(format!("`{}` is not a regular file", w.path)));
+                }
+                let mut h = Sha256::new();
+                let mut f = File::open(&file).map_err(|e| wrong(format!("`{}`: {e}", w.path)))?;
+                std::io::copy(&mut f, &mut h).map_err(|e| wrong(format!("`{}`: {e}", w.path)))?;
+                let actual = hex(&h.finalize());
+                if actual != w.sha256 {
+                    return Err(wrong(format!(
+                        "`{}` has sha256 {actual}; the lock pins {}",
+                        w.path, w.sha256
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The directories, inside `root`, that hold the locked wheels. The
+    /// installer searches only these (`--find-links`, `--no-index`).
+    #[must_use]
+    pub fn wheel_dirs(&self, root: &Path) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = self
+            .packages
+            .iter()
+            .flat_map(|p| &p.wheels)
+            .map(|w| {
+                let parent = w.path.rsplit_once('/').map_or("", |(d, _)| d);
+                root.join(parent)
+            })
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        dirs
+    }
+
+    /// The lock as a hash-checking requirements file: one `name==version`
+    /// line per package with every locked wheel hash, so the installer may
+    /// install only those exact files.
+    #[must_use]
+    pub fn requirements(&self) -> String {
+        let mut out = String::new();
+        for p in &self.packages {
+            let _ = write!(out, "{}=={}", p.name, p.version);
+            if let Some(m) = &p.marker {
+                let _ = write!(out, " ; {m}");
+            }
+            for w in &p.wheels {
+                let _ = write!(out, " --hash=sha256:{}", w.sha256);
+            }
+            out.push('\n');
+        }
+        out
+    }
+}
+
+fn package(v: &toml::Value) -> Result<LockedPackage, PyEnvError> {
+    let t = v
+        .as_table()
+        .ok_or_else(|| PyEnvError::Lock("a package is not a table".into()))?;
+    let name = t
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| PyEnvError::Lock("a package has no name".into()))?;
+    if name.is_empty()
+        || name.len() > 200
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return Err(PyEnvError::Lock(format!(
+            "package name `{}` is not a distribution name",
+            name.escape_debug()
+        )));
+    }
+    let wrong = |why: String| PyEnvError::Wheel {
+        package: name.to_owned(),
+        why,
+    };
+    if let Some(key) = NOT_A_WHEEL.iter().find(|k| t.contains_key(**k)) {
+        return Err(PyEnvError::SourceOnly {
+            package: name.to_owned(),
+            source_kind: (*key).to_owned(),
+        });
+    }
+    let version = t
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| wrong("no exact version".into()))?;
+    if version.is_empty()
+        || version.len() > 100
+        || !version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'+' | b'!'))
+    {
+        return Err(wrong(format!(
+            "version `{}` is not exact",
+            version.escape_debug()
+        )));
+    }
+    let marker = match t.get("marker") {
+        None => None,
+        Some(m) => {
+            let m = m
+                .as_str()
+                .ok_or_else(|| wrong("marker is not a string".into()))?;
+            // Marker grammar characters only: no comment, option or line break.
+            let ok = m.len() <= 1_000
+                && m.bytes().all(|b| {
+                    b.is_ascii_alphanumeric()
+                        || matches!(
+                            b,
+                            b' ' | b'_'
+                                | b'.'
+                                | b'\''
+                                | b'"'
+                                | b'<'
+                                | b'>'
+                                | b'='
+                                | b'!'
+                                | b'~'
+                                | b'('
+                                | b')'
+                                | b','
+                                | b'*'
+                                | b'+'
+                        )
+                });
+            if !ok {
+                return Err(wrong(format!("marker `{}` is refused", m.escape_debug())));
+            }
+            Some(m.to_owned())
+        }
+    };
+    let wheels = t
+        .get("wheels")
+        .and_then(toml::Value::as_array)
+        .filter(|w| !w.is_empty())
+        .ok_or_else(|| PyEnvError::SourceOnly {
+            package: name.to_owned(),
+            source_kind: "no wheels".into(),
+        })?
+        .iter()
+        .map(|w| wheel(name, version, w))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(LockedPackage {
+        name: name.to_owned(),
+        version: version.to_owned(),
+        marker,
+        wheels,
+    })
+}
+
+fn wheel(package: &str, version: &str, v: &toml::Value) -> Result<LockedWheel, PyEnvError> {
+    let wrong = |why: String| PyEnvError::Wheel {
+        package: package.to_owned(),
+        why,
+    };
+    let t = v
+        .as_table()
+        .ok_or_else(|| wrong("a wheel is not a table".into()))?;
+    let path = t.get("path").and_then(toml::Value::as_str).ok_or_else(|| {
+        wrong("a wheel has no `path` inside the artifact; a `url` would need a download".into())
+    })?;
+    check_relative_path(path).map_err(|e| wrong(format!("`{}`: {e}", path.escape_debug())))?;
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let Some(stem) = file.strip_suffix(".whl") else {
+        return Err(wrong(format!("`{path}` is not a wheel")));
+    };
+    // {distribution}-{version}(-{build})?-{python}-{abi}-{platform}.whl
+    let parts: Vec<&str> = stem.split('-').collect();
+    if !(5..=6).contains(&parts.len())
+        || normalise(parts[0]) != normalise(package)
+        || parts[1] != version.replace('-', "_")
+    {
+        return Err(wrong(format!(
+            "`{path}` is not a wheel of {package} {version}"
+        )));
+    }
+    let sha = t
+        .get("hashes")
+        .and_then(toml::Value::as_table)
+        .and_then(|h| h.get("sha256"))
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| wrong(format!("`{path}` has no sha256")))?;
+    if sha.len() != 64 || !sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(wrong(format!("`{path}` has a malformed sha256")));
+    }
+    Ok(LockedWheel {
+        path: path.to_owned(),
+        sha256: sha.to_owned(),
+    })
+}
+
+/// PEP 503 normalisation.
+fn normalise(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut sep = false;
+    for c in name.chars() {
+        if matches!(c, '-' | '_' | '.') {
+            sep = true;
+        } else {
+            if sep && !out.is_empty() {
+                out.push('-');
+            }
+            sep = false;
+            out.push(c.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+pub(super) fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::with_capacity(64), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
