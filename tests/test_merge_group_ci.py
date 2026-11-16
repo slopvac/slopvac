@@ -835,3 +835,57 @@ def test_reviewdog_does_not_post_when_the_recheck_api_fails(tmp_path, job):
     proc, count = run_post(tmp_path, job, pull(draft=False), fail=True)
     assert proc.returncode != 0
     assert count == 0
+
+
+# --- the artifact's PR number must be the resolved one ---------------------------
+
+
+def run_validation(tmp_path: Path, claims: list[str], resolved: str, current: dict):
+    """Run the `comment` job's real validation step on crafted pr-number files."""
+    step = next(
+        s
+        for s in REVIEWDOG["comment"]["steps"]
+        if s["name"] == "Validate the pull request"
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "gh").chmod(0o755)
+    for i, claim in enumerate(claims):
+        (tmp_path / "findings" / f"artifact{i}").mkdir(parents=True)
+        (tmp_path / "findings" / f"artifact{i}" / "pr-number").write_text(claim)
+    output = tmp_path / "output"
+    output.touch()
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_PULLS": json.dumps(current),
+        "FAKE_ARGS": str(tmp_path / "args"),
+        "GITHUB_OUTPUT": str(output),
+        "REPO": "srobroek/slopvac",
+        "HEAD_SHA": SHA,
+        "RESOLVED_PR": resolved,
+    }
+    proc = subprocess.run(
+        ["bash", "-c", step["run"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    return proc, output.read_text()
+
+
+def test_reviewdog_accepts_an_artifact_naming_the_resolved_pull_request(tmp_path):
+    proc, written = run_validation(tmp_path, ["7\n"], "7", pull(draft=False))
+    assert proc.returncode == 0, proc.stderr
+    assert written == f"number=7\nsha={SHA}\n"
+
+
+@pytest.mark.parametrize("claim", ["8", "70", "17"])
+def test_reviewdog_rejects_an_artifact_naming_another_pull_request(tmp_path, claim):
+    proc, written = run_validation(tmp_path, [claim], "7", pull(draft=False))
+    assert proc.returncode != 0
+    assert written == ""
