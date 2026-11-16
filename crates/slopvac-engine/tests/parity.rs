@@ -102,11 +102,9 @@ fn engine(fixture: &Value) -> Engine {
     for (name, dials) in s["categories"].as_object().unwrap() {
         settings.categories.insert(
             CategoryId::new(name).unwrap(),
-            CategoryDials {
-                level: None,
-                weight: dials["weight"].as_f64(),
-                max_per_100_words: dials["budget"].as_f64(),
-            },
+            CategoryDials::default()
+                .with_weight(dials["weight"].as_f64())
+                .with_max_per_100_words(dials["budget"].as_f64()),
         );
     }
     let t = &s["thresholds"];

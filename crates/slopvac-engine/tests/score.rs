@@ -148,10 +148,7 @@ fn a_zero_weight_category_gates_nothing() {
         &[finding("a", Severity::Error)],
         100,
         &cats,
-        &Thresholds {
-            max_errors: Some(0),
-            ..Thresholds::default()
-        },
+        &Thresholds::default().with_max_errors(Some(0)),
         &[],
     );
     assert!(s.gate.is_passed());
@@ -169,13 +166,11 @@ fn thresholds_fail_the_gate_with_the_2x_reasons() {
         &findings,
         100,
         None,
-        &Thresholds {
-            max_errors: Some(0),
-            max_warnings: Some(1),
-            max_total_per_100_words: Some(1.5),
-            min_score: Some(90.0),
-            ..Thresholds::default()
-        },
+        &Thresholds::default()
+            .with_max_errors(Some(0))
+            .with_max_warnings(Some(1))
+            .with_max_total_per_100_words(Some(1.5))
+            .with_min_score(Some(90.0)),
     );
     // Weighted density: 1 + 0.5 + 0.5 = 2.0 per 100. Without a category budget the score
     // is 100 - 2 * 10 = 80, and the document budget of 1.5 gives the whole-document score
@@ -229,10 +224,7 @@ fn the_unicode_dash_limit_counts_that_rule_at_any_severity() {
         &[dash.clone(), dash],
         100,
         None,
-        &Thresholds {
-            max_unicode_dashes: Some(1),
-            ..Thresholds::default()
-        },
+        &Thresholds::default().with_max_unicode_dashes(Some(1)),
     );
     assert_eq!(s.gate.reasons(), ["2 Unicode dash(es), limit 1"]);
 }
