@@ -179,6 +179,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
         include:
           - name: linux-x64
             os: ubuntu-latest
@@ -196,8 +197,6 @@ jobs:
             os: macos-latest
           - name: macos-x64
             os: macos-15-intel
-          - name: windows-x64
-            os: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -243,7 +242,7 @@ jobs:
 
       # The managed-Python plugin tests build real uv environments. With SLOPVAC_PYENV_LIVE
       # set, they fail instead of skipping when uv is missing. Managed environments are
-      # refused on Windows, so only linux-x64 runs them. The cache holds uv's downloaded
+      # needs the Linux toolchain, so only linux-x64 runs them. The cache holds uv's downloaded
       # CPython builds, scoped to the ref by GitHub's standard cache rules.
       - name: Install uv for the managed-Python tests
         if: matrix.name == 'linux-x64'
