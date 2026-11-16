@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -15,7 +16,71 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 import build_site
 
 GENRES_YAML = ROOT / "crates/slopvac-context/src/builtin/genres.yaml"
-OLD_PREFIX = "https://old.example/pkg/schemas/v3/"
+REAL_SCHEMAS = ROOT / "schemas" / "v3"
+# The committed schemas use this author-side prefix; the fixture schemas share it.
+OLD_PREFIX = "https://srobroek.github.io/slopvac/schemas/v3/"
+
+DATA_PACK = """\
+schema_version = 3
+id = "style-pack"
+version = "1.2.0"
+slopvac_api = 1
+kind = "data"
+description = "Styles and terms."
+license = "MIT"
+
+[provides]
+styles = ["styles/*.toml"]
+terms = ["terms/a.toml", "terms/b.toml"]
+
+[[requires]]
+id = "plug"
+version = "^0.1"
+"""
+
+PLUGIN_PACK = """\
+schema_version = 3
+id = "plug"
+version = "0.1.0"
+slopvac_api = 1
+kind = "plugin"
+description = "A | plugin."
+
+[plugin]
+command = "python"
+args = ["run.py", "--fast"]
+env = ["HOME_DIR"]
+network = true
+
+[[plugin.hooks]]
+kind = "tagger"
+id = "fences"
+
+[plugin.features]
+required = []
+optional = ["document-path"]
+"""
+
+CONTRACT = """\
+# Contract
+
+## 9. Other
+
+| 1 | `ignored` | Not an error. |
+
+## 10. Error codes
+
+| Code | `slopvac_code` | Meaning |
+|---|---|---|
+| -32700 | `parse-error` | The body is not valid JSON. |
+| -32001 | `protocol-version-unsupported` | No common version. |
+
+| `slopvac_code` | Cause |
+|---|---|
+| `plugin-timeout` | A timer expired. |
+
+## 11. Security
+"""
 
 RULES_YAML = """\
 id: demo
@@ -59,18 +124,15 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
-    (schemas / "plugin-protocol.schema.json").write_text(
-        _schema(
-            "plugin-protocol.schema.json",
-            description="Messages <of> v1.",
-            **{
-                "$defs": {
-                    "Zed": {"type": "object", "description": "A | <b>"},
-                    "Alpha": {"oneOf": []},
-                }
-            },
-        )
-    )
+    for name in ("plugin-protocol", "pack-manifest", "common"):
+        shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
+    packs = tmp_path / "packs"
+    for pack_id, body in (("style-pack", DATA_PACK), ("plug", PLUGIN_PACK)):
+        (packs / pack_id).mkdir(parents=True)
+        (packs / pack_id / "slopvac-pack.toml").write_text(body)
+    contract = tmp_path / "contract"
+    contract.mkdir()
+    (contract / "plugin-protocol.md").write_text(CONTRACT)
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -78,6 +140,8 @@ def sources(tmp_path: Path) -> dict[str, Path]:
     return {
         "rules": rules,
         "schemas": schemas,
+        "packs": packs,
+        "contract": contract,
         "config": config,
         "out": tmp_path / "out",
     }
@@ -90,6 +154,8 @@ def _run(sources: dict[str, Path], *extra: str) -> int:
             "--config", str(sources["config"]),
             "--rules-dir", str(sources["rules"]),
             "--schemas-dir", str(sources["schemas"]),
+            "--packs-dir", str(sources["packs"]),
+            "--contract-dir", str(sources["contract"]),
             *extra,
         ]
     )  # fmt: skip
@@ -155,13 +221,165 @@ def test_category_and_root_indexes_link_each_page(sources: dict[str, Path]) -> N
     assert "(demo/index.md): 1 rules" in _read(sources, "rules/index.md")
 
 
-def test_protocol_reference_lists_sorted_definitions_with_kinds(
+def test_protocol_methods_table_lists_requests_and_notifications(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
     page = _read(sources, "plugins/protocol.md")
-    assert "Messages &lt;of&gt; v1." in page
-    assert page.index("`Alpha` (union)") < page.index("`Zed` (object): A | &lt;b&gt;")
+    assert (
+        "| `initialize` | request | [`InitializeParams`](#initializeparams) "
+        "| [`InitializeResult`](#initializeresult) |"
+    ) in page
+    assert "| `shutdown` | request | none | `null` |" in page
+    assert "| `exit` | notification | none | none |" in page
+
+
+def test_protocol_hook_points_pair_each_kind_with_its_method_and_types(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/protocol.md")
+    assert (
+        "| `tagger` | `tagger/tag` | [`TagParams`](#tagparams) "
+        "| [`TagResult`](#tagresult) | Run the named tagger over each document. |"
+    ) in page
+    kinds = page.split("## Hook points")[1].split("## Capabilities")[0]
+    assert kinds.count("\n| `") == 7
+
+
+def test_protocol_capabilities_show_declaration_offer_and_reply_fields(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/protocol.md")
+    capabilities = page.split("## Capabilities")[1].split("## Errors")[0]
+    assert "| `features.optional` |" in capabilities
+    assert "| `limits.maxBatchDocuments` | integer | yes | minimum 1 |" in capabilities
+    assert "| `capabilities.requiresNetwork` | boolean | yes |" in capabilities
+
+
+def test_protocol_errors_come_from_the_contract_tables(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    errors = _read(sources, "plugins/protocol.md").split("## Errors")[1]
+    errors = errors.split("## Definitions")[0]
+    assert "| -32001 | `protocol-version-unsupported` | No common version. |" in errors
+    assert "| `plugin-timeout` | A timer expired. |" in errors
+    assert "ignored" not in errors
+
+
+def test_protocol_definitions_follow_the_schema_with_fields(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/protocol.md")
+    definition = page.split("### CancelParams")[1].split("###")[0]
+    assert "| `id` | integer ([`RequestId`](#requestid)) | yes |" in definition
+
+
+def test_protocol_without_error_tables_in_the_contract_fails(
+    sources: dict[str, Path],
+) -> None:
+    (sources["contract"] / "plugin-protocol.md").write_text("# Contract\n")
+    with pytest.raises(SystemExit, match="Error codes"):
+        _run(sources)
+
+
+def test_manifest_reference_documents_fields_and_the_kind_rule(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/manifest.md")
+    assert "| `id` | string (`PackId`) | yes |" in page
+    assert "- When `kind` is `plugin`, the manifest requires `plugin`." in page
+    assert "- For any other kind, the manifest forbids `plugin`." in page
+    assert "Keys that start with `x-` are extensions" in page
+
+
+def test_manifest_reference_has_a_section_for_each_nested_table(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/manifest.md")
+    provides = page.split("## `provides`")[1].split("## `")[0]
+    assert "| `genres` | array of string (`PackPath`) | no |" in provides
+    requires = page.split("## `requires`")[1].split("## `")[0]
+    assert "| `version` | string (`VersionReq`) | yes |" in requires
+    plugin = page.split("## `plugin`")[1]
+    assert "| `command` | string | yes | minimum length 1 |" in plugin
+    assert "| `features.required` |" in plugin
+
+
+def test_pack_page_renders_a_data_pack_from_its_manifest(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/packs/style-pack.md")
+    assert page.startswith("# style-pack\n\nStyles and terms.\n")
+    assert "| Version | 1.2.0 |" in page
+    assert "| Kind | data |" in page
+    assert "- styles: `styles/*.toml`" in page
+    assert "- terms: `terms/a.toml`, `terms/b.toml`" in page
+    assert "- [`plug`](plug.md) `^0.1`" in page
+    assert "## Plugin" not in page
+
+
+def test_pack_page_renders_a_plugin_pack_declaration(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "plugins/packs/plug.md")
+    assert "Command: `python run.py --fast`" in page
+    assert "Network access: yes" in page
+    assert "- `HOME_DIR`" in page
+    assert "| `tagger` | `fences` |" in page
+    assert "Features required: none" in page
+    assert "Features optional: `document-path`" in page
+    assert page.startswith("# plug\n\nA | plugin.\n")
+
+
+def test_packs_index_links_every_pack_page(sources: dict[str, Path]) -> None:
+    assert _run(sources) == 0
+    index = _read(sources, "plugins/packs/index.md")
+    assert "| [plug](plug.md) | 0.1.0 | plugin | A \\| plugin. |" in index
+    assert "| [style-pack](style-pack.md) | 1.2.0 | data | Styles and terms. |" in index
+
+
+def test_manifest_that_breaks_the_schema_stops_the_build(
+    sources: dict[str, Path],
+) -> None:
+    path = sources["packs"] / "plug" / "slopvac-pack.toml"
+    path.write_text(PLUGIN_PACK.replace('kind = "plugin"', 'kind = "data"'))
+    with pytest.raises(SystemExit, match="plug.*slopvac-pack.toml.*does not match"):
+        _run(sources)
+
+
+def test_two_packs_with_one_id_stop_the_build(sources: dict[str, Path]) -> None:
+    (sources["packs"] / "copy").mkdir()
+    (sources["packs"] / "copy" / "slopvac-pack.toml").write_text(PLUGIN_PACK)
+    with pytest.raises(SystemExit, match="pack id plug also appears"):
+        _run(sources)
+
+
+def test_no_packs_gives_an_index_that_says_so(sources: dict[str, Path]) -> None:
+    shutil.rmtree(sources["packs"])
+    sources["packs"].mkdir()
+    assert _run(sources) == 0
+    assert "No packs are bundled" in _read(sources, "plugins/packs/index.md")
+
+
+def test_committed_schemas_contract_and_example_pack_render() -> None:
+    sys.path.insert(0, str(ROOT / "scripts" / "docs"))
+    import plugin_pages
+
+    schemas = plugin_pages.SchemaSet(REAL_SCHEMAS)
+    protocol = plugin_pages.generate_protocol(schemas, ROOT / "docs" / "contract")
+    assert "| -32002 | `required-feature-missing` |" in protocol["plugins/protocol.md"]
+    packs = plugin_pages.generate_packs(
+        schemas, ROOT / "packages" / "slopvac-plugin" / "examples"
+    )
+    assert "Command: `python plugin.py`" in packs["plugins/packs/fence-tagger.md"]
 
 
 def test_schemas_are_written_at_their_published_id_path(

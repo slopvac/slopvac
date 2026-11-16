@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -13,7 +14,8 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 
 import build_site
 
-PREFIX = "https://old.example/schemas/v3/"
+REAL_SCHEMAS = ROOT / "schemas" / "v3"
+PREFIX = "https://srobroek.github.io/slopvac/schemas/v3/"
 
 
 @pytest.fixture
@@ -27,12 +29,17 @@ def site_dir(tmp_path: Path) -> Path:
     )
     schemas = tmp_path / "schemas"
     schemas.mkdir()
-    for name in ("a", "plugin-protocol"):
-        (schemas / f"{name}.schema.json").write_text(
-            json.dumps(
-                {"$id": f"{PREFIX}{name}.schema.json", "description": "d", "$defs": {}}
-            )
-        )
+    (schemas / "a.schema.json").write_text(
+        json.dumps({"$id": f"{PREFIX}a.schema.json", "description": "d", "$defs": {}})
+    )
+    for name in ("plugin-protocol", "pack-manifest", "common"):
+        shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
+    packs = tmp_path / "packs" / "demo"
+    packs.mkdir(parents=True)
+    (packs / "slopvac-pack.toml").write_text(
+        'schema_version = 3\nid = "demo"\nversion = "1.0.0"\nslopvac_api = 1\n'
+        'kind = "data"\n'
+    )
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -44,6 +51,7 @@ def site_dir(tmp_path: Path) -> Path:
             "--config", str(config),
             "--rules-dir", str(rules),
             "--schemas-dir", str(schemas),
+            "--packs-dir", str(tmp_path / "packs"),
             "--starlight", str(site),
         ]
     )  # fmt: skip
@@ -95,3 +103,11 @@ def test_stale_generated_pages_are_removed_on_rebuild(site_dir: Path) -> None:
     )  # fmt: skip
     assert not stale.exists()
     assert not (site_dir / "public/schemas/v3/old.schema.json").exists()
+
+
+def test_pack_pages_keep_the_published_packs_urls(site_dir: Path) -> None:
+    # /v3/plugins/packs/ lists the pack, and each pack sits one level below it.
+    assert "(demo/)" in _page(site_dir, "plugins/packs/index.md")
+    page = _page(site_dir, "plugins/packs/demo.md")
+    assert "(../../manifest/)" in page
+    assert "(../../protocol/)" in page
