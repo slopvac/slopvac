@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender, bounded, select};
 use serde_json::{Value, json};
 
+use crate::budget::RunBudget;
 use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
@@ -126,6 +127,9 @@ pub struct HostConfig {
     pub timeouts: Timeouts,
     /// Run caps.
     pub caps: RunCaps,
+    /// Whole-run budget. Clones of one config share it, so every plugin
+    /// started from them draws on the same counters.
+    pub budget: Arc<RunBudget>,
     /// Test seam: where a teardown reads the process table. `None`, the
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
@@ -145,6 +149,7 @@ impl Default for HostConfig {
             max_in_flight: 16,
             timeouts: Timeouts::default(),
             caps: RunCaps::default(),
+            budget: Arc::default(),
             process_table: None,
         }
     }
@@ -233,6 +238,7 @@ struct Shared {
     stderr: Mutex<VecDeque<u8>>,
     stderr_done: Receiver<()>,
     caps: RunCaps,
+    budget: Arc<RunBudget>,
     exit_timeout: Duration,
 }
 
@@ -338,7 +344,7 @@ impl Shared {
                     self.caps.unsolicited_messages
                 ))
             } else {
-                Ok(false)
+                self.budget.charge_unsolicited().map(|()| false)
             }
         };
         if obj.contains_key("method") {
@@ -399,6 +405,7 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
         read: 0,
     });
     let mut unsolicited = 0u32;
+    let mut charged = 0u64;
     let mut negotiated = false;
     loop {
         match read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst)) {
@@ -410,6 +417,10 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
                 if total > shared.caps.stdout_bytes {
                     return shared.violation("standard output volume cap reached");
                 }
+                if let Err(m) = shared.budget.charge_stdout(total - charged) {
+                    return shared.violation(m);
+                }
+                charged = total;
                 let msg = match strict::parse(&body) {
                     Ok(v) => v,
                     Err(m) => return shared.violation(m),
@@ -442,6 +453,10 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                     ring.extend(&buf[..n]);
                     let excess = ring.len().saturating_sub(STDERR_RING);
                     ring.drain(..excess);
+                }
+                if let Err(m) = shared.budget.charge_stderr(n as u64) {
+                    shared.violation(m);
+                    break;
                 }
                 if total > shared.caps.stderr_bytes {
                     shared.fail(PluginError::ProtocolViolation(format!(
@@ -817,6 +832,12 @@ impl Plugin {
         cfg: &HostConfig,
         gate: &dyn SpawnGate,
     ) -> Result<Self, StartError> {
+        if let Some(m) = cfg.budget.breach() {
+            return Err(StartError {
+                error: PluginError::ProtocolViolation(format!("{}: {m}", spec.name)),
+                teardown: Teardown::default(),
+            });
+        }
         prespawn(spec, cfg, gate).map_err(|error| StartError {
             error,
             teardown: Teardown::default(),
@@ -1095,6 +1116,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         stderr: Mutex::new(VecDeque::new()),
         stderr_done,
         caps: cfg.caps,
+        budget: Arc::clone(&cfg.budget),
         exit_timeout: cfg.timeouts.exit,
     });
     {

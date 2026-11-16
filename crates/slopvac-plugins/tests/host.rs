@@ -12,7 +12,7 @@ use slopvac_plugins::hooks::{
     CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
     Rendered, Segment, Span,
 };
-use slopvac_plugins::{HookKind, Plugin, PluginError};
+use slopvac_plugins::{BudgetCaps, HookKind, HostConfig, Plugin, PluginError, RunBudget};
 
 #[test]
 fn a_well_behaved_plugin_tags_documents_and_shuts_down_cleanly() {
@@ -996,4 +996,96 @@ fn recipe_returns_the_planned_files() {
         sent,
         json!({"recipe": "main", "harness": "claude", "options": {"marker": "hi"}})
     );
+}
+
+/// A config whose plugins share one budget with the given aggregate caps.
+fn budgeted(caps: BudgetCaps) -> HostConfig {
+    let mut c = cfg();
+    c.caps.unsolicited_messages = 100_000;
+    c.budget = RunBudget::shared(caps);
+    c
+}
+
+/// Poll until one of `plugins` has failed; its error code.
+fn first_failure_code(plugins: &[&Plugin]) -> String {
+    let t = Instant::now();
+    while t.elapsed() < NO_HANG {
+        if let Some(e) = plugins.iter().find_map(|p| p.failure()) {
+            return e.slopvac_code().to_owned();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("no plugin failed within {NO_HANG:?}");
+}
+
+fn refused_start_code(c: &HostConfig) -> String {
+    code(&Plugin::start(&spec("ok"), c, &Allow))
+}
+
+/// Each flood plugin sends 1,500 unsolicited messages, under the per-plugin cap of
+/// the test config. Two are 3,000 in all, over the aggregate cap of 2,000.
+#[test]
+fn tm2b_unsolicited_messages_add_up_across_plugins() {
+    let c = budgeted(BudgetCaps {
+        unsolicited_messages: 2000,
+        ..BudgetCaps::default()
+    });
+    let first = Plugin::start(&spec("flood"), &c, &Allow).unwrap();
+    assert!(
+        first.tag("main", &docs(1)).is_ok(),
+        "1,500 are within 2,000"
+    );
+    let second = Plugin::start(&spec("flood"), &c, &Allow).unwrap();
+    assert_eq!(
+        code(&second.tag("main", &docs(1))),
+        "plugin-protocol-violation"
+    );
+    assert_eq!(refused_start_code(&c), "plugin-protocol-violation");
+}
+
+/// Each header-padding plugin reads about 290 KB, under the per-plugin default.
+#[test]
+fn tm2b_standard_output_bytes_add_up_across_plugins() {
+    let c = budgeted(BudgetCaps {
+        stdout_bytes: 400 << 10,
+        ..BudgetCaps::default()
+    });
+    let first = Plugin::start(&spec("header-padding"), &c, &Allow).unwrap();
+    assert!(
+        first.tag("main", &docs(1)).is_ok(),
+        "290 KB is within 400 KB"
+    );
+    let second = Plugin::start(&spec("header-padding"), &c, &Allow).unwrap();
+    assert_eq!(
+        code(&second.tag("main", &docs(1))),
+        "plugin-protocol-violation"
+    );
+    assert_eq!(refused_start_code(&c), "plugin-protocol-violation");
+}
+
+/// Each stderr-flood plugin writes 10 MiB, under the per-plugin default. Two
+/// are 20 MiB, over the aggregate cap of 15 MiB, so one of them dies.
+#[test]
+fn tm2b_standard_error_bytes_add_up_across_plugins() {
+    let c = budgeted(BudgetCaps {
+        stderr_bytes: 15 << 20,
+        ..BudgetCaps::default()
+    });
+    let a = Plugin::start(&spec("stderr-flood"), &c, &Allow).unwrap();
+    let b = Plugin::start(&spec("stderr-flood"), &c, &Allow).unwrap();
+    assert_eq!(first_failure_code(&[&a, &b]), "plugin-protocol-violation");
+    assert_eq!(refused_start_code(&c), "plugin-protocol-violation");
+}
+
+#[test]
+fn separate_budgets_do_not_share_counts() {
+    let caps = BudgetCaps {
+        unsolicited_messages: 2000,
+        ..BudgetCaps::default()
+    };
+    for _ in 0..2 {
+        let c = budgeted(caps);
+        let p = Plugin::start(&spec("flood"), &c, &Allow).unwrap();
+        assert!(p.tag("main", &docs(1)).is_ok());
+    }
 }
