@@ -294,7 +294,7 @@ Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and
 - Positions: segment-local coordinates drive matching, contexts, exclusions and fingerprints. The container byte range is provenance only. `Finding.origin` is an optional structure that carries the locator, label, segment id and local range.
 - Fix: `--fix` skips binary hosts with `SkipReason::BinaryHost`.
 - Limits: 256 MiB input, ZIP entry-count, size and ratio caps checked before expensive work, DTD off, and bounded PNG chunks. A breach exits 2.
-- Approved tradeoffs: in-process first-party extractors, PNG discovery only for `.drawio.png`, `.excalidraw.png` and explicit includes, no binary stdin, macro and template variants included, and xlsx kept with a cell-occurrence model.
+- Approved tradeoffs: in-process first-party extractors, PNG discovery only for `.drawio.png`, `.excalidraw.png` and explicit includes, no binary stdin, macro and template variants included, and xlsx and ods kept with a cell-occurrence model.
 - Evidence: a crate survey (`zip` has no read-side bomb guards; `roxmltree` can disable the DTD) and an adversarial review whose revisions are all adopted. No spike measured extraction speed. The PlantUML PNG value encoding is unverified.
 - Rejected: bundled subprocess plugins for first-party formats (a spawn plus base64 per file, in return for crash and memory isolation and host-enforced deadlines that the in-process extractors give up), sniffing every PNG, and a container byte offset as the finding position.
 - Tracking: epic `slopvac-8l4.20`, bead `slopvac-8l4.2.31`. Detail: [Binary container inputs](binary-inputs.md).

@@ -13,7 +13,7 @@ Supported formats:
 | OOXML Word | `.docx`, `.docm`, `.dotx` | Body, comments, footnotes, endnotes, headers and footers, text boxes |
 | OOXML PowerPoint | `.pptx`, `.pptm` | Slides, speaker notes, comments |
 | OOXML Excel | `.xlsx`, `.xlsm` | Text cells, comments, headers and footers (see "xlsx") |
-| OpenDocument | `.odt`, `.odp`, `.ods` | Body, annotations, `text:note`, master-page headers and footers |
+| OpenDocument | `.odt`, `.odp`, `.ods` | Body, annotations, `text:note`, master-page headers and footers. For `.ods`, see "xlsx and ods" |
 | PNG with a diagram source | `.drawio.png`, `.excalidraw.png`, and PNG files named by an explicit include | draw.io, Excalidraw and PlantUML sources |
 
 Macro and template variants (`docm`, `xlsm`, `pptm`, `dotx` and similar) are included and read-only. Slopvac skips macros and leaves these files unchanged.
@@ -121,13 +121,13 @@ Extraction follows the accepted view of a document:
 
 A moved sentence must appear once in the output.
 
-### xlsx
+### xlsx and ods
 
-xlsx uses a cell-occurrence model. Each text cell becomes one segment, addressed by sheet and cell reference such as `Sheet1!B4`. Comments, headers and footers are separate segments.
+xlsx and ods use a cell-occurrence model. Each text cell becomes one segment, addressed by sheet and cell reference such as `Sheet1!B4`. For xlsx, comments, headers and footers are separate segments. For ods, only text cells are linted.
 
 The user decided these cases on 2026-11-16. Hidden sheets are skipped, because a reader does not see them. Formulas and their cached results are not linted.
 
-The design also fixes these cases:
+The design also fixes these cases for xlsx:
 
 - `sharedStrings.xml` is never linted as standalone prose. A shared string is linted once per cell that references it.
 - The number of occurrences is budgeted before allocation, because one shared string can fan out to millions of cells.
