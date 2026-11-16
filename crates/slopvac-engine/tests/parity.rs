@@ -6,7 +6,8 @@
 //! the reason and the facts that are not compared for it (`position`, `end`, `words`, `sentences`, `paragraphs`,
 //! `score`, `gate`). Everything else is still compared. A listed fact must still differ, so
 //! the list cannot go stale. `fewer` names rules for which Rust reports exactly that many
-//! findings fewer than 2.x; the rest of the findings are still compared.
+//! findings fewer than 2.x; the rest of the findings are still compared. `unmapped` names
+//! rules for which exactly that many 2.x findings lost their matched text.
 
 #![allow(
     missing_docs,
@@ -135,6 +136,40 @@ struct Divergence {
     /// Findings per rule that 2.x reports and Rust does not.
     #[serde(default)]
     fewer: BTreeMap<String, usize>,
+    /// Findings per rule for which 2.x lost the matched text and reports an empty `matched`.
+    /// Exactly that many such 2.x rows take the text of an unclaimed Rust finding of the same
+    /// rule and severity before the comparison; everything else is still compared.
+    #[serde(default)]
+    unmapped: BTreeMap<String, usize>,
+}
+
+/// Fill in the 2.x rows that lost their matched text with the text of an unclaimed Rust row
+/// of the same rule and severity. Returns how many rows were filled per rule.
+fn fill_unmapped(
+    want: &mut [Row],
+    got: &[Row],
+    unmapped: &BTreeMap<String, usize>,
+) -> BTreeMap<String, usize> {
+    let mut filled = BTreeMap::new();
+    // Rust rows whose text no 2.x row already accounts for.
+    let mut spare: Vec<&Row> = multiset_minus(got, want);
+    for row in want.iter_mut() {
+        let Some(limit) = unmapped.get(&row.0) else {
+            continue;
+        };
+        let count = filled.entry(row.0.clone()).or_insert(0usize);
+        if *count == *limit || !row.5.is_empty() {
+            continue;
+        }
+        let candidate = spare
+            .iter()
+            .position(|g| g.0 == row.0 && g.4 == row.4 && !g.5.is_empty());
+        if let Some(i) = candidate {
+            row.5.clone_from(&spare.swap_remove(i).5);
+            *count += 1;
+        }
+    }
+    filled
 }
 
 /// Findings reduced to what one comparison reads: `0` keeps everything, `1` drops the end
@@ -222,9 +257,16 @@ fn differences(
     text: &str,
     expected: &Value,
     fewer: &BTreeMap<String, usize>,
+    unmapped: &BTreeMap<String, usize>,
 ) -> BTreeMap<&'static str, String> {
     let mut out = BTreeMap::new();
-    let (want, got) = (rows_expected(expected), rows_actual(doc, text));
+    let (mut want, got) = (rows_expected(expected), rows_actual(doc, text));
+    if &fill_unmapped(&mut want, &got, unmapped) != unmapped {
+        out.insert(
+            "unmapped",
+            "the count of 2.x findings with lost matched text changed".to_owned(),
+        );
+    }
     // `end` is only reported when the start agrees, so it names the end column alone.
     let start_agrees = keyed(want.clone(), 1) == keyed(got.clone(), 1);
     for (name, level) in [("end", 0), ("position", 1), ("findings", 2)] {
@@ -297,7 +339,8 @@ fn rust_matches_the_2x_engine_on_the_interim_fixture() {
         let doc = engine.lint(&Input::markdown(name, text)).unwrap();
         let no_fewer = BTreeMap::new();
         let fewer = divergences.get(name).map_or(&no_fewer, |d| &d.fewer);
-        let diff = differences(&doc, text, &entry["expected"], fewer);
+        let unmapped = divergences.get(name).map_or(&no_fewer, |d| &d.unmapped);
+        let diff = differences(&doc, text, &entry["expected"], fewer, unmapped);
         let allowed: &[String] = divergences.get(name).map_or(&[], |d| &d.ignore);
         // `position` is the exact comparison. `findings` ignores positions, so ignoring
         // `position` still compares which rules matched which text.
