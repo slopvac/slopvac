@@ -110,6 +110,14 @@ fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(),
 }
 
 impl Blocklist {
+    /// Add the entries of `other` that this blocklist does not have. An entry for the same word
+    /// and part of speech that is already here wins, so list the most specific file first.
+    pub fn merge(&mut self, other: Self) {
+        for (key, entry) in other.entries {
+            self.entries.entry(key).or_insert(entry);
+        }
+    }
+
     /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
