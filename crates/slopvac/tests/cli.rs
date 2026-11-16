@@ -164,7 +164,7 @@ fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
 #[test]
 fn unwired_commands_exit_2_naming_the_owner() {
     slopvac()
-        .arg("migrate")
+        .arg("packs")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("not available in this build yet"));
@@ -234,7 +234,7 @@ fn failures_carry_stable_bracketed_codes() {
             vec!["lint".into(), "--no-vale".into(), "x".into()],
             "error[removed-option]: ",
         ),
-        (vec!["migrate".into()], "error[command-not-wired]: "),
+        (vec!["packs".into()], "error[command-not-wired]: "),
         (vec!["lint".into(), "--bogus".into()], "error[usage]: "),
     ];
     for (args, prefix) in cases {
