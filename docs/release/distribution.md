@@ -8,7 +8,7 @@ The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives 
   - macOS arm64 and x86_64.
   - Linux arm64 and x86_64 (glibc).
   - Linux x86_64 (musl).
-- A shell installer and a Homebrew formula pushed to `srobroek/homebrew-tap`.
+- A shell installer and a Homebrew formula pushed to `slopvac/homebrew-tap`.
 - GitHub build attestations, checksums, a CycloneDX SBOM, and binaries built with `cargo-auditable`.
 - A minisign signature (`<file>.minisig`) for every published file: archives, installers, the Homebrew formula, checksum files, the SBOM and `dist-manifest.json`.
 
@@ -74,7 +74,7 @@ dist build --artifacts=local --tag v<version>
 A maintainer must do these once. No workflow does them.
 
 - Create the `MINISIGN_SECRET_KEY` repository secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key). Release and candidate jobs stop without the secret or the committed public key.
-- Create the `srobroek/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
+- Create the `slopvac/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
 - Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
 - Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
 - Create the tag ruleset described next.
@@ -118,7 +118,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 
 ## Publish order and recovery
 
-Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `srobroek/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
+Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `slopvac/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
 
 ## Test an installed release
 
@@ -126,7 +126,7 @@ Each release of major 3 and later publishes in this order: build, upload to the 
 
 - the archive for each of the five targets, after checking the published `.sha256` file.
 - the shell installer on Linux and macOS.
-- `brew install srobroek/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
+- `brew install slopvac/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
 
 It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with `GITHUB_TOKEN`, which raises no event, and such a trigger could start before the assets exist. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.
 
