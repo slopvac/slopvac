@@ -493,7 +493,8 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
 fn stop_group(_leader: u32) {}
 
 /// `taskkill /T /F` on the leader's tree. The leader's open handle keeps its
-/// id reserved; the tree walk itself is `taskkill`'s (job objects: NEW-3).
+/// id reserved; the tree walk itself is `taskkill`'s (job objects:
+/// `slopvac-8l4.18.8`).
 #[cfg(not(unix))]
 fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
     if matches!(then, Then::Resume) {
@@ -548,7 +549,7 @@ fn graceful(acknowledged: bool, forced: bool, exited_zero: bool) -> bool {
 /// After a `graceful` exit `taskkill` does not run and the teardown is
 /// complete. Once the leader has exited, `taskkill` finds no tree, and
 /// containing the leader's descendants then is the work of job objects
-/// (residual risk, NEW-3, `slopvac-8l4.9.13`).
+/// (residual risk, native Windows support: `slopvac-8l4.18.8`).
 ///
 /// Any other teardown, a kill on a timeout, a failure, a drop or an
 /// interrupt, is complete only if `taskkill` exits with status 0. Status
