@@ -48,5 +48,10 @@ cold = true
 
 [[scenario]]
 name = "lint comments source"
-args = ["lint", "--mode", "code-comments", "{root}/scripts/perf/fixtures/comments/example.py"]
+args = [
+  "lint",
+  "--mode",
+  "code-comments",
+  "{root}/scripts/perf/fixtures/comments/example.py",
+]
 accept_exits = [0, 1]
