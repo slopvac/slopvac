@@ -1,0 +1,62 @@
+---
+# MegaLinter plugin descriptor for slopvac. See docs/ci/megalinter-trunk.md.
+# MegaLinter loads plugin URLs only if they contain "/mega-linter-plugin-" and the file
+# name ends in ".megalinter-descriptor.yml", so keep this directory and file name.
+# MegaLinter's plugin installer runs only `dockerfile` entries that start with RUN, so the
+# install step is one RUN that pins the PyPI release. Update the pin with every slopvac release.
+descriptor_id: PROSE
+descriptor_type: other
+descriptor_label: prose
+descriptor_flavors:
+  - all_flavors
+  - ci_light
+  - documentation
+file_extensions:
+  - ".md"
+  - ".markdown"
+  - ".rst"
+  - ".txt"
+  - ".html"
+linters:
+  - linter_name: slopvac
+    name: PROSE_SLOPVAC
+    linter_spdx_license: Apache-2.0
+    linter_text: |
+      **slopvac** lints prose for AI writing patterns and technical-writing problems. It reads
+      Markdown, reStructuredText, plain text and HTML, and reports each finding with a rule ID,
+      a location and a suggested fix. Exit 0 means the files pass, 1 means findings, and 2 means
+      the check was incomplete. MegaLinter treats every nonzero exit as a failure, so an
+      incomplete check never passes.
+    linter_url: https://github.com/srobroek/slopvac
+    linter_repo: https://github.com/srobroek/slopvac
+    linter_megalinter_ref_url: https://github.com/srobroek/slopvac/blob/main/docs/ci/megalinter-trunk.md
+    linter_rules_configuration_url: https://github.com/srobroek/slopvac/blob/main/README.md
+    config_file_name: slopvac.toml
+    cli_config_arg_name: --config
+    cli_lint_mode: list_of_files
+    supported_cli_lint_modes:
+      - file
+      - list_of_files
+    cli_lint_extra_args:
+      - lint
+    cli_version_arg_name: --version
+    cli_help_arg_name: --help
+    can_output_sarif: true
+    cli_sarif_args:
+      - --format
+      - sarif
+      - --out
+      - "{{SARIF_OUTPUT_FILE}}"
+    examples:
+      - "slopvac lint README.md docs/guide.md"
+      - "slopvac lint --config slopvac.toml README.md"
+    install:
+      dockerfile:
+        - >-
+          RUN python3 -m venv /venvs/slopvac
+          && /venvs/slopvac/bin/pip install --no-cache-dir --only-binary=:all: "slopvac==3.0.0"
+          && ln -s /venvs/slopvac/bin/slopvac /usr/local/bin/slopvac
+          && slopvac --version
+    supported_platforms:
+      platform:
+        - linux/amd64

@@ -13,10 +13,10 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol reference, styles, terms and genres come
-from real data. The styles, terms and genres pages come from each crate's
-``reference`` example, which the builder runs through cargo. Plugin packs are a
-stub generator that emits a placeholder page until the owning crate exists.
+Rules, schemas, the plugin protocol and pack manifest references, the pack
+pages, styles, terms and genres come from real data. The styles, terms and
+genres pages come from each crate's ``reference`` example, which the builder
+runs through cargo.
 """
 
 from __future__ import annotations
@@ -37,13 +37,22 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import mdlinks
+import plugin_pages
 import starlight
 import yaml
+from mdtext import cell as _cell
+from mdtext import one_line as _one_line
+from mdtext import text as _text
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 DEFAULT_OUT = ROOT / "build" / "site-src"
+# Pack manifests to document. The example plugin pack is the only committed one
+# until the pack loader and the bundled core pack exist.
+PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
+CONTRACT_DIR = ROOT / "docs" / "contract"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
 CARGO = "cargo"
 
@@ -83,23 +92,6 @@ def rule_url(category: str, rule: str, site: Site | None = None) -> str:
     """Stable public URL of a rule page, as outputs link to it."""
     site = site or load_site()
     return site.versioned_url(rule_page_path(category, rule).removesuffix(".md") + "/")
-
-
-def _one_line(text: object) -> str:
-    return " ".join(str(text).split())
-
-
-def _text(value: object) -> str:
-    """Catalogue prose as one Markdown line, with HTML specials escaped.
-
-    Unicode dashes become the ASCII ``--`` that the prose rules ask for.
-    """
-    one_line = _one_line(value).replace("\u2014", "--").replace("\u2013", "--")
-    return html.escape(one_line, quote=False)
-
-
-def _cell(value: object) -> str:
-    return _text(value).replace("|", "\\|")
 
 
 _SLOT = re.compile(r"\{(\w+)\}")
@@ -244,31 +236,6 @@ def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     return pages
 
 
-def generate_protocol(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
-    schema = json.loads((schemas_dir / "plugin-protocol.schema.json").read_text())
-    lines = [
-        "# Plugin protocol v1",
-        "",
-        _text(schema["description"]),
-        "",
-        "## Definitions",
-        "",
-    ]
-    for name, definition in sorted(schema["$defs"].items()):
-        kind = definition.get("type") or (
-            "union" if {"oneOf", "anyOf"} & definition.keys() else "any"
-        )
-        description = _text(definition.get("description", "No description."))
-        lines.append(f"- `{name}` ({kind}): {description}")
-    return {"plugins/protocol.md": "\n".join(lines) + "\n"}
-
-
-def _placeholder(path: str, title: str, swap: str) -> Pages:
-    return {
-        path: f"# {title}\n\nThis reference is not generated yet. Bead {swap} tracks it.\n"
-    }
-
-
 @cache
 def rust_reference(crate: str) -> Pages:
     """Pages printed by a crate's ``reference`` example, keyed by site path."""
@@ -297,18 +264,14 @@ def generate_genres() -> Pages:
     return rust_reference("slopvac-context")
 
 
-def generate_packs() -> Pages:
-    # STUB(slopvac-8l4.19.12): needs the pack loader (slopvac-8l4.9.1).
-    return _placeholder("plugins/packs.md", "Packs", "slopvac-8l4.19.12")
-
-
 SECTIONS = (
     ("Rules", "rules/index.md"),
     ("Styles", "styles/index.md"),
     ("Genres", "genres/index.md"),
     ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
-    ("Packs", "plugins/packs.md"),
+    ("Pack manifest", "plugins/manifest.md"),
+    ("Packs", "plugins/packs/index.md"),
     ("Schemas", "schemas/index.md"),
 )
 
@@ -323,16 +286,20 @@ def build(
     site: Site,
     rules_dir: Path = RULES_DIR,
     schemas_dir: Path = SCHEMAS_DIR,
+    packs_dir: Path = PACKS_DIR,
+    contract_dir: Path = CONTRACT_DIR,
 ) -> Pages:
     pages: Pages = {}
+    schemas = plugin_pages.SchemaSet(schemas_dir)
     generated = (
         generate_rules(rules_dir),
         generate_schemas(site, schemas_dir),
-        generate_protocol(schemas_dir),
+        plugin_pages.generate_protocol(schemas, contract_dir),
+        plugin_pages.generate_manifest(schemas),
         generate_styles(),
         generate_terms(),
         generate_genres(),
-        generate_packs(),
+        plugin_pages.generate_packs(schemas, packs_dir),
         {"index.md": index_page()},
     )
     for group in generated:
@@ -343,21 +310,18 @@ def build(
     return pages
 
 
-_LINK = re.compile(r"\]\(([^)#:]+\.(?:md|json))(?:#[^)]*)?\)")
-
-
 def broken_links(pages: Pages) -> list[str]:
     """Relative links that point at no generated file."""
     problems = []
     for path, text in pages.items():
         if not path.endswith(".md"):
             continue
-        for target in _LINK.findall(text):
+        for link in mdlinks.find_links(text):
             resolved = posixpath.normpath(
-                posixpath.join(posixpath.dirname(path), target)
+                posixpath.join(posixpath.dirname(path), link.target)
             )
             if resolved not in pages:
-                problems.append(f"{path}: broken link {target}")
+                problems.append(f"{path}: broken link {link.target}")
     return problems
 
 
@@ -405,6 +369,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
+    parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
+    parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -418,7 +384,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     site = load_site(args.config)
-    pages = build(site, args.rules_dir, args.schemas_dir)
+    pages = build(
+        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+    )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:
         problems += stale_problems(pages, args.out)
