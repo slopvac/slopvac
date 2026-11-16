@@ -22,6 +22,8 @@ FIXTURES = Path(__file__).resolve().parents[2] / "crates/slopvac-engine/tests/fi
     "script", ["generate_vocabulary.py", "generate_fix.py", "generate_locale.py"]
 )
 def test_engine_fixture_is_current(script: str) -> None:
+    # CI's Vale is older than 3.27, so the vocabulary case replays the stored Vale findings
+    # there until slopvac-8l4.3.47 gives CI a usable Vale.
     result = subprocess.run(
         [sys.executable, str(FIXTURES / script), "--check"],
         capture_output=True,
