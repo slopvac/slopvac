@@ -130,7 +130,9 @@ fn open_parent(root: &Dir, ancestors: &[&OsStr], create: bool) -> std::io::Resul
         dir = match dir.open_dir_nofollow(name) {
             Err(e) if create && e.kind() == ErrorKind::NotFound => {
                 match dir.create_dir(name) {
-                    Ok(()) => {}
+                    // Sync the directory that gained an entry, so the new directory survives a
+                    // crash. The effect is not observable in a test.
+                    Ok(()) => dir.open(".")?.sync_all()?,
                     Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
                     Err(e) => return Err(e),
                 }
@@ -374,9 +376,12 @@ mod tests {
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o500)).unwrap();
         let result = write(&dir, "locked/f", b"x", WriteOptions::default());
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let Err(Error::Io { source, .. }) = result else {
-            // Running as root: directory permissions do not apply.
+        if rustix::process::geteuid().is_root() {
+            // Directory permissions do not apply to root.
             return;
+        }
+        let Err(Error::Io { source, .. }) = result else {
+            panic!("expected Error::Io, got {result:?}");
         };
         assert_eq!(source.raw_os_error(), Some(13), "EACCES");
         assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
