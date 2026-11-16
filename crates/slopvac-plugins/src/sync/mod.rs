@@ -78,6 +78,7 @@ use crate::oci::{
     Client, Descriptor, Digest, MAX_MANIFEST_BYTES, MEDIA_MANIFEST, Manifest, OciError, Reference,
     Target,
 };
+use crate::pyenv::{EnvStore, InstallNetwork, Installer, PythonRuntime};
 use crate::revoke::{RevocationList, RevocationNotice, Revocations};
 use crate::sign::{
     Expectation, KeyPolicy, MAX_STATEMENT_BYTES, MEDIA_MINISIG, MEDIA_STATEMENT, signature_layers,
@@ -128,6 +129,10 @@ pub struct PackOutcome {
     pub tree: PathBuf,
     /// A modified tree too large to delete was moved here and keeps using storage.
     pub quarantined: Option<PathBuf>,
+    /// Store key of the managed Python environment for this pack, when its
+    /// manifest selects `runtime = "python"` and the syncer builds environments
+    /// ([`Syncer::with_python`]).
+    pub python_env: Option<String>,
 }
 
 /// What sync did, sorted by pack id.
@@ -151,6 +156,19 @@ enum Acquired {
     InPlace(PathBuf),
 }
 
+/// Where and how sync builds managed Python environments (threat model
+/// section 6.6). Offline mode builds offline too: uv downloads nothing and
+/// uses only interpreters that are already installed.
+#[derive(Debug, Clone, Copy)]
+pub struct PythonBuild<'a> {
+    /// The store the environments go into.
+    pub envs: &'a EnvStore,
+    /// Absolute path of the `uv` binary.
+    pub uv: &'a Path,
+    /// Where uv keeps managed interpreters (`UV_PYTHON_INSTALL_DIR`).
+    pub python_install_dir: &'a Path,
+}
+
 /// Installs a lock into a [`Store`].
 pub struct Syncer<'a> {
     store: &'a Store,
@@ -161,6 +179,7 @@ pub struct Syncer<'a> {
     limits: Limits,
     executables: BTreeMap<PackId, HashSet<String>>,
     git: GitSettings,
+    python: Option<PythonBuild<'a>>,
 }
 
 /// How git sources are fetched. Production uses the defaults; tests may allow
@@ -199,6 +218,7 @@ impl<'a> Syncer<'a> {
                 launcher: Launcher::CurrentExe,
                 rewrite: None,
             },
+            python: None,
         }
     }
 
@@ -237,6 +257,16 @@ impl<'a> Syncer<'a> {
     #[must_use]
     pub fn with_git_timeout_for_tests(mut self, timeout: Duration) -> Self {
         self.git.timeout = timeout;
+        self
+    }
+
+    /// Build the managed Python environment of every pack whose manifest
+    /// selects `runtime = "python"`, after the pack is extracted and
+    /// verified. An environment that still passes its quick check is kept.
+    /// A failed build fails the sync ([`SyncError::PythonEnv`]).
+    #[must_use]
+    pub fn with_python(mut self, python: PythonBuild<'a>) -> Self {
+        self.python = Some(python);
         self
     }
 
@@ -310,11 +340,37 @@ impl<'a> Syncer<'a> {
         };
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
             let mut outcome = self.install(pack, how, &before)?;
+            outcome.python_env = self.python_env(pack, &outcome.tree)?;
             // A modified tree too large to delete was moved aside; keep reporting it.
             outcome.quarantined = outcome.quarantined.or(aside);
             report.packs.push(outcome);
         }
         Ok(report)
+    }
+
+    fn python_env(&self, pack: &LockedPack, tree: &Path) -> Result<Option<String>, SyncError> {
+        let Some(build) = self.python else {
+            return Ok(None);
+        };
+        let fail = |source| SyncError::PythonEnv {
+            id: pack.id.clone(),
+            source,
+        };
+        let Some(runtime) = PythonRuntime::read(tree).map_err(fail)? else {
+            return Ok(None);
+        };
+        let hash = tree_hash(tree).map_err(|e| fail(e.into()))?;
+        let installer = Installer {
+            uv: build.uv.to_path_buf(),
+            python_install_dir: build.python_install_dir.to_path_buf(),
+            python: runtime.python,
+            network: match self.network {
+                Network::Offline => InstallNetwork::Offline,
+                Network::Online(_) => InstallNetwork::Online,
+            },
+        };
+        build.envs.ensure(&installer, tree, &hash).map_err(fail)?;
+        Ok(Some(EnvStore::key(&hash, &installer.python)))
     }
 
     fn install(
@@ -329,6 +385,7 @@ impl<'a> Syncer<'a> {
             change,
             tree,
             quarantined,
+            python_env: None,
         };
         let extract = |source| SyncError::Extract {
             id: pack.id.clone(),
@@ -829,6 +886,23 @@ pub enum PackState {
     InPlaceChanged(PathBuf),
 }
 
+/// How the managed Python environment of a pack stands. `status` leaves it at
+/// [`PythonState::NotChecked`]; [`status_with_python`] fills it in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PythonState {
+    /// Not looked at: the caller passed no environment store, the pack is not
+    /// a Python plugin, or its tree is not intact.
+    NotChecked,
+    /// The environment exists and passes the full check, which hashes every
+    /// file and the interpreter (threat model Y5). Carries its store key.
+    Verified(String),
+    /// The pack needs an environment and none is built. `sync` builds it.
+    Missing,
+    /// The environment fails the full check, or the manifest cannot select
+    /// one. Spawning is refused until it is rebuilt and trusted again.
+    Failed(String),
+}
+
 /// The state of one locked pack.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackStatus {
@@ -838,6 +912,8 @@ pub struct PackStatus {
     pub version: Version,
     /// State in the store.
     pub state: PackState,
+    /// State of its managed Python environment.
+    pub python: PythonState,
 }
 
 impl PackStatus {
@@ -856,6 +932,53 @@ impl PackStatus {
 /// [`SyncError::Store`] when a tree cannot be read.
 pub fn status(
     store: &Store,
+    project_root: &Path,
+    lock: &Lockfile,
+) -> Result<Vec<PackStatus>, SyncError> {
+    status_in(store, None, project_root, lock)
+}
+
+/// [`status`], plus the full check of each managed Python environment
+/// (`slopvac plugins status` and `doctor`, threat model section 6.6). For an
+/// intact pack whose manifest selects `runtime = "python"`, this loads the
+/// environment from `envs` and hashes every file in it and the interpreter.
+/// The hashing is the cost that the spawn gate avoids (Y5). Environments
+/// that no pack uses are listed by [`EnvStore::list`].
+///
+/// # Errors
+/// [`SyncError::Store`] when a tree cannot be read.
+pub fn status_with_python(
+    store: &Store,
+    envs: &EnvStore,
+    project_root: &Path,
+    lock: &Lockfile,
+) -> Result<Vec<PackStatus>, SyncError> {
+    status_in(store, Some(envs), project_root, lock)
+}
+
+fn python_state(envs: &EnvStore, tree: &Path) -> PythonState {
+    let runtime = match PythonRuntime::read(tree) {
+        Ok(None) => return PythonState::NotChecked,
+        Ok(Some(r)) => r,
+        Err(e) => return PythonState::Failed(e.to_string()),
+    };
+    let hash = match tree_hash(tree) {
+        Ok(h) => h,
+        Err(e) => return PythonState::Failed(e.to_string()),
+    };
+    match envs.load(&hash, &runtime.python) {
+        Ok(None) => PythonState::Missing,
+        Ok(Some(env)) => match env.verify_full() {
+            Ok(()) => PythonState::Verified(EnvStore::key(&hash, &runtime.python)),
+            Err(e) => PythonState::Failed(e.to_string()),
+        },
+        Err(e) => PythonState::Failed(e.to_string()),
+    }
+}
+
+fn status_in(
+    store: &Store,
+    envs: Option<&EnvStore>,
     project_root: &Path,
     lock: &Lockfile,
 ) -> Result<Vec<PackStatus>, SyncError> {
@@ -878,10 +1001,17 @@ pub fn status(
                     TreeState::Tampered(dir) => PackState::Tampered(dir),
                 },
             };
+            let python = match (&state, envs) {
+                (PackState::Recorded(dir) | PackState::InPlace(dir), Some(envs)) => {
+                    python_state(envs, dir)
+                }
+                _ => PythonState::NotChecked,
+            };
             Ok(PackStatus {
                 id: pack.id.clone(),
                 version: pack.version.clone(),
                 state,
+                python,
             })
         })
         .collect()

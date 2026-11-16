@@ -19,7 +19,7 @@ use flate2::write::GzEncoder;
 use sha2::{Digest as _, Sha256};
 use slopvac_plugins::extract::{Limits, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
-use slopvac_plugins::pyenv::{PyEnvError, PyLock};
+use slopvac_plugins::pyenv::{MANIFEST_FILE, PyEnvError, PyLock, PythonRuntime};
 use slopvac_plugins::trust::VerifiedPlugin;
 
 const PLUGIN_PY: &str = include_str!("fixtures/fake_plugin.py");
@@ -204,10 +204,21 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
 
 /// Extract a Python plugin tree with `lock` and `wheels`, as sync would.
 fn install(s: &Scratch, lock: &str, wheels: &[Wheel<'_>]) -> VerifiedPlugin {
+    install_with(s, lock, wheels, &[])
+}
+
+/// [`install`], plus `extra` files in the tree.
+fn install_with(
+    s: &Scratch,
+    lock: &str,
+    wheels: &[Wheel<'_>],
+    extra: &[(&str, &[u8])],
+) -> VerifiedPlugin {
     let mut files: Vec<(&str, &[u8])> = vec![
         ("plugin.py", PLUGIN_PY.as_bytes()),
         ("pylock.toml", lock.as_bytes()),
     ];
+    files.extend_from_slice(extra);
     for w in wheels {
         files.push((w.path.as_str(), w.bytes.as_slice()));
     }
@@ -480,6 +491,109 @@ fn managed_python_environments_are_refused_on_windows() {
     assert!(!s.dir("envs").exists(), "nothing was created");
 }
 
+/// A `slopvac-pack.toml` for a pack of `kind`, with `plugin` lines appended to its `[plugin]` table.
+fn manifest(kind: &str, plugin: &str) -> String {
+    format!(
+        "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"{kind}\"\n\n[plugin]\nnetwork = false\nhooks = []\nfeatures = {{ required = [], optional = [] }}\n{plugin}"
+    )
+}
+
+fn read_runtime(name: &str, manifest: Option<&str>) -> Result<Option<PythonRuntime>, PyEnvError> {
+    let s = Scratch::new(&format!("rt-{name}"));
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    if let Some(m) = manifest {
+        fs::write(s.dir("tree").join(MANIFEST_FILE), m).unwrap();
+    }
+    PythonRuntime::read(&s.dir("tree"))
+}
+
+#[test]
+fn a_python_runtime_in_the_manifest_selects_a_managed_environment() {
+    let m = manifest(
+        "plugin",
+        "runtime = \"python\"\npython = \"3.12\"\ncommand = \"bin/tagger.py\"\nargs = [\"--stdio\"]\n",
+    );
+    let rt = read_runtime("python", Some(&m)).unwrap().unwrap();
+    assert_eq!(
+        rt,
+        PythonRuntime {
+            python: "3.12".into(),
+            command: "bin/tagger.py".into(),
+            args: vec!["--stdio".into()],
+        }
+    );
+}
+
+#[test]
+fn a_tree_that_asks_for_no_python_environment_selects_none() {
+    let data =
+        "schema_version = 3\nid = \"d\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+    let cases = [
+        ("no-manifest", None),
+        ("data", Some(data.to_owned())),
+        ("default", Some(manifest("plugin", "command = \"bin/x\"\n"))),
+        (
+            "native",
+            Some(manifest(
+                "plugin",
+                "command = \"bin/x\"\nruntime = \"native\"\n",
+            )),
+        ),
+    ];
+    for (name, m) in cases {
+        assert_eq!(read_runtime(name, m.as_deref()).unwrap(), None, "{name}");
+    }
+}
+
+#[test]
+fn a_manifest_that_cannot_select_an_environment_is_refused() {
+    let py = |extra: &str| manifest("plugin", &format!("runtime = \"python\"\n{extra}"));
+    let cases = [
+        ("no-request", py("command = \"a.py\"\n")),
+        ("no-command", py("python = \"3.12\"\n")),
+        (
+            "option-request",
+            py("python = \"--index-url=x\"\ncommand = \"a.py\"\n"),
+        ),
+        ("dash-command", py("python = \"3.12\"\ncommand = \"-c\"\n")),
+        (
+            "parent-command",
+            py("python = \"3.12\"\ncommand = \"../a.py\"\n"),
+        ),
+        (
+            "absolute-command",
+            py("python = \"3.12\"\ncommand = \"/bin/sh\"\n"),
+        ),
+        (
+            "backslash-command",
+            py("python = \"3.12\"\ncommand = 'a\\b.py'\n"),
+        ),
+        (
+            "unknown-runtime",
+            manifest("plugin", "runtime = \"node\"\ncommand = \"a.js\"\n"),
+        ),
+        (
+            "request-on-native",
+            manifest("plugin", "python = \"3.12\"\ncommand = \"a\"\n"),
+        ),
+        (
+            "python-in-a-data-pack",
+            manifest(
+                "data",
+                "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n",
+            ),
+        ),
+        ("not-toml", "[plugin\n".to_owned()),
+    ];
+    for (name, m) in cases {
+        let err = read_runtime(name, Some(&m)).unwrap_err();
+        assert!(
+            matches!(err, PyEnvError::Manifest { .. }),
+            "{name}: {err:?}"
+        );
+    }
+}
+
 #[test]
 fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
     let wheel = format!(
@@ -636,138 +750,13 @@ mod unix_only {
     use std::time::Duration;
 
     use super::*;
+    use crate::common::fake_uv::{Fake, Tamper, fake_uv, write_exec};
     use crate::common::{cfg, decl, docs, python};
     use slopvac_plugins::pyenv::{EnvStore, InstallNetwork, Installer, ManagedEnv};
     use slopvac_plugins::trust::{TrustError, TrustGate, TrustStore};
     use slopvac_plugins::{Plugin, PluginError, PluginSpec, SpawnGate};
 
     const NOW: &str = "2026-11-15T12:00:00Z";
-
-    /// Knobs of the fake uv.
-    struct Fake<'a> {
-        /// What `bin/python` links to.
-        interpreter: PathBuf,
-        /// Written into the environment as `payload.py`.
-        payload: &'a str,
-        /// Exit status of `uv python find`.
-        find_exit: i32,
-        /// When set, `pip install` also writes a `.pth` file that appends to this marker.
-        hook: Option<PathBuf>,
-        /// When set, `pip install` acts like a wheel that overwrites the
-        /// interpreter (`Tamper::Python`, whose replacement touches the
-        /// marker) or `pyvenv.cfg` (`Tamper::Config`).
-        tamper: Option<Tamper>,
-        /// Shell run at the end of `pip install`, with `$site` set: extra output.
-        pip_extra: &'a str,
-        /// `uv venv` hangs instead of creating the environment.
-        hang: bool,
-        /// Shell run at the start of `uv venv`.
-        venv_extra: &'a str,
-        /// Exit 99 when a run could download: any call without both
-        /// `--offline` and `--no-python-downloads`, or with `--python-downloads`.
-        offline_only: bool,
-    }
-
-    #[derive(Clone)]
-    enum Tamper {
-        Python(PathBuf),
-        Config,
-    }
-
-    impl Fake<'_> {
-        fn real() -> Self {
-            Self {
-                interpreter: python(),
-                payload: "VALUE = 1",
-                find_exit: 0,
-                hook: None,
-                tamper: None,
-                pip_extra: "",
-                hang: false,
-                venv_extra: "",
-                offline_only: false,
-            }
-        }
-    }
-
-    fn write_exec(path: &Path, text: &str) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    /// Write the fake uv into `dir` and return its path. Each run appends its
-    /// arguments and environment to `dir/uv.log`.
-    fn fake_uv(dir: &Path, fake: &Fake<'_>) -> PathBuf {
-        let uv = dir.join("uv");
-        let home = fs::canonicalize(&fake.interpreter).unwrap();
-        let home = home.parent().unwrap();
-        write_exec(
-            &uv,
-            &format!(
-                r#"#!/bin/sh
-log='{log}'
-{{ printf 'ARGS'; for a; do printf ' %s' "$a"; done; printf '\n'; env | sed 's/^/ENV /'; }} >> "$log"
-ver=$('{py}' -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-{offline}
-case "$1" in
-python) exit {find} ;;
-venv)
-  {hang}
-  {venv_extra}
-  for a; do dir=$a; done
-  mkdir -p "$dir/bin" "$dir/lib/python$ver/site-packages"
-  ln -s '{py}' "$dir/bin/python"
-  printf 'home = %s\ninclude-system-site-packages = false\n' '{home}' > "$dir/pyvenv.cfg"
-  ;;
-pip)
-  prev=; py=; req=
-  for a; do case "$prev" in --python) py=$a ;; -r) req=$a ;; esac; prev=$a; done
-  site="${{py%/bin/python}}/lib/python$ver/site-packages"
-  cp "$req" "$site/installed.txt"
-  printf '%s\n' '{payload}' > "$site/payload.py"
-  {hook}
-  {tamper}
-  # Like uv: --compile-bytecode starts the environment's interpreter with site
-  # enabled, so a .pth file in it runs.
-  case " $* " in *" --compile-bytecode "*) "$py" -c pass ;; esac
-  {pip_extra}
-  ;;
-esac
-"#,
-                log = dir.join("uv.log").display(),
-                offline = if fake.offline_only {
-                    r#"case " $* " in *" --python-downloads"*) echo "download-capable: $*" >&2; exit 99 ;; esac
-case " $* " in *" --offline "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac
-case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac"#
-                } else {
-                    ""
-                },
-                hang = if fake.hang { "exec sleep 30" } else { "" },
-                venv_extra = fake.venv_extra,
-                pip_extra = fake.pip_extra,
-                find = fake.find_exit,
-                py = fake.interpreter.display(),
-                home = home.display(),
-                payload = fake.payload,
-                hook = fake.hook.as_ref().map_or(String::new(), |m| format!(
-                    r#"printf '%s\n' "import os; open('{}', 'a').write('x')" > "$site/hook.pth""#,
-                    m.display()
-                )),
-                tamper = match &fake.tamper {
-                    None => String::new(),
-                    Some(Tamper::Python(m)) => format!(
-                        "rm \"$py\"; printf '#!/bin/sh\\ntouch %s\\nexec %s \"$@\"\\n' '{}' '{}' > \"$py\"; chmod 755 \"$py\"",
-                        m.display(),
-                        fake.interpreter.display()
-                    ),
-                    Some(Tamper::Config) =>
-                        r#"printf 'home = /tmp\n' >> "${py%/bin/python}/pyvenv.cfg""#.to_owned(),
-                },
-            ),
-        );
-        uv
-    }
 
     fn installer(uv: PathBuf, network: InstallNetwork) -> Installer {
         Installer {
@@ -890,6 +879,115 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
         let p = Plugin::start(&sp, &cfg(), &g).unwrap();
         assert_eq!(p.tag("main", &docs(1)).unwrap().len(), 1);
         assert!(p.shutdown().clean());
+    }
+
+    const PY_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"plugin\"\n\n[plugin]\ncommand = \"plugin.py\"\nargs = [\"ok\", \"{}\"]\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+
+    /// A plugin tree whose manifest selects a Python environment, with that
+    /// environment built in the store `envs`.
+    fn manifest_plugin(s: &Scratch, manifest: &str) -> (Built, EnvStore) {
+        let wheels = demo();
+        let vp = install_with(
+            s,
+            &lock_text(&wheels),
+            &wheels,
+            &[(MANIFEST_FILE, manifest.as_bytes())],
+        );
+        let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
+        let store = EnvStore::open(s.dir("envs"));
+        let env = store
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap();
+        (Built { vp, env }, store)
+    }
+
+    fn wired(s: &Scratch, b: &Built, store: &EnvStore) -> TrustGate {
+        TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(store)
+            .unwrap()
+    }
+
+    /// The spec a caller builds from the gate's launch: the managed interpreter.
+    fn wired_spec(g: &TrustGate, b: &Built) -> PluginSpec {
+        let (program, args) = g.python_launch(&b.vp.name).unwrap();
+        PluginSpec {
+            program,
+            args,
+            ..spec(b, "/usr/bin:/bin")
+        }
+    }
+
+    #[test]
+    fn a_manifest_selected_python_plugin_starts_through_the_managed_interpreter() {
+        let s = Scratch::new("u-wire-start");
+        let (b, store) = manifest_plugin(&s, PY_MANIFEST);
+        let g = wired(&s, &b, &store);
+        let sp = wired_spec(&g, &b);
+        assert_eq!(sp.program, b.env.python());
+        assert_eq!(
+            sp.args,
+            b.env.args(&["plugin.py".into(), "ok".into(), "{}".into()])
+        );
+        let err = Plugin::start(&sp, &cfg(), &g).unwrap_err().error;
+        assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
+        g.record_trust(&b.vp, &sp, NOW).unwrap();
+        let p = Plugin::start(&sp, &cfg(), &g).unwrap();
+        assert_eq!(p.tag("main", &docs(1)).unwrap().len(), 1);
+        assert!(p.shutdown().clean());
+    }
+
+    #[test]
+    fn a_wired_plugin_is_refused_after_its_environment_changes() {
+        let s = Scratch::new("u-wire-quick");
+        let (b, store) = manifest_plugin(&s, PY_MANIFEST);
+        let g = wired(&s, &b, &store);
+        let sp = wired_spec(&g, &b);
+        g.record_trust(&b.vp, &sp, NOW).unwrap();
+        g.check(&sp).unwrap();
+        let file = site(&b).join("payload.py");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, "VALUE = 'changed, and longer'\n").unwrap();
+        let err = g.check(&sp).unwrap_err();
+        assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
+    }
+
+    #[test]
+    fn wiring_fails_closed_for_a_python_plugin_without_an_environment() {
+        let s = Scratch::new("u-wire-missing");
+        let (b, _) = manifest_plugin(&s, PY_MANIFEST);
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, PyEnvError::EnvMissing { plugin, python } if plugin == "fake" && python == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn wiring_leaves_a_native_plugin_alone() {
+        let s = Scratch::new("u-wire-native");
+        let native = PY_MANIFEST.replace("runtime = \"python\"\npython = \"3.12\"\n", "");
+        let (b, _) = manifest_plugin(&s, &native);
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let g = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .unwrap();
+        assert_eq!(g.python_launch(&b.vp.name), None);
+    }
+
+    #[test]
+    fn wiring_refuses_a_manifest_that_cannot_select_an_environment() {
+        let s = Scratch::new("u-wire-bad");
+        let bad = PY_MANIFEST.replace("python = \"3.12\"\n", "");
+        let (b, store) = manifest_plugin(&s, &bad);
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&store)
+            .err()
+            .unwrap();
+        assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
     }
 
     #[test]

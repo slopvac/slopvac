@@ -181,9 +181,22 @@
       ],
       "properties": {
         "command": {
-          "description": "Executable inside the plugin, or a bare name that the plugin's own environment provides.",
+          "description": "Executable inside the plugin, or a bare name that the plugin's own environment provides. With runtime python it is a script inside the plugin (PackPath, no leading dash).",
           "type": "string",
           "minLength": 1
+        },
+        "runtime": {
+          "description": "How the host runs the command. native (the default) runs it as a program from the plugin. python runs it as a script of the plugin in a managed Python environment that sync builds from the plugin's pylock.toml (threat-model.md section 6.6).",
+          "enum": [
+            "native",
+            "python"
+          ]
+        },
+        "python": {
+          "description": "The Python version request for the managed environment, for example 3.12. Required with runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can never start with a dash that uv would read as an option.",
+          "$ref": "#/$defs/VersionReq",
+          "maxLength": 64,
+          "pattern": "^\\S+$"
         },
         "args": {
           "type": "array",
@@ -225,6 +238,35 @@
       "required": [
         "command"
       ],
+      "if": {
+        "properties": {
+          "runtime": {
+            "const": "python"
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "then": {
+        "properties": {
+          "command": {
+            "description": "With runtime python, a script inside the plugin that the interpreter runs.",
+            "$ref": "#/$defs/PackPath",
+            "pattern": "^[^-]"
+          }
+        },
+        "required": [
+          "python"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "python"
+          ]
+        }
+      },
       "patternProperties": {
         "^x-": {}
       },

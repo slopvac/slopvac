@@ -328,7 +328,7 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 **Environment verification cost (Y5), decided 2026-11-15.** Slopvac checks an environment at these points:
 
 - **At every spawn.** The spawn gate reads every directory of the environment and the metadata of each entry, and hashes nothing, so file sizes do not add to its cost. The check refuses an added, removed or retyped entry, such as a new `.pth` file. It also refuses a change in size, modification time, executable bit or link target, and a change in the interpreter's size or modification time.
-- **In `plugins status`, `doctor` and `plugins trust`.** The full check hashes every file and every interpreter executable. Trust is never recorded for an environment that fails it. `plugins trust` runs it now. `slopvac-8l4.9.34` wires it into `plugins status` and `doctor`.
+- **In `plugins status`, `doctor` and `plugins trust`.** The full check hashes every file and every interpreter executable. Trust is never recorded for an environment that fails it. `plugins trust`, `plugins status` and `doctor` run it. Status calls `sync::status_with_python`, which reports each environment as verified, missing or failed.
 
 The spawn check misses an edit that keeps the size and restores the modification time. That edit needs write access as the user, which is residual risk R6, and the next full check reports it. The environment is read-only after the build, so a plugin must change file modes before it can write there. The test `tm52_a_same_size_edit_with_the_old_mtime_is_caught_by_the_full_check` records this gap.
 
@@ -352,7 +352,7 @@ The spawn check misses an edit that keeps the size and restores the modification
 **Residual gaps.**
 
 - The bounds check reads the sizes that a wheel declares. uv expands the wheel, and slopvac checks the bounds of the result only after the install.
-- Slopvac refuses to build, load or check a managed environment on Windows (`UnsupportedPlatform`), so a Python plugin with a managed environment does not run there. Windows support is follow-up work in `slopvac-8l4.9.34`.
+- Slopvac refuses to build, load or check a managed environment on Windows (`UnsupportedPlatform`), so a Python plugin with a managed environment does not run there. 3.0 ships no native Windows support; any later work is tracked in `slopvac-8l4.9.37`.
 - The startup-hook refusal also refuses packages that ship a `.pth` file for their own use, such as `setuptools`.
 - CI has no uv yet, so the `live_` tests skip there. Tests with a scripted fake uv cover the build controls without uv. The fake runs the interpreter with `site` enabled when it receives `--compile-bytecode`, as uv does. A request to `slopvac-8l4.14` asks for uv in the Rust CI job and `SLOPVAC_PYENV_LIVE=1`.
 - The interpreter identity covers the interpreter executables. The standard library of the uv-managed installation sits outside the environment, and a change there needs write access as the user (R6).
