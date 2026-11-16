@@ -122,7 +122,7 @@ pub const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.p
 /// The verifier that real downloads use: [`MinisignVerifier`] with the compiled-in release key.
 ///
 /// It fails closed. If the compiled key does not parse, every artifact is refused with
-/// [`VerifyError::Invalid`]. Tests swap the key through [`ReleaseVerifier::with_key_file`], which
+/// [`VerifyError::Invalid`]. Tests swap the key through `ReleaseVerifier::with_key_file`, which
 /// exists only in test builds of this crate, so no shipped code path takes another key.
 #[derive(Debug, Clone, Copy)]
 pub struct ReleaseVerifier {
@@ -275,6 +275,11 @@ mod tests {
             format!("{good}\tfile:other"),
             good.replace("slopvac-release", "other-release"),
             good.replace(" version:", " ver:"),
+            format!("{good} version:3.1.0"),
+            format!(" {good}"),
+            format!("{good} "),
+            format!("{good}\t"),
+            good.replace(' ', "  "),
         ] {
             let sig = sign(&kp, b"artifact", Some(&garbled));
             assert!(

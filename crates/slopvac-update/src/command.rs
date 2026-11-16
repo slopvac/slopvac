@@ -215,6 +215,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     .map_err(|e| {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
+            UpdateError::Prerelease(_) => "update-prerelease-refused",
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

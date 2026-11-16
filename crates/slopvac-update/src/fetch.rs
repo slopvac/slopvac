@@ -36,7 +36,10 @@ pub fn redirect_host_allowed(url: &str) -> bool {
         return false;
     }
     let host = authority.strip_suffix(":443").unwrap_or(authority);
-    if host.contains(':') || host != host.to_ascii_lowercase() {
+    // Lowercase ASCII letters, digits, `-` and `.` only: no uppercase, percent-escapes, ports,
+    // non-ASCII (IDN) labels or other tricks that a URL parser might read differently.
+    let plain = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.';
+    if host.is_empty() || !host.bytes().all(plain) {
         return false;
     }
     matches!(host, "github.com" | "api.github.com")
@@ -100,17 +103,35 @@ impl UreqFetcher {
     }
 }
 
-/// The URL to follow after a redirect, or the reason to stop.
-fn next_hop(location: &str, hops: u32) -> Result<String, FetchError> {
-    if hops > MAX_REDIRECTS {
-        return Err(FetchError::Network("too many redirects".into()));
+/// What one request returned: the final response, or a redirect to follow.
+enum Step<T> {
+    Done(T),
+    Redirect(String),
+}
+
+/// Run `request` on `start`, then on each redirect target, until it returns a response.
+///
+/// This is the whole redirect policy: at most [`MAX_REDIRECTS`] hops, and every target must pass
+/// [`redirect_host_allowed`] before `request` is called on it. The first URL is the caller's.
+fn follow<T>(
+    start: &str,
+    mut request: impl FnMut(&str) -> Result<Step<T>, FetchError>,
+) -> Result<T, FetchError> {
+    let mut url = start.to_owned();
+    for _ in 0..=MAX_REDIRECTS {
+        match request(&url)? {
+            Step::Done(response) => return Ok(response),
+            Step::Redirect(location) => {
+                if !redirect_host_allowed(&location) {
+                    return Err(FetchError::Network(
+                        "refusing a redirect to a host that does not serve GitHub releases".into(),
+                    ));
+                }
+                url = location;
+            }
+        }
     }
-    if !redirect_host_allowed(location) {
-        return Err(FetchError::Network(
-            "refusing a redirect to a host that does not serve GitHub releases".into(),
-        ));
-    }
-    Ok(location.to_owned())
+    Err(FetchError::Network("too many redirects".into()))
 }
 
 impl Fetcher for UreqFetcher {
@@ -120,9 +141,7 @@ impl Fetcher for UreqFetcher {
         }
         // The deadline covers the whole exchange, redirects included.
         let started = std::time::Instant::now();
-        let mut url = url.to_owned();
-        let mut hops = 0;
-        let mut resp = loop {
+        let mut resp = follow(url, |url| {
             let agent: ureq::Agent = ureq::Agent::config_builder()
                 .timeout_global(Some(self.timeout.saturating_sub(started.elapsed())))
                 .https_only(!self.allow_loopback_http)
@@ -131,24 +150,23 @@ impl Fetcher for UreqFetcher {
                 .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .into();
-            let resp = agent.get(&url).call().map_err(|e| match e {
+            let resp = agent.get(url).call().map_err(|e| match e {
                 ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
                 other => FetchError::Network(other.to_string()),
             })?;
             if !resp.status().is_redirection() {
-                break resp;
+                return Ok(Step::Done(resp));
             }
             if self.allow_loopback_http {
                 return Err(FetchError::Network("redirects are refused".into()));
             }
-            hops += 1;
             let location = resp
                 .headers()
                 .get("location")
                 .and_then(|v| v.to_str().ok())
                 .ok_or_else(|| FetchError::Network("redirect without a Location".into()))?;
-            url = next_hop(location, hops)?;
-        };
+            Ok(Step::Redirect(location.to_owned()))
+        })?;
         let mut buf = Vec::new();
         let n = std::io::Read::read_to_end(
             &mut resp.body_mut().with_config().limit(limit + 1).reader(),
@@ -326,6 +344,14 @@ mod tests {
             "https://github.com@evil.example/a",
             "https://github.com:8443/a",
             "https://GitHub.com/a",
+            "https://github.com%2f.evil.example/a",
+            "https://github.com%2eevil.example/a",
+            "https://%67ithub.com/a",
+            "https://g\u{131}thub.com/a",
+            "https://\u{e9}.githubusercontent.com/a",
+            "https://xn--github-9d0c.com/a",
+            "https://github.com./a",
+            "https://github.com\\@evil.example/a",
             "/relative/path",
             "//evil.example/a",
             "",
@@ -334,11 +360,95 @@ mod tests {
         }
     }
 
+    const START: &str = "https://github.com/srobroek/slopvac/releases/download/v3.1.0/a";
+    const ASSETS: &str = "https://release-assets.githubusercontent.com/a";
+
+    type Asked = std::rc::Rc<std::cell::RefCell<Vec<String>>>;
+
+    /// A transport that answers from a script and records every URL it was asked for.
+    fn scripted(
+        replies: Vec<(&str, Step<&'static str>)>,
+    ) -> (
+        Asked,
+        impl FnMut(&str) -> Result<Step<&'static str>, FetchError>,
+    ) {
+        let asked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut replies: std::collections::HashMap<String, Step<&'static str>> = replies
+            .into_iter()
+            .map(|(url, step)| (url.to_owned(), step))
+            .collect();
+        let log = std::rc::Rc::clone(&asked);
+        let request = move |url: &str| {
+            log.borrow_mut().push(url.to_owned());
+            replies
+                .remove(url)
+                .ok_or_else(|| FetchError::Network(format!("404 {url}")))
+        };
+        (asked, request)
+    }
+
     #[test]
-    fn a_redirect_chain_stops_after_the_hop_limit() {
-        let url = "https://github.com/a";
-        assert!(next_hop(url, MAX_REDIRECTS).is_ok());
-        assert!(next_hop(url, MAX_REDIRECTS + 1).is_err());
+    fn an_allowed_redirect_returns_the_destination_response() {
+        let (asked, request) = scripted(vec![
+            (START, Step::Redirect(ASSETS.into())),
+            (ASSETS, Step::Done("body")),
+        ]);
+        assert_eq!(follow(START, request).unwrap(), "body");
+        assert_eq!(*asked.borrow(), [START, ASSETS]);
+    }
+
+    #[test]
+    fn a_redirect_to_a_forbidden_host_is_never_requested() {
+        let evil = "https://evil.example/a";
+        let (asked, request) = scripted(vec![
+            (START, Step::Redirect(evil.into())),
+            (evil, Step::Done("evil body")),
+        ]);
+        let err = follow(START, request).unwrap_err();
+        assert!(matches!(err, FetchError::Network(_)), "{err}");
+        assert_eq!(*asked.borrow(), [START], "the forbidden host was contacted");
+    }
+
+    #[test]
+    fn a_forbidden_host_in_the_middle_of_a_chain_stops_the_chain() {
+        let evil = "http://github.com/a";
+        let (asked, request) = scripted(vec![
+            (START, Step::Redirect(ASSETS.into())),
+            (ASSETS, Step::Redirect(evil.into())),
+            (evil, Step::Done("evil body")),
+        ]);
+        assert!(follow(START, request).is_err());
+        assert_eq!(*asked.borrow(), [START, ASSETS]);
+    }
+
+    /// `n` redirects between allowed hosts, then a response.
+    fn chain(n: usize) -> Vec<(&'static str, Step<&'static str>)> {
+        let urls: Vec<&'static str> = (0..=n)
+            .map(|i| &*Box::leak(format!("https://github.com/hop/{i}").into_boxed_str()))
+            .collect();
+        let mut script: Vec<_> = (0..n)
+            .map(|i| (urls[i], Step::Redirect(urls[i + 1].to_owned())))
+            .collect();
+        script.push((urls[n], Step::Done("end")));
+        script
+    }
+
+    #[test]
+    fn five_redirects_are_followed() {
+        let script = chain(5);
+        let start = script[0].0;
+        let (_, request) = scripted(script);
+        assert_eq!(follow(start, request).unwrap(), "end");
+    }
+
+    #[test]
+    fn a_sixth_redirect_fails() {
+        let script = chain(6);
+        let start = script[0].0;
+        let (asked, request) = scripted(script);
+        let err = follow(start, request).unwrap_err();
+        assert!(err.to_string().contains("too many redirects"), "{err}");
+        assert_eq!(asked.borrow().len(), 6, "the sixth hop was requested");
     }
 
     #[test]

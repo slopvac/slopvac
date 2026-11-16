@@ -48,6 +48,11 @@ pub enum UpdateError {
         /// Version the update asked for.
         requested: String,
     },
+    /// The requested version is a prerelease. `self update` installs stable releases only.
+    #[error(
+        "refusing to install {0}: it is a prerelease, and self update installs stable releases only"
+    )]
+    Prerelease(String),
     /// The signature check refused the archive.
     #[error("refusing to install: {0}")]
     Verify(#[from] VerifyError),
@@ -89,7 +94,8 @@ pub fn asset_name(target: &str) -> String {
 ///
 /// The verifier must see a signature made for this exact asset of this exact `version`, so a
 /// server cannot pass off an older or another target's signed archive. `version` must also be
-/// newer than `current`: `self update` has no downgrade flag.
+/// a stable release newer than `current`: `self update` has no downgrade flag and no
+/// candidate channel, so a signed prerelease is refused before any download.
 pub fn update(
     fetcher: &dyn Fetcher,
     verifier: &dyn ArtifactVerifier,
@@ -103,6 +109,9 @@ pub fn update(
         semver::Version::parse(current),
         semver::Version::parse(version),
     ) {
+        (Ok(_), Ok(new)) if !new.pre.is_empty() => {
+            return Err(UpdateError::Prerelease(version.to_owned()));
+        }
         (Ok(cur), Ok(new)) => new > cur,
         _ => false,
     };
@@ -333,6 +342,29 @@ mod tests {
                 format!("slopvac-release file:slopvac-{TARGET}.tar.gz version:3.1.0")
             )
         );
+    }
+
+    #[test]
+    fn a_prerelease_target_is_refused_before_any_download() {
+        for requested in ["3.2.0-rc.1", "4.0.0-alpha", "3.1.1-rc.2+build"] {
+            let (_dir, exe) = installed();
+            let files = Files(HashMap::new());
+            let err = update(
+                &files,
+                &Verdict(Ok(())),
+                BASE,
+                "3.1.0",
+                requested,
+                TARGET,
+                &exe,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err, UpdateError::Prerelease(_)),
+                "{requested}: {err}"
+            );
+            assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+        }
     }
 
     #[test]

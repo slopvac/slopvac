@@ -50,7 +50,7 @@ minisign -Vm slopvac-x86_64-unknown-linux-gnu.tar.gz -p keys/slopvac-release.pub
 
 minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.gz.minisig` next to the file. A changed file, or a signature from another key, fails with a non-zero exit. For many files at once, run `python3 scripts/release_signing.py verify <files>`.
 
-Each signature also carries a trusted comment that names the file and the release, for example `slopvac-release file:slopvac-x86_64-unknown-linux-gnu.tar.gz version:3.1.0`. The release version has no `v`, and a candidate keeps its suffix, as in `3.1.0-rc.2`. Minisign prints the comment after it verifies the signature, and the signature covers it. `slopvac self update` requires the comment to match the archive and version it requested, so a signed archive from another release or target does not install.
+Each signature also carries a trusted comment that names the file and the release, for example `slopvac-release file:slopvac-x86_64-unknown-linux-gnu.tar.gz version:3.1.0`. The release version has no `v`, and a candidate keeps its suffix, as in `3.1.0-rc.2`. Minisign prints the comment after it verifies the signature, and the signature covers it. `slopvac self update` requires the comment to match the archive and version it requested, so a signed archive from another release or target does not install. It also installs stable releases only, so a signed candidate does not install either.
 
 How the workflows sign:
 

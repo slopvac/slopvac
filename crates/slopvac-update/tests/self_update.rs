@@ -270,6 +270,45 @@ fn release_key_rejects_an_archive_signed_by_another_key() {
 }
 
 #[test]
+fn a_validly_signed_next_minor_candidate_is_refused_before_any_download() {
+    const LINUX: &str = "x86_64-unknown-linux-gnu";
+    let name = format!("slopvac-{LINUX}.tar.gz");
+    let archive_bytes = include_bytes!("fixtures/slopvac-x86_64-unknown-linux-gnu.tar.gz");
+    let rc_sig =
+        include_bytes!("fixtures/slopvac-x86_64-unknown-linux-gnu.tar.gz.3.2.0-rc.1.minisig");
+    let verifier = MinisignVerifier::from_pub_file(include_str!("fixtures/test-only.pub")).unwrap();
+    // Precondition: the candidate is genuine, so only the stable-only rule can stop it.
+    let rc = ReleaseFile {
+        name: &name,
+        version: "3.2.0-rc.1",
+    };
+    verifier
+        .verify(archive_bytes, rc_sig, &rc)
+        .expect("the fixture is a valid signed candidate");
+
+    let url = format!("{BASE}/v3.2.0-rc.1/{name}");
+    let srv = Arc::new(Server {
+        files: HashMap::from([
+            (LATEST.to_owned(), br#"{"tag_name":"v3.2.0-rc.1"}"#.to_vec()),
+            (format!("{url}.minisig"), rc_sig.to_vec()),
+            (url, archive_bytes.to_vec()),
+        ]),
+        hits: AtomicUsize::new(0),
+    });
+    let fx = installed();
+    let mut rt = runtime(&fx, srv.clone(), Box::new(verifier));
+    rt.target = Some(LINUX);
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "update-prerelease-refused");
+    assert_eq!(
+        srv.hits.load(Ordering::SeqCst),
+        1,
+        "only the version lookup"
+    );
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
 fn already_current_downloads_nothing() {
     let fx = installed();
     let srv = server("3.0.0");

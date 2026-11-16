@@ -321,3 +321,28 @@ def test_the_command_line_requires_a_version(release):
     )
     assert result.returncode == 2
     assert "--version" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "slopvac linux.tar.gz",
+        "slopvac\tlinux.tar.gz",
+        "slopvac\nlinux.tar.gz",
+        "slopvac\rlinux.tar.gz",
+        "slopvac-\u00e9.tar.gz",
+        "slopvac-\u4e2d.tar.gz",
+        "slopvac\u00a0linux.tar.gz",
+    ],
+)
+def test_a_file_name_that_cannot_go_in_a_trusted_comment_stops_signing_first(
+    fake, release, name
+):
+    directory, pub = release
+    (directory / name).write_bytes(b"x")
+    with pytest.raises(signing.SigningError, match="trusted comment"):
+        run_sign(directory, pub, MINISIGN_SECRET_KEY=SECRET)
+    # Nothing was signed, not even the valid files that sort before the bad one.
+    assert list(directory.glob("*.minisig")) == []
+    # The fake minisign logs every call; no log means it never ran.
+    assert not fake.exists()
