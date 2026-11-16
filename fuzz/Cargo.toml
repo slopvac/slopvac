@@ -38,3 +38,4 @@ libfuzzer-sys = "0.4"
 slopvac-config = { path = "../crates/slopvac-config" }
 slopvac-model = { path = "../crates/slopvac-model" }
 slopvac-parse = { path = "../crates/slopvac-parse" }
+tempfile = "3"
