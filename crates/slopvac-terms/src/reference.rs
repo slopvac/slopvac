@@ -2,6 +2,10 @@
 //!
 //! [`reference_pages`] returns `(path, markdown)` pairs relative to the docs
 //! site root, like the style reference in `slopvac-styles`.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

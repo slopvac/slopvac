@@ -76,7 +76,10 @@ pub struct Blocklist {
 struct Raw {
     entries: Option<Vec<RawEntry>>,
     #[serde(flatten)]
-    #[allow(clippy::zero_sized_map_values)] // only the key names are reported
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "only the key names are reported"
+    )]
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 

@@ -257,6 +257,10 @@ fn cmd_list(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i3
     Ok(0)
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
     let q = m
         .get_one::<String>("query")
@@ -275,6 +279,10 @@ fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<
     Ok(i32::from(hits == 0))
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required").clone();
     let case_sensitive = m.get_flag("case-sensitive");
@@ -310,6 +318,10 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
     Ok(0)
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_remove(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required");
     let file = &paths[0];
@@ -324,6 +336,10 @@ fn cmd_remove(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_check(
     m: &ArgMatches,
     cwd: &Path,
@@ -351,6 +367,10 @@ fn cmd_check(
     Ok(i32::from(found > 0))
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_suggest(
     m: &ArgMatches,
     cwd: &Path,
@@ -417,6 +437,10 @@ fn cmd_suggest(
     Ok(0)
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "clap enforces the required argument or supplies its default"
+)]
 fn cmd_import(
     m: &ArgMatches,
     cwd: &Path,

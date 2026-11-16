@@ -1,4 +1,5 @@
 //! Atomic, symlink-safe saves of a terms file.
+#![cfg(test)]
 
 use std::path::{Path, PathBuf};
 

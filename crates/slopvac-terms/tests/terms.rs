@@ -1,4 +1,5 @@
 //! Behavior of the casing check, term files and blocklists through the public API.
+#![cfg(test)]
 
 use slopvac_terms::{Blocklist, Pos, TermEntry, TermSet, TermsError, TermsFile};
 

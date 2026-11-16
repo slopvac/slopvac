@@ -3,6 +3,7 @@
 //! Every file under `valid/` must load. Every file under `invalid/` other than
 //! `cases.toml` must be rejected. The blocklist corpus is not covered here: it
 //! requires `schema_version`, which the 2.x blocklist format lacks.
+#![cfg(test)]
 
 use std::path::{Path, PathBuf};
 

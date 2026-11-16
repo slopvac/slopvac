@@ -1,4 +1,5 @@
 //! `terms suggest`: candidates listed with evidence, written only on request.
+#![cfg(test)]
 
 use std::path::{Path, PathBuf};
 

@@ -1,4 +1,5 @@
 //! The generated built-in terms reference page.
+#![cfg(test)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

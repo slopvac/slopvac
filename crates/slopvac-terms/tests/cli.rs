@@ -1,4 +1,5 @@
 //! The `terms` subcommands through `command()` and `run()`.
+#![cfg(test)]
 
 use std::path::{Path, PathBuf};
 

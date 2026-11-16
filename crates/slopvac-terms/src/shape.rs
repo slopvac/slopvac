@@ -114,6 +114,10 @@ impl TermsFile {
     /// # Panics
     /// If the bundled data is malformed; the crate's tests prevent that.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "the bundled file is checked by the crate's tests"
+    )]
     pub fn builtin() -> Self {
         Self::parse("builtin terms", include_str!("../data/builtin.toml"))
             .expect("bundled terms file is valid")
