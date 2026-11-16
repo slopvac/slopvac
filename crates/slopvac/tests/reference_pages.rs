@@ -40,15 +40,44 @@ fn label(arg: &Arg) -> String {
     format!("| {}", parts.join(", "))
 }
 
-/// Check each visible argument of `cmd` against the rows of `text`, then recurse.
-fn check_command(cmd: &Command, text: &str, where_: &str, checked: &mut usize) {
-    check_args(cmd, text, where_, checked);
+/// The part of `page` that documents `where_` alone: from its heading to the next heading of
+/// any level, so rows of a parent or a child never count for it.
+fn own_section<'a>(page: &'a str, where_: &str) -> &'a str {
+    let lines: Vec<&str> = page.split_inclusive('\n').collect();
+    let at = lines
+        .iter()
+        .position(|l| {
+            l.starts_with('#')
+                && l.trim_end()
+                    .trim_start_matches('#')
+                    .trim()
+                    .trim_matches('`')
+                    == where_
+        })
+        .unwrap_or_else(|| panic!("no heading for {where_}"));
+    let len = lines[at + 1..]
+        .iter()
+        .position(|l| l.starts_with('#'))
+        .map_or(lines.len() - at, |n| n + 1);
+    let start: usize = lines[..at].iter().map(|l| l.len()).sum();
+    let size: usize = lines[at..at + len].iter().map(|l| l.len()).sum();
+    &page[start..start + size]
+}
+
+/// Check each visible argument of `cmd` inside its own section of `page`, then recurse.
+fn check_command(cmd: &Command, page: &str, where_: &str, checked: &mut usize) {
+    let own = own_section(page, where_);
+    assert!(
+        own.contains(&format!("Usage: {where_}")),
+        "{where_}: no usage line in its section"
+    );
+    check_args(cmd, own, where_, checked);
     for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
         if sub.get_name() == "help" {
             let hint = format!("{where_} help [COMMAND]");
-            assert!(text.contains(&hint), "{where_}: no help subcommand note");
+            assert!(own.contains(&hint), "{where_}: no help subcommand note");
         } else {
-            check_command(sub, text, &format!("{where_} {}", sub.get_name()), checked);
+            check_command(sub, page, &format!("{where_} {}", sub.get_name()), checked);
         }
     }
 }

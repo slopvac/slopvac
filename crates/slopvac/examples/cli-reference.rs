@@ -1,6 +1,6 @@
 //! Write the CLI reference pages under a directory.
 //!
-//! `cargo run -p slopvac --example reference -- <out-dir>` writes `cli/index.md` and one
+//! `cargo run -p slopvac --example cli-reference -- <out-dir>` writes `cli/index.md` and one
 //! page per top-level command below `<out-dir>`. It reads the clap tree through its public
 //! API and changes nothing in it.
 
