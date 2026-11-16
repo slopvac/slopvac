@@ -215,9 +215,14 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
 fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
     // 2.x config and a migrated tree.
-    slopvac_migrate::execute(m, &slopvac_migrate::NullLinter, out)
-        .map(|()| exit::PASS)
-        .map_err(|e| CliError::new(e.code(), e.to_string()))
+    slopvac_migrate::execute(
+        m,
+        &slopvac_migrate::NullLinter,
+        &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
+        out,
+    )
+    .map(|()| exit::PASS)
+    .map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
