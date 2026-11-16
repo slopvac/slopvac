@@ -935,6 +935,116 @@ fn level_by_any_key_follows_layers_not_spelling() {
     }
 }
 
+/// When one layer writes the same rule or category under both spellings, the spelling listed
+/// first in the call wins; and a category floor set under one spelling holds against a level
+/// set under the other until a higher layer sets `off` under either.
+#[test]
+fn level_by_any_breaks_ties_and_merges_floors_across_spellings() {
+    use slopvac_config::LevelFrom::{Category, Rule};
+    type Want = Option<(&'static str, slopvac_config::LevelFrom)>;
+    type Keys = (&'static [&'static str], &'static [&'static str]);
+    let qualified_first: Keys = (&["core:r", "r"], &["core:cat", "cat"]);
+    let bare_first: Keys = (&["r", "core:r"], &["cat", "core:cat"]);
+    let cases: Vec<(&str, &str, &str, Keys, Want)> = vec![
+        (
+            "same file, rules: the first listed spelling wins (qualified)",
+            "",
+            "[rules]\nr = \"error\"\n\"core:r\" = \"suggestion\"\n",
+            qualified_first,
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "same file, rules: the first listed spelling wins (bare)",
+            "",
+            "[rules]\nr = \"error\"\n\"core:r\" = \"suggestion\"\n",
+            bare_first,
+            Some(("error", Rule)),
+        ),
+        (
+            "same file, categories: the first listed spelling wins",
+            "",
+            "[categories]\ncat = \"error\"\n\"core:cat\" = \"warning\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+        (
+            "a floor under the qualified spelling lifts a level set under the bare one",
+            "[categories.\"core:cat\"]\nminimum_severity = \"error\"\n",
+            "[categories]\ncat = \"suggestion\"\n",
+            qualified_first,
+            Some(("error", Category)),
+        ),
+        (
+            "a floor under the bare spelling lifts a level set under the qualified one",
+            "[categories.cat]\nminimum_severity = \"warning\"\n",
+            "[categories]\n\"core:cat\" = \"suggestion\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+        (
+            "off under the other spelling in a higher layer clears the floor",
+            "[categories.cat]\nminimum_severity = \"error\"\n",
+            "[categories.\"core:cat\"]\nseverity = \"suggestion\"\nminimum_severity = \"off\"\n",
+            qualified_first,
+            Some(("suggestion", Category)),
+        ),
+        (
+            "off in a lower layer does not cancel a floor from a higher one",
+            "[categories.\"core:cat\"]\nminimum_severity = \"off\"\n",
+            "[categories.cat]\nseverity = \"suggestion\"\nminimum_severity = \"warning\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+    ];
+    for (name, base, project, (rules, categories), want) in cases {
+        let fx = Fixture::new();
+        fx.write("base.toml", &format!("schema_version = 3\n\n{base}"));
+        fx.write(
+            "slopvac.toml",
+            &format!("schema_version = 3\nextends = [\"base.toml\"]\n\n{project}"),
+        );
+        let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
+        let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+        let got = r.level_by_any(rules, categories).map(|l| (l.level, l.from));
+        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+    }
+}
+
+#[test]
+fn a_missing_extends_target_is_named_without_the_directories_above_the_root() {
+    let fx = Fixture::new();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("my base.toml");
+    let inside_file = fx.root().join("sub dir").join("gone.toml");
+    for (target, want) in [
+        (outside_file.as_path(), "`<external>/my base.toml`"),
+        (inside_file.as_path(), "`sub dir/gone.toml`"),
+    ] {
+        fx.write(
+            "slopvac.toml",
+            &format!(
+                "schema_version = 3\nextends = [{:?}]\n",
+                target.display().to_string()
+            ),
+        );
+        let err = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap_err();
+        let diagnostic = &rejected(err).diagnostics[0];
+        assert_eq!(diagnostic.code, Code::ExtendsMissing);
+        assert!(
+            diagnostic
+                .message
+                .starts_with(&format!("cannot read the extended config {want}")),
+            "{}",
+            diagnostic.message
+        );
+        assert!(
+            !diagnostic
+                .message
+                .contains(outside.path().to_str().unwrap())
+        );
+    }
+}
+
 #[test]
 fn a_read_failure_renders_with_its_code() {
     let err = load(Path::new("missing/slopvac.toml"), &NoPresets).unwrap_err();

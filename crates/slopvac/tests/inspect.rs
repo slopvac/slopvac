@@ -624,3 +624,50 @@ fn a_config_diagnostic_never_prints_an_absolute_path_or_source_excerpt() {
         "the source excerpt leaked: {err}"
     );
 }
+
+#[test]
+fn a_config_path_with_spaces_is_redacted_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(
+        &file,
+        "schema_version = 3\nextends = [\"/home/SENTINEL user 1234/my base.toml\"]\n",
+    )
+    .unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["explain", CHAT_LEAKAGE, "--config"])
+        .arg(&file)
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.contains("`<external>/my base.toml`"),
+        "the file name is kept: {err}"
+    );
+    for leaked in ["SENTINEL", "1234", "/home"] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}
+
+#[test]
+fn a_config_path_inside_the_working_directory_is_shown_relative() {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(
+        work.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"conf dir/missing.toml\"]\n",
+    )
+    .unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config", "slopvac.toml"])
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.contains("`conf dir/missing.toml`"), "{err}");
+    assert!(err.contains(" --> slopvac.toml:2:12"), "{err}");
+    assert!(!err.contains(&work.path().display().to_string()), "{err}");
+}

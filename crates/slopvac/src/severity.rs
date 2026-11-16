@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use clap::ArgMatches;
-use slopvac_config::{ConfigError, Discovery, Inputs, Resolved, describe, load_labeled};
+use slopvac_config::{ConfigError, Discovery, Inputs, Rejected, Resolved, describe, load_labeled};
 use slopvac_rules::{LoadedRule, MatchKind};
 
 use crate::errors::CliError;
@@ -41,75 +41,33 @@ pub struct Severities {
 
 const RANKS: [&str; 3] = ["suggestion", "warning", "error"];
 
-/// Drop the source excerpt of a rendered diagnostic and replace absolute paths in the rest.
-///
-/// What stays is the code line, the `file:line:column` pointer and the help text. A path the
-/// user wrote in the file, such as an `extends` target, appears in them only in redacted form
-/// (policies.md, 1.7).
-fn sanitize(text: &str, cwd: &Path) -> String {
-    text.lines()
-        .filter(|line| !is_excerpt(line))
-        .map(|line| redact_paths(line, cwd))
+/// Describe a refused config from its structured fields: the first line of each diagnostic,
+/// its `file:line:column` pointer and its help. The source excerpt is left out because it
+/// quotes the user's own text, paths included. The config crate already words a path in a
+/// message as `<external>/<file>` or relative to the project root.
+fn describe_rejected(rejected: &Rejected) -> String {
+    rejected
+        .diagnostics
+        .iter()
+        .map(|d| {
+            let (line, column) = d.location(&rejected.text);
+            let mut text = format!("{}\n --> {}:{line}:{column}", d.message, rejected.file);
+            if let Some(help) = &d.help {
+                text.push_str("\nhelp: ");
+                text.push_str(help);
+            }
+            text
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// A gutter line of the rendering: `  |`, `2 | extends = ...`.
-fn is_excerpt(line: &str) -> bool {
-    let t = line.trim_start();
-    if t.starts_with('|') {
-        return true;
-    }
-    t.split_once(' ').is_some_and(|(number, rest)| {
-        !number.is_empty()
-            && number.bytes().all(|b| b.is_ascii_digit())
-            && rest.trim_start().starts_with('|')
-    })
-}
-
-/// Replace every absolute path in `line` with `redact::shown_path`.
-fn redact_paths(line: &str, cwd: &Path) -> String {
-    let is_end = |c: char| c.is_whitespace() || matches!(c, '`' | '\'' | '"' | ')' | ']');
-    let mut out = String::with_capacity(line.len());
-    let mut rest = line;
-    while let Some(at) = rest.find('/') {
-        let starts_token = at == 0
-            || rest[..at]
-                .chars()
-                .next_back()
-                .is_some_and(|c| c.is_whitespace() || matches!(c, '`' | '\'' | '"' | '(' | '['));
-        let (head, tail) = rest.split_at(at);
-        out.push_str(head);
-        if !starts_token {
-            out.push('/');
-            rest = &tail[1..];
-            continue;
-        }
-        let end = tail.find(is_end).unwrap_or(tail.len());
-        let token = &tail[..end];
-        let trimmed = token.trim_end_matches(['.', ',', ':', ';']);
-        out.push_str(&redact::shown_path(Path::new(trimmed), cwd));
-        out.push_str(&token[trimmed.len()..]);
-        rest = &tail[end..];
-    }
-    out.push_str(rest);
-    out
-}
-
-fn config_error(err: &ConfigError, cwd: &Path) -> CliError {
-    let code = err.code().as_str();
+fn config_error(err: &ConfigError) -> CliError {
     let message = match err {
-        ConfigError::Rejected(rejected) => {
-            let text = rejected.render();
-            // The rendering starts with `error[<code>]: `; the CLI adds that prefix itself.
-            let body = text
-                .strip_prefix(&format!("error[{code}]: "))
-                .unwrap_or(&text);
-            sanitize(body, cwd)
-        }
-        other @ ConfigError::Io { .. } => sanitize(&other.to_string(), cwd),
+        ConfigError::Rejected(rejected) => describe_rejected(rejected),
+        other @ ConfigError::Io { .. } => other.to_string(),
     };
-    CliError::new(code, message)
+    CliError::new(err.code().as_str(), message)
 }
 
 impl Severities {
@@ -132,12 +90,12 @@ impl Severities {
             Some(
                 load_labeled(path, &shown, &presets)
                     .map(Arc::new)
-                    .map_err(|e| config_error(&e, &cwd))?,
+                    .map_err(|e| config_error(&e))?,
             )
         } else {
             Discovery::new(&presets)
                 .nearest(&cwd)
-                .map_err(|e| config_error(&e, &cwd))?
+                .map_err(|e| config_error(&e))?
         };
         let Some(config) = config else {
             return Ok(Self {
@@ -229,35 +187,5 @@ impl Severities {
                 from: None,
             },
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn excerpt_lines_are_dropped_and_the_pointer_stays() {
-        let text = "cannot read `/srv/x/base.toml`: gone\n --> slopvac.toml:2:12\n  |\n2 | extends = [\"/srv/x/base.toml\"]\n  |            ^^^ extended here\n  |\nhelp: paths are relative";
-        assert_eq!(
-            sanitize(text, Path::new("/work")),
-            "cannot read `<external>/base.toml`: gone\n --> slopvac.toml:2:12\nhelp: paths are relative"
-        );
-    }
-
-    #[test]
-    fn a_path_inside_the_working_directory_becomes_relative() {
-        assert_eq!(
-            redact_paths("see /work/conf/a.toml.", Path::new("/work")),
-            "see conf/a.toml."
-        );
-    }
-
-    #[test]
-    fn a_slash_inside_a_word_is_not_a_path() {
-        assert_eq!(
-            redact_paths("read/write and a/b", Path::new("/work")),
-            "read/write and a/b"
-        );
     }
 }
