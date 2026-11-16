@@ -4,6 +4,7 @@
 //! return no fragments. Known limits: a label that spans lines is not seen, and a
 //! node that has no shape renders its id, which is not extracted.
 
+use crate::sub;
 use std::collections::HashMap;
 
 use crate::{Extraction, Fragment, Role, lines};
@@ -41,9 +42,10 @@ impl Emitter {
     fn push_unescaped(&mut self, off: usize, s: &str, a: usize, b: usize, role: Role, id: &str) {
         let before = self.out.len();
         self.push(off, s, a, b, role, id);
-        if self.out.len() > before {
-            let last = self.out.last_mut().expect("just pushed");
-            let raw = &s[last.span.start - off..last.span.end - off];
+        if self.out.len() > before
+            && let Some(last) = self.out.last_mut()
+        {
+            let raw = sub(s, last.span.start - off..last.span.end - off);
             if raw.contains('\\') {
                 last.text = Some(raw.replace("\\\"", "\"").replace("\\\\", "\\"));
             }
@@ -52,7 +54,7 @@ impl Emitter {
 }
 
 fn trim_range(s: &str, a: usize, b: usize) -> (usize, usize) {
-    let t = &s[a..b];
+    let t = sub(s, a..b);
     let lead = t.len() - t.trim_start().len();
     let t = t.trim();
     (a + lead, a + lead + t.len())
@@ -61,7 +63,7 @@ fn trim_range(s: &str, a: usize, b: usize) -> (usize, usize) {
 fn unwrap_label(s: &str, a: usize, b: usize) -> (usize, usize) {
     let (mut a, mut b) = trim_range(s, a, b);
     for q in ["\"", "`"] {
-        let t = &s[a..b];
+        let t = sub(s, a..b);
         if t.len() >= 2 && t.starts_with(q) && t.ends_with(q) {
             (a, b) = trim_range(s, a + 1, b - 1);
         }
@@ -132,7 +134,7 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
     if let Some((off, t)) = header
         && let Some(k) = t.find(';')
     {
-        let tail = &t[k + 1..];
+        let tail = sub(t, k + 1..);
         let lead = tail.len() - tail.trim_start().len();
         statement(&mut em, &mut state, off + k + 1 + lead, tail.trim());
     }
@@ -142,7 +144,7 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
     }
     (
         Extraction {
-            diagram: Some(diagram.to_string()),
+            diagram: Some(diagram.to_owned()),
             fragments: em.out,
         },
         em.work,
@@ -250,8 +252,9 @@ impl<'a> Search<'a> {
         let bytes = self.t.as_bytes();
         for pos in from..bytes.len() {
             self.work += 1;
+            let tail = bytes.get(pos..).unwrap_or_default();
             for needle in needles {
-                if bytes[pos..].starts_with(needle.as_bytes()) {
+                if tail.starts_with(needle.as_bytes()) {
                     return Some((pos, needle.len()));
                 }
             }
@@ -270,9 +273,9 @@ impl<'a> Search<'a> {
         let bytes = self.t.as_bytes();
         let mut quoted = false;
         let mut pos = from;
-        while pos < bytes.len() {
+        while let Some(&byte) = bytes.get(pos) {
             self.work += 1;
-            match bytes[pos] {
+            match byte {
                 b'\\' if quoted => pos += 1,
                 b'"' => quoted = !quoted,
                 b'}' if !quoted => return Some(pos),
@@ -291,30 +294,34 @@ fn attr_label(t: &str, start: usize, end: usize) -> Option<(usize, usize)> {
     let bytes = t.as_bytes();
     let mut pos = start;
     while pos < end {
-        while pos < end && (bytes[pos].is_ascii_whitespace() || bytes[pos] == b',') {
+        while pos < end
+            && bytes
+                .get(pos)
+                .is_some_and(|b| b.is_ascii_whitespace() || *b == b',')
+        {
             pos += 1;
         }
         let key_start = pos;
-        while pos < end && bytes[pos] != b':' {
+        while pos < end && bytes.get(pos) != Some(&b':') {
             pos += 1;
         }
-        let key = t[key_start..pos.min(end)].trim().trim_matches('"');
+        let key = sub(t, key_start..pos.min(end)).trim().trim_matches('"');
         pos += 1;
-        while pos < end && bytes[pos].is_ascii_whitespace() {
+        while pos < end && bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
             pos += 1;
         }
         let (value_start, value_end);
         if bytes.get(pos) == Some(&b'"') && pos < end {
             value_start = pos + 1;
             pos += 1;
-            while pos < end && bytes[pos] != b'"' {
-                pos += if bytes[pos] == b'\\' { 2 } else { 1 };
+            while pos < end && bytes.get(pos) != Some(&b'"') {
+                pos += if bytes.get(pos) == Some(&b'\\') { 2 } else { 1 };
             }
             value_end = pos.min(end);
             pos += 1;
         } else {
             value_start = pos;
-            while pos < end && bytes[pos] != b',' {
+            while pos < end && bytes.get(pos) != Some(&b',') {
                 pos += 1;
             }
             value_end = pos.min(end);
@@ -332,20 +339,20 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
         "style" | "classDef" | "class" | "linkStyle" | "click" | "direction" | "end"
         | "callback" | "href" => return,
         "subgraph" => {
-            let rest = &t[word.len()..];
+            let rest = sub(t, word.len()..);
             let a = word.len() + (rest.len() - rest.trim_start().len());
-            let id_end = t[a..]
+            let id_end = sub(t, a..)
                 .find(|c: char| !is_id_char(c))
                 .map_or(t.len(), |n| a + n);
-            let bracket = t[id_end..].trim_start();
+            let bracket = sub(t, id_end..).trim_start();
             if id_end > a && bracket.starts_with('[') {
                 let open = t.len() - bracket.len();
-                let id = t[a..id_end].to_string();
-                if let Some(n) = t[open + 1..].rfind(']') {
+                let id = sub(t, a..id_end).to_owned();
+                if let Some(n) = sub(t, open + 1..).rfind(']') {
                     em.push(off, t, open + 1, open + 1 + n, Role::Group, &id);
                 }
             } else {
-                let id = t[a..].trim().to_string();
+                let id = sub(t, a..).trim().to_owned();
                 em.push(off, t, a, t.len(), Role::Group, &id);
             }
             return;
@@ -355,16 +362,15 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
     let mut search = Search::new(t);
     let b = t.as_bytes();
     let mut i = 0;
-    while i < b.len() {
-        let c = b[i];
+    while let Some(&c) = b.get(i) {
         if c.is_ascii_whitespace() || c == b';' || c == b'&' {
             i += 1;
         } else if let Some(n) = link(em, &mut search, off, i) {
             i = n;
-        } else if t[i..].chars().next().is_some_and(is_id_char) {
+        } else if sub(t, i..).chars().next().is_some_and(is_id_char) {
             i = node(em, &mut search, off, i, Role::Node);
         } else {
-            i += t[i..].chars().next().map_or(1, char::len_utf8);
+            i += sub(t, i..).chars().next().map_or(1, char::len_utf8);
         }
     }
     em.work += search.work;
@@ -373,11 +379,11 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
 /// Parse one node starting at `i`. Return the index after it.
 fn node(em: &mut Emitter, search: &mut Search<'_>, off: usize, i: usize, role: Role) -> usize {
     let t = search.t;
-    let id_end = t[i..]
+    let id_end = sub(t, i..)
         .find(|c: char| !is_id_char(c))
         .map_or(t.len(), |n| i + n);
-    let id = &t[i..id_end];
-    let rest = &t[id_end..];
+    let id = sub(t, i..id_end);
+    let rest = sub(t, id_end..);
     if rest.starts_with("@{") {
         let body = id_end + 2;
         let Some(end) = search.attr_end(body) else {
@@ -393,9 +399,9 @@ fn node(em: &mut Emitter, search: &mut Search<'_>, off: usize, i: usize, role: R
             continue;
         }
         let p = id_end + open.len();
-        let body = &t[p..];
+        let body = sub(t, p..);
         let lead = body.len() - body.trim_start().len();
-        if body[lead..].starts_with('"') {
+        if sub(body, lead..).starts_with('"') {
             let q = p + lead + 1;
             if let Some((n, _)) = search.find_any("\"", &["\""], q) {
                 em.push(off, t, q, n, role, id);
@@ -418,7 +424,7 @@ fn node(em: &mut Emitter, search: &mut Search<'_>, off: usize, i: usize, role: R
 
 fn link(em: &mut Emitter, search: &mut Search<'_>, off: usize, at: usize) -> Option<usize> {
     let t = search.t;
-    let rest = &t[at..];
+    let rest = sub(t, at..);
     for (marker, terminators) in [
         ("-- ", &["-->", "---", "--x", "--o"][..]),
         ("== ", &["==>", "==="][..]),
@@ -433,18 +439,19 @@ fn link(em: &mut Emitter, search: &mut Search<'_>, off: usize, at: usize) -> Opt
     }
     let bytes = t.as_bytes();
     let next = bytes.get(at + 1).copied();
-    let starts = match bytes[at] {
-        b'<' => next.is_some_and(|c| b"-=.~".contains(&c)),
-        b'-' => next.is_some_and(|c| c == b'-' || c == b'.'),
-        b'=' => next == Some(b'='),
-        b'~' => next == Some(b'~'),
+    let here = bytes.get(at).copied();
+    let starts = match here {
+        Some(b'<') => next.is_some_and(|c| b"-=.~".contains(&c)),
+        Some(b'-') => next.is_some_and(|c| c == b'-' || c == b'.'),
+        Some(b'=') => next == Some(b'='),
+        Some(b'~') => next == Some(b'~'),
         _ => false,
     };
     if !starts {
         return None;
     }
-    let mut end = at + usize::from(bytes[at] == b'<');
-    while end < bytes.len() && b"-=.~".contains(&bytes[end]) {
+    let mut end = at + usize::from(here == Some(b'<'));
+    while bytes.get(end).is_some_and(|b| b"-=.~".contains(b)) {
         end += 1;
     }
     let tip = bytes.get(end).copied();
@@ -454,7 +461,7 @@ fn link(em: &mut Emitter, search: &mut Search<'_>, off: usize, at: usize) -> Opt
     if tip == Some(b'>') || marker_tip {
         end += 1;
     }
-    let bar = end + t[end..].len() - t[end..].trim_start_matches(' ').len();
+    let bar = end + sub(t, end..).len() - sub(t, end..).trim_start_matches(' ').len();
     if bytes.get(bar) == Some(&b'|')
         && let Some((close, _)) = search.find_any("|", &["|"], bar + 1)
     {
@@ -468,13 +475,13 @@ fn sequence(em: &mut Emitter, off: usize, t: &str) {
     let word = first_word(t);
     let rest_at = word.len();
     let (word, t_off) = if word == "create" {
-        let r = t[rest_at..].trim_start();
+        let r = sub(t, rest_at..).trim_start();
         let a = t.len() - r.len();
         (first_word(r), a)
     } else {
         (word, 0)
     };
-    let body = &t[t_off..];
+    let body = sub(t, t_off..);
     let after_word = t_off + word.len();
     match word {
         "participant" | "actor" => {
@@ -485,7 +492,7 @@ fn sequence(em: &mut Emitter, off: usize, t: &str) {
                     t_off + k + 4,
                     t.len(),
                     Role::Node,
-                    body[word.len()..k].trim(),
+                    sub(body, word.len()..k).trim(),
                 );
             }
         }
@@ -502,9 +509,9 @@ fn sequence(em: &mut Emitter, off: usize, t: &str) {
         | "rect" => {}
         _ => {
             if let Some(k) = t.find(':')
-                && t[..k].contains('-')
+                && sub(t, ..k).contains('-')
             {
-                em.push(off, t, k + 1, t.len(), Role::Message, t[..k].trim());
+                em.push(off, t, k + 1, t.len(), Role::Message, sub(t, ..k).trim());
             }
         }
     }
@@ -538,10 +545,10 @@ fn class(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
     let word = first_word(t);
     match word {
         "class" => {
-            let name = t[word.len()..].trim().trim_end_matches('{').trim();
-            let id = name.split(['[', ' ']).next().unwrap_or(name).to_string();
+            let name = sub(t, word.len()..).trim().trim_end_matches('{').trim();
+            let id = name.split(['[', ' ']).next().unwrap_or(name).to_owned();
             if let Some(a) = t.find("[\"").map(|k| k + 2)
-                && let Some(n) = t[a..].find('"')
+                && let Some(n) = sub(t, a..).find('"')
             {
                 em.push(off, t, a, a + n, Role::Node, &id);
             }
@@ -551,7 +558,7 @@ fn class(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
         }
         "note" => {
             if let Some(a) = t.find('"')
-                && let Some(n) = t[a + 1..].rfind('"')
+                && let Some(n) = sub(t, a + 1..).rfind('"')
             {
                 em.push(off, t, a + 1, a + 1 + n, Role::Note, "note");
             }
@@ -562,10 +569,10 @@ fn class(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
             let Some(k) = colon_outside_quotes(t) else {
                 return;
             };
-            if is_relation(&t[..k]) {
-                em.push(off, t, k + 1, t.len(), Role::Edge, t[..k].trim());
+            if is_relation(sub(t, ..k)) {
+                em.push(off, t, k + 1, t.len(), Role::Edge, sub(t, ..k).trim());
             } else if !t.starts_with("<<") {
-                em.push(off, t, k + 1, t.len(), Role::Member, t[..k].trim());
+                em.push(off, t, k + 1, t.len(), Role::Member, sub(t, ..k).trim());
             }
         }
     }
@@ -584,10 +591,10 @@ fn state_diagram(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
     match word {
         "state" => {
             if let Some(a) = t.find('"')
-                && let Some(n) = t[a + 1..].find('"')
+                && let Some(n) = sub(t, a + 1..).find('"')
             {
-                let rest = &t[a + 1 + n + 1..];
-                let id = rest.trim().trim_start_matches("as").trim().to_string();
+                let rest = sub(t, a + 1 + n + 1..);
+                let id = rest.trim().trim_start_matches("as").trim().to_owned();
                 em.push(off, t, a + 1, a + 1 + n, Role::Node, &id);
             }
         }
@@ -603,10 +610,10 @@ fn state_diagram(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
             let Some(k) = colon_outside_quotes(t) else {
                 return;
             };
-            if t[..k].contains("-->") {
-                em.push(off, t, k + 1, t.len(), Role::Edge, t[..k].trim());
+            if sub(t, ..k).contains("-->") {
+                em.push(off, t, k + 1, t.len(), Role::Edge, sub(t, ..k).trim());
             } else {
-                em.push(off, t, k + 1, t.len(), Role::Node, t[..k].trim());
+                em.push(off, t, k + 1, t.len(), Role::Node, sub(t, ..k).trim());
             }
         }
     }
@@ -617,7 +624,7 @@ fn er(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
         if t.starts_with('}') {
             st.body = None;
         } else if let Some(a) = t.find('"')
-            && let Some(n) = t[a + 1..].rfind('"')
+            && let Some(n) = sub(t, a + 1..).rfind('"')
         {
             em.push(off, t, a + 1, a + 1 + n, Role::Member, &name);
         }
@@ -625,9 +632,9 @@ fn er(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
     }
     if t.ends_with('{') {
         let name = t.trim_end_matches('{').trim();
-        let id = name.split('[').next().unwrap_or(name).trim().to_string();
+        let id = name.split('[').next().unwrap_or(name).trim().to_owned();
         if let Some(a) = t.find("[\"").map(|k| k + 2)
-            && let Some(n) = t[a..].find('"')
+            && let Some(n) = sub(t, a..).find('"')
         {
             em.push(off, t, a, a + n, Role::Node, &id);
         }
@@ -635,9 +642,9 @@ fn er(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
         return;
     }
     if let Some(k) = colon_outside_quotes(t)
-        && is_relation(&t[..k])
+        && is_relation(sub(t, ..k))
     {
-        em.push(off, t, k + 1, t.len(), Role::Edge, t[..k].trim());
+        em.push(off, t, k + 1, t.len(), Role::Edge, sub(t, ..k).trim());
     }
 }
 
@@ -650,15 +657,15 @@ mod tests {
         let ex = run(Format::Mermaid, src, 0);
         ex.fragments
             .iter()
-            .map(|f| (f.role, src[f.span.clone()].to_string()))
+            .map(|f| (f.role, sub(src, f.span.clone()).to_owned()))
             .collect()
     }
 
     fn n(s: &str) -> (Role, String) {
-        (Role::Node, s.to_string())
+        (Role::Node, s.to_owned())
     }
     fn e(s: &str) -> (Role, String) {
-        (Role::Edge, s.to_string())
+        (Role::Edge, s.to_owned())
     }
 
     #[test]
@@ -702,12 +709,12 @@ mod tests {
         assert_eq!(
             labels(src),
             [
-                (Role::Group, "First group".to_string()),
+                (Role::Group, "First group".to_owned()),
                 n("One"),
                 n("Two"),
                 n("Three"),
                 n("Four"),
-                (Role::Group, "Plain title".to_string()),
+                (Role::Group, "Plain title".to_owned()),
             ]
         );
     }
@@ -715,7 +722,7 @@ mod tests {
     #[test]
     fn frontmatter_title_and_comments() {
         let src = "---\ntitle: My flow\n---\n%% note\nflowchart LR\n  A[x]\n";
-        assert_eq!(labels(src), [(Role::Title, "My flow".to_string()), n("x")]);
+        assert_eq!(labels(src), [(Role::Title, "My flow".to_owned()), n("x")]);
     }
 
     #[test]
@@ -724,12 +731,12 @@ mod tests {
         assert_eq!(
             labels(src),
             [
-                (Role::Title, "Login".to_string()),
+                (Role::Title, "Login".to_owned()),
                 n("Alice Client"),
-                (Role::Message, "Send request".to_string()),
-                (Role::Note, "Both agree".to_string()),
-                (Role::Group, "Every minute".to_string()),
-                (Role::Message, "ok".to_string()),
+                (Role::Message, "Send request".to_owned()),
+                (Role::Note, "Both agree".to_owned()),
+                (Role::Group, "Every minute".to_owned()),
+                (Role::Message, "ok".to_owned()),
             ]
         );
     }
@@ -740,11 +747,11 @@ mod tests {
         assert_eq!(
             labels(src),
             [
-                (Role::Member, "+String name".to_string()),
-                (Role::Member, "+eat()".to_string()),
+                (Role::Member, "+String name".to_owned()),
+                (Role::Member, "+eat()".to_owned()),
                 e("extends"),
-                (Role::Member, "+bark()".to_string()),
-                (Role::Note, "Good boy".to_string()),
+                (Role::Member, "+bark()".to_owned()),
+                (Role::Note, "Good boy".to_owned()),
                 n("Feline"),
             ]
         );
@@ -759,8 +766,8 @@ mod tests {
                 n("Waiting for input"),
                 e("user confirms"),
                 n("All finished"),
-                (Role::Note, "Terminal".to_string()),
-                (Role::Note, "First line".to_string()),
+                (Role::Note, "Terminal".to_owned()),
+                (Role::Note, "First line".to_owned()),
             ]
         );
     }
@@ -770,7 +777,7 @@ mod tests {
         let src = "erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  CUSTOMER {\n    string name PK \"Full legal name\"\n    int age\n  }\n";
         assert_eq!(
             labels(src),
-            [e("places"), (Role::Member, "Full legal name".to_string())]
+            [e("places"), (Role::Member, "Full legal name".to_owned())]
         );
     }
 
@@ -780,8 +787,8 @@ mod tests {
         assert_eq!(
             labels(src),
             [
-                (Role::Title, "Pipeline".to_string()),
-                (Role::Title, "Line one".to_string()),
+                (Role::Title, "Pipeline".to_owned()),
+                (Role::Title, "Line one".to_owned()),
                 n("x")
             ]
         );
@@ -871,7 +878,11 @@ mod tests {
     fn lone_cr_and_mixed_terminators_keep_original_offsets() {
         let src = "flowchart TD\rA[One]\r\nB[Two]\nC[Three]\r";
         let ex = run(Format::Mermaid, src, 0);
-        let got: Vec<_> = ex.fragments.iter().map(|f| &src[f.span.clone()]).collect();
+        let got: Vec<_> = ex
+            .fragments
+            .iter()
+            .map(|f| sub(src, f.span.clone()))
+            .collect();
         assert_eq!(got, ["One", "Two", "Three"]);
         assert_eq!(ex.fragments[0].span.start, src.find("One").unwrap());
     }
@@ -885,6 +896,6 @@ mod tests {
         let two = src.find("Two").unwrap() + 40;
         assert_eq!(spans, [one..one + 3, two..two + 3]);
         let seq = labels("sequenceDiagram; A->>B: hi\n");
-        assert_eq!(seq, [(Role::Message, "hi".to_string())]);
+        assert_eq!(seq, [(Role::Message, "hi".to_owned())]);
     }
 }

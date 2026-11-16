@@ -23,6 +23,7 @@
 //! and turns a [`SignalHit`] into a finding, so suppression and severity follow its
 //! configuration.
 
+use crate::sub;
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -105,8 +106,9 @@ const GLOSS_MIN_WORDS: usize = 5;
 const NOTE_WORDS: usize = 6;
 const MIN_LABELS: usize = 3;
 const MIN_PROSE_WORDS: usize = 40;
-const MENTION_SHARE: f64 = 0.6;
-const COVERAGE: f64 = 0.6;
+/// Both shares are three fifths, kept as a ratio so the comparison needs no float.
+const MENTION_SHARE: (usize, usize) = (3, 5);
+const COVERAGE: (usize, usize) = (3, 5);
 
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "its", "of",
@@ -115,7 +117,9 @@ const STOPWORDS: &[&str] = &[
 
 /// The label text the rules see.
 fn label_text<'a>(source: &'a str, f: &'a Fragment) -> &'a str {
-    f.text.as_deref().unwrap_or_else(|| &source[f.span.clone()])
+    f.text
+        .as_deref()
+        .unwrap_or_else(|| sub(source, f.span.clone()))
 }
 
 /// Split a label into words. `<br>` tags separate words, and tokens without a letter or digit are dropped.
@@ -152,7 +156,7 @@ fn gloss_split(label: &str) -> Option<(&str, &str)> {
         .iter()
         .filter_map(|sep| label.find(sep).map(|at| (at, *sep)))
         .min_by_key(|&(at, _)| at)
-        .map(|(at, sep)| (&label[..at], &label[at + sep.len()..], sep))
+        .map(|(at, sep)| (sub(label, ..at), sub(label, at + sep.len()..), sep))
         // A line break between two names lists components, as in "Istio Sidecar" over
         // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
         .filter(|&(_, gloss, sep)| !BREAKS.contains(&sep) || !all_capitalised(gloss))
@@ -209,7 +213,7 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<SignalHit> {
                     let list = gloss.contains(',') || gloss_words >= 3;
                     if (1..=4).contains(&head_words) && gloss_words >= 2 && list {
                         out.push(finding(Signal::LabelTitlePlusGloss,
-                            "This label holds a name and a description. Keep the name and move the description to the text.".to_string(),
+                            "This label holds a name and a description. Keep the name and move the description to the text.".to_owned(),
                         ));
                     }
                 }
@@ -232,7 +236,7 @@ fn spans(text: &str) -> Vec<(Range<usize>, String)> {
         match (part, start) {
             (true, None) => start = Some(i),
             (false, Some(s)) => {
-                out.push((s..i, text[s..i].to_lowercase()));
+                out.push((s..i, sub(text, s..i).to_lowercase()));
                 start = None;
             }
             _ => {}
@@ -274,7 +278,9 @@ fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
             i += 1;
             continue;
         };
-        out.push(block.span.start + w[i].0.start..block.span.start + w[i + len - 1].0.end);
+        if let Some(((first, _), (last, _))) = w.get(i).zip(w.get(i + len - 1)) {
+            out.push(block.span.start + first.start..block.span.start + last.end);
+        }
         i += len;
     }
     out
@@ -306,7 +312,7 @@ pub fn check_prose(
                 signal: Signal::MetaReference,
                 span,
                 matched: None,
-                message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_string(),
+                message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_owned(),
             });
         }
     }
@@ -325,11 +331,14 @@ pub fn check_prose(
             .iter()
             .filter(|tokens| {
                 !tokens.is_empty()
-                    && count_f64(tokens.iter().filter(|t| known.contains(*t)).count())
-                        >= MENTION_SHARE * count_f64(tokens.len())
+                    && at_least_share(
+                        tokens.iter().filter(|t| known.contains(*t)).count(),
+                        tokens.len(),
+                        MENTION_SHARE,
+                    )
             })
             .count();
-        if count_f64(mentioned) >= COVERAGE * count_f64(labels.len()) {
+        if at_least_share(mentioned, labels.len(), COVERAGE) {
             out.push(SignalHit {
                 signal: Signal::ProseRestatesLabels,
                 span: first.span.clone(),
@@ -344,9 +353,9 @@ pub fn check_prose(
     out
 }
 
-#[allow(clippy::cast_precision_loss)]
-fn count_f64(n: usize) -> f64 {
-    n as f64
+/// Whether `part / whole >= num / den`, compared by cross-multiplication.
+fn at_least_share(part: usize, whole: usize, (num, den): (usize, usize)) -> bool {
+    part * den >= whole * num
 }
 
 #[cfg(test)]
@@ -438,7 +447,7 @@ mod tests {
         let start = source.find("cGF5").unwrap();
         let fragment = Fragment {
             span: start..start + "cGF5bG9hZA==".len(),
-            text: Some("one two three four five six seven".to_string()),
+            text: Some("one two three four five six seven".to_owned()),
             role: Role::Node,
             logical: String::new(),
         };
@@ -473,7 +482,7 @@ mod tests {
         let src = "x";
         let f = Fragment {
             span: 0..1,
-            text: Some("a b c d e f g".to_string()),
+            text: Some("a b c d e f g".to_owned()),
             role: Role::Node,
             logical: String::new(),
         };
