@@ -52,6 +52,19 @@ minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.gz.minisig` next to the fil
 
 Each signature also carries a trusted comment that names the file and the release, for example `slopvac-release file:slopvac-x86_64-unknown-linux-gnu.tar.gz version:3.1.0`. The release version has no `v`, and a candidate keeps its suffix, as in `3.1.0-rc.2`. Minisign prints the comment after it verifies the signature, and the signature covers it. `slopvac self update` requires the comment to match the archive and version it requested, so a signed archive from another release or target does not install. It also installs stable releases only, so a signed candidate does not install either.
 
+When `slopvac self update` refuses or fails, it exits 2, leaves the installed binary unchanged and reports one of these codes:
+
+| Code | When |
+| --- | --- |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for its install method. |
+| `offline-network-needed` | Offline mode is on. Self update needs the network. |
+| `update-check-failed` | The latest-release lookup failed. |
+| `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
+| `update-verification-failed` | The signature is missing, does not verify against the embedded key, or names another file or version. |
+| `self-update-failed` | The download, extraction or replacement failed, or the platform has no self-update support. |
+
+If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
+
 How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
