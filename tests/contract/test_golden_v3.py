@@ -57,6 +57,36 @@ def test_format_fixtures_cover_mdx_html_rst_and_two_comment_languages():
     assert {formats[k]["surface"] for k in ("mdx", "html", "rst")} == {"prose"}
 
 
+CORPUS = [i for i in INPUTS if i["tier"] == "corpus"]
+
+
+def test_corpus_tier_is_every_third_small_human_markdown_document_by_id():
+    manifest = json.loads((ROOT / "evals" / "manifest.json").read_text("utf-8"))
+    small = sorted(
+        d["id"]
+        for d in manifest["documents"]
+        if d["origin"] == "human"
+        and d["format"] == "markdown"
+        and d["committed"]
+        and d["bytes"] <= 4096
+    )
+    assert [i["id"] for i in CORPUS] == [f"corpus-{d}" for d in small[::3]]
+    assert 10 <= len(CORPUS) <= 20
+
+
+def test_corpus_inputs_keep_the_sha256_that_the_eval_manifest_pins():
+    manifest = json.loads((ROOT / "evals" / "manifest.json").read_text("utf-8"))
+    pinned = {f"corpus-{d['id']}": d["sha256"] for d in manifest["documents"]}
+    assert {i["id"]: i["sha256"] for i in CORPUS} == {
+        i["id"]: pinned[i["id"]] for i in CORPUS
+    }
+
+
+def test_corpus_documents_are_staged_as_markdown(captured):
+    staged = {f for c in captured("parity", "3x") for f in c["files"]}
+    assert {f"{i['id']}.md" for i in CORPUS} <= staged
+
+
 @pytest.mark.parametrize("profile", golden.PROFILES)
 def test_every_input_has_a_golden_file(profile):
     missing = [i for i in IDS if not golden.golden_path(profile, i).is_file()]
