@@ -183,7 +183,9 @@ Trust is stored per user, outside the project. A trust file inside a project is 
 
 ### 5.5 Limits set by this model
 
-The plugin protocol hands the numbers to this model. The per-plugin run caps are implemented as the `RunCaps` defaults in `crates/slopvac-plugins/src/host.rs`. The process limits come from the open limits PR (#389, `slopvac-8l4.9.13`). The whole-run budget is new work (`slopvac-8l4.9.33`).
+The plugin protocol hands the numbers to this model. The per-plugin run caps are implemented as the `RunCaps` defaults in `crates/slopvac-plugins/src/host.rs`. The whole-run budget is `RunBudget` in `crates/slopvac-plugins/src/budget.rs` (`slopvac-8l4.9.33`).
+
+The process limits (CPU time, open files, file size, core files and memory) are approved defaults. They are the `cpu_time`, `open_files`, `file_size` and `memory` fields of `RunCaps`, which `HostConfig::caps` carries. These values are fixed in 3.0: only code that builds a `HostConfig` sets them, and the configuration file has no key for them. The host sets them on Unix through the plugin launcher (`slopvac-8l4.9.13`). Windows has no process limits in 3.0 (`slopvac-8l4.18.8`).
 
 | Limit | Value | Bead |
 |---|---|---|
