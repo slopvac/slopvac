@@ -108,6 +108,24 @@ rules:
 """
 
 
+FIXTURE_CONFIG = {
+    "description": "Demo config.",
+    "required": ["schema_version"],
+    "properties": {
+        "schema_version": {"const": 3, "description": "Version."},
+        "mode": {"enum": ["a", "b"], "default": "a", "description": "A | mode."},
+        "packs": {"type": "array", "items": {"$ref": "#/$defs/Source"}},
+    },
+    "$defs": {
+        "Source": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {"id": {"type": "string", "description": "Use <id>."}},
+        }
+    },
+}
+
+
 def _schema(name: str, **extra: object) -> str:
     body = {"$id": OLD_PREFIX + name, "title": f"{name} title", **extra}
     return json.dumps(body, indent=2) + "\n"
@@ -126,6 +144,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
+<<<<<<< HEAD
     for name in ("plugin-protocol", "pack-manifest", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     packs = tmp_path / "packs"
@@ -135,6 +154,24 @@ def sources(tmp_path: Path) -> dict[str, Path]:
     contract = tmp_path / "contract"
     contract.mkdir()
     (contract / "plugin-protocol.md").write_text(CONTRACT)
+=======
+    (schemas / "plugin-protocol.schema.json").write_text(
+        _schema(
+            "plugin-protocol.schema.json",
+            description="Messages <of> v1.",
+            **{
+                "$defs": {
+                    "Zed": {"type": "object", "description": "A | <b>"},
+                    "Alpha": {"oneOf": []},
+                }
+            },
+        )
+    )
+    (schemas / "config.schema.json").write_text(
+        _schema("config.schema.json", **FIXTURE_CONFIG)
+    )
+    (schemas / "common.schema.json").write_text(_schema("common.schema.json"))
+>>>>>>> 77887c088c (docs: generate CLI and config reference pages)
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -562,6 +599,7 @@ def test_genre_pages_come_from_the_registry_for_every_builtin_genre(
     )
 
 
+<<<<<<< HEAD
 # --- folded allOf branches -------------------------------------------------
 
 
@@ -838,3 +876,56 @@ def test_link_like_text_in_a_rule_example_survives_the_site_rewrite(
     assert _run(sources, "--starlight", str(_site(sources))) == 0
     page = _starlight_page(sources, "rules/more/no-link.md")
     assert "```text\nSee [the page](protocol.md) here.\n```" in page
+=======
+def _json_keys(node: object) -> set[str]:
+    """Every key of every ``properties`` object in a schema, by plain recursion."""
+    found: set[str] = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "properties" and isinstance(value, dict):
+                found |= set(value)
+            found |= _json_keys(value)
+    elif isinstance(node, list):
+        for item in node:
+            found |= _json_keys(item)
+    return found
+
+
+def test_config_reference_shows_type_default_requirement_and_description(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "config/index.md")
+    assert "| `schema_version` (required) | `3` | none | Version. |" in page
+    assert '| `mode` | one of `a`, `b` | `"a"` | A \\| mode. |' in page
+    assert "| `packs[].id` (required) | string | none | Use &lt;id>. |" in page
+    assert "(config/index.md)" in _read(sources, "index.md")
+
+
+def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
+    schema = json.loads((build_site.SCHEMAS_DIR / "config.schema.json").read_text())
+    page = build_site.build(build_site.load_site())["config/index.md"]
+    rows = [r for r in page.splitlines() if r.startswith("| `")]
+    segments = {
+        part.removesuffix("[]")
+        for row in rows
+        for part in row.split("`")[1].split(".")
+    }
+    assert _json_keys(schema) <= segments
+    assert all(r.split(" | ")[1].strip() for r in rows)
+    assert "| `network.offline` | boolean | `false` |" in page
+    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `"standard"` |' in page
+
+
+def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
+    sources: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    _run(sources)
+    assert "(cli/index.md)" in _read(sources, "index.md")
+    index = _read(sources, "cli/index.md")
+    assert "(lint.md)" in index and "## Exit codes" in index
+    assert "`--format`" in _read(sources, "cli/lint.md")
+    (sources["out"] / "cli/lint.md").write_text("edited\n")
+    assert _run(sources, "--check") == 1
+    assert "cli/lint.md: out of date" in capsys.readouterr().err
+>>>>>>> 77887c088c (docs: generate CLI and config reference pages)

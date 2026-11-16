@@ -237,10 +237,10 @@ def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
 
 
 @cache
-def rust_reference(crate: str) -> Pages:
-    """Pages printed by a crate's ``reference`` example, keyed by site path."""
+def rust_reference(crate: str, example: str = "reference") -> Pages:
+    """Pages printed by a crate's reference example, keyed by site path."""
     with tempfile.TemporaryDirectory() as tmp:
-        command = [CARGO, "run", "--quiet", "-p", crate, "--example", "reference"]
+        command = [CARGO, "run", "--quiet", "-p", crate, "--example", example]
         result = subprocess.run(
             [*command, "--", tmp], cwd=ROOT, capture_output=True, text=True, check=False
         )
@@ -264,6 +264,127 @@ def generate_genres() -> Pages:
     return rust_reference("slopvac-context")
 
 
+def generate_cli() -> Pages:
+    return rust_reference("slopvac", "cli-reference")
+
+
+class _ConfigSchema:
+    """Walks ``config.schema.json`` into one row per key path."""
+
+    def __init__(self, config: dict, common: dict) -> None:
+        self.config = config
+        self.common = common
+
+    def resolve(self, node: dict) -> dict:
+        """The node with a local or ``common.schema.json`` ``$ref`` followed."""
+        ref = node.get("$ref")
+        if not ref:
+            return node
+        base, _, pointer = ref.partition("#")
+        target = self.common if base == "common.schema.json" else self.config
+        for part in pointer.strip("/").split("/"):
+            target = target[part]
+        own = {k: v for k, v in node.items() if k != "$ref"}
+        return {**self.resolve(target), **own}
+
+    def _parts(self, node: dict) -> list[dict]:
+        """The node and every schema merged into it by ``allOf`` or ``then``."""
+        node = self.resolve(node)
+        parts = [node]
+        for sub in [*node.get("allOf", []), *([node["then"]] if "then" in node else [])]:
+            parts += self._parts(sub)
+        return parts
+
+    def properties(self, node: dict) -> dict[str, dict]:
+        found: dict[str, dict] = {}
+        for part in self._parts(node):
+            found.update(part.get("properties", {}))
+        return found
+
+    def required(self, node: dict) -> set[str]:
+        return {key for part in self._parts(node) for key in part.get("required", [])}
+
+    def kind(self, node: dict) -> str:
+        node = self.resolve(node)
+        if "enum" in node:
+            return "one of " + ", ".join(f"`{v}`" for v in node["enum"])
+        if "const" in node:
+            return f"`{node['const']}`"
+        if "oneOf" in node:
+            return " or ".join(self.kind(n) for n in node["oneOf"])
+        if "then" in node:
+            return f"{self.kind(node['else'])} or table"
+        kind = node.get("type")
+        if kind == "array":
+            return f"array of {self.kind(node.get('items', {}))}"
+        if kind == "object" and isinstance(node.get("additionalProperties"), dict):
+            return f"table of {self.kind(node['additionalProperties'])}"
+        if kind in (None, "object"):
+            return "table"
+        return kind if isinstance(kind, str) else " or ".join(kind)
+
+    def rows(self, node: dict, prefix: str = "") -> list[tuple[str, str, str, str]]:
+        found = []
+        required = self.required(node)
+        for key, child in self.properties(node).items():
+            path = prefix + key
+            resolved = self.resolve(child)
+            default = resolved.get("default")
+            found.append(
+                (
+                    path + (" (required)" if key in required else ""),
+                    self.kind(child),
+                    "none" if default is None else f"`{json.dumps(default)}`",
+                    resolved.get("description", ""),
+                )
+            )
+            found += self.children(resolved, path)
+        return found
+
+    def children(self, node: dict, path: str) -> list[tuple[str, str, str, str]]:
+        if node.get("type") == "array" and "items" in node:
+            return self.rows(node["items"], path + "[].")
+        extra = node.get("additionalProperties")
+        if isinstance(extra, dict):
+            return self.rows(extra, path + ".<name>.")
+        return self.rows(node, path + ".")
+
+
+_CODE_SPAN = re.compile(r"(`[^`]*`)")
+
+
+def _config_cell(text: object) -> str:
+    """One-line table text. ``<`` is escaped outside code spans only."""
+    one_line = _one_line(text).replace("\u2014", "--").replace("\u2013", "--")
+    parts = _CODE_SPAN.split(one_line)
+    return "".join(
+        part if i % 2 else part.replace("<", "&lt;") for i, part in enumerate(parts)
+    ).replace("|", "\\|")
+
+
+def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
+    config = json.loads((schemas_dir / "config.schema.json").read_text())
+    common = json.loads((schemas_dir / "common.schema.json").read_text())
+    lines = [
+        "# Configuration reference",
+        "",
+        _config_cell(config.get("description", "")),
+        "",
+        "This page writes a key inside an array of tables as `name[].key`.",
+        "It writes a key inside a table of user-chosen names as `table.<name>.key`.",
+        "",
+        "| Key | Type | Default | Description |",
+        "| --- | --- | --- | --- |",
+    ]
+    for path, kind, default, description in _ConfigSchema(config, common).rows(config):
+        key, _, note = path.partition(" ")
+        lines.append(
+            f"| `{key}`{' ' + note if note else ''} | {kind} | {default} "
+            f"| {_config_cell(description)} |"
+        )
+    return {"config/index.md": "\n".join(lines) + "\n"}
+
+
 SECTIONS = (
     ("Rules", "rules/index.md"),
     ("Styles", "styles/index.md"),
@@ -272,6 +393,8 @@ SECTIONS = (
     ("Plugin protocol", "plugins/protocol.md"),
     ("Pack manifest", "plugins/manifest.md"),
     ("Packs", "plugins/packs/index.md"),
+    ("Command line", "cli/index.md"),
+    ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
 
@@ -300,6 +423,8 @@ def build(
         generate_terms(),
         generate_genres(),
         plugin_pages.generate_packs(schemas, packs_dir),
+        generate_cli(),
+        generate_config(schemas_dir),
         {"index.md": index_page()},
     )
     for group in generated:
