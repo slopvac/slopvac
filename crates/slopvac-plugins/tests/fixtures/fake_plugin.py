@@ -231,7 +231,7 @@ while True:
         if mode == "version-unsupported":
             error(id_, -32001, "protocol-version-unsupported")
             continue
-        if mode == "hang" and pidfile:
+        if mode in ("hang", "stderr-after-exit") and pidfile:
             write_pids(pidfile, [os.getpid()])
         if mode == "stray-init":
             # A child outside the group, started before a reply the host refuses.

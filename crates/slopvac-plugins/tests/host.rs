@@ -13,7 +13,8 @@ use slopvac_plugins::hooks::{
     Rendered, Segment, Span,
 };
 use slopvac_plugins::{
-    BudgetCaps, HookKind, HostConfig, Plugin, PluginError, PluginSpec, RunBudget, SpawnGate,
+    BudgetCaps, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook, RunBudget,
+    SpawnGate,
 };
 
 #[test]
@@ -1183,5 +1184,64 @@ fn tm2b_output_after_the_shutdown_acknowledgement_makes_it_unclean() {
     let out = p.shutdown();
     assert!(out.acknowledged, "{out:?}");
     assert!(out.violation.is_some(), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+/// A hook that holds the stderr reader at its final read of 2 MiB until
+/// `release` fires, or for `NO_HANG`.
+fn hold_final_stderr_read(release: crossbeam_channel::Receiver<()>) -> ReadHook {
+    ReadHook::new(move |total| {
+        if total >= 2 << 20 {
+            let _ = release.recv_timeout(NO_HANG);
+        }
+    })
+}
+
+/// The plugin writes 2 MiB to standard error and leaves with status 0, while
+/// the host has read the last chunk but not charged it. The final charge
+/// crosses the cap after the leader is reaped and before the drain ends.
+#[test]
+fn tm2b_a_cap_crossing_charge_that_lands_during_the_drain_is_reported() {
+    let (release_tx, release) = crossbeam_channel::bounded(1);
+    let mut c = budgeted(BudgetCaps {
+        stderr_bytes: (2 << 20) - 1,
+        ..BudgetCaps::default()
+    });
+    c.stderr_read_hook = Some(hold_final_stderr_read(release));
+    let dir = scratch("tm2b-drain");
+    let pidfile = dir.join("pid");
+    let spec = spec_with("stderr-after-exit", &json!({}), Some(&pidfile), decl());
+    let p = Plugin::start(&spec, &c, &Allow).unwrap();
+    // Release once the leader is gone, with margin on both sides of the
+    // 500 ms drain wait that the shutdown is in by then.
+    let releaser = std::thread::spawn(move || {
+        let pid = pids_n(&pidfile, 1);
+        assert!(wait_gone(&pid), "the plugin never left");
+        std::thread::sleep(Duration::from_millis(100));
+        release_tx.send(()).unwrap();
+    });
+    let out = p.shutdown();
+    releaser.join().unwrap();
+    assert!(
+        out.acknowledged && out.left,
+        "the exit was voluntary: {out:?}"
+    );
+    assert!(out.status.is_some_and(|s| s.success()), "{out:?}");
+    assert!(out.violation.is_some(), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
+}
+
+/// The reader stays paused past the drain wait, as if a descendant held the
+/// pipe open: the accounting is unfinished, so the shutdown is not clean.
+#[test]
+fn tm2b_a_reader_that_outlasts_the_drain_wait_makes_the_shutdown_unclean() {
+    let (release_tx, release) = crossbeam_channel::bounded(1);
+    let mut c = budgeted(BudgetCaps::default());
+    c.stderr_read_hook = Some(hold_final_stderr_read(release));
+    let p = Plugin::start(&spec("stderr-after-exit"), &c, &Allow).unwrap();
+    let out = p.shutdown();
+    release_tx.send(()).unwrap();
+    assert!(out.acknowledged && out.left, "{out:?}");
+    assert!(out.violation.is_none(), "{out:?}");
+    assert!(out.accounting_incomplete, "{out:?}");
     assert!(!out.clean(), "{out:?}");
 }

@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, Sender, bounded, select};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select};
 use serde_json::{Value, json};
 
 use crate::budget::RunBudget;
@@ -106,6 +106,25 @@ impl Default for RunCaps {
     }
 }
 
+/// Test seam: called by the standard error reader with the plugin's running
+/// byte count, after each read and before the read is charged.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ReadHook(Arc<dyn Fn(u64) + Send + Sync>);
+
+impl ReadHook {
+    /// Wrap `f`.
+    pub fn new(f: impl Fn(u64) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for ReadHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReadHook")
+    }
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -136,6 +155,9 @@ pub struct HostConfig {
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
     pub process_table: Option<TableSource>,
+    /// Test seam for the standard error reader; production code never sets it.
+    #[doc(hidden)]
+    pub stderr_read_hook: Option<ReadHook>,
 }
 
 impl Default for HostConfig {
@@ -153,6 +175,7 @@ impl Default for HostConfig {
             caps: RunCaps::default(),
             budget: Arc::default(),
             process_table: None,
+            stderr_read_hook: None,
         }
     }
 }
@@ -243,6 +266,7 @@ struct Shared {
     reader_done: Receiver<()>,
     caps: RunCaps,
     budget: Arc<RunBudget>,
+    stderr_read_hook: Option<ReadHook>,
     exit_timeout: Duration,
 }
 
@@ -469,6 +493,9 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                     ring.extend(&buf[..n]);
                     let excess = ring.len().saturating_sub(STDERR_RING);
                     ring.drain(..excess);
+                }
+                if let Some(hook) = &shared.stderr_read_hook {
+                    (hook.0)(total);
                 }
                 if let Err(m) = shared.budget.charge_stderr(n as u64) {
                     shared.violation(m);
@@ -1032,13 +1059,18 @@ impl Plugin {
         let _ = shared.group.wait_done(REAP_WAIT);
         // Output that is still in the pipes counts against the caps, so read
         // both streams to the end before the verdict.
-        let _ = shared.stderr_done.recv_timeout(DRAIN_WAIT);
-        let _ = shared.reader_done.recv_timeout(DRAIN_WAIT);
+        // A reader that is still running when the wait ends has not finished
+        // its accounting.
+        let stderr_drained =
+            shared.stderr_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
+        let stdout_drained =
+            shared.reader_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
         let violation = match lock(&shared.dead).as_ref() {
             Some(PluginError::ProtocolViolation(m)) => Some(m.clone()),
             _ => None,
         };
         Shutdown {
+            accounting_incomplete: !(stderr_drained && stdout_drained),
             violation,
             acknowledged,
             left,
@@ -1071,6 +1103,10 @@ pub struct Shutdown {
     /// The protocol violation that ended the plugin, such as output past a
     /// cap that arrived after the shutdown acknowledgement.
     pub violation: Option<String>,
+    /// A standard output or standard error reader was still running when the
+    /// drain wait ended, for example because a descendant holds the pipe, so
+    /// output may be uncounted.
+    pub accounting_incomplete: bool,
 }
 
 impl Shutdown {
@@ -1080,6 +1116,7 @@ impl Shutdown {
     #[must_use]
     pub fn clean(&self) -> bool {
         self.violation.is_none()
+            && !self.accounting_incomplete
             && self.acknowledged
             && self.left
             && self.status.is_some_and(|s| s.success())
@@ -1156,6 +1193,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         reader_done,
         caps: cfg.caps,
         budget: Arc::clone(&cfg.budget),
+        stderr_read_hook: cfg.stderr_read_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
     });
     {

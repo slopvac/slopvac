@@ -34,6 +34,6 @@ pub mod trust;
 pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
 pub use error::{PluginError, RpcError, StartError};
-pub use host::{HostConfig, Plugin, PluginSpec, RunCaps, Shutdown, SpawnGate, Timeouts};
+pub use host::{HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts};
 pub use process::{Teardown, kill_all_live};
 pub use protocol::{HookKind, PluginDeclaration};
