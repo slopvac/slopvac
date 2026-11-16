@@ -87,11 +87,11 @@ pub struct TaggerSpec {
     #[serde(default, deserialize_with = "present")]
     pub unit: Option<Unit>,
     /// The tagger fires when at least one entry matches the unit. Not with `when`.
-    #[serde(default, rename = "match")]
-    pub matches: Vec<Matcher>,
-    /// The tagger stays silent for a unit where any of these entries matches.
-    #[serde(default)]
-    pub unless: Vec<Matcher>,
+    #[serde(default, rename = "match", deserialize_with = "present")]
+    pub matches: Option<Vec<Matcher>>,
+    /// The tagger stays silent for a unit where any of these entries matches. Not with `when`.
+    #[serde(default, deserialize_with = "present")]
+    pub unless: Option<Vec<Matcher>>,
     /// Structural conditions, instead of `match`.
     #[serde(default, deserialize_with = "present")]
     pub when: Option<When>,
@@ -143,7 +143,7 @@ impl TaggerSpec {
             return Err(fail("evidence and description need at least one character"));
         }
         if let Some(when) = &self.when {
-            if !self.matches.is_empty() || !self.unless.is_empty() || self.unit.is_some() {
+            if self.matches.is_some() || self.unless.is_some() || self.unit.is_some() {
                 return Err(fail("`when` excludes `match`, `unless` and `unit`"));
             }
             let structural = when.compile(&Settings {
@@ -163,17 +163,18 @@ impl TaggerSpec {
         if self.scope.is_some() {
             return Err(fail("`scope` needs `when`"));
         }
-        if self.matches.is_empty() {
+        let entries = self.matches.as_deref().unwrap_or_default();
+        if entries.is_empty() {
             return Err(fail("`match` needs at least one entry"));
         }
-        let matching = self
-            .matches
+        let matching = entries
             .iter()
             .map(|m| m.compile(&id))
             .collect::<Result<Vec<_>, _>>()?;
         let unless = self
             .unless
             .iter()
+            .flatten()
             .map(|m| m.compile(&id))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(DeclarativeTagger {

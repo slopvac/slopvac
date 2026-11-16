@@ -354,3 +354,24 @@ fn dot_components_are_dropped_before_an_anchored_path_condition() {
     assert_eq!(idx.tags()[0].kind, "change-note");
     assert_eq!(idx.tags()[0].span, 0..DOC.len());
 }
+
+#[test]
+fn a_structural_tagger_reports_the_evidence_it_was_given() {
+    let idx = run(
+        "schema_version: 3\nid: t\ntag: k\nevidence: Says flag.\nwhen:\n  sentence: flag\n",
+        "a.md",
+        DOC,
+    );
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].evidence, "Says flag.");
+}
+
+#[test]
+fn a_structural_tagger_without_evidence_names_itself_and_its_scope() {
+    let idx = run(
+        "schema_version: 3\nid: t\ntag: k\nwhen:\n  sentence: flag\n",
+        "a.md",
+        DOC,
+    );
+    assert_eq!(idx.tags()[0].evidence, "t: sentence");
+}

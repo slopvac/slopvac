@@ -25,14 +25,22 @@ fn read_json(path: &Path) -> Value {
 /// A validator for one published schema. Its `$ref`s reach the other schemas by URL, so
 /// every schema file is registered.
 fn validator(file: &str) -> jsonschema::Validator {
+    validator_with(file, &[])
+}
+
+/// Like [`validator`], but a schema in `replace` stands in for the published file of the
+/// same name.
+fn validator_with(file: &str, replace: &[(&str, Value)]) -> jsonschema::Validator {
     let mut registry = jsonschema::Registry::new();
     for entry in fs::read_dir(schemas()).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|e| e == "json") {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            registry = registry
-                .add(format!("{BASE}/{name}"), read_json(&path))
-                .unwrap();
+            let schema = replace
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map_or_else(|| read_json(&path), |(_, v)| v.clone());
+            registry = registry.add(format!("{BASE}/{name}"), schema).unwrap();
         }
     }
     let registry = registry.prepare().unwrap();
@@ -168,36 +176,66 @@ fn every_built_in_structural_tagger_satisfies_the_tagger_schema() {
     }
 }
 
+/// Files from the merge-base of the change that added `contexts`, `when` and `scope`.
+fn before(file: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pre-8l4.5.14")
+        .join(file)
+}
+
 /// Schema evolution within one `schema_version` is additive (`docs/contract/policies.md`,
-/// section 3.2): a file that was valid before `contexts` and `when` stays valid. These are
-/// the valid corpus files and the built-in files that predate the two additions.
+/// section 3.2): an input that the previous schemas accepted stays valid. The previous
+/// genre and tagger schemas and the inputs they accepted are snapshots from the merge-base:
+/// the valid conformance files and the built-in genre and tagger files of that time.
 #[test]
 fn schema_evolution_is_additive() {
-    let genre = validator("genre.schema.json");
-    let tagger = validator("tagger.schema.json");
-    let corpus = |artifact: &str, file: &str| {
-        load(
-            &schemas()
-                .join("conformance")
-                .join(artifact)
-                .join("valid")
-                .join(file),
-        )
-    };
-    let before = [
-        (&genre, corpus("genre", "minimal.toml")),
-        (&genre, corpus("genre", "how-to.toml")),
-        (&tagger, corpus("tagger", "minimal.toml")),
-        (&tagger, corpus("tagger", "requirement.toml")),
+    let old_schemas = [
+        ("genre.schema.json", read_json(&before("genre.schema.json"))),
+        (
+            "tagger.schema.json",
+            read_json(&before("tagger.schema.json")),
+        ),
     ];
-    for (v, value) in before {
-        let errors: Vec<String> = v.iter_errors(&value).map(|e| e.to_string()).collect();
-        assert!(errors.is_empty(), "{}: {errors:?}", value["id"]);
-    }
-    for (v, file) in [(&genre, "genres.yaml"), (&tagger, "taggers.yaml")] {
-        for entry in builtin(file).as_array().unwrap() {
-            let errors: Vec<String> = v.iter_errors(entry).map(|e| e.to_string()).collect();
-            assert!(errors.is_empty(), "{}: {errors:?}", entry["id"]);
+    let yaml_list = |file: &str| -> Vec<Value> {
+        let v: Value = serde_saphyr::from_str(&fs::read_to_string(before(file)).unwrap()).unwrap();
+        v.as_array().unwrap().clone()
+    };
+    let inputs: [(&str, Vec<Value>); 2] = [
+        (
+            "genre.schema.json",
+            vec![
+                load(&before("genre-minimal.toml")),
+                load(&before("genre-how-to.toml")),
+            ]
+            .into_iter()
+            .chain(yaml_list("genres.yaml"))
+            .collect(),
+        ),
+        (
+            "tagger.schema.json",
+            vec![
+                load(&before("tagger-minimal.toml")),
+                load(&before("tagger-requirement.toml")),
+            ]
+            .into_iter()
+            .chain(yaml_list("taggers.yaml"))
+            .collect(),
+        ),
+    ];
+    let mut checked = 0;
+    for (schema, values) in inputs {
+        let old = validator_with(schema, &old_schemas);
+        let new = validator(schema);
+        for value in values {
+            assert!(
+                old.is_valid(&value),
+                "snapshot is not valid: {}",
+                value["id"]
+            );
+            let errors: Vec<String> = new.iter_errors(&value).map(|e| e.to_string()).collect();
+            assert!(errors.is_empty(), "{}: {errors:?}", value["id"]);
+            checked += 1;
         }
     }
+    assert!(checked >= 12, "{checked} inputs");
 }

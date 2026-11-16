@@ -1,0 +1,12 @@
+# Built-in declarative taggers, as `tagger.schema.json` defines them. Patterns are PCRE2.
+# Each entry is one tagger file; the list is a bundle for the built-in pack.
+
+- schema_version: 3
+  id: change-note-version-sentence
+  description: A sentence that names a version.
+  tag: change-note
+  unit: sentence
+  confidence: 0.6
+  evidence: The sentence names a version.
+  match:
+    - pattern: '\bv\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b|\b(?:version|release|since|until)\s+v?\d+\.\d+\b'
