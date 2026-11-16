@@ -89,6 +89,7 @@ tempfile = "3"
 thiserror = "2"
 toml = "1"
 toml_edit = "0.25"
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 unicode-normalization = "0.1"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",
