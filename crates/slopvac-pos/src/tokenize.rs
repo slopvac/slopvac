@@ -18,7 +18,7 @@ pub(crate) mod work {
     }
 
     pub(crate) fn tick(units: usize) {
-        WORK.with(|w| w.set(w.get() + u64::try_from(units).unwrap_or(u64::MAX)));
+        WORK.with(|w| w.set(w.get() + u64::try_from(units).unwrap()));
     }
 
     /// Returns the work done since the last call and resets the counter.

@@ -19,6 +19,15 @@ pub enum ModelError {
     /// A field holds a value the format does not allow.
     #[error("model file is corrupt: {0}")]
     Corrupt(&'static str),
+    /// A length or offset does not fit in `usize` on this target.
+    #[error("model file is corrupt: length overflows usize")]
+    LengthOverflow(#[source] std::num::TryFromIntError),
+    /// A string field is not UTF-8.
+    #[error("model file is corrupt: string is not UTF-8")]
+    StringNotUtf8(#[source] std::str::Utf8Error),
+    /// A feature key is not UTF-8.
+    #[error("model file is corrupt: feature key is not UTF-8")]
+    KeyNotUtf8(#[source] std::str::Utf8Error),
     /// The model uses a feature template this port does not implement.
     #[error("unsupported feature template {0:?}; only the rune template (1) is implemented")]
     UnsupportedTemplate(String),
@@ -32,7 +41,7 @@ pub enum ModelError {
 pub(crate) struct Model {
     classes: Vec<Box<str>>,
     /// Feature key to its `[lo, hi)` range in `class_ids` and `weights`.
-    features: HashMap<Box<str>, (u32, u32)>,
+    features: HashMap<Box<str>, (usize, usize)>,
     class_ids: Vec<u8>,
     weights: Vec<f32>,
     /// Words the training data only ever saw with one tag.
@@ -70,9 +79,7 @@ impl<'a> Reader<'a> {
     }
 
     fn len(&mut self) -> Result<usize, ModelError> {
-        usize::try_from(self.u32()?)
-            .ok()
-            .ok_or(ModelError::Corrupt("length overflows usize"))
+        usize::try_from(self.u32()?).map_err(ModelError::LengthOverflow)
     }
 
     fn u8(&mut self) -> Result<u8, ModelError> {
@@ -84,32 +91,23 @@ impl<'a> Reader<'a> {
         let n = usize::from(u16::from_le_bytes(self.array::<2>()?));
         let raw = self.take(n)?;
         std::str::from_utf8(raw)
-            .ok()
             .map(Box::from)
-            .ok_or(ModelError::Corrupt("string is not UTF-8"))
+            .map_err(ModelError::StringNotUtf8)
     }
 
-    fn offsets(&mut self, n: usize) -> Result<Vec<u32>, ModelError> {
+    fn offsets(&mut self, n: usize) -> Result<Vec<usize>, ModelError> {
         let raw = self.take(n.checked_mul(4).ok_or(ModelError::Truncated)?)?;
-        Ok(raw
-            .as_chunks::<4>()
+        raw.as_chunks::<4>()
             .0
             .iter()
-            .map(|c| u32::from_le_bytes(*c))
-            .collect())
+            .map(|c| usize::try_from(u32::from_le_bytes(*c)).map_err(ModelError::LengthOverflow))
+            .collect()
     }
-}
-
-/// A `u32` table value as an index, or `None` on a target where it does not fit.
-fn index(value: u32) -> Option<usize> {
-    usize::try_from(value).ok()
 }
 
 /// Checks that `offsets` is non-decreasing, starts at 0 and ends at `end`.
-fn check_offsets(offsets: &[u32], end: usize) -> Result<(), ModelError> {
-    let ok = offsets.first() == Some(&0)
-        && offsets.is_sorted()
-        && offsets.last().and_then(|&l| index(l)) == Some(end);
+fn check_offsets(offsets: &[usize], end: usize) -> Result<(), ModelError> {
+    let ok = offsets.first() == Some(&0) && offsets.is_sorted() && offsets.last() == Some(&end);
     if ok {
         Ok(())
     } else {
@@ -188,13 +186,10 @@ impl Model {
         let feat_ranges = feat_off.iter().zip(feat_off.iter().skip(1));
         let pair_ranges = pair_off.iter().zip(pair_off.iter().skip(1));
         for ((&key_lo, &key_hi), (&pair_lo, &pair_hi)) in feat_ranges.zip(pair_ranges) {
-            let key = index(key_lo)
-                .zip(index(key_hi))
-                .and_then(|(lo, hi)| blob.get(lo..hi))
+            let key = blob
+                .get(key_lo..key_hi)
                 .ok_or(ModelError::Corrupt("feature key is out of range"))?;
-            let key = std::str::from_utf8(key)
-                .ok()
-                .ok_or(ModelError::Corrupt("feature key is not UTF-8"))?;
+            let key = std::str::from_utf8(key).map_err(ModelError::KeyNotUtf8)?;
             features.insert(Box::from(key), (pair_lo, pair_hi));
         }
 
@@ -272,8 +267,8 @@ impl Model {
         }
         work::tick(1 + key.len());
         if let Some(&(lo, hi)) = self.features.get(key.as_str()) {
-            work::tick(index(hi - lo).unwrap_or(usize::MAX));
-            let range = index(lo).unwrap_or(usize::MAX)..index(hi).unwrap_or(usize::MAX);
+            work::tick(hi - lo);
+            let range = lo..hi;
             let ids = self.class_ids.get(range.clone()).unwrap_or_default();
             let weights = self.weights.get(range).unwrap_or_default();
             for (&id, &weight) in ids.iter().zip(weights) {

@@ -3,6 +3,7 @@
 //! `tests/fixtures/`; `tools/gen_fixtures.py --check` proves they are current.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::TryFromIntError;
 
 use serde::Deserialize;
 use slopvac_pos::Tagger;
@@ -25,9 +26,8 @@ const CORPUS_EXACT_MEASURED: usize = 17_169;
 const BLOCKLIST_AGREEMENT_FLOOR: f64 = 0.95;
 
 /// `part / whole` for counts far below 2^32.
-fn ratio(part: usize, whole: usize) -> f64 {
-    f64::from(u32::try_from(part).unwrap_or(u32::MAX))
-        / f64::from(u32::try_from(whole).unwrap_or(u32::MAX))
+fn ratio(part: usize, whole: usize) -> Result<f64, TryFromIntError> {
+    Ok(f64::from(u32::try_from(part)?) / f64::from(u32::try_from(whole)?))
 }
 
 /// `(line, byte offset in the line)` of a token, both Vale's and ours.
@@ -110,7 +110,7 @@ fn corpus_tags_match_vale_at_least_99_percent() {
         .iter()
         .filter(|(pos, word, tag)| ours.get(pos).is_some_and(|(w, t)| w == word && t == tag))
         .count();
-    let rate = ratio(exact, vale.len());
+    let rate = ratio(exact, vale.len()).unwrap();
     eprintln!("corpus exact match: {exact}/{} = {rate:.4}", vale.len());
     assert_eq!(vale.len(), CORPUS_TOKENS, "fixture size changed");
     assert!(
@@ -187,13 +187,16 @@ fn agreement(list: &BTreeMap<&str, BTreeSet<String>>) -> BTreeMap<&'static str, 
         .collect()
 }
 
-fn assert_agreement(label: &str, list: &BTreeMap<&str, BTreeSet<String>>) {
+fn assert_agreement(
+    label: &str,
+    list: &BTreeMap<&str, BTreeSet<String>>,
+) -> Result<(), TryFromIntError> {
     for (pos, (both, union)) in agreement(list) {
         assert!(
             union > 0,
             "{label} {pos}: the slice has no candidate findings"
         );
-        let rate = ratio(both, union);
+        let rate = ratio(both, union)?;
         #[expect(
             clippy::print_stderr,
             reason = "reports the measured rate for a run with --nocapture; this helper is not a test fn"
@@ -204,6 +207,7 @@ fn assert_agreement(label: &str, list: &BTreeMap<&str, BTreeSet<String>>) {
             "{label} {pos}: agreement {rate:.4} is below 95% ({both}/{union})"
         );
     }
+    Ok(())
 }
 
 #[test]
@@ -219,7 +223,7 @@ fn shipped_blocklist_findings_agree_with_vale_per_pos() {
                 .insert(e.word.to_lowercase());
         }
     }
-    assert_agreement("shipped", &list);
+    assert_agreement("shipped", &list).unwrap();
 }
 
 #[test]
@@ -231,5 +235,5 @@ fn stress_blocklist_findings_agree_with_vale_per_pos() {
         .collect();
     let list: BTreeMap<&str, BTreeSet<String>> =
         POSES.iter().map(|&p| (p, words.clone())).collect();
-    assert_agreement("stress", &list);
+    assert_agreement("stress", &list).unwrap();
 }

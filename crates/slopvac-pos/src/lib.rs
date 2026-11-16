@@ -351,13 +351,17 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "crosses the edge of a block")]
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the call panics before it returns; there is no result to use"
+    )]
     fn a_mask_across_a_block_edge_is_refused() {
         let text = "abcdef";
         let masks = [Mask {
             range: 1..4,
             stars: 1,
         }];
-        drop(Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks));
+        let _ = Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks);
     }
 
     /// Work units allowed per input byte for tokenizing and tagging together,

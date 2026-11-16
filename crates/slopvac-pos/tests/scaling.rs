@@ -27,8 +27,7 @@ fn best_of_three(text: &str) -> Duration {
             std::hint::black_box(&tokens);
             start.elapsed()
         })
-        .min()
-        .unwrap_or_default()
+        .fold(Duration::MAX, Duration::min)
 }
 
 #[test]
