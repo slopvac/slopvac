@@ -143,7 +143,16 @@ impl Blocklist {
         let raw: Raw = match format {
             "toml" => toml::from_str(text).map_err(|e| parse_err(e.to_string()))?,
             "json" => serde_json::from_str(text).map_err(|e| parse_err(e.to_string()))?,
-            "yml" | "yaml" => serde_saphyr::from_str(text).map_err(|e| parse_err(e.to_string()))?,
+            // `no_schema` rejects unquoted numbers and booleans in string fields,
+            // as TOML and JSON do.
+            "yml" | "yaml" => {
+                let mut options = serde_saphyr::Options::default();
+                options.no_schema = true;
+                // `n` and `v` are part-of-speech codes, not YAML 1.1 booleans.
+                options.strict_booleans = true;
+                serde_saphyr::from_str_with_options(text, options)
+                    .map_err(|e| parse_err(e.to_string()))?
+            }
             other => {
                 return Err(parse_err(format!(
                     "unrecognized suffix `{other}`; use .toml, .json, .yml or .yaml"

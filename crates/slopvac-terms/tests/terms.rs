@@ -413,6 +413,44 @@ fn invalid_yaml_blocklist_names_the_file() {
 }
 
 #[test]
+fn blocklist_field_types_are_strict_in_every_format() {
+    let cases = [
+        (
+            "toml",
+            "[[entries]]\nword = 5\npos = \"n\"\nreason = \"r\"\n",
+        ),
+        (
+            "toml",
+            "[[entries]]\nword = \"x\"\npos = \"n\"\nreason = true\n",
+        ),
+        ("json", r#"{"entries":[{"word":5,"pos":"n","reason":"r"}]}"#),
+        (
+            "json",
+            r#"{"entries":[{"word":"x","pos":"n","reason":true}]}"#,
+        ),
+        ("yaml", "entries:\n  - {word: 5, pos: n, reason: r}\n"),
+        ("yaml", "entries:\n  - {word: x, pos: n, reason: true}\n"),
+        (
+            "yaml",
+            "entries:\n  - {word: x, pos: n, reason: r, replacement: 1.5}\n",
+        ),
+    ];
+    for (format, text) in cases {
+        let e = Blocklist::parse("b", format, text).unwrap_err();
+        assert!(
+            matches!(e, TermsError::Parse { .. }),
+            "{format}: {text}: {e}"
+        );
+    }
+}
+
+#[test]
+fn quoted_scalars_load_from_yaml() {
+    let text = "entries:\n  - {word: \"5\", pos: n, reason: \"true\"}\n";
+    assert_eq!(Blocklist::parse("b", "yaml", text).unwrap().len(), 1);
+}
+
+#[test]
 fn blocklist_load_dispatches_on_suffix() {
     let dir = scratch("blocklist");
     let toml = dir.join("b.TOML");

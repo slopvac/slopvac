@@ -26,6 +26,49 @@ pub struct TermEntry {
     pub case_sensitive: bool,
 }
 
+impl TermEntry {
+    /// Check the entry against the terms schema: non-empty term, kebab-case
+    /// kind, non-empty and unique variants, and at most one casing mode.
+    /// `path` is used in messages only.
+    ///
+    /// # Errors
+    /// [`TermsError::Entry`] naming the first problem.
+    pub(crate) fn validate(&self, path: &str) -> Result<(), TermsError> {
+        let err = |message: String| TermsError::Entry {
+            path: path.to_owned(),
+            message,
+        };
+        if self.term.trim().is_empty() {
+            return Err(err("term is empty".to_owned()));
+        }
+        if self.ignore_case && self.case_sensitive {
+            return Err(err(format!(
+                "term `{}` sets both ignore_case and case_sensitive",
+                self.term
+            )));
+        }
+        if let Some(kind) = self.kind.as_deref().filter(|k| !is_kebab_label(k)) {
+            return Err(err(format!(
+                "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
+                self.term
+            )));
+        }
+        let mut variants = BTreeSet::new();
+        for v in &self.variants {
+            if v.is_empty() {
+                return Err(err(format!("term `{}` has an empty variant", self.term)));
+            }
+            if !variants.insert(v.as_str()) {
+                return Err(err(format!(
+                    "term `{}` lists variant `{v}` twice",
+                    self.term
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A parsed terms file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TermsFile {
@@ -115,43 +158,21 @@ impl TermsFile {
             if let Some(key) = t.extra.keys().find(|k| !k.starts_with("x-")) {
                 return Err(unknown(&format!("terms[{}].{key}", i + 1)));
             }
-            if t.term.trim().is_empty() {
-                return Err(entry_err(format!("term {} is empty", i + 1)));
-            }
-            if t.ignore_case && t.case_sensitive {
-                return Err(entry_err(format!(
-                    "term `{}` sets both ignore_case and case_sensitive",
-                    t.term
-                )));
-            }
-            if let Some(kind) = t.kind.as_deref().filter(|k| !is_kebab_label(k)) {
-                return Err(entry_err(format!(
-                    "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
-                    t.term
-                )));
-            }
-            let mut variants = BTreeSet::new();
-            for v in &t.variants {
-                if v.is_empty() {
-                    return Err(entry_err(format!("term `{}` has an empty variant", t.term)));
-                }
-                if !variants.insert(v.as_str()) {
-                    return Err(entry_err(format!(
-                        "term `{}` lists variant `{v}` twice",
-                        t.term
-                    )));
-                }
-            }
-            if !seen.insert(t.term.clone()) {
-                return Err(entry_err(format!("duplicate term `{}`", t.term)));
-            }
-            terms.push(TermEntry {
+            let entry = TermEntry {
                 term: t.term,
                 variants: t.variants,
                 kind: t.kind,
                 ignore_case: t.ignore_case,
                 case_sensitive: t.case_sensitive,
-            });
+            };
+            if entry.term.trim().is_empty() {
+                return Err(entry_err(format!("term {} is empty", i + 1)));
+            }
+            entry.validate(path)?;
+            if !seen.insert(entry.term.clone()) {
+                return Err(entry_err(format!("duplicate term `{}`", entry.term)));
+            }
+            terms.push(entry);
         }
         Ok(Self {
             schema_version: raw.schema_version,
