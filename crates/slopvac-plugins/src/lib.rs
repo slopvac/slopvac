@@ -10,7 +10,8 @@
 //! model ([`lock`]: strict reader, canonical writer, drift diff and the
 //! `outdated` query), [`sync`] (install the lock, status, CI check), the pack
 //! [`index`] reader, builder and search, the [`trust`] store and spawn
-//! gate, and the signed revocation list with its cache ([`revoke`]).
+//! gate, the signed revocation list with its cache ([`revoke`]) and [`update`],
+//! which moves the lock to newer in-range versions.
 
 pub mod api;
 pub mod apply;
@@ -29,6 +30,7 @@ pub mod sign;
 pub mod strict;
 pub mod sync;
 pub mod trust;
+pub mod update;
 
 pub use api::{DocOutcome, plan_batches};
 pub use error::{PluginError, RpcError, StartError};
