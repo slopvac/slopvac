@@ -1,0 +1,10 @@
+# Retries
+
+As shown in the logs, retries cluster at midnight when the batch job starts.
+
+```mermaid
+flowchart LR
+  A[Batch job] --> B[Retry handler]
+```
+
+The chart of latency percentiles lives in Grafana, and the graph database holds job history.

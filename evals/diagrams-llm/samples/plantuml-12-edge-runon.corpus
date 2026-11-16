@@ -1,0 +1,13 @@
+# Fulfilment
+
+Orders flow to fulfilment.
+
+```plantuml
+@startuml
+component "Orders" as O
+component "Fulfilment" as F
+O --> F : sends the validated order to the fulfilment queue now
+@enduml
+```
+
+Fulfilment batches orders hourly.

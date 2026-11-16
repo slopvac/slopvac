@@ -159,3 +159,44 @@ The interval is the wider of the Wilson interval and the document-cluster bootst
 Tuning and holdout are compared separately against their own baselines. Tune rules against `tuning`. Use `holdout` to check that a gain generalises.
 
 The ratchet starts in report mode. The workflow `evals-ratchet.yml` runs from `test.yml` on rule, engine and eval changes and writes the table to the job summary. Set the repository variable `SLOPVAC_EVALS_GATE` to `enforce`, or pass `--mode enforce`, to fail the run. The run is deterministic for a given engine and corpus, and a baseline from another manifest is rejected with exit 2. After a corpus or label change, rebuild the baseline in the same pull request and say why.
+
+## LLM-written diagram set
+
+`corpus/diagrams` holds human diagrams, so it only bounds false positives of the diagram rules. `diagrams-llm/` holds 53 diagrams that an LLM wrote, with the prose around them, for recall and precision. It has 28 Mermaid and 14 PlantUML diagrams in Markdown, and 11 draw.io files.
+
+| File | Content |
+| --- | --- |
+| `diagrams-llm/manifest.json` | Provenance (author model, date, instruction, limits), the sha256 of each sample and its format. |
+| `diagrams-llm/labels.json` | The hand labels. A label names a rule and text that the finding should contain. A sample with no label is a clean negative. |
+| `diagrams-llm/samples/*.corpus` | The samples. The suffix keeps prose gates off them, and the runner stages them as `.md` or `.drawio`. |
+
+The author model wrote the samples in one session and labelled each one from the rule definitions in `crates/slopvac-diagrams/pack/diagram.json`, never from rule output. No model API was called. The author knew the thresholds, so recall is probably higher than on unprompted model output. The negatives are of three kinds: clean diagrams, boundary cases such as six words against seven, and prose that names every label but adds limits and reasons. draw.io files have no prose, so the two prose rules have no draw.io positives.
+
+```sh
+just eval-diagrams                    # build the diagram_eval example of slopvac-engine, run it, score it
+just eval-diagrams --details          # list each miss and false positive
+just eval-diagrams --findings f.json  # score stored engine output without an engine
+```
+
+The runner reads the findings of `crates/slopvac-engine/examples/diagram_eval.rs`, which lints each file with the diagram pack. It reports recall (labels found over labels) and precision (correct findings over findings) per rule, each with a Wilson interval.
+
+### Results
+
+Measured on 2026-11-16 at the commit that added the set:
+
+| Rule | Labels | Recall | Findings | Precision |
+| --- | --- | --- | --- | --- |
+| `diagram.label-run-on` | 10 | 1.00 (0.72-1.00) | 12 | 0.83 (0.55-0.95) |
+| `diagram.label-title-plus-gloss` | 14 | 0.64 (0.39-0.84) | 9 | 1.00 (0.70-1.00) |
+| `diagram.note-long` | 5 | 1.00 (0.57-1.00) | 5 | 1.00 (0.57-1.00) |
+| `diagram.meta-reference` | 6 | 1.00 (0.61-1.00) | 6 | 1.00 (0.61-1.00) |
+| `diagram.prose-restates-labels` | 4 | 1.00 (0.51-1.00) | 6 | 0.67 (0.30-0.90) |
+
+The misses and false positives show four things:
+
+- Title-cased glosses after a line break cost gloss recall. The exemption for a list of names, such as `Istio Sidecar<br/>Envoy Pilot Proxy`, also skips `Ingest Service<br/>Validates Incoming Events`. Three labels are missed for this reason, and without them recall is 9 of 11. The exemption still keeps the list of names quiet in two negative samples. A title-cased gloss after a colon is found.
+- `<br/>` counts as a word, because only the bare `<br>` tag is dropped. A six-word label with `<br/>` reads as seven words, so `diagram.label-run-on` fires instead of the gloss rule. This accounts for both run-on false positives and one gloss miss.
+- A PlantUML label that breaks with a literal `\n` escape is not split, so its gloss is missed.
+- `diagram.prose-restates-labels` fires on both hard negatives, where the prose names every label but adds a limit, a reason and a failure mode. It checks token overlap only.
+
+Each count is small, so every interval is wide. Treat the table as a sanity check on the severities, not a ranking.

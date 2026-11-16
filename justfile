@@ -97,6 +97,10 @@ doc-rust:
 eval-run ENGINE="python" OUT="evals/.cache/results/latest.json":
     uv run python -m evals run --engine {{quote(ENGINE)}} --out {{quote(OUT)}}
 
+# Recall and precision of the diagram rule pack on the LLM-written diagram set.
+eval-diagrams *ARGS:
+    uv run python -m evals.diagrams {{ARGS}}
+
 # Offline tier: score stored results without starting an engine.
 eval-score RESULTS SPLIT="all":
     uv run python -m evals score {{quote(RESULTS)}} --split {{quote(SPLIT)}}

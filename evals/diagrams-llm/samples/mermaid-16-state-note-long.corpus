@@ -1,0 +1,13 @@
+# Account lifecycle
+
+An account moves through three states.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Pending
+  Pending --> Active: payment cleared
+  Active --> Closed
+  note right of Active: Active accounts are billed on the first of each month
+```
+
+Closed accounts keep their data for 30 days.

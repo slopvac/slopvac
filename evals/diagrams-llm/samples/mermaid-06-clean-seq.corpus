@@ -1,0 +1,14 @@
+# Token issue
+
+The client asks the server for a token before every session.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant S as Server
+  C->>S: Send the credentials and request a signed token
+  Note right of S: Signs token
+  S-->>C: Return the signed token to the caller
+```
+
+Clients cache the token until it expires.

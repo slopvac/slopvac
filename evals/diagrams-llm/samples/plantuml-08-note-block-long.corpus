@@ -1,0 +1,16 @@
+# Retry
+
+The client retries failed calls.
+
+```plantuml
+@startuml
+participant A
+participant B
+A -> B : call
+note right of A
+  This service retries failed calls three times before giving up
+end note
+@enduml
+```
+
+State is kept in memory only.
