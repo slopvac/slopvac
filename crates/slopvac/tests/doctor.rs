@@ -780,6 +780,8 @@ fn resolved(path: &Path) -> PathBuf {
 }
 
 #[test]
+// Native Windows is not supported in 3.0 (slopvac-8l4.18.8); its cwd canonicalisation differs.
+#[cfg_attr(windows, ignore = "native Windows is a 3.x feature (slopvac-8l4.18.8)")]
 fn a_directory_that_is_the_working_directory_is_shown_as_a_dot() {
     let w = World::new();
     let (code, doc) = w.json(&[], |c| {
