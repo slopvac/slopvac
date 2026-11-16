@@ -426,6 +426,92 @@ fn classes_of(diff: &serde_json::Map<String, Value>) -> Vec<&'static str> {
     classes
 }
 
+/// The golden modes a delta can list (`tests/golden/v3/README.md`).
+const MODES: [&str; 3] = ["parity", "preserve", "policy"];
+
+/// The deltas of `source` that apply in `mode`. A delta without `modes` applies to
+/// `policy`. Every entry is validated first, so a misspelled mode is an error even when
+/// no listed mode would select the entry.
+fn deltas_for(source: &str, mode: &str) -> Result<Vec<toml::Table>, String> {
+    let doc: toml::Table = source.parse().map_err(|e| format!("{e}"))?;
+    let all: Vec<toml::Table> = doc
+        .get("delta")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|d| d.as_table().unwrap().clone())
+        .collect();
+    for d in &all {
+        let Some(list) = d.get("modes") else { continue };
+        for m in list.as_array().ok_or("`modes` is not a list")? {
+            let m = m.as_str().ok_or("a mode is not a string")?;
+            if !MODES.contains(&m) {
+                return Err(format!("unknown mode `{m}`"));
+            }
+        }
+    }
+    Ok(all
+        .into_iter()
+        .filter(|d| match d.get("modes") {
+            None => mode == "policy",
+            Some(list) => list
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m.as_str() == Some(mode)),
+        })
+        .collect())
+}
+
+/// The expectation of the engine run: the parity golden with the reviewed deltas that list
+/// `parity` applied, as `scripts/contract/golden.py` does for a 3.0 candidate.
+fn apply_deltas(want: &mut Value, deltas: &[toml::Table], profile: &str, input: &str) {
+    for d in deltas {
+        if d["input"].as_str() != Some(input) || d["profile"].as_str() != Some(profile) {
+            continue;
+        }
+        let delta = serde_json::to_value(d).unwrap();
+        let doc = &mut want["document"];
+        let findings = doc["findings"].as_array_mut().unwrap();
+        if delta["kind"] == "added" {
+            findings.push(delta["finding"].clone());
+        } else {
+            let hit: Vec<usize> = findings
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| {
+                    f["rule_id"] == delta["rule_id"]
+                        && f["line"] == delta["line"]
+                        && f["column"] == delta["column"]
+                })
+                .map(|(i, _)| i)
+                .collect();
+            assert_eq!(hit.len(), 1, "delta does not match one finding: {delta}");
+            if delta["kind"] == "removed" {
+                findings.remove(hit[0]);
+            } else {
+                for (k, v) in delta["set"].as_object().unwrap() {
+                    findings[hit[0]][k] = v.clone();
+                }
+            }
+        }
+        for (k, v) in delta
+            .get("document")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            doc[k] = v.clone();
+        }
+        want["exit_code"] = json!(exit_of(&want["document"]));
+    }
+}
+
+fn recorded_deltas(mode: &str) -> Vec<toml::Table> {
+    let text = std::fs::read_to_string(root().join("tests/golden/v3/policy/deltas.toml")).unwrap();
+    deltas_for(&text, mode).unwrap_or_else(|e| panic!("deltas.toml: {e}"))
+}
+
 fn divergence_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
 }
@@ -434,6 +520,7 @@ fn divergence_path() -> PathBuf {
 /// Runs that the engine skips (RST without docutils) are absent.
 fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
     let mut runs = BTreeMap::new();
+    let deltas = recorded_deltas("parity");
     for profile in PROFILES {
         let engine = legacy_engine(profile).with_rst(rst_options());
         for entry in inputs()
@@ -442,6 +529,7 @@ fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
         {
             let path = format!("tests/golden/v3/parity/{profile}/{}.json", entry.id);
             let mut want = read_json(&root().join(path));
+            apply_deltas(&mut want, &deltas, profile, &entry.id);
             let Some(mut got) = lint(&engine, entry) else {
                 continue;
             };
@@ -743,4 +831,68 @@ fn a_sentence_with_inline_code_and_a_parenthesis_matches_whole() {
             "Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot."
         ]
     );
+}
+
+const SAMPLE: &str = r#"
+[[delta]]
+input = "a"
+[[delta]]
+input = "b"
+modes = ["parity", "policy"]
+[[delta]]
+input = "c"
+modes = ["parity", "preserve", "policy"]
+"#;
+
+fn sample_inputs(mode: &str) -> Vec<String> {
+    deltas_for(SAMPLE, mode)
+        .unwrap()
+        .iter()
+        .map(|d| d["input"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_delta_without_modes_applies_to_policy_only() {
+    assert_eq!(sample_inputs("preserve"), ["c"]);
+    assert!(sample_inputs("policy").contains(&"a".to_owned()));
+    assert!(!sample_inputs("parity").contains(&"a".to_owned()));
+}
+
+#[test]
+fn a_delta_applies_to_the_modes_it_lists() {
+    assert_eq!(sample_inputs("parity"), ["b", "c"]);
+    assert_eq!(sample_inputs("policy"), ["a", "b", "c"]);
+}
+
+#[test]
+fn a_delta_that_lists_only_a_misspelled_mode_is_an_error() {
+    let source = "[[delta]]\ninput = \"a\"\nmodes = [\"polcy\"]\n";
+    for mode in MODES {
+        assert_eq!(
+            deltas_for(source, mode).unwrap_err(),
+            "unknown mode `polcy`"
+        );
+    }
+}
+
+#[test]
+fn every_recorded_delta_names_known_modes() {
+    for mode in MODES {
+        recorded_deltas(mode);
+    }
+}
+
+#[test]
+fn a_parity_delta_moves_the_expected_findings() {
+    let (mut want, _) = base_pair();
+    let first = want["document"]["findings"][0].clone();
+    let source = format!(
+        "[[delta]]\ninput = \"issue-254\"\nprofile = \"normal\"\nkind = \"removed\"\nrule_id = {}\nline = {}\ncolumn = {}\nmodes = [\"parity\"]\n",
+        first["rule_id"], first["line"], first["column"]
+    );
+    let deltas = deltas_for(&source, "parity").unwrap();
+    let before = want["document"]["findings"].as_array().unwrap().len();
+    apply_deltas(&mut want, &deltas, "normal", "issue-254");
+    assert_eq!(want["document"]["findings"].as_array().unwrap().len(), before - 1);
 }
