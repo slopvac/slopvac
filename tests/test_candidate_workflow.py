@@ -397,7 +397,6 @@ TARGET_TAGS = [
     "manylinux_2_17_x86_64",
     "manylinux_2_17_aarch64",
     "musllinux_1_2_x86_64",
-    "win_amd64",
 ]
 
 
