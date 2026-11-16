@@ -1,0 +1,111 @@
+# slopvac configuration.
+# Generated from schemas/v3/config.schema.json. Edit your copy, not the
+# template.
+# Unknown keys are errors. Keys that start with `x-` are ignored.
+# Each commented line shows a setting with its default or an example.
+
+schema_version = 3
+
+# Input surface.
+# mode = "prose"
+
+# Config files merged below this one, lowest first.
+# extends = []
+
+# Ordered style presets.
+# styles = []
+
+# Files never linted.
+# exclude = []
+
+# A built-in strictness tier, as a name or as a table that adds a severity
+# shift.
+profile = "normal"
+
+# Spelling target.
+# locale = "en-US"
+
+# Document-level gates, evaluated after every finding is collected.
+# [thresholds]
+# max_errors = 0
+# Severity-weighted error and warning density per 100 words; errors count 1.0
+# and warnings 0.5.
+# max_total_per_100_words = 0
+# Ceiling on Unicode em and en dashes in the source.
+# max_unicode_dashes = 0
+# max_warnings = 0
+# Floor on the 0-100 quality score.
+# min_score = 0
+
+# [categories]
+# "example" = "error"
+
+# Rule levels by rule name.
+# [rules]
+# "example" = "error"
+
+# Project vocabulary.
+# [terms]
+# Words this project spells or uses its own way.
+# allow = []
+# Word blocklist files, relative to the config file.
+# blocklists = []
+# Terms files, relative to the config file.
+# files = []
+
+# Which fields of a document's `slopvac:` block take effect.
+# [frontmatter]
+# allow = ["genre", "locale", "terms"]
+# When false, `slopvac:` is plain data and is not read.
+# enabled = true
+
+# Agent steering.
+# [guidance]
+# Detail of the rendered `prime` topics.
+# level = "standard"
+# report = "ask"
+# review = "auto"
+# review_depth = "subagent"
+# write = "auto"
+
+# Network policy.
+# [network]
+# offline = false
+# update_check = true
+
+# Agent review.
+# [review]
+# Model name of the author.
+# author_model = "<author_model>"
+# Model name the reviewer must report.
+# model = "<model>"
+# Plugin id of the model provider.
+# provider = "example"
+
+# A pack or plugin the project depends on.
+# [[packs]]
+# Pack identifier: the namespace of a rule.
+# id = "example"
+# An `oci://` reference, a `git+https://` URL with a commit, or a path
+# relative to the config file.
+# source = "<source>"
+# version = "<version>"
+
+# A pack or plugin the project depends on.
+# [[plugins]]
+# Pack identifier: the namespace of a rule.
+# id = "example"
+# An `oci://` reference, a `git+https://` URL with a commit, or a path
+# relative to the config file.
+# source = "<source>"
+# version = "<version>"
+
+# Assigns a genre to the files it matches and patches their settings.
+# [[genres]]
+# files = ["<files>"]
+# A style or genre name.
+# genre = "example"
+
+# A glob-scoped patch.
+# [[overrides]]
+# files = ["<files>"]
