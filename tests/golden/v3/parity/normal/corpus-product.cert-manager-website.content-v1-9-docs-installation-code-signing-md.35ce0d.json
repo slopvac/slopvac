@@ -1,0 +1,767 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 2,
+        "per_100_words": 0.735,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.735,
+        "score": 98.2,
+        "suggestions": 2,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.551,
+        "over_budget": false,
+        "per_100_words": 1.471,
+        "score": 88.1,
+        "suggestions": 1,
+        "warnings": 3
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.735,
+        "over_budget": false,
+        "per_100_words": 1.471,
+        "score": 77.9,
+        "suggestions": 0,
+        "warnings": 4
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.735,
+        "score": 98.2,
+        "suggestions": 2,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.368,
+        "over_budget": false,
+        "per_100_words": 0.735,
+        "score": 89.0,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 5,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.838,
+        "score": 95.4,
+        "suggestions": 5,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 5,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.838,
+        "score": 95.4,
+        "suggestions": 5,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 6,
+        "line": 6,
+        "matched_text": "",
+        "message": "This sentence has 37 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 107,
+          "start": 107
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 3,
+        "end_line": 6,
+        "line": 6,
+        "matched_text": "To",
+        "message": "sentence of 37 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 109,
+          "start": 107
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 39,
+        "end_line": 7,
+        "line": 7,
+        "matched_text": "are cryptographically signed",
+        "message": "Passive voice \"are cryptographically signed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 262,
+          "start": 234
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 1,
+        "end_column": 21,
+        "end_line": 8,
+        "line": 8,
+        "matched_text": "is actually built by",
+        "message": "Passive voice \"is actually built by\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 359,
+          "start": 339
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 4,
+        "end_column": 12,
+        "end_line": 8,
+        "line": 8,
+        "matched_text": "actually",
+        "message": "\"actually\" reads differently to a non-native reader. Use \"in fact\".",
+        "replacement": "in fact",
+        "rule_id": "core:ste-practices.false-friend-term",
+        "severity": "suggestion",
+        "span": {
+          "end": 350,
+          "start": 342
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 10,
+        "line": 10,
+        "matched_text": "",
+        "message": "This sentence has 35 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 407,
+          "start": 407
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 5,
+        "end_line": 10,
+        "line": 10,
+        "matched_text": "This",
+        "message": "sentence of 35 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 411,
+          "start": 407
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 103,
+        "end_column": 104,
+        "end_line": 10,
+        "line": 10,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 510,
+          "start": 509
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "",
+        "message": "This sentence has 30 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 608,
+          "start": 608
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-practices",
+        "column": 83,
+        "end_column": 89,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "actual",
+        "message": "\"actual\" reads differently to a non-native reader. Use \"current\".",
+        "replacement": "current",
+        "rule_id": "core:ste-practices.false-friend-term",
+        "severity": "suggestion",
+        "span": {
+          "end": 696,
+          "start": 690
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 29,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "Container Images / Cosign",
+        "message": "title-case heading: Container Images / Cosign -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 889,
+          "start": 864
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 86,
+        "end_column": 96,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "are signed",
+        "message": "Passive voice \"are signed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 986,
+          "start": 976
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "",
+        "message": "The lead-in before the colon has 21 words. Use the sentence cap.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.colon-terminates-sentence-for-count",
+        "severity": "suggestion",
+        "span": {
+          "end": 1064,
+          "start": 1064
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 77,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "The simplest way to verify signatures is to download the public key and then",
+        "message": "This step carries more than one instruction (\"The simplest way to verify signatures is to download the public key and then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 1140,
+          "start": 1064
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 12,
+        "end_column": 26,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "fully-featured",
+        "message": "adverb hyphen: fully-featured -- an -ly adverb takes no hyphen",
+        "replacement": null,
+        "rule_id": "core:prose-craft.hyphens",
+        "severity": "warning",
+        "span": {
+          "end": 2043,
+          "start": 2029
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 15,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "Helm Charts",
+        "message": "title-case heading: Helm Charts -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 2321,
+          "start": 2310
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 46,
+        "end_column": 47,
+        "end_line": 40,
+        "line": 40,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 2393,
+          "start": 2392
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 67,
+        "end_column": 72,
+        "end_line": 42,
+        "line": 42,
+        "matched_text": "will ",
+        "message": "future tense: will  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 2495,
+          "start": 2490
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 68,
+        "end_column": 78,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "are signed",
+        "message": "Passive voice \"are signed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 2586,
+          "start": 2576
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "",
+        "message": "The lead-in before the colon has 21 words. Use the sentence cap.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.colon-terminates-sentence-for-count",
+        "severity": "suggestion",
+        "span": {
+          "end": 2625,
+          "start": 2625
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 78,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "The easiest way to verify is to grab the GPG keyring directly, which can then",
+        "message": "This step carries more than one instruction (\"The easiest way to verify is to grab the GPG keyring directly, which can then\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "warning",
+        "span": {
+          "end": 2702,
+          "start": 2625
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 79,
+        "end_column": 88,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "be passed",
+        "message": "Passive voice \"be passed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 2712,
+          "start": 2703
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 56,
+        "line": 56,
+        "matched_text": "",
+        "message": "This sentence has 28 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "warning",
+        "span": {
+          "end": 3303,
+          "start": 3303
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 56,
+        "line": 56,
+        "matched_text": "",
+        "message": "The lead-in before the colon has 28 words. Use the sentence cap.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.colon-terminates-sentence-for-count",
+        "severity": "suggestion",
+        "span": {
+          "end": 3303,
+          "start": 3303
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "score 69.7, minimum 70.0"
+      ]
+    },
+    "paragraphs": 11,
+    "path": "corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d.md",
+    "per_100_words": 8.824,
+    "profile": "normal",
+    "prose": {
+      "errors": 0,
+      "findings": 22,
+      "per_100_words": 8.088,
+      "warnings": 9
+    },
+    "score": 69.7,
+    "sentences": 17,
+    "suggestions": 15,
+    "total_findings": 24,
+    "unchecked": [],
+    "warnings": 9,
+    "words": 272
+  },
+  "exit_code": 1
+}

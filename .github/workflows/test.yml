@@ -7,12 +7,19 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The merge queue builds each entry on gh-readonly-queue/main/pr-N-<sha>. The
+  # event carries no pull_request payload; the diff base is
+  # github.event.merge_group.base_sha, which dorny/paths-filter reads natively.
   merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
   pull-requests: read
 
+# Pull requests key on their number. Every other event keys on its ref; a queue
+# entry's ref embeds the PR number and head SHA, so entries never share a group
+# with each other or with the pull-request run.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

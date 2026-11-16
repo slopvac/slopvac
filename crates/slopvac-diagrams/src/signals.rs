@@ -81,6 +81,9 @@ pub struct SignalHit {
     pub span: Range<usize>,
     /// What is wrong and what to do.
     pub message: String,
+    /// The text the hit is about, when the span does not show it: a label decoded from a
+    /// compressed page has a span over the payload.
+    pub matched: Option<String>,
 }
 
 /// A paragraph of prose next to a diagram.
@@ -144,11 +147,27 @@ fn is_code_token(word: &str) -> bool {
 }
 
 fn gloss_split(label: &str) -> Option<(&str, &str)> {
+    const BREAKS: [&str; 2] = ["\n", "<br"];
     ["\n", "<br", ":", " - ", " – ", " / ", "("]
         .iter()
-        .filter_map(|sep| label.find(sep).map(|at| (at, sep.len())))
+        .filter_map(|sep| label.find(sep).map(|at| (at, *sep)))
         .min_by_key(|&(at, _)| at)
-        .map(|(at, len)| (&label[..at], &label[at + len..]))
+        .map(|(at, sep)| (&label[..at], &label[at + sep.len()..], sep))
+        // A line break between two names lists components, as in "Istio Sidecar" over
+        // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
+        .filter(|&(_, gloss, sep)| !BREAKS.contains(&sep) || !all_capitalised(gloss))
+        .map(|(head, gloss, _)| (head, gloss))
+}
+
+/// Every word starts with a capital letter, so the text reads as a name.
+fn all_capitalised(text: &str) -> bool {
+    let list = words(text);
+    !list.is_empty()
+        && list.iter().all(|w| {
+            w.chars()
+                .find(|c| c.is_alphanumeric())
+                .is_some_and(char::is_uppercase)
+        })
 }
 
 /// Check the labels of one diagram.
@@ -162,6 +181,7 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<SignalHit> {
             signal,
             span: f.span.clone(),
             message,
+            matched: f.text.clone(),
         };
         let has_code = words(label).iter().any(|w| is_code_token(w));
         if has_code && matches!(f.role, Role::Node | Role::Edge | Role::Group | Role::Note) {
@@ -285,6 +305,7 @@ pub fn check_prose(
             out.push(SignalHit {
                 signal: Signal::MetaReference,
                 span,
+                matched: None,
                 message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_string(),
             });
         }
@@ -312,6 +333,7 @@ pub fn check_prose(
             out.push(SignalHit {
                 signal: Signal::ProseRestatesLabels,
                 span: first.span.clone(),
+                matched: None,
                 message: format!(
                     "The text names {mentioned} of the {} labels in the diagram. Keep what the diagram cannot show, such as reasons, limits and failure modes.",
                     labels.len()
@@ -392,6 +414,40 @@ mod tests {
         assert_eq!(
             rules(&src, &[(Role::Node, a), (Role::Node, b), (Role::Node, c)]),
             [Signal::LabelTitlePlusGloss, Signal::LabelTitlePlusGloss]
+        );
+    }
+
+    #[test]
+    fn a_line_break_between_component_names_is_not_a_gloss() {
+        let names = "Istio Sidecar\nEnvoy / Pilot Engine";
+        let gloss = "Clean Data\nremove duplicates, nulls";
+        let note = "Merge\n(32 + 2048 + 2048 values)";
+        let src = format!("{names}\n{gloss}\n{note}\n");
+        assert_eq!(
+            rules(
+                &src,
+                &[(Role::Node, names), (Role::Node, gloss), (Role::Node, note)]
+            ),
+            [Signal::LabelTitlePlusGloss, Signal::LabelTitlePlusGloss]
+        );
+    }
+
+    #[test]
+    fn a_decoded_label_is_the_matched_text_and_the_span_stays_on_the_source() {
+        let source = "<diagram>cGF5bG9hZA==</diagram>";
+        let start = source.find("cGF5").unwrap();
+        let fragment = Fragment {
+            span: start..start + "cGF5bG9hZA==".len(),
+            text: Some("one two three four five six seven".to_string()),
+            role: Role::Node,
+            logical: String::new(),
+        };
+        let hits = check_labels(source, std::slice::from_ref(&fragment));
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].span, fragment.span);
+        assert_eq!(
+            hits[0].matched.as_deref(),
+            Some("one two three four five six seven")
         );
     }
 

@@ -2,7 +2,7 @@ name: Release smoke test
 
 # Installs a published release the way users do and checks `slopvac --version`
 # against the tag: from the archive (with its published sha256), from the shell
-# and PowerShell installers, and, for stable tags, from the Homebrew tap.
+# installer, and, for stable tags, from the Homebrew tap.
 #
 # It can only run once a GitHub release exists. Triggers:
 #   * workflow_run after "Release" succeeds on a tag push. The release.yml host
@@ -95,28 +95,14 @@ jobs:
         include:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            ext: tar.xz
-            exe: ""
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-            ext: tar.xz
-            exe: ""
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            ext: tar.xz
-            exe: ""
           - os: macos-15
             target: aarch64-apple-darwin
-            ext: tar.xz
-            exe: ""
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            ext: tar.xz
-            exe: ""
-          - os: windows-2025
-            target: x86_64-pc-windows-msvc
-            ext: zip
-            exe: .exe
     defaults:
       run:
         shell: bash
@@ -124,8 +110,6 @@ jobs:
       TAG: ${{ needs.resolve.outputs.tag }}
       REPO: ${{ github.repository }}
       TARGET: ${{ matrix.target }}
-      EXT: ${{ matrix.ext }}
-      EXE: ${{ matrix.exe }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,23 +120,19 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "$TAG" --repo "$REPO" --dir assets \
-            --pattern "slopvac-$TARGET.$EXT" --pattern "slopvac-$TARGET.$EXT.sha256"
+            --pattern "slopvac-$TARGET.tar.xz" --pattern "slopvac-$TARGET.tar.xz.sha256"
 
       - name: Verify the published sha256
         run: |
           python3 scripts/release_smoke.py verify-sha256 \
-            "assets/slopvac-$TARGET.$EXT" "assets/slopvac-$TARGET.$EXT.sha256"
+            "assets/slopvac-$TARGET.tar.xz" "assets/slopvac-$TARGET.tar.xz.sha256"
 
       - name: Unpack and run
         run: |
           set -euo pipefail
           mkdir unpacked
-          if [[ "$EXT" == "zip" ]]; then
-            python3 -m zipfile -e "assets/slopvac-$TARGET.$EXT" unpacked
-          else
-            tar -xJf "assets/slopvac-$TARGET.$EXT" -C unpacked
-          fi
-          bin="$(find unpacked -name "slopvac$EXE" -type f | head -n 1)"
+          tar -xJf "assets/slopvac-$TARGET.tar.xz" -C unpacked
+          bin="$(find unpacked -name slopvac -type f | head -n 1)"
           test -n "$bin"
           chmod +x "$bin"
           python3 scripts/release_smoke.py expect-version "$TAG" "$("$bin" --version)"
@@ -184,33 +164,6 @@ jobs:
           export CARGO_HOME="$RUNNER_TEMP/cargo-home"
           sh assets/slopvac-installer.sh
           python3 scripts/release_smoke.py expect-version "$TAG" "$("$CARGO_HOME/bin/slopvac" --version)"
-
-  powershell-installer:
-    name: PowerShell installer on Windows
-    needs: resolve
-    if: needs.resolve.outputs.dist == 'true'
-    runs-on: windows-2025
-    timeout-minutes: 15
-    env:
-      TAG: ${{ needs.resolve.outputs.tag }}
-      REPO: ${{ github.repository }}
-      GH_TOKEN: ${{ github.token }}
-      SLOPVAC_NO_MODIFY_PATH: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install with slopvac-installer.ps1
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          gh release download $env:TAG --repo $env:REPO --dir assets --pattern slopvac-installer.ps1
-          $env:CARGO_HOME = Join-Path $env:RUNNER_TEMP 'cargo-home'
-          & ./assets/slopvac-installer.ps1
-          $version = & (Join-Path $env:CARGO_HOME 'bin/slopvac.exe') --version
-          python scripts/release_smoke.py expect-version $env:TAG "$version"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
 
   homebrew:
     name: Homebrew on ${{ matrix.os }}

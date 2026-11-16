@@ -19,7 +19,7 @@ A 3.0 binary takes its profile from the config, because `--profile` is removed i
 - `issues`: the regression samples for issues 252 to 257 (`slopvac-8l4.2.8`).
 - `formats`: one sample each for MDX, HTML and reStructuredText, and code comments in Python and JavaScript. The runner stages each with its real extension, because the format comes from the extension, and runs the code files with `--mode code-comments`. The RST sample needs `rst2html` on `PATH`; the dev dependencies install docutils.
 
-A corpus tier from the eval corpus (`slopvac-8l4.15.1`) is not part of the suite yet. A swap bead tracks it.
+- `corpus`: a subset of the committed human Markdown documents in `evals/manifest.json` (`slopvac-8l4.15.1`). The rule takes the documents with `origin` `human`, `format` `markdown` and `committed` true, at most 4096 bytes each. It sorts them by manifest id and keeps every third one, starting with the first. The subset holds 13 documents. The suite lints them in place under `evals/corpus/`, where each file ends in `.corpus` and keeps the SHA-256 that the manifest pins. The runner stages each one as `.md`. A change to `evals/manifest.json` that alters the subset changes `inputs.toml`, so the inputs test fails until `golden.py inputs` and `record` run again.
 
 ## Projection
 

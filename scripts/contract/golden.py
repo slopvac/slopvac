@@ -77,6 +77,13 @@ FORMAT_FILES = {
     "format-javascript-comments": ("sample.js", "code-comments", "javascript"),
 }
 
+# Eval-corpus tier: a deterministic subset of the committed human Markdown documents
+# in evals/manifest.json, linted in place. The files end in `.corpus`, so the runner
+# stages them as `.md`. The subset rule is in tests/golden/v3/README.md.
+EVALS_MANIFEST = ROOT / "evals" / "manifest.json"
+CORPUS_MAX_BYTES = 4096
+CORPUS_STRIDE = 3
+
 
 # --- inputs ----------------------------------------------------------------
 
@@ -113,6 +120,33 @@ def write_rule_examples() -> None:
         )
 
 
+def corpus_documents() -> list[dict]:
+    """The manifest documents of the corpus tier.
+
+    Human Markdown documents that the repository commits, at most 4096 bytes,
+    sorted by manifest id, taking every third one from the first.
+    """
+    documents = json.loads(EVALS_MANIFEST.read_text(encoding="utf-8"))["documents"]
+    eligible = sorted(
+        (
+            d
+            for d in documents
+            if d["origin"] == "human"
+            and d["format"] == "markdown"
+            and d["committed"]
+            and d["bytes"] <= CORPUS_MAX_BYTES
+        ),
+        key=lambda d: d["id"],
+    )
+    return eligible[::CORPUS_STRIDE]
+
+
+def staged_name(entry: dict) -> str:
+    """The file name a run stages an input under: the format comes from the extension."""
+    suffix = Path(entry["path"]).suffix
+    return f"{entry['id']}{'.md' if suffix == '.corpus' else suffix}"
+
+
 def input_entries() -> list[dict]:
     entries = []
     for path in sorted(RULE_EXAMPLES.glob("*.md")):
@@ -147,6 +181,18 @@ def input_entries() -> list[dict]:
                 "sha256": sha256(ROOT / rel),
                 "surface": surface,
                 "language": language,
+            }
+        )
+    for doc in corpus_documents():
+        rel = f"evals/{doc['path']}"
+        entries.append(
+            {
+                "id": f"corpus-{doc['id']}",
+                "tier": "corpus",
+                "path": rel,
+                "sha256": sha256(ROOT / rel),
+                "surface": "prose",
+                "language": "markdown",
             }
         )
     return entries
@@ -393,7 +439,7 @@ def run_binary(
             files: dict[str, bytes] = {}
             names: dict[str, str] = {}
             for entry in entries:
-                name = f"{entry['id']}{Path(entry['path']).suffix}"
+                name = staged_name(entry)
                 shutil.copyfile(ROOT / entry["path"], scratch / name)
                 files[name] = (ROOT / entry["path"]).read_bytes()
                 names[name] = entry["id"]
