@@ -16,6 +16,7 @@ targets = [
 ]
 install-path = "CARGO_HOME"
 install-success-msg = "slopvac is installed. Run `slopvac --help` to start."
+unix-archive = ".tar.gz"
 create-release = false
 github-attestations = true
 cargo-auditable = true
