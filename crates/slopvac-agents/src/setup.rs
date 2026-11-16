@@ -100,9 +100,8 @@ pub fn run(matches: &ArgMatches) -> Result<Outcome, AgentsError> {
     let mut opts = options(matches);
     // `--list` and `--remove` need no config, so a broken one must not stop them.
     // `--no-skill` wins; otherwise the skill goes when write and review are both off.
-    if !(opts.list || opts.remove || opts.no_skill)
-        && !Guidance::load(&opts.root, None)?.skill_wanted()
-    {
+    let needs_config = !opts.list && !opts.remove && !opts.no_skill;
+    if needs_config && !Guidance::load(&opts.root, None)?.skill_wanted() {
         opts.no_skill = true;
     }
     execute(&opts)

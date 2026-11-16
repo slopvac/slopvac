@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use slopvac_agents::AgentsError;
 use slopvac_agents::guidance::Guidance;
+use slopvac_agents::harness::SKILL_NAME;
 use slopvac_agents::prime::{self, Level};
 use slopvac_agents::setup;
 
@@ -101,7 +102,7 @@ fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError>
 }
 
 fn skill_installed(root: &Path) -> bool {
-    root.join(".claude/skills").exists()
+    root.join(".claude/skills").join(SKILL_NAME).exists()
 }
 
 #[test]
@@ -143,5 +144,6 @@ fn list_and_remove_work_with_a_broken_config() {
         .unwrap();
     assert!(setup::run(&list).is_ok());
     run_setup(dir.path(), &["--remove"]).unwrap();
-    assert!(!skill_installed(dir.path()));
+    let skill = dir.path().join(".claude/skills").join(SKILL_NAME);
+    assert!(!skill.exists());
 }
