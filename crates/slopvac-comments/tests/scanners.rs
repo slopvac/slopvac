@@ -96,10 +96,16 @@ const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
 const GIT_INDEX_DIR: &str = "github.com-1ecc6299db9ec823";
 
 /// Registry cache directories that hold crates.io sources. The sparse protocol unpacks
-/// under `index.crates.io-<hash>`, where the host name is part of the directory name, so
-/// only crates.io produces it. The hash differs between Cargo versions.
+/// under `index.crates.io-<hash>`, where the host name is part of the directory name and
+/// the hash is 16 lowercase hex digits. The hash differs between Cargo versions, so only
+/// its shape is fixed.
 fn is_crates_io_cache(dir_name: &str) -> bool {
-    dir_name.starts_with("index.crates.io-") || dir_name == GIT_INDEX_DIR
+    let sparse = dir_name
+        .strip_prefix("index.crates.io-")
+        .is_some_and(|hash| {
+            hash.len() == 16 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        });
+    sparse || dir_name == GIT_INDEX_DIR
 }
 
 /// Every unpacked copy of the linked package, identified by its `Cargo.lock` source.
@@ -462,11 +468,40 @@ fn only_another_github_registry_copy_is_not_used() {
 }
 
 #[test]
-fn the_canonical_names_are_the_only_ones_accepted() {
-    assert!(is_crates_io_cache("index.crates.io-1949cf8c6b5b557f"));
-    assert!(is_crates_io_cache("index.crates.io-6f17d22bba15001f"));
-    assert!(is_crates_io_cache("github.com-1ecc6299db9ec823"));
-    assert!(!is_crates_io_cache("github.com-1ecc6299db9ec824"));
-    assert!(!is_crates_io_cache("github.com-"));
-    assert!(!is_crates_io_cache("index.example.com-1949cf8c6b5b557f"));
+fn canonical_cache_names_resolve_and_lookalikes_do_not() {
+    let accepted = [
+        "index.crates.io-1949cf8c6b5b557f",
+        "index.crates.io-6f17d22bba15001f",
+        "github.com-1ecc6299db9ec823",
+    ];
+    let rejected = [
+        "github.com-1ecc6299db9ec824",
+        "github.com-",
+        "index.example.com-1949cf8c6b5b557f",
+        "index.crates.io-",
+        "index.crates.io-evil.example-0123456789abcdef",
+        "index.crates.io-1949cf8c6b5b557",
+        "index.crates.io-1949cf8c6b5b557f0",
+        "index.crates.io-1949CF8C6B5B557F",
+        "index.crates.io-1949cf8c6b5b55zz",
+    ];
+    for name in accepted {
+        let home = Scratch::new("names-ok");
+        home.write(
+            &format!("registry/src/{name}/tree-sitter-fake-1.0.0/src/parser.c"),
+            "int parser;",
+        );
+        let dirs = resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO));
+        assert_eq!(dirs.map(|d| d.len()), Ok(1), "{name} should resolve");
+    }
+    for name in rejected {
+        let home = Scratch::new("names-bad");
+        home.write(
+            &format!("registry/src/{name}/tree-sitter-fake-1.0.0/src/parser.c"),
+            "int parser;",
+        );
+        let error =
+            resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect_err(name);
+        assert!(error.contains("not unpacked"), "{name}: {error}");
+    }
 }
