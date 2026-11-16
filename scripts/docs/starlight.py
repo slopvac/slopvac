@@ -16,9 +16,10 @@ import re
 import shutil
 from pathlib import Path
 
+import mdlinks
+
 Pages = dict[str, str]
 
-_LINK = re.compile(r"\]\(([^)#:]+\.(?:md|json))(#[^)]*)?\)")
 _TITLE = re.compile(r"\A# (.+)\n+")
 
 
@@ -36,15 +37,20 @@ def _rewrite_links(path: str, text: str, api_version: str) -> str:
     # Every page URL ends in a slash, so its links resolve against the page route itself.
     start = _route(path, api_version).rstrip("/")
 
-    def replace(match: re.Match[str]) -> str:
-        target = posixpath.normpath(posixpath.join(posixpath.dirname(path), match[1]))
+    def replace(link: mdlinks.Link) -> str:
+        target = posixpath.normpath(
+            posixpath.join(posixpath.dirname(path), link.target)
+        )
         route = _route(target, api_version)
         relative = posixpath.relpath(route.rstrip("/"), start or ".")
         if route.endswith("/"):
             relative += "/"
-        return f"]({relative}{match[2] or ''})"
+        return f"]({relative}{link.fragment})"
 
-    return _LINK.sub(replace, text)
+    # Links in code, and text that is not a link, stay as written.
+    for link in reversed(mdlinks.find_links(text)):
+        text = text[: link.start] + replace(link) + text[link.end :]
+    return text
 
 
 def _with_front_matter(text: str) -> str:

@@ -62,7 +62,7 @@ language = "markdown"
 id = "rule-examples-docs-discipline"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/docs-discipline.md"
-sha256 = "164702f5ac483a5099e18a2a398b925b29f375c55fe929490701908fafb5ddc8"
+sha256 = "395a9e891c54d30e0a04315070a3dd777c37ee6ebb34e4e931da86cdb25ed2cc"
 surface = "prose"
 language = "markdown"
 

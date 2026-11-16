@@ -5,6 +5,7 @@
 
 pub mod cli;
 pub mod color;
+pub mod doctor;
 pub mod engine_stub;
 pub mod env;
 pub mod errors;

@@ -9,7 +9,7 @@ use std::ops::Range;
 use slopvac_model::Span;
 use slopvac_parse::{BlockKind, Document, ParseError, parse_markdown, parse_mdx};
 
-use crate::Format;
+use crate::{Extraction, Format};
 
 /// A fenced code block that holds a diagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +54,107 @@ fn lone_cr_as_lf(source: &str) -> Cow<'_, str> {
             .map(|(i, c)| if c == '\r' && lone(i) { '\n' } else { c })
             .collect(),
     )
+}
+
+/// Extract a diagram fence body, with spans in the host `source`.
+///
+/// `body` is the range from [`DiagramBlock`]. It starts after the container prefix of its
+/// first line, but later lines still carry theirs (`> ` of a block quote, the indent of a
+/// list item). The prefix is stripped from each line before extraction, so a label that
+/// leads a line is not hidden behind a quote marker. Spans map back through the stripped
+/// bytes. A fragment that runs over a stripped prefix has no byte-for-byte replacement, so
+/// it carries its converted text and is not fixable.
+#[must_use]
+pub fn extract_fenced(format: Format, source: &str, body: Range<usize>) -> Extraction {
+    let Some(text) = source.get(body.clone()) else {
+        return Extraction::default();
+    };
+    let strip = Prefix::of_line_before(source, body.start);
+    if strip.is_empty() {
+        return crate::extract(format, text, body.start);
+    }
+    let mut stripped = String::with_capacity(text.len());
+    // (offset in `stripped`, offset in `source`) for the start of each kept line piece.
+    let mut pieces: Vec<(usize, usize)> = Vec::new();
+    let mut line_start = 0;
+    for (i, line) in text.split_inclusive('\n').enumerate() {
+        let skip = if i == 0 { 0 } else { strip.len_in(line) };
+        pieces.push((stripped.len(), body.start + line_start + skip));
+        stripped.push_str(&line[skip..]);
+        line_start += line.len();
+    }
+    let map = |at: usize| {
+        let i = pieces.partition_point(|&(s, _)| s <= at).saturating_sub(1);
+        pieces.get(i).map_or(at, |&(s, o)| o + (at - s))
+    };
+    let mut out = crate::extract(format, &stripped, 0);
+    for f in &mut out.fragments {
+        let (a, b) = (f.span.start, f.span.end);
+        let start = map(a);
+        let end = if b > a { map(b - 1) + 1 } else { start };
+        if f.text.is_none() && end - start != b - a {
+            f.text = Some(stripped[a..b].to_owned());
+        }
+        f.span = start..end;
+    }
+    out
+}
+
+/// The container prefix of a body's first line, as a rule for the lines after it.
+struct Prefix {
+    quotes: usize,
+    indent: usize,
+}
+
+impl Prefix {
+    fn of_line_before(source: &str, at: usize) -> Self {
+        let line_start = source[..at].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+        let prefix = &source[line_start..at];
+        let none = Self {
+            quotes: 0,
+            indent: 0,
+        };
+        if !prefix.bytes().all(|b| matches!(b, b' ' | b'\t' | b'>')) {
+            return none;
+        }
+        let quotes = prefix.bytes().filter(|&b| b == b'>').count();
+        let tail = prefix.rfind('>').map_or(prefix, |i| &prefix[i + 1..]);
+        let indent = if quotes > 0 {
+            tail.len().saturating_sub(1)
+        } else {
+            tail.len()
+        };
+        Self { quotes, indent }
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.quotes == 0 && self.indent == 0
+    }
+
+    /// Bytes of `line` that belong to the container.
+    fn len_in(&self, line: &str) -> usize {
+        let b = line.as_bytes();
+        let mut at = 0;
+        for _ in 0..self.quotes {
+            let mut j = at;
+            while j < b.len() && j < at + 3 && b[j] == b' ' {
+                j += 1;
+            }
+            if b.get(j) != Some(&b'>') {
+                return at;
+            }
+            at = j + 1;
+            if b.get(at) == Some(&b' ') {
+                at += 1;
+            }
+        }
+        let spaces = b[at..]
+            .iter()
+            .take(self.indent)
+            .take_while(|&&c| c == b' ')
+            .count();
+        at + spaces
+    }
 }
 
 fn whole(source: &str) -> Span {
@@ -181,5 +282,39 @@ mod tests {
     #[test]
     fn mdx_that_does_not_parse_is_an_error() {
         assert!(find_mdx_blocks("<Open>\n").is_err());
+    }
+
+    fn labels(md: &str) -> Vec<(&str, Range<usize>)> {
+        let block = &find_markdown_blocks(md).unwrap()[0];
+        extract_fenced(block.format, md, block.body.clone())
+            .fragments
+            .into_iter()
+            .map(|f| (&md[f.span.clone()], f.span))
+            .collect()
+    }
+
+    #[test]
+    fn block_quote_labels_are_found_at_their_source_offsets() {
+        let md = "> ```mermaid\n> sequenceDiagram\n> participant A as Alice\n> ```\n";
+        // "> ```mermaid\n" is 13 bytes and "> sequenceDiagram\n" is 18, so line 3 starts at 31.
+        // The prefix is 2 bytes and `participant A as ` is 17, so "Alice" is 50..55.
+        assert_eq!(labels(md), [("Alice", 50..55)]);
+    }
+
+    #[test]
+    fn keyword_led_plantuml_line_in_a_quote_is_not_dropped() {
+        let md = "> ```plantuml\n> @startuml\n> title Hello\n> @enduml\n> ```\n";
+        // "> ```plantuml\n" is 14 bytes and "> @startuml\n" is 12, so line 3 starts at 26.
+        // The prefix is 2 bytes and `title ` is 6, so "Hello" is 34..39.
+        assert_eq!(labels(md), [("Hello", 34..39)]);
+    }
+
+    #[test]
+    fn nested_list_in_quote_labels_keep_source_offsets() {
+        let md = "> - item\n>\n>   ```mermaid\n>   sequenceDiagram\n>   participant A as Alice\n>   ```\n";
+        // "> - item\n" 9, ">\n" 2, ">   ```mermaid\n" 15 and ">   sequenceDiagram\n" 20 put
+        // line 5 at byte 46. Its prefix is 4 bytes and `participant A as ` is 17, so
+        // "Alice" is 67..72.
+        assert_eq!(labels(md), [("Alice", 67..72)]);
     }
 }

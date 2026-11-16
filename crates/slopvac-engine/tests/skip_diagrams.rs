@@ -83,6 +83,19 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
 }
 
 #[test]
+fn a_quoted_fence_is_positioned_past_the_quote_markers() {
+    let source = "> ```mermaid\n> sequenceDiagram\n> participant A as This label has far too many words in it\n> ```\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", source))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    let f = &doc.findings[0];
+    assert_eq!(f.matched_text, "This label has far too many words in it");
+    // Line 3 is `> participant A as This ...`: the label starts after 19 bytes, so at column 20.
+    assert_eq!((f.start.line(), f.start.column()), (3, 20));
+}
+
+#[test]
 fn a_diagram_file_is_checked_without_prose() {
     let source = "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
     let doc = diagram_engine(settings())

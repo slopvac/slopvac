@@ -129,6 +129,7 @@
 "ai-tells-structure.tricolon-abuse-remainder" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ai-tells-structure.vague-attribution-core" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
 "ai-tells-structure.vague-attribution-remainder" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"docs-discipline.history-internal-reference" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "docs-discipline.history-narration" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "docs-discipline.internal-refs" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "docs-discipline.no-longer-change" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }

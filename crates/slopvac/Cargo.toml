@@ -20,10 +20,14 @@ path = "src/lib.rs"
 name = "slopvac"
 path = "src/main.rs"
 
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 [dependencies]
 clap.workspace = true
 clap_complete = "4"
 clap_mangen = "0.3.3"
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 slopvac-agents.workspace = true
@@ -31,11 +35,13 @@ slopvac-config.workspace = true
 slopvac-lsp.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true
+slopvac-plugins.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
 slopvac-styles.workspace = true
 slopvac-update.workspace = true
 tempfile.workspace = true
+toml.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "ansi",
@@ -46,12 +52,12 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 assert_cmd = "2.2.2"
 insta.workspace = true
 jsonschema.workspace = true
+minisign.workspace = true
 predicates = "3.1.4"
 proptest.workspace = true
 roxmltree.workspace = true
 rstest.workspace = true
 snapbox.workspace = true
-toml.workspace = true
 
 [lints]
 workspace = true

@@ -47,9 +47,9 @@ const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 #[test]
 fn rules_lists_every_core_rule_with_a_count_line() {
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 237, "236 rules and the count line");
+    assert_eq!(text.lines().count(), 238, "237 rules and the count line");
     assert!(
-        text.ends_with("236 rule(s) in 26 category(ies)\n"),
+        text.ends_with("237 rule(s) in 26 category(ies)\n"),
         "{text}"
     );
 }
@@ -94,7 +94,7 @@ fn kind_filter_counts_match_the_data() {
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 231);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 232);
 }
 
 #[test]
