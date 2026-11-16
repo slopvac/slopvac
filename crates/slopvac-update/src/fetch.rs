@@ -18,6 +18,33 @@ pub enum FetchError {
     Network(String),
 }
 
+/// Hops the fetcher follows. GitHub release downloads need one, to the asset host.
+const MAX_REDIRECTS: u32 = 5;
+
+/// Whether a redirect may lead to `url`: HTTPS, no credentials, and one of the hosts that serve
+/// GitHub release assets. These are `github.com`, `api.github.com` and the `githubusercontent.com`
+/// hosts that releases redirect to (`release-assets.githubusercontent.com`,
+/// `objects.githubusercontent.com`). A server that can redirect elsewhere could serve any bytes
+/// from any host, so everything else is refused. Signatures still decide what gets installed.
+#[must_use]
+pub fn redirect_host_allowed(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return false;
+    }
+    let host = authority.strip_suffix(":443").unwrap_or(authority);
+    if host.contains(':') || host != host.to_ascii_lowercase() {
+        return false;
+    }
+    matches!(host, "github.com" | "api.github.com")
+        || host
+            .strip_suffix(".githubusercontent.com")
+            .is_some_and(|label| !label.is_empty() && !label.contains(".."))
+}
+
 /// Fetch a URL into memory.
 pub trait Fetcher {
     /// GET `url` and return the body, failing when it exceeds `limit` bytes.
@@ -26,7 +53,8 @@ pub trait Fetcher {
 
 /// The real fetcher: HTTPS only, bounded time and size.
 ///
-/// `ureq` applies `https_only` to every hop, so a redirect to plain HTTP fails too.
+/// `ureq` applies `https_only` to every hop, so a redirect to plain HTTP fails too. Redirects are
+/// followed here, not by `ureq`, so each hop can be checked against [`redirect_host_allowed`].
 #[derive(Debug, Clone, Copy)]
 pub struct UreqFetcher {
     timeout: Duration,
@@ -72,25 +100,55 @@ impl UreqFetcher {
     }
 }
 
+/// The URL to follow after a redirect, or the reason to stop.
+fn next_hop(location: &str, hops: u32) -> Result<String, FetchError> {
+    if hops > MAX_REDIRECTS {
+        return Err(FetchError::Network("too many redirects".into()));
+    }
+    if !redirect_host_allowed(location) {
+        return Err(FetchError::Network(
+            "refusing a redirect to a host that does not serve GitHub releases".into(),
+        ));
+    }
+    Ok(location.to_owned())
+}
+
 impl Fetcher for UreqFetcher {
     fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
         if !self.scheme_allowed(url) {
             return Err(FetchError::NotHttps);
         }
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(self.timeout))
-            .https_only(!self.allow_loopback_http)
-            .max_redirects(if self.allow_loopback_http { 0 } else { 10 })
-            .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .into();
-        let mut resp = agent.get(url).call().map_err(|e| match e {
-            ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
-            other => FetchError::Network(other.to_string()),
-        })?;
-        if self.allow_loopback_http && resp.status().is_redirection() {
-            return Err(FetchError::Network("redirects are refused".into()));
-        }
+        // The deadline covers the whole exchange, redirects included.
+        let started = std::time::Instant::now();
+        let mut url = url.to_owned();
+        let mut hops = 0;
+        let mut resp = loop {
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .timeout_global(Some(self.timeout.saturating_sub(started.elapsed())))
+                .https_only(!self.allow_loopback_http)
+                .max_redirects(0)
+                .max_redirects_will_error(false)
+                .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .into();
+            let resp = agent.get(&url).call().map_err(|e| match e {
+                ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
+                other => FetchError::Network(other.to_string()),
+            })?;
+            if !resp.status().is_redirection() {
+                break resp;
+            }
+            if self.allow_loopback_http {
+                return Err(FetchError::Network("redirects are refused".into()));
+            }
+            hops += 1;
+            let location = resp
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| FetchError::Network("redirect without a Location".into()))?;
+            url = next_hop(location, hops)?;
+        };
         let mut buf = Vec::new();
         let n = std::io::Read::read_to_end(
             &mut resp.body_mut().with_config().limit(limit + 1).reader(),
@@ -239,6 +297,48 @@ mod tests {
             matches!(&hit, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
             "the redirect target was contacted: {hit:?}"
         );
+    }
+
+    #[test]
+    fn redirects_may_lead_only_to_github_release_hosts() {
+        for url in [
+            "https://github.com/srobroek/slopvac/releases/download/v3.1.0/a.tar.gz",
+            "https://api.github.com/repos/srobroek/slopvac/releases/latest",
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1?x=y",
+            "https://objects.githubusercontent.com/a",
+            "https://github.com:443/a",
+        ] {
+            assert!(redirect_host_allowed(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn redirects_to_other_hosts_schemes_or_credentials_are_refused() {
+        for url in [
+            "http://github.com/a",
+            "https://evil.example/github.com",
+            "https://github.com.evil.example/a",
+            "https://evilgithub.com/a",
+            "https://githubusercontent.com/a",
+            "https://.githubusercontent.com/a",
+            "https://evil.com/.githubusercontent.com",
+            "https://user@github.com/a",
+            "https://github.com@evil.example/a",
+            "https://github.com:8443/a",
+            "https://GitHub.com/a",
+            "/relative/path",
+            "//evil.example/a",
+            "",
+        ] {
+            assert!(!redirect_host_allowed(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_redirect_chain_stops_after_the_hop_limit() {
+        let url = "https://github.com/a";
+        assert!(next_hop(url, MAX_REDIRECTS).is_ok());
+        assert!(next_hop(url, MAX_REDIRECTS + 1).is_err());
     }
 
     #[test]
