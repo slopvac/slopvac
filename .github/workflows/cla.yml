@@ -1,61 +1,74 @@
 name: CLA
 # Contributor License Agreement check, run by CLA Assistant Lite. Signatures live in
-# slopvac/cla-signatures. The sjorsr-cla-bot GitHub App only supplies a token (it has no
-# webhooks), so this workflow is the only trigger.
-#
-# pull_request_target runs the base branch's workflow with write-capable tokens, so this
-# workflow never checks out or executes pull request code.
+# slopvac/cla-signers and are written with a GitHub App token.
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, closed]
   issue_comment:
     types: [created]
+  pull_request_target:
+    types: [opened, closed, reopened, synchronize]
   merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false # Never cancel a CLA check
 
 permissions: {}
 
 jobs:
-  # The job name is the required status check name; it must stay exactly "CLA".
-  # Ruleset required checks also gate merge_group runs, so the merge queue needs a
-  # job with the same name. It passes: the check already ran on the pull request.
+  # Both jobs are named "CLA": that is the required status check name. A ruleset's
+  # required checks also gate merge_group runs, so the merge queue needs a job with
+  # the same name. The pull request run already enforced the CLA.
   CLA:
     name: CLA
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
-      contents: read
+      actions: write
+      contents: read # signatures are written to slopvac/cla-signers with the App token
+      pull-requests: write
+      statuses: write
+    # Write scopes on a pull_request_target job are safe only while nothing here
+    # checks out or executes pull request content. Do not add a checkout or build step.
     steps:
-      - name: Merge queue
-        if: github.event_name == 'merge_group'
-        run: echo "CLA enforced on the pull request"
-
-      # Comment events only matter for the sign phrase or "recheck".
-      - name: Mint CLA app token
+      - name: Generate app token
         id: app-token
         if: >-
           github.event_name == 'pull_request_target' ||
-          (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-          (github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA' ||
-          github.event.comment.body == 'recheck'))
+          (github.event.issue.pull_request &&
+          (github.event.comment.body == 'recheck' ||
+          github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.CLA_APP_CLIENT_ID }}
           private-key: ${{ secrets.CLA_APP_PRIVATE_KEY }}
           owner: slopvac
-          repositories: slopvac,cla-signatures
+          repositories: cla-signers
+          permission-contents: write
 
       - name: CLA Assistant
         if: steps.app-token.outcome == 'success'
-        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        # STUB(slopvac-8l4.13.27): repin to the hardened slopvac fork release
+        uses: slopvac/cla-github-action@0d27e5a16278d4adb6b0c4b92f08ad27b0a21dc8 # v3.2.0 (upstream)
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
-          # STUB(slopvac-8l4.13.27): CLA.md not yet written; user supplies legal text
-          path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
           path-to-signatures: signatures/v1/cla.json
-          remote-organization-name: slopvac
-          remote-repository-name: cla-signatures
-          branch: main
+          # STUB(slopvac-8l4.13.27): CLA text pending user approval
+          path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
+          branch: main # must not be protected
           allowlist: dependabot[bot],sjorsr-release-bot[bot],github-actions[bot],renovate[bot]
-          custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
-          lock-pullrequest-aftermerge: false
+          remote-organization-name: slopvac
+          remote-repository-name: cla-signers
+          lock-pullrequest-aftermerge: true
+          require-opener-as-author: true
+
+  CLA-merge-queue:
+    name: CLA
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - run: echo "CLA enforced on the pull request"
