@@ -11,10 +11,12 @@ descriptor can install slopvac until a 3.0 release is on PyPI.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -59,15 +61,22 @@ def _megalinter_pin() -> str:
 
 @pytest.fixture(scope="session")
 def megalinter_schema() -> dict:
-    """Download the descriptor schema at a pinned upstream commit; skip offline.
+    """Download the descriptor schema at a pinned upstream commit.
 
     MegaLinter is AGPL-3.0, so the schema is fetched at test time, not vendored.
+    Only a network failure outside CI skips. In CI any download error fails, and a
+    response that isn't JSON fails everywhere.
     """
     try:
         with urllib.request.urlopen(SCHEMA_URL, timeout=30) as response:
-            return json.load(response)
-    except (OSError, ValueError) as error:
-        pytest.skip(f"cannot download the MegaLinter schema: {error}")
+            body = response.read()
+    except urllib.error.HTTPError:
+        raise
+    except OSError as error:
+        if os.environ.get("CI"):
+            raise
+        pytest.skip(f"offline: cannot download the MegaLinter schema: {error}")
+    return json.loads(body)
 
 
 def test_megalinter_descriptor_matches_upstream_schema(megalinter_schema):
