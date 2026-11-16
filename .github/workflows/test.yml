@@ -162,9 +162,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
+      # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
       - name: Install the pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -218,9 +218,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
+      # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
       - name: Install the pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Add the musl target
         if: matrix.musl
@@ -352,6 +352,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
