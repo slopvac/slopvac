@@ -140,7 +140,7 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        serde_json::from_slice(&read_regular(&self.path)?).ok()
+        serde_json::from_slice(&crate::bounded::read_regular(&self.path, MAX_CACHE_BYTES)?).ok()
     }
 
     /// Store an entry. The caller may ignore the error.
@@ -177,33 +177,6 @@ impl Cache {
 
 /// Largest cache file read. A real entry is a few dozen bytes.
 const MAX_CACHE_BYTES: u64 = 64 * 1024;
-
-/// The bytes of a regular file of at most [`MAX_CACHE_BYTES`], else `None`.
-///
-/// The cache path is under a user-writable directory, so it can be a FIFO, a directory or a
-/// link to a device. The open does not block, the open handle is checked to be a regular file,
-/// and the read stops at the cap.
-fn read_regular(path: &Path) -> Option<Vec<u8>> {
-    use std::io::Read as _;
-    let mut opts = std::fs::OpenOptions::new();
-    opts.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A FIFO with no writer would block an ordinary open.
-        opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
-    }
-    let handle = opts.open(path).ok()?;
-    if !handle.metadata().ok()?.is_file() {
-        return None;
-    }
-    let mut bytes = Vec::new();
-    handle
-        .take(MAX_CACHE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    (bytes.len() as u64 <= MAX_CACHE_BYTES).then_some(bytes)
-}
 
 /// How often a rename that Windows refuses for a moment is retried.
 const PERSIST_RETRIES: u32 = 20;

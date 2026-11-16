@@ -957,3 +957,36 @@ fn an_oversize_update_cache_is_reported_unknown() {
     let (_, doc) = w.json(&[], |_| {});
     assert_eq!(doc["update"]["state"], "unknown");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_install_receipt_does_not_hang_doctor() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    fs::create_dir_all(&receipts).unwrap();
+    fifo(&receipts.join("slopvac-receipt.json"));
+    let (code, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts)
+            .timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["slopvac"]["install_method"], "unknown");
+}
+
+#[test]
+fn an_oversize_install_receipt_is_ignored() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    write_receipt(&receipts, &binary_dir());
+    let path = receipts.join("slopvac-receipt.json");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.insert_str(
+        text.len() - 1,
+        &format!(",\"pad\":\"{}\"", "x".repeat(80 * 1024)),
+    );
+    fs::write(&path, text).unwrap();
+    let (_, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts);
+    });
+    assert_eq!(doc["slopvac"]["install_method"], "unknown");
+}
