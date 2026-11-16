@@ -176,26 +176,22 @@
       "properties": {
         "heading_path": {
           "description": "Matches when the text of any enclosing heading matches.",
-          "type": "string",
-          "minLength": 1
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
         },
         "admonition_title": {
           "description": "Matches the title of the enclosing admonition.",
-          "type": "string",
-          "minLength": 1
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
         },
         "front_matter": {
           "$ref": "#/$defs/FrontMatterCondition"
         },
         "path": {
           "description": "Matches the file path, with forward slashes.",
-          "type": "string",
-          "minLength": 1
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
         },
         "sentence": {
           "description": "Matches the text of a sentence.",
-          "type": "string",
-          "minLength": 1
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
         },
         "block_kind": {
           "description": "The block has this kind.",
@@ -255,8 +251,7 @@
           "minLength": 1
         },
         "matches": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "rule.schema.json#/$defs/Pcre2Pattern"
         }
       },
       "required": [
