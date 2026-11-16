@@ -323,6 +323,10 @@ jobs:
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Install minisign
+        # The release signing tests run the real binary; the script checks its sha256.
+        run: bash scripts/install_minisign.sh
+
       - name: Install ast-grep
         run: |
           set -euo pipefail
