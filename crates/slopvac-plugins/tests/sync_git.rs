@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::{Limits, tree_hash};
 use slopvac_plugins::lock::Lockfile;
@@ -86,11 +87,39 @@ impl Remote {
         Self { dir, commit }
     }
 
+    /// A repository whose history is `first`, then `second` (which replaces the
+    /// files). Returns the repository and the commit of `first`.
+    fn history(first: &[(&str, &[u8])], second: &[(&str, &[u8])]) -> (Self, String) {
+        let remote = Self::with_files(first, &[]);
+        let earlier = remote.commit.clone();
+        let work = remote.path();
+        git(&work, &["rm", "-r", "-q", "--", "."]);
+        for (name, data) in second {
+            let path = work.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, data).unwrap();
+            git(&work, &["add", "--", name]);
+        }
+        git(&work, &["commit", "--quiet", "-m", "second"]);
+        let head = git(&work, &["rev-parse", "HEAD"]);
+        assert_ne!(head, earlier);
+        (
+            Self {
+                commit: head,
+                ..remote
+            },
+            earlier,
+        )
+    }
+
     fn lock(&self, digest: &str) -> Lockfile {
+        self.lock_at(&self.commit, digest)
+    }
+
+    fn lock_at(&self, commit: &str, digest: &str) -> Lockfile {
         let text = format!(
             "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
-             slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{}\"\ndigest = \"{digest}\"\n",
-            self.commit
+             slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
         );
         Lockfile::parse(&text).unwrap()
     }
@@ -154,6 +183,17 @@ impl Env {
         lock: &Lockfile,
         limits: Limits,
     ) -> Result<SyncReport, SyncError> {
+        self.sync_from(network, &remote.served_from(), lock, limits)
+    }
+
+    /// Sync with the locked host standing in for `served_from`.
+    fn sync_from(
+        &self,
+        network: Network<'_>,
+        served_from: &str,
+        lock: &Lockfile,
+        limits: Limits,
+    ) -> Result<SyncReport, SyncError> {
         let store = self.store();
         let revocations = Revocations::new(
             self.data.path().join("state"),
@@ -165,7 +205,7 @@ impl Env {
         let policy = KeyPolicy::default();
         Syncer::new(&store, network, &policy, self.project.path(), &revocations)
             .with_limits(limits)
-            .with_git_rewrite_for_tests(LOCKED_HOST, &remote.served_from())
+            .with_git_rewrite_for_tests(LOCKED_HOST, served_from)
             .sync(lock)
     }
 
@@ -545,18 +585,22 @@ fn a_repository_larger_than_the_download_limit_is_refused() {
         .sync_with(Network::Online(&c), &remote, &lock, limits)
         .unwrap_err();
 
-    assert!(git_error(&err).contains("size limit"), "{err}");
+    // The watcher and the check after the fetch report the same kind.
+    assert!(matches!(err, SyncError::GitLimit { .. }), "{err:?}");
+    assert!(err.to_string().contains("download exceeds 1024"), "{err}");
     env.assert_no_trees();
 }
-
 #[test]
-fn a_commit_that_expands_past_the_size_limit_is_refused() {
-    let remote = Remote::with_files(&[("big.txt", &[b'a'; 4096])], &[]);
+fn a_small_pack_of_a_huge_blob_is_refused_before_the_blob_is_read() {
+    // 8 MiB of zeros packs to a few KiB, far below the download limit, and
+    // expands past the 1 MiB expanded-size limit.
+    let zeros = vec![0u8; 8 << 20];
+    let remote = Remote::with_files(&[("zeros.bin", &zeros)], &[]);
     let env = Env::new();
     let c = client();
-    let lock = remote.lock(&expected_digest(&[("big.txt", &[b'a'; 4096])]));
+    let lock = remote.lock(&expected_digest(&[("zeros.bin", &zeros)]));
     let limits = Limits {
-        expanded_bytes: 1000,
+        expanded_bytes: 1 << 20,
         ..Limits::default()
     };
 
@@ -564,6 +608,97 @@ fn a_commit_that_expands_past_the_size_limit_is_refused() {
         .sync_with(Network::Online(&c), &remote, &lock, limits)
         .unwrap_err();
 
-    assert!(git_error(&err).contains("size limit"), "{err}");
+    assert!(matches!(err, SyncError::GitLimit { .. }), "{err:?}");
+    assert!(err.to_string().contains("size limit"), "{err}");
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_commit_with_more_files_than_the_entry_limit_is_refused() {
+    let files: &[(&str, &[u8])] = &[("a", b"1"), ("b", b"2"), ("c", b"3")];
+    let remote = Remote::with_files(files, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(files));
+    let limits = Limits {
+        entries: 2,
+        ..Limits::default()
+    };
+
+    let err = env
+        .sync_with(Network::Online(&c), &remote, &lock, limits)
+        .unwrap_err();
+
+    assert!(matches!(err, SyncError::GitLimit { .. }), "{err:?}");
+    env.assert_no_trees();
+}
+
+#[test]
+fn a_commit_with_more_nodes_than_the_limit_installs_nothing() {
+    let files: &[(&str, &[u8])] = &[("a/b/one.txt", b"1"), ("a/b/two.txt", b"2")];
+    let remote = Remote::with_files(files, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(files));
+    // `a`, `a/b` and two files are four nodes.
+    let limits = Limits {
+        nodes: 3,
+        ..Limits::default()
+    };
+
+    let err = env
+        .sync_with(Network::Online(&c), &remote, &lock, limits)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SyncError::Extract { .. }) && err.to_string().contains("more than 3"),
+        "{err:?}"
+    );
+    env.assert_no_trees();
+}
+
+#[test]
+fn the_pinned_commit_is_installed_even_when_the_branch_moved_on() {
+    let first: &[(&str, &[u8])] = &[("pack.toml", b"id = \"old\"\n")];
+    let second: &[(&str, &[u8])] = &[("pack.toml", b"id = \"new\"\n"), ("extra.yml", b"x\n")];
+    let (remote, earlier) = Remote::history(first, second);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock_at(&earlier, &expected_digest(first));
+
+    let report = env.sync(Network::Online(&c), &remote, &lock).unwrap();
+
+    let tree = &report.packs[0].tree;
+    assert_eq!(fs::read(tree.join("pack.toml")).unwrap(), b"id = \"old\"\n");
+    assert!(!tree.join("extra.yml").exists());
+}
+
+#[test]
+fn a_redirect_from_the_remote_is_not_followed() {
+    // CWE-918: the remote answers its first request with a redirect to an
+    // internal endpoint. Git must stop there instead of calling the target.
+    let target = Server::start(|_| Response::new(200));
+    let target_url = format!("http://{}/internal", target.registry());
+    let redirector = Server::start(move |_| Response::new(302).header("Location", &target_url));
+    let remote = Remote::with_files(FILES, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(FILES));
+    let served_from = format!("http://{}/", redirector.registry());
+
+    let err = env
+        .sync_from(Network::Online(&c), &served_from, &lock, Limits::default())
+        .unwrap_err();
+
+    assert!(matches!(err, SyncError::Git { .. }), "{err:?}");
+    assert!(
+        !redirector.requests().is_empty(),
+        "the remote was not asked"
+    );
+    assert!(
+        target.requests().is_empty(),
+        "git followed the redirect: {:?}",
+        target.requests()
+    );
     env.assert_no_trees();
 }

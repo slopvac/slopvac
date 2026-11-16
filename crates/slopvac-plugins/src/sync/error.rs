@@ -41,6 +41,15 @@ pub enum SyncError {
         /// What went wrong.
         why: String,
     },
+    /// A git source passed a limit: the download size, the number of files or
+    /// the expanded size.
+    #[error("pack `{id}`: git source passes a limit: {}", esc(.why))]
+    GitLimit {
+        /// Pack id.
+        id: PackId,
+        /// Which limit.
+        why: String,
+    },
     /// The registry or the network failed.
     #[error("pack `{id}`: {source}")]
     Fetch {

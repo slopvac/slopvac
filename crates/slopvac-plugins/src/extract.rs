@@ -70,6 +70,7 @@ const MAX_SIDECAR_LINE: u64 = 1025;
 
 /// Counts the nodes a tree occupies on disk: every file, every directory that
 /// holds something (including implicit parents of nested files) and the sidecar.
+#[derive(Debug)]
 struct NodeBudget {
     used: usize,
     limit: usize,
@@ -607,15 +608,19 @@ pub struct StagedTree {
     executable: HashSet<String>,
     files: usize,
     bytes: u64,
+    names: HashMap<String, (String, bool)>,
+    dirs: HashSet<String>,
+    budget: NodeBudget,
 }
 
 impl StagedTree {
-    /// An empty staged tree under `store`, which is created if needed.
+    /// An empty staged tree under `store`, which is created if needed. The tree
+    /// may hold at most `limits.nodes` files and directories.
     ///
     /// # Errors
     /// [`ExtractError::Io`] when the staging directory cannot be made, or
     /// [`ExtractError::Refused`] when `store` is not a private directory.
-    pub fn new(store: &Path) -> Result<Self, ExtractError> {
+    pub fn new(store: &Path, limits: Limits) -> Result<Self, ExtractError> {
         ensure_private_dir(store)?;
         let staging_parent = store.join(".staging");
         ensure_private_child(&staging_parent)?;
@@ -631,6 +636,9 @@ impl StagedTree {
             executable: HashSet::new(),
             files: 0,
             bytes: 0,
+            names: HashMap::new(),
+            dirs: HashSet::new(),
+            budget: NodeBudget::new(limits.nodes),
         })
     }
 
@@ -639,7 +647,8 @@ impl StagedTree {
     ///
     /// # Errors
     /// [`ExtractError::Refused`] for a name the extractor would refuse or a name
-    /// that is taken, [`ExtractError::Io`] for a failed write.
+    /// that is taken or collides with another, or when the tree has too many
+    /// nodes; [`ExtractError::Io`] for a failed write.
     pub fn write_file(
         &mut self,
         path: &str,
@@ -647,6 +656,12 @@ impl StagedTree {
         executable: bool,
     ) -> Result<(), ExtractError> {
         let rel = normalise_entry_path(path.as_bytes())?;
+        // Everything that can refuse the name is checked before anything is
+        // created: case and Unicode collisions, then the node budget.
+        claim_with_parents(&mut self.names, &rel, false)?;
+        let parents = new_parents(&self.dirs, &rel);
+        self.budget.charge(parents.len() + 1)?;
+        self.dirs.extend(parents);
         let target = self.root.join(&rel);
         if let Some(dir) = target.parent() {
             fs::create_dir_all(dir).map_err(io_err("creating a directory"))?;
@@ -660,6 +675,12 @@ impl StagedTree {
             self.executable.insert(rel);
         }
         Ok(())
+    }
+
+    /// The staging directory of the tree, for inspection.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// The tree hash of what was written.

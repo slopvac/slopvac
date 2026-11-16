@@ -14,9 +14,11 @@
 //!
 //! # What runs, and what cannot
 //!
-//! - `git` is found on `PATH` by absolute entries only (CWE-427): a relative
-//!   `PATH` entry such as `.` can name a program in the project, so it is
-//!   skipped, as host helpers are looked up.
+//! - `git` is found on `PATH` among trusted directories only (CWE-427). A
+//!   relative entry such as `.` is skipped. So is an absolute entry that, after
+//!   links resolve, lies inside the project (a hostile checkout could plant its
+//!   own `git` there) or that other users can write to. The program itself must
+//!   not be writable by others either.
 //! - The environment is cleared. Only proxy and certificate variables and the
 //!   Windows system variables pass through. `HOME` and the config files point
 //!   at an empty scratch directory (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`
@@ -24,8 +26,10 @@
 //!   `GIT_*` variable or askpass program applies, and `GIT_TERMINAL_PROMPT=0`
 //!   rules out a prompt.
 //! - Only `https` is an allowed transport (`GIT_ALLOW_PROTOCOL`,
-//!   `protocol.allow=never`, `protocol.https.allow=always`), which also stops
-//!   `ext::`, `file::` and an HTTPS-to-HTTP redirect. Hooks point at an empty
+//!   `protocol.allow=never`, `protocol.https.allow=always`), which stops
+//!   `ext::` and `file::`. Redirects are not followed at all
+//!   (`http.followRedirects=false`): git's HTTP client would otherwise follow an
+//!   initial redirect, to an internal host included (CWE-918). Hooks point at an empty
 //!   directory, `core.fsmonitor` is off and the scratch repository is made
 //!   with no templates.
 //! - The repository is fresh and bare, so nothing the remote serves can become
@@ -38,6 +42,20 @@
 //!   `--no-tags` and no submodule recursion. A deadline covers every command and
 //!   the whole process group is killed at the deadline, and a watcher kills the
 //!   fetch when the objects on disk pass the compressed size limit.
+//!   `transfer.unpackLimit=1` keeps received objects in the pack, so a pack of
+//!   highly compressed objects is not expanded to loose files, and the watcher
+//!   sees every byte that lands on disk.
+//! - Nothing is read from an object before its size is known. `ls-tree -l`
+//!   lists every blob size, and the sum is checked against the expanded-size
+//!   limit before `cat-file` runs, so a small pack of huge blobs is refused
+//!   without materialising one.
+//!
+//! # Residual risks
+//!
+//! `git` has no option to cap the memory of `index-pack`. A delta chain that
+//! expands one object past the memory of the machine is bounded only by the
+//! deadline and `core.deltaBaseCacheLimit`. A process memory limit needs the
+//! plugin launcher (`slopvac-8l4.9.13`), as `unsafe` is forbidden here.
 //!
 //! The caller compares the resulting tree hash with the lock before anything
 //! reaches the store.
@@ -53,7 +71,6 @@ use std::time::{Duration, Instant};
 
 use crate::extract::{ExtractError, Limits, StagedTree};
 use crate::oci::{Contained, find_in_path};
-use crate::process::sanitize_display;
 
 /// Longest `git` error text kept for a message.
 const MAX_STDERR_BYTES: u64 = 4 * 1024;
@@ -81,8 +98,10 @@ const PASS_THROUGH: &[&str] = &[
 /// Why a git fetch or export failed.
 #[derive(Debug)]
 pub(super) enum GitError {
-    /// `git` failed, or the commit is not acceptable. The text is safe to show.
+    /// `git` failed, or the commit is not acceptable. The text is raw.
     Failed(String),
+    /// A limit was passed: the download, the number of files, or the expanded size.
+    Limit(String),
     /// Writing the tree was refused.
     Extract(ExtractError),
 }
@@ -97,27 +116,56 @@ fn failed(msg: impl Into<String>) -> GitError {
     GitError::Failed(msg.into())
 }
 
+fn limit(msg: impl Into<String>) -> GitError {
+    GitError::Limit(msg.into())
+}
+
+fn download_limit(max: u64) -> GitError {
+    limit(format!("the repository download exceeds {max} bytes"))
+}
+
 /// What to fetch and how far to trust the transport.
 pub(super) struct Request<'a> {
     pub(super) git: &'a Path,
     pub(super) url: &'a str,
     pub(super) commit: &'a str,
-    /// Test seam: also allow `file://` repositories.
-    pub(super) allow_file: bool,
+    /// Test seam: also allow `file://` and loopback `http://` repositories.
+    pub(super) allow_local: bool,
     pub(super) timeout: Duration,
     pub(super) limits: Limits,
 }
 
-/// The `git` program: the first on an absolute `PATH` entry.
-pub(super) fn find_git() -> Option<PathBuf> {
-    find_git_in(&std::env::var_os("PATH")?)
+/// The `git` program: the first in a trusted `PATH` directory (see the module
+/// documentation). `project_root` anchors the check that it is not in the project.
+pub(super) fn find_git(project_root: &Path) -> Option<PathBuf> {
+    let project = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_owned());
+    find_git_in(&std::env::var_os("PATH")?, &project)
 }
 
-fn find_git_in(path: &OsStr) -> Option<PathBuf> {
-    let absolute: Vec<PathBuf> = std::env::split_paths(path)
+fn find_git_in(path: &OsStr, project: &Path) -> Option<PathBuf> {
+    let trusted: Vec<PathBuf> = std::env::split_paths(path)
         .filter(|dir| dir.is_absolute())
+        .filter_map(|dir| std::fs::canonicalize(dir).ok())
+        .filter(|dir| !dir.starts_with(project) && !other_can_write(dir))
         .collect();
-    find_in_path("git", Some(&std::env::join_paths(absolute).ok()?))
+    let found = find_in_path("git", Some(&std::env::join_paths(trusted).ok()?))?;
+    let real = std::fs::canonicalize(&found).ok()?;
+    (!real.starts_with(project) && !other_can_write(&real)).then_some(found)
+}
+
+/// Whether group or others can write to `path`. Windows has no such mode bits
+/// and is not a supported platform for 3.0.
+fn other_can_write(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o022 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 /// Fetch exactly `request.commit` into a scratch repository under `scratch`
@@ -128,7 +176,10 @@ pub(super) fn export_commit(
     staged: &mut StagedTree,
 ) -> Result<(), GitError> {
     let https = request.url.starts_with("https://");
-    let local = request.allow_file && request.url.starts_with("file://");
+    let local = request.allow_local
+        && ["file://", "http://127.0.0.1:"]
+            .iter()
+            .any(|p| request.url.starts_with(p));
     if !(https || local) || request.url.starts_with('-') {
         return Err(failed("only https:// repositories are fetched"));
     }
@@ -181,8 +232,8 @@ impl<'a> Git<'a> {
                 cmd.env(name, value);
             }
         }
-        let allowed = if self.request.allow_file {
-            "https:file"
+        let allowed = if self.request.allow_local {
+            "https:file:http"
         } else {
             "https"
         };
@@ -208,13 +259,18 @@ impl<'a> Git<'a> {
             "http.sslVerify=true",
             "transfer.fsckObjects=true",
             "fetch.recurseSubmodules=false",
+            "http.followRedirects=false",
+            "transfer.unpackLimit=1",
+            "fetch.unpackLimit=1",
+            "core.deltaBaseCacheLimit=16m",
             "gc.auto=0",
             "maintenance.auto=false",
             "fetch.writeCommitGraph=false",
             &hooks,
         ];
-        if self.request.allow_file {
+        if self.request.allow_local {
             config.push("protocol.file.allow=always");
+            config.push("protocol.http.allow=always");
         }
         for entry in config {
             cmd.arg("-c").arg(entry);
@@ -274,9 +330,7 @@ impl<'a> Git<'a> {
         };
         self.run(cmd, "fetch", Some(watch), 4096)?;
         if dir_size(&objects) > max {
-            return Err(failed(format!(
-                "the repository download exceeds {max} bytes"
-            )));
+            return Err(download_limit(max));
         }
         Ok(())
     }
@@ -294,11 +348,18 @@ impl<'a> Git<'a> {
 
     fn list_tree(&self) -> Result<Vec<Entry>, GitError> {
         let mut cmd = self.in_repo();
-        cmd.args(["ls-tree", "-r", "-z", "--full-tree", "--end-of-options"])
-            .arg(self.request.commit);
+        cmd.args([
+            "ls-tree",
+            "-r",
+            "-z",
+            "-l",
+            "--full-tree",
+            "--end-of-options",
+        ])
+        .arg(self.request.commit);
         let cap = self.request.limits.entries.saturating_mul(1200) + 1024;
         let out = self.run(cmd, "ls-tree", None, cap)?;
-        parse_tree(&out, self.request.limits.entries)
+        parse_tree(&out, self.request.limits)
     }
 
     fn export(&self, entries: &[Entry], staged: &mut StagedTree) -> Result<(), GitError> {
@@ -341,14 +402,19 @@ impl<'a> Git<'a> {
 struct Entry {
     path: String,
     oid: String,
+    size: u64,
     executable: bool,
 }
 
-fn parse_tree(out: &[u8], max_entries: usize) -> Result<Vec<Entry>, GitError> {
+/// Read the `ls-tree -r -z -l` listing. Sizes are summed here, so the commit is
+/// refused for expanding past the limit before a single blob is read.
+fn parse_tree(out: &[u8], limits: Limits) -> Result<Vec<Entry>, GitError> {
+    let max_entries = limits.entries;
+    let mut total = 0u64;
     let mut entries = Vec::new();
     for record in out.split(|&b| b == 0).filter(|r| !r.is_empty()) {
         if entries.len() >= max_entries {
-            return Err(failed(format!(
+            return Err(limit(format!(
                 "the commit has more than {max_entries} files"
             )));
         }
@@ -360,13 +426,18 @@ fn parse_tree(out: &[u8], max_entries: usize) -> Result<Vec<Entry>, GitError> {
             .map_err(|_| failed("a path in the commit is not UTF-8"))?;
         let meta = std::str::from_utf8(&record[..tab])
             .map_err(|_| failed("`git ls-tree` printed an unexpected line"))?;
-        let mut fields = meta.split(' ');
-        let (Some(mode), Some(kind), Some(oid), None) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
+        // The size column is padded with spaces; a submodule shows `-`.
+        let mut fields = meta.split_whitespace();
+        let (Some(mode), Some(kind), Some(oid), Some(size), None) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
             return Err(failed("`git ls-tree` printed an unexpected line"));
         };
-        let shown = path.escape_debug();
+        let shown = &path;
         let executable = match (mode, kind) {
             ("100644", "blob") => false,
             ("100755", "blob") => true,
@@ -377,9 +448,20 @@ fn parse_tree(out: &[u8], max_entries: usize) -> Result<Vec<Entry>, GitError> {
         if oid.len() != 40 || !oid.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             return Err(failed("`git ls-tree` printed an unexpected object id"));
         }
+        let size: u64 = size
+            .parse()
+            .map_err(|_| failed("`git ls-tree` printed an unexpected size"))?;
+        total = total.saturating_add(size);
+        if total > limits.expanded_bytes {
+            return Err(limit(format!(
+                "the commit expands past the size limit of {} bytes",
+                limits.expanded_bytes
+            )));
+        }
         entries.push(Entry {
             path,
             oid: oid.to_owned(),
+            size,
             executable,
         });
     }
@@ -418,8 +500,10 @@ fn copy_blob(
     if oid != entry.oid {
         return Err(failed("`git cat-file` answered for another object"));
     }
-    if size > *remaining {
-        return Err(failed("the commit expands past the size limit"));
+    if size != entry.size || size > *remaining {
+        return Err(failed(
+            "`git cat-file` printed another size than `git ls-tree`",
+        ));
     }
     *remaining -= size;
     let mut body = reader.by_ref().take(size);
@@ -476,6 +560,8 @@ struct Supervised {
     done: Arc<AtomicBool>,
     killed: Arc<AtomicU8>,
     deadline: Instant,
+    /// The size limit of the watched directory, for the error text.
+    watched_max: u64,
 }
 
 impl Supervised {
@@ -485,6 +571,7 @@ impl Supervised {
             .stderr(Stdio::piped());
         let mut child =
             Contained::spawn(&mut cmd).map_err(|e| failed(format!("cannot start git: {e}")))?;
+        let watched_max = watch.as_ref().map_or(0, |w| w.max);
         let stdin = child.child_mut().stdin.take();
         let stdout = child.child_mut().stdout.take();
         let stderr = child.child_mut().stderr.take();
@@ -532,6 +619,7 @@ impl Supervised {
             done,
             killed,
             deadline,
+            watched_max,
         })
     }
 
@@ -548,7 +636,7 @@ impl Supervised {
         let child = self.stop_watchdog();
         let why = match self.killed.load(Ordering::SeqCst) {
             KILLED_TIME => Some(format!("`git {what}` timed out")),
-            KILLED_SIZE => Some(format!("`git {what}` downloaded more than the size limit")),
+            KILLED_SIZE => return Err(download_limit(self.watched_max)),
             _ => None,
         };
         if let Some(why) = why {
@@ -596,7 +684,7 @@ fn check_status(what: &str, status: ExitStatus, stderr: &[u8]) -> Result<(), Git
     if status.success() {
         return Ok(());
     }
-    let text = sanitize_display(String::from_utf8_lossy(stderr).trim());
+    let text = String::from_utf8_lossy(stderr).trim().to_owned();
     let detail = if text.is_empty() {
         String::new()
     } else {
@@ -609,23 +697,94 @@ fn check_status(what: &str, status: ExitStatus, stderr: &[u8]) -> Result<(), Git
 mod tests {
     use super::*;
 
-    #[test]
-    fn relative_path_entries_never_find_git() {
-        let dir = tempfile::tempdir().unwrap();
-        let name = if cfg!(windows) { "git.exe" } else { "git" };
-        std::fs::write(dir.path().join(name), b"").unwrap();
-        // The directory is only reachable through a relative entry.
-        let relative = std::env::join_paths([Path::new("."), Path::new("sub/bin")]).unwrap();
-        assert_eq!(find_git_in(&relative), None);
+    /// A scratch tree: `project/bin`, a private `trusted` directory and an
+    /// `open` directory that anyone can write to, each holding a `git` file.
+    #[cfg(unix)]
+    struct Layout {
+        _dir: tempfile::TempDir,
+        project: PathBuf,
+        local: PathBuf,
+        trusted: PathBuf,
+        open: PathBuf,
     }
 
+    #[cfg(unix)]
+    fn layout() -> Layout {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let make = |rel: &str, mode: u32| {
+            let path = base.join(rel);
+            std::fs::create_dir_all(&path).unwrap();
+            std::fs::write(path.join("git"), b"").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        let project = base.join("project");
+        let local = make("project/bin", 0o755);
+        let trusted = make("trusted", 0o755);
+        let open = make("open", 0o777);
+        Layout {
+            _dir: dir,
+            project,
+            local,
+            trusted,
+            open,
+        }
+    }
+
+    #[cfg(unix)]
+    fn path_of(dirs: &[&Path]) -> std::ffi::OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_path_entries_never_find_git() {
+        let l = layout();
+        // `trusted` is reachable only through a relative entry.
+        let relative = path_of(&[Path::new("."), Path::new("sub/bin")]);
+        assert_eq!(find_git_in(&relative, &l.project), None);
+    }
+
+    #[cfg(unix)]
     #[test]
     fn an_absolute_entry_after_a_relative_one_still_finds_git() {
-        let dir = tempfile::tempdir().unwrap();
-        let name = if cfg!(windows) { "git.exe" } else { "git" };
-        std::fs::write(dir.path().join(name), b"").unwrap();
-        let path = std::env::join_paths([Path::new("."), dir.path()]).unwrap();
-        assert_eq!(find_git_in(&path), Some(dir.path().join(name)));
+        let l = layout();
+        let path = path_of(&[Path::new("."), &l.trusted]);
+        assert_eq!(find_git_in(&path, &l.project), Some(l.trusted.join("git")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_git_inside_the_project_is_ignored_even_first_on_the_path() {
+        let l = layout();
+        let path = path_of(&[&l.local, &l.trusted]);
+        assert_eq!(find_git_in(&path, &l.project), Some(l.trusted.join("git")));
+        assert_eq!(find_git_in(&path_of(&[&l.local]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_into_the_project_does_not_hide_a_planted_git() {
+        let l = layout();
+        // `/usr/bin`-like directory whose `git` is a link to the project's file.
+        let linked = l.trusted.parent().unwrap().join("linked");
+        std::fs::create_dir(&linked).unwrap();
+        std::os::unix::fs::symlink(l.local.join("git"), linked.join("git")).unwrap();
+        let path = path_of(&[&linked]);
+        assert_eq!(find_git_in(&path, &l.project), None);
+        // A link to the project directory itself is resolved before the check.
+        let alias = l.trusted.parent().unwrap().join("alias");
+        std::os::unix::fs::symlink(&l.local, &alias).unwrap();
+        assert_eq!(find_git_in(&path_of(&[&alias]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_others_can_write_is_not_trusted() {
+        let l = layout();
+        assert_eq!(find_git_in(&path_of(&[&l.open]), &l.project), None);
     }
 
     #[test]
@@ -636,8 +795,9 @@ mod tests {
             ("160000", "commit", "submodule"),
             ("100664", "blob", "unsupported mode"),
         ] {
-            let record = format!("{mode} {kind} {oid}\tx/y\0");
-            let Err(GitError::Failed(msg)) = parse_tree(record.as_bytes(), 10) else {
+            let record = format!("{mode} {kind} {oid}      0\tx/y\0");
+            let Err(GitError::Failed(msg)) = parse_tree(record.as_bytes(), Limits::default())
+            else {
                 panic!("{mode} was accepted");
             };
             assert!(msg.contains(word), "{msg}");
@@ -645,16 +805,37 @@ mod tests {
     }
 
     #[test]
-    fn tree_listing_reads_modes_and_stops_at_the_entry_limit() {
+    fn tree_listing_reads_modes_and_sizes_and_stops_at_the_entry_limit() {
         let oid = "b".repeat(40);
-        let two = format!("100644 blob {oid}\ta.txt\0100755 blob {oid}\tbin/run\0");
-        let entries = parse_tree(two.as_bytes(), 2).unwrap();
-        let got: Vec<(&str, bool)> = entries
+        let two = format!("100644 blob {oid}      7\ta.txt\0100755 blob {oid}     12\tbin/run\0");
+        let few = |entries| Limits {
+            entries,
+            ..Limits::default()
+        };
+        let entries = parse_tree(two.as_bytes(), few(2)).unwrap();
+        let got: Vec<(&str, bool, u64)> = entries
             .iter()
-            .map(|e| (e.path.as_str(), e.executable))
+            .map(|e| (e.path.as_str(), e.executable, e.size))
             .collect();
-        assert_eq!(got, vec![("a.txt", false), ("bin/run", true)]);
-        assert!(parse_tree(two.as_bytes(), 1).is_err());
+        assert_eq!(got, vec![("a.txt", false, 7), ("bin/run", true, 12)]);
+        assert!(matches!(
+            parse_tree(two.as_bytes(), few(1)),
+            Err(GitError::Limit(_))
+        ));
+    }
+
+    #[test]
+    fn tree_listing_adds_sizes_before_any_blob_is_read() {
+        let oid = "c".repeat(40);
+        let two = format!("100644 blob {oid}    600\ta\0100644 blob {oid}    600\tb\0");
+        let limits = Limits {
+            expanded_bytes: 1000,
+            ..Limits::default()
+        };
+        assert!(matches!(
+            parse_tree(two.as_bytes(), limits),
+            Err(GitError::Limit(_))
+        ));
     }
 
     /// What a stand-in `git` sees: its environment lines, then its arguments.
@@ -675,7 +856,7 @@ mod tests {
             git: &script,
             url: "https://git.test/repo",
             commit: &"a".repeat(40),
-            allow_file: false,
+            allow_local: false,
             timeout: Duration::from_secs(30),
             limits: Limits::default(),
         };
@@ -742,6 +923,8 @@ mod tests {
             "credential.helper=",
             "core.fsmonitor=false",
             "fetch.recurseSubmodules=false",
+            "http.followRedirects=false",
+            "transfer.unpackLimit=1",
             "transfer.fsckObjects=true",
         ] {
             assert!(args.iter().any(|a| a == want), "{want} missing in {args:?}");

@@ -622,7 +622,7 @@ impl<'a> Syncer<'a> {
         }
         self.client(pack, "git tree")?;
 
-        let (url, allow_file) = match &self.git.rewrite {
+        let (url, allow_local) = match &self.git.rewrite {
             Some((from, to)) if url.starts_with(from.as_str()) => {
                 (format!("{to}{}", &url[from.len()..]), true)
             }
@@ -632,20 +632,24 @@ impl<'a> Syncer<'a> {
             id: id.clone(),
             why,
         };
-        let program = git::find_git()
-            .ok_or_else(|| git_failed("git was not found on an absolute PATH entry".into()))?;
+        let program = git::find_git(self.project_root)
+            .ok_or_else(|| git_failed("git was not found in a trusted PATH directory".into()))?;
         let scratch = self.store.scratch_dir()?;
-        let mut staged = StagedTree::new(&self.store.trees()).map_err(extract)?;
+        let mut staged = StagedTree::new(&self.store.trees(), self.limits).map_err(extract)?;
         let request = git::Request {
             git: &program,
             url: &url,
             commit,
-            allow_file,
+            allow_local,
             timeout: self.git.timeout,
             limits: self.limits,
         };
         git::export_commit(&request, scratch.path(), &mut staged).map_err(|e| match e {
             git::GitError::Failed(msg) => git_failed(msg),
+            git::GitError::Limit(why) => SyncError::GitLimit {
+                id: id.clone(),
+                why,
+            },
             git::GitError::Extract(source) => extract(source),
         })?;
         let actual = staged.hash().map_err(extract)?;
