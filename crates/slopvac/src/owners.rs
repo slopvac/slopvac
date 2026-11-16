@@ -39,39 +39,17 @@ fn shown(path: &str) -> String {
 }
 
 fn terms_error(err: &TermsError) -> CliError {
-    let (code, message) = match err {
-        TermsError::Io { path, message } => (
-            "terms-io",
-            format!(
-                "cannot read {}: {}",
-                shown(path),
-                redact::redact_root(message, &cwd())
-            ),
-        ),
-        TermsError::Parse { path, message } => (
-            "terms-parse",
-            format!(
-                "cannot parse {}: {}",
-                shown(path),
-                redact::redact_root(message, &cwd())
-            ),
-        ),
-        TermsError::SchemaVersion { path, found } => (
-            "terms-schema-version",
-            format!(
-                "{}: schema_version {found} is not supported, expected 3",
-                shown(path)
-            ),
-        ),
-        TermsError::UnknownKey { path, key } => (
-            "terms-unknown-key",
-            format!("{}: unknown key `{key}`", shown(path)),
-        ),
-        TermsError::Entry { path, message } => {
-            ("terms-entry", format!("{}: {message}", shown(path)))
-        }
+    let (code, path) = match err {
+        TermsError::Io { path, .. } => ("terms-io", path),
+        TermsError::Parse { path, .. } => ("terms-parse", path),
+        TermsError::MissingSchemaVersion { path } => ("terms-missing-schema-version", path),
+        TermsError::SchemaVersion { path, .. } => ("terms-schema-version", path),
+        TermsError::UnknownKey { path, .. } => ("terms-unknown-key", path),
+        TermsError::Entry { path, .. } => ("terms-entry", path),
     };
-    CliError::new(code, message)
+    // The owner's own wording, with its path (carried as data) replaced whole.
+    let message = err.to_string().replace(path.as_str(), &shown(path));
+    CliError::new(code, redact::redact_root(&message, &cwd()))
 }
 
 /// Name an owner's error from its fields, with every path shown through `shown_path`.
