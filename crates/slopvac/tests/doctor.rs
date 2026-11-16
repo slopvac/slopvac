@@ -236,6 +236,76 @@ fn a_file_in_the_working_directory_is_shown_relative_to_it() {
 }
 
 #[test]
+fn every_file_of_an_extends_chain_is_a_source_in_load_order() {
+    let w = World::new();
+    w.write(
+        "base.toml",
+        "schema_version = 3\n[network]\noffline = true\n",
+    );
+    w.write(
+        "shared/mid.toml",
+        "schema_version = 3\nextends = [\"../base.toml\"]\n",
+    );
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"shared/mid.toml\"]\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 0);
+    let sources: Vec<(String, String, String)> = doc["config"]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["layer"].as_str().unwrap().to_owned(),
+                s["file"].as_str().unwrap().to_owned(),
+                s["status"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            (
+                "extends".to_owned(),
+                "base.toml".to_owned(),
+                "ok".to_owned()
+            ),
+            (
+                "extends".to_owned(),
+                "shared/mid.toml".to_owned(),
+                "ok".to_owned()
+            ),
+            (
+                "project".to_owned(),
+                "slopvac.toml".to_owned(),
+                "ok".to_owned()
+            ),
+        ]
+    );
+    // Offline from the extended file is visible in the report.
+    assert_eq!(
+        doc["offline"],
+        json!({"effective": true, "sources": ["config"]})
+    );
+}
+
+#[test]
+fn a_missing_extended_file_is_reported_and_names_no_path() {
+    let w = World::new();
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"gone.toml\"]\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    let source = &doc["config"]["sources"][0];
+    assert_eq!(source["status"], "invalid");
+    assert_eq!(source["error"], "refused: config-extends-missing at line 2");
+}
+
+#[test]
 fn the_config_option_names_one_file_and_skips_discovery() {
     let w = World::new();
     w.write("slopvac.toml", "{{{ not toml");
@@ -270,9 +340,13 @@ fn broken_config_files_get_a_status_and_never_echo_their_content() {
         (
             "schema_version = 4\n",
             "invalid",
-            "unsupported schema_version",
+            "config-unsupported-version at line 1",
         ),
-        ("password = \"hunter2\"\n{{{\n", "invalid", "line 2"),
+        (
+            "password = \"hunter2\"\n{{{\n",
+            "invalid",
+            "config-parse at line 2",
+        ),
     ] {
         w.write("slopvac.toml", body);
         let (code, doc) = w.json(&[], |_| {});
