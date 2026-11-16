@@ -455,6 +455,14 @@ fn a_raw_html_block_counts_in_words_sentences_and_paragraphs() {
 }
 
 #[test]
+fn a_table_cell_with_two_sentences_counts_as_one_sentence_as_in_2x() {
+    let e = engine(&[tokens("dull", "leverage", &json!({}))]);
+    let doc = lint(&e, "|A|B|\n|-|-|\n|Stop it. Then wait.|Done.|\n");
+    // Four cells, one sentence each: A, B, "Stop it. Then wait." and Done. Words: 1 + 1 + 4 + 1.
+    assert_eq!((doc.words, doc.sentences), (7, 4));
+}
+
+#[test]
 fn a_raw_html_block_with_several_elements_is_one_paragraph() {
     let e = engine(&[tokens("dull", "leverage", &json!({}))]);
     let doc = lint(

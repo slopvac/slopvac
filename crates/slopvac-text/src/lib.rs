@@ -18,5 +18,5 @@ pub use measure::{
     longest_noun_stack, plain_words, suffix_counts, without_code_and_comments,
 };
 pub use pattern::{Pattern, PatternError, TextError};
-pub use sentences::{Sentence, split_sentences};
+pub use sentences::{Sentence, cell_sentence, split_sentences};
 pub use tokens::{count_words, tokens};
