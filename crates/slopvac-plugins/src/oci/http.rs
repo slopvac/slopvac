@@ -1,11 +1,19 @@
 //! Redirect-aware HTTP on top of `ureq`.
 
+use std::fmt;
+use std::io;
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use ureq::config::Config;
 use ureq::http::{Request, Response, Uri};
 use ureq::tls::{RootCerts, TlsConfig};
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{
+    Buffers, ConnectionDetails, Connector, DefaultConnector, NextTimeout, Transport as WireIo,
+};
 use ureq::{Agent, Body};
 
 use super::{MAX_REDIRECTS, OciError, redact_url};
@@ -28,14 +36,166 @@ impl Default for Timeouts {
     }
 }
 
+/// Most bytes of response headers one hop may take, which ureq's own header
+/// limit (64 KiB) bounds.
+const HEADER_ALLOWANCE: u64 = 64 << 10;
+
+/// Raw bytes allowed on the wire for a response body of at most `body_max`
+/// bytes: the body, chunk framing at one part in 64 (chunks of 4 KiB or more
+/// stay below it), and headers for every hop of a redirect chain.
+fn wire_cap(body_max: u64) -> u64 {
+    body_max
+        .saturating_add(body_max / 64)
+        .saturating_add(HEADER_ALLOWANCE * (MAX_REDIRECTS as u64 + 1))
+}
+
+/// Bytes received from one registry exchange, below the HTTP decoder.
+///
+/// Body limits count decoded bytes only. This counts every byte read from the
+/// connection, so status lines, headers, chunk framing and trailers count too,
+/// and a read that fails still has its bytes charged. A response that passes
+/// the cap stops the connection.
+///
+/// [`Transport::send`] stores the meter in the response extensions as an
+/// `Arc<WireMeter>`, so callers can charge [`WireMeter::used`] to a budget
+/// shared by several responses.
+#[derive(Debug)]
+pub(crate) struct WireMeter {
+    used: AtomicU64,
+    cap: u64,
+}
+
+impl WireMeter {
+    fn new(cap: u64) -> Self {
+        Self {
+            used: AtomicU64::new(0),
+            cap,
+        }
+    }
+
+    /// Raw bytes read so far, failed reads included.
+    pub(crate) fn used(&self) -> u64 {
+        self.used.load(Ordering::Relaxed)
+    }
+
+    fn charge(&self, n: u64) {
+        self.used.fetch_add(n, Ordering::Relaxed);
+    }
+
+    fn exceeded(&self) -> bool {
+        self.used() > self.cap
+    }
+}
+
+/// The I/O error a [`WireMeter`] raises past its cap.
+#[derive(Debug)]
+struct WireLimit {
+    limit: u64,
+}
+
+impl fmt::Display for WireLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "response exceeds {} bytes on the wire", self.limit)
+    }
+}
+
+impl std::error::Error for WireLimit {}
+
+/// The [`OciError`] for a failed read of `url`: [`OciError::TooLarge`] when the
+/// wire cap stopped it, otherwise a network error.
+pub(crate) fn read_error(url: &str, e: &io::Error) -> OciError {
+    if let Some(WireLimit { limit }) = e.get_ref().and_then(|i| i.downcast_ref::<WireLimit>()) {
+        return OciError::TooLarge {
+            what: "response".into(),
+            limit: *limit,
+        };
+    }
+    OciError::Network {
+        url: url.to_owned(),
+        message: e.to_string(),
+    }
+}
+
+/// Adds a [`WireMeter`] on top of the connection the default connector makes.
+#[derive(Debug)]
+struct MeterConnector(Arc<WireMeter>);
+
+impl Connector<Box<dyn WireIo>> for MeterConnector {
+    type Out = Box<dyn WireIo>;
+
+    fn connect(
+        &self,
+        _details: &ConnectionDetails<'_>,
+        chained: Option<Box<dyn WireIo>>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        Ok(chained.map(|inner| {
+            Box::new(Metered {
+                inner,
+                meter: Arc::clone(&self.0),
+            }) as Box<dyn WireIo>
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct Metered {
+    inner: Box<dyn WireIo>,
+    meter: Arc<WireMeter>,
+}
+
+impl Metered {
+    fn check(&self) -> Result<(), ureq::Error> {
+        if self.meter.exceeded() {
+            let limit = self.meter.cap;
+            return Err(ureq::Error::Io(io::Error::other(WireLimit { limit })));
+        }
+        Ok(())
+    }
+}
+
+impl WireIo for Metered {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        self.inner.transmit_output(amount, timeout)
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        self.check()?;
+        // The decoder consumes input only between reads, so the growth of the
+        // unconsumed input is exactly what this read added.
+        let before = self.inner.buffers().input().len();
+        let progress = self.inner.await_input(timeout);
+        let after = self.inner.buffers().input().len();
+        self.meter.charge(after.saturating_sub(before) as u64);
+        let progress = progress?;
+        self.check()?;
+        Ok(progress)
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.inner.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
+    }
+}
+
 pub(crate) struct Transport {
-    agent: Agent,
+    config: Config,
     allow_loopback_http: bool,
 }
 
+#[derive(Clone)]
 pub(crate) struct Req<'a> {
     pub method: &'static str,
     pub url: String,
+    /// Most decoded body bytes the caller will read; the raw bytes of the
+    /// exchange are capped relative to it.
+    pub max_body: u64,
     pub headers: Vec<(&'static str, String)>,
     /// Full `Authorization` header value, sent only to the first host.
     pub authorization: Option<String>,
@@ -186,7 +346,7 @@ impl Transport {
             .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
             .build();
         Self {
-            agent: config.into(),
+            config,
             allow_loopback_http,
         }
     }
@@ -207,6 +367,14 @@ impl Transport {
         let mut url = req.url.clone();
         let mut auth = req.authorization.clone();
         let mut hops = 0;
+        // One meter and one agent per exchange: the wire cap is per response,
+        // and a pooled connection would carry it into the next request.
+        let meter = Arc::new(WireMeter::new(wire_cap(req.max_body)));
+        let agent = Agent::with_parts(
+            self.config.clone(),
+            DefaultConnector::new().chain(MeterConnector(Arc::clone(&meter))),
+            DefaultResolver::default(),
+        );
         loop {
             if !url_allowed(&url, self.allow_loopback_http) {
                 return Err(OciError::InsecureUrl(redact_url(&url)));
@@ -221,10 +389,14 @@ impl Transport {
             let request = b
                 .body(req.body.map(<[u8]>::to_vec).unwrap_or_default())
                 .map_err(|e| OciError::Invalid(format!("request for {}: {e}", redact_url(&url))))?;
-            let resp = self.agent.run(request).map_err(|e| OciError::Network {
-                url: redact_url(&url),
-                message: e.to_string(),
+            let mut resp = agent.run(request).map_err(|e| match e {
+                ureq::Error::Io(e) => read_error(&redact_url(&url), &e),
+                e => OciError::Network {
+                    url: redact_url(&url),
+                    message: e.to_string(),
+                },
             })?;
+            resp.extensions_mut().insert(Arc::clone(&meter));
             let status = resp.status().as_u16();
             if !matches!(status, 301 | 302 | 303 | 307 | 308) {
                 return Ok(resp);

@@ -14,7 +14,8 @@ use ureq::http::Response;
 
 use super::auth::{Challenge, CredentialSource, DefaultCredentials};
 use super::http::{
-    Req, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, resolve, url_allowed,
+    Req, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error, resolve,
+    url_allowed,
 };
 use super::reference::{Reference, Target};
 use super::types::{
@@ -247,6 +248,7 @@ impl Client {
         let mut resp = self.transport.send(&Req {
             method: "GET",
             url: url.clone(),
+            max_body: MAX_TOKEN_BYTES as u64,
             headers: vec![("Accept", "application/json".into())],
             authorization: cred.map(|c| c.basic_header()),
             body: None,
@@ -285,6 +287,7 @@ impl Client {
     }
 
     /// Send a request with lazy token acquisition and one retry after a 401.
+    /// The response is a manifest-sized document at most.
     fn call(
         &self,
         r: &Reference,
@@ -294,13 +297,35 @@ impl Client {
         headers: &[(&'static str, String)],
         body: Option<&[u8]>,
     ) -> Result<Response<Body>, OciError> {
+        self.call_capped(
+            r,
+            actions,
+            MAX_MANIFEST_BYTES as u64,
+            &Req {
+                method,
+                url: url.to_owned(),
+                max_body: 0,
+                headers: headers.to_vec(),
+                authorization: None,
+                body,
+            },
+        )
+    }
+
+    /// [`Client::call`] for a response body of up to `max_body` bytes; the raw
+    /// bytes read are capped relative to it.
+    fn call_capped(
+        &self,
+        r: &Reference,
+        actions: &str,
+        max_body: u64,
+        template: &Req<'_>,
+    ) -> Result<Response<Body>, OciError> {
         let scope = format!("repository:{}:{actions}", r.repository);
         let make = |authorization: Option<String>| Req {
-            method,
-            url: url.to_owned(),
-            headers: headers.to_vec(),
+            max_body,
             authorization,
-            body,
+            ..template.clone()
         };
         let first = self
             .cached(&self.token_key(r, &scope))
@@ -411,6 +436,7 @@ impl Client {
         let mut resp = self.transport.send(&Req {
             method: "GET",
             url: url.to_owned(),
+            max_body: max,
             headers: vec![],
             authorization: None,
             body: None,
@@ -421,10 +447,7 @@ impl Client {
         }
         let shown = redact_url(url);
         let mut reader = resp.body_mut().with_config().limit(max + 1).reader();
-        let copied = std::io::copy(&mut reader, out).map_err(|e| OciError::Network {
-            url: shown,
-            message: e.to_string(),
-        })?;
+        let copied = std::io::copy(&mut reader, out).map_err(|e| read_error(&shown, &e))?;
         if copied > max {
             return Err(OciError::TooLarge {
                 what: "archive".into(),
@@ -455,7 +478,19 @@ impl Client {
             });
         }
         let url = format!("{}/v2/{}/blobs/{}", self.base(r), r.repository, desc.digest);
-        let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
+        let mut resp = self.call_capped(
+            r,
+            "pull",
+            desc.size,
+            &Req {
+                method: "GET",
+                url: url.clone(),
+                max_body: 0,
+                headers: vec![],
+                authorization: None,
+                body: None,
+            },
+        )?;
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(Self::deny_or_status(&url, status));
@@ -466,10 +501,9 @@ impl Client {
         let mut buf = vec![0u8; 64 * 1024];
         let mut total: u64 = 0;
         loop {
-            let n = reader.read(&mut buf).map_err(|e| OciError::Network {
-                url: redact_url(&url),
-                message: e.to_string(),
-            })?;
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| read_error(&redact_url(&url), &e))?;
             if n == 0 {
                 break;
             }
@@ -854,10 +888,7 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
         .limit(limit as u64 + 1)
         .reader()
         .read_to_end(&mut buf)
-        .map_err(|e| OciError::Network {
-            url: what.to_owned(),
-            message: e.to_string(),
-        })?;
+        .map_err(|e| read_error(what, &e))?;
     if buf.len() > limit {
         return Err(OciError::TooLarge {
             what: what.into(),
@@ -887,10 +918,7 @@ fn read_charged(
     let _ = allowance.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(used))
     });
-    read.map_err(|e| OciError::Network {
-        url: what.to_owned(),
-        message: e.to_string(),
-    })?;
+    read.map_err(|e| read_error(what, &e))?;
     if used > cap {
         return Err(OciError::TooLarge {
             what: what.into(),
