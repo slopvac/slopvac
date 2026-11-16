@@ -452,3 +452,127 @@ def test_matrix_commands_keep_a_justified_zizmor_ignore_on_their_run_line(
     assert key_line.strip().startswith("run:")
     assert "# zizmor: ignore[template-injection]" in key_line
     assert "dist-workspace.toml" in key_line
+
+
+# --- minisign signing before the draft is published ----------------------------
+
+
+def _host_step_index(workflow, name: str) -> int:
+    steps = workflow["jobs"]["host"]["steps"]
+    return next(i for i, s in enumerate(steps) if s.get("name") == name)
+
+
+def test_artifacts_are_signed_after_cleanup_and_before_the_upload(workflow):
+    names = [s.get("name") for s in workflow["jobs"]["host"]["steps"]]
+    order = [
+        names.index(n)
+        for n in (
+            "Cleanup",
+            "Install minisign",
+            "Sign the release artifacts",
+            "Upload the artifacts to the draft release",
+            "Publish the release",
+        )
+    ]
+    assert order == sorted(order)
+
+
+def test_the_signed_directory_is_the_one_uploaded_to_the_release(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    sign = steps[_host_step_index(workflow, "Sign the release artifacts")]
+    upload = steps[
+        _host_step_index(workflow, "Upload the artifacts to the draft release")
+    ]
+    assert sign["run"].strip() == "python3 scripts/release_signing.py sign artifacts"
+    # The glob also takes the .minisig files written next to the artifacts.
+    assert 'gh release upload "$RELEASE_TAG" artifacts/*' in upload["run"]
+
+
+def test_the_signing_secret_is_in_the_signing_step_env_only(workflow):
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert text.count("MINISIGN_SECRET_KEY") == 2  # the env name and its secret
+    assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
+    steps = workflow["jobs"]["host"]["steps"]
+    holders = [s["name"] for s in steps if "MINISIGN_SECRET_KEY" in str(s)]
+    assert holders == ["Sign the release artifacts"]
+    assert "MINISIGN_PASSWORD" not in text
+
+
+def test_minisign_is_installed_by_the_pinned_script(workflow):
+    step = workflow["jobs"]["host"]["steps"][
+        _host_step_index(workflow, "Install minisign")
+    ]
+    assert step["run"] == "bash scripts/install_minisign.sh"
+
+
+# --- Homebrew tap token minted from the release App -----------------------------
+
+
+def _homebrew_steps(workflow) -> list[dict]:
+    return workflow["jobs"]["publish-homebrew-formula"]["steps"]
+
+
+def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workflow):
+    steps = _homebrew_steps(workflow)
+    mint = steps[0]
+    assert mint["id"] == "tap-token"
+    assert (
+        mint["uses"]
+        == "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
+    )
+    assert mint["with"] == {
+        "client-id": "${{ vars.RELEASE_APP_CLIENT_ID }}",
+        "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+        "owner": "srobroek",
+        "repositories": "homebrew-tap",
+        "permission-contents": "write",
+    }
+    checkout = steps[1]
+    assert checkout["with"]["repository"] == "srobroek/homebrew-tap"
+    assert checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
+    # No stored secret feeds the tap push, in this or any other workflow.
+    for path in (ROOT / ".github" / "workflows").glob("*.yml"):
+        assert "HOMEBREW_TAP_TOKEN" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_app_action_matches_the_pin_release_please_uses():
+    release_please = (ROOT / ".github" / "workflows" / "release-please.yml").read_text(
+        encoding="utf-8"
+    )
+    pin = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0"
+    assert pin in release_please
+    assert pin in WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_a_second_tap_token_in_the_template_fails_the_patch(raw):
+    old = "          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}\n"
+    assert old in raw
+    with pytest.raises(ValueError, match="expected exactly one Homebrew"):
+        patcher.harden(raw.replace(old, old + old))
+    with pytest.raises(ValueError, match="expected exactly one Homebrew"):
+        patcher.harden(raw.replace(old, ""))
+
+
+def _tap_checkout(raw: str) -> str:
+    match = patcher._TAP_CHECKOUT.search(raw)
+    assert match
+    return match.group(0)
+
+
+def test_a_missing_tap_checkout_in_the_homebrew_job_fails_the_patch(raw):
+    block = _tap_checkout(raw)
+    with pytest.raises(ValueError, match="expected exactly one Homebrew tap checkout"):
+        patcher.harden(raw.replace(block, ""))
+
+
+def test_a_duplicated_tap_checkout_in_the_homebrew_job_fails_the_patch(raw):
+    block = _tap_checkout(raw)
+    with pytest.raises(ValueError, match="expected"):
+        patcher.harden(raw.replace(block, block + block))
+
+
+def test_a_tap_checkout_outside_the_homebrew_job_is_not_rewritten(raw):
+    # Rename the job: the checkout then sits in no job the patcher recognises.
+    renamed = raw.replace(patcher._TAP_JOB, "  publish-formula-elsewhere:\n")
+    with pytest.raises(ValueError, match="expected exactly one Homebrew publish job"):
+        patcher.harden(renamed)

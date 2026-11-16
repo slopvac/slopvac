@@ -285,6 +285,34 @@ fn broken_config_files_get_a_status_and_never_echo_their_content() {
 }
 
 #[test]
+fn doctor_reports_an_unreadable_config_that_stops_every_other_command() {
+    let w = World::new();
+    fs::create_dir(w.project().join("slopvac.toml")).unwrap();
+    // Doctor runs, prints the document and exits 2 itself.
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(doc["config"]["sources"][0]["status"], "unreadable");
+    // Any other command stops on the same file before it runs.
+    Command::cargo_bin("slopvac")
+        .unwrap()
+        .current_dir(w.project())
+        .env("HOME", w.home())
+        .args(["rules"])
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::contains("error[config-unreadable]"));
+    // And `doctor --help` is help, not a doctor run.
+    Command::cargo_bin("slopvac")
+        .unwrap()
+        .current_dir(w.project())
+        .args(["doctor", "--help"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unreadable]"));
+}
+
+#[test]
 fn an_oversize_or_non_regular_config_is_unreadable() {
     let w = World::new();
     w.write("slopvac.toml", &"#".repeat(1024 * 1024 + 1));

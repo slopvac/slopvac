@@ -2424,6 +2424,7 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-update",
  "snapbox",
  "tempfile",
  "toml",
@@ -2452,6 +2453,7 @@ name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "clap",
  "ignore",
  "insta",
  "saphyr",
@@ -2599,6 +2601,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slopvac-sanitize",
  "tar",
  "tempfile",
  "thiserror",
@@ -2646,6 +2649,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-sanitize"
+version = "0.0.0"
+
+[[package]]
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
@@ -2677,6 +2684,26 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "slopvac-update"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "crossbeam-channel",
+ "flate2",
+ "minisign",
+ "minisign-verify",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "ureq",
 ]
 
 [[package]]

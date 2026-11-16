@@ -42,7 +42,7 @@ pub struct Plan {
     pub changes: Vec<Change>,
     /// Config changes that are more than a plain copy.
     pub notes: Vec<String>,
-    /// Things the user should check, such as an unknown directive id.
+    /// Things the user should check, such as a malformed steering block.
     pub warnings: Vec<String>,
 }
 
@@ -91,7 +91,7 @@ pub fn plan(
         plan_dir(root, &dir, renames, options, &mut plan, &mut dropped)?;
     }
     for doc in docs {
-        plan_document(root, &doc, renames, steering, &mut plan);
+        plan_document(root, &doc, renames, steering, &mut plan, &mut dropped);
     }
     if dropped.is_empty() {
         Ok(plan)
@@ -290,18 +290,28 @@ fn extract_tool_table(text: &str) -> Option<(String, String)> {
     Some((standalone.to_string(), doc.to_string()))
 }
 
-fn plan_document(root: &Path, path: &Path, renames: &RenameTable, steering: &str, plan: &mut Plan) {
+/// Plan the directive and steering rewrite of one document. A directive id with no
+/// rename entry stops the migration (docs/contract/config.md, section 5.2), so it
+/// goes to `dropped` with the other blocking settings.
+fn plan_document(
+    root: &Path,
+    path: &Path,
+    renames: &RenameTable,
+    steering: &str,
+    plan: &mut Plan,
+    dropped: &mut Vec<Dropped>,
+) {
     let Ok(old) = fs::read_to_string(path) else {
         return;
     };
     let label = rel(root, path);
     let (mut text, unknown) = rewrite_directives(&old, renames);
-    for id in unknown {
-        plan.warnings.push(format!(
-            "{}: directive rule id `{id}` has no 3.0 name; left unchanged",
-            label.display()
-        ));
-    }
+    dropped.extend(unknown.into_iter().map(|u| Dropped {
+        file: label.display().to_string(),
+        key: format!("slopvac-allow rule={}", u.id),
+        line: u.line,
+        reason: "directive rule id has no 3.0 name; the rename table has no entry".into(),
+    }));
     match rewrite_steering(&text, steering) {
         Ok(Some(new)) => text = new,
         Ok(None) => {}

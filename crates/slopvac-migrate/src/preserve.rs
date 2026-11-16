@@ -3,7 +3,6 @@
 //!
 //! Ported from `expand` in `tests/contract/preserve_expansion.py`. The caller writes
 //! the result into the migrated document.
-// STUB(slopvac-8l4.16.11): ported from PR #296 b138f5888a; re-verify when it lands.
 
 use std::collections::{BTreeMap, BTreeSet};
 

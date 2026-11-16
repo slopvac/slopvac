@@ -6,7 +6,6 @@
 //! entries the expansion adds, removes the ones it drops, sets the new level of an
 //! entry whose level changes (comments kept), and puts the profile switch blocks
 //! before and the guard blocks after the original overrides.
-// STUB(slopvac-8l4.16.11): follows the expansion of PR #296 b138f5888a.
 
 use std::collections::{BTreeMap, HashMap};
 

@@ -35,6 +35,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 use crate::error::PluginError;
@@ -53,7 +54,7 @@ const MAX_STORE_BYTES: u64 = 8 << 20;
 #[derive(Debug, Error)]
 pub enum TrustError {
     /// The store file is unreadable or invalid. The run exits 2; it is never treated as empty.
-    #[error("the trust store {path} is damaged: {why}")]
+    #[error("the trust store {} is damaged: {}", esc(&.path.to_string_lossy()), esc(.why))]
     Corrupt {
         /// The file.
         path: PathBuf,
@@ -61,7 +62,7 @@ pub enum TrustError {
         why: String,
     },
     /// A file system operation failed.
-    #[error("{what}: {source}")]
+    #[error("{}: {}", esc(.what), esc(&.source.to_string()))]
     Io {
         /// The operation.
         what: String,
@@ -71,12 +72,15 @@ pub enum TrustError {
     },
     /// `SLOPVAC_TRUST` named something other than a content hash.
     #[error(
-        "`{0}` in SLOPVAC_TRUST is not a sha256 content hash; it names hashes only, never a name or a tag"
+        "`{}` in SLOPVAC_TRUST is not a sha256 content hash; it names hashes only, never a name or a tag",
+        esc(.0)
     )]
     NotAHash(String),
     /// A namespace already has a different pinned key.
     #[error(
-        "namespace `{namespace}` is already bound to key {existing}; a new key needs a rotation statement signed by the old key"
+        "namespace `{}` is already bound to key {}; a new key needs a rotation statement signed by the old key",
+        esc(.namespace),
+        esc(.existing)
     )]
     NamespaceBound {
         /// The namespace.
@@ -88,10 +92,10 @@ pub enum TrustError {
     #[error(transparent)]
     Tree(#[from] ExtractError),
     /// The program cannot be tied to the verified tree or the allowlist.
-    #[error("program refused: {0}")]
+    #[error("program refused: {}", esc(.0))]
     Program(String),
     /// The environment or `PATH` handed to the plugin is not allowed.
-    #[error("environment refused: {0}")]
+    #[error("environment refused: {}", esc(.0))]
     Environment(String),
     /// A rotation statement failed verification.
     #[error("rotation refused: {0}")]
@@ -209,7 +213,8 @@ impl DeclSummary {
         }
     }
 
-    /// Human-readable differences from `self` (old) to `new`.
+    /// Human-readable differences from `self` (old) to `new`. Names from the
+    /// manifest are escaped, so a line is safe to print as it is.
     #[must_use]
     pub fn diff(&self, new: &Self) -> Vec<String> {
         let mut out = Vec::new();
@@ -218,10 +223,10 @@ impl DeclSummary {
         }
         let mut set_diff = |label: &str, old: &[String], new: &[String]| {
             for added in new.iter().filter(|x| !old.contains(x)) {
-                out.push(format!("{label} added: {added}"));
+                out.push(format!("{label} added: {}", esc(added)));
             }
             for removed in old.iter().filter(|x| !new.contains(x)) {
-                out.push(format!("{label} removed: {removed}"));
+                out.push(format!("{label} removed: {}", esc(removed)));
             }
         };
         set_diff("hook", &self.hooks, &new.hooks);
@@ -983,14 +988,21 @@ impl SpawnGate for TrustGate {
             }
             Err(e) => {
                 return Err(PluginError::HashMismatch(format!(
-                    "{name} (tree refused: {e})"
+                    "{name} (tree refused: {})",
+                    e.unescaped()
                 )));
             }
         }
         let (hash, state) = match self.state(vp, spec) {
             Ok(x) => x,
-            Err(e @ (TrustError::Program(_) | TrustError::Environment(_))) => {
-                return Err(PluginError::Usage(format!("{name}: {e}")));
+            // Raw payloads: `PluginError`'s `Display` escapes the whole message once.
+            Err(TrustError::Program(m)) => {
+                return Err(PluginError::Usage(format!("{name}: program refused: {m}")));
+            }
+            Err(TrustError::Environment(m)) => {
+                return Err(PluginError::Usage(format!(
+                    "{name}: environment refused: {m}"
+                )));
             }
             Err(_) => return Err(PluginError::Untrusted(name.clone())),
         };
