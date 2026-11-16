@@ -1175,7 +1175,7 @@ impl Run<'_> {
                     .map_err(|e| EngineError::Internal(e.to_string()))?;
                 let text = &source[line.clone()];
                 if exclusions.as_ref().is_some_and(|skip| skip.hides(span))
-                    || self.guarded(rule, &detectors, text, &(0..text.len()), span, &[])
+                    || self.guarded(rule, &detectors, text, &(0..text.len()), None, span, &[])
                     || self.suppressed(loaded.id().as_str(), &exceptions, span)
                 {
                     continue;
