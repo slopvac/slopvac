@@ -327,10 +327,6 @@ fn self_cmd() -> Command {
         .subcommand(Command::new("update").about("Update slopvac to the latest release."))
 }
 
-fn lsp() -> Command {
-    Command::new("lsp").about("Run the language server on standard input and output.")
-}
-
 fn completions() -> Command {
     Command::new("completions")
         .about("Print a shell completion script.")
@@ -390,7 +386,7 @@ pub fn command() -> Command {
         .subcommand(rules())
         .subcommand(doctor())
         .subcommand(self_cmd())
-        .subcommand(lsp())
+        .subcommand(slopvac_lsp::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
