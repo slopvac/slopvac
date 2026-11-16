@@ -305,10 +305,10 @@ fn run_helper(
         // A helper that never reads is caught by the deadline below.
         let reg = registry.to_owned();
         std::thread::spawn(move || {
-            let _ = stdin.write_all(reg.as_bytes());
+            stdin.write_all(reg.as_bytes()).ok();
         });
     }
-    let Some(mut stdout) = helper.child_mut().stdout.take() else {
+    let Some(stdout) = helper.child_mut().stdout.take() else {
         helper.kill_tree();
         return Err(cred("no helper stdout".into()));
     };
@@ -317,10 +317,11 @@ fn run_helper(
     // helper's whole tree closes every write end, so it never outlives a lookup.
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = (&mut stdout)
+        stdout
             .take(widen(HELPER_MAX_OUTPUT) + 1)
-            .read_to_end(&mut buf);
-        let _ = tx.send(buf);
+            .read_to_end(&mut buf)
+            .ok();
+        tx.send(buf).ok();
     });
     let mut exited = false;
     let mut output = None;
@@ -359,9 +360,7 @@ fn run_helper(
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let Some(out) = output else {
-        return Err(cred("helper did not finish".into()));
-    };
+    let out = output.ok_or_else(|| cred("helper did not finish".into()))?;
     let status = helper
         .reap()
         .map_err(|e| cred(format!("waiting for `{program}`: {e}")))?;

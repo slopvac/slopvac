@@ -199,7 +199,13 @@ impl From<SignError> for RevocationError {
             SignError::InvalidStatement(m) => {
                 Self::Invalid(format!("the signed statement is invalid: {m}"))
             }
-            other => Self::Invalid(other.to_string()),
+            other @ (SignError::MissingSignature
+            | SignError::DuplicateSignature
+            | SignError::KeyNotPinned { .. }
+            | SignError::Mismatch(_)
+            | SignError::Rollback(_)
+            | SignError::Fetch(_)
+            | SignError::InvalidKey(_)) => Self::Invalid(other.to_string()),
         }
     }
 }
@@ -209,7 +215,17 @@ fn raw_reason(e: RevocationError) -> String {
     match e {
         RevocationError::Invalid(m) => format!("the revocation list is invalid: {m}"),
         RevocationError::Layout(m) => format!("the revocation list artifact is malformed: {m}"),
-        other => other.to_string(),
+        other @ (RevocationError::NoRootKey
+        | RevocationError::RootKey(_)
+        | RevocationError::TooLarge
+        | RevocationError::BadSignature
+        | RevocationError::Fetch(_)
+        | RevocationError::Expired { .. }
+        | RevocationError::Rollback { .. }
+        | RevocationError::Equivocation { .. }
+        | RevocationError::CacheInvalid { .. }
+        | RevocationError::Io { .. }
+        | RevocationError::Clock(_)) => other.to_string(),
     }
 }
 

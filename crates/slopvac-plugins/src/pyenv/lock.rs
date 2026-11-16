@@ -204,12 +204,12 @@ impl PyLock {
     pub fn requirements(&self) -> String {
         let mut out = String::new();
         for p in &self.packages {
-            let _ = write!(out, "{}=={}", p.name, p.version);
+            write!(out, "{}=={}", p.name, p.version).ok();
             if let Some(m) = &p.marker {
-                let _ = write!(out, " ; {m}");
+                write!(out, " ; {m}").ok();
             }
             for w in &p.wheels {
-                let _ = write!(out, " --hash=sha256:{}", w.sha256);
+                write!(out, " --hash=sha256:{}", w.sha256).ok();
             }
             out.push('\n');
         }
@@ -510,7 +510,7 @@ fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::with_capacity(64), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
+        write!(s, "{b:02x}").ok();
         s
     })
 }

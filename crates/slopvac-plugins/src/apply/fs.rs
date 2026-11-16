@@ -158,7 +158,10 @@ pub(crate) enum Current {
 }
 
 #[cfg(unix)]
-#[expect(clippy::unnecessary_wraps)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps the signature of the Windows variant, which can fail"
+)]
 fn link_count(_: &cap_std::fs::File, m: &cap_std::fs::Metadata) -> std::io::Result<u64> {
     use cap_std::fs::MetadataExt;
     Ok(m.nlink())
@@ -339,7 +342,7 @@ pub(crate) fn replace(
     };
     let result = finish(file);
     if result.is_err() {
-        let _ = parent.remove_file(&tmp);
+        parent.remove_file(&tmp).ok();
     }
     result
 }
@@ -642,7 +645,7 @@ mod tests {
                 }
             })
             .map(|(c, _)| c);
-            let _ = tx.send(got);
+            tx.send(got).ok();
         });
         let got = rx
             .recv_timeout(std::time::Duration::from_secs(10))

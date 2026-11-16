@@ -195,11 +195,12 @@ fn apply_one(
         Current::Absent => Expect::Absent,
     };
     match file.action {
-        RecipeAction::Remove => match at.parent(false)? {
-            Some(parent) => remove(&parent, &at.name, &file.path, &expect, hook),
-            // The directory was absent when checked, so there is nothing to delete.
-            None => Ok(WriteOutcome::Absent),
-        },
+        // An absent directory (`None`) was absent when checked, so there is nothing to delete.
+        RecipeAction::Remove => at
+            .parent(false)?
+            .map_or(Ok(WriteOutcome::Absent), |parent| {
+                remove(&parent, &at.name, &file.path, &expect, hook)
+            }),
         RecipeAction::Write | RecipeAction::Merge => {
             let parent = at
                 .parent(true)?

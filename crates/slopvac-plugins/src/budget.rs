@@ -122,10 +122,9 @@ impl RunBudget {
     /// The breach message when the budget has tripped.
     pub fn admit<T>(&self, start: impl FnOnce() -> T) -> Result<T, String> {
         let breach = self.breach.lock().unwrap_or_else(PoisonError::into_inner);
-        match breach.as_ref() {
-            Some(m) => Err(m.clone()),
-            None => Ok(start()),
-        }
+        breach
+            .as_ref()
+            .map_or_else(|| Ok(start()), |m| Err(m.clone()))
     }
 
     fn charge(&self, counter: &AtomicU64, n: u64, cap: u64, what: &str) -> Result<(), String> {

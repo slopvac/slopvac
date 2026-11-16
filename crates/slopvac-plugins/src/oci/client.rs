@@ -240,9 +240,9 @@ impl Client {
         let mut url = realm.to_owned();
         url.push(if realm.contains('?') { '&' } else { '?' });
         if let Some(service) = ch.param("service") {
-            let _ = write!(url, "service={}&", encode(service));
+            write!(url, "service={}&", encode(service)).ok();
         }
-        let _ = write!(url, "scope={}", encode(scope));
+        write!(url, "scope={}", encode(scope)).ok();
         let cred = self.creds.credential(&r.registry)?;
         let mut resp = self.transport.send(&Req {
             method: "GET",
@@ -851,7 +851,7 @@ fn encode(s: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
             out.push(char::from(b));
         } else {
-            let _ = write!(out, "%{b:02X}");
+            write!(out, "%{b:02X}").ok();
         }
     }
     out

@@ -38,6 +38,13 @@ impl Contained {
 
     /// Whether the helper has exited. On Unix the exit stays unreaped, so the
     /// process group is still reserved and can be signalled safely.
+    #[cfg_attr(
+        unix,
+        expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "the non-Unix build caches the polled status, so the signature must take `&mut self`"
+        )
+    )]
     pub(super) fn has_exited(&mut self) -> io::Result<bool> {
         #[cfg(unix)]
         {
@@ -71,7 +78,7 @@ impl Contained {
             use rustix::process::{Pid, Signal, kill_process_group};
             // The helper is unreaped, so its pid still names the group. An
             // error means the group is already empty.
-            let _ = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
+            kill_process_group(Pid::from_child(&self.child), Signal::KILL).ok();
         }
         // Residual (slopvac-8l4.9.13): once the helper has exited, Windows no
         // longer has its pid to name a tree, so a descendant that outlived it and
@@ -83,8 +90,8 @@ impl Contained {
                 .args(["/T", "/F", "/PID", &self.child.id().to_string()])
                 .output();
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.child.kill().ok();
+        self.child.wait().ok();
     }
 }
 

@@ -287,14 +287,13 @@ impl Shared {
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            let _ = p.reply.try_send((Instant::now(), Err(first.clone())));
+            p.reply.try_send((Instant::now(), Err(first.clone()))).ok();
         }
         first
     }
 
     fn stderr_tail(&self) -> String {
-        let ring = lock(&self.stderr);
-        let bytes: Vec<u8> = ring.iter().copied().collect();
+        let bytes: Vec<u8> = lock(&self.stderr).iter().copied().collect();
         let start = bytes.len().saturating_sub(STDERR_SHOWN);
         let text = String::from_utf8_lossy(&bytes[start..]);
         let text = text.trim_end();
@@ -310,16 +309,20 @@ impl Shared {
     fn release_pending(&self) {
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            let _ = p.reply.try_send((
-                Instant::now(),
-                Err(PluginError::Usage("the plugin has shut down".into())),
-            ));
+            p.reply
+                .try_send((
+                    Instant::now(),
+                    Err(PluginError::Usage("the plugin has shut down".into())),
+                ))
+                .ok();
         }
     }
 
     /// Collect the exit status and stderr tail, fail every pending request.
     fn tear_down_after_exit(&self) {
-        let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
+        self.stderr_done
+            .recv_timeout(Duration::from_millis(500))
+            .ok();
         let status = self
             .group
             .status()
@@ -401,7 +404,7 @@ impl Shared {
         };
         match lock(&self.pending).remove(&id) {
             Some(p) => {
-                let _ = p.reply.try_send((Instant::now(), reply));
+                p.reply.try_send((Instant::now(), reply)).ok();
                 Ok(true)
             }
             None => unmatched(unsolicited),
@@ -679,11 +682,12 @@ impl Conn {
         deadline_passed: bool,
         method: &str,
     ) -> Reply {
-        let _ = self.notify(
+        self.notify(
             "$/cancelRequest",
             Some(json!({"id": id})),
             self.cancel_grace,
-        );
+        )
+        .ok();
         let Ok((_, answer)) = rx.recv_timeout(self.cancel_grace) else {
             lock(&self.shared.pending).remove(&id);
             let err = self.timeout(&format!("`{method}` ignored its cancel"));
@@ -703,7 +707,7 @@ impl Conn {
 
     fn cancel_all(&self) {
         for p in lock(&self.shared.pending).values() {
-            let _ = p.cancel.try_send(());
+            p.cancel.try_send(()).ok();
         }
     }
 }
@@ -943,7 +947,7 @@ impl Plugin {
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
         // The reader stopped after the reply; it resumes under the new limit.
         if let Some(ready) = conn.limits_ready.take() {
-            let _ = ready.send(());
+            ready.send(()).ok();
         }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
         let (inflight_tx, inflight_rx) = bounded(negotiated.max_in_flight);
@@ -1049,7 +1053,7 @@ impl Plugin {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
             }
-            let _ = self.conn.notify("exit", None, self.timeouts.exit);
+            self.conn.notify("exit", None, self.timeouts.exit).ok();
         }
         // Closing the pipe ends the writer after it flushes `exit`.
         lock(&shared.frames).take();
@@ -1130,7 +1134,7 @@ struct Slot<'a>(&'a Receiver<()>);
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
-        let _ = self.0.try_recv();
+        self.0.try_recv().ok();
     }
 }
 
@@ -1267,7 +1271,9 @@ mod tests {
             let far = Instant::now() + Duration::from_secs(60);
             match wait_for(&reply_rx, &cancel_rx, far) {
                 Wake::Reply(Some(Ok(v))) => assert_eq!(v, json!(round)),
-                other => panic!("round {round}: {other:?}"),
+                other @ (Wake::Reply(_) | Wake::Late(_) | Wake::Cancel | Wake::Deadline) => {
+                    panic!("round {round}: {other:?}")
+                }
             }
         }
     }

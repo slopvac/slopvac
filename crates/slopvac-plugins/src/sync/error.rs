@@ -149,7 +149,12 @@ impl SyncError {
             }
             Self::Revoked { .. } => "pack-revoked",
             Self::Revocation(e) => e.code(),
-            _ => "sync-failed",
+            Self::Unsupported { .. }
+            | Self::Source { .. }
+            | Self::Fetch { .. }
+            | Self::Layout { .. }
+            | Self::Extract { .. }
+            | Self::Store(_) => "sync-failed",
         }
     }
 }

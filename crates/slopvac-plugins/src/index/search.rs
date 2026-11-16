@@ -101,7 +101,7 @@ impl SearchHit<'_> {
         let e = self.entry;
         let s = slopvac_sanitize::line;
         let mut out = String::new();
-        let _ = writeln!(
+        writeln!(
             out,
             "{}/{} {} ({}, needs slopvac API {})",
             s(&e.namespace),
@@ -109,27 +109,30 @@ impl SearchHit<'_> {
             e.version,
             e.kind.as_str(),
             e.slopvac_api
-        );
-        let _ = writeln!(out, "  {}", s(&e.name));
-        let _ = writeln!(out, "  {}", s(&e.description));
-        let _ = writeln!(out, "  source: {}", s(&e.source));
-        let _ = writeln!(
+        )
+        .ok();
+        writeln!(out, "  {}", s(&e.name)).ok();
+        writeln!(out, "  {}", s(&e.description)).ok();
+        writeln!(out, "  source: {}", s(&e.source)).ok();
+        writeln!(
             out,
             "  publisher key: {} (fingerprint {})",
             s(&e.publisher_key.key_id),
             s(&e.publisher_key.fingerprint)
-        );
+        )
+        .ok();
         if RESERVED_NAMESPACES.contains(&e.namespace.as_str()) {
-            let _ = writeln!(
+            writeln!(
                 out,
                 "  warning: claims first-party namespace `{}`; not verified",
                 s(&e.namespace)
-            );
+            )
+            .ok();
         }
-        let _ = writeln!(
+        writeln!(
             out,
             "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
-        );
+        ).ok();
         out
     }
 }

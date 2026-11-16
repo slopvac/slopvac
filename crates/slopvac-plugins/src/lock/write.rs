@@ -14,7 +14,7 @@ fn quote(s: &str) -> String {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if c.is_control() => {
-                let _ = write!(out, "\\u{:04X}", u32::from(c));
+                write!(out, "\\u{:04X}", u32::from(c)).ok();
             }
             c => out.push(c),
         }
@@ -29,7 +29,7 @@ pub(super) fn write(lock: &Lockfile) -> String {
         out.push_str("packs = []\n");
     }
     for pack in lock.packs() {
-        let _ = write!(
+        write!(
             out,
             "\n[[packs]]\nid = {}\nkind = {}\nversion = {}\nslopvac_api = {}\nsource = {}\ndigest = {}\n",
             quote(pack.id.as_str()),
@@ -38,18 +38,19 @@ pub(super) fn write(lock: &Lockfile) -> String {
             pack.slopvac_api,
             quote(&pack.source.to_string()),
             quote(pack.digest.as_str()),
-        );
+        ).ok();
         if !pack.requires.is_empty() {
             let ids: Vec<String> = pack.requires.iter().map(|id| quote(id.as_str())).collect();
-            let _ = writeln!(out, "requires = [{}]", ids.join(", "));
+            writeln!(out, "requires = [{}]", ids.join(", ")).ok();
         }
         if let Some(sig) = &pack.signature {
-            let _ = write!(
+            write!(
                 out,
                 "\n[packs.signature]\nkey_id = {}\nnot_before = {}\n",
                 quote(sig.key_id.as_str()),
                 quote(sig.not_before.as_str()),
-            );
+            )
+            .ok();
         }
     }
     out

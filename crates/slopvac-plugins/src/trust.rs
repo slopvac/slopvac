@@ -168,11 +168,16 @@ pub struct TrustInputs<'a> {
 pub fn trust_hash(i: &TrustInputs<'_>) -> Digest {
     let mut env: Vec<[&str; 2]> = i.env.iter().map(|(k, v)| [k.as_str(), v]).collect();
     env.sort_unstable();
+    #[expect(
+        clippy::expect_used,
+        reason = "the derived Serialize of the declaration cannot fail, and a fallback would hash different bytes"
+    )]
+    let declaration = serde_json::to_value(i.declaration).expect("declaration serialises");
     let doc = json!({
         "v": 1,
         "name": i.name,
         "tree": i.tree.as_str(),
-        "declaration": serde_json::to_value(i.declaration).expect("declaration serialises"),
+        "declaration": declaration,
         "program": i.program,
         "args": i.args,
         "env": env,
@@ -317,7 +322,10 @@ fn strip_extension_keys(v: &mut serde_json::Value) {
             map.values_mut().for_each(strip_extension_keys);
         }
         serde_json::Value::Array(items) => items.iter_mut().for_each(strip_extension_keys),
-        _ => {}
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
     }
 }
 

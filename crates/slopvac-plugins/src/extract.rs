@@ -156,7 +156,7 @@ impl std::error::Error for ExtractError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            _ => None,
+            Self::Refused(_) | Self::Malformed(_) | Self::Tampered { .. } => None,
         }
     }
 }
@@ -1152,7 +1152,7 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
     let mut stack = vec![(dir.to_owned(), 0usize)];
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     while let Some((path, depth)) = stack.pop() {
-        let _ = set_mode(&path, 0o700);
+        set_mode(&path, 0o700).ok();
         let Ok(rd) = fs::read_dir(&path) else {
             continue;
         };
@@ -1167,7 +1167,7 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
                 stack.push((e.path(), depth + 1));
             } else if cfg!(windows) && ty.is_file() {
                 // Windows refuses to delete read-only files.
-                let _ = set_mode(&e.path(), 0o600);
+                set_mode(&e.path(), 0o600).ok();
             }
         }
         if oversized {
@@ -1264,7 +1264,7 @@ mod open_regular_tests {
     fn within_ten_seconds<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(f());
+            tx.send(f()).ok();
         });
         rx.recv_timeout(Duration::from_secs(10))
             .expect("the open blocked")

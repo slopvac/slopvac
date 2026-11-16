@@ -63,7 +63,13 @@ pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
     let root = Obj::new(&table, String::new(), &["schema_version", "packs"])?;
     match root.required("schema_version")? {
         Value::Integer(3) => {}
-        _ => return Err(err("/schema_version", "must be the integer 3")),
+        Value::String(_)
+        | Value::Integer(_)
+        | Value::Float(_)
+        | Value::Boolean(_)
+        | Value::Datetime(_)
+        | Value::Array(_)
+        | Value::Table(_) => return Err(err("/schema_version", "must be the integer 3")),
     }
     let items = root
         .required("packs")?

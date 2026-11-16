@@ -247,6 +247,7 @@ impl Group {
         if st.reaped.is_none() {
             st.forced = true;
             self.kill_once(&mut st);
+            drop(st);
         }
     }
 
@@ -345,6 +346,7 @@ impl Group {
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
+        drop(st);
         true
     }
 }
@@ -380,6 +382,10 @@ impl Leader {
 
     /// Block until the leader exits, but leave it unreaped so its ids stay reserved.
     #[cfg(unix)]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the non-Unix variant stores the exit status, so both take `&mut self`"
+    )]
     pub(crate) fn wait_exit(&mut self) {
         use rustix::io::Errno;
         use rustix::process::{WaitId, WaitIdOptions, waitid};
@@ -428,8 +434,8 @@ fn stop_group(leader: u32) {
     use rustix::process::{Signal, kill_process, kill_process_group};
     if let Some(pid) = unix::pid(leader) {
         // An error means the group is already gone, or the leader left it.
-        let _ = kill_process_group(pid, Signal::STOP);
-        let _ = kill_process(pid, Signal::STOP);
+        kill_process_group(pid, Signal::STOP).ok();
+        kill_process(pid, Signal::STOP).ok();
     }
 }
 
@@ -447,8 +453,8 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
     struct Last(rustix::process::Pid, Signal);
     impl Drop for Last {
         fn drop(&mut self) {
-            let _ = kill_process_group(self.0, self.1);
-            let _ = kill_process(self.0, self.1);
+            kill_process_group(self.0, self.1).ok();
+            kill_process(self.0, self.1).ok();
         }
     }
 
@@ -898,9 +904,9 @@ mod unix {
         let exited = out.is_some() && exited_by(&child, deadline);
         // Still unreaped, so the helper's ids are its own. The helper itself
         // is killed too, in case it moved to another group.
-        let _ = child.kill();
+        child.kill().ok();
         if let Some(g) = pid(child.id()) {
-            let _ = rustix::process::kill_process_group(g, Signal::KILL);
+            rustix::process::kill_process_group(g, Signal::KILL).ok();
         }
         let ok = child.wait().is_ok_and(|s| s.success());
         out.filter(|_| exited && ok)
@@ -914,7 +920,7 @@ mod unix {
             let mut buf = Vec::new();
             let limit = widen(TABLE_MAX_BYTES) + 1;
             let read = (&mut pipe).take(limit).read_to_end(&mut buf);
-            let _ = tx.send(read.ok().map(|_| buf));
+            tx.send(read.ok().map(|_| buf)).ok();
         });
         rx.recv_deadline(deadline)
             .ok()

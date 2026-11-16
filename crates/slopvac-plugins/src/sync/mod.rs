@@ -275,7 +275,7 @@ impl<'a> Syncer<'a> {
         let change = match before {
             TreeState::Intact(dir) if *dir == done.root => Change::Unchanged,
             TreeState::Tampered(_) => Change::Reinstalled,
-            _ => Change::Installed,
+            TreeState::Absent | TreeState::Intact(_) => Change::Installed,
         };
         Ok(outcome(change, done.root, done.quarantined))
     }
@@ -672,7 +672,10 @@ pub fn status(
                         _ => PackState::InPlaceChanged(dir),
                     }
                 }
-                _ => match store.inspect(&pack.digest)? {
+                SourceKind::Oci(_)
+                | SourceKind::Archive(_)
+                | SourceKind::Git { .. }
+                | SourceKind::Path(_) => match store.inspect(&pack.digest)? {
                     TreeState::Absent => PackState::NotInstalled,
                     TreeState::Intact(dir) => PackState::Recorded(dir),
                     TreeState::Tampered(dir) => PackState::Tampered(dir),

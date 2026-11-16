@@ -220,7 +220,17 @@ impl std::fmt::Display for PyEnvError {
                 esc(&Self::step_head(step, status)),
                 terminal(output)
             ),
-            _ => f.write_str(&esc(&self.unescaped())),
+            Self::Lock(_)
+            | Self::SourceOnly { .. }
+            | Self::Wheel { .. }
+            | Self::Installer(_)
+            | Self::OfflinePythonMissing(_)
+            | Self::Changed { .. }
+            | Self::Refused(_)
+            | Self::UnsupportedPlatform
+            | Self::Record { .. }
+            | Self::Tree(_)
+            | Self::Io { .. } => f.write_str(&esc(&self.unescaped())),
         }
     }
 }
@@ -230,7 +240,16 @@ impl std::error::Error for PyEnvError {
         match self {
             Self::Tree(e) => Some(e),
             Self::Io { source, .. } => Some(source),
-            _ => None,
+            Self::Lock(_)
+            | Self::SourceOnly { .. }
+            | Self::Wheel { .. }
+            | Self::Installer(_)
+            | Self::OfflinePythonMissing(_)
+            | Self::Step { .. }
+            | Self::Changed { .. }
+            | Self::Refused(_)
+            | Self::UnsupportedPlatform
+            | Self::Record { .. } => None,
         }
     }
 }
@@ -435,7 +454,8 @@ impl ManagedEnv {
             "platform": i.platform,
             "machine": i.machine,
         });
-        String::from_utf8(canonical_json(&doc)).expect("canonical JSON is UTF-8")
+        // `canonical_json` writes UTF-8 only, so the lossy conversion never substitutes.
+        String::from_utf8_lossy(&canonical_json(&doc)).into_owned()
     }
 
     /// The digest of the lock, the interpreter request and the content
@@ -905,7 +925,7 @@ struct Staging(PathBuf, bool);
 impl Drop for Staging {
     fn drop(&mut self) {
         if self.1 {
-            let _ = evict(&self.0);
+            evict(&self.0).ok();
         }
     }
 }
@@ -944,8 +964,8 @@ fn run(
         }
     };
     let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
+        child.kill().ok();
+        child.wait().ok();
         return Err(PyEnvError::Step {
             step: step.to_owned(),
             status: "timed out".into(),

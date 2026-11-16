@@ -142,7 +142,7 @@ impl PublicKey {
     pub fn key_id(&self) -> String {
         // minisign prints the id as a little-endian integer: reverse the stored bytes.
         self.id.iter().rev().fold(String::new(), |mut acc, b| {
-            let _ = write!(acc, "{b:02X}");
+            write!(acc, "{b:02X}").ok();
             acc
         })
     }
@@ -290,7 +290,9 @@ fn canonical(v: &Value, out: &mut Vec<u8>) {
             }
             out.push(b']');
         }
-        other => out.extend_from_slice(other.to_string().as_bytes()),
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => {
+            out.extend_from_slice(other.to_string().as_bytes());
+        }
     }
 }
 
@@ -309,7 +311,12 @@ impl Statement {
     /// Never: the type always serialises.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        canonical_json(&serde_json::to_value(self).expect("statement serialises"))
+        #[expect(
+            clippy::expect_used,
+            reason = "the derived Serialize of Statement cannot fail, and a fallback would sign different bytes"
+        )]
+        let value = serde_json::to_value(self).expect("statement serialises");
+        canonical_json(&value)
     }
 
     /// Build the statement for a manifest that has no signature layers yet.

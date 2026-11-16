@@ -37,10 +37,10 @@ fn read_line<R: BufRead>(r: &mut R) -> Result<Option<Vec<u8>>, FrameError> {
             }
             return Err(framing("stream ended inside a header line"));
         }
-        let (take, found) = match buf.iter().position(|&b| b == b'\n') {
-            Some(i) => (i + 1, true),
-            None => (buf.len(), false),
-        };
+        let (take, found) = buf
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or((buf.len(), false), |i| (i + 1, true));
         // The line ending adds two bytes beyond the content limit.
         if line.len() + take > MAX_HEADER_LINE + 2 {
             return Err(framing(format!(

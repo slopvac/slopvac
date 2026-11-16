@@ -131,7 +131,7 @@ impl Store {
         if ok {
             Some(path)
         } else {
-            let _ = fs::remove_file(&path);
+            fs::remove_file(&path).ok();
             None
         }
     }
