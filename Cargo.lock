@@ -687,6 +687,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "etcetera"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de48cc4d1c1d97a20fd819def54b890cadde72ed3ad0c614822a0a433361be96"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2510,6 +2520,16 @@ dependencies = [
  "slopvac-rules",
  "slopvac-terms",
  "slopvac-text",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "slopvac-fs"
+version = "0.0.0"
+dependencies = [
+ "etcetera",
+ "proptest",
  "tempfile",
  "thiserror",
 ]
