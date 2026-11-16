@@ -122,6 +122,11 @@ const CLAUSE_OPENERS: &[&str] = &[
     "while", "who", "whom", "whose",
 ];
 
+/// Punctuation that ends the negated phrase: it opens a new clause, a list or an aside.
+const CLAUSE_PUNCTUATION: &[char] = &[
+    ';', ':', ',', '—', '–', '(', ')', '[', ']', '{', '}', '"', '“', '”',
+];
+
 /// The words of `text`, lowercase: runs of letters and digits, with inner `-` and `_`.
 fn words(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
@@ -139,16 +144,40 @@ fn stem(word: &str) -> &str {
     }
 }
 
+/// The byte offset in the projected text of the token that holds source byte `source`.
+/// Inside an identity token the offset is exact; inside any other token it is the token's
+/// start.
+fn projected_offset(projection: &slopvac_parse::Projection, source: usize) -> Option<usize> {
+    let mut offset = 0;
+    for token in projection.tokens() {
+        let (start, end) = (token.src.start(), token.src.end());
+        if token.kind.is_real() && start <= source && source < end {
+            return Some(match token.kind {
+                slopvac_parse::TokenKind::Identity => offset + (source - start),
+                _ => offset,
+            });
+        }
+        offset += token.text.len();
+    }
+    None
+}
+
 /// The negated term of a contrastive-appositive match, as a comparison key.
 ///
 /// The match has the form `X does A; it does not B`. The negated term is the last content
 /// word of `B`, the head of its closing noun phrase: `yaml` in `it does not read YAML`,
 /// `judge` in `it does not judge`. `B` ends at the first conjunction or subordinator, so
-/// `it does not confirm that it started` yields `confirm`. A content word is any word that
-/// is not in [`FUNCTION_WORDS`]. A match with no `;` or `,` followed by `not` has no
+/// `it does not confirm that it started` yields `confirm`. `B` also ends at the first
+/// punctuation that opens another clause or an aside ([`CLAUSE_PUNCTUATION`]), so in
+/// `it does not accept YAML; it emits XML` the term is `yaml`. A content word is any word
+/// that is not in [`FUNCTION_WORDS`]. A match with no `;` or `,` followed by `not` has no
 /// negated term.
 fn negated_term(matched: &str) -> Option<String> {
     let (_, negation) = matched.split_once([';', ','])?;
+    let negation = negation
+        .split(CLAUSE_PUNCTUATION)
+        .next()
+        .unwrap_or(negation);
     let mut tokens = words(negation);
     // The negator is `not`, alone or after a subject and an auxiliary: `it does not`.
     tokens.by_ref().take(3).find(|w| w == "not")?;
@@ -180,16 +209,13 @@ impl NegatedAntecedent {
                 && site.span.end() <= b.span.end()
         });
         // `site.text` may be a part of the block, so the block text gives the full prefix.
-        let block_text = owner.and_then(|i| {
-            blocks[i]
-                .projection
-                .as_ref()
-                .map(slopvac_parse::Projection::text)
+        // The match's source start locates it: the same sentence can occur twice.
+        let in_block = owner.and_then(|i| {
+            let projection = blocks[i].projection.as_ref()?;
+            let at = projected_offset(projection, site.span.start())?;
+            projection.text().get(..at)
         });
-        let before = match block_text.and_then(|t| t.find(site.text).map(|at| (t, at))) {
-            Some((t, at)) => &t[..at + site.range.start],
-            None => &site.text[..site.range.start],
-        };
+        let before = in_block.unwrap_or(&site.text[..site.range.start]);
         let mut sentences = split_sentences(before).ok()?;
         if sentences.len() < ANTECEDENT_SENTENCES
             && let Some(i) = owner
@@ -288,11 +314,15 @@ mod tests {
 
     const NEEDLE: &str = "The parser reads JSON; it does not read YAML";
 
-    /// Whether `negated-antecedent` drops a match of `needle` in `source`. The match is the
-    /// first occurrence of `needle`, taken in the prose of the block that holds it.
-    fn detects(source: &str, needle: &str) -> bool {
+    /// Whether `negated-antecedent` drops the `nth` match (from 0) of `needle` in `source`.
+    /// The match is taken in the prose of the block that holds it.
+    fn detects_nth(source: &str, needle: &str, nth: usize) -> bool {
         let document = parse_markdown(source, Span::new(0, source.len()).unwrap()).unwrap();
-        let at = source.find(needle).expect("needle is in the source");
+        let at = source
+            .match_indices(needle)
+            .nth(nth)
+            .expect("needle is in the source")
+            .0;
         let span = Span::new(at, at + needle.len()).unwrap();
         let block = document
             .blocks
@@ -304,7 +334,14 @@ mod tests {
             })
             .expect("a block holds the needle");
         let text = block.projection.as_ref().unwrap().text();
-        let start = text.find(needle).expect("needle is in the prose");
+        // The source is plain prose, so the needle's offset in its block is its offset in
+        // the block's text, counting the same occurrences.
+        let in_block = source[block.span.start()..at].matches(needle).count();
+        let start = text
+            .match_indices(needle)
+            .nth(in_block)
+            .expect("needle is in the prose")
+            .0;
         let range = start..start + needle.len();
         let site = MatchSite {
             text,
@@ -316,28 +353,8 @@ mod tests {
         Detectors::builtin().detects("negated-antecedent", &site)
     }
 
-    #[test]
-    fn the_negated_term_is_the_last_content_word_of_the_negated_clause() {
-        for (matched, want) in [
-            ("The parser reads JSON; it does not read YAML", Some("yaml")),
-            (
-                "The client speaks HTTP, not the old FTP protocol",
-                Some("protocol"),
-            ),
-            ("The tool checks prose; it does not judge", Some("judge")),
-            (
-                "It acknowledges the run; it does not confirm that it started",
-                Some("confirm"),
-            ),
-            (
-                "The hosts list servers; it is not about servers",
-                Some("server"),
-            ),
-            ("The parser reads JSON", None),
-            ("The parser reads JSON; it reads nothing else", None),
-        ] {
-            assert_eq!(negated_term(matched).as_deref(), want, "{matched}");
-        }
+    fn detects(source: &str, needle: &str) -> bool {
+        detects_nth(source, needle, 0)
     }
 
     #[test]
@@ -399,5 +416,57 @@ mod tests {
     fn a_match_without_a_negated_clause_is_not_detected() {
         let doc = "The module loads YAML files. The parser reads JSON.\n";
         assert!(!detects(doc, "The parser reads JSON"));
+    }
+
+    #[test]
+    fn a_repeated_contrast_checks_the_sentences_before_its_own_occurrence() {
+        // The first copy follows "We ship YAML."; the second follows two sentences that
+        // never name it.
+        let doc = format!("We ship YAML. {NEEDLE}. It is fast. It is big. {NEEDLE}.\n");
+        assert!(detects_nth(&doc, NEEDLE, 0));
+        assert!(!detects_nth(&doc, NEEDLE, 1));
+    }
+
+    #[test]
+    fn the_term_is_the_head_of_the_closing_phrase_of_the_negated_clause() {
+        let needle = "The client speaks HTTP, not the old FTP protocol";
+        // The head noun is `protocol`, not the modifier `FTP`.
+        assert!(detects(
+            &format!("The protocol is old. {needle}.\n"),
+            needle
+        ));
+        assert!(!detects(&format!("We study FTP. {needle}.\n"), needle));
+    }
+
+    #[test]
+    fn the_negated_clause_ends_at_a_conjunction_or_subordinator() {
+        let needle = "It acknowledges the run; it does not confirm that it started";
+        assert!(detects(&format!("We confirm runs. {needle}.\n"), needle));
+        assert!(!detects(&format!("It started late. {needle}.\n"), needle));
+    }
+
+    #[test]
+    fn a_later_clause_after_a_semicolon_does_not_supply_the_term() {
+        let needle = "The loader accepts CSV; it does not accept YAML; it emits XML";
+        // `XML` follows the negated clause, so an earlier `XML` is not the antecedent.
+        assert!(!detects(&format!("We use XML. {needle}.\n"), needle));
+        assert!(detects(&format!("We use YAML. {needle}.\n"), needle));
+    }
+
+    #[test]
+    fn an_aside_after_a_dash_or_parenthesis_does_not_supply_the_term() {
+        for needle in [
+            "The loader accepts CSV; it does not accept YAML — it emits XML",
+            "The loader accepts CSV; it does not accept YAML (it emits XML)",
+        ] {
+            assert!(!detects(&format!("We use XML. {needle}.\n"), needle));
+            assert!(detects(&format!("We use YAML. {needle}.\n"), needle));
+        }
+    }
+
+    #[test]
+    fn a_plural_negated_term_matches_its_singular() {
+        let needle = "The hosts list servers; it is not about servers";
+        assert!(detects(&format!("One server runs. {needle}.\n"), needle));
     }
 }
