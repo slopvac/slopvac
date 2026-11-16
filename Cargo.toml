@@ -117,7 +117,7 @@ missing_panics_doc = "allow"
 # Remove a name here when its first dependant lands; cargo-shear then guards it.
 # pcre2-sys is a deliberate version pin of a transitive dependency of pcre2.
 [workspace.metadata.cargo-shear]
-ignored = ["pcre2-sys", "slopvac-styles"]
+ignored = ["pcre2-sys"]
 
 [profile.release]
 lto = "thin"
