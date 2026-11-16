@@ -369,9 +369,9 @@ impl<'a> Syncer<'a> {
     }
 
     fn locked_digest(pack: &LockedPack) -> Result<Digest, SyncError> {
-        Digest::parse(pack.digest.as_str()).map_err(|e| SyncError::Source {
+        Digest::parse_raw(pack.digest.as_str()).map_err(|why| SyncError::Source {
             id: pack.id.clone(),
-            why: e.to_string(),
+            why,
         })
     }
 

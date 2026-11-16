@@ -9,8 +9,6 @@ use std::fmt;
 use semver::Version;
 use serde::Serialize;
 
-use super::text::sanitize_for_terminal;
-
 /// Largest index document the reader accepts, in bytes. Checked before parsing
 /// (threat model N11).
 pub const MAX_INDEX_BYTES: usize = 32 * 1024 * 1024;
@@ -44,7 +42,7 @@ impl IndexError {
     pub(super) fn new(pointer: impl Into<String>, message: impl AsRef<str>) -> Self {
         Self {
             pointer: pointer.into(),
-            message: sanitize_for_terminal(message.as_ref()),
+            message: slopvac_sanitize::line(message.as_ref()),
         }
     }
 }
@@ -99,7 +97,7 @@ pub struct IndexEntry {
     /// Display name.
     pub name: String,
     /// One-line summary. Untrusted text: print it through
-    /// [`sanitize_for_terminal`].
+    /// [`slopvac_sanitize::line`].
     pub description: String,
     /// Latest listed version, without build metadata.
     pub version: Version,

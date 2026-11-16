@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +27,16 @@ pub struct Globals {
 /// The flags are global, so they count before or after the subcommand.
 #[must_use]
 pub fn resolve_globals(matches: &ArgMatches, env: &dyn Env) -> Globals {
+    resolve_globals_with(matches, env, None)
+}
+
+/// Like [`resolve_globals`], with the project `[network] offline` value.
+#[must_use]
+pub fn resolve_globals_with(
+    matches: &ArgMatches,
+    env: &dyn Env,
+    config_offline: Option<bool>,
+) -> Globals {
     let flag = if matches.get_flag("no-color") {
         Some(ColorChoice::Never)
     } else {
@@ -35,7 +45,7 @@ pub fn resolve_globals(matches: &ArgMatches, env: &dyn Env) -> Globals {
             .and_then(|v| ColorChoice::parse(v))
     };
     Globals {
-        offline: offline::resolve(matches.get_flag("offline"), env, None),
+        offline: offline::resolve(matches.get_flag("offline"), env, config_offline),
         color: color::resolve(flag, env),
     }
 }
@@ -88,7 +98,38 @@ where
     T: Into<OsString>,
 {
     let tree = cli::command();
-    let args = cli::insert_default_command(args.into_iter().map(Into::into).collect(), &tree);
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let policy = match slopvac_update::policy::network_policy(&cwd) {
+        Ok(policy) => policy,
+        Err(err) => {
+            // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
+            let message = format!(
+                "{}: {}",
+                redact::path_for_log(err.path(), &cwd),
+                err.problem()
+            );
+            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
+            return exit::code(exit::INCOMPLETE);
+        }
+    };
+    let config_offline = policy.offline.then_some(true);
+    // `--version --json` is read before the default `lint` command is inserted.
+    if let Some(flag) = version_json_offline_flag(&args) {
+        let rt = update_runtime(
+            env,
+            offline::resolve(flag, env, config_offline),
+            policy.update_check,
+        );
+        return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
+            Ok(code) => exit::code(code),
+            Err(failure) => {
+                let _ = writeln!(err_out, "{failure}");
+                exit::code(exit::INCOMPLETE)
+            }
+        };
+    }
+    let args = cli::insert_default_command(args, &tree);
     let early_color = color::resolve(scan_color_flag(&args), env);
     let tree = tree.color(if early_color {
         clap::ColorChoice::Always
@@ -123,14 +164,14 @@ where
             };
         }
     };
-    let globals = resolve_globals(&matches, env);
+    let globals = resolve_globals_with(&matches, env, config_offline);
     logging::init(env, globals.color);
     tracing::debug!(
         offline = globals.offline,
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, out, err_out) {
+    match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -141,11 +182,20 @@ where
 
 fn dispatch(
     matches: &ArgMatches,
+    globals: Globals,
+    update_check: Option<bool>,
+    env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
-        Some(("lint", m)) => lint(m, err_out),
+        Some(("self", m)) => {
+            let rt = update_runtime(env, globals.offline, update_check);
+            let text = slopvac_update::command::run(m, &rt)
+                .map_err(|f| CliError::new(f.code, f.message))?;
+            write_stdout(out, text.as_bytes())
+        }
+        Some(("lint", m)) => lint(m, out, err_out),
         Some(("lsp", m)) => slopvac_lsp::run(m)
             .map(|exit| match exit {
                 slopvac_lsp::Exit::AfterShutdown => exit::PASS,
@@ -182,7 +232,6 @@ fn dispatch(
                 .or(match name {
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
                     "doctor" => Some("slopvac-8l4.12.5"),
-                    "self" => Some("slopvac-8l4.12.4"),
                     _ => None,
                 });
             Err(CliError::new(
@@ -212,12 +261,59 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
     Ok(())
 }
 
+/// For `--version --json` with only global flags around it, whether `--offline` was among them.
+///
+/// Returns `None` for any other invocation. The flags may come in any order.
+fn version_json_offline_flag(args: &[OsString]) -> Option<bool> {
+    let (mut version, mut json, mut offline) = (false, false, false);
+    let mut tokens = args.iter().skip(1).map(|a| a.to_str());
+    while let Some(token) = tokens.next() {
+        match token? {
+            "--version" | "-V" => version = true,
+            "--json" => json = true,
+            "--offline" => offline = true,
+            "--no-color" => {}
+            "--color" => {
+                ColorChoice::parse(tokens.next()??)?;
+            }
+            t if t
+                .strip_prefix("--color=")
+                .is_some_and(|v| ColorChoice::parse(v).is_some()) => {}
+            _ => return None,
+        }
+    }
+    (version && json).then_some(offline)
+}
+
+/// Build the update runtime from the injected environment.
+fn update_runtime(
+    env: &dyn Env,
+    offline: bool,
+    update_check: Option<bool>,
+) -> slopvac_update::command::Runtime {
+    let vars: std::collections::HashMap<&'static str, String> = slopvac_update::command::ENV_VARS
+        .iter()
+        .filter_map(|name| env.var(name).map(|v| (*name, v)))
+        .collect();
+    slopvac_update::command::Runtime::with_var(
+        offline,
+        env!("CARGO_PKG_VERSION"),
+        update_check,
+        Box::new(move |k| vars.get(k).cloned()),
+    )
+}
+
 fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
     // 2.x config and a migrated tree.
-    slopvac_migrate::execute(m, &slopvac_migrate::NullLinter, out)
-        .map(|()| exit::PASS)
-        .map_err(|e| CliError::new(e.code(), e.to_string()))
+    slopvac_migrate::execute(
+        m,
+        &slopvac_migrate::NullLinter,
+        &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
+        out,
+    )
+    .map(|()| exit::PASS)
+    .map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
@@ -247,15 +343,20 @@ fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     write_stdout(out, &page)
 }
 
-fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+fn lint(
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
     // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
-    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, err_out)
+    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, out, err_out)
 }
 
 fn lint_with(
     m: &ArgMatches,
     stdin_source: &mut dyn std::io::Read,
     linter: &dyn Linter,
+    out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
@@ -292,6 +393,7 @@ fn lint_with(
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
+    output::deliver(m, &outcome, out)?;
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
         exit::INCOMPLETE
@@ -328,7 +430,7 @@ mod tests {
         let (_, m) = matches.subcommand().expect("lint");
         let recorder = Recorder::default();
         let mut err = Vec::new();
-        lint_with(m, &mut &*input, &recorder, &mut err).expect("lint runs");
+        lint_with(m, &mut &*input, &recorder, &mut Vec::new(), &mut err).expect("lint runs");
         recorder.0.into_inner()
     }
 

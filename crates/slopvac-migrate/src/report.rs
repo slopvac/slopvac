@@ -108,25 +108,25 @@ mod tests {
     #[test]
     fn maps_2x_ids_and_joins_sides() {
         let rows = compare(
-            &[f("a.x", 3), f("a.y", 1)],
-            &[f("core:a.x", 2), f("core:a.z", 4)],
+            &[f("orwell.not-un", 3), f("prose-craft.latinisms", 1)],
+            &[f("core:orwell.not-un", 2), f("core:prose-craft.spacing", 4)],
             &RenameTable::bundled(),
         );
         assert_eq!(
             rows,
             vec![
                 RuleDelta {
-                    rule: "core:a.x".into(),
+                    rule: "core:orwell.not-un".into(),
                     before: 3,
                     after: 2
                 },
                 RuleDelta {
-                    rule: "core:a.y".into(),
+                    rule: "core:prose-craft.latinisms".into(),
                     before: 1,
                     after: 0
                 },
                 RuleDelta {
-                    rule: "core:a.z".into(),
+                    rule: "core:prose-craft.spacing".into(),
                     before: 0,
                     after: 4
                 },

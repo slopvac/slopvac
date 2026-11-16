@@ -8,6 +8,8 @@ use slopvac_migrate::{
     render_diff, restore, run,
 };
 
+const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
+
 fn write(root: &Path, name: &str, text: &str) {
     let p = root.join(name);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -15,7 +17,7 @@ fn write(root: &Path, name: &str, text: &str) {
 }
 
 fn plan_of(root: &Path) -> Result<slopvac_migrate::Plan, Error> {
-    plan(root, &RenameTable::bundled(), Options::default())
+    plan(root, &RenameTable::bundled(), Options::default(), STEERING)
 }
 
 #[test]
@@ -79,7 +81,7 @@ fn pyproject_overlap_error_reports_the_pyproject_line() {
     let options = Options {
         preserve_behavior: true,
     };
-    match plan(dir.path(), &RenameTable::bundled(), options) {
+    match plan(dir.path(), &RenameTable::bundled(), options, STEERING) {
         Err(Error::OverrideOverlap {
             file, line, block, ..
         }) => assert_eq!((file.as_str(), line, block), ("pyproject.toml", 7, 0)),
@@ -132,7 +134,7 @@ fn second_run_finds_nothing_to_do() {
     write(
         dir.path(),
         "a.md",
-        "<!-- slopvac-allow: rule=a.b reason=x -->\n",
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
     );
     apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
     assert!(plan_of(dir.path()).unwrap().is_empty());
@@ -145,7 +147,7 @@ fn restore_undoes_apply() {
     write(
         dir.path(),
         "a.md",
-        "<!-- slopvac-allow: rule=a.b reason=x -->\n",
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
     );
     apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
     assert_eq!(restore(dir.path()).unwrap(), 3);
@@ -156,7 +158,7 @@ fn restore_undoes_apply() {
     assert!(!dir.path().join("slopvac.toml").exists());
     assert_eq!(
         fs::read_to_string(dir.path().join("a.md")).unwrap(),
-        "<!-- slopvac-allow: rule=a.b reason=x -->\n"
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n"
     );
     assert!(!dir.path().join(slopvac_migrate::BACKUP_DIR).exists());
 }
@@ -168,7 +170,7 @@ fn a_dropped_setting_writes_nothing() {
     write(
         dir.path(),
         "a.md",
-        "<!-- slopvac-allow: rule=a.b reason=x -->\n",
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
     );
     assert!(matches!(plan_of(dir.path()), Err(Error::Dropped(_))));
 }
@@ -196,13 +198,13 @@ impl Linter for FakeLinter {
     ) -> Result<Vec<Finding>, Error> {
         Ok(match phase {
             Phase::Before => vec![Finding {
-                rule: "a.x".into(),
+                rule: "orwell.not-un".into(),
                 count: 3,
             }],
             Phase::After => {
                 assert_eq!(overlay.len(), 1);
                 vec![Finding {
-                    rule: "core:a.x".into(),
+                    rule: "core:orwell.not-un".into(),
                     count: 1,
                 }]
             }
@@ -213,7 +215,7 @@ impl Linter for FakeLinter {
 fn run_cli(args: &[&str], linter: &dyn Linter) -> (i32, String, String) {
     let m = command().get_matches_from(std::iter::once("migrate").chain(args.iter().copied()));
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, linter, &mut out, &mut err);
+    let code = run(&m, linter, STEERING, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -228,7 +230,7 @@ fn cli_previews_by_default_and_reports_rule_changes() {
     let path = dir.path().to_str().unwrap();
     let (code, out, _) = run_cli(&[path], &FakeLinter);
     assert_eq!(code, 0);
-    assert!(out.contains("core:a.x: 3 -> 1"), "{out}");
+    assert!(out.contains("core:orwell.not-un: 3 -> 1"), "{out}");
     assert!(out.contains("Preview only"), "{out}");
     assert_eq!(
         fs::read_to_string(dir.path().join("slopvac.toml")).unwrap(),
@@ -364,6 +366,55 @@ fn dotted_tool_slopvac_keys_migrate() {
     assert!(new.contains("profile = \"strict\""), "{new}");
     let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
     assert!(!py.contains("slopvac"), "{py}");
+}
+
+#[test]
+fn an_unmapped_directive_id_stops_the_command_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = "profile = \"strict\"\n";
+    let doc = "# Title\n\n<!-- slopvac-allow: rule=prose-craft.no-such-rule reason=x -->\nText\n";
+    write(dir.path(), "slopvac.toml", config);
+    write(dir.path(), "docs/a.md", doc);
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"], &NullLinter);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.starts_with("error[config-legacy-dropped]: "), "{err}");
+    // Diagnostics show project-relative paths with the platform separator, as the
+    // config labels do (`rel(..).display()` in plan.rs).
+    let shown = Path::new("docs").join("a.md").display().to_string();
+    assert!(
+        err.contains(&format!(
+            "{shown}:3: `slopvac-allow rule=prose-craft.no-such-rule`"
+        )),
+        "{err}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("slopvac.toml")).unwrap(),
+        config
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("docs/a.md")).unwrap(),
+        doc
+    );
+    assert!(!dir.path().join(slopvac_migrate::BACKUP_DIR).exists());
+}
+
+#[test]
+fn unmapped_directive_ids_and_dropped_settings_come_back_together() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", "[vale]\nenabled = true\n");
+    write(
+        dir.path(),
+        "a.md",
+        "<!-- slopvac-allow: rule=orwell.no-such-rule reason=x -->\n",
+    );
+    match plan_of(dir.path()) {
+        Err(Error::Dropped(d)) => {
+            let files: Vec<_> = d.iter().map(|x| x.file.as_str()).collect();
+            assert!(files.contains(&"slopvac.toml"), "{d:?}");
+            assert!(files.contains(&"a.md"), "{d:?}");
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]

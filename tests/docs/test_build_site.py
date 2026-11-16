@@ -7,12 +7,14 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 
 import build_site
 
+GENRES_YAML = ROOT / "crates/slopvac-context/src/builtin/genres.yaml"
 OLD_PREFIX = "https://old.example/pkg/schemas/v3/"
 
 RULES_YAML = """\
@@ -317,3 +319,21 @@ def test_a_failing_reference_example_stops_the_build_and_reports_its_stderr(
     message = str(failure.value)
     assert "slopvac-styles" in message
     assert "boom: no such example xyzzy" in message
+
+
+def test_genre_pages_come_from_the_registry_for_every_builtin_genre(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    ids = [g["id"] for g in yaml.safe_load(GENRES_YAML.read_text())]
+    written = {
+        p.relative_to(sources["out"]).as_posix()
+        for p in (sources["out"] / "genres").glob("*.md")
+    }
+    assert written == {"genres/index.md", *(f"genres/{i}.md" for i in ids)}
+    index = _read(sources, "genres/index.md")
+    assert "not generated yet" not in index
+    assert all(f"({i}.md)" in index for i in ids)
+    assert "Issue comments, discussions, blogs, drafts." in _read(
+        sources, "genres/informal.md"
+    )

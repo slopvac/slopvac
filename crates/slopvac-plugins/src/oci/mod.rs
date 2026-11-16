@@ -33,6 +33,7 @@ pub use types::{
     MEDIA_MANIFEST, Manifest,
 };
 
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 /// Redirects followed per request.
@@ -43,10 +44,10 @@ pub const MAX_REDIRECTS: usize = 5;
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum OciError {
     /// A reference, digest or descriptor is malformed.
-    #[error("invalid OCI input: {0}")]
+    #[error("invalid OCI input: {}", esc(.0))]
     Invalid(String),
     /// The transport failed.
-    #[error("network error for {url}: {message}")]
+    #[error("network error for {}: {}", esc(.url), esc(.message))]
     Network {
         /// Redacted URL.
         url: String,
@@ -54,10 +55,10 @@ pub enum OciError {
         message: String,
     },
     /// The URL would send data over plain HTTP or to a host the rules forbid.
-    #[error("refused URL {0}: HTTPS is required")]
+    #[error("refused URL {}: HTTPS is required", esc(.0))]
     InsecureUrl(String),
     /// A redirect broke a rule.
-    #[error("bad redirect from {url}: {why}")]
+    #[error("bad redirect from {}: {}", esc(.url), esc(.why))]
     BadRedirect {
         /// Redacted URL.
         url: String,
@@ -65,19 +66,19 @@ pub enum OciError {
         why: String,
     },
     /// The token realm is not on the registry's origin or a listed token service.
-    #[error("token realm {0} is not on the registry origin; credentials were not sent")]
+    #[error("token realm {} is not on the registry origin; credentials were not sent", esc(.0))]
     RealmRejected(String),
     /// Credentials could not be read.
-    #[error("credential error: {0}")]
+    #[error("credential error: {}", esc(.0))]
     Credential(String),
     /// The registry answered 401 or 403. A private or missing package looks like this on GHCR.
-    #[error("access denied or not found at {0}")]
+    #[error("access denied or not found at {}", esc(.0))]
     Denied(String),
     /// The registry has no such object.
-    #[error("not found: {0}")]
+    #[error("not found: {}", esc(.0))]
     NotFound(String),
     /// Another status than expected.
-    #[error("unexpected status {status} from {url}")]
+    #[error("unexpected status {status} from {}", esc(.url))]
     Status {
         /// HTTP status.
         status: u16,
@@ -85,7 +86,7 @@ pub enum OciError {
         url: String,
     },
     /// A body is larger than the limit.
-    #[error("{what} exceeds the limit of {limit} bytes")]
+    #[error("{} exceeds the limit of {limit} bytes", esc(.what))]
     TooLarge {
         /// What was read.
         what: String,
@@ -93,7 +94,7 @@ pub enum OciError {
         limit: u64,
     },
     /// A blob or manifest does not hash to its digest.
-    #[error("digest mismatch: expected {expected}, got {actual}")]
+    #[error("digest mismatch: expected {}, got {}", esc(.expected), esc(.actual))]
     DigestMismatch {
         /// From the descriptor or reference.
         expected: String,
@@ -109,7 +110,7 @@ pub enum OciError {
         actual: u64,
     },
     /// A manifest media type the client does not accept.
-    #[error("unsupported media type `{0}`")]
+    #[error("unsupported media type `{}`", esc(.0))]
     UnsupportedMediaType(String),
 }
 

@@ -6,6 +6,7 @@ vale = "3.24.0"
 just = "1.59.0"                            # available via mise registry aqua:casey/just
 typos = "1.51.1"
 node = "24.22.3"                           # docs site (site/); Astro needs 22.23.4 or later
+"aqua:jedisct1/minisign" = "0.12"          # release signing tests; keep in step with scripts/install_minisign.sh
 "cargo:cargo-nextest" = "0.9.152"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "github:Boshen/cargo-shear" = "1.14.1"

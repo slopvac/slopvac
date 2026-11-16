@@ -4,24 +4,16 @@ name: Eval ratchet
 # and compares the scores with evals/baselines/python.json. It reports in the job
 # summary and never fails the run while the ratchet is in report mode. Set the
 # repository variable SLOPVAC_EVALS_GATE to `enforce` to make a regression fail it.
-# It has its own path filter so the main CI workflow and its final gate stay untouched.
+# Called from test.yml when the evals path class matches (pull requests, merge
+# queue and pushes to main); .github/ci-paths.yml owns the paths and the Tests
+# gate checks the run. It also runs by hand.
 
 on:
-  pull_request:
-    paths:
-      - "evals/**"
-      - "packages/slopvac-lint/src/**"
-      - "packages/slopvac-lint/vale/**"
-      - "scripts/install_vale.py"
-      - ".github/workflows/evals-ratchet.yml"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: evals-ratchet-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   ratchet:
