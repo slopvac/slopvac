@@ -1,0 +1,7 @@
+schema_version = 3
+id = "t"
+tag = "safety"
+
+[when.front_matter]
+key = "type"
+matches = '\u00e9'

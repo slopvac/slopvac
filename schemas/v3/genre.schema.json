@@ -50,6 +50,14 @@
         "$ref": "config.schema.json#/$defs/Ref"
       }
     },
+    "contexts": {
+      "description": "Context tags that every document of this genre carries, whole document, at confidence 1. A genre that extends this one inherits them. Use it for a context that only a declaration should set, such as security, which no vocabulary signal may infer.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/ContextTag"
+      },
+      "uniqueItems": true
+    },
     "categories": {
       "type": "object",
       "propertyNames": {
