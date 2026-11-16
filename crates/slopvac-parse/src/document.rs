@@ -65,6 +65,35 @@ pub enum BlockKind {
     },
 }
 
+/// A container that holds a block: a list item or a block quote.
+///
+/// A table cell and an admonition are not listed here. A cell is a [`BlockKind::TableCell`]
+/// and an admonition is a [`BlockKind::Admonition`] block whose span contains its children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Container {
+    /// A list item.
+    ListItem {
+        /// Whether the list is ordered.
+        ordered: bool,
+        /// How many lists enclose the item, counting its own: 1 for a top-level list.
+        depth: usize,
+    },
+    /// A block quote.
+    BlockQuote,
+}
+
+/// A raw HTML block of a Markdown file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HtmlBlock {
+    /// The source ranges that hold the block's text, in order. Consecutive lines are one
+    /// range. A block in a block quote or list item has one range per line, because the
+    /// container prefix sits between the lines.
+    pub segments: Vec<Span>,
+    /// The lists and block quotes that hold the block, outermost first.
+    pub containers: Vec<Container>,
+}
+
 /// One block and where it sits in the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -74,6 +103,9 @@ pub struct Block {
     pub span: Span,
     /// The prose of a paragraph, heading or table cell.
     pub projection: Option<Projection>,
+    /// The lists and block quotes that hold the block, outermost first. Empty at the top
+    /// level. A parser that cannot tell leaves it empty.
+    pub containers: Vec<Container>,
 }
 
 /// A parsed document.
@@ -86,6 +118,12 @@ pub struct Document {
     pub blocks: Vec<Block>,
     /// Inline code spans, backticks included, in source order. Rules skip these ranges.
     pub code_spans: Vec<Span>,
+    /// Raw HTML blocks, in source order. Each block lists the source ranges that hold its
+    /// text: consecutive lines are one range, and a block inside a block quote or list item
+    /// has one range per line, because the container prefix sits between the lines. Read the
+    /// ranges as one stream with [`crate::parse_html_segments`]. Only the Markdown parser
+    /// fills this.
+    pub html_blocks: Vec<HtmlBlock>,
 }
 
 /// Why a document did not parse.
@@ -97,4 +135,13 @@ pub enum ParseError {
     /// MDX syntax error.
     #[error("MDX syntax error: {0}")]
     Mdx(String),
+    /// The document needs more work than the parse budget allows. The check is incomplete.
+    #[error("the document needs more work than the parse budget allows")]
+    Budget,
+    /// The segments of an HTML stream do not ascend, or they overlap.
+    #[error("the HTML segments must ascend and not overlap")]
+    Segments,
+    /// The document is longer than the parser accepts. The check is incomplete.
+    #[error("the document is longer than the parser accepts")]
+    TooLarge,
 }

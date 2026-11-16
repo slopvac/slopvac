@@ -9,13 +9,38 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-ignore.workspace = true
+cap-fs-ext.workspace = true
+cap-std.workspace = true
+clap = { workspace = true }
+crossbeam-channel = { workspace = true }
+frontmatter-spans = { workspace = true }
 globset.workspace = true
-thiserror.workspace = true
+ignore.workspace = true
+pulldown-cmark = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+similar.workspace = true
+slopvac-context = { workspace = true }
+slopvac-diagrams = { workspace = true }
+slopvac-model = { workspace = true }
+slopvac-parse = { workspace = true }
+slopvac-pos = { workspace = true }
+slopvac-rules = { workspace = true }
+slopvac-terms = { workspace = true }
+slopvac-text = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+
+# O_NONBLOCK, the effective user id and ACL attributes for `fix_file`; the process group
+# kill and the no-follow open for the changed-line scope.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs", "process"] }
 
 [dev-dependencies]
-tempfile.workspace = true
 proptest.workspace = true
+# The work-counter tests count the indexes a lint builds.
+slopvac-model = { workspace = true, features = ["test-counters"] }
 
 [lints]
 workspace = true

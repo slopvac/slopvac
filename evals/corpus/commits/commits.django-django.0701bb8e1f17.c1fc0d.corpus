@@ -1,0 +1,22 @@
+Fixed #33928 -- Avoided unnecessary queries when cascade updating.
+
+Models that use SET, SET_NULL, and SET_DEFAULT as on_delete handler
+don't have to fetch objects for the sole purpose of passing them back to
+a follow up UPDATE query filtered by the retrieved objects primary key.
+
+This was achieved by flagging SET handlers as _lazy_ and having the
+collector logic defer object collections until the last minute. This
+should ensure that the rare cases where custom on_delete handlers are
+defined remain uncalled when when dealing with an empty collection of
+instances.
+
+This reduces the number queries required to apply SET handlers from
+2 to 1 where the remaining UPDATE use the same predicate as the non
+removed SELECT query.
+
+In a lot of ways this is similar to the fast-delete optimization that
+was added in #18676 but for updates this time. The conditions only
+happen to be simpler in this case because SET handlers are always
+terminal. They never cascade to more deletes that can be combined.
+
+Thanks Renan GEHAN for the report.

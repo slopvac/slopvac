@@ -14,10 +14,8 @@ mod mermaid;
 mod plantuml;
 mod signals;
 
-pub use fences::{DiagramBlock, find_markdown_blocks};
-pub use signals::{
-    DiagramFinding, JUDGEMENT_RULES, ProseBlock, Severity, check_labels, check_prose,
-};
+pub use fences::{DiagramBlock, find_markdown_blocks, find_mdx_blocks};
+pub use signals::{PACK, ProseBlock, Signal, SignalHit, check_labels, check_prose};
 
 use std::ops::Range;
 
@@ -150,8 +148,6 @@ pub(crate) struct SourceLine<'a> {
     pub(crate) start: usize,
     /// The line text, terminator excluded.
     pub(crate) text: &'a str,
-    /// Byte offset just after the terminator.
-    pub(crate) end: usize,
 }
 
 /// Split text into lines at LF, CRLF and a CR that does not precede LF
@@ -173,7 +169,6 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
         out.push(SourceLine {
             start,
             text: &src[start..pos],
-            end: pos + terminator,
         });
         pos += terminator;
         start = pos;
@@ -182,7 +177,6 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
         out.push(SourceLine {
             start,
             text: &src[start..],
-            end: bytes.len(),
         });
     }
     out
@@ -255,9 +249,9 @@ mod tests {
     fn lines_split_on_lf_crlf_and_lone_cr() {
         let got: Vec<_> = lines("a\nb\r\nc\rd")
             .iter()
-            .map(|l| (l.start, l.text, l.end))
+            .map(|l| (l.start, l.text))
             .collect();
-        assert_eq!(got, [(0, "a", 2), (2, "b", 5), (5, "c", 7), (7, "d", 8)]);
+        assert_eq!(got, [(0, "a"), (2, "b"), (5, "c"), (7, "d")]);
         assert_eq!(lines("").len(), 0);
         assert_eq!(lines("a\n").len(), 1);
     }

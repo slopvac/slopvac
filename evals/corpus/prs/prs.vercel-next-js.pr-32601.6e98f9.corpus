@@ -1,0 +1,18 @@
+fix the dynamic routing of middleware
+
+fixes #31324
+
+Also fixes middleware on dynamic routes like `pages/[slug]/_middleware.js` match with unintended paths like priority static path, api path. 
+
+<!--
+Thanks for opening a PR! Your contribution is much appreciated.
+In order to make sure your PR is handled as smoothly as possible we request that you follow the checklist sections below.
+Choose the right checklist for the change that you're making:
+-->
+
+## Bug
+
+- [x] Related issues linked using `fixes #number`
+- [x] Integration tests added
+- [x] Errors have helpful link attached, see `contributing.md`
+- [x] Make sure the linting passes by running `yarn lint`

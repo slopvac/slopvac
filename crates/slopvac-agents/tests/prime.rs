@@ -43,7 +43,7 @@ fn tree() -> Command {
             "Preview or post an issue",
             &["submit", "include-text"],
         ))
-        .subcommand(Command::new("migrate").about("Move a 2.x project to 3.0"))
+        .subcommand(slopvac_migrate::command())
         .subcommand(slopvac_agents::claims::command())
         .subcommand(slopvac_agents::review::command())
         .subcommand(Command::new("doctor").about("Check the installation"))
@@ -90,7 +90,11 @@ fn base_topic_fits_its_word_budget_at_every_level() {
 fn every_topic_fits_its_budget() {
     for topic in prime::topic_names() {
         let n = words(&render(Some(topic), Level::Default));
-        let budget = if topic == "review" { 360 } else { 330 };
+        let budget = match topic {
+            "review" => 360,
+            "migrate" => 700,
+            _ => 330,
+        };
         assert!(n <= budget, "{topic} is {n} words");
     }
 }
@@ -210,19 +214,43 @@ fn run_renders_the_requested_topic_and_level() {
 }
 
 #[test]
-fn migrate_topic_prints_the_supplied_guide_instead_of_its_fallback() {
-    let settings = Settings {
-        migrate_guide: Some("GUIDE FROM ONE SOURCE".into()),
-        ..Settings::default()
-    };
-    let text = prime::render(
-        Some("migrate"),
-        &settings,
-        &tree(),
-        std::path::Path::new("/nonexistent"),
-    )
-    .unwrap();
-    assert!(text.contains("GUIDE FROM ONE SOURCE"));
-    assert!(!text.contains("no 2.x compatibility mode"));
-    assert!(render(Some("migrate"), Level::Default).contains("no 2.x compatibility mode"));
+fn prime_migrate_prints_the_migration_guide_from_its_one_source() {
+    let text = render(Some("migrate"), Level::Default);
+    assert_eq!(text.trim_end(), slopvac_migrate::prime_migrate().trim_end());
+    let doc_path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/migrate-2-to-3.md");
+    // Git may check files out with CRLF on Windows; compare line content only.
+    let doc = fs::read_to_string(doc_path).unwrap().replace("\r\n", "\n");
+    let (notice, body) = doc.split_once("-->\n\n").expect("generated-file notice");
+    assert!(notice.starts_with("<!-- Generated from"));
+    assert_eq!(
+        text.trim_end(),
+        body.trim_end(),
+        "prime migrate diverges from docs/migrate-2-to-3.md"
+    );
+    for level in [Level::Minimal, Level::Full] {
+        assert_eq!(
+            render(Some("migrate"), level),
+            text,
+            "the guide has one level"
+        );
+    }
+}
+
+#[test]
+fn diagrams_topic_is_indexed_and_names_every_supported_format() {
+    assert!(render(None, Level::Default).contains("- `diagrams`: "));
+    let text = render(Some("diagrams"), Level::Default);
+    assert!(text.starts_with("# Prime: diagrams"));
+    for needle in [
+        "experimental",
+        "slopvac lint <paths>",
+        ".mmd",
+        ".puml",
+        ".drawio",
+        ".drawio.svg",
+        ".excalidraw",
+    ] {
+        assert!(text.contains(needle), "{needle}");
+    }
 }

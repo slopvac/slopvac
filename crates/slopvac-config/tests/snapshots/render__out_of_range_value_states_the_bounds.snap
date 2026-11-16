@@ -1,0 +1,9 @@
+---
+source: crates/slopvac-config/tests/render.rs
+expression: "rendered(\"schema_version = 3\\n\\n[thresholds]\\nmin_score = 120\\n\")"
+---
+error[config-invalid-value]: 120 is out of range
+ --> slopvac.toml:4:13
+  |
+4 | min_score = 120
+  |             ^^^ must be between 0 and 100

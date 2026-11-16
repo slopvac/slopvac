@@ -1,0 +1,13 @@
+Allow loading of environment variables into the config
+
+This new method will pick out any environment variables with a certain
+prefix and place them into the config named without the prefix. This
+makes it easy to use environment variables to configure the app as is
+now more popular than when Flask started.
+
+The prefix should ensure that the environment isn't polluted and the
+config isn't polluted by environment variables.
+
+I've followed the dynaconf convention of trying to parse the
+environment variable and then falling back to the raw value if parsing
+fails.

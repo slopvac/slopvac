@@ -1,0 +1,66 @@
+# cargo-deny policy: licences, advisories, bans and sources for the Rust workspace.
+# Run `cargo deny check`. Advisories also run nightly (see .github/workflows/rust-supply-chain.yml).
+
+[graph]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[licenses]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+# Permissive licences only. The vendored PCRE2 C library (BSD-3-Clause with a
+# PCRE2 exception) is not a crate, so cargo-deny cannot see it: pcre2-sys builds
+# it from bundled sources and declares only its own MIT OR Unlicense licence.
+# BSD-3-Clause stays in the allow list below for crates that carry that licence,
+# and the release notices must ship the PCRE2 notice itself.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+  "CDLA-Permissive-2.0",
+]
+# The embedded part-of-speech model is CC BY-SA 4.0 and covers the model file
+# only. The exception is scoped to the crate that embeds it. cargo-deny does not
+# fail on an exception for a crate that is absent, so this sits here ahead of
+# the crate. Never add CC-BY-SA-4.0 to `allow`: it would admit it for every
+# dependency. The crate name is the working name; rename it with the crate.
+exceptions = [{ crate = "slopvac-pos-model", allow = ["CC-BY-SA-4.0"] }]
+
+[advisories]
+version = 2
+yanked = "deny"
+unmaintained = "workspace"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+  # ADR 0001: no async runtime, and TLS through rustls only.
+  { crate = "tokio", reason = "no async runtime; use rayon, threads and crossbeam-channel" },
+  { crate = "async-std", reason = "no async runtime" },
+  { crate = "openssl", reason = "use rustls through ureq" },
+  { crate = "openssl-sys", reason = "use rustls through ureq" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

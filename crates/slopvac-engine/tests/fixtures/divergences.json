@@ -1,0 +1,78 @@
+{
+ "CONTRIBUTING.md": {
+  "ignore": [
+   "position"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`)."
+ },
+ "README.md": {
+  "ignore": [
+   "position",
+   "paragraphs"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). 2.x counts the paragraph of image-only badge links (lines 11 to 13) as a paragraph with empty text and no sentences. `slopvac-parse` emits no block for a paragraph without prose, so Rust counts one fewer."
+ },
+ "docs/contract/config.md": {
+  "ignore": [
+   "position",
+   "sentences",
+   "warnings",
+   "score"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ. 2.x measures each table cell separately but treats the whole content of a cell as one sentence, so a cell with several sentences is one long sentence there. Rust splits the sentences within a cell, which is the 3.0 behaviour, so it reports fewer sentence-length findings (`fewer`), and the warning count and the score follow.",
+  "fewer": {
+   "core:ste-descriptive.sentence-too-long-descriptive": 1
+  }
+ },
+ "docs/contract/lint-report.md": {
+  "ignore": [
+   "position",
+   "sentences",
+   "warnings",
+   "score"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ. 2.x measures each table cell separately but treats the whole content of a cell as one sentence, so a cell with several sentences is one long sentence there. Rust splits the sentences within a cell, which is the 3.0 behaviour, so it reports fewer sentence-length findings (`fewer`), and the warning count and the score follow.",
+  "fewer": {
+   "core:ste-descriptive.sentence-too-long-descriptive": 1
+  }
+ },
+ "docs/design/slopvac-3.md": {
+  "ignore": [
+   "position",
+   "sentences",
+   "warnings",
+   "score"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ. 2.x measures each table cell separately but treats the whole content of a cell as one sentence, so a cell with several sentences is one long sentence there. Rust splits the sentences within a cell, which is the 3.0 behaviour, so it reports fewer sentence-length findings (`fewer`), and the warning count and the score follow.",
+  "fewer": {
+   "core:ste-descriptive.sentence-too-long-descriptive": 5,
+   "core:prose-craft.sentence-length": 4
+  }
+ },
+ "docs/migrate-2-to-3.md": {
+  "ignore": [
+   "position",
+   "sentences",
+   "words"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). slopvac-parse keeps each table cell as its own block. 2.x joins the cells of a table with a space, so a cell without a final period runs into the next sentence and the sentence, word and score numbers differ."
+ },
+ "example/ai-tells-structure.negative-guarantee-core/0": {
+  "ignore": [
+   "position"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`)."
+ },
+ "example/ai-tells-structure.negative-guarantee-core/1": {
+  "ignore": [
+   "position"
+  ],
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`)."
+ },
+ "sample/entities": {
+  "ignore": [
+   "end"
+  ],
+  "reason": "2.x ends a match at the end of the markup that closes it: a match that ends a bold or link text ends two or more columns late, after the `**` or the link target. The Rust end column is the end of the matched text."
+ }
+}

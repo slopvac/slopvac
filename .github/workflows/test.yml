@@ -26,6 +26,8 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       package: ${{ steps.filter.outputs.package }}
       rust: ${{ steps.filter.outputs.rust }}
+      evals: ${{ steps.filter.outputs.evals }}
+      docs-site: ${{ steps.filter.outputs.docs-site }}
       action: ${{ steps.filter.outputs.action }}
       docs: ${{ steps.filter.outputs.docs }}
       ci: ${{ steps.filter.outputs.ci }}
@@ -96,6 +98,9 @@ jobs:
       - name: Ruff
         working-directory: packages/slopvac-lint
         run: uvx ruff@0.16.3 check .
+
+      - name: Release-please crate entries
+        run: python3 scripts/sync_release_please_crates.py --check
 
       - name: Validate hook JSON
         run: |
@@ -216,6 +221,19 @@ jobs:
         with:
           tool: nextest@0.9.152
 
+      # The RST adapter runs docutils. With SLOPVAC_RST_LIVE set, its live tests fail
+      # instead of skipping when docutils is missing, and the recorded driver output in the
+      # fixtures must equal what the pinned docutils writes now.
+      - name: Install the pinned docutils for the RST tests
+        if: matrix.name == 'linux-x64'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rst-venv"
+          "$RUNNER_TEMP/rst-venv/bin/python" -m pip install --quiet --require-hashes \
+            -r crates/slopvac-engine/tests/fixtures/rst/requirements-docutils.pip
+          "$RUNNER_TEMP/rst-venv/bin/python" crates/slopvac-engine/tests/fixtures/rst/generate.py --check
+          echo "$RUNNER_TEMP/rst-venv/bin" >> "$GITHUB_PATH"
+          echo "SLOPVAC_RST_LIVE=1" >> "$GITHUB_ENV"
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
 
@@ -268,6 +286,16 @@ jobs:
         env:
           MSRV: ${{ steps.msrv.outputs.version }}
 
+  rust-supply-chain:
+    name: Rust supply chain
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-supply-chain.yml
+    permissions:
+      contents: read
+
   # Full repository test discovery on the newest supported Python. The root
   # pytest configuration includes both package tests and any repository-level
   # tests, so new test directories cannot silently sit outside CI.
@@ -302,7 +330,8 @@ jobs:
           ast-grep --version
 
       - name: Install package and test dependencies
-        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]"
+        # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
+        run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
       - name: Run every discovered pytest suite
         run: python3 -m pytest
@@ -380,7 +409,7 @@ jobs:
           import json
           payload = json.load(open("/tmp/rules.json"))
           kinds = [rule["kind"] for rule in payload["rules"]]
-          assert len(kinds) == 236
+          assert len(kinds) == 237
           assert kinds.count("judgement") == 68
           assert all(
               rule["judgement_question"]
@@ -468,6 +497,26 @@ jobs:
       filesystem: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.filesystem == 'true' }}
       secrets: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.secrets == 'true' }}
 
+  evals-ratchet:
+    name: Eval ratchet
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.evals == 'true'
+    uses: ./.github/workflows/evals-ratchet.yml
+    permissions:
+      contents: read
+
+  docs-site:
+    name: Docs site build
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs['docs-site'] == 'true'
+    uses: ./.github/workflows/docs-site.yml
+    permissions:
+      contents: read
+
   # Keep the established required-check name, but make it the single source of
   # truth for the whole CI graph. It enforces exact skip semantics: a suite must
   # succeed when its path class matched and must be skipped when it did not.
@@ -482,12 +531,15 @@ jobs:
       - rust-static
       - rust
       - rust-msrv
+      - rust-supply-chain
       - lint-package
       - cli-e2e
       - action-contract
       - lint
       - markdown-audit
       - security
+      - evals-ratchet
+      - docs-site
     if: always()
     steps:
       - name: Verify required runs and valid skips
@@ -503,6 +555,8 @@ jobs:
           SECRETS: ${{ needs.changes.outputs.secrets }}
           DEPENDENCIES: ${{ needs.changes.outputs.dependencies }}
           FILESYSTEM: ${{ needs.changes.outputs.filesystem }}
+          EVALS: ${{ needs.changes.outputs.evals }}
+          DOCS_SITE: ${{ needs.changes.outputs['docs-site'] }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -528,6 +582,8 @@ jobs:
           secrets = os.environ["SECRETS"] == "true"
           dependencies = os.environ["DEPENDENCIES"] == "true"
           filesystem = os.environ["FILESYSTEM"] == "true"
+          evals = os.environ["EVALS"] == "true"
+          docs_site = os.environ["DOCS_SITE"] == "true"
 
           expected = {
               "quick-lint": True,
@@ -535,12 +591,15 @@ jobs:
               "rust-static": force_all or rust,
               "rust": force_all or rust,
               "rust-msrv": force_all or rust,
+              "rust-supply-chain": force_all or rust,
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,
               "lint": force_all or lint,
               "markdown-audit": force_all or docs,
               "security": force_all or secrets or code or dependencies or filesystem,
+              "evals-ratchet": force_all or evals,
+              "docs-site": force_all or docs_site,
           }
 
           for name, should_run in expected.items():

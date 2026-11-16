@@ -1,0 +1,10 @@
+watch::Sender: Modify and send value conditionally
+
+### TODO
+- [x] Improve documentation
+
+Often times you need to check preconditions and constraints before actually modifying a value. Currently receivers are notified unconditionally, even if the value has not been modified.
+
+This PR adds a function `send_if_modified()` that is more versatile than `send_modify()`. The result of the passed closure indicates if the mutably borrowed value has actually been modified or not. Receivers are only notified if the value has been modified as indicated by the sender.
+
+Signed-off-by: Uwe Klotz <uwe.klotz@slowtec.de>

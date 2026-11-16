@@ -1,0 +1,10 @@
+Refs #33992 -- Refactored subquery grouping logic.
+
+This required moving the combined queries slicing logic to the compiler
+in order to allow Query.exists() to be called at expression resolving
+time.
+
+It allowed for Query.exists() to be called at Exists() initialization
+time and thus ensured that get_group_by_cols() was operating on the
+terminal representation of the query that only has a single column
+selected.

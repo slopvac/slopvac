@@ -119,6 +119,19 @@ impl PublicKey {
         Ok(Self { inner, id, raw })
     }
 
+    /// Parse the text of a `minisign.pub` file: an `untrusted comment:` line, then the base64 line.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the file has no key line or the line is not a minisign key.
+    pub fn from_pub_file(text: &str) -> Result<Self, SignError> {
+        let line = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("untrusted comment:"))
+            .ok_or_else(|| SignError::InvalidKey("no key line".into()))?;
+        Self::from_base64(line)
+    }
+
     /// The 8-byte key id as 16 uppercase hex digits, as `minisign -V` prints it and as the lockfile stores it.
     #[must_use]
     pub fn key_id(&self) -> String {
@@ -134,6 +147,33 @@ impl PublicKey {
     pub fn fingerprint(&self) -> String {
         Digest::of(&self.raw).hex().to_owned()
     }
+
+    /// The base64 line of the key, as a `minisign.pub` file holds it.
+    #[must_use]
+    pub fn to_base64(&self) -> String {
+        base64::engine::general_purpose::STANDARD.encode(&self.raw)
+    }
+}
+
+/// The first-party release public key, compiled in from `keys/slopvac-release.pub`.
+/// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
+pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
+
+/// Namespaces that only the first-party release key may sign.
+pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
+
+/// The compiled first-party release key. It signs first-party packs and the
+/// revocation list.
+///
+/// # Errors
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
+/// then have no first-party key, so first-party verification refuses.
+pub fn release_key() -> Result<PublicKey, SignError> {
+    release_key_from(RELEASE_KEY_FILE)
+}
+
+pub(crate) fn release_key_from(text: &str) -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(text)
 }
 
 /// Which keys may sign which namespaces.
@@ -149,6 +189,27 @@ pub struct KeyPolicy {
 }
 
 impl KeyPolicy {
+    /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
+    /// and no pinned keys. Tests build the struct directly to inject other keys.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
+    /// no policy, so nothing verifies as first-party.
+    pub fn compiled() -> Result<Self, SignError> {
+        Self::compiled_from(RELEASE_KEY_FILE)
+    }
+
+    fn compiled_from(key_file: &str) -> Result<Self, SignError> {
+        Ok(Self {
+            first_party: vec![release_key_from(key_file)?],
+            first_party_namespaces: FIRST_PARTY_NAMESPACES
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect(),
+            pinned: BTreeMap::new(),
+        })
+    }
+
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
         if self.first_party_namespaces.iter().any(|n| n == namespace) {
             &self.first_party
@@ -342,6 +403,49 @@ fn mismatch(what: &str) -> SignError {
     SignError::Mismatch(what.to_owned())
 }
 
+/// Parse a size-capped, strict and canonical JSON document into `T`.
+pub(crate) fn parse_canonical<T: serde::de::DeserializeOwned>(
+    bytes: &[u8],
+    max: usize,
+) -> Result<T, SignError> {
+    if bytes.len() > max {
+        return Err(SignError::StatementTooLarge);
+    }
+    let value = strict::parse(bytes).map_err(SignError::InvalidStatement)?;
+    if canonical_json(&value) != bytes {
+        return Err(SignError::NotCanonical("re-encoding differs".into()));
+    }
+    serde_json::from_value(value).map_err(|e| SignError::InvalidStatement(e.to_string()))
+}
+
+/// Verify a prehashed minisign signature by `key` over exactly `bytes`.
+pub(crate) fn verify_bytes(key: &PublicKey, bytes: &[u8], minisig: &str) -> Result<(), SignError> {
+    let sig = minisign_verify::Signature::decode(minisig).map_err(|_| SignError::BadSignature)?;
+    key.inner
+        .verify(bytes, &sig, false)
+        .map_err(|_| SignError::BadSignature)
+}
+
+/// Whether `text` is 16 uppercase hex digits, the form of a key id.
+pub(crate) fn is_key_id(text: &str) -> bool {
+    text.len() == 16 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'A'..=b'F'))
+}
+
+/// Seconds since 1970-01-01T00:00:00Z of a `YYYY-MM-DDTHH:MM:SSZ` time, or
+/// `None` for text that is not a real calendar time.
+pub(crate) fn utc_seconds(text: &str) -> Option<i64> {
+    let (year, month, day, hour, minute, second) = parse_time(text)?;
+    // Days from the civil date (H. Hinnant, "chrono-Compatible Low-Level Date Algorithms").
+    let y = i64::from(year) - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let m = i64::from(month);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + i64::from(hour) * 3_600 + i64::from(minute) * 60 + i64::from(second))
+}
+
 /// A UTC time as `(year, month, day, hour, minute, second)`, which orders chronologically.
 type Time = (u32, u32, u32, u32, u32, u32);
 
@@ -390,15 +494,7 @@ pub fn verify(
     policy: &KeyPolicy,
     expect: &Expectation<'_>,
 ) -> Result<Verified, SignError> {
-    if statement_bytes.len() > MAX_STATEMENT_BYTES {
-        return Err(SignError::StatementTooLarge);
-    }
-    let value = strict::parse(statement_bytes).map_err(SignError::InvalidStatement)?;
-    if canonical_json(&value) != statement_bytes {
-        return Err(SignError::NotCanonical("re-encoding differs".into()));
-    }
-    let statement: Statement =
-        serde_json::from_value(value).map_err(|e| SignError::InvalidStatement(e.to_string()))?;
+    let statement: Statement = parse_canonical(statement_bytes, MAX_STATEMENT_BYTES)?;
     let namespace = statement.namespace.clone();
     if !is_name(&namespace) || !is_name(&statement.id) {
         return Err(SignError::InvalidStatement(
@@ -415,10 +511,7 @@ pub fn verify(
             key_id: statement.key_id.clone(),
             namespace: namespace.clone(),
         })?;
-    let sig = minisign_verify::Signature::decode(minisig).map_err(|_| SignError::BadSignature)?;
-    key.inner
-        .verify(statement_bytes, &sig, false)
-        .map_err(|_| SignError::BadSignature)?;
+    verify_bytes(key, statement_bytes, minisig)?;
 
     check_binding(manifest, &statement, expect)?;
     check_rollback(&statement, expect)?;
@@ -528,4 +621,154 @@ pub fn fetch_and_verify(
     let sig_bytes = client.fetch_blob_bytes(repository, minisig, MAX_MINISIG_BYTES as u64)?;
     let sig_text = String::from_utf8(sig_bytes).map_err(|_| SignError::BadSignature)?;
     verify(manifest, &statement_bytes, &sig_text, policy, expect)
+}
+
+/// The `type` of a rotation statement.
+pub const ROTATION_TYPE: &str = "rotation";
+/// Largest rotation statement the verifier reads.
+pub const MAX_ROTATION_BYTES: usize = 4 * 1024;
+
+/// A publisher's announcement that `newKeyId` replaces `oldKeyId` for one
+/// namespace (threat model section 5.3). Canonical JSON, signed by both keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RotationStatement {
+    /// Always 1.
+    pub schema_version: u32,
+    /// Always [`ROTATION_TYPE`], so no other signed document can pass as a rotation.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The pack namespace whose key changes.
+    pub namespace: String,
+    /// Key id of the pinned key.
+    #[serde(rename = "oldKeyId")]
+    pub old_key_id: String,
+    /// Key id of the key that replaces it.
+    #[serde(rename = "newKeyId")]
+    pub new_key_id: String,
+    /// The whole new public key, as the base64 line of its `minisign.pub`.
+    /// A key id is unsigned metadata that anyone can copy, so the statement
+    /// binds the key bytes themselves.
+    #[serde(rename = "newKey")]
+    pub new_key: String,
+    /// `YYYY-MM-DDTHH:MM:SSZ`. It must be later than the pin's own `notBefore`.
+    #[serde(rename = "notBefore")]
+    pub not_before: String,
+}
+
+/// A rotation statement, its two signatures and the new public key.
+#[derive(Debug, Clone, Copy)]
+pub struct RotationProof<'a> {
+    /// The canonical statement bytes.
+    pub statement: &'a [u8],
+    /// `.minisig` text by the old (pinned) key.
+    pub old_signature: &'a str,
+    /// `.minisig` text by the new key.
+    pub new_signature: &'a str,
+    /// The new key. Its id must be the statement's `newKeyId`.
+    pub new_key: &'a PublicKey,
+}
+
+/// Verify a rotation for `namespace` against the key pinned for it.
+///
+/// The statement must be strict canonical JSON naming `namespace`, the pinned
+/// key as `oldKeyId` and `proof.new_key` as `newKeyId` and, byte for byte, as
+/// `newKey`. Both keys must sign it, and its `notBefore` must be later than
+/// `floor`, the pin's own `notBefore` when the pin came from an earlier
+/// rotation.
+///
+/// # Errors
+/// [`SignError::KeyNotPinned`] when `oldKeyId` is not the pinned key,
+/// [`SignError::Mismatch`] for another namespace or new key,
+/// [`SignError::BadSignature`] unless both signatures verify,
+/// [`SignError::Rollback`] when `notBefore` is not later than `floor`, and the
+/// parse errors of [`verify`].
+pub fn verify_rotation(
+    proof: &RotationProof<'_>,
+    namespace: &str,
+    pinned: &PublicKey,
+    floor: Option<&str>,
+) -> Result<RotationStatement, SignError> {
+    let st: RotationStatement = parse_canonical(proof.statement, MAX_ROTATION_BYTES)?;
+    if st.schema_version != 1 || st.kind != ROTATION_TYPE {
+        return Err(SignError::InvalidStatement(
+            "not a version 1 rotation statement".into(),
+        ));
+    }
+    if !is_name(&st.namespace) || !is_key_id(&st.old_key_id) || !is_key_id(&st.new_key_id) {
+        return Err(SignError::InvalidStatement(
+            "the namespace or a key id is malformed".into(),
+        ));
+    }
+    if st.namespace != namespace {
+        return Err(mismatch("the rotation is for another namespace"));
+    }
+    if st.old_key_id != pinned.key_id() {
+        return Err(SignError::KeyNotPinned {
+            key_id: st.old_key_id,
+            namespace: namespace.to_owned(),
+        });
+    }
+    if st.new_key_id != proof.new_key.key_id() || st.new_key_id == st.old_key_id {
+        return Err(mismatch(
+            "the new key is not the one the rotation names, or equals the old key",
+        ));
+    }
+    let bound = PublicKey::from_base64(&st.new_key)
+        .map_err(|_| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
+    if bound.raw != proof.new_key.raw || bound.key_id() != st.new_key_id {
+        return Err(mismatch(
+            "the new key differs from the key the rotation binds",
+        ));
+    }
+    verify_bytes(pinned, proof.statement, proof.old_signature)?;
+    verify_bytes(proof.new_key, proof.statement, proof.new_signature)?;
+    let at = utc_seconds(&st.not_before)
+        .ok_or_else(|| SignError::InvalidStatement("notBefore is not a valid UTC time".into()))?;
+    if let Some(floor) = floor {
+        let floor_at = utc_seconds(floor).ok_or_else(|| {
+            SignError::InvalidStatement("the pin's notBefore is not a valid UTC time".into())
+        })?;
+        if at <= floor_at {
+            return Err(SignError::Rollback(format!(
+                "rotation notBefore {} is not later than the pin's {floor}",
+                st.not_before
+            )));
+        }
+    }
+    Ok(st)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MALFORMED: [&str; 3] = [
+        "",
+        "untrusted comment: x\n",
+        "untrusted comment: x\nnot-a-key\n",
+    ];
+
+    #[test]
+    fn a_malformed_compiled_key_is_a_typed_error_not_a_panic() {
+        for text in MALFORMED {
+            assert!(
+                matches!(release_key_from(text), Err(SignError::InvalidKey(_))),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_compiled_key_builds_no_policy() {
+        for text in MALFORMED {
+            assert!(
+                matches!(
+                    KeyPolicy::compiled_from(text),
+                    Err(SignError::InvalidKey(_))
+                ),
+                "{text:?}"
+            );
+        }
+    }
 }

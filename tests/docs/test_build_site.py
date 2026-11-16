@@ -35,7 +35,7 @@ rules:
       - bad: Remove this.
         good: ''
         note: The ending is dropped.
-    provenance: {source: Hand written, url: 'https://example.test/foo'}
+    provenance: {source: "Hand written \u2014 draft", url: 'https://example.test/foo'}
 """
 
 
@@ -102,9 +102,18 @@ def test_build_writes_rule_page_with_required_fields(sources: dict[str, Path]) -
     page = _read(sources, "rules/demo/no-foo.md")
     assert page.startswith("# Avoid foo\n")
     assert "| Severity | error |" in page
-    assert "| Profile `relaxed` | excluded |" in page
+    assert "| Profile `relaxed` | `excluded` |" in page
     assert "Delete foo." in page
     assert "<https://example.test/foo>" in page
+
+
+def test_unicode_dashes_in_catalogue_prose_become_ascii(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "rules/demo/no-foo.md")
+    assert "Hand written -- draft" in page
+    assert "\u2014" not in page
 
 
 def test_message_slots_render_as_visible_text_not_html_tags(
@@ -203,7 +212,7 @@ def test_rule_url_uses_the_configured_site(sources: dict[str, Path]) -> None:
     site = build_site.load_site(sources["config"])
     assert (
         build_site.rule_url("demo", "no-foo", site)
-        == "https://docs.example.org/tools/v3/rules/demo/no-foo.html"
+        == "https://docs.example.org/tools/v3/rules/demo/no-foo/"
     )
 
 
@@ -262,3 +271,49 @@ def test_real_data_builds_clean_with_a_page_per_rule_and_matching_ids() -> None:
         p for p in pages if p.startswith("rules/") and not p.endswith("index.md")
     ]
     assert len(rule_pages) == expected
+
+
+@pytest.mark.parametrize("preset", ["ste", "google"])
+def test_every_bundled_style_preset_gets_a_generated_page(
+    sources: dict[str, Path], preset: str
+) -> None:
+    assert _run(sources) == 0
+    assert _read(sources, f"styles/{preset}.md").startswith(f"# Style: {preset}\n")
+
+
+def test_styles_index_links_the_preset_pages_and_is_not_a_placeholder(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    index = _read(sources, "styles/index.md")
+    assert "not generated yet" not in index
+    assert "(ste.md)" in index
+    assert "(google.md)" in index
+
+
+def test_built_in_terms_page_is_generated_and_linked_from_the_root_index(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    assert _read(sources, "terms/index.md").startswith("# Built-in terms\n")
+    assert "(terms/index.md)" in _read(sources, "index.md")
+
+
+def test_a_failing_reference_example_stops_the_build_and_reports_its_stderr(
+    sources: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cargo = tmp_path / "fake-cargo"
+    fake_cargo.write_text(
+        "#!/bin/sh\necho 'boom: no such example xyzzy' >&2\nexit 101\n"
+    )
+    fake_cargo.chmod(0o755)
+    build_site.rust_reference.cache_clear()
+    monkeypatch.setattr(build_site, "CARGO", str(fake_cargo))
+    try:
+        with pytest.raises(SystemExit) as failure:
+            _run(sources)
+    finally:
+        build_site.rust_reference.cache_clear()
+    message = str(failure.value)
+    assert "slopvac-styles" in message
+    assert "boom: no such example xyzzy" in message

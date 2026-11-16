@@ -1,0 +1,7 @@
+io: reduce syscalls in poll_read (#4840)
+
+As the [epoll documentation points out](https://man7.org/linux/man-pages/man7/epoll.7.html), a read that only partially fills a buffer is sufficient to show that the socket buffer has been drained.
+
+We can take advantage of this by clearing readiness in this case, which seems to significantly improve performance under certain conditions.
+
+Co-authored-by: Carl Lerche <me@carllerche.com>

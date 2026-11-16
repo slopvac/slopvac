@@ -1,0 +1,18 @@
+ACL default newly created user set USER_FLAG_SANITIZE_PAYLOAD flag (#11279)
+
+Starting from 6.2, after ACL SETUSER user reset, the user
+will carry the sanitize-payload flag. It was added in #7807,
+and then ACL SETUSER reset is inconsistent with default
+newly created user which missing sanitize-payload flag.
+
+Same as `off` and `on` these two bits are mutually exclusive,
+the default created user needs to have sanitize-payload flag.
+Adds USER_FLAG_SANITIZE_PAYLOAD flag to ACLCreateUser.
+
+Note that the bug don't have any real implications,
+since the code in rdb.c (rdbLoadObject) checks for
+`USER_FLAG_SANITIZE_PAYLOAD_SKIP`, so the fact that
+`USER_FLAG_SANITIZE_PAYLOAD` is missing doesn't really matters.
+
+Added tests to make sure it won't be broken in the future,
+and updated the comment in ACLSetUser and redis.conf

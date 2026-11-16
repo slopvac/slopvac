@@ -1,0 +1,165 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "table",
+   "table": true,
+   "start": 2,
+   "end": 8,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 2,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "A"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 2,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "B"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 2,
+   "end": 2,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "C"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    2,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Wide span"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    0,
+    2
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "D"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    2,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "E"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    2,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "F"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    2,
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "G"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    2,
+    2,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 8,
+   "end": 8,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "H"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    3,
+    1,
+    2
+   ]
+  }
+ ]
+}

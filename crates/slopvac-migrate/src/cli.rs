@@ -34,7 +34,7 @@ pub fn command() -> Command {
             Arg::new("preserve-behavior")
                 .long("preserve-behavior")
                 .action(ArgAction::SetTrue)
-                .help("Keep the 2.x vocabulary behavior by adding the STE style"),
+                .help("Reproduce the 2.x profile gates with the core:legacy-<profile> style"),
         )
         .arg(
             Arg::new("restore")
@@ -45,16 +45,17 @@ pub fn command() -> Command {
         )
 }
 
-/// Run `slopvac migrate`. Writes to `out` and `err`; returns the exit code:
+/// Run `slopvac migrate`. `steering` is the 3.0 managed block from `slopvac setup`. Writes to `out` and `err`; returns the exit code:
 /// 0 done or nothing to do, 2 incomplete (a setting 3.0 cannot represent, or any
 /// other failure).
 pub fn run(
     matches: &ArgMatches,
     linter: &dyn Linter,
+    steering: &str,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
-    match execute(matches, linter, out) {
+    match execute(matches, linter, steering, out) {
         Ok(()) => 0,
         Err(e) => {
             let _ = writeln!(err, "error[{}]: {e}", e.code());
@@ -68,18 +69,20 @@ pub fn run(
 pub fn execute(
     matches: &ArgMatches,
     linter: &dyn Linter,
+    steering: &str,
     out: &mut dyn Write,
 ) -> Result<(), Error> {
     let root = matches
         .get_one::<PathBuf>("path")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
-    execute_in(matches, linter, out, &root).map_err(|e| e.redacted(&root))
+    execute_in(matches, linter, steering, out, &root).map_err(|e| e.redacted(&root))
 }
 
 fn execute_in(
     matches: &ArgMatches,
     linter: &dyn Linter,
+    steering: &str,
     out: &mut dyn Write,
     root: &std::path::Path,
 ) -> Result<(), Error> {
@@ -94,7 +97,7 @@ fn execute_in(
         preserve_behavior: matches.get_flag("preserve-behavior"),
     };
     let renames = RenameTable::bundled();
-    let plan = plan(&root, &renames, options)?;
+    let plan = plan(&root, &renames, options, steering)?;
     for warning in &plan.warnings {
         writeln!(out, "warning: {warning}").map_err(io)?;
     }

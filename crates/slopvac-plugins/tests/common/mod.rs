@@ -14,7 +14,7 @@ use slopvac_plugins::{
     StartError, Timeouts,
 };
 
-// STUB(slopvac-8l4.9.12): test-only gates stand in for the trust store.
+// Fixed-answer gates for the host protocol tests; the trust gate is tested in trust.rs.
 pub struct Allow;
 impl SpawnGate for Allow {
     fn check(&self, _: &PluginSpec) -> Result<(), PluginError> {

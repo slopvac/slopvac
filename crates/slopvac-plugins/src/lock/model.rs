@@ -365,6 +365,10 @@ fn parse_kind(s: &str) -> Result<SourceKind, ValueError> {
     if s.starts_with('/') || s.contains('\\') {
         return bad("a path source must be relative and use forward slashes");
     }
+    if s.contains(':') {
+        // `Path::push` treats `C:x` as a drive on Windows, and `a:b` names a stream.
+        return bad("a path source must not contain `:`");
+    }
     if s.split('/').any(|segment| segment == "..") {
         return bad("a path source must not contain a `..` segment");
     }

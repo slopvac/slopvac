@@ -1,0 +1,6 @@
+"profile-unknown.toml" = "/profile"
+"signal-path-without-glob.toml" = "/detect/signals/0"
+"signal-mixed-fields.toml" = "/detect/signals/0"
+"signal-unknown-kind.toml" = "/detect/signals/0/kind"
+"detect-no-signals.toml" = "/detect/signals"
+"weight-zero.toml" = "/detect/signals/0/weight"

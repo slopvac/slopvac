@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/style.schema.json",
+  "title": "slopvac v3 style preset",
+  "description": "An ordered preset of category and rule levels and of terms. A config lists styles in order and the last one wins. A style may extend other styles, which apply first. A style declares the styles it cannot combine with, and the host reports a conflict when both are active. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4. The style name is the file name without its extension, qualified by the pack id. Maps merge by key and lists replace, as in config.schema.json. Category entries, rule levels and names are the definitions in config.schema.json.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extends": {
+      "description": "Styles applied before this one, lowest first.",
+      "type": "array",
+      "items": {
+        "$ref": "config.schema.json#/$defs/Ref"
+      },
+      "uniqueItems": true
+    },
+    "conflicts": {
+      "description": "Styles that must not be active together with this one.",
+      "type": "array",
+      "items": {
+        "$ref": "config.schema.json#/$defs/Ref"
+      },
+      "uniqueItems": true
+    },
+    "categories": {
+      "description": "Category dials, keyed by category name. A bare level sets the severity of every rule in the category. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "config.schema.json#/$defs/RuleKey"
+      },
+      "additionalProperties": {
+        "$ref": "config.schema.json#/$defs/CategorySettings"
+      }
+    },
+    "rules": {
+      "description": "Rule levels, keyed by rule name. A rule entry wins over the category entry. Keys are data, so the x- convention does not apply: an x- key is a rule or category name and takes a level.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "config.schema.json#/$defs/RuleKey"
+      },
+      "additionalProperties": {
+        "$ref": "config.schema.json#/$defs/RuleLevel"
+      }
+    },
+    "terms": {
+      "$ref": "#/$defs/Terms"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Terms": {
+      "description": "Terms the style brings.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Words the style lets through the spelling check. A list replaces."
+        },
+        "blocklists": {
+          "description": "Blocklist files, relative to this style file.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelPath"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "RelPath": {
+      "description": "A path relative to this file: no leading slash or drive letter, no backslash and no .. segment.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))"
+    }
+  }
+}

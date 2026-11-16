@@ -1,0 +1,12 @@
+schema_version = 3
+id = "acme-tagger"
+version = "0.3.1"
+slopvac_api = 1
+kind = "plugin"
+
+[plugin]
+command = "bin/x"
+network = false
+hooks = []
+features = { required = [], optional = [] }
+sandbox = true

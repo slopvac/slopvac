@@ -142,6 +142,7 @@ fn merge(into: &mut SettingsPatch, from: &SettingsPatch) {
             .or_insert_with(|| CategoryPatch::Dials(CategoryDials::default()));
         let mut d = cur.dials();
         d.severity = new.severity.or(d.severity);
+        d.minimum_severity = new.minimum_severity.or(d.minimum_severity);
         d.max_per_100_words = new.max_per_100_words.or(d.max_per_100_words);
         d.weight = new.weight.or(d.weight);
         *cur = CategoryPatch::Dials(d);

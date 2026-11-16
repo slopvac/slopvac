@@ -1,0 +1,5 @@
+schema_version = 3
+
+[categories.orwell-voice]
+severity = "warning"
+max_per_100_words = "none"

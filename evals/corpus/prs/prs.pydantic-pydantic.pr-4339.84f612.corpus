@@ -1,0 +1,91 @@
+Generate docs exampels for Python 3.10 and above
+
+<!-- Thank you for your contribution! -->
+<!-- Unless your change is trivial, please create an issue to discuss the change before creating a PR -->
+<!-- See https://pydantic-docs.helpmanual.io/contributing/ for help on Contributing -->
+<!-- PLEASE DO **NOT** put issue ids in the PR title! Instead, add a descriptive title and put ids in the body -->
+
+## Change Summary
+<img width="640" alt="image" src="https://user-images.githubusercontent.com/36469655/183285104-bd3dd939-de91-463a-83a9-962c0dc8c41f.png">
+
+Embedding examples workflow is simplified:
+
+
+<table>
+<tr>
+<th>Current</th>
+<th>New</th>
+</tr>
+<tr>
+<td>
+  
+````markdown
+```py
+{!.tmp_examples/schema_main.py!}
+```
+_(This script is complete, it should run "as is")_
+
+Outputs:
+
+```json
+{!.tmp_examples/schema_main.json!}
+```
+````
+  
+</td>
+<td>
+
+````markdown
+{!.tmp_examples/schema_main.md!}
+````
+
+
+</td>
+</tr>
+</table>
+
+`docs/build/exec_examples.py` will now:
+1. check if example uses all features of minimal supported version via pyupgrade
+2. create and add versions of the file with upgraded syntax that correspond to major python releases, if applicable
+3. add `This script is complete, it should run "as is"` if applicable
+4. add json output if applicable
+
+## Screenshots 
+<details>
+<summary>Tabs</summary>
+
+<table>
+<tr>
+</tr>
+<tr>
+<td>
+  
+<img width="640" alt="image" src="https://user-images.githubusercontent.com/36469655/183254888-ae3dc968-748e-4942-b6c6-db5d3a8bb67d.png">
+  
+</td>
+<td>
+<img width="640" alt="image" src="https://user-images.githubusercontent.com/36469655/183254885-0fd802a2-9286-449d-8de4-feff2272f4aa.png">
+
+
+</td>
+</tr>
+</table>
+</details>
+
+<details>
+<summary>Json output, single tab, incomplete script</summary>
+
+<img width="632" alt="image" src="https://user-images.githubusercontent.com/36469655/183255046-41275567-4dd5-4fe0-9cc3-adcb4fc23d2e.png">
+</details>
+
+## Related issue number
+Closes #4334
+
+## Checklist
+
+* [ ] Unit tests for the changes exist
+* [x] Tests pass on CI and coverage remains at 100%
+* [x] Documentation reflects the changes where applicable
+* [x] `changes/<pull request or issue id>-<github username>.md` file added describing change
+  (see [changes/README.md](https://github.com/samuelcolvin/pydantic/blob/master/changes/README.md) for details)
+* [ ] My PR is ready to review, **please add a comment including the phrase "please review" to assign reviewers**

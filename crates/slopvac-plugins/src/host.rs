@@ -205,10 +205,9 @@ pub struct PluginSpec {
 
 /// The pre-spawn check that backs plugin-protocol.md section 4.3.
 ///
-/// The real implementation verifies the trust hash (`slopvac plugins trust`),
-/// the signature and the revocation list, and hands out the verified tree.
-/// STUB(slopvac-8l4.9.12): only test gates implement this until the trust
-/// store (slopvac-8l4.9.4) and signatures (slopvac-8l4.9.5) land.
+/// [`crate::trust::TrustGate`] is the production implementation: it recomputes
+/// the tree hash and checks the trust hash (`slopvac plugins trust`) and the
+/// revocation list before every spawn. Signatures are verified earlier, at sync.
 pub trait SpawnGate: Send + Sync {
     /// Refuse the spawn with [`PluginError::Untrusted`] or
     /// [`PluginError::HashMismatch`], or allow it.

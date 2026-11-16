@@ -51,7 +51,7 @@ fn type_is_chosen_from_change_size_claim_density_and_genre() {
 
 #[test]
 fn fixture_change_is_an_update_because_literals_and_facts_changed() {
-    let report = compare(ORIGINAL, REVISED);
+    let report = compare(ORIGINAL, REVISED).unwrap();
     let s = ChangeStats::from_report(&report);
     assert_eq!(s, stats(15, 6, 3, 3));
     let (kind, reason) = select_type(&s, None);
@@ -61,7 +61,7 @@ fn fixture_change_is_an_update_because_literals_and_facts_changed() {
 
 #[test]
 fn scope_budget_scales_with_the_change_and_asks_above_it() {
-    let scope = Scope::for_report(&compare(ORIGINAL, REVISED));
+    let scope = Scope::for_report(&compare(ORIGINAL, REVISED).unwrap());
     assert_eq!((scope.required, scope.extra_budget), (6, 8));
     assert!(scope.admit(8, Approval::Ask, false).is_ok());
     let err = scope.admit(9, Approval::Ask, false).unwrap_err();
@@ -69,7 +69,7 @@ fn scope_budget_scales_with_the_change_and_asks_above_it() {
     assert!(err.to_string().contains("--scope-approved"));
     assert!(scope.admit(9, Approval::Auto, false).is_ok());
     assert!(scope.admit(9, Approval::Ask, true).is_ok());
-    let bigger = Scope::for_report(&compare("A one. B two.", ""));
+    let bigger = Scope::for_report(&compare("A one. B two.", "").unwrap());
     assert!(bigger.extra_budget >= 5);
 }
 
@@ -89,7 +89,7 @@ fn reviewer_model_must_differ_from_the_author_model() {
 
 #[test]
 fn payload_is_only_what_the_review_type_needs() {
-    let report = compare(ORIGINAL, REVISED);
+    let report = compare(ORIGINAL, REVISED).unwrap();
     let mechanical = payload(ReviewType::Mechanical, &report, ORIGINAL, REVISED);
     assert_eq!(mechanical.kind, "none");
     assert_eq!(mechanical.items.len(), 0);
@@ -135,7 +135,7 @@ fn payload_is_only_what_the_review_type_needs() {
 #[test]
 fn a_deletion_only_update_still_sends_the_deleted_sentence() {
     let original = "Keep this one. Remove the 90 day limit. Keep that one.";
-    let report = compare(original, "Keep this one. Keep that one.");
+    let report = compare(original, "Keep this one. Keep that one.").unwrap();
     let update = payload(
         ReviewType::Update,
         &report,
@@ -295,7 +295,6 @@ fn review_topic(review_type: Option<ReviewType>, approval: Approval, level: Leve
             level,
             review_type,
             review_approval: approval,
-            ..Settings::default()
         },
         &tree(),
         Path::new("/nonexistent"),

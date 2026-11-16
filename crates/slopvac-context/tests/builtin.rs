@@ -237,3 +237,14 @@ fn generated_notice_tags_its_paragraph_only() {
     let other = kinds_for("a.md", src, "You can generate files with the tool.");
     assert!(!has(&other, "generated"), "{other:?}");
 }
+
+#[test]
+fn generated_notice_also_covers_list_items_and_headings() {
+    let src = "# This file is generated\n\n- Do not edit this by hand.\n- Plain item.\n";
+    let heading = kinds_for("a.md", src, "This file is generated");
+    assert!(has(&heading, "generated"), "{heading:?}");
+    let item = kinds_for("a.md", src, "Do not edit this by hand.");
+    assert!(has(&item, "generated"), "{item:?}");
+    let plain = kinds_for("a.md", src, "Plain item.");
+    assert!(!has(&plain, "generated"), "{plain:?}");
+}

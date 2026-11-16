@@ -151,8 +151,20 @@ Three consequences follow:
   Inline code is `masked`.
 - **HTML.** Entities are `entity`. Tags and comments are gaps. A run of whitespace, with
   or without newlines, is one `collapse` token.
-- **reStructuredText.** Backslash escapes are `backslash`. Emphasis and strong markers
-  are gaps. RST has no HTML entities.
+- **reStructuredText.** The core parses the document with docutils. docutils records the
+  source lines of every block and keeps the source text of every inline construct, and the
+  core places each node's words inside that node's own lines, never elsewhere in the file.
+  Backslash escapes are `backslash`. Emphasis, strong, link and role markers are gaps. RST
+  has no HTML entities. An inline literal is `masked`, and the whitespace between words is
+  `collapse` when the source has it there. Positions are byte exact for every word that is
+  found inside its node. When a node's words cannot be matched, its prose is kept and maps
+  to the node's whole trimmed lines (`opaque`), so the position is line-precise, and the
+  document carries an `info` notice. A node with no usable source lines makes the check
+  incomplete. docutils 0.21 puts the line of some directive output one line late, so the
+  mapper retries with one line of slack before it falls back. A table cell is matched only
+  inside its own columns, read from the table border, and a table is a block that covers
+  its cells and borders. Text docutils generates, such as the title and entries of a
+  `contents` directive, is not prose.
 - **Code comments.** The delimiters (`//`, `#`, `/*`, `*/`, a leading `*`) are gaps.
   Consecutive comment lines join with `wrap`. Comment text is not decoded.
 
@@ -189,7 +201,7 @@ Every format derives from the span and the original bytes. The vectors pin each 
 | json | 1-based | code points | exclusive | `span` in bytes, plus `start` and `end` as `LineCol` |
 | SARIF | 1-based | UTF-16 code units | exclusive | `startLine`, `startColumn`, `endLine`, `endColumn`, with `columnKind` set to `utf16CodeUnits` |
 | rdjsonl | 1-based | UTF-8 bytes | exclusive | `range.start`, `range.end`; suggestions carry the same range |
-| codeclimate | 1-based | code points | inclusive | `lines` and `positions` |
+| codeclimate | 1-based | none | inclusive | `lines` only |
 | junit | 1-based | code points | not shown | `line:col` in the failure text |
 | checkstyle | 1-based | code points | not shown | `line` and `column` on `<error>` |
 | markdown, html | 1-based | code points | not shown | `line:col` |
@@ -232,16 +244,15 @@ byte after the BOM, as in every other unit.
 ### Code Climate
 
 The [Code Climate spec](https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md#locations)
-has line-based and position-based locations. It says line ranges are **inclusive**, lines are
-1-based, and positions refer to "specific characters". It does not name the column unit
+has line-based and position-based locations. It treats them as alternatives. It says line
+ranges are **inclusive** and lines are 1-based. It does not name the column unit of a position
 or say whether a position end is inclusive.
 
-**Decision:** emit both. `lines.begin` is the start line. `lines.end` is the line of the last
-included character, so a span that ends at column 1 of the next line ends on the previous
-line. The positions form uses code points. `positions.end` is the **last included
-character**, matching the inclusive line range. For CRLF, that character is the CR. An
-empty span has `end` equal to `begin`. The spec leaves the end open, so this decision needs
-confirmation against a real consumer.
+**Decision:** emit `location.lines` only. GitLab Code Quality, the main consumer, requires
+`lines.begin`, and the unspecified position semantics would not be portable. `lines.begin` is
+the start line. `lines.end` is the line of the last included character, so a span that ends at
+column 1 of the next line ends on the previous line. An empty span has `end` equal to `begin`.
+Columns do not appear in this format.
 
 ### JUnit
 

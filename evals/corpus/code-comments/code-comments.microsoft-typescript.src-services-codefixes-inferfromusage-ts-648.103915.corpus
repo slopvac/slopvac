@@ -1,0 +1,220 @@
+            }
+        }
+
+        function inferTypeFromContextualType(node: Expression, usage: Usage): void {
+            if (isExpressionNode(node)) {
+                addCandidateType(usage, checker.getContextualType(node));
+            }
+        }
+
+        function inferTypeFromExpressionStatement(node: Expression, usage: Usage): void {
+            addCandidateType(usage, isCallExpression(node) ? checker.getVoidType() : checker.getAnyType());
+        }
+
+        function inferTypeFromPrefixUnaryExpression(node: PrefixUnaryExpression, usage: Usage): void {
+            switch (node.operator) {
+                case SyntaxKind.PlusPlusToken:
+                case SyntaxKind.MinusMinusToken:
+                case SyntaxKind.MinusToken:
+                case SyntaxKind.TildeToken:
+                    usage.isNumber = true;
+                    break;
+
+                case SyntaxKind.PlusToken:
+                    usage.isNumberOrString = true;
+                    break;
+
+                // case SyntaxKind.ExclamationToken:
+                // no inferences here;
+            }
+        }
+
+        function inferTypeFromBinaryExpression(node: Expression, parent: BinaryExpression, usage: Usage): void {
+            switch (parent.operatorToken.kind) {
+                // ExponentiationOperator
+                case SyntaxKind.AsteriskAsteriskToken:
+
+                // MultiplicativeOperator
+                // falls through
+                case SyntaxKind.AsteriskToken:
+                case SyntaxKind.SlashToken:
+                case SyntaxKind.PercentToken:
+
+                // ShiftOperator
+                // falls through
+                case SyntaxKind.LessThanLessThanToken:
+                case SyntaxKind.GreaterThanGreaterThanToken:
+                case SyntaxKind.GreaterThanGreaterThanGreaterThanToken:
+
+                // BitwiseOperator
+                // falls through
+                case SyntaxKind.AmpersandToken:
+                case SyntaxKind.BarToken:
+                case SyntaxKind.CaretToken:
+
+                // CompoundAssignmentOperator
+                // falls through
+                case SyntaxKind.MinusEqualsToken:
+                case SyntaxKind.AsteriskAsteriskEqualsToken:
+                case SyntaxKind.AsteriskEqualsToken:
+                case SyntaxKind.SlashEqualsToken:
+                case SyntaxKind.PercentEqualsToken:
+                case SyntaxKind.AmpersandEqualsToken:
+                case SyntaxKind.BarEqualsToken:
+                case SyntaxKind.CaretEqualsToken:
+                case SyntaxKind.LessThanLessThanEqualsToken:
+                case SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken:
+                case SyntaxKind.GreaterThanGreaterThanEqualsToken:
+
+                // AdditiveOperator
+                // falls through
+                case SyntaxKind.MinusToken:
+
+                // RelationalOperator
+                // falls through
+                case SyntaxKind.LessThanToken:
+                case SyntaxKind.LessThanEqualsToken:
+                case SyntaxKind.GreaterThanToken:
+                case SyntaxKind.GreaterThanEqualsToken:
+                    const operandType = checker.getTypeAtLocation(parent.left === node ? parent.right : parent.left);
+                    if (operandType.flags & TypeFlags.EnumLike) {
+                        addCandidateType(usage, operandType);
+                    }
+                    else {
+                        usage.isNumber = true;
+                    }
+                    break;
+
+                case SyntaxKind.PlusEqualsToken:
+                case SyntaxKind.PlusToken:
+                    const otherOperandType = checker.getTypeAtLocation(parent.left === node ? parent.right : parent.left);
+                    if (otherOperandType.flags & TypeFlags.EnumLike) {
+                        addCandidateType(usage, otherOperandType);
+                    }
+                    else if (otherOperandType.flags & TypeFlags.NumberLike) {
+                        usage.isNumber = true;
+                    }
+                    else if (otherOperandType.flags & TypeFlags.StringLike) {
+                        usage.isString = true;
+                    }
+                    else if (otherOperandType.flags & TypeFlags.Any) {
+                        // do nothing, maybe we'll learn something elsewhere
+                    }
+                    else {
+                        usage.isNumberOrString = true;
+                    }
+                    break;
+
+                //  AssignmentOperators
+                case SyntaxKind.EqualsToken:
+                case SyntaxKind.EqualsEqualsToken:
+                case SyntaxKind.EqualsEqualsEqualsToken:
+                case SyntaxKind.ExclamationEqualsEqualsToken:
+                case SyntaxKind.ExclamationEqualsToken:
+                    addCandidateType(usage, checker.getTypeAtLocation(parent.left === node ? parent.right : parent.left));
+                    break;
+
+                case SyntaxKind.InKeyword:
+                    if (node === parent.left) {
+                        usage.isString = true;
+                    }
+                    break;
+
+                // LogicalOperator Or NullishCoalescing
+                case SyntaxKind.BarBarToken:
+                case SyntaxKind.QuestionQuestionToken:
+                    if (node === parent.left &&
+                        (node.parent.parent.kind === SyntaxKind.VariableDeclaration || isAssignmentExpression(node.parent.parent, /*excludeCompoundAssignment*/ true))) {
+                        // var x = x || {};
+                        // TODO: use getFalsyflagsOfType
+                        addCandidateType(usage, checker.getTypeAtLocation(parent.right));
+                    }
+                    break;
+
+                case SyntaxKind.AmpersandAmpersandToken:
+                case SyntaxKind.CommaToken:
+                case SyntaxKind.InstanceOfKeyword:
+                    // nothing to infer here
+                    break;
+            }
+        }
+
+        function inferTypeFromSwitchStatementLabel(parent: CaseOrDefaultClause, usage: Usage): void {
+            addCandidateType(usage, checker.getTypeAtLocation(parent.parent.parent.expression));
+        }
+
+        function inferTypeFromCallExpression(parent: CallExpression | NewExpression, usage: Usage): void {
+            const call: CallUsage = {
+                argumentTypes: [],
+                return_: createEmptyUsage()
+            };
+
+            if (parent.arguments) {
+                for (const argument of parent.arguments) {
+                    call.argumentTypes.push(checker.getTypeAtLocation(argument));
+                }
+            }
+
+            calculateUsageOfNode(parent, call.return_);
+            if (parent.kind === SyntaxKind.CallExpression) {
+                (usage.calls || (usage.calls = [])).push(call);
+            }
+            else {
+                (usage.constructs || (usage.constructs = [])).push(call);
+            }
+        }
+
+        function inferTypeFromPropertyAccessExpression(parent: PropertyAccessExpression, usage: Usage): void {
+            const name = escapeLeadingUnderscores(parent.name.text);
+            if (!usage.properties) {
+                usage.properties = new Map();
+            }
+            const propertyUsage = usage.properties.get(name) || createEmptyUsage();
+            calculateUsageOfNode(parent, propertyUsage);
+            usage.properties.set(name, propertyUsage);
+        }
+
+        function inferTypeFromPropertyElementExpression(parent: ElementAccessExpression, node: Expression, usage: Usage): void {
+            if (node === parent.argumentExpression) {
+                usage.isNumberOrString = true;
+                return;
+            }
+            else {
+                const indexType = checker.getTypeAtLocation(parent.argumentExpression);
+                const indexUsage = createEmptyUsage();
+                calculateUsageOfNode(parent, indexUsage);
+                if (indexType.flags & TypeFlags.NumberLike) {
+                    usage.numberIndex = indexUsage;
+                }
+                else {
+                    usage.stringIndex = indexUsage;
+                }
+            }
+        }
+
+        function inferTypeFromPropertyAssignment(assignment: PropertyAssignment | ShorthandPropertyAssignment, usage: Usage) {
+            const nodeWithRealType = isVariableDeclaration(assignment.parent.parent) ?
+                assignment.parent.parent :
+                assignment.parent;
+            addCandidateThisType(usage, checker.getTypeAtLocation(nodeWithRealType));
+        }
+
+        function inferTypeFromPropertyDeclaration(declaration: PropertyDeclaration, usage: Usage) {
+            addCandidateThisType(usage, checker.getTypeAtLocation(declaration.parent));
+        }
+
+        interface Priority {
+            high: (t: Type) => boolean;
+            low: (t: Type) => boolean;
+        }
+
+        function removeLowPriorityInferences(inferences: readonly Type[], priorities: Priority[]): Type[] {
+            const toRemove: ((t: Type) => boolean)[] = [];
+            for (const i of inferences) {
+                for (const { high, low } of priorities) {
+                    if (high(i)) {
+                        Debug.assert(!low(i), "Priority can't have both low and high");
+                        toRemove.push(low);
+                    }
+                }
+            }

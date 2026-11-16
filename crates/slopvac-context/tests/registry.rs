@@ -2,12 +2,12 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, TagIndex, TagRegistry, Tagger,
-    TaggerSpec,
+    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, StructuralSpec, TagIndex,
+    TagRegistry, Tagger,
 };
 
 fn tagger(yaml: &str) -> Box<dyn Tagger> {
-    Box::new(TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap())
+    Box::new(StructuralSpec::from_yaml(yaml).unwrap().compile().unwrap())
 }
 
 fn run(yaml: &str, path: &str, src: &str) -> TagIndex {
@@ -194,7 +194,7 @@ fn duplicate_tagger_ids_are_rejected() {
 
 #[test]
 fn invalid_specs_are_errors() {
-    let compile = |y: &str| TaggerSpec::from_yaml(y).and_then(TaggerSpec::compile);
+    let compile = |y: &str| StructuralSpec::from_yaml(y).and_then(StructuralSpec::compile);
     let cases = [
         "id: t\nkind: a\nwhen:\n  sentence: x\nbogus: 1\n",
         "id: t\nkind: a\nwhen: {}\n",
@@ -246,4 +246,112 @@ fn context_gate_semantics() {
     for (g, kinds, want) in cases {
         assert_eq!(g.allows(kinds), want, "{g:?} on {kinds:?}");
     }
+}
+
+fn piece(kind: &str, span: std::ops::Range<usize>, group: usize) -> (slopvac_context::Tag, usize) {
+    (
+        slopvac_context::Tag {
+            kind: kind.to_owned(),
+            span,
+            confidence: 1.0,
+            evidence: String::new(),
+        },
+        group,
+    )
+}
+
+#[test]
+#[allow(clippy::single_range_in_vec_init)]
+fn ranges_on_different_pieces_of_one_tag_are_covered_by_it() {
+    // One tag in two pieces (two lines of a cell), and an unrelated tag of the same kind.
+    let idx = TagIndex::from_pieces(vec![
+        piece("requirement", 2..14, 0),
+        piece("requirement", 40..57, 0),
+        piece("requirement", 80..90, 1),
+    ]);
+    assert_eq!(idx.kinds_covering(&[10..14, 40..46]), ["requirement"]);
+    // A range inside the other tag's piece is not covered by the first tag's pieces.
+    assert!(idx.kinds_covering(&[10..14, 80..85]).is_empty());
+    // A range between the pieces is covered by none.
+    assert!(idx.kinds_covering(&[10..14, 20..25]).is_empty());
+    // One range is the plain containment check.
+    assert_eq!(idx.kinds_covering(&[3..5]), idx.kinds_at(&(3..5)));
+    assert!(idx.kinds_covering(&[]).is_empty());
+}
+
+fn block(
+    kind: BlockKind,
+    span: std::ops::Range<usize>,
+    text: &str,
+    level: Option<u8>,
+) -> OwnedBlock {
+    OwnedBlock {
+        kind,
+        span,
+        text: text.to_owned(),
+        heading_path: vec!["Procedure".to_owned()],
+        heading_level: level,
+        admonition_title: None,
+    }
+}
+
+#[test]
+fn a_section_runs_to_the_furthest_end_of_its_blocks() {
+    // Reading order is not source order: the second cell ends before the first one does.
+    let doc = PlainDocument {
+        path: "a.rst".to_owned(),
+        source_len: 200,
+        blocks: vec![
+            block(BlockKind::Heading, 0..9, "Procedure", Some(1)),
+            block(BlockKind::TableRow, 50..120, "left cell", None),
+            block(BlockKind::TableRow, 70..90, "right cell", None),
+        ],
+        ..PlainDocument::default()
+    };
+    let mut reg = TagRegistry::new();
+    reg.register(tagger(
+        "id: t\nkind: procedure\nscope: section\nwhen:\n  heading_path: procedure\n",
+    ))
+    .unwrap();
+    let idx = reg.tag_document(&doc).unwrap();
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].span, 0..120);
+}
+
+#[test]
+#[allow(clippy::single_range_in_vec_init)]
+fn overlapping_groups_keep_every_piece_they_share() {
+    // Group 0 is one piece. Group 1 has the same first piece and a second one.
+    let idx = TagIndex::from_pieces(vec![
+        piece("requirement", 2..14, 0),
+        piece("requirement", 2..14, 1),
+        piece("requirement", 40..57, 1),
+    ]);
+    assert_eq!(idx.kinds_covering(&[10..14, 40..46]), ["requirement"]);
+    // Group 0 alone does not reach the second range.
+    assert!(idx.kinds_covering(&[10..14, 60..65]).is_empty());
+    // Equal pieces of one group are still one piece.
+    let same = TagIndex::from_pieces(vec![
+        piece("requirement", 2..14, 0),
+        piece("requirement", 2..14, 0),
+    ]);
+    assert_eq!(same.tags().len(), 1);
+}
+
+#[test]
+fn windows_style_paths_match_path_conditions_like_unix_paths() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let idx = run(y, "C:\\docs\\CHANGELOG.md", DOC);
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].kind, "change-note");
+    assert_eq!(idx.tags()[0].span, 0..DOC.len());
+}
+
+#[test]
+fn dot_components_are_dropped_before_an_anchored_path_condition() {
+    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let idx = run(y, "./docs/./CHANGELOG.md", DOC);
+    assert_eq!(idx.tags().len(), 1);
+    assert_eq!(idx.tags()[0].kind, "change-note");
+    assert_eq!(idx.tags()[0].span, 0..DOC.len());
 }

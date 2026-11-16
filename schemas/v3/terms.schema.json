@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srobroek.github.io/slopvac/schemas/v3/terms.schema.json",
+  "title": "slopvac v3 terms file",
+  "description": "A list of project terms: product names, acronyms and other words that rules must not flag or must spell a fixed way. The project file is .slopvac/terms.toml, and packs ship more. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "terms": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Term"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "terms"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Term": {
+      "description": "One term. Only `term` is required. The canonical spelling is `term`. A listed variant is a wrong spelling that a check may flag and fix to the canonical one.",
+      "type": "object",
+      "properties": {
+        "term": {
+          "type": "string",
+          "minLength": 1
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "kind": {
+          "description": "What the term is, as a kebab-case label. Known values: product, language, protocol, acronym, proper-noun, identifier and jargon. A check may treat acronyms and identifiers differently from prose words.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "ignore_case": {
+          "description": "Accept any casing. The term then works as an allow-list entry and no casing finding fires for it.",
+          "type": "boolean",
+          "default": false
+        },
+        "case_sensitive": {
+          "description": "Match only the exact spelling of `term` and its variants. Other casings are different words and never flag. For names that are also common words, such as Go, Rust, React, Windows and REST: `go` in running text is not a finding. Cannot combine with ignore_case.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "term"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "ignore_case",
+          "case_sensitive"
+        ],
+        "properties": {
+          "ignore_case": {
+            "const": true
+          },
+          "case_sensitive": {
+            "const": true
+          }
+        }
+      }
+    }
+  }
+}

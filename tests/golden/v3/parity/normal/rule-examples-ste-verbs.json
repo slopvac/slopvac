@@ -1,0 +1,1109 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.402,
+        "over_budget": false,
+        "per_100_words": 1.606,
+        "score": 90.0,
+        "suggestions": 2,
+        "warnings": 2
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-discipline",
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 1.205,
+        "over_budget": true,
+        "per_100_words": 1.205,
+        "score": 58.2,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-inflation",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.402,
+        "over_budget": false,
+        "per_100_words": 0.402,
+        "score": 79.9,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.6,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 7,
+        "gating_per_100_words": 0.602,
+        "over_budget": false,
+        "per_100_words": 2.811,
+        "score": 77.9,
+        "suggestions": 4,
+        "warnings": 3
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.205,
+        "score": 97.0,
+        "suggestions": 3,
+        "warnings": 0
+      },
+      {
+        "budget": 1.0,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 26,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 10.442,
+        "score": 85.0,
+        "suggestions": 26,
+        "warnings": 0
+      },
+      {
+        "budget": 1.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 4,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 10,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 12,
+        "end_column": 20,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "had been",
+        "message": "Complex verb construction \"had been\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 19,
+          "start": 11
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 11,
+        "end_line": 3,
+        "line": 3,
+        "matched_text": "The runner",
+        "message": "Missing article before \"The runner\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 69,
+          "start": 59
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 15,
+        "end_column": 28,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "has completed",
+        "message": "Complex verb construction \"has completed\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 135,
+          "start": 122
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 44,
+        "end_column": 55,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "has started",
+        "message": "Complex verb construction \"has started\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 162,
+          "start": 151
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 15,
+        "end_column": 26,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "is draining",
+        "message": "Complex verb construction \"is draining\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 239,
+          "start": 228
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 52,
+        "end_column": 65,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "is restarting",
+        "message": "Complex verb construction \"is restarting\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 278,
+          "start": 265
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "The scheduler",
+        "message": "Missing article before \"The scheduler\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "suggestion",
+        "span": {
+          "end": 294,
+          "start": 281
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 8,
+        "end_column": 20,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "next release",
+        "message": "relative date: next release -- give the absolute date or version",
+        "replacement": null,
+        "rule_id": "core:prose-craft.relative-date",
+        "severity": "warning",
+        "span": {
+          "end": 357,
+          "start": 345
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 31,
+        "end_column": 36,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "will ",
+        "message": "future tense: will  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 373,
+          "start": 368
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 31,
+        "end_column": 45,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "will have been",
+        "message": "Complex verb construction \"will have been\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 382,
+          "start": 368
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 31,
+        "end_column": 53,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "will have been removed",
+        "message": "Auxiliary stack \"will have been removed\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "suggestion",
+        "span": {
+          "end": 390,
+          "start": 368
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 41,
+        "end_column": 53,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "been removed",
+        "message": "Passive voice \"been removed\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 390,
+          "start": 378
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 5,
+        "end_column": 17,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "next release",
+        "message": "relative date: next release -- give the absolute date or version",
+        "replacement": null,
+        "rule_id": "core:prose-craft.relative-date",
+        "severity": "warning",
+        "span": {
+          "end": 409,
+          "start": 397
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 11,
+        "end_column": 16,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "will ",
+        "message": "future tense: will  -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 444,
+          "start": 439
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 25,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "will have been",
+        "message": "Complex verb construction \"will have been\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 453,
+          "start": 439
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 33,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "will have been rotated",
+        "message": "Auxiliary stack \"will have been rotated\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "suggestion",
+        "span": {
+          "end": 461,
+          "start": 439
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 21,
+        "end_column": 33,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "been rotated",
+        "message": "Passive voice \"been rotated\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 461,
+          "start": 449
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 35,
+        "end_line": 19,
+        "line": 19,
+        "matched_text": "Rotate the token before the audit.",
+        "message": "The condition follows the command (\"Rotate the token before the audit.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 515,
+          "start": 481
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 27,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "is to be rebuilt",
+        "message": "Auxiliary stack \"is to be rebuilt\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "suggestion",
+        "span": {
+          "end": 543,
+          "start": 527
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 17,
+        "end_column": 27,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": "be rebuilt",
+        "message": "Passive voice \"be rebuilt\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 543,
+          "start": 533
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 36,
+        "end_line": 23,
+        "line": 23,
+        "matched_text": "Rebuild the index after the import.",
+        "message": "The condition follows the command (\"Rebuild the index after the import.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 598,
+          "start": 563
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 17,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "The cache has to",
+        "message": "This step is not in the imperative (\"The cache has to\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 616,
+          "start": 600
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 28,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "has to be cleared",
+        "message": "Auxiliary stack \"has to be cleared\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "suggestion",
+        "span": {
+          "end": 627,
+          "start": 610
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 18,
+        "end_column": 28,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "be cleared",
+        "message": "Passive voice \"be cleared\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 627,
+          "start": 617
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "You can clear",
+        "message": "This step is not in the imperative (\"You can clear\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 660,
+          "start": 647
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 15,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "The cache must",
+        "message": "This step is not in the imperative (\"The cache must\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.instruction-not-imperative",
+        "severity": "warning",
+        "span": {
+          "end": 704,
+          "start": 690
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 11,
+        "end_column": 33,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "must have been cleared",
+        "message": "Auxiliary stack \"must have been cleared\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "suggestion",
+        "span": {
+          "end": 722,
+          "start": 700
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 16,
+        "end_column": 33,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "have been cleared",
+        "message": "Complex verb construction \"have been cleared\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 722,
+          "start": 705
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 21,
+        "end_column": 33,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "been cleared",
+        "message": "Passive voice \"been cleared\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 722,
+          "start": 710
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 15,
+        "end_column": 25,
+        "end_line": 31,
+        "line": 31,
+        "matched_text": "be cleared",
+        "message": "Passive voice \"be cleared\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 764,
+          "start": 754
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 14,
+        "end_column": 29,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "is validated by",
+        "message": "Passive voice \"is validated by\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 812,
+          "start": 797
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 20,
+        "end_column": 32,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "were deleted",
+        "message": "Passive voice \"were deleted\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 921,
+          "start": 909
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 17,
+        "end_column": 23,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "is set",
+        "message": "Passive voice \"is set\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 1013,
+          "start": 1007
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 12,
+        "end_column": 28,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "is often ignored",
+        "message": "Passive voice \"is often ignored\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "suggestion",
+        "span": {
+          "end": 1107,
+          "start": 1091
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 14,
+        "end_column": 35,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "performs a validation",
+        "message": "\"performs a validation\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 1219,
+          "start": 1198
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 14,
+        "end_column": 35,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "performs a validation",
+        "message": "nominalisation: performs a validation -- use the verb ('validate', not 'perform validation')",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.nominalized-verb",
+        "severity": "error",
+        "span": {
+          "end": 1219,
+          "start": 1198
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 14,
+        "end_column": 35,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "performs a validation",
+        "message": "Nominalized action \"performs a validation\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "suggestion",
+        "span": {
+          "end": 1219,
+          "start": 1198
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "Do a verification",
+        "message": "\"Do a verification\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 1339,
+          "start": 1322
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 1,
+        "end_column": 18,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "Do a verification",
+        "message": "Nominalized action \"Do a verification\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "suggestion",
+        "span": {
+          "end": 1339,
+          "start": 1322
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 54,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "Do a verification of the checksum after the download.",
+        "message": "The condition follows the command (\"Do a verification of the checksum after the download.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1375,
+          "start": 1322
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 40,
+        "end_line": 55,
+        "line": 55,
+        "matched_text": "Verify the checksum after the download.",
+        "message": "The condition follows the command (\"Verify the checksum after the download.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1416,
+          "start": 1377
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-discipline",
+        "column": 10,
+        "end_column": 29,
+        "end_line": 57,
+        "line": 57,
+        "matched_text": "provides protection",
+        "message": "\"provides protection\" freezes the action in a noun. Use the plain verb.",
+        "replacement": null,
+        "rule_id": "core:prose-discipline.frozen-verb",
+        "severity": "error",
+        "span": {
+          "end": 1446,
+          "start": 1427
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 10,
+        "end_column": 29,
+        "end_line": 57,
+        "line": 57,
+        "matched_text": "provides protection",
+        "message": "Nominalized action \"provides protection\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "suggestion",
+        "span": {
+          "end": 1446,
+          "start": 1427
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "4 error(s), limit 0",
+        "score 58.9, minimum 70.0",
+        "prose-discipline at 1.21 severity-weighted findings per 100 words, budget 0.8"
+      ]
+    },
+    "paragraphs": 30,
+    "path": "rule-examples-ste-verbs.md",
+    "per_100_words": 17.671,
+    "profile": "normal",
+    "prose": {
+      "errors": 4,
+      "findings": 44,
+      "per_100_words": 17.671,
+      "warnings": 5
+    },
+    "score": 58.9,
+    "sentences": 30,
+    "suggestions": 35,
+    "total_findings": 44,
+    "unchecked": [],
+    "warnings": 5,
+    "words": 249
+  },
+  "exit_code": 1
+}

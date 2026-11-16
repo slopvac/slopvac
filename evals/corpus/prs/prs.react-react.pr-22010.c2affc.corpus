@@ -1,0 +1,32 @@
+[DevTools] Support extended source maps with named hooks information
+
+## Summary
+
+Adds support for statically extracting names for hook calls from source code, and extending source maps with that information so that DevTools does not have to directly parse source code at runtime, which will speed up the Named Hooks feature and allow it to be enabled by default.
+
+Specifically, this PR includes the following parts:
+
+- [x] Adding logic to statically extract relevant hook names from the parsed source code (i.e. the babel ast). Note that this logic differs slightly from the existing logic in that the existing logic also uses runtime information from DevTools (such as whether given hooks are a custom hook) to extract names for hooks, whereas this code is meant to run entirely at build time, so it does not rely on that information.
+- [x] Generating an encoded "hook map", which encodes the information about a hooks *original* source location, and it's corresponding name. This "hook map" will be used to generate extended source maps, included tentatively under an extra `x_react_hook_map` field. The map itself is formatted and encoded in a very similar way as how the `names` and `mappings` fields of a standard source map are encoded ( = Base64 VLQ delta coding representing offsets into a string array), and how the "function map" in Metro is encoded, as suggested in #21782. Note that this initial version uses a very basic format, and we are not implementing our own custom encoding, but reusing the `encode` function from `sourcemap-codec`.
+- [x] Updating the logic in `parseHookNames` to check if the source maps have been extended with the hook map information, and if so use that information to extract the hook names without loading the original source code. In this PR we are manually generating extended source maps in our tests in order to test that this functionality works as expected, even though we are not actually generating the extended source maps in production.
+
+The second stage of this work, which will likely need to occur outside this repo, is to update bundlers such as Metro to use these new primitives to actually generate source maps that DevTools can use.
+
+### Follow-ups
+
+- Use our own custom encoding for the Hook Map instead of relying on `sourcemap-codec`
+- Enable named hooks by default when extended source maps are present.
+- Support looking up hook names when column numbers are not present in source map.
+- Measure performance improvement of using extended source maps (manual testing suggests ~4 to 5x faster)
+- Update relevant bundlers to generate extended source maps.
+
+## Test Plan
+
+- yarn flow
+- Tests still pass
+  - yarn test
+  - yarn test-build-devtools
+- Named hooks still work on manual test of browser extension on a few different apps (code sandbox, create-react-app, facebook).
+- For new functionality:
+  - New tests for statically extracting hook names.
+  - New tests for using extended source maps to look up hook names at runtime.

@@ -1,0 +1,19 @@
+Don't auto-advance time when a spawn_blocking task is running.
+
+Time shouldn't auto-advance unless there's really nothing else going on. In general that is hard to fix, but this special case is relatively easy.
+
+Fixes: #4614
+
+## Motivation
+
+I'm writing tests for a complex distributed system. In a single test process, a "server" task runs CPU-bound units of work using `spawn_blocking`, while a "client" task sends requests and waits for responses using `.await`, with a generous timeout. Issue #4614 causes the timeout to elapse instantly; no responses ever succeed.
+
+There seems to be consensus in #4614 that this behavior is a bug, and I agree.
+
+## Solution
+
+I added a field in the clock that tells how many `spawn_blocking` tasks are running/scheduled.
+
+The code increments this counter when spawning such a task and decrements it when the task is done. This means the increment and the decrement are not conveniently side by side in the code, but I think it might be important to bump the counter synchronously, to avoid a race condition if the new task doesn't actually start running right away.
+
+I named the counter `auto_advance_inhibit_count`, instead of something obvious like `num_blocking_tasks`, because it might make sense in the future to provide an API whereby users can manually inhibit auto-advance (... if I'm right in thinking that blocking tasks are not the only kind of work Tokio "can't see").

@@ -1,0 +1,11 @@
+schema_version = 3
+id = "acme-docs"
+version = "1.0.0"
+slopvac_api = 1
+kind = "data"
+
+[plugin]
+command = "bin/x"
+network = false
+hooks = []
+features = { required = [], optional = [] }

@@ -1,0 +1,5 @@
+{
+ "gb/code-span": {
+  "reason": "The 2.x position mapping is wrong for text after an inline code span: it reports line 2, column 1 for a match on line 1. The Rust position points at the matched text. The rule, severity, matched text and message agree."
+ }
+}

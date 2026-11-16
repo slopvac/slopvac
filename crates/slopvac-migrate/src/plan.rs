@@ -74,9 +74,14 @@ const SKIP_DIRS: &[&str] = &[
 
 /// Plan the migration of the project under `root`.
 ///
-/// Reads only. Every unrepresentable setting across all files comes back together in
+/// `steering` is the 3.0 managed block, as `slopvac setup` writes it. Reads only. Every unrepresentable setting across all files comes back together in
 /// [`Error::Dropped`].
-pub fn plan(root: &Path, renames: &RenameTable, options: Options) -> Result<Plan, Error> {
+pub fn plan(
+    root: &Path,
+    renames: &RenameTable,
+    options: Options,
+    steering: &str,
+) -> Result<Plan, Error> {
     let mut plan = Plan::default();
     let mut dropped: Vec<Dropped> = Vec::new();
     let mut dirs = Vec::new();
@@ -86,7 +91,7 @@ pub fn plan(root: &Path, renames: &RenameTable, options: Options) -> Result<Plan
         plan_dir(root, &dir, renames, options, &mut plan, &mut dropped)?;
     }
     for doc in docs {
-        plan_document(root, &doc, renames, &mut plan);
+        plan_document(root, &doc, renames, steering, &mut plan);
     }
     if dropped.is_empty() {
         Ok(plan)
@@ -166,23 +171,16 @@ fn plan_dir(
     let rewrite = match migrate_config(&old, &label, renames, options) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
-        Err(Error::Dropped(d)) => {
-            let lines = py_text
-                .as_deref()
-                .filter(|_| origin == Origin::Pyproject)
-                .and_then(|t| key_lines(t).ok());
-            dropped.extend(d.into_iter().map(|mut x| {
-                if let Some(l) = lines
-                    .as_ref()
-                    .and_then(|m| m.get(&format!("tool.slopvac.{}", x.key)))
-                {
-                    x.line = *l;
+        Err(e) => {
+            let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
+            return match pyproject_lines(e, py) {
+                Error::Dropped(d) => {
+                    dropped.extend(d);
+                    Ok(())
                 }
-                x
-            }));
-            return Ok(());
+                e => Err(e),
+            };
         }
-        Err(e) => return Err(e),
     };
     plan.notes
         .extend(rewrite.notes.into_iter().map(|n| format!("{label}: {n}")));
@@ -236,6 +234,39 @@ enum Origin {
     Pyproject,
 }
 
+/// Point the lines of a config error at `pyproject.toml` when the config came from
+/// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
+fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
+    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
+        return e;
+    };
+    let line_of = |key: &str| lines.get(&format!("tool.slopvac.{key}")).copied();
+    match e {
+        Error::Dropped(d) => Error::Dropped(
+            d.into_iter()
+                .map(|mut x| {
+                    if let Some(l) = line_of(&x.key) {
+                        x.line = l;
+                    }
+                    x
+                })
+                .collect(),
+        ),
+        Error::OverrideOverlap {
+            file,
+            line,
+            block,
+            reason,
+        } => Error::OverrideOverlap {
+            line: line_of(&format!("overrides[{block}]")).unwrap_or(line),
+            file,
+            block,
+            reason,
+        },
+        e => e,
+    }
+}
+
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text
 /// without it. Unrelated content and comments in `pyproject.toml` stay as they are.
 fn extract_tool_table(text: &str) -> Option<(String, String)> {
@@ -259,7 +290,7 @@ fn extract_tool_table(text: &str) -> Option<(String, String)> {
     Some((standalone.to_string(), doc.to_string()))
 }
 
-fn plan_document(root: &Path, path: &Path, renames: &RenameTable, plan: &mut Plan) {
+fn plan_document(root: &Path, path: &Path, renames: &RenameTable, steering: &str, plan: &mut Plan) {
     let Ok(old) = fs::read_to_string(path) else {
         return;
     };
@@ -271,7 +302,7 @@ fn plan_document(root: &Path, path: &Path, renames: &RenameTable, plan: &mut Pla
             label.display()
         ));
     }
-    match rewrite_steering(&text) {
+    match rewrite_steering(&text, steering) {
         Ok(Some(new)) => text = new,
         Ok(None) => {}
         Err(msg) => plan.warnings.push(format!("{}: {msg}", label.display())),

@@ -1,0 +1,12 @@
+rt: remove driver drop implementations (#5014)
+
+Currently, drivers are responsible for clean up when they are dropped.
+This is possible today because each driver struct holds a reference to
+its internal handle.
+
+As part of an effort to decouple drivers from their handles, this patch
+removes the drop implementations for the time and IO driver in favor of
+having the scheduler explicitly call `shutdown()` as part of its
+shutdown process. The scheduler will hold a reference to both the driver
+and the driver handles, so in the future, it will be able to pass in the
+driver handles as part of the shutdown process.

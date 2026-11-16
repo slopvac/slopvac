@@ -1,0 +1,21 @@
+Fix Json strategy serialization failure
+
+When generating pydantic models having nested `Json` fields with
+hypothesis, a JSON serialization exception was raised.
+
+## Change Summary
+
+Changed the `resolve_json` function in `pydantic/_hypothesis_plugin.py` to use the pydantic json serializer if the type passed to the `Json` field is a subclass of  `pydantic.BaseModel`.
+
+## Related issue number
+
+fix #4004 
+
+## Checklist
+
+* [x] Unit tests for the changes exist
+* [x] Tests pass on CI and coverage remains at 100%
+* [x] ~~Documentation reflects the changes where applicable~~
+* [x] `changes/<pull request or issue id>-<github username>.md` file added describing change
+  (see [changes/README.md](https://github.com/samuelcolvin/pydantic/blob/master/changes/README.md) for details)
+* [x] My PR is ready to review, **please add a comment including the phrase "please review" to assign reviewers**

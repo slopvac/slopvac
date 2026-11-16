@@ -9,7 +9,7 @@ use crate::code::{code_kind, mdast_body, trim_terminator};
 use crate::jsexpr::ExpressionChecker;
 use crate::markdown::{MASK, finish, resolve_body};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, ParseError, TokenKind};
 
 /// Read `text` with the MDX options.
 ///
@@ -78,6 +78,8 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
         masked: &masked,
         blocks: Vec::new(),
         code_spans: Vec::new(),
+        containers: Vec::new(),
+        lists: Vec::new(),
     };
     walker.block(&tree);
     let Walker {
@@ -89,11 +91,177 @@ pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
     Ok(finish(blocks, code_spans))
 }
 
+/// The source ranges of MDX syntax that is code, not prose: `{expressions}`, `import` and
+/// `export` blocks, and the opening and closing tags of JSX elements with their attributes.
+/// The text between the tags is not included.
+///
+/// `body` is read as in [`parse_mdx`]. Every position is a byte offset into `source`.
+///
+/// # Errors
+/// Returns [`ParseError::Body`] or [`ParseError::Mdx`] in the cases of [`parse_mdx`].
+pub fn mdx_syntax_spans(source: &str, body: Span) -> Result<Vec<Span>, ParseError> {
+    mdx_syntax_spans_counted(source, body).map(|(spans, _)| spans)
+}
+
+/// [`mdx_syntax_spans`] with the number of bytes the tag scanner looked at, so a test can
+/// check the work stays linear.
+#[doc(hidden)]
+pub fn mdx_syntax_spans_counted(
+    source: &str,
+    body: Span,
+) -> Result<(Vec<Span>, usize), ParseError> {
+    let body = resolve_body(source, body)?;
+    let text = &source[body.start()..body.end()];
+    let regions = code_regions(&parse(text)?);
+    let masked = scan(text, body.start(), &regions, false);
+    let tree = parse(&masked.text)?;
+    let mut spans = Vec::new();
+    let mut work = 0;
+    collect_syntax(&tree, &masked, &mut spans, &mut work);
+    Ok((spans, work))
+}
+
+fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>, work: &mut usize) {
+    match node {
+        Node::MdxFlowExpression(_) | Node::MdxTextExpression(_) | Node::MdxjsEsm(_) => {
+            if let Some((s, e)) = range(node) {
+                out.push(masked.span(s, e));
+            }
+        }
+        Node::MdxJsxFlowElement(_) | Node::MdxJsxTextElement(_) => {
+            if let Some((s, e)) = range(node) {
+                // When the scanner is unsure, protect up to the first child, which is where
+                // markdown-rs says the opening tag ends, or the whole element.
+                let open_end = jsx_tag_end(&masked.text, s, e, work)
+                    .or_else(|| {
+                        node.children()
+                            .and_then(|c| c.first())
+                            .and_then(range)
+                            .map(|(first, _)| first)
+                    })
+                    .map_or(e, |end| end.clamp(s, e));
+                out.push(masked.span(s, open_end));
+                // A closing tag is the last `</` in the node when the opening tag did not
+                // end the node.
+                if open_end < e
+                    && let Some(close) = masked.text[open_end..e].rfind("</")
+                {
+                    out.push(masked.span(open_end + close, e));
+                }
+            }
+        }
+        _ => {}
+    }
+    for child in node.children().into_iter().flatten() {
+        collect_syntax(child, masked, out, work);
+    }
+}
+
+/// What the tag scanner is inside, innermost last.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Js {
+    /// `{ ... }` holding JavaScript.
+    Braces,
+    /// A template literal. `${` opens [`Js::Braces`] inside it.
+    Template,
+}
+
+/// Whether a JavaScript line terminator starts at `i`: LF, CR, U+2028 or U+2029.
+fn line_terminator(bytes: &[u8], i: usize) -> bool {
+    matches!(bytes[i], b'\n' | b'\r')
+        || (bytes[i] == 0xE2
+            && bytes.get(i + 1) == Some(&0x80)
+            && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9)))
+}
+
+/// The end of the JSX tag that starts at `start`: its closing `>`, found outside attribute
+/// strings and JavaScript. It reads strings (with escapes), template literals with nested
+/// `${}`, and `//` and `/* */` comments, and it never reads past `limit`, the end of the
+/// element's own range. `work` counts the bytes looked at.
+///
+/// It returns `None` when it cannot be sure: a `/` that is not a comment (a regular
+/// expression or a division, which cannot be told apart without parsing) or a string,
+/// template or comment that does not end. The caller then protects more, never less.
+fn jsx_tag_end(text: &str, start: usize, limit: usize, work: &mut usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let limit = limit.min(bytes.len());
+    let mut stack: Vec<Js> = Vec::new();
+    // An open string: its quote, and whether it is JavaScript (with escapes) or a JSX
+    // attribute value (without).
+    let mut string: Option<(u8, bool)> = None;
+    let mut i = start;
+    while i < limit {
+        *work += 1;
+        let b = bytes[i];
+        let next = bytes.get(i + 1).copied();
+        if let Some((quote, script)) = string {
+            if script && b == b'\\' {
+                i += 1;
+            } else if b == quote {
+                string = None;
+            }
+        } else if stack.last() == Some(&Js::Template) {
+            match (b, next) {
+                (b'\\', _) => i += 1,
+                (b'`', _) => {
+                    stack.pop();
+                }
+                (b'$', Some(b'{')) => {
+                    stack.push(Js::Braces);
+                    i += 1;
+                }
+                _ => {}
+            }
+        } else {
+            let script = !stack.is_empty();
+            match (b, next) {
+                (b'/', Some(b'/')) if script => {
+                    while i < limit && !line_terminator(bytes, i) {
+                        i += 1;
+                        *work += 1;
+                    }
+                    if i >= limit {
+                        return None;
+                    }
+                    // The terminator is a character of its own, so step over it below.
+                    i += if bytes[i] == 0xE2 { 2 } else { 0 };
+                }
+                (b'/', Some(b'*')) if script => {
+                    i += 2;
+                    while i + 1 < limit && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                        i += 1;
+                        *work += 1;
+                    }
+                    if i + 1 >= limit {
+                        return None;
+                    }
+                    i += 1;
+                }
+                (b'/', _) if script => return None,
+                (b'"' | b'\'', _) => string = Some((b, script)),
+                (b'`', _) if script => stack.push(Js::Template),
+                (b'{', _) => stack.push(Js::Braces),
+                (b'}', _) => {
+                    stack.pop();
+                }
+                (b'>', _) if stack.is_empty() => return Some(i + 1),
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 struct Walker<'a> {
     source: &'a str,
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
+    /// The lists and block quotes the walk is inside.
+    containers: Vec<Container>,
+    /// Whether each enclosing list is ordered.
+    lists: Vec<bool>,
 }
 
 /// Masked byte range of a node.
@@ -117,6 +285,7 @@ impl Walker<'_> {
                         kind: BlockKind::Table,
                         span,
                         projection: None,
+                        containers: self.containers.clone(),
                     });
                 }
                 for (row, tr) in table.children.iter().enumerate() {
@@ -135,6 +304,7 @@ impl Walker<'_> {
                             kind: BlockKind::Paragraph,
                             span: self.span(r),
                             projection: Some(projection),
+                            containers: self.containers.clone(),
                         });
                     }
                 }
@@ -152,13 +322,26 @@ impl Walker<'_> {
                         kind: code_kind(Some(&info), self.masked.span(start, end)),
                         span,
                         projection: None,
+                        containers: self.containers.clone(),
                     });
                 }
             }
             _ => {
+                let (lists, containers) = (self.lists.len(), self.containers.len());
+                match node {
+                    Node::List(list) => self.lists.push(list.ordered),
+                    Node::ListItem(_) => self.containers.push(Container::ListItem {
+                        ordered: self.lists.last().copied().unwrap_or(false),
+                        depth: self.lists.len(),
+                    }),
+                    Node::Blockquote(_) => self.containers.push(Container::BlockQuote),
+                    _ => {}
+                }
                 for child in node.children().into_iter().flatten() {
                     self.block(child);
                 }
+                self.lists.truncate(lists);
+                self.containers.truncate(containers);
             }
         }
     }
@@ -174,6 +357,7 @@ impl Walker<'_> {
                 kind,
                 span: self.span(r),
                 projection: Some(projection),
+                containers: self.containers.clone(),
             });
         }
     }

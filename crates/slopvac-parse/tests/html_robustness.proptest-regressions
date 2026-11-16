@@ -1,0 +1,17 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 526140e40e443467f552adac2e9520a8b793e560efc6af248e1d9c7b6a2cb011 # shrinks to source = "<textarea></p>&lt"
+cc 56aaa47f2f1245062108fe3a140347bd059c99777f6f2a8e71bd653a9f8c601a # shrinks to source = "<!doctype html><code><code><p></b><br/><br/><p><br/><title>a</h2>&lt", a = 22, b = 68
+cc 862048f188cd4a1234e85cf06d6902159b71b661202fa004586a8ed8848ffe59 # shrinks to source = "&#xD800;</b><code><code><script><p><p><p></p><p><p><code><p><!doctype html><p><p><table><br/>&amp;é", a = 100, b = 52
+cc 9281b955a578a7b15193ec462144f480c5ce36098de87fac943c9c5ce4a65122 # shrinks to source = "&amp;é"
+cc 3d2ac24025de97fbbc95ea2111df2cc5343110c9a386bb2b23bfde0399a5c054 # shrinks to source = "&#x</code>&notit;&#x41;<p>--><b>\u{feff}\r\n", a = 36, b = 0
+cc 091e01ed58afd1be4298b93679da31403cdc979f7ceb628154b3b0b7bbbf88f0 # shrinks to source = "\r\n", a = 0, b = 1
+cc b62281776f400661308a4674d7c8902aa0581723f65048cce9b00712111f5207 # shrinks to source = "<a href=\"<a href=\"<br/>]]></><<p>"
+cc a9b51cc7a458daec5570250887d6fc3c03ed8fcf5a719475542ed6cf4f42e6ab # shrinks to source = "<a href='x&amp;y'></code><p><p><p><p><code><p><p><!doctype html><p><p></></", a = 68, b = 75
+cc 852006f0c775c35c1adc830e85a4280d4c95df6d2647826ae368773eef07f46b # shrinks to source = "", a = 0, b = 0
+cc 888b6e027ba42fd6d4088ca524d718be151db66c83a0b6f528518a19bc52f994 # shrinks to source = ""
+cc 55d53f507b23aff99f7355b469be30082510700ddb8880dbdb8e1133442e7795 # shrinks to source = ""

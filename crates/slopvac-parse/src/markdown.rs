@@ -8,7 +8,7 @@ use slopvac_model::{SourceIndex, Span};
 use crate::align::{ProseBuilder, align};
 use crate::code::{code_kind, trim_terminator};
 use crate::mask::{CodeRegion, Masked, scan};
-use crate::{Block, BlockKind, Document, ParseError, TokenKind};
+use crate::{Block, BlockKind, Container, Document, HtmlBlock, ParseError, TokenKind};
 
 const BOM: &str = "\u{feff}";
 
@@ -30,7 +30,11 @@ pub(crate) fn resolve_body(source: &str, body: Span) -> Result<Span, ParseError>
 pub(crate) fn finish(mut blocks: Vec<Block>, mut code_spans: Vec<Span>) -> Document {
     blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     code_spans.sort_by_key(Span::start);
-    Document { blocks, code_spans }
+    Document {
+        blocks,
+        code_spans,
+        html_blocks: Vec::new(),
+    }
 }
 
 const OPTIONS: Options = Options::ENABLE_TABLES
@@ -72,10 +76,25 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
     let Collector {
         mut blocks,
         code_spans,
+        html_blocks,
         ..
     } = collector;
     blocks.extend(masked.admonitions.iter().cloned());
-    Ok(finish(blocks, code_spans))
+    let mut document = finish(blocks, code_spans);
+    document.html_blocks = html_blocks
+        .into_iter()
+        .filter_map(|mut block| {
+            // The last line's terminator is not part of the block.
+            let last = block.segments.pop()?;
+            let text = &source[last.start()..last.end()];
+            let kept = text.trim_end_matches(['\n', '\r']).len();
+            block
+                .segments
+                .push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
+            Some(block)
+        })
+        .collect();
+    Ok(document)
 }
 
 /// A prose block under construction.
@@ -86,6 +105,7 @@ struct Open {
     /// Range of the inline events seen so far.
     inline: Option<Range<usize>>,
     prose: ProseBuilder,
+    containers: Vec<Container>,
 }
 
 /// A code block under construction.
@@ -95,6 +115,7 @@ struct OpenCode {
     range: Range<usize>,
     /// Hull of the block's text events: the body without fences and container prefixes.
     hull: Option<Range<usize>>,
+    containers: Vec<Container>,
 }
 
 struct Collector<'a> {
@@ -102,6 +123,7 @@ struct Collector<'a> {
     masked: &'a Masked,
     blocks: Vec<Block>,
     code_spans: Vec<Span>,
+    html_blocks: Vec<HtmlBlock>,
     open: Option<Open>,
     code: Option<OpenCode>,
     image_depth: usize,
@@ -109,6 +131,10 @@ struct Collector<'a> {
     prev_end: usize,
     row: usize,
     column: usize,
+    /// The lists and block quotes the parser is inside.
+    containers: Vec<Container>,
+    /// Whether each enclosing list is ordered.
+    lists: Vec<bool>,
 }
 
 impl<'a> Collector<'a> {
@@ -118,12 +144,15 @@ impl<'a> Collector<'a> {
             masked,
             blocks: Vec::new(),
             code_spans: Vec::new(),
+            html_blocks: Vec::new(),
             open: None,
             code: None,
             image_depth: 0,
             prev_end: 0,
             row: 0,
             column: 0,
+            containers: Vec::new(),
+            lists: Vec::new(),
         }
     }
 
@@ -148,16 +177,19 @@ impl<'a> Collector<'a> {
             tag: Some(range),
             inline: None,
             prose: ProseBuilder::default(),
+            containers: self.containers.clone(),
         });
     }
 
     /// The open block, or a tight-list paragraph opened now.
     fn prose(&mut self) -> &mut Open {
+        let containers = &self.containers;
         self.open.get_or_insert_with(|| Open {
             kind: BlockKind::Paragraph,
             tag: None,
             inline: None,
             prose: ProseBuilder::default(),
+            containers: containers.clone(),
         })
     }
 
@@ -172,6 +204,7 @@ impl<'a> Collector<'a> {
                 kind: open.kind,
                 span: self.span(&range),
                 projection: Some(projection),
+                containers: open.containers,
             });
         }
     }
@@ -247,6 +280,31 @@ impl<'a> Collector<'a> {
                     self.prose().prose.push(TokenKind::Masked, MASK, span);
                 }
             }
+            Event::Html(_) if self.image_depth == 0 => {
+                let mut span = self.masked.span(range.start, range.end);
+                // The parser reports the `\n` of a CRLF as its own event, without the `\r`
+                // before it. A segment must not start inside the line break.
+                let bytes = self.source.as_bytes();
+                if span.start() > 0
+                    && bytes[span.start() - 1] == b'\r'
+                    && bytes[span.start()] == b'\n'
+                {
+                    span = Span::new(span.start() - 1, span.end().max(span.start() - 1))
+                        .expect("start does not exceed end");
+                }
+                // The lines of one block follow each other, line breaks included. A
+                // container prefix between two lines starts a new segment of the block.
+                if let Some(block) = self.html_blocks.last_mut() {
+                    let segments = &mut block.segments;
+                    match segments.last_mut() {
+                        Some(last) if last.end() == span.start() => {
+                            *last = Span::new(last.start(), span.end().max(last.end()))
+                                .expect("start does not exceed end");
+                        }
+                        _ => segments.push(span),
+                    }
+                }
+            }
             Event::InlineHtml(html) => {
                 if html.starts_with("<!--") && self.image_depth == 0 {
                     self.inline_range(&range);
@@ -291,6 +349,7 @@ impl<'a> Collector<'a> {
                     kind: BlockKind::Table,
                     span,
                     projection: None,
+                    containers: self.containers.clone(),
                 });
             }
             Tag::TableHead => {
@@ -310,6 +369,29 @@ impl<'a> Collector<'a> {
                     },
                     range,
                     hull: None,
+                    containers: self.containers.clone(),
+                });
+            }
+            Tag::List(first) => {
+                self.flush();
+                self.lists.push(first.is_some());
+            }
+            Tag::Item => {
+                self.flush();
+                self.containers.push(Container::ListItem {
+                    ordered: self.lists.last().copied().unwrap_or(false),
+                    depth: self.lists.len(),
+                });
+            }
+            Tag::BlockQuote(_) => {
+                self.flush();
+                self.containers.push(Container::BlockQuote);
+            }
+            Tag::HtmlBlock => {
+                self.flush();
+                self.html_blocks.push(HtmlBlock {
+                    segments: Vec::new(),
+                    containers: self.containers.clone(),
                 });
             }
             Tag::Image { .. } => {
@@ -340,8 +422,17 @@ impl<'a> Collector<'a> {
                         kind: code_kind(code.info.as_deref(), body),
                         span,
                         projection: None,
+                        containers: code.containers,
                     });
                 }
+            }
+            TagEnd::List(_) => {
+                self.flush();
+                self.lists.pop();
+            }
+            TagEnd::Item | TagEnd::BlockQuote(_) => {
+                self.flush();
+                self.containers.pop();
             }
             TagEnd::Image => {
                 self.inline_range(range);

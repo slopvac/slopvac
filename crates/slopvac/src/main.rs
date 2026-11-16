@@ -1,12 +1,5 @@
-//! The `slopvac` command-line interface.
+//! The `slopvac` binary.
 
-use clap::Parser;
-
-/// Lint prose for AI-generated text patterns.
-#[derive(Debug, Parser)]
-#[command(version, about)]
-struct Cli {}
-
-fn main() {
-    Cli::parse();
+fn main() -> std::process::ExitCode {
+    slopvac_cli::main_with(std::env::args_os(), &slopvac_cli::SystemEnv)
 }

@@ -47,3 +47,8 @@ globs:
   # Test fixtures are input text, not repository prose. Their trailing spaces can be
   # part of what the test checks, so they are left as written.
   - "!crates/*/tests/fixtures/**"
+  # Test inputs: vendored pages and quoted issue samples whose defects are the point.
+  - "!packages/slopvac-lint/tests/fixtures/**"
+  # Golden suite inputs: the rule examples and format samples hold the defects the
+  # reference must report.
+  - "!tests/golden/v3/inputs/**"

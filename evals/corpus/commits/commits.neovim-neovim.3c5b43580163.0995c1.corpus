@@ -1,0 +1,15 @@
+vim-patch:8.2.0179: still a few places where range() does not work
+
+Problem:    Still a few places where range() does not work.
+Solution:   Fix using range() causing problems.
+
+https://github.com/vim/vim/commit/b09920203a0f2b202497ef9632f8447f73d0f1fb
+
+Code is mostly N/A.
+Cherry-pick all of Test_range() from patch 8.2.0159.
+
+- Use nvim_input() instead of test_feedinput()
+- Assert a different result from json_encode()
+- Assert a different error for sign_undefine()
+
+Co-authored-by: Bram Moolenaar <Bram@vim.org>

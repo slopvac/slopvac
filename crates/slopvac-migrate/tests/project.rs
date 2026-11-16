@@ -8,6 +8,8 @@ use slopvac_migrate::{
     render_diff, restore, run,
 };
 
+const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
+
 fn write(root: &Path, name: &str, text: &str) {
     let p = root.join(name);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -15,7 +17,7 @@ fn write(root: &Path, name: &str, text: &str) {
 }
 
 fn plan_of(root: &Path) -> Result<slopvac_migrate::Plan, Error> {
-    plan(root, &RenameTable::bundled(), Options::default())
+    plan(root, &RenameTable::bundled(), Options::default(), STEERING)
 }
 
 #[test]
@@ -63,6 +65,26 @@ fn pyproject_drop_reports_the_pyproject_line() {
             assert_eq!((d[0].key.as_str(), d[0].line), ("bogus", 6));
             assert_eq!(d[0].file, "pyproject.toml");
         }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn pyproject_overlap_error_reports_the_pyproject_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n\n\
+         [[tool.slopvac.overrides]]\nfiles = [\"a.md\"]\n",
+    );
+    let options = Options {
+        preserve_behavior: true,
+    };
+    match plan(dir.path(), &RenameTable::bundled(), options, STEERING) {
+        Err(Error::OverrideOverlap {
+            file, line, block, ..
+        }) => assert_eq!((file.as_str(), line, block), ("pyproject.toml", 7, 0)),
         other => panic!("{other:?}"),
     }
 }
@@ -193,7 +215,7 @@ impl Linter for FakeLinter {
 fn run_cli(args: &[&str], linter: &dyn Linter) -> (i32, String, String) {
     let m = command().get_matches_from(std::iter::once("migrate").chain(args.iter().copied()));
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, linter, &mut out, &mut err);
+    let code = run(&m, linter, STEERING, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),

@@ -1,0 +1,60 @@
+name: Eval ratchet
+
+# Runs the Python reference on the committed and derived eval corpus, scores it,
+# and compares the scores with evals/baselines/python.json. It reports in the job
+# summary and never fails the run while the ratchet is in report mode. Set the
+# repository variable SLOPVAC_EVALS_GATE to `enforce` to make a regression fail it.
+# Called from test.yml when the evals path class matches (pull requests, merge
+# queue and pushes to main); .github/ci-paths.yml owns the paths and the Tests
+# gate checks the run. It also runs by hand.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ratchet:
+    name: Score rules against the baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SLOPVAC_EVALS_GATE: ${{ vars.SLOPVAC_EVALS_GATE || 'report' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install vale
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+
+      - name: Add vale to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Materialise derived documents
+        run: uv run --extra dev python -m evals.build_derived --materialise --cache "$RUNNER_TEMP/evals-cache"
+
+      - name: Run the reference engine
+        run: >-
+          uv run --extra dev python -m evals run --available --skip-format rst
+          --cache "$RUNNER_TEMP/evals-cache" --out "$RUNNER_TEMP/results.json"
+
+      - name: Compare with the baseline
+        run: >-
+          uv run --extra dev python -m evals gate "$RUNNER_TEMP/results.json"
+          --baseline evals/baselines/python.json --out "$RUNNER_TEMP/ratchet.md"
+
+      - name: Write the job summary
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/ratchet.md" ]; then
+            cat "$RUNNER_TEMP/ratchet.md" >> "$GITHUB_STEP_SUMMARY"
+          fi

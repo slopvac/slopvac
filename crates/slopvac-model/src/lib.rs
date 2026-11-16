@@ -21,6 +21,9 @@ pub use report::{
     ConfigSource, Document, Extent, Finding, FindingError, Fix, FixError, Gate, GateError,
     GenreReason, GenreResult, GenreSource, Notice, NoticeLevel, Report, RuleProvenance, RunSummary,
 };
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use source::indexes_built;
 pub use source::{BomMode, ColumnUnit, PositionEncoding, SourceIndex};
 pub use span::{LineCol, LineColError, PositionError, Span, SpanError};
 pub use values::{CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, ValueError};
