@@ -253,8 +253,9 @@ while True:
         if mode == "orphan-init":
             spawn_orphan()
             sys.exit(0)
-        if mode == "flood":
-            for _ in range(1500):
+        if mode == "flood" or mode.startswith("flood:"):
+            count = int(mode.split(":")[1]) if ":" in mode else 1500
+            for _ in range(count):
                 send({"jsonrpc": "2.0", "method": "noise", "params": {}})
         if mode == "header-padding":
             # Valid frames whose bodies are tiny and whose headers are not.
@@ -302,6 +303,9 @@ while True:
             time.sleep(0.3)
         if mode == "exit-3":
             sys.exit(3)
+        if mode == "stderr-after-exit":
+            sys.stderr.write("x" * (2 * 1024 * 1024))
+            sys.stderr.flush()
         if mode == "refuse-shutdown":
             sys.exit(0)
         sys.exit(0 if shut else 1)
@@ -341,6 +345,11 @@ while True:
             sys.exit(3)
         elif mode == "partial-frame":
             out.write(b"Content-Length: 100\r\n\r\n{")
+            out.flush()
+            time.sleep(300)
+        elif mode == "partial-big":
+            # A header for a 1,000,000-byte body and 600,000 of its bytes.
+            out.write(b"Content-Length: 1000000\r\n\r\n" + b" " * 600000)
             out.flush()
             time.sleep(300)
         elif mode == "oversize":

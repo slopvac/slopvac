@@ -113,6 +113,21 @@ impl RunBudget {
             .clone()
     }
 
+    /// Run `start` only while the budget is intact.
+    ///
+    /// A breach is published under the same lock, so a start either runs
+    /// before the breach exists or does not run at all. Keep `start` short.
+    ///
+    /// # Errors
+    /// The breach message when the budget has tripped.
+    pub fn admit<T>(&self, start: impl FnOnce() -> T) -> Result<T, String> {
+        let breach = self.breach.lock().unwrap_or_else(PoisonError::into_inner);
+        match breach.as_ref() {
+            Some(m) => Err(m.clone()),
+            None => Ok(start()),
+        }
+    }
+
     fn charge(&self, counter: &AtomicU64, n: u64, cap: u64, what: &str) -> Result<(), String> {
         let total = counter.fetch_add(n, Ordering::SeqCst).saturating_add(n);
         let mut breach = self.breach.lock().unwrap_or_else(PoisonError::into_inner);

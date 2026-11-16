@@ -12,7 +12,9 @@ use slopvac_plugins::hooks::{
     CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
     Rendered, Segment, Span,
 };
-use slopvac_plugins::{BudgetCaps, HookKind, HostConfig, Plugin, PluginError, RunBudget};
+use slopvac_plugins::{
+    BudgetCaps, HookKind, HostConfig, Plugin, PluginError, PluginSpec, RunBudget, SpawnGate,
+};
 
 #[test]
 fn a_well_behaved_plugin_tags_documents_and_shuts_down_cleanly() {
@@ -1088,4 +1090,98 @@ fn separate_budgets_do_not_share_counts() {
         let p = Plugin::start(&spec("flood"), &c, &Allow).unwrap();
         assert!(p.tag("main", &docs(1)).is_ok());
     }
+}
+/// Four plugins send 1,001 unsolicited messages each. The per-plugin cap of
+/// 1,000 rejects each 1,001st, and that message still counts: 4 x 1,001 is
+/// 4,004, over the aggregate cap of 4,000.
+#[test]
+fn tm2b_messages_past_the_plugin_cap_still_count_toward_the_run() {
+    let mut c = budgeted(BudgetCaps::default());
+    c.caps.unsolicited_messages = 1000;
+    for _ in 0..4 {
+        let p = Plugin::start(&spec("flood:1001"), &c, &Allow).unwrap();
+        assert_eq!(code(&p.tag("main", &docs(1))), "plugin-protocol-violation");
+    }
+    assert_eq!(refused_start_code(&c), "plugin-protocol-violation");
+}
+
+/// A body that never completes is read from the pipe, so it counts: 600,000
+/// bytes of a 1,000,000-byte body against an aggregate cap of 300,000.
+#[test]
+fn tm2b_an_incomplete_frame_counts_toward_the_run() {
+    let c = budgeted(BudgetCaps {
+        stdout_bytes: 300_000,
+        ..BudgetCaps::default()
+    });
+    let p = Plugin::start(&spec("partial-big"), &c, &Allow).unwrap();
+    let r = p.tag("main", &docs(1));
+    assert_eq!(code(&r), "plugin-protocol-violation");
+    assert!(
+        r.unwrap_err().to_string().contains("whole-run budget"),
+        "the run budget made the kill"
+    );
+}
+
+/// A gate that holds the start between its checks and the spawn.
+struct BlockingGate {
+    entered: crossbeam_channel::Sender<()>,
+    release: crossbeam_channel::Receiver<()>,
+}
+
+impl SpawnGate for BlockingGate {
+    fn check(&self, _: &PluginSpec) -> Result<(), PluginError> {
+        self.entered.send(()).unwrap();
+        self.release.recv().unwrap();
+        Ok(())
+    }
+}
+
+/// A start that passed the early budget check and waits in its gate must not
+/// spawn once another plugin has tripped the budget.
+#[test]
+fn tm2b_a_start_blocked_in_its_gate_does_not_spawn_after_a_breach() {
+    let c = budgeted(BudgetCaps {
+        unsolicited_messages: 10,
+        ..BudgetCaps::default()
+    });
+    let (entered_tx, entered) = crossbeam_channel::bounded(1);
+    let (release_tx, release) = crossbeam_channel::bounded(1);
+    let gate = BlockingGate {
+        entered: entered_tx,
+        release,
+    };
+    let pidfile = std::env::temp_dir().join(format!("slopvac-gate-{}", std::process::id()));
+    let _ = std::fs::remove_file(&pidfile);
+    let blocked_spec = spec_with("hang", &json!({}), Some(&pidfile), decl());
+    std::thread::scope(|s| {
+        let blocked = s.spawn(|| Plugin::start(&blocked_spec, &c, &gate));
+        entered
+            .recv_timeout(NO_HANG)
+            .expect("the start reached its gate");
+        let flooder = Plugin::start(&spec("flood"), &c, &Allow).unwrap();
+        assert_eq!(
+            code(&flooder.tag("main", &docs(1))),
+            "plugin-protocol-violation"
+        );
+        release_tx.send(()).unwrap();
+        let r = blocked.join().unwrap();
+        assert_eq!(code(&r), "plugin-protocol-violation");
+    });
+    assert!(!pidfile.exists(), "the blocked plugin was spawned");
+}
+
+/// The plugin acknowledges shutdown, writes 2 MiB to standard error and exits
+/// 0. The aggregate cap is one byte short of that, so the crossing byte is in
+/// the last 64 KiB, which sits in the pipe when the plugin leaves.
+#[test]
+fn tm2b_output_after_the_shutdown_acknowledgement_makes_it_unclean() {
+    let c = budgeted(BudgetCaps {
+        stderr_bytes: (2 << 20) - 1,
+        ..BudgetCaps::default()
+    });
+    let p = Plugin::start(&spec("stderr-after-exit"), &c, &Allow).unwrap();
+    let out = p.shutdown();
+    assert!(out.acknowledged, "{out:?}");
+    assert!(out.violation.is_some(), "{out:?}");
+    assert!(!out.clean(), "{out:?}");
 }
