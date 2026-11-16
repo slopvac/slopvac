@@ -12,7 +12,7 @@ use std::sync::Arc;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_context::{TagIndex, TagRegistry};
-use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract};
+use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
     KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
@@ -1129,9 +1129,8 @@ impl Run<'_> {
                     let Some(format) = DiagramFormat::from_lang(lang) else {
                         continue;
                     };
-                    let text = &self.input.source[body.start()..body.end()];
                     diagrams.push((
-                        extract(format, text, body.start()),
+                        extract_fenced(format, self.input.source, body.start()..body.end()),
                         self.nearby_prose(block.span),
                     ));
                 }
