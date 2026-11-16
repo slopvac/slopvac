@@ -82,6 +82,37 @@ wait for `pypi` approval. They get no tag or changelog entry.
 
 Plain installs and `slopvac@latest` stay on the latest stable release. The package README lists how to opt in to a candidate.
 
+## Contributor license agreement
+
+Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is based on the Apache Individual CLA. You keep the copyright in your contribution. You grant Sjors Robroek a license to use, sublicense and distribute it, and a patent license. The license lets the project change its license later without asking every past contributor.
+
+### Sign the CLA
+
+When you open your first pull request, the `CLA` check asks you to sign. Post this comment on the pull request:
+
+```text
+I have read the CLA Document and I hereby sign the CLA
+```
+
+You sign once. After that, the check passes on that pull request and on every later one. To run the check again, comment `recheck`.
+
+### Contributions from your employer
+
+If your employer has rights to work that you create, get its permission before you contribute, as section 4 of the CLA describes. The project has no corporate CLA yet. If your employer needs one, open an issue.
+
+### Bots
+
+These bot accounts don't sign:
+
+- `dependabot[bot]`
+- `renovate[bot]`
+- `github-actions[bot]`
+- `sjorsr-release-bot[bot]`, the release bot
+
+### Unsigned pull requests
+
+A pull request can't merge until the `CLA` check passes. That covers every author of every commit in it.
+
 ## Commits and pull requests
 
 Use [Conventional Commits](https://www.conventionalcommits.org/). Release-please reads the commit message to prepare releases. Examples: `feat(rules): add a rule`, `fix: correct a rule`, and `docs: clarify setup`.
