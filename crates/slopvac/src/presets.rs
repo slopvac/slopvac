@@ -15,6 +15,7 @@ use slopvac_styles::{
 pub struct BuiltinPresets;
 
 /// The names of the bundled styles.
+#[must_use]
 pub fn style_names() -> Vec<&'static str> {
     BuiltinSource::names().collect()
 }

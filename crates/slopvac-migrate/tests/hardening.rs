@@ -200,7 +200,7 @@ fn locale_extension_key_note_is_qualified_in_an_override() {
 #[test]
 fn inline_array_overrides_migrate_like_array_tables() {
     let out = migrate(
-        "overrides = [{ files = [\"a\"], locale = { default = \"en-GB\", allow = [\"x\"] } }, { files = [\"b\"], vocabulary = { path = \"w.toml\" }, rules = { \"a.b\" = \"off\" } }]\n",
+        "overrides = [{ files = [\"a\"], locale = { default = \"en-GB\", allow = [\"x\"] } }, { files = [\"b\"], vocabulary = { path = \"w.toml\" }, rules = { \"orwell.not-un\" = \"off\" } }]\n",
     )
     .unwrap();
     let after = doc(&out);
@@ -217,7 +217,7 @@ fn inline_array_overrides_migrate_like_array_tables() {
         ["w.toml"]
     );
     assert_eq!(
-        Item::Value(second["rules"].clone())["core:a.b"].as_str(),
+        Item::Value(second["rules"].clone())["core:orwell.not-un"].as_str(),
         Some("off")
     );
     assert!(!second.contains_key("vocabulary"));
@@ -240,12 +240,12 @@ fn inline_array_overrides_report_unmappable_settings() {
 #[test]
 fn rule_table_comments_move_to_the_bare_level() {
     let out = migrate(
-        "[rules]\n# why this is off\n[rules.\"a.b\"] # header note\n# about the level\nseverity = \"off\" # trailing\n",
+        "[rules]\n# why this is off\n[rules.\"orwell.not-un\"] # header note\n# about the level\nseverity = \"off\" # trailing\n",
     )
     .unwrap();
     assert!(
         out.contains(
-            "# why this is off\n# header note\n# about the level\n\"core:a.b\" = \"off\" # trailing\n"
+            "# why this is off\n# header note\n# about the level\n\"core:orwell.not-un\" = \"off\" # trailing\n"
         ),
         "{out}"
     );

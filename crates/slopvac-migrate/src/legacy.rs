@@ -1,7 +1,9 @@
 //! The 2.x profile data that `--preserve-behavior` expands against: the
 //! `core:legacy-<profile>` styles, each rule's kind and tiers, and the per-rule
 //! defaults of each profile.
-// STUB(slopvac-8l4.16.11): the data files are copied from PR #296 b138f5888a.
+//!
+//! `tests/fixtures/generate.py` writes the data files from
+//! `docs/contract/compat/profiles/` and the 2.x ruleset.
 
 use std::collections::{BTreeMap, BTreeSet};
 

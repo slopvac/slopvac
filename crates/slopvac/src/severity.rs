@@ -50,7 +50,7 @@ fn config_error(err: &ConfigError) -> CliError {
             text.strip_prefix(&format!("error[{code}]: "))
                 .map_or(text.clone(), str::to_owned)
         }
-        other => other.to_string(),
+        other @ ConfigError::Io { .. } => other.to_string(),
     };
     CliError::new(code, message)
 }

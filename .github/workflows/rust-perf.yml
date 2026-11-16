@@ -67,3 +67,32 @@ jobs:
         with:
           name: perf-${{ matrix.os }}
           path: ${{ runner.temp }}/perf.json
+
+  # perf_budget:: tests are excluded from the matrix test job (nextest ci
+  # profile) because timing on shared runners is noisy. They run here one at a
+  # time. With no such test yet, nextest passes with zero tests.
+  budget-tests:
+    name: Budget tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: perf-budget
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: nextest@0.9.152
+
+      - name: Run budget tests
+        run: cargo nextest run --workspace --locked --profile perf --no-tests=pass

@@ -2410,6 +2410,7 @@ dependencies = [
  "jsonschema",
  "predicates",
  "proptest",
+ "roxmltree",
  "rstest",
  "serde",
  "serde_json",
@@ -2449,6 +2450,7 @@ name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "clap",
  "ignore",
  "insta",
  "saphyr",
@@ -2543,6 +2545,7 @@ dependencies = [
  "jsonschema",
  "serde_json",
  "similar 3.2.1",
+ "slopvac-agents",
  "tempfile",
  "thiserror",
  "toml",
