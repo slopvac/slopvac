@@ -41,20 +41,59 @@ pub struct Severities {
 
 const RANKS: [&str; 3] = ["suggestion", "warning", "error"];
 
-/// Describe a refused config from its structured fields: the first line of each diagnostic,
-/// its `file:line:column` pointer and its help. The source excerpt is left out because it
-/// quotes the user's own text, paths included. The config crate already words a path in a
-/// message as `<external>/<file>` or relative to the project root.
-fn describe_rejected(rejected: &Rejected) -> String {
+/// Redact every backtick-quoted absolute path in `text`.
+///
+/// The config diagnostics quote the user's own value in backticks, such as the value of a
+/// bad `locale` or an unknown key. When the quoted text is an absolute path, it can hold
+/// spaces and the directories above the project, so the whole quoted text is replaced with
+/// `redact::shown_path` (policies.md, 1.7).
+fn redact_quoted(text: &str, cwd: &Path) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let (head, tail) = rest.split_at(open);
+        out.push_str(head);
+        let tail = &tail[1..];
+        let Some(close) = tail.find('`') else {
+            out.push('`');
+            rest = tail;
+            continue;
+        };
+        let quoted = &tail[..close];
+        out.push('`');
+        if Path::new(quoted).is_absolute() {
+            out.push_str(&redact::shown_path(Path::new(quoted), cwd));
+        } else {
+            out.push_str(quoted);
+        }
+        out.push('`');
+        rest = &tail[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Describe a refused config from its structured fields: each diagnostic's message, its
+/// `file:line:column` pointer and its help. The source excerpt is left out because it
+/// quotes the user's own text, paths included. The first diagnostic's code leads the error;
+/// each later one starts with its own `error[code]:` so no code is lost.
+fn describe_rejected(rejected: &Rejected, cwd: &Path) -> String {
     rejected
         .diagnostics
         .iter()
-        .map(|d| {
+        .enumerate()
+        .map(|(i, d)| {
             let (line, column) = d.location(&rejected.text);
-            let mut text = format!("{}\n --> {}:{line}:{column}", d.message, rejected.file);
+            let mut text = if i == 0 {
+                String::new()
+            } else {
+                format!("error[{}]: ", d.code.as_str())
+            };
+            text.push_str(&redact_quoted(&d.message, cwd));
+            text.push_str(&format!("\n --> {}:{line}:{column}", rejected.file));
             if let Some(help) = &d.help {
                 text.push_str("\nhelp: ");
-                text.push_str(help);
+                text.push_str(&redact_quoted(help, cwd));
             }
             text
         })
@@ -62,9 +101,9 @@ fn describe_rejected(rejected: &Rejected) -> String {
         .join("\n")
 }
 
-fn config_error(err: &ConfigError) -> CliError {
+fn config_error(err: &ConfigError, cwd: &Path) -> CliError {
     let message = match err {
-        ConfigError::Rejected(rejected) => describe_rejected(rejected),
+        ConfigError::Rejected(rejected) => describe_rejected(rejected, cwd),
         other @ ConfigError::Io { .. } => other.to_string(),
     };
     CliError::new(err.code().as_str(), message)
@@ -90,12 +129,12 @@ impl Severities {
             Some(
                 load_labeled(path, &shown, &presets)
                     .map(Arc::new)
-                    .map_err(|e| config_error(&e))?,
+                    .map_err(|e| config_error(&e, &cwd))?,
             )
         } else {
             Discovery::new(&presets)
                 .nearest(&cwd)
-                .map_err(|e| config_error(&e))?
+                .map_err(|e| config_error(&e, &cwd))?
         };
         let Some(config) = config else {
             return Ok(Self {

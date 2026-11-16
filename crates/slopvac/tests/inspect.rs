@@ -671,3 +671,54 @@ fn a_config_path_inside_the_working_directory_is_shown_relative() {
     assert!(err.contains(" --> slopvac.toml:2:12"), "{err}");
     assert!(!err.contains(&work.path().display().to_string()), "{err}");
 }
+
+/// Run `rules --config` on a config with the given text, from another directory.
+fn refused(text: &str) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(&file, text).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config"])
+        .arg(&file)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn a_quoted_absolute_path_in_a_diagnostic_message_is_redacted() {
+    // Three producers quote the user's value: a bad enum, a bad key and a bad name.
+    for text in [
+        "schema_version = 3\nlocale = \"/home/SENTINEL user 1234/secret dir\"\n",
+        "schema_version = 3\n\"/home/SENTINEL user 1234/secret dir\" = 1\n",
+        "schema_version = 3\n\n[rules]\n\"/home/SENTINEL user 1234/secret dir\" = \"off\"\n",
+    ] {
+        let err = refused(text);
+        for leaked in ["SENTINEL", "1234", "/home"] {
+            assert!(!err.contains(leaked), "{leaked} leaked for {text:?}: {err}");
+        }
+        assert!(err.contains("<external>/secret dir"), "{err}");
+    }
+}
+
+#[test]
+fn every_diagnostic_after_the_first_keeps_its_code() {
+    let err = refused("schema_version = 3\nlocale = \"klingon\"\nbogus = true\n");
+    let mut lines = err.lines().filter(|l| l.starts_with("error["));
+    assert!(
+        lines
+            .next()
+            .unwrap()
+            .starts_with("error[config-invalid-value]: "),
+        "{err}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("error[config-unknown-key]: unknown key `bogus`")),
+        "the second diagnostic lost its code: {err}"
+    );
+}
