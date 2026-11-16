@@ -36,3 +36,7 @@
 "finding-origin-bad-segment-id.json" = "/documents/0/findings/1/origin/segment"
 "finding-origin-range-negative-start.json" = "/documents/0/findings/1/origin/range/start"
 "finding-origin-range-extension-key.json" = "/documents/0/findings/1/origin/range"
+"finding-origin-with-fix.json" = "/documents/0/findings/1"
+"finding-origin-locator-trailing-lf.json" = "/documents/0/findings/1/origin/locator"
+"finding-origin-label-trailing-lf.json" = "/documents/0/findings/1/origin/label"
+"finding-origin-segment-trailing-lf.json" = "/documents/0/findings/1/origin/segment"

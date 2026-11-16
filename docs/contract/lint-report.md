@@ -63,8 +63,10 @@ the original file bytes, and a segment range does not. `SegmentRange` takes no `
   it can be wider than the match, for example the whole entry when the container
   compresses it. A consumer must not read it as the match. The existing rule still ties
   `span` to `end_line` and `end_column`.
-- `fix.edits` are not allowed for a finding with an origin until a later bead defines
-  edits against a container. A producer must omit `fix` for such a finding.
+- A finding with an origin carries no `fix`. The schema rejects a finding that has both,
+  and the `slopvac-model` type refuses to decode or serialize one. An edit addresses
+  container bytes, which the linter cannot rewrite. See
+  [Binary hosts](positions.md#binary-hosts).
 
 ### Locator
 
@@ -99,14 +101,23 @@ inserted before a position-based locator.
 
 ### SARIF
 
-A SARIF result for a finding with an origin gets:
+[positions.md](positions.md#binary-hosts) is the authority for the rendered forms. A SARIF
+result for a finding with an origin gets:
 
-- `locations[0].physicalLocation.artifactLocation` for the container file.
-- `region.byteOffset` and `region.byteLength` from `span`, when present. It sets no
-  `startLine` or `startColumn`, because those would count in the container.
-- `locations[0].logicalLocations[0]` with `fullyQualifiedName` set to `locator`, `name`
-  set to `label`, and an `index` into `run.logicalLocations`.
-- `properties.slopvac.origin` with `segment` and `range`, so a reader can find the match.
+- `locations[0].physicalLocation.artifactLocation.uri` for the container file, with no
+  `region`. A region would claim a position in the artifact bytes, and the segment-local
+  line and column are not one.
+- `locations[0].logicalLocations[0].fullyQualifiedName` set to the escaped `locator`,
+  and `name` set to `label`. Its `kind` is `resource` for a container part and `element`
+  only for an XML element.
+- `locations[0].properties["slopvac/local"]` holding the local start and end as a pair
+  of `LineCol` values under `start` and `end`.
+- `message.text` repeating the text form `path!locator:line:col`. The renderer encodes
+  `%` as `%25` and `!` as `%21` in the path and in the locator. A reader takes `line` and
+  `col` from the right, splits the rest at the first `!`, then decodes both parts.
+
+The `segment` id and the byte `range` stay in the JSON report. GitHub code scanning can
+show no line annotation for these alerts, because the location has no region.
 
 ### Fingerprints
 

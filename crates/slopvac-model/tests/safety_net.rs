@@ -104,17 +104,34 @@ fn every_invalid_report_fixture_is_rejected_or_harmlessly_ignored() {
     }
 }
 
+fn origins(report: &Value) -> Vec<Option<Value>> {
+    report["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|d| d["findings"].as_array().unwrap())
+        .map(|f| f.get("origin").cloned())
+        .collect()
+}
+
 #[test]
 fn every_valid_report_fixture_decodes_and_reserializes_schema_valid() {
     let validator = published_lint_report();
     for path in instances(&corpus().join("lint-report/valid")) {
         let mut value = load(&path);
         patch_layer(&mut value);
-        let report: Report = serde_json::from_value(value).unwrap();
+        let report: Report = serde_json::from_value(value.clone()).unwrap();
         let out = serde_json::to_value(&report).unwrap();
         assert!(
             validator.is_valid(&out),
             "{} re-serialized invalid",
+            path.display()
+        );
+        // `origin` must survive the round trip exactly, not just stay schema-valid.
+        assert_eq!(
+            origins(&value),
+            origins(&out),
+            "{} lost or changed an origin",
             path.display()
         );
     }

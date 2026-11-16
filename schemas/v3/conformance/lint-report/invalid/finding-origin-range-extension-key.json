@@ -159,17 +159,6 @@
           ],
           "ai_signal": "strong",
           "matched_text": "delve",
-          "fix": {
-            "edits": [
-              {
-                "span": {
-                  "start": 141,
-                  "end": 146
-                },
-                "text": "look"
-              }
-            ]
-          },
           "provenance": {
             "pack": "core",
             "version": "3.0.0"

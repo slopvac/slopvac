@@ -207,6 +207,7 @@ checked_string!(
         "type": "string",
         "minLength": 1,
         "maxLength": 512,
+        "not": {"pattern": "\\n"},
         "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+$"
     })
 );
@@ -218,6 +219,7 @@ checked_string!(
         "type": "string",
         "minLength": 1,
         "maxLength": 256,
+        "not": {"pattern": "\\n"},
         "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+$"
     })
 );
@@ -227,6 +229,7 @@ checked_string!(
     check_segment,
     json_schema!({
         "type": "string",
+        "not": {"pattern": "\\n"},
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     })
 );
