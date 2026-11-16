@@ -2424,6 +2424,7 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-styles",
  "slopvac-update",
  "snapbox",
  "tempfile",
