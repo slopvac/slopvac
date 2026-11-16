@@ -36,3 +36,15 @@ repos:
         entry: scripts/rust-hook.sh typos --force-exclude
         language: system
         files: \.(rs|toml|md)$
+      - id: ast-grep
+        name: ast-grep message checks
+        entry: scripts/rust-hook.sh ast-grep test
+        language: system
+        pass_filenames: false
+        files: ^(sgconfig\.yml|ast-grep/.*|crates/.*\.rs)$
+      - id: ast-grep-scan
+        name: ast-grep scan
+        entry: scripts/rust-hook.sh ast-grep scan
+        language: system
+        pass_filenames: false
+        files: ^(sgconfig\.yml|ast-grep/.*|crates/.*\.rs)$

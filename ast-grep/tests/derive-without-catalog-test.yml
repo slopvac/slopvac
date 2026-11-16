@@ -1,0 +1,19 @@
+id: derive-without-catalog
+valid:
+  - |
+    #[derive(Debug, thiserror::Error, Catalog)]
+    enum E { A }
+  - |
+    #[derive(Debug)]
+    enum E { A }
+  - |
+    #[derive(Debug, Error, Catalog)]
+    #[cfg(unix)]
+    struct E;
+invalid:
+  - |
+    #[derive(Debug, thiserror::Error)]
+    enum E { A }
+  - |
+    #[derive(Debug, Error)]
+    struct E;

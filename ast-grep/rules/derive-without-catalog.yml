@@ -1,0 +1,26 @@
+id: derive-without-catalog
+language: rust
+severity: error
+message: An error type that derives `Error` must also derive `Catalog`.
+note: >-
+  Give each variant `#[code("kebab-case")]` and a `#[message("…")]` template, so the code and
+  text live in the registry. Files under tests, benches and examples are exempt.
+files:
+  - crates/slopvac-messages/src/**
+  - crates/slopvac-messages-derive/src/**
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/examples/**"
+rule:
+  kind: attribute_item
+  regex: derive\(.*\bError\b
+  not:
+    regex: Catalog
+  precedes:
+    stopBy:
+      not:
+        kind: attribute_item
+    any:
+      - kind: enum_item
+      - kind: struct_item

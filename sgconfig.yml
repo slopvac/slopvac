@@ -1,0 +1,6 @@
+# ast-grep config for the Rust message-registry checks. Run `ast-grep scan` to check and
+# `ast-grep test` to test the rules against ast-grep/tests.
+ruleDirs:
+  - ast-grep/rules
+testConfigs:
+  - testDir: ast-grep/tests

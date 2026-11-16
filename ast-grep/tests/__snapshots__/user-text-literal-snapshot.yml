@@ -1,0 +1,116 @@
+id: user-text-literal
+snapshots:
+  "fn f() { Command::new(\"x\").about(\"Lint prose\"); }":
+    labels:
+    - source: Command::new("x").about("Lint prose")
+      style: primary
+      start: 9
+      end: 46
+    - source: about
+      style: secondary
+      start: 27
+      end: 32
+    - source: Command::new("x").about
+      style: secondary
+      start: 9
+      end: 32
+    - source: "\"Lint prose\""
+      style: secondary
+      start: 33
+      end: 45
+    - source: "\"Lint prose\""
+      style: secondary
+      start: 33
+      end: 45
+  "fn f() { Command::new(\"x\").help(\"Print the report\"); }":
+    labels:
+    - source: Command::new("x").help("Print the report")
+      style: primary
+      start: 9
+      end: 51
+    - source: help
+      style: secondary
+      start: 27
+      end: 31
+    - source: Command::new("x").help
+      style: secondary
+      start: 9
+      end: 31
+    - source: "\"Print the report\""
+      style: secondary
+      start: 32
+      end: 50
+    - source: "\"Print the report\""
+      style: secondary
+      start: 32
+      end: 50
+  "fn f() { eprintln!(\"warning: {} is stale\", name); }":
+    labels:
+    - source: "eprintln!(\"warning: {} is stale\", name)"
+      style: primary
+      start: 9
+      end: 48
+    - source: eprintln
+      style: secondary
+      start: 9
+      end: 17
+    - source: "\"warning: {} is stale\""
+      style: secondary
+      start: 19
+      end: 41
+  "fn f() { let s = format!(\"cannot read {}\", name); }":
+    labels:
+    - source: format!("cannot read {}", name)
+      style: primary
+      start: 17
+      end: 48
+    - source: format
+      style: secondary
+      start: 17
+      end: 23
+    - source: "\"cannot read {}\""
+      style: secondary
+      start: 25
+      end: 41
+  "fn f() { println!(\"cannot read the file\"); }":
+    labels:
+    - source: println!("cannot read the file")
+      style: primary
+      start: 9
+      end: 41
+    - source: println
+      style: secondary
+      start: 9
+      end: 16
+    - source: "\"cannot read the file\""
+      style: secondary
+      start: 18
+      end: 40
+  "fn f() { write!(out, \"found {} problems\", n)?; }":
+    labels:
+    - source: write!(out, "found {} problems", n)
+      style: primary
+      start: 9
+      end: 44
+    - source: write
+      style: secondary
+      start: 9
+      end: 14
+    - source: "\"found {} problems\""
+      style: secondary
+      start: 21
+      end: 40
+  "mod tests {\n    fn f() { println!(\"not marked as test code\"); }\n}\n":
+    labels:
+    - source: println!("not marked as test code")
+      style: primary
+      start: 25
+      end: 60
+    - source: println
+      style: secondary
+      start: 25
+      end: 32
+    - source: "\"not marked as test code\""
+      style: secondary
+      start: 34
+      end: 59

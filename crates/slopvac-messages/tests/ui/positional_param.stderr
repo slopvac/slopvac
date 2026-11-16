@@ -1,0 +1,5 @@
+error: positional placeholder `{}`; name the parameter, as in `{path}`
+ --> tests/ui/positional_param.rs:8:15
+  |
+8 |     #[message("cannot read {}")]
+  |               ^^^^^^^^^^^^^^^^

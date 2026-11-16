@@ -173,6 +173,13 @@ jobs:
       - name: Rustdoc
         run: cargo doc --workspace --no-deps --document-private-items --locked
 
+      # The version matches ast-grep in mise.toml.
+      - name: Message registry checks
+        run: |
+          python3 -m pip install --quiet ast-grep-cli==0.51.3
+          ast-grep test
+          ast-grep scan
+
   rust:
     name: Rust (${{ matrix.name }})
     needs: changes
