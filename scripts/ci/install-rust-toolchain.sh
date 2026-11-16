@@ -14,12 +14,16 @@ root="${RUST_TOOLCHAIN_DIR:-$(dirname "${BASH_SOURCE[0]}")/../..}"
 file="$root/rust-toolchain.toml"
 
 channel="$(python3 -c '
-import sys, tomllib
+import sys
 
 path = sys.argv[1]
 try:
+    import tomllib
+
     with open(path, "rb") as handle:
         print(tomllib.load(handle)["toolchain"]["channel"])
+except ImportError:
+    sys.exit("python3 3.11 or newer is required to read rust-toolchain.toml")
 except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as error:
     sys.exit(f"cannot read the toolchain channel from {path}: {error!r}")
 ' "$file")"

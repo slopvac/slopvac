@@ -170,12 +170,13 @@ jobs:
           persist-credentials: false
 
       - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Add the build target
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: |
-          bash scripts/ci/install-rust-toolchain.sh
-          rustup target add "$TARGET"
+        run: rustup target add "$TARGET"
 
       - name: Install musl tools
         if: ${{ endsWith(matrix.target, '-musl') }}

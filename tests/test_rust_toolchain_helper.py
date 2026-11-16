@@ -7,7 +7,6 @@ the first N ``toolchain install`` calls.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -108,68 +107,125 @@ def test_missing_channel_fails_before_rustup(tmp_path: Path) -> None:
     assert calls == []
 
 
-# Jobs that name their own toolchain or install Rust through cargo-dist.
-EXEMPT = {
-    ("test.yml", "rust-msrv"),  # cargo "+$MSRV" only
-    ("release.yml", "build-local-artifacts"),  # cargo-dist installs rustup
-    ("release.yml", "build-global-artifacts"),
+def test_malformed_toml_fails_before_rustup(tmp_path: Path) -> None:
+    # A line-oriented regex would still find the channel and install it.
+    toml = '[toolchain]\nchannel = "9.8.7"\n= broken\n'
+    code, calls = run_helper(tmp_path, fail_first=0, toml=toml)
+    assert code != 0
+    assert calls == []
+
+
+# Every job that checks out the repository installs the pinned toolchain first,
+# because any cargo, rustc or rustfmt call under the checkout (from a script, a
+# test or a hook) makes rustup auto-install it, and a partial preinstalled copy
+# breaks that. A job without a repository checkout (a reusable-workflow call, an
+# artifact-only or API-only job) has no pinned toolchain to read and is not
+# checked.
+#
+# These jobs check out the repository but never run Rust. Add the helper to a
+# new job, or list it here with a reason.
+NO_RUST = {
+    ("action-test.yml", "action"): "runs the Python action and pipx docutils",
+    ("action-v3-test.yml", "action"): "runs the action against a fake binary",
+    ("candidate.yml", "validate"): "tag parsing and key checks in Python",
+    ("candidate.yml", "sign"): "minisign over downloaded artifacts",
+    ("cli-e2e.yml", "e2e"): "installs the Python wheel; no cargo",
+    ("cli-e2e.yml", "smoke"): "installs the Python package; no cargo",
+    ("lint.yml", "markdownlint"): "npx markdownlint",
+    ("lint.yml", "taplo"): "uvx taplo",
+    ("lint.yml", "pinact"): "third-party pinact action",
+    ("lint.yml", "complexity"): "uvx lizard over two Python files",
+    ("lint.yml", "shell-lint"): "shellcheck",
+    ("lint.yml", "python-lint"): "uvx ruff",
+    ("lint.yml", "action"): "runs the Python action",
+    ("lint.yml", "prose"): "slopvac lint (Python) over Markdown",
+    ("markdown-audit.yml", "inventory-and-audit"): "Python Markdown audit",
+    ("publish-lint.yml", "build"): "builds the Python sdist and wheel",
+    ("release-provenance.yml", "provenance"): "tag and ruleset checks in Python",
+    ("release-smoke.yml", "resolve"): "tag parsing in Python",
+    ("release-smoke.yml", "archive"): "unpacks a released binary",
+    ("release-smoke.yml", "shell-installer"): "runs the released shell installer",
+    ("release-smoke.yml", "homebrew"): "brew install of the released formula",
+    ("release.yml", "route"): "cargo-dist generated; tag routing in Python",
+    ("release.yml", "plan"): "cargo-dist generated; dist plan only",
+    ("release.yml", "build-local-artifacts"): "cargo-dist generated; installs rustup",
+    ("release.yml", "build-global-artifacts"): "cargo-dist generated; own toolchain",
+    ("release.yml", "host"): "cargo-dist generated; uploads artifacts",
+    ("release.yml", "publish-homebrew-formula"): "cargo-dist generated; git only",
+    ("release.yml", "announce"): "cargo-dist generated; no steps run",
+    ("release.yml", "publish-legacy-release"): "release checks in Python",
+    ("reviewdog.yml", "comment-v3"): "posts findings with reviewdog",
+    ("security.yml", "dependency-review"): "third-party action",
+    ("security.yml", "trufflehog"): "third-party action",
+    ("security.yml", "codeql"): "CodeQL Python analysis",
+    ("security.yml", "osv"): "third-party scanner",
+    ("security.yml", "trivy"): "third-party scanner",
+    ("test.yml", "changes"): "path classification",
+    ("test.yml", "quick-lint"): "ruff, JSON checks and Python steering tests",
+    ("trunk-dev-stale-branches.yml", "stale-bead-branches"): "bd and git only",
 }
-# Jobs whose Rust use is indirect: the step that triggers it must follow the helper.
-INDIRECT = {
-    ("test.yml", "test"): re.compile(r"\bpytest\b"),  # Full test suite
-    ("lint.yml", "prek"): re.compile(r"\bprek\b"),  # Rust hooks
-}
-RUST_COMMAND = re.compile(r"(?:^|[\s;&|(])(?:cargo|rustup|rustc|rustfmt)\s")
+# Steps that may sit between checkout and the helper.
+RUNTIME_SETUP = (
+    "actions/setup-python@",
+    "astral-sh/setup-uv@",
+    "actions/setup-node@",
+    "jdx/mise-action@",
+)
 
 
-def _first_use(
-    runs: list[str], indirect: re.Pattern[str] | None
-) -> tuple[int, int] | None:
-    """Position (step, line) of the first Rust use outside the helper line."""
-    for step, run in enumerate(runs):
-        for line_no, line in enumerate(run.splitlines()):
-            if HELPER in line or line.lstrip().startswith("#"):
-                continue
-            if RUST_COMMAND.search(line) or (indirect and indirect.search(line)):
-                return step, line_no
-    return None
-
-
-def _helper_at(runs: list[str]) -> tuple[int, int] | None:
-    for step, run in enumerate(runs):
-        for line_no, line in enumerate(run.splitlines()):
-            if HELPER in line and not line.lstrip().startswith("#"):
-                return step, line_no
-    return None
-
-
-def _runs(job: dict) -> list[str]:
-    return [s.get("run", "") for s in job.get("steps", [])]
-
-
-def _jobs() -> list[tuple[str, str, dict]]:
+def _all_jobs() -> list[tuple[str, str, dict]]:
     found = []
     for path in sorted(WORKFLOWS.glob("*.yml")):
         workflow = yaml.safe_load(path.read_text())
         for name, job in (workflow.get("jobs") or {}).items():
-            key = (path.name, name)
-            if key not in EXEMPT and _first_use(_runs(job), INDIRECT.get(key)):
-                found.append((path.name, name, job))
+            found.append((path.name, name, job))
     return found
 
 
-def test_indirect_jobs_exist() -> None:
-    found = {(f, n) for f, n, _ in _jobs()}
-    assert set(INDIRECT) <= found
+def _is_helper(step: dict) -> bool:
+    return step.get("run", "").strip() == f"bash {HELPER}"
+
+
+def _problem(file: str, name: str, job: dict) -> str | None:
+    steps = job.get("steps") or []
+    checkout = next(
+        (
+            i
+            for i, s in enumerate(steps)
+            if s.get("uses", "").startswith("actions/checkout@")
+        ),
+        None,
+    )
+    allowed = (file, name) in NO_RUST
+    if checkout is None:
+        return None
+    has_helper = any(_is_helper(s) for s in steps)
+    if allowed:
+        return (
+            f"{file}:{name} is in NO_RUST but runs the helper" if has_helper else None
+        )
+    rest = steps[checkout + 1 :]
+    index = 0
+    while index < len(rest) and rest[index].get("uses", "").startswith(RUNTIME_SETUP):
+        index += 1
+    if index < len(rest) and _is_helper(rest[index]):
+        return None
+    return (
+        f"{file}:{name} must run `bash {HELPER}` right after checkout "
+        "(runtime setup steps may come between), or be added to NO_RUST "
+        "with a reason"
+    )
 
 
 @pytest.mark.parametrize(
-    ("file", "name", "job"), _jobs(), ids=lambda v: v if isinstance(v, str) else ""
+    ("file", "name", "job"), _all_jobs(), ids=lambda v: v if isinstance(v, str) else ""
 )
-def test_rust_jobs_use_the_toolchain_helper(file: str, name: str, job: dict) -> None:
-    runs = _runs(job)
-    helper = _helper_at(runs)
-    assert helper is not None, f"{file}:{name} runs Rust without the helper"
-    first = _first_use(runs, INDIRECT.get((file, name)))
-    assert first is not None
-    assert helper < first, f"{file}:{name} uses Rust before the helper"
+def test_job_installs_the_toolchain_or_is_classified(
+    file: str, name: str, job: dict
+) -> None:
+    assert _problem(file, name, job) is None
+
+
+def test_no_rust_entries_name_real_jobs() -> None:
+    existing = {(f, n) for f, n, _ in _all_jobs()}
+    assert set(NO_RUST) <= existing
