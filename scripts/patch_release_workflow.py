@@ -12,9 +12,11 @@ so that is command injection. This script rewrites the generated text:
 * the root token is read-only, and only the host job may write contents;
 * the host job re-resolves the tag on the remote right before it publishes and
   fails unless it still points at the commit the workflow runs on (CWE-367);
-* the Windows build step runs under bash, where `$TAG_FLAG` is an environment
-  variable (under PowerShell it expands to nothing);
-* the CycloneDX step output is read as `outputs`, which dist spells `output`.
+* the build step runs under bash with `$TAG_FLAG` and `$DIST_ARGS` as environment
+  variables, not as `${{ }}` text;
+* the CycloneDX step output is read as `outputs`, which dist spells `output`;
+* artifacts are signed with minisign before they reach the draft release;
+* the Homebrew job pushes with a token minted from the release App, not a stored secret.
 
 Run `scripts/dist_generate.sh` instead of `dist generate`. Each rewrite must
 match exactly once, so a dist upgrade that changes the template fails loudly
@@ -78,6 +80,7 @@ _RELEASE_OLD = """\
           gh release edit "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
 """
 _RELEASE_NEW = """\
+{sign}\
       - name: Upload the artifacts to the draft release
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
@@ -93,6 +96,17 @@ _RELEASE_NEW = """\
           gh release edit "$RELEASE_TAG" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
 """
 _JOB_ENV = "      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+# Every published file gets a minisign signature before the upload, so the draft
+# never holds an unsigned asset. The secret reaches only the signing step.
+_SIGN_STEPS = """\
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          python3 scripts/release_signing.py sign artifacts
+"""
 _HOST_ENV = (
     "    env:\n"
     + _JOB_ENV
@@ -115,7 +129,7 @@ def harden(text: str) -> str:
     text = _replace_once(
         text,
         _RELEASE_OLD,
-        _RELEASE_NEW.replace("{verify}", _VERIFY_STEP),
+        _RELEASE_NEW.replace("{verify}", _VERIFY_STEP).replace("{sign}", _SIGN_STEPS),
         "release step",
     )
     # Every remaining `needs.plan.outputs.tag-flag` is a shell word in `dist ...`.
@@ -146,6 +160,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
+    text = _mint_tap_token(text)
     text = _route_by_major_version(text)
     _assert_clean(text)
     return text
@@ -217,6 +232,60 @@ _VERIFY_STEP = """\
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
 """
 _HOST_STEP = "      - id: host\n"
+
+# cargo-dist reads a long-lived HOMEBREW_TAP_TOKEN secret to push the formula. Mint a
+# short-lived installation token from the release App instead, scoped to the tap.
+_TAP_TOKEN_OLD = "          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}\n"
+_TAP_TOKEN_NEW = "          token: ${{ steps.tap-token.outputs.token }}\n"
+_TAP_MINT_STEP = """\
+      # `client-id`, not `app-id`, and the same App credentials as release-please.yml.
+      - name: Mint the Homebrew tap token
+        id: tap-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: srobroek
+          repositories: homebrew-tap
+          permission-contents: write
+"""
+
+
+_TAP_JOB = "  publish-homebrew-formula:\n"
+# The one checkout of the tap, inside the Homebrew job; the token line is its last input.
+_TAP_CHECKOUT = re.compile(
+    r"      - uses: actions/checkout@\S+ # \S+\n"
+    r"        with:\n"
+    r"(?:          [^\n]*\n)*?"
+    r"          repository: \"srobroek/homebrew-tap\"\n"
+    r"(?:          [^\n]*\n)*?" + re.escape(_TAP_TOKEN_OLD)
+)
+
+
+def _mint_tap_token(text: str) -> str:
+    """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App.
+
+    The rewrite is confined to the Homebrew job and needs exactly one tap checkout
+    there, so a reordered or renamed template fails here instead of moving the step.
+    """
+    chunks = _split_jobs(text)
+    jobs = [i for i, chunk in enumerate(chunks) if chunk.startswith(_TAP_JOB)]
+    if len(jobs) != 1:
+        raise ValueError(
+            f"expected exactly one Homebrew publish job, found {len(jobs)}"
+        )
+    job = chunks[jobs[0]]
+    matches = list(_TAP_CHECKOUT.finditer(job))
+    if len(matches) != 1 or job.count(_TAP_TOKEN_OLD) != 1:
+        raise ValueError(
+            f"expected exactly one Homebrew tap checkout, found {len(matches)}"
+        )
+    start = matches[0].start()
+    job = job.replace(_TAP_TOKEN_OLD, _TAP_TOKEN_NEW)
+    chunks[jobs[0]] = job[:start] + _TAP_MINT_STEP + job[start:]
+    if "HOMEBREW_TAP_TOKEN" in "".join(chunks):
+        raise ValueError("a HOMEBREW_TAP_TOKEN reference remains after the rewrite")
+    return "".join(chunks)
 
 
 def _verify_tag_before_publishing(text: str) -> str:

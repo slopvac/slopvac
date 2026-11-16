@@ -94,6 +94,12 @@ jobs:
             exit 1
           fi
 
+      # A release must not ship unsigned, and the PyPI upload below cannot be undone.
+      # Stop early when the public key that checks the signatures is not committed.
+      - name: Require the release public key
+        if: ${{ steps.mode.outputs.publish == 'true' }}
+        run: python3 scripts/release_signing.py require-key
+
   evals:
     name: Offline evals and migration end-to-end
     needs: validate
@@ -158,8 +164,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-          - os: windows-2025
-            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -211,13 +215,52 @@ jobs:
           name: archive-${{ matrix.target }}
           path: |
             target/distrib/*.tar.xz
-            target/distrib/*.zip
             target/distrib/*.sha256
+          if-no-files-found: error
+
+  # Signs before the PyPI upload, which cannot be undone, so a signing failure stops
+  # the candidate first. Only this job reads the secret; the prerelease job attaches
+  # the signatures it uploads.
+  sign:
+    name: Sign the candidate assets
+    needs: [validate, wheels, archives]
+    if: ${{ needs.validate.outputs.publish == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # The signing script and public key come from the tagged tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download archives and wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{archive,wheels}-*"
+          merge-multiple: true
+          path: artifacts
+
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+
+      # Signs archives, checksums and wheels, and verifies each signature.
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: python3 scripts/release_signing.py sign artifacts
+
+      - name: Upload signatures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signatures-candidate
+          path: artifacts/*.minisig
           if-no-files-found: error
 
   publish:
     name: Publish to PyPI
-    needs: [validate, evals, wheels, archives]
+    needs: [validate, evals, wheels, archives, sign]
     if: ${{ needs.validate.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -252,7 +295,7 @@ jobs:
   # Runs after the PyPI approval, so one approval covers the whole candidate.
   prerelease:
     name: GitHub prerelease
-    needs: [validate, publish, wheels, archives]
+    needs: [validate, publish, wheels, archives, sign]
     if: ${{ needs.validate.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -264,7 +307,7 @@ jobs:
       - name: Download archives and wheels
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "{archive,wheels}-*"
+          pattern: "{archive,wheels,signatures}-*"
           merge-multiple: true
           path: artifacts
 
@@ -273,7 +316,6 @@ jobs:
         with:
           subject-path: |
             artifacts/*.tar.xz
-            artifacts/*.zip
             artifacts/*.whl
 
       # Draft first, then publish: with immutable releases on, a published release

@@ -1,0 +1,742 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 1,
+        "findings": 1,
+        "per_100_words": 0.33,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.33,
+        "over_budget": true,
+        "per_100_words": 0.33,
+        "score": 54.8,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 5,
+        "gating_per_100_words": 0.825,
+        "over_budget": true,
+        "per_100_words": 1.65,
+        "score": 69.3,
+        "suggestions": 0,
+        "warnings": 5
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 0.66,
+        "over_budget": true,
+        "per_100_words": 0.66,
+        "score": 42.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 0.66,
+        "over_budget": true,
+        "per_100_words": 0.66,
+        "score": 54.8,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.33,
+        "over_budget": true,
+        "per_100_words": 0.33,
+        "score": 67.7,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.33,
+        "over_budget": false,
+        "per_100_words": 0.33,
+        "score": 75.2,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 2,
+        "gating_per_100_words": 0.33,
+        "over_budget": false,
+        "per_100_words": 0.66,
+        "score": 80.2,
+        "suggestions": 0,
+        "warnings": 2
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.33,
+        "over_budget": false,
+        "per_100_words": 0.33,
+        "score": 80.2,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 4,
+        "findings": 4,
+        "gating_per_100_words": 1.32,
+        "over_budget": true,
+        "per_100_words": 1.32,
+        "score": 16.3,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 0.99,
+        "over_budget": true,
+        "per_100_words": 0.99,
+        "score": 47.1,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 15,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 30,
+        "end_column": 43,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "containerised",
+        "message": "Use the en-US spelling \"containerized\".",
+        "replacement": "containerized",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 42,
+          "start": 29
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 67,
+        "end_column": 78,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "has evolved",
+        "message": "Complex verb construction \"has evolved\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 187,
+          "start": 176
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 94,
+        "end_column": 101,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "has led",
+        "message": "Complex verb construction \"has led\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 210,
+          "start": 203
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 100,
+        "end_column": 104,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "our ",
+        "message": "first-person plural: our  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 539,
+          "start": 535
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 104,
+        "end_column": 119,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "standardisation",
+        "message": "Use the en-US spelling \"standardization\".",
+        "replacement": "standardization",
+        "rule_id": "core:ste-words.spelling",
+        "severity": "error",
+        "span": {
+          "end": 554,
+          "start": 539
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "",
+        "message": "The lead-in before the colon has 23 words. Use the sentence cap.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.colon-terminates-sentence-for-count",
+        "severity": "warning",
+        "span": {
+          "end": 577,
+          "start": 577
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 20,
+        "end_column": 28,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "has seen",
+        "message": "Complex verb construction \"has seen\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 604,
+          "start": 596
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 43,
+        "end_column": 50,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "several",
+        "message": "vague quantifier: several -- give the count, or name the cases",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.vague-quantifier",
+        "severity": "error",
+        "span": {
+          "end": 626,
+          "start": 619
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "",
+        "message": "This sentence has 58 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 806,
+          "start": 806
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "",
+        "message": "This sentence carries 5 coordinated items. Use a vertical list.",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
+        "severity": "error",
+        "span": {
+          "end": 806,
+          "start": 806
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 6,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "Given",
+        "message": "sentence of 58 words > 34 -- split it, or convert the enumeration to a list",
+        "replacement": null,
+        "rule_id": "core:prose-craft.sentence-length",
+        "severity": "warning",
+        "span": {
+          "end": 811,
+          "start": 806
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 44,
+        "end_column": 47,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "we ",
+        "message": "first-person plural: we  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 852,
+          "start": 849
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 47,
+        "end_column": 54,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "require",
+        "message": "Use \"need\" rather than \"require\".",
+        "replacement": "need",
+        "rule_id": "core:ste-words.approved-word-substitution",
+        "severity": "error",
+        "span": {
+          "end": 859,
+          "start": 852
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-content-shape",
+        "column": 104,
+        "end_column": 119,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": "a wide range of",
+        "message": "fake specificity: a wide range of -- give the number or drop the quantifier",
+        "replacement": null,
+        "rule_id": "core:ai-tells-content-shape.fake-specificity",
+        "severity": "error",
+        "span": {
+          "end": 924,
+          "start": 909
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 305,
+        "end_column": 306,
+        "end_line": 25,
+        "line": 25,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "warning",
+        "span": {
+          "end": 1111,
+          "start": 1110
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "error",
+        "span": {
+          "end": 1361,
+          "start": 1361
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 3,
+        "end_column": 83,
+        "end_line": 32,
+        "line": 32,
+        "matched_text": "Increasing support for Kubernetes as a deployment target for commercial and open",
+        "message": "This step carries more than one instruction (\"Increasing support for Kubernetes as a deployment target for commercial and open\").",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.multiple-instructions-per-sentence",
+        "severity": "error",
+        "span": {
+          "end": 1653,
+          "start": 1573
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 9,
+        "end_line": 34,
+        "line": 34,
+        "matched_text": "There is",
+        "message": "dead opener: There is -- start the sentence with its real subject",
+        "replacement": null,
+        "rule_id": "core:prose-craft.dead-opener",
+        "severity": "warning",
+        "span": {
+          "end": 1688,
+          "start": 1680
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 88,
+        "end_column": 96,
+        "end_line": 34,
+        "line": 34,
+        "matched_text": "has been",
+        "message": "Complex verb construction \"has been\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 1775,
+          "start": 1767
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 78,
+        "end_column": 82,
+        "end_line": 38,
+        "line": 38,
+        "matched_text": "our ",
+        "message": "first-person plural: our  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 1923,
+          "start": 1919
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 4,
+        "end_column": 11,
+        "end_line": 42,
+        "line": 42,
+        "matched_text": "Several",
+        "message": "vague quantifier: Several -- give the count, or name the cases",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.vague-quantifier",
+        "severity": "error",
+        "span": {
+          "end": 1973,
+          "start": 1966
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 43,
+        "line": 43,
+        "matched_text": "",
+        "message": "This sentence has 30 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 2098,
+          "start": 2098
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "15 error(s), limit 0",
+        "6.11 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "ai-tells-content-shape at 0.33 severity-weighted findings per 100 words, budget 0.2",
+        "prose-craft at 0.82 severity-weighted findings per 100 words, budget 0.8",
+        "prose-inflation at 0.66 severity-weighted findings per 100 words, budget 0.3",
+        "ste-descriptive at 0.66 severity-weighted findings per 100 words, budget 0.4",
+        "ste-nouns at 0.33 severity-weighted findings per 100 words, budget 0.3",
+        "ste-verbs at 1.32 severity-weighted findings per 100 words, budget 0.4",
+        "ste-words at 0.99 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 8,
+    "path": "corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736.md",
+    "per_100_words": 7.261,
+    "profile": "strict",
+    "prose": {
+      "errors": 14,
+      "findings": 21,
+      "per_100_words": 6.931,
+      "warnings": 7
+    },
+    "score": 0.0,
+    "sentences": 27,
+    "suggestions": 0,
+    "total_findings": 22,
+    "unchecked": [],
+    "warnings": 7,
+    "words": 303
+  },
+  "exit_code": 1
+}

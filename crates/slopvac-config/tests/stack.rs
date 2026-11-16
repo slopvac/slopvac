@@ -954,3 +954,26 @@ fn a_missing_explicit_config_is_named_as_the_user_typed_it() {
     assert_eq!(err.to_string(), "cannot read conf/team.toml: no such file");
     assert!(!err.render().contains(fx.root().to_str().unwrap()));
 }
+
+/// `canonicalize` yields `\\?\C:\...` on Windows, and a user writes `C:\...`. Both name one
+/// drive, so the extended file shows relative to the root and not as external.
+#[cfg(windows)]
+#[test]
+fn an_extends_path_in_plain_drive_form_shows_relative_to_a_verbatim_root() {
+    let fx = Fixture::new();
+    let base = fx.write(
+        "shared/base.toml",
+        "schema_version = 3\nlocale = \"en-US\"\n",
+    );
+    let plain = base.to_string_lossy().replace(r"\\?\", "");
+    fx.write(
+        "proj/slopvac.toml",
+        &format!("schema_version = 3\nextends = ['{plain}']\n"),
+    );
+    let cfg = load_at(&fx, "proj/slopvac.toml");
+    let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+    assert_eq!(
+        r.source(&["locale"]),
+        Some(&src(Layer::Extends, "../shared/base.toml", 2, 1))
+    );
+}

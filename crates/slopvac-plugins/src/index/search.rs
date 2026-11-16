@@ -20,7 +20,6 @@ use std::fmt::Write as _;
 
 use super::Index;
 use super::model::IndexEntry;
-use super::text::sanitize_for_terminal;
 
 /// An entry that matched, with its score.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +99,7 @@ impl SearchHit<'_> {
     #[must_use]
     pub fn render(&self) -> String {
         let e = self.entry;
-        let s = sanitize_for_terminal;
+        let s = slopvac_sanitize::line;
         let mut out = String::new();
         let _ = writeln!(
             out,
