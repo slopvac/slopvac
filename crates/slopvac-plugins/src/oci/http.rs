@@ -9,12 +9,13 @@ use std::time::Duration;
 
 use ureq::config::Config;
 use ureq::http::{Request, Response, Uri};
-use ureq::tls::{RootCerts, TlsConfig};
+use ureq::tls::{Certificate, RootCerts, TlsConfig};
 use ureq::unversioned::resolver::DefaultResolver;
 use ureq::unversioned::transport::{
-    Buffers, ConnectionDetails, Connector, DefaultConnector, NextTimeout, Transport as WireIo,
+    Buffers, ConnectProxyConnector, ConnectionDetails, Connector, Either, NextTimeout,
+    RustlsConnector, TcpConnector, Transport as WireIo,
 };
-use ureq::{Agent, Body};
+use ureq::{Agent, Body, Proxy};
 
 use super::{MAX_REDIRECTS, OciError, redact_url};
 
@@ -36,25 +37,27 @@ impl Default for Timeouts {
     }
 }
 
-/// Most bytes of response headers one hop may take, which ureq's own header
-/// limit (64 KiB) bounds.
-const HEADER_ALLOWANCE: u64 = 64 << 10;
+/// Raw bytes one hop of an exchange may take besides the body: response
+/// headers (ureq limits them to 64 KiB), a TLS handshake with a certificate
+/// chain, session tickets and a proxy's `CONNECT` reply.
+const HOP_ALLOWANCE: u64 = 192 << 10;
 
-/// Raw bytes allowed on the wire for a response body of at most `body_max`
-/// bytes: the body, chunk framing at one part in 64 (chunks of 4 KiB or more
-/// stay below it), and headers for every hop of a redirect chain.
+/// Raw bytes allowed on the socket for a response body of at most `body_max`
+/// bytes: the body, TLS record and chunk framing at one part in 64 (records and
+/// chunks of 4 KiB or more stay below it), and the allowance of the first hop.
+/// Each redirect followed adds [`HOP_ALLOWANCE`] ([`WireMeter::allow_hop`]).
 fn wire_cap(body_max: u64) -> u64 {
     body_max
         .saturating_add(body_max / 64)
-        .saturating_add(HEADER_ALLOWANCE * (MAX_REDIRECTS as u64 + 1))
+        .saturating_add(HOP_ALLOWANCE)
 }
 
-/// Bytes received from one registry exchange, below the HTTP decoder.
+/// Bytes received from one registry exchange, below TLS and any proxy.
 ///
 /// Body limits count decoded bytes only. This counts every byte read from the
-/// connection, so status lines, headers, chunk framing and trailers count too,
-/// and a read that fails still has its bytes charged. A response that passes
-/// the cap stops the connection.
+/// TCP socket, so TLS records and handshakes, status lines, headers, chunk
+/// framing and trailers count too, and a read that fails still has its bytes
+/// charged. A response that passes the cap stops the connection.
 ///
 /// [`Transport::send`] stores the meter in the response extensions as an
 /// `Arc<WireMeter>`, so callers can charge [`WireMeter::used`] to a budget
@@ -62,14 +65,14 @@ fn wire_cap(body_max: u64) -> u64 {
 #[derive(Debug)]
 pub(crate) struct WireMeter {
     used: AtomicU64,
-    cap: u64,
+    cap: AtomicU64,
 }
 
 impl WireMeter {
     fn new(cap: u64) -> Self {
         Self {
             used: AtomicU64::new(0),
-            cap,
+            cap: AtomicU64::new(cap),
         }
     }
 
@@ -82,8 +85,17 @@ impl WireMeter {
         self.used.fetch_add(n, Ordering::Relaxed);
     }
 
+    fn cap(&self) -> u64 {
+        self.cap.load(Ordering::Relaxed)
+    }
+
+    /// Room for the connection and headers of one more redirect hop.
+    fn allow_hop(&self) {
+        self.cap.fetch_add(HOP_ALLOWANCE, Ordering::Relaxed);
+    }
+
     fn exceeded(&self) -> bool {
-        self.used() > self.cap
+        self.used() > self.cap()
     }
 }
 
@@ -116,24 +128,44 @@ pub(crate) fn read_error(url: &str, e: &io::Error) -> OciError {
     }
 }
 
-/// Adds a [`WireMeter`] on top of the connection the default connector makes.
-#[derive(Debug)]
-struct MeterConnector(Arc<WireMeter>);
+/// [`TcpConnector`] that meters the socket it opens.
+///
+/// The `CONNECT` proxy connector runs the whole chain again for its own leg and
+/// hands the result down as `chained`. That leg is already metered, and so is
+/// every byte of the tunnel it carries, so a chained transport passes through
+/// and each socket is metered once.
+struct MeterTcp {
+    tcp: TcpConnector,
+    meter: Arc<WireMeter>,
+}
 
-impl Connector<Box<dyn WireIo>> for MeterConnector {
-    type Out = Box<dyn WireIo>;
+impl fmt::Debug for MeterTcp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MeterTcp").finish_non_exhaustive()
+    }
+}
+
+impl<In: WireIo> Connector<In> for MeterTcp {
+    type Out = Either<In, Metered>;
 
     fn connect(
         &self,
-        _details: &ConnectionDetails<'_>,
-        chained: Option<Box<dyn WireIo>>,
+        details: &ConnectionDetails<'_>,
+        chained: Option<In>,
     ) -> Result<Option<Self::Out>, ureq::Error> {
-        Ok(chained.map(|inner| {
-            Box::new(Metered {
-                inner,
-                meter: Arc::clone(&self.0),
-            }) as Box<dyn WireIo>
-        }))
+        if chained.is_some() {
+            return Ok(chained.map(Either::A));
+        }
+        Ok(self
+            .tcp
+            .connect(details, None::<In>)?
+            .map(|opened| match opened {
+                Either::A(other) => Either::A(other),
+                Either::B(socket) => Either::B(Metered {
+                    inner: Box::new(socket),
+                    meter: Arc::clone(&self.meter),
+                }),
+            }))
     }
 }
 
@@ -146,7 +178,7 @@ struct Metered {
 impl Metered {
     fn check(&self) -> Result<(), ureq::Error> {
         if self.meter.exceeded() {
-            let limit = self.meter.cap;
+            let limit = self.meter.cap();
             return Err(ureq::Error::Io(io::Error::other(WireLimit { limit })));
         }
         Ok(())
@@ -182,6 +214,17 @@ impl WireIo for Metered {
     fn is_tls(&self) -> bool {
         self.inner.is_tls()
     }
+}
+
+/// Settings only tests use: a trusted root for a local HTTPS registry and a
+/// `CONNECT` proxy. Production transports use the platform roots and the
+/// proxy settings of the environment.
+#[derive(Clone, Default)]
+pub(crate) struct TestNet {
+    /// DER certificate to trust instead of the platform roots.
+    pub root: Option<Vec<u8>>,
+    /// Proxy URL, such as `http://127.0.0.1:3128`.
+    pub proxy: Option<String>,
 }
 
 pub(crate) struct Transport {
@@ -329,11 +372,29 @@ pub(crate) fn resolve(base: &str, reference: &str) -> Option<String> {
 impl Transport {
     /// `allow_loopback_http` is set only by the test-only client constructor;
     /// production transports refuse every `http://` URL, redirects included.
+    #[cfg(test)]
     pub(crate) fn new(allow_loopback_http: bool, timeouts: Timeouts) -> Self {
-        let tls = TlsConfig::builder()
-            .root_certs(RootCerts::PlatformVerifier)
-            .build();
-        let config = Config::builder()
+        Self::with_test_net(allow_loopback_http, timeouts, &TestNet::default())
+    }
+
+    /// [`Transport::new`] with the test settings of `net`.
+    pub(crate) fn with_test_net(
+        allow_loopback_http: bool,
+        timeouts: Timeouts,
+        net: &TestNet,
+    ) -> Self {
+        let roots = net
+            .root
+            .as_ref()
+            .map_or(RootCerts::PlatformVerifier, |der| {
+                RootCerts::new_with_certs(&[Certificate::from_der(der).to_owned()])
+            });
+        let tls = TlsConfig::builder().root_certs(roots).build();
+        let mut builder = Config::builder();
+        if let Some(proxy) = &net.proxy {
+            builder = builder.proxy(Some(Proxy::new(proxy).expect("a proxy URL")));
+        }
+        let config = builder
             .http_status_as_error(false)
             .max_redirects(0)
             .max_redirects_will_error(false)
@@ -368,11 +429,19 @@ impl Transport {
         let mut auth = req.authorization.clone();
         let mut hops = 0;
         // One meter and one agent per exchange: the wire cap is per response,
-        // and a pooled connection would carry it into the next request.
+        // and a pooled connection would carry it into the next request. The
+        // price is a new connection, and a TLS handshake, for every request.
         let meter = Arc::new(WireMeter::new(wire_cap(req.max_body)));
         let agent = Agent::with_parts(
             self.config.clone(),
-            DefaultConnector::new().chain(MeterConnector(Arc::clone(&meter))),
+            // The default chain minus SOCKS (not built), with the socket metered
+            // below TLS and below a `CONNECT` proxy.
+            ().chain(ConnectProxyConnector::default())
+                .chain(MeterTcp {
+                    tcp: TcpConnector::default(),
+                    meter: Arc::clone(&meter),
+                })
+                .chain(RustlsConnector::default()),
             DefaultResolver::default(),
         );
         loop {
@@ -409,6 +478,7 @@ impl Transport {
                 return Err(bad("redirect on a request that is not GET or HEAD"));
             }
             hops += 1;
+            meter.allow_hop();
             if hops > MAX_REDIRECTS {
                 return Err(bad("more than 5 redirects"));
             }

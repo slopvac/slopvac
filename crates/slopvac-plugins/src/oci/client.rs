@@ -14,8 +14,8 @@ use ureq::http::Response;
 
 use super::auth::{Challenge, CredentialSource, DefaultCredentials};
 use super::http::{
-    Req, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error, resolve,
-    url_allowed,
+    Req, TestNet, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error,
+    resolve, url_allowed,
 };
 use super::reference::{Reference, Target};
 use super::types::{
@@ -141,7 +141,7 @@ impl Client {
     /// Client with a given credential source.
     #[must_use]
     pub fn with_credentials(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, false, Timeouts::default())
+        Self::build(creds, false, Timeouts::default(), &TestNet::default())
     }
 
     /// Test seam: like [`Client::with_credentials`] but speaks plain HTTP to
@@ -153,7 +153,7 @@ impl Client {
     #[doc(hidden)]
     #[must_use]
     pub fn with_loopback_http_for_tests(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, true, Timeouts::default())
+        Self::build(creds, true, Timeouts::default(), &TestNet::default())
     }
 
     /// Test seam: like [`Client::with_loopback_http_for_tests`] with a short limit
@@ -168,16 +168,37 @@ impl Client {
             send_body,
             ..Timeouts::default()
         };
-        Self::build(creds, true, timeouts)
+        Self::build(creds, true, timeouts, &TestNet::default())
+    }
+
+    /// Test seam: an HTTPS-only client that trusts the DER certificate `root`
+    /// instead of the platform roots and, when `proxy` is set, reaches
+    /// registries through that `CONNECT` proxy (for example
+    /// `http://127.0.0.1:3128`).
+    ///
+    /// Production code never calls this.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_tls_root_for_tests(
+        creds: Box<dyn CredentialSource>,
+        root: &[u8],
+        proxy: Option<&str>,
+    ) -> Self {
+        let net = TestNet {
+            root: Some(root.to_vec()),
+            proxy: proxy.map(str::to_owned),
+        };
+        Self::build(creds, false, Timeouts::default(), &net)
     }
 
     fn build(
         creds: Box<dyn CredentialSource>,
         allow_loopback_http: bool,
         timeouts: Timeouts,
+        net: &TestNet,
     ) -> Self {
         Self {
-            transport: Transport::new(allow_loopback_http, timeouts),
+            transport: Transport::with_test_net(allow_loopback_http, timeouts, net),
             creds,
             tokens: Mutex::new(HashMap::new()),
             allow_loopback_http,

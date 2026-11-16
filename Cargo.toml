@@ -54,6 +54,7 @@ rustix = { version = "1", default-features = false, features = [
   "std",
   "process",
 ] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 saphyr = "0.3"
 # The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
 saphyr-parser = "0.3.4"
@@ -97,7 +98,9 @@ tree-sitter-go = "0.25"
 tree-sitter-java = "0.23"
 tree-sitter-proto = "0.6"
 unicode-normalization = "0.1"
-ureq = { version = "3.5", default-features = false, features = [
+# Pinned exactly: the connector chain in `oci/http.rs` uses ureq's `unversioned`
+# transport API, which has no semver promise.
+ureq = { version = "=3.5.2", default-features = false, features = [
   "rustls",
   "platform-verifier",
 ] }
