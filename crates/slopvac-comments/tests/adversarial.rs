@@ -173,3 +173,17 @@ fn the_lexer_survives_confusing_input_in_every_language() {
         }
     }
 }
+/// The lexer stops at the step budget instead of scanning the whole input first.
+#[test]
+fn a_tiny_walk_budget_stops_the_lexer_early_on_a_large_input() {
+    let source = "// word word word\n".repeat(200_000);
+    let limits = Limits {
+        max_walk_steps: Some(50),
+        ..Limits::default()
+    };
+    let error = extract_lexical(Language::Rust, &source, &limits).expect_err("over budget");
+    assert!(
+        matches!(error, ExtractError::WalkBudget { budget: 50 }),
+        "{error:?}"
+    );
+}

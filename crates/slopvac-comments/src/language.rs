@@ -308,6 +308,8 @@ pub(crate) struct Syntax {
     pub(crate) leaders: &'static [char],
     /// A backslash before the line end continues a line comment onto the next line.
     pub(crate) continuation: bool,
+    /// Strings may use Lua long brackets, `[[ ... ]]` and `[==[ ... ]==]`.
+    pub(crate) long_strings: bool,
     /// Block forms, checked in order, before line forms.
     pub(crate) blocks: &'static [Block],
     /// String forms, checked in order. List a longer delimiter before its prefix.
@@ -370,6 +372,7 @@ const fn syntax(
         line_doc: &[],
         leaders: &[],
         continuation: false,
+        long_strings: false,
         blocks,
         strings,
     }
@@ -393,7 +396,7 @@ const JAVA: Syntax = c_like(&[star(false)], &[TDQ, DQ, CHAR]);
 const GO: Syntax = c_like(&[star(false)], &[BT, DQ, CHAR]);
 const RUST: Syntax = Syntax {
     shebang: SHEBANG,
-    ..c_like(&[star(true)], &[DQ, CHAR])
+    ..c_like(&[star(true)], &[MDQ, CHAR])
 };
 const SWIFT: Syntax = Syntax {
     shebang: SHEBANG,
@@ -450,7 +453,10 @@ const R: Syntax = Syntax {
 };
 const JULIA: Syntax = hash(&[plain("#=", "=#", true)], &[TDQ, DQ, CHAR]);
 const POWERSHELL: Syntax = hash(&[plain("<#", "#>", false)], &[MDQ, MSQ]);
-const LUA: Syntax = syntax(&["--"], &[Block::Lua], &[DQ, SQ]);
+const LUA: Syntax = Syntax {
+    long_strings: true,
+    ..syntax(&["--"], &[Block::Lua], &[DQ, SQ])
+};
 const HASKELL: Syntax = Syntax {
     leaders: &['|', '^'],
     ..syntax(&["--"], &[plain("{-", "-}", true)], &[DQ, CHAR])

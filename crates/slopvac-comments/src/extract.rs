@@ -150,11 +150,9 @@ pub fn extract_lexical(
 ) -> Result<Extraction, ExtractError> {
     check_size(source, limits)?;
     let syntax = language.syntax();
-    let scan = lexer::scan(source, syntax);
     let budget = limits.max_walk_steps.unwrap_or(1024 + 8 * source.len());
-    if scan.steps > budget {
-        return Err(ExtractError::WalkBudget { budget });
-    }
+    let scan =
+        lexer::scan(source, syntax, budget).map_err(|_| ExtractError::WalkBudget { budget })?;
     let mut pieces = Vec::new();
     for range in scan.comments {
         let range = trimmed(source, range);

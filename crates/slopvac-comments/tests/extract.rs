@@ -399,3 +399,45 @@ fn a_shebang_counts_only_on_the_first_line() {
     let got = pairs_lexical(Language::Rust, "// c\n#!/usr/bin/env run\n");
     assert_eq!(got, [(Line, "c".into())]);
 }
+#[test]
+fn an_escaped_quote_char_literal_does_not_hide_a_comment_after_unicode() {
+    // The window after `'\"'` ends in the middle of the emoji, which once emptied it.
+    let source = "char q = '\\\"'; // ab \u{1F600} x\n";
+    for language in [Language::C, Language::Cpp, Language::Java, Language::Rust] {
+        let got: Vec<String> = pairs_lexical(language, source)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(got, ["ab \u{1F600} x"], "{language:?}");
+    }
+}
+
+#[test]
+fn a_rust_string_may_span_lines_and_hold_comment_markers() {
+    let source = "let s = \"first // not\nsecond /* not */\nthird\"; // yes\n";
+    let got = pairs_lexical(Language::Rust, source);
+    assert_eq!(got, [(Line, "yes".into())]);
+}
+
+#[test]
+fn lua_long_brackets_hold_strings_and_comments() {
+    let mut wrong = Vec::new();
+    for (source, want) in [
+        ("s = [[ -- no\n-- still no ]] -- yes\n", vec!["yes"]),
+        ("s = [==[ ]] -- no ]==] -- yes\n", vec!["yes"]),
+        (
+            "--[==[ ]] kept\nmore ]==] x = 1 -- yes\n",
+            vec!["]] kept more", "yes"],
+        ),
+        ("t = a[b[1]] -- yes\n", vec!["yes"]),
+    ] {
+        let got: Vec<String> = pairs_lexical(Language::Lua, source)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        if got != want {
+            wrong.push(format!("{source:?}: want {want:?}, got {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

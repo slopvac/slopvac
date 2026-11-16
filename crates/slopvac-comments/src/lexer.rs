@@ -40,9 +40,22 @@ enum State {
         line_start: bool,
     },
     Quote(Quote),
+    /// A Lua long-bracket string, such as `[==[ ... ]==]`.
+    Long {
+        close: String,
+    },
 }
 
-pub(crate) fn scan(source: &str, syntax: &Syntax) -> Scan {
+/// The scan used more than its step budget.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct OverBudget {
+    /// Steps taken when the scan stopped.
+    pub(crate) steps: usize,
+}
+
+/// Scan `source` for comments. The scan stops with [`OverBudget`] as soon as it has taken
+/// more than `max_steps` steps, so a small budget bounds both time and the comment list.
+pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Scan, OverBudget> {
     let bytes = source.as_bytes();
     let bom = if source.starts_with('\u{feff}') { 3 } else { 0 };
     let mut comments = Vec::new();
@@ -51,6 +64,9 @@ pub(crate) fn scan(source: &str, syntax: &Syntax) -> Scan {
     let mut steps = 0;
     while at < bytes.len() {
         steps += 1;
+        if steps > max_steps {
+            return Err(OverBudget { steps });
+        }
         let at_line_start = at == bom || at == 0 || matches!(bytes[at - 1], b'\n' | b'\r');
         state = match state {
             State::Code => {
@@ -111,24 +127,14 @@ pub(crate) fn scan(source: &str, syntax: &Syntax) -> Scan {
                     }
                 }
             }
-            State::Quote(quote) => {
-                let here = &bytes[at..];
-                if bytes[at] == b'\\' {
-                    // A backslash takes the next byte, and a CRLF as one.
-                    at += 2;
-                    if bytes.get(at - 1) == Some(&b'\r') && bytes.get(at) == Some(&b'\n') {
-                        at += 1;
-                    }
-                    State::Quote(quote)
-                } else if here.starts_with(quote.delim.as_bytes()) {
-                    at += quote.delim.len();
-                    State::Code
-                } else if matches!(bytes[at], b'\n' | b'\r') && !quote.multiline {
-                    at += 1;
+            State::Quote(quote) => in_quote(bytes, &mut at, quote),
+            State::Long { close } => {
+                if bytes[at..].starts_with(close.as_bytes()) {
+                    at += close.len();
                     State::Code
                 } else {
                     at += 1;
-                    State::Quote(quote)
+                    State::Long { close }
                 }
             }
         };
@@ -136,7 +142,29 @@ pub(crate) fn scan(source: &str, syntax: &Syntax) -> Scan {
     if let State::Block { start, .. } = state {
         comments.push(start..bytes.len());
     }
-    Scan { comments, steps }
+    Ok(Scan { comments, steps })
+}
+
+/// One step inside a string. Returns the state after it and moves `at` forward.
+fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> State {
+    let here = &bytes[*at..];
+    if bytes[*at] == b'\\' {
+        // A backslash takes the next byte, and a CRLF as one.
+        *at += 2;
+        if bytes.get(*at - 1) == Some(&b'\r') && bytes.get(*at) == Some(&b'\n') {
+            *at += 1;
+        }
+        State::Quote(quote)
+    } else if here.starts_with(quote.delim.as_bytes()) {
+        *at += quote.delim.len();
+        State::Code
+    } else if matches!(bytes[*at], b'\n' | b'\r') && !quote.multiline {
+        *at += 1;
+        State::Code
+    } else {
+        *at += 1;
+        State::Quote(quote)
+    }
 }
 
 /// Look for something that starts at `at` in code. Returns the next offset and state.
@@ -195,6 +223,11 @@ fn code(
         comments.push(at..end);
         return Some((end, State::Code));
     }
+    if syntax.long_strings
+        && let Some((len, close)) = long_bracket(here)
+    {
+        return Some((at + len, State::Long { close }));
+    }
     for quote in syntax.strings {
         if !here.starts_with(quote.delim.as_bytes()) {
             continue;
@@ -236,24 +269,36 @@ fn line_end(bytes: &[u8], from: usize) -> usize {
 
 /// The length of a character literal at the start of `text`, which begins with `'`.
 fn char_literal(text: &str) -> Option<usize> {
-    let rest = text.strip_prefix('\'')?;
-    let mut chars = rest.chars();
-    let first = chars.next()?;
-    if first == '\\' {
-        // An escape such as `\n`, `\'` or `\u{1F600}` ends at the next `'`, within 12 bytes.
-        let escaped = rest.get(1..)?;
-        let skip = escaped.chars().next()?.len_utf8();
-        let window = escaped
-            .get(skip..)?
-            .get(..escaped.len().min(skip + 12) - skip)
-            .unwrap_or("");
-        let close = window.find('\'')?;
-        return Some(1 + 1 + skip + close + 1);
+    let bytes = text.as_bytes();
+    if bytes.get(1) == Some(&b'\\') {
+        // An escape such as `\n`, `\'` or `\u{1F600}`: skip the escaped character, then
+        // the literal closes at the next `'` within 12 bytes. The search is over bytes, and
+        // `'` is ASCII, so a multi-byte character in the window cannot hide it.
+        let escaped = text.get(2..)?.chars().next()?;
+        let start = 2 + escaped.len_utf8();
+        let close = bytes
+            .get(start..)?
+            .iter()
+            .take(12)
+            .position(|&byte| byte == b'\'')?;
+        return Some(start + close + 1);
     }
+    let first = text.get(1..)?.chars().next()?;
     if matches!(first, '\'' | '\n' | '\r') {
         return None;
     }
-    (chars.next() == Some('\'')).then(|| 1 + first.len_utf8() + 1)
+    let end = 1 + first.len_utf8();
+    (bytes.get(end) == Some(&b'\'')).then_some(end + 1)
+}
+
+/// A Lua long-bracket string opener and its closer: `[[` and `]]`, or `[==[` and `]==]`.
+fn long_bracket(text: &[u8]) -> Option<(usize, String)> {
+    let rest = text.strip_prefix(b"[")?;
+    let level = rest.iter().take_while(|&&byte| byte == b'=').count();
+    if rest.get(level) != Some(&b'[') {
+        return None;
+    }
+    Some((level + 2, format!("]{}]", "=".repeat(level))))
 }
 
 /// A Lua long-bracket comment opener and its closer, such as `--[==[` and `]==]`.
@@ -266,4 +311,24 @@ fn lua_open(text: &[u8]) -> Option<(&'static str, String)> {
     // The opener varies with the level, so state keeps the closer and a fixed opener
     // that never matches a nested form: Lua comments do not nest.
     Some(("--[", format!("]{}]", "=".repeat(level))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Language;
+
+    #[test]
+    fn the_scan_stops_one_step_past_the_budget_on_a_large_input() {
+        let source = "// word\n".repeat(500_000);
+        let result = scan(&source, Language::Rust.syntax(), 100);
+        assert_eq!(result.err(), Some(OverBudget { steps: 101 }));
+    }
+
+    #[test]
+    fn the_scan_keeps_its_comments_within_the_budget() {
+        let source = "// a\n// b\n// c\n";
+        let scan = scan(source, Language::Rust.syntax(), 1_000).expect("within budget");
+        assert_eq!(scan.comments.len(), 3);
+    }
 }
