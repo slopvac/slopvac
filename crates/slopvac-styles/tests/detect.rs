@@ -272,3 +272,74 @@ fn a_style_section_covers_its_subsections_and_ends_at_a_sibling_heading() {
         .collect();
     assert_eq!(seen, [(Some("google"), 4), (None, 6)]);
 }
+
+#[test]
+fn a_heading_inside_a_fence_does_not_open_a_style_section() {
+    let text = format!("# Contributing\n\n```md\n## Style\n```\n\n{GOOGLE_LINE}");
+    let dir = repo(&[("CONTRIBUTING.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn a_heading_inside_a_fence_does_not_close_a_style_section() {
+    let text = format!("## Style\n\n```md\n## Testing\n```\n\n{GOOGLE_LINE}");
+    let dir = repo(&[("CONTRIBUTING.md", &text)]);
+    let found = detect_house_styles(dir.path());
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].evidence.line, 7);
+}
+
+#[test]
+fn a_long_fence_is_not_closed_by_a_shorter_one() {
+    let text = format!("````md\n```\n{GOOGLE_LINE}```\n{GOOGLE_LINE}````\n");
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn a_fence_closes_on_the_same_marker_with_at_least_the_opening_length() {
+    let text = format!("```\nx\n`````\n{GOOGLE_LINE}");
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()).len(), 1);
+}
+
+#[test]
+fn a_closing_fence_line_with_text_after_it_does_not_close() {
+    let text = format!("```\n``` not a close\n{GOOGLE_LINE}```\n");
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn a_cue_in_another_clause_does_not_reject_the_guide() {
+    for line in [
+        "We follow the Google developer documentation style guide, but never use emoji.",
+        "We follow the Google developer documentation style guide, except for headings.",
+        "We follow the Google developer documentation style guide; we don't use emoji.",
+        "We follow the Google developer documentation style guide and avoid jargon.",
+        "We don't use emoji. We follow the Google developer documentation style guide.",
+        "We don't use emoji, but we follow the Google developer documentation style guide.",
+    ] {
+        let dir = repo(&[("STYLE.md", &format!("{line}\n"))]);
+        let found = detect_house_styles(dir.path());
+        assert_eq!(found.len(), 1, "{line}");
+        assert_eq!(found[0].preset.as_deref(), Some("google"), "{line}");
+    }
+}
+
+#[test]
+fn a_cue_before_the_guide_in_its_clause_rejects_it() {
+    for line in [
+        "We do not follow the Google developer documentation style guide.",
+        "We follow Microsoft, not the Google developer documentation style guide.",
+        "We use STE instead of the Google developer documentation style guide.",
+    ] {
+        let dir = repo(&[("STYLE.md", &format!("{line}\n"))]);
+        assert!(
+            detect_house_styles(dir.path())
+                .iter()
+                .all(|s| s.preset.as_deref() != Some("google")),
+            "{line}"
+        );
+    }
+}

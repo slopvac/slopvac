@@ -128,17 +128,21 @@ const MAX_BYTES: u64 = 1024 * 1024;
 
 /// Read a regular file under `root`, or `None`.
 ///
-/// The path is resolved first. A target outside the root, or anything that is not a
-/// regular file (a FIFO, a device), is skipped without opening it. The read stops
-/// one byte past [`MAX_BYTES`], so memory use is bounded for any input.
+/// The path is resolved first. A target outside the root is skipped. The file is
+/// opened without blocking, so a FIFO swapped in after the check cannot hang the
+/// open, and the opened handle must itself be a regular file. The read stops one
+/// byte past [`MAX_BYTES`], so memory use is bounded for any input.
+///
+/// A local writer who races a symlink swap between the containment check and the
+/// open is out of scope: they already control the repository's files.
 fn read(root: &Path, name: &str) -> Option<String> {
     use std::io::Read;
     let root = std::fs::canonicalize(root).ok()?;
     let path = std::fs::canonicalize(root.join(name)).ok()?;
-    if !path.starts_with(&root) || !std::fs::metadata(&path).ok()?.is_file() {
+    if !path.starts_with(&root) {
         return None;
     }
-    let file = std::fs::File::open(&path).ok()?;
+    let file = open_nonblocking(&path).ok()?;
     if !file.metadata().ok()?.is_file() {
         return None;
     }
@@ -148,6 +152,19 @@ fn read(root: &Path, name: &str) -> Option<String> {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+
+/// Open for reading. On unix the open does not block on a FIFO.
+fn open_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or(0);
+        options.custom_flags(flag);
+    }
+    options.open(path)
 }
 
 fn suggestion(guide: &Guide, file: &str, line: usize, text: &str) -> Suggestion {
@@ -215,11 +232,8 @@ fn phrase_matches(file: &str, text: &str, wanted: impl Fn(usize) -> bool) -> Vec
             continue;
         }
         let lower = line.to_ascii_lowercase();
-        if rejects(&lower) {
-            continue;
-        }
         for g in GUIDES {
-            if g.phrases.iter().any(|p| lower.contains(p)) {
+            if g.phrases.iter().any(|p| adopted(&lower, p)) {
                 out.push(suggestion(g, file, i + 1, line));
             }
         }
@@ -227,7 +241,7 @@ fn phrase_matches(file: &str, text: &str, wanted: impl Fn(usize) -> bool) -> Vec
     out
 }
 
-/// Words that turn a mention into a rejection, a contrast or an example.
+/// Words that reject a guide when they come before its name in the same clause.
 const NEGATIONS: &[&str] = &[
     " not ",
     "n't",
@@ -237,29 +251,61 @@ const NEGATIONS: &[&str] = &[
     "unlike",
     "instead of",
     "rather than",
-    "for example",
-    "e.g.",
-    " except ",
-    " without ",
 ];
 
-fn rejects(lower: &str) -> bool {
-    let padded = format!(" {lower} ");
-    NEGATIONS.iter().any(|n| padded.contains(n))
+/// Words that make a mention an example when they come anywhere before it on the line.
+const EXAMPLES: &[&str] = &["for example", "e.g."];
+
+/// Text that ends a clause, with the length of the marker.
+const CLAUSE_BREAKS: &[&str] = &[";", ",", ". ", " but ", " however "];
+
+/// Whether `lower` mentions `phrase` as something the project follows.
+///
+/// A mention counts unless a negation comes before it in its own clause, or the line
+/// introduces it as an example. A cue after the name, or in another clause, does not
+/// count: "We follow it, but never use emoji" still adopts it.
+fn adopted(lower: &str, phrase: &str) -> bool {
+    lower.match_indices(phrase).any(|(at, _)| {
+        let before = &lower[..at];
+        if EXAMPLES.iter().any(|e| before.contains(e)) {
+            return false;
+        }
+        let start = CLAUSE_BREAKS
+            .iter()
+            .filter_map(|b| before.rfind(b).map(|i| i + b.len()))
+            .max()
+            .unwrap_or(0);
+        let clause = format!(" {}", &before[start..]);
+        !NEGATIONS.iter().any(|n| clause.contains(n))
+    })
 }
 
 /// For each line, whether it is a fence delimiter or inside a fenced code block.
+///
+/// A fence opens on three or more backticks or tildes (up to three spaces of
+/// indent). It closes on the same character, at least as many, and nothing but
+/// whitespace after them (`CommonMark`).
 fn fenced_lines(text: &str) -> Vec<bool> {
-    let mut inside = false;
+    let mut open: Option<(char, usize)> = None;
     text.lines()
         .map(|line| {
-            let t = line.trim_start();
-            let delimiter = t.starts_with("```") || t.starts_with("~~~");
-            let flagged = inside || delimiter;
-            if delimiter {
-                inside = !inside;
+            let indent = line.len() - line.trim_start_matches(' ').len();
+            let t = &line[indent..];
+            let marker = t.chars().next().filter(|c| *c == '`' || *c == '~');
+            let run = marker.map_or(0, |m| t.chars().take_while(|c| *c == m).count());
+            let fence = marker.filter(|_| indent <= 3 && run >= 3);
+            match (open, fence) {
+                (None, Some(m)) => {
+                    open = Some((m, run));
+                    true
+                }
+                (Some((m, len)), Some(c)) if c == m && run >= len && t[run..].trim().is_empty() => {
+                    open = None;
+                    true
+                }
+                (Some(_), _) => true,
+                (None, None) => false,
             }
-            flagged
         })
         .collect()
 }

@@ -2658,6 +2658,7 @@ version = "0.0.0"
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
+ "rustix",
  "serde",
  "serde_json",
  "slopvac-config",
