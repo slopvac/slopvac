@@ -7,6 +7,7 @@ mod declarative;
 mod declared;
 mod genre;
 mod pattern;
+mod reference;
 mod schema;
 mod structural;
 mod tag;
@@ -25,6 +26,7 @@ pub use genre::{
     SignalKind, files_match, parse_genres,
 };
 pub use pattern::{Pattern, normalize_path};
+pub use reference::reference_pages;
 pub use structural::{FrontmatterCondition, Scope, StructuralSpec, StructuralTagger, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{

@@ -13,9 +13,10 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas and the plugin protocol reference come from real data. Styles,
-genres and plugin packs are stub generators that emit a placeholder page until
-the owning crates exist.
+Rules, schemas, the plugin protocol reference, styles, terms and genres come
+from real data. The styles, terms and genres pages come from each crate's
+``reference`` example, which the builder runs through cargo. Plugin packs are a
+stub generator that emits a placeholder page until the owning crate exists.
 """
 
 from __future__ import annotations
@@ -293,8 +294,7 @@ def generate_terms() -> Pages:
 
 
 def generate_genres() -> Pages:
-    # STUB(slopvac-8l4.19.11): needs the genre registry (slopvac-8l4.5.7).
-    return _placeholder("genres/index.md", "Genres", "slopvac-8l4.19.11")
+    return rust_reference("slopvac-context")
 
 
 def generate_packs() -> Pages:
