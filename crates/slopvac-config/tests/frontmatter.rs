@@ -475,3 +475,16 @@ fn the_negative_fixtures_are_genuinely_malformed() {
         assert_malformed(doc);
     }
 }
+
+#[test]
+fn a_wide_table_is_checked_for_repeats_in_linear_time() {
+    // 100 000 distinct keys: a pairwise scan needs about 5e9 key comparisons, which takes far
+    // longer than the bound even in a release build. A per-table set finishes in milliseconds.
+    let keys: Vec<String> = (0..100_000).map(|i| format!("\"k{i}\": 0")).collect();
+    let doc = format!("{{\"slopvac\": {{\"v\": 3}}, \"meta\": {{{}}}}}\n", keys.join(", "));
+    let block = extract(&doc).expect("a JSON block");
+    let start = std::time::Instant::now();
+    assert!(parse_block(&doc, &block).is_ok());
+    let took = start.elapsed();
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+}
