@@ -51,9 +51,13 @@ fn visible_subcommands(cmd: &Command) -> impl Iterator<Item = &Command> {
         .filter(|s| !s.is_hide_set() && s.get_name() != "help")
 }
 
+/// The `help` subcommand that clap adds to every command with subcommands.
+fn has_help_subcommand(cmd: &Command) -> bool {
+    cmd.get_subcommands().any(|s| s.get_name() == "help")
+}
+
 fn shown_args(cmd: &Command) -> impl Iterator<Item = &Arg> {
-    cmd.get_arguments()
-        .filter(|a| !a.is_hide_set() && !matches!(a.get_id().as_str(), "help" | "version"))
+    cmd.get_arguments().filter(|a| !a.is_hide_set())
 }
 
 fn tidy(mut text: String) -> String {
@@ -65,20 +69,27 @@ fn tidy(mut text: String) -> String {
 fn index(root: &Command) -> String {
     let mut out = String::from("# Command-line reference\n\n");
     if let Some(about) = root.get_about() {
-        let _ = writeln!(out, "{about}\n");
+        let _ = writeln!(out, "{}\n", prose(&about.to_string()));
     }
     out.push_str("Run `slopvac PATH...` or `slopvac lint PATH...` to lint.\n\n");
     out.push_str("## Commands\n\n");
     for sub in visible_subcommands(root) {
         let name = sub.get_name();
         let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
-        let _ = writeln!(out, "- [`{name}`]({name}.md): {}", one_line(&about));
+        let _ = writeln!(out, "- [`{name}`]({name}.md): {}", prose(&about));
+    }
+    if has_help_subcommand(root) {
+        out.push_str("- `help`: Print this message or the help of the given subcommand(s).\n");
     }
     out.push_str("\n## Global options\n\n");
     options_table(&mut out, root, true);
+    out.push_str(
+        "## Root options\n\nThese options apply to `slopvac` itself, not to a subcommand.\n\n",
+    );
+    options_table(&mut out, root, false);
     out.push_str("## Exit codes\n\n| Code | Meaning |\n| --- | --- |\n");
-    for (code, meaning) in EXIT_CODES {
-        let _ = writeln!(out, "| `{code}` | {meaning} |");
+    for (status, meaning) in EXIT_CODES {
+        let _ = writeln!(out, "| `{status}` | {meaning} |");
     }
     tidy(out)
 }
@@ -88,15 +99,21 @@ fn section(out: &mut String, cmd: &Command, path: &str, depth: usize) {
         let _ = writeln!(out, "{} `{path}`\n", "#".repeat(depth));
     }
     if let Some(about) = cmd.get_long_about().or_else(|| cmd.get_about()) {
-        let _ = writeln!(out, "{about}\n");
+        let _ = writeln!(out, "{}\n", prose(&about.to_string()));
     }
     let mut usage = cmd.clone();
     let _ = writeln!(out, "```text\n{}\n```\n", usage.render_usage());
     if cmd.get_all_aliases().next().is_some() {
-        let aliases: Vec<_> = cmd.get_all_aliases().map(|a| format!("`{a}`")).collect();
+        let aliases: Vec<_> = cmd.get_all_aliases().map(code).collect();
         let _ = writeln!(out, "Aliases: {}.\n", aliases.join(", "));
     }
     options_table(out, cmd, false);
+    if has_help_subcommand(cmd) {
+        let _ = writeln!(
+            out,
+            "Run `{path} help [COMMAND]` to print the help of a subcommand.\n"
+        );
+    }
     for sub in visible_subcommands(cmd) {
         section(out, sub, &format!("{path} {}", sub.get_name()), depth + 1);
     }
@@ -130,18 +147,19 @@ fn options_table(out: &mut String, cmd: &Command, global: bool) {
 fn name(arg: &Arg) -> String {
     let mut names = Vec::new();
     if let Some(short) = arg.get_short() {
-        names.push(format!("`-{short}`"));
+        names.push(code(&format!("-{short}")));
     }
     if let Some(long) = arg.get_long() {
-        names.push(format!("`--{long}`"));
+        names.push(code(&format!("--{long}")));
     }
     if names.is_empty() {
-        names.push(format!("`<{}>`", value_name(arg)));
+        names.push(code(&format!("<{}>", value_name(arg))));
     }
+    let mut label = names.join(", ");
     if arg.is_required_set() {
-        names.push("(required)".to_owned());
+        label.push_str(" (required)");
     }
-    names.join(", ")
+    label
 }
 
 fn value_name(arg: &Arg) -> String {
@@ -158,10 +176,10 @@ fn value(arg: &Arg) -> String {
         .get_possible_values()
         .iter()
         .filter(|v| !v.is_hide_set())
-        .map(|v| format!("`{}`", v.get_name()))
+        .map(|v| code(v.get_name()))
         .collect();
     if possible.is_empty() {
-        format!("`{}`", value_name(arg))
+        code(&value_name(arg))
     } else {
         format!("one of {}", possible.join(", "))
     }
@@ -171,7 +189,7 @@ fn defaults(arg: &Arg) -> String {
     let values: Vec<_> = arg
         .get_default_values()
         .iter()
-        .map(|v| format!("`{}`", v.to_string_lossy()))
+        .map(|v| code(&v.to_string_lossy()))
         .collect();
     if values.is_empty() {
         "none".to_owned()
@@ -186,13 +204,45 @@ fn description(arg: &Arg) -> String {
         .or_else(|| arg.get_help())
         .map(ToString::to_string)
         .unwrap_or_default();
-    cell(&help)
+    prose(&help)
 }
 
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+/// A value as a literal code span. The fence is one backtick longer than any run inside.
+fn code(value: &str) -> String {
+    let body = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (mut longest, mut run) = (0, 0);
+    for c in body.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat(longest + 1);
+    let pad = if body.is_empty() || body.starts_with(['`', ' ']) || body.ends_with(['`', ' ']) {
+        " "
+    } else {
+        ""
+    };
+    format!("{fence}{pad}{body}{pad}{fence}").replace('|', "\\|")
 }
 
-fn cell(text: &str) -> String {
-    one_line(text).replace('|', "\\|").replace('<', "&lt;")
+/// Help text as one line of inert Markdown: no link, image, emphasis or HTML survives.
+fn prose(text: &str) -> String {
+    let mut out = String::new();
+    for c in text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+    {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '#' | '!' | '~' | '|' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }

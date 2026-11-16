@@ -115,8 +115,23 @@ FIXTURE_CONFIG = {
         "schema_version": {"const": 3, "description": "Version."},
         "mode": {"enum": ["a", "b"], "default": "a", "description": "A | mode."},
         "packs": {"type": "array", "items": {"$ref": "#/$defs/Source"}},
+        "tricky": {
+            "enum": ["a|b", "c`d"],
+            "default": "e`|f",
+            "description": "See [docs](nowhere.md) and ![i](x.png) *now* `code`.",
+        },
+        "levels": {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/Name"},
+            "additionalProperties": {"enum": ["on", "off"]},
+        },
     },
     "$defs": {
+        "Name": {
+            "type": "string",
+            "pattern": "^[a-z]+$",
+            "description": "A data name; the `x-` rule does not apply.",
+        },
         "Source": {
             "type": "object",
             "required": ["id"],
@@ -881,9 +896,57 @@ def test_config_reference_shows_type_default_requirement_and_description(
     _run(sources)
     page = _read(sources, "config/index.md")
     assert "| `schema_version` (required) | `3` | none | Version. |" in page
-    assert '| `mode` | one of `a`, `b` | `"a"` | A \\| mode. |' in page
-    assert "| `packs[].id` (required) | string | none | Use &lt;id>. |" in page
+    assert '| `mode` | one of `a`, `b` | `a` | A \\| mode. |' in page
+    assert "| `packs[].id` (required) | string | none | Use &lt;id&gt;. |" in page
     assert "(config/index.md)" in _read(sources, "index.md")
+
+
+def test_config_cells_keep_pipes_backticks_and_link_shaped_text_inert(
+    sources: dict[str, Path],
+) -> None:
+    assert _run(sources) == 0
+    page = _read(sources, "config/index.md")
+    row = next(r for r in page.splitlines() if r.startswith("| `tricky`"))
+    assert row == (
+        "| `tricky` | one of `a\\|b`, ``c`d`` | ``e`\\|f`` "
+        "| See \\[docs\\]\\(nowhere.md\\) and \\!\\[i\\]\\(x.png\\) "
+        "\\*now\\* \\`code\\`. |"
+    )
+    assert build_site.broken_links(
+        {"config/index.md": page, "index.md": ""}
+    ) == []
+
+
+def test_map_keys_get_a_row_with_the_property_names_metadata(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "config/index.md")
+    assert (
+        "| `levels.<name>` | one of `on`, `off` | none "
+        "| A data name; the \\`x-\\` rule does not apply. "
+        "Names match the pattern ^\\[a-z\\]+$ |"
+    ) in page
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "rules",
+        "categories",
+        "genres[].rules",
+        "genres[].categories",
+        "overrides[].rules",
+        "overrides[].categories",
+    ],
+)
+def test_real_config_map_keys_state_that_the_x_convention_does_not_apply(
+    key: str,
+) -> None:
+    page = build_site.build(build_site.load_site())["config/index.md"]
+    row = next(r for r in page.splitlines() if r.startswith(f"| `{key}.<name>`"))
+    assert "does not apply to them" in row
+    assert "qualified" in row
 
 
 def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
@@ -898,7 +961,7 @@ def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
     assert _json_keys(schema) <= segments
     assert all(r.split(" | ")[1].strip() for r in rows)
     assert "| `network.offline` | boolean | `false` |" in page
-    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `"standard"` |' in page
+    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |' in page
 
 
 def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(

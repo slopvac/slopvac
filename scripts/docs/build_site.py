@@ -42,6 +42,7 @@ import plugin_pages
 import starlight
 import yaml
 from mdtext import cell as _cell
+from mdtext import code, untrusted, untrusted_cell
 from mdtext import one_line as _one_line
 from mdtext import text as _text
 
@@ -304,12 +305,16 @@ class _ConfigSchema:
     def required(self, node: dict) -> set[str]:
         return {key for part in self._parts(node) for key in part.get("required", [])}
 
+    @staticmethod
+    def literal(value: object) -> str:
+        return code(value if isinstance(value, str) else json.dumps(value), in_table=True)
+
     def kind(self, node: dict) -> str:
         node = self.resolve(node)
         if "enum" in node:
-            return "one of " + ", ".join(f"`{v}`" for v in node["enum"])
+            return "one of " + ", ".join(self.literal(v) for v in node["enum"])
         if "const" in node:
-            return f"`{node['const']}`"
+            return self.literal(node["const"])
         if "oneOf" in node:
             return " or ".join(self.kind(n) for n in node["oneOf"])
         if "then" in node:
@@ -334,32 +339,36 @@ class _ConfigSchema:
                 (
                     path + (" (required)" if key in required else ""),
                     self.kind(child),
-                    "none" if default is None else f"`{json.dumps(default)}`",
+                    "none" if default is None else self.literal(default),
                     resolved.get("description", ""),
                 )
             )
             found += self.children(resolved, path)
         return found
 
+    def map_rows(
+        self, node: dict, values: dict, path: str
+    ) -> list[tuple[str, str, str, str]]:
+        """A row for the user-chosen key, then rows for the keys of each value.
+
+        The key row carries the ``propertyNames`` metadata: which names are
+        allowed and that ``x-`` has no special meaning for them.
+        """
+        names = self.resolve(node.get("propertyNames", {}))
+        pattern = names.get("pattern")
+        description = names.get("description", "A name chosen by the user.")
+        if pattern:
+            description += f" Names match the pattern {pattern}"
+        key_row = (f"{path}.<name>", self.kind(values), "none", description)
+        return [key_row, *self.rows(values, path + ".<name>.")]
+
     def children(self, node: dict, path: str) -> list[tuple[str, str, str, str]]:
         if node.get("type") == "array" and "items" in node:
             return self.rows(node["items"], path + "[].")
         extra = node.get("additionalProperties")
         if isinstance(extra, dict):
-            return self.rows(extra, path + ".<name>.")
+            return self.map_rows(node, extra, path)
         return self.rows(node, path + ".")
-
-
-_CODE_SPAN = re.compile(r"(`[^`]*`)")
-
-
-def _config_cell(text: object) -> str:
-    """One-line table text. ``<`` is escaped outside code spans only."""
-    one_line = _one_line(text).replace("\u2014", "--").replace("\u2013", "--")
-    parts = _CODE_SPAN.split(one_line)
-    return "".join(
-        part if i % 2 else part.replace("<", "&lt;") for i, part in enumerate(parts)
-    ).replace("|", "\\|")
 
 
 def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
@@ -368,7 +377,7 @@ def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     lines = [
         "# Configuration reference",
         "",
-        _config_cell(config.get("description", "")),
+        untrusted(config.get("description", "")),
         "",
         "This page writes a key inside an array of tables as `name[].key`.",
         "It writes a key inside a table of user-chosen names as `table.<name>.key`.",
@@ -378,10 +387,8 @@ def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     ]
     for path, kind, default, description in _ConfigSchema(config, common).rows(config):
         key, _, note = path.partition(" ")
-        lines.append(
-            f"| `{key}`{' ' + note if note else ''} | {kind} | {default} "
-            f"| {_config_cell(description)} |"
-        )
+        label = code(key, in_table=True) + (" " + note if note else "")
+        lines.append(f"| {label} | {kind} | {default} | {untrusted_cell(description)} |")
     return {"config/index.md": "\n".join(lines) + "\n"}
 
 
