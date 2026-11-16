@@ -310,7 +310,7 @@
       ]
     },
     "HookDecl": {
-      "description": "One hook a plugin implements. The host calls only declared hooks. A binary-extractor hook must list the formats it reads; for other kinds formats carries no meaning.",
+      "description": "One hook a plugin implements. The host calls only declared hooks. A binary-extractor hook must list the formats it reads, at least one and without duplicates. For other kinds formats is an unknown field and a reader ignores it.",
       "type": "object",
       "properties": {
         "kind": {
@@ -318,14 +318,6 @@
         },
         "id": {
           "$ref": "#/$defs/HookId"
-        },
-        "formats": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/BinaryFormat"
-          },
-          "minItems": 1,
-          "uniqueItems": true
         }
       },
       "required": [
@@ -345,6 +337,16 @@
             ]
           },
           "then": {
+            "properties": {
+              "formats": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/BinaryFormat"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            },
             "required": [
               "formats"
             ]
@@ -587,7 +589,7 @@
     "BinaryFormat": {
       "description": "Format id of a binary document, kebab-case. The 3.0 registry is in docs/contract/plugin-protocol.md section 5.5.1. The set is extensible: a reader ignores a format id it does not know, so the schema fixes only the form.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "BinaryDocument": {
       "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows Document.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
@@ -610,7 +612,7 @@
         },
         "bytes": {
           "type": "string",
-          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])"
         },
         "path": {
           "type": "string",
@@ -650,11 +652,11 @@
       "properties": {
         "part": {
           "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}$"
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
         },
         "locator": {
           "type": "string",
-          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}$"
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
         },
         "span": {
           "$ref": "#/$defs/BinarySpan"
@@ -668,7 +670,7 @@
         },
         "role": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$"
+          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
         }
       },
       "required": [
@@ -681,7 +683,7 @@
       ]
     },
     "BinaryExtractParams": {
-      "description": "binary-extractor/extract. Extract the prose of each binary document. The host sends a request only when its whole serialized size fits the negotiated maxMessageBytes (plugin-protocol.md section 5.5.6).",
+      "description": "binary-extractor/extract. Extract the prose of each binary document. The host admits a request by a length preflight before it reads or encodes the file, holds it against the in-flight budget, and sends it only when the exact serialized size fits the negotiated maxMessageBytes (plugin-protocol.md section 5.5.6).",
       "type": "object",
       "properties": {
         "extractor": {

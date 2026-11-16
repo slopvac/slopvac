@@ -242,15 +242,23 @@ These limits hold for every binary extractor:
 | `part` and `locator` | 1024 characters each | `plugin-output-invalid`. |
 | Time | The 30 s hook timeout of section 6.3 | `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative. |
 
-Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
+Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). Every host read of a binary file has a bound. The wire adapter reads under section 5.5.6, and the native adapter reads at most its input limit plus one byte. The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
 
 #### 5.5.6 Frames on the wire
 
 The negotiated `maxMessageBytes` of section 2.2 bounds both directions. v1 has no chunking and no path fallback.
 
-- **Requests.** The host serializes the whole request, envelope included, and sends it only when its size is at most `maxMessageBytes`. The size counts the bytes the host would write, so its serializer choices count too. A document whose request does not fit gets `message-too-large`, the host does not send it, and the run exits 2.
-- **Base64 growth.** A file of n bytes encodes to 4 × ⌈n / 3⌉ characters. A 12,582,912-byte file encodes to 16,777,216 characters, which is the whole default limit before any JSON, so that file never fits. The largest file that fits is about 3 × ⌊(`maxMessageBytes` − envelope) / 4⌋ bytes, where envelope is the size of the same request with an empty `bytes` string. The vectors in [`binary-frames.json`](../../schemas/v3/conformance/plugin-protocol/binary-frames.json) fix the exact boundary.
-- **Replies.** The reply must fit the limit as well, and JSON escaping can make it larger than the extracted text. A plugin whose reply would not fit answers one or more documents with `message-too-large` (-32004) in place of their segments, until the reply fits. Each segment it sends is complete. The host reads the reply under the limit of section 2.2.
+**Base64 growth.** A file of n bytes encodes to 4 × ⌈n / 3⌉ characters. A 12,582,912-byte file encodes to 16,777,216 characters, which is the whole default limit before any JSON, so that file never fits. The largest file that fits is about 3 × ⌊(`maxMessageBytes` − envelope) / 4⌋ bytes. The envelope is the size of the same request with an empty `bytes` string. The vectors in [`binary-frames.json`](../../schemas/v3/conformance/plugin-protocol/binary-frames.json) fix the exact boundary.
+
+**Requests.** The host builds each request in the order below, so a large file costs no memory before it is admitted (CWE-770). A document that fails step 1, 2, 4 or 5 gets `message-too-large`. The host does not send a failed document, and the run exits 2. All size arithmetic is checked (section 2.2).
+
+1. **Preflight.** The host takes n from the file metadata and serializes the envelope, which is small. It computes 4 × ⌈n / 3⌉ plus the envelope size and compares the sum with `maxMessageBytes`. It reads and encodes nothing before this check passes.
+2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once. The host releases the reservation when the frame is written or the request fails.
+3. **Bounded read.** The host reads at most n + 1 bytes. A file that holds more than n bytes changed after the preflight. The host stops reading and reports `binary-input-changed`. A file that holds fewer bytes is sent with its real length.
+4. **Capped serialization.** The host encodes into a buffer of exactly the base64 length. It serializes into a writer that stops at `maxMessageBytes`, so escaping in other fields cannot grow the frame past the limit.
+5. **Final gate.** The host sends the frame only when its exact serialized size is at most `maxMessageBytes`. The size counts the bytes the host writes, so its serializer choices count too.
+
+**Replies.** The reply must fit the limit as well, and JSON escaping can make it larger than the extracted text. A plugin whose reply would not fit answers one or more documents with `message-too-large` (-32004) in place of their segments, until the reply fits. Each segment it sends is complete. The host reads the reply under the limit of section 2.2.
 
 ## 6. Requests in flight, cancellation and timeouts
 
@@ -354,6 +362,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `request-id-exhausted` | The request counter reached 2^53-1. |
 | `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
 | `binary-no-source` | A binary extractor found no embedded source in a valid container. |
+| `binary-input-changed` | A binary file grew between the preflight and the read (section 5.5.6). |
 
 A first-party extractor reports `binary-unsupported`, `binary-malformed` and `binary-budget` with the same strings. The host also raises `binary-unsupported` when no extractor reads a format.
 
@@ -442,12 +451,13 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H23 | Two documents whose batch exceeds `maxMessageBytes`. | The host sends two messages. |
 | H24 | A response with an unknown id, and a second response to a finished id. | Ignored and logged. |
 | H25 | A top-level array, a duplicate key, a nesting depth of 65. | Each is a framing error. |
-| H36 | `binary-extractor/extract` requests built from every case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. |
+| H36 | `binary-extractor/extract` requests built from every `frames` and `preflight` case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. For a case that fails the preflight, the host reads and encodes no byte of the file. |
 | H37 | A binary result entry with both `outcome` and `error`, `extracted` with no segments, `empty` with segments, a span past `byte_length`, a duplicate `part` and `locator`, and a locator with a control or bidirectional character. | `plugin-output-invalid` for each. |
 | H38 | Binary documents that end `empty`, `no-source`, `binary-unsupported`, `binary-malformed` and `binary-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
 | H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `binary-unsupported`. No extractor gets the file. The run exits 2. |
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
 | H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P22. |
+| H42 | Concurrent binary requests whose reservations exceed the in-flight budget, and a file that grows after the preflight. | The later requests wait, and peak memory for request buffers stays under the budget. The grown file gets `binary-input-changed`, and the run exits 2. |
 
 ### 12.2 Plugin
 
