@@ -107,16 +107,59 @@ def test_ci_runs_on_merge_group_checks_requested():
     assert load("test.yml")["on"]["merge_group"] == {"types": ["checks_requested"]}
 
 
+PUSH_MAIN = {"event_name": "push", "ref": "refs/heads/main", "sha": "1" * 40}
+NEXT_PUSH = {"event_name": "push", "ref": "refs/heads/main", "sha": "2" * 40}
+
+
 def test_concurrency_group_is_unique_per_run():
     template = load("test.yml")["concurrency"]["group"]
-    groups = [
-        evaluate(template, ctx(c)) for c in (PULL_REQUEST, MERGE_GROUP, OTHER_ENTRY)
-    ]
+    contexts = (PULL_REQUEST, MERGE_GROUP, OTHER_ENTRY, PUSH_MAIN, NEXT_PUSH)
+    groups = [evaluate(template, ctx(c)) for c in contexts]
     assert groups == [
         "ci-7",
         "ci-refs/heads/gh-readonly-queue/main/pr-7-aaaa",
         "ci-refs/heads/gh-readonly-queue/main/pr-8-dddd",
+        "ci-" + "1" * 40,
+        "ci-" + "2" * 40,
     ]
+
+
+@pytest.mark.parametrize(
+    ("context", "cancels"),
+    [(PULL_REQUEST, "true"), (MERGE_GROUP, ""), (PUSH_MAIN, "")],
+)
+def test_only_pull_request_runs_cancel_a_superseded_run(context, cancels):
+    template = load("test.yml")["concurrency"]["cancel-in-progress"]
+    assert evaluate(template, ctx(context)) == cancels
+
+
+def rust_cache_steps() -> dict[tuple[str, str], dict]:
+    found = {}
+    for workflow in ("test.yml", "docs-site.yml"):
+        for name, job in load(workflow)["jobs"].items():
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith("Swatinem/rust-cache@"):
+                    found[(workflow, name)] = step
+    return found
+
+
+def test_every_rust_cache_step_is_checked():
+    assert set(rust_cache_steps()) == {
+        ("test.yml", "rust-static"),
+        ("test.yml", "rust"),
+        ("test.yml", "rust-msrv"),
+        ("docs-site.yml", "build"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("context", "saves"),
+    [(PUSH_MAIN, "true"), (PULL_REQUEST, ""), (MERGE_GROUP, "")],
+)
+@pytest.mark.parametrize("where", sorted(rust_cache_steps()))
+def test_rust_cache_is_saved_only_from_main(where, context, saves):
+    step = rust_cache_steps()[where]
+    assert evaluate(step["with"]["save-if"], ctx(context)) == saves
 
 
 @pytest.mark.parametrize(

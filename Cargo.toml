@@ -4,6 +4,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The cargo-fuzz harness needs nightly and is built only by `just fuzz`.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.0"
@@ -112,11 +114,6 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
-
-# The skeleton declares every crate before any of them depends on another.
-# Remove a name here when its first dependant lands; cargo-shear then guards it.
-[workspace.metadata.cargo-shear]
-ignored = ["slopvac-styles"]
 
 [profile.release]
 lto = "thin"

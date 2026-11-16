@@ -393,3 +393,28 @@ fn code_ranges_cover_fences_and_inline_spans() {
     assert_eq!(ranges, [2..5, 8..18]);
     assert_eq!(&text[2..5], "`b`");
 }
+
+#[test]
+fn importing_zero_words_into_a_new_file_leaves_a_loadable_file() {
+    let dir = scratch("import-zero");
+    std::fs::write(dir.join("accept.txt"), "# only a comment\n").unwrap();
+    let (_, out) = terms(&dir, &["import", "--from", "vale", "accept.txt"]);
+    assert!(out.starts_with("imported 0 terms"), "{out}");
+    let loaded = slopvac_terms::TermsFile::load(&dir.join(".slopvac/terms.toml")).unwrap();
+    assert_eq!(loaded.terms, []);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn add_with_an_invalid_kind_fails_and_leaves_the_file_unchanged() {
+    let dir = scratch("add-bad-kind");
+    terms(&dir, &["add", "Acme"]);
+    let before = file(&dir);
+    let m = command()
+        .try_get_matches_from(["terms", "add", "Widget", "--kind", "Proper Noun"])
+        .unwrap();
+    let e = run(&m, &dir, &mut Vec::new()).unwrap_err().to_string();
+    assert!(e.contains("kebab-case"), "{e}");
+    assert_eq!(file(&dir), before);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

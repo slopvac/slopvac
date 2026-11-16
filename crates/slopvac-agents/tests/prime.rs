@@ -254,3 +254,11 @@ fn diagrams_topic_is_indexed_and_names_every_supported_format() {
         assert!(text.contains(needle), "{needle}");
     }
 }
+
+#[test]
+fn configure_topic_explains_house_style_mapping() {
+    let text = render(Some("configure"), Level::Default);
+    assert!(text.contains("## House style"));
+    assert!(text.contains("styles = [\"google\"]"));
+    assert!(!render(Some("configure"), Level::Minimal).contains("## House style"));
+}

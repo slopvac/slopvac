@@ -156,3 +156,62 @@ fn a_save_keeps_the_file_mode() {
     assert_eq!(mode, 0o644);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn an_empty_new_document_saves_an_explicit_terms_array_that_reloads() {
+    let dir = scratch("empty-new");
+    let file = dir.join("terms.toml");
+    TermsDoc::default().save(&file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "schema_version = 3\nterms = []\n"
+    );
+    assert_eq!(slopvac_terms::TermsFile::load(&file).unwrap().terms, []);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn removing_the_last_table_term_saves_a_file_that_reloads() {
+    let dir = scratch("remove-last");
+    let file = dir.join("terms.toml");
+    std::fs::write(&file, ORIGINAL).unwrap();
+    let mut doc = TermsDoc::open(&file).unwrap();
+    assert!(doc.remove("Acme"));
+    doc.save(&file).unwrap();
+    assert_eq!(slopvac_terms::TermsFile::load(&file).unwrap().terms, []);
+    // The live document keeps the table form for the next add.
+    doc.add(&entry("Widget")).unwrap();
+    assert!(doc.render().contains("[[terms]]"), "{}", doc.render());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn add_rejects_entries_the_parser_would_reject_and_changes_nothing() {
+    let dir = scratch("invalid-add");
+    let file = dir.join("terms.toml");
+    std::fs::write(&file, ORIGINAL).unwrap();
+    let bad_kind = TermEntry {
+        kind: Some("Proper Noun".to_owned()),
+        ..entry("A")
+    };
+    let empty_variant = TermEntry {
+        variants: vec![String::new()],
+        ..entry("B")
+    };
+    let repeated_variant = TermEntry {
+        variants: vec!["x".to_owned(), "x".to_owned()],
+        ..entry("C")
+    };
+    let both_modes = TermEntry {
+        ignore_case: true,
+        case_sensitive: true,
+        ..entry("D")
+    };
+    for bad in [bad_kind, empty_variant, repeated_variant, both_modes] {
+        let mut doc = TermsDoc::open(&file).unwrap();
+        assert!(doc.add(&bad).is_err(), "{bad:?}");
+        assert_eq!(doc.render(), ORIGINAL, "{bad:?}");
+    }
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), ORIGINAL);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

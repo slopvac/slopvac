@@ -1,0 +1,11 @@
+# Job workers
+
+In the figure above, workers pull jobs from the shared queue.
+
+```mermaid
+flowchart LR
+  Q[Job queue] --> W1[Worker 1]
+  Q --> W2[Worker 2]
+```
+
+Workers stop pulling when memory use passes 80 percent.

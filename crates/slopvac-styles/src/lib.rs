@@ -7,6 +7,7 @@
 //! Styles can declare `conflicts`; when both sides are active the resolution
 //! reports the winner, and strict mode turns the report into an error.
 
+mod detect;
 mod error;
 mod reference;
 mod resolve;
@@ -15,6 +16,7 @@ mod source;
 mod stack;
 mod types;
 
+pub use detect::{Evidence, Suggestion, detect_house_styles};
 pub use error::StyleError;
 pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, resolve};
