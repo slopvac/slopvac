@@ -16,7 +16,7 @@ fn settings_for(genre: &str) -> Settings {
         NonEmptyString::new("normal").unwrap(),
         GenreResult {
             id: GenreId::new(genre).unwrap(),
-            // STUB(PENDING): the run carries one genre. The config layer that resolves a genre
+            // STUB(slopvac-8l4.5.17): the run carries one genre. The config layer that resolves a genre
             // per document and builds `Settings` from it does not exist yet.
             source: GenreSource::Explicit,
             reasons: Vec::new(),
