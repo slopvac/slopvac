@@ -108,6 +108,6 @@ def test_stale_generated_pages_are_removed_on_rebuild(site_dir: Path) -> None:
 def test_pack_pages_keep_the_published_packs_urls(site_dir: Path) -> None:
     # /v3/plugins/packs/ lists the pack, and each pack sits one level below it.
     assert "(demo/)" in _page(site_dir, "plugins/packs/index.md")
-    page = _page(site_dir, "plugins/packs/demo.md")
+    page = _page(site_dir, "plugins/packs/demo/index.md")
     assert "(../../manifest/)" in page
     assert "(../../protocol/)" in page

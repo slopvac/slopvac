@@ -19,7 +19,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from mdtext import cell, text
+from mdtext import cell, code, text, untrusted, untrusted_cell
 
 Pages = dict[str, str]
 
@@ -81,16 +81,15 @@ class SchemaSet:
         return node, name
 
     def properties(self, node: dict) -> tuple[dict[str, dict], set[str]]:
-        """Properties and required names, with ``allOf`` references folded in."""
+        """Properties and required names, with every ``allOf`` branch folded in."""
         merged: dict[str, dict] = {}
         required: set[str] = set()
         node, _ = self.resolve(node)
         for part in node.get("allOf", []):
-            if "$ref" in part:
-                props, req = self.properties(part)
-                for key, value in props.items():
-                    merged[key] = _merge(merged.get(key, {}), value)
-                required |= req
+            props, req = self.properties(part)
+            for key, value in props.items():
+                merged[key] = _merge(merged.get(key, {}), value)
+            required |= req
         for key, value in node.get("properties", {}).items():
             merged[key] = _merge(merged.get(key, {}), value)
         required |= set(node.get("required", []))
@@ -254,6 +253,12 @@ def _def_link(name: str | None) -> str:
     return f"[`{name}`](#{name.lower()})" if name else "none"
 
 
+_TABLE_HEADERS = (
+    ["Code", "`slopvac_code`", "Meaning"],
+    ["`slopvac_code`", "Cause"],
+)
+
+
 def _error_tables(
     contract: Path,
 ) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
@@ -268,13 +273,23 @@ def _error_tables(
         raise SystemExit(f"{contract}: no 'Error codes' section")
     codes, diagnostics = [], []
     for line in match[1].splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if not line.startswith("|"):
+            continue
+        if not line.rstrip().endswith("|"):
+            raise SystemExit(f"{contract}: malformed error table row: {line}")
+        # A pipe escaped as \| belongs to its cell. A split on bare pipes keeps it there.
+        cells = [
+            c.strip().replace("\\|", "|")
+            for c in re.split(r"(?<!\\)\|", line.strip()[1:-1])
+        ]
+        if all(re.fullmatch(r":?-+:?", c) for c in cells) or cells in _TABLE_HEADERS:
             continue
         if len(cells) == 3 and re.fullmatch(r"-\d+", cells[0]):
             codes.append((cells[0], cells[1].strip("`"), cells[2]))
         elif len(cells) == 2 and re.fullmatch(r"`[a-z][a-z0-9-]*`", cells[0]):
             diagnostics.append((cells[0].strip("`"), cells[1]))
+        else:
+            raise SystemExit(f"{contract}: malformed error table row: {line}")
     if not codes or not diagnostics:
         raise SystemExit(f"{contract}: error tables not found in 'Error codes'")
     return codes, diagnostics
@@ -498,28 +513,33 @@ def _validate(schemas: SchemaSet, path: Path, manifest: dict) -> None:
         raise SystemExit(f"{path}: manifest does not match {MANIFEST_SCHEMA}: {detail}")
 
 
-def _pack_page(manifest: dict, known: set[str]) -> str:
+def free(value: object) -> str | None:
+    return None if value is None else code(value, in_table=True)
+
+
+def _pack_page(manifest: dict, known: set[str], artifact_keys: list[str]) -> str:
+    """One pack's page. Every manifest value is untrusted, so none is written raw."""
     plugin = manifest.get("plugin")
+    # The schema pins version, kind and API to safe forms. License and homepage are free text.
     facts = [
-        ("Version", manifest["version"]),
-        ("Kind", manifest["kind"]),
-        ("Extension API", manifest["slopvac_api"]),
-        ("License", manifest.get("license")),
-        ("Homepage", manifest.get("homepage")),
+        ("Version", cell(manifest["version"])),
+        ("Kind", cell(manifest["kind"])),
+        ("Extension API", cell(manifest["slopvac_api"])),
+        ("License", free(manifest.get("license"))),
+        ("Homepage", free(manifest.get("homepage"))),
     ]
-    lines = [f"# {text(manifest['id'])}", ""]
+    lines = [f"# {untrusted(manifest['id'])}", ""]
     if manifest.get("description"):
-        lines += [text(manifest["description"]), ""]
+        lines += [untrusted(manifest["description"]), ""]
     lines += ["| Field | Value |", "| --- | --- |"]
-    lines += [
-        f"| {label} | {cell(value)} |" for label, value in facts if value is not None
-    ]
+    lines += [f"| {label} | {value} |" for label, value in facts if value is not None]
 
     lines += ["", "## Provides", ""]
-    provides = {k: v for k, v in manifest.get("provides", {}).items() if v}
-    if provides:
-        for kind, paths in provides.items():
-            lines.append(f"- {text(kind)}: " + ", ".join(f"`{p}`" for p in paths))
+    provides = manifest.get("provides", {})
+    declared = [(key, provides[key]) for key in artifact_keys if provides.get(key)]
+    if declared:
+        for kind, paths in declared:
+            lines.append(f"- {kind}: " + ", ".join(code(p) for p in paths))
     else:
         lines.append("This pack declares no data files.")
 
@@ -528,11 +548,11 @@ def _pack_page(manifest: dict, known: set[str]) -> str:
         lines += ["", "## Requires", ""]
         for item in requires:
             name = (
-                f"[`{item['id']}`]({item['id']}.md)"
+                f"[{code(item['id'])}](../{item['id']}/index.md)"
                 if item["id"] in known
-                else f"`{item['id']}`"
+                else code(item["id"])
             )
-            lines.append(f"- {name} `{item['version']}`")
+            lines.append(f"- {name} {code(item['version'])}")
 
     if plugin:
         command = " ".join([plugin["command"], *plugin.get("args", [])])
@@ -541,28 +561,31 @@ def _pack_page(manifest: dict, known: set[str]) -> str:
             "",
             "## Plugin",
             "",
-            f"Command: `{command}`",
+            f"Command: {code(command)}",
             "",
             f"Network access: {'yes' if plugin.get('network') else 'no'}",
         ]
         if plugin.get("env"):
             lines += ["", "Environment variables the plugin may receive:", ""]
-            lines += [f"- `{name}`" for name in plugin["env"]]
+            lines += [f"- {code(name)}" for name in plugin["env"]]
         lines += ["", "### Hooks", ""]
         if plugin.get("hooks"):
             lines += ["| Kind | Id |", "| --- | --- |"]
-            lines += [f"| `{h['kind']}` | `{h['id']}` |" for h in plugin["hooks"]]
+            lines += [
+                f"| {code(h['kind'], in_table=True)} | {code(h['id'], in_table=True)} |"
+                for h in plugin["hooks"]
+            ]
         else:
             lines.append("The plugin declares no hooks.")
         for label in ("required", "optional"):
             names = features.get(label, [])
-            shown = ", ".join(f"`{n}`" for n in names) if names else "none"
+            shown = ", ".join(code(n) for n in names) if names else "none"
             lines += ["", f"Features {label}: {shown}"]
     lines += [
         "",
         (
-            "See the [manifest reference](../manifest.md) for every field and the "
-            "[protocol reference](../protocol.md) for hook kinds."
+            "See the [manifest reference](../../manifest.md) for every field and the "
+            "[protocol reference](../../protocol.md) for hook kinds."
         ),
     ]
     return "\n".join(lines) + "\n"
@@ -572,6 +595,10 @@ def generate_packs(schemas: SchemaSet, packs_dir: Path) -> Pages:
     manifests = load_manifests(packs_dir)
     for path, data in manifests.values():
         _validate(schemas, path, data)
+    # The artifact kinds a manifest may list, in schema order. Extension keys
+    # (x-) are not file lists and never reach the page.
+    provides_schema = schemas.defs(MANIFEST_SCHEMA)["Provides"]
+    artifact_keys = list(schemas.properties(provides_schema)[0])
     pages: Pages = {}
     known = set(manifests)
     index = ["# Packs", ""]
@@ -585,10 +612,15 @@ def generate_packs(schemas: SchemaSet, packs_dir: Path) -> Pages:
     else:
         index.append("No packs are bundled with this build.")
     for pack_id, (_, data) in sorted(manifests.items()):
-        pages[f"plugins/packs/{pack_id}.md"] = _pack_page(data, known)
+        # A folder per pack keeps the page clear of packs/index.md, whatever the
+        # id, and the public route stays /plugins/packs/<id>/.
+        pages[f"plugins/packs/{pack_id}/index.md"] = _pack_page(
+            data, known, artifact_keys
+        )
         index.append(
-            f"| [{pack_id}]({pack_id}.md) | {cell(data['version'])} | {cell(data['kind'])} "
-            f"| {cell(data.get('description', ''))} |"
+            f"| [{pack_id}]({pack_id}/index.md) | {cell(data['version'])} "
+            f"| {cell(data['kind'])} "
+            f"| {untrusted_cell(data.get('description', ''))} |"
         )
     pages["plugins/packs/index.md"] = "\n".join(index) + "\n"
     return pages
