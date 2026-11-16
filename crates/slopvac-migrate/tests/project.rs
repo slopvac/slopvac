@@ -378,8 +378,13 @@ fn an_unmapped_directive_id_stops_the_command_and_writes_nothing() {
     let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"], &NullLinter);
     assert_eq!(code, 2, "{err}");
     assert!(err.starts_with("error[config-legacy-dropped]: "), "{err}");
+    // Diagnostics show project-relative paths with the platform separator, as the
+    // config labels do (`rel(..).display()` in plan.rs).
+    let shown = Path::new("docs").join("a.md").display().to_string();
     assert!(
-        err.contains("docs/a.md:3: `slopvac-allow rule=prose-craft.no-such-rule`"),
+        err.contains(&format!(
+            "{shown}:3: `slopvac-allow rule=prose-craft.no-such-rule`"
+        )),
         "{err}"
     );
     assert_eq!(
