@@ -19,25 +19,28 @@ Each rule gives a source. A repository source is a link. A source written as ski
 ## Logging and output
 
 - Every user-facing message comes from one message registry. This covers CLI output, error and diagnostic messages, notices, help text, and language server and report text. No literal message at a call site. Each stable error code maps to a message template with named parameters. The docs generator reads the same registry. A CI check rejects bypassing literals. Why: one source keeps wording, codes and generated docs in step. Target: after `slopvac-8l4.21.6`. Source: [policies, error codes](contract/policies.md#35-error-codes).
+- The message registry follows these rules, so a later move to Fluent needs no rewrite. Every message code is a valid Fluent message id. Parameters are named, never positional. All rendering goes through one function in `slopvac-messages`, never through per-variant `Display` bodies. Parameter types are plain values (strings, numbers, redacted paths), and counts are marked for later plural selection. Keep text out of code where possible, and add a test that exports the whole catalog as `.ftl` to prove compatibility. Add no Fluent dependency now. Target: after `slopvac-8l4.21.6`.
 - Libraries stay silent. No `println!`, `eprintln!` or `dbg!` in a library crate. They emit `tracing` events and spans and return values. Why: the binary owns the streams. Target for the lint that enforces it: after `slopvac-8l4.21.3`. Source: skill `lang-rust-libraries`.
 - The binary installs one stderr subscriber, and `SLOPVAC_LOG` turns it on. Logging is off when the variable is unset, and no log file exists. Sources: [`logging.rs`](../crates/slopvac/src/logging.rs), [policies, logging](contract/policies.md#17-logging-and-redaction).
 - The language server writes only protocol frames to stdout. Why: stdout is the transport. Source: [plan, Language and runtime](design/slopvac-3.md#language-and-runtime).
 - Logs, panics and error chains never carry document text, matched spans, front matter values, terms, credentials or `Authorization` headers. Show paths relative to the project root, `<external>/<file name>` outside it, and `<stdin>` for stdin. Strip URL user-info before logging. Source: [policies, logging](contract/policies.md#17-logging-and-redaction).
-- Escape output through `slopvac-sanitize` only. Do not write another escaper for terminal, XML, GitHub or HTML output. Why: escaping defects are injection defects. Target: after `slopvac-8l4.2.32`, because `slopvac-report` still has its own escapers and `slopvac-sanitize` has no public text-escape API yet. Sources: [threat model](contract/threat-model.md) (O1 to O4), [`slopvac-sanitize`](../crates/slopvac-sanitize/src/lib.rs).
+- Escape output through `slopvac-sanitize` only. Do not write another escaper for terminal, XML, GitHub or HTML output. Why: escaping defects are injection defects. Target: after `slopvac-8l4.2.32`, because `slopvac-report` still has its own escapers. `slopvac-sanitize` already offers terminal, HTML and workflow escaping, but it has no XML-specific coverage (the XML 1.0 character rule) for the report formats. Sources: [threat model](contract/threat-model.md) (O1 to O4), [`slopvac-sanitize`](../crates/slopvac-sanitize/src/lib.rs).
 
 ## Panics and lints
 
 - No `unwrap()` in library code. Target for the enforcing lint: after `slopvac-8l4.21.3`. Source: skill `lang-rust-quality`.
 - Use `expect` only for an invariant from local construction or bundled data (a regex literal, an embedded table). Mark the site `#[expect(clippy::expect_used, reason = "...")]`. Do not call `expect` on input from a file, the network, a plugin or the user. Return an error. Target: after `slopvac-8l4.21.3`.
 - Every `#[allow]` and `#[expect]` has a `reason`. Use `#[expect(..., reason = "...")]` for a local suppression, so a stale one fails. A workspace-level allow carries `reason = "..."`. A crate-level temporary allow names the burn-down bead in its reason. Target: after `slopvac-8l4.21.3`.
+- Use a module-level `#![allow(dead_code, unreachable_pub, missing_docs, reason = "...")]` only in test-support modules shared across more than one test binary (for example `tests/common/mod.rs`). Give each a reason. Never use one in production code, and never mark one temporary. Target: after `slopvac-8l4.21.3`.
+- Never discard a `#[must_use]` result with `.ok()`. Handle or propagate it. Where ignoring is right, write `let _ = ...` with a comment, or `#[expect(clippy::let_underscore_must_use, reason = "...")]` that names why failure is harmless. Use `map_err` in a way that keeps the source error. Narrow numbers with `try_from` and return an error, never with silent saturation. Use saturating helpers only for lossless widening. Target: after `slopvac-8l4.21.3`. Source: skill `lang-rust-quality`.
 - Set `[workspace.lints.clippy]` to `pedantic = warn`. CI denies warnings through `-D warnings`. Add these restriction and nursery lints at least: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `dbg_macro`, `allow_attributes_without_reason`, `undocumented_unsafe_blocks` and `clone_on_ref_ptr`. Add `print_stdout` and `print_stderr` for library crates, and `indexing_slicing` and `string_slice` for parser crates. Why: a reviewer cannot check by eye what a lint can check on every build. Target: after `slopvac-8l4.21.3`. Source: skill `lang-rust-quality`.
-- `unsafe` is forbidden. The workspace sets `unsafe_code = "forbid"`. Source: [`Cargo.toml`](../Cargo.toml).
+- `unsafe` is forbidden. The workspace sets `unsafe_code = "forbid"`. The one exception is `slopvac-pcre2`, which wraps the PCRE2 C library: it sets `unsafe_code = "deny"` and only `src/ffi.rs` opts in. See the [approved departures](#approved-departures). Sources: [`Cargo.toml`](../Cargo.toml), [`slopvac-pcre2/Cargo.toml`](../crates/slopvac-pcre2/Cargo.toml).
 - Code builds clean under the workspace lints. `cargo clippy --workspace --all-targets -- -D warnings` passes. Source: [CONTRIBUTING, Rust workspace](../CONTRIBUTING.md#rust-workspace).
 
 ## Workspace and manifests
 
-- Declare every dependency version once under `[workspace.dependencies]` and use `dep.workspace = true` in the crate. This includes dev-dependencies, patch pins and feature sets. Target: after `slopvac-8l4.21.5`, because nine dependencies are still inline in member manifests. Source: skill `lang-rust-packaging`.
-- Every crate sets `[lints] workspace = true` and inherits `version`, `edition`, `rust-version` and `license` from `[workspace.package]`. Source: [`Cargo.toml`](../Cargo.toml).
+- Declare every dependency version once under `[workspace.dependencies]` and use `dep.workspace = true` in the crate. This includes dev-dependencies, patch pins and feature sets. Target: after `slopvac-8l4.21.5`, because 15 dependency declarations are still inline in member manifests. Source: skill `lang-rust-packaging`.
+- Every crate except `slopvac-pcre2` sets `[lints] workspace = true`. Every crate inherits `version`, `edition`, `rust-version` and `license` from `[workspace.package]`. Source: [`Cargo.toml`](../Cargo.toml).
 - Keep the toolchain pin and the `rust-version` floor. `rust-toolchain.toml` pins the dev toolchain. `rust-version` in `Cargo.toml` trails stable by two minor releases. Raise it only with a recorded reason. Source: [`Cargo.toml`](../Cargo.toml).
 - Pin a dependency only with a comment that gives the reason. Source: [`Cargo.toml`](../Cargo.toml) (`pcre2-sys`, `saphyr-parser`).
 - A new crate needs a `Cargo.lock` entry in `extra-files` of `release-please-config.json`. Run `just sync-release-please`. Source: [CONTRIBUTING, Rust workspace](../CONTRIBUTING.md#rust-workspace).
@@ -66,7 +69,7 @@ Each rule gives a source. A repository source is a link. A source written as ski
 | Filesystem and path primitives: normalize, display under the root, redact (policies section 1.7), cache and config directories through `etcetera`, atomic write with fsync, capped read | `slopvac-fs`. Target: after `slopvac-8l4.21.2`. Until then, do not add another copy. |
 | Regex escaping | `slopvac-text`. Target: after `slopvac-8l4.3.50`, because `slopvac-rules` and `slopvac-context` each keep a local escaper. |
 | Output escaping | `slopvac-sanitize`. Target: after `slopvac-8l4.2.32`, see Logging and output. |
-| Line and column | `frontmatter_spans::LineIndex`. Treat `frontmatter-spans` as an external dependency: the crate is meant to move to its own repository, so index lines and columns only through its public `LineIndex` API and add no slopvac-specific code to it. Target: after `slopvac-8l4.2.32`, because `slopvac-config` copies it and `slopvac-terms` has its own. |
+| Line and column | `frontmatter_spans::LineIndex`. `frontmatter-spans` is an external crates.io dependency, maintained at `srobroek/frontmatter-spans`. Index lines and columns only through its public `LineIndex` API and add no slopvac-specific code to it. Target: after `slopvac-8l4.2.32`, because `slopvac-config` copies it and `slopvac-terms` has its own. |
 | Content digests | One digest type in `slopvac-plugins`. Target: after `slopvac-8l4.2.32`, because the crate has two digest types. |
 
 Why: the audit found five copies of root-relative display, four path normalizers, eight atomic writers and nine capped readers, each with different edge cases. Sources: [policies, logging](contract/policies.md#17-logging-and-redaction), [policies, data written to disk](contract/policies.md#18-data-written-to-disk), [positions contract](contract/positions.md), skill `quality-code-policy`.
@@ -76,7 +79,7 @@ Why: the audit found five copies of root-relative display, four path normalizers
 - Resolve config through the layer stack in `slopvac-config`. Every value keeps its file, line and column. Sources: [architecture record, decision 6](design/0001-slopvac-3-architecture.md#6-hand-rolled-config-layer-stack-with-provenance), [decision 20](design/0001-slopvac-3-architecture.md#20-config-precedence-nearest-config-and-front-matter).
 - Write only to the per-user cache directory, the project's `.slopvac/` directory and paths the user names. Source: [policies, data written to disk](contract/policies.md#18-data-written-to-disk).
 - Use no prompt in any code path. Agents and CI cannot answer one. Source: [architecture record, decision 9](design/0001-slopvac-3-architecture.md#9-oci-artifacts-minisign-and-mise-style-trust).
-- Write no native Windows code in 3.0. Do not add `cfg(windows)` branches or Windows dependencies. Windows users run the Linux build under WSL. Target for the existing Windows code: removal after `slopvac-8l4.14.26`. Source: [architecture record, decision 26](design/0001-slopvac-3-architecture.md#26-no-native-windows-in-30).
+- Write no native Windows code in 3.0. Do not add `cfg(windows)` branches or Windows dependencies. Windows users run the Linux build under WSL. Target for the existing Windows code: removal after `slopvac-8l4.21.5`. Source: [architecture record, decision 26](design/0001-slopvac-3-architecture.md#26-no-native-windows-in-30).
 
 ## User-facing text
 
@@ -128,6 +131,7 @@ Each departure from a standard below has a recorded reason. Where a reason is no
 | Hand-rolled OCI client on `ureq` | Use `oci-client` | `oci-client` needs tokio and adds 180 dependencies and 5.4 MB, against 42 dependencies and 1.67 MB for the client on `ureq`. No async runtime is allowed. | [Architecture record, decision 3](design/0001-slopvac-3-architecture.md#3-no-async-runtime) |
 | `cargo shear` for unused dependencies | `cargo machete` | The plan names `cargo shear` in its hygiene list. No document or commit records a comparison with `cargo machete`. | [Plan, Quality](design/slopvac-3.md#quality), [CONTRIBUTING, Rust checks](../CONTRIBUTING.md#rust-checks) |
 | Span-keeping JSON reader in `slopvac-diagrams` | `serde_json` | `serde_json` gives no byte offsets, and the extractors need them to report spans. | [`json.rs`](../crates/slopvac-diagrams/src/json.rs) |
+| `slopvac-pcre2` sets its own `[lints]` with `unsafe_code = "deny"` and allows `unsafe` in `src/ffi.rs` | Workspace `unsafe_code = "forbid"` and `lints.workspace = true` | The crate wraps the PCRE2 C library through FFI. `forbid` cannot be overridden, so the crate cannot inherit the workspace table. It repeats the other workspace lints, and only `src/ffi.rs` opts in with `#![allow(unsafe_code)]`. Residual risk: the table can drift from the root. Revisit if the FFI layer is replaced. | [`slopvac-pcre2/Cargo.toml`](../crates/slopvac-pcre2/Cargo.toml), [`ffi.rs`](../crates/slopvac-pcre2/src/ffi.rs) |
 | `pcre2-sys` pinned to `=0.2.10` | Floating dependency version | Version 0.2.10 vendors PCRE2 10.46, and the rules need 10.43 or later. | [`Cargo.toml`](../Cargo.toml) |
 | `jsonschema` with `default-features = false` | Default features | The default features pull in a transitive async runtime (tokio), and `deny.toml` bans `tokio`, `async-std` and OpenSSL. | [`Cargo.toml`](../Cargo.toml), [`deny.toml`](../deny.toml) |
 | Plain-level `SLOPVAC_LOG` text subscriber on stderr, no OpenTelemetry export | Telemetry over OTLP | Policy states that slopvac has no telemetry. It permits only the listed update, registry, reporting and provider traffic, so no trace exporter may send data. Logs go to stderr only. | [Policies, principles](contract/policies.md#11-principles), [policies, inventory](contract/policies.md#12-inventory-of-network-features) |
@@ -145,7 +149,7 @@ Each departure from a standard below has a recorded reason. Where a reason is no
 - [ ] The binary reports errors through `CliError`, with a code from the registry (target).
 - [ ] No code is reused or changes meaning, and a retired code stays in the docs marked retired.
 - [ ] Exit codes are only 0, 1 and 2.
-- [ ] Every user-facing message comes from the message registry (target).
+- [ ] Every user-facing message comes from the message registry, and the registry follows the Fluent-compatible rules (target).
 - [ ] No library code prints. Events go through `tracing`.
 - [ ] Logging is off unless `SLOPVAC_LOG` is set, and no log file exists.
 - [ ] The language server writes only protocol frames to stdout.
@@ -153,9 +157,11 @@ Each departure from a standard below has a recorded reason. Where a reason is no
 - [ ] Output escaping goes through `slopvac-sanitize` (target).
 - [ ] No `unwrap()` in library code. Each `expect` guards a local invariant and has `#[expect(..., reason)]` (target).
 - [ ] Every `#[allow]` and `#[expect]` has a `reason`, and the workspace clippy lint set is in place (target).
-- [ ] No `unsafe`.
+- [ ] No `unsafe` outside `src/ffi.rs` in `slopvac-pcre2`.
+- [ ] A module-level `#![allow(...)]` appears only in shared test-support modules and has a `reason` (target).
+- [ ] No `#[must_use]` result is discarded with `.ok()`, `map_err` keeps the source error, and narrowing conversions use `try_from` (target).
 - [ ] Dependencies are declared in `[workspace.dependencies]` (target).
-- [ ] The crate sets `lints.workspace = true` and inherits package fields from `[workspace.package]`.
+- [ ] The crate sets `lints.workspace = true` (except `slopvac-pcre2`) and inherits package fields from `[workspace.package]`.
 - [ ] The change keeps the toolchain pin and the `rust-version` floor.
 - [ ] Each dependency pin has a comment that gives the reason.
 - [ ] `lib.rs` is a thin facade with private modules, `pub(crate)` by default and no glob re-exports (target).
