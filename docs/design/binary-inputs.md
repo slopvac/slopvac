@@ -205,7 +205,7 @@ Each row needs a proving fixture. The threat model owner adds them to `docs/cont
 
 The user approved all five recommendations on 2026-11-16:
 
-1. First-party extractors run in process through the native adapter, with conformance tests through the wire adapter. The alternative was bundled subprocess plugins. They would give the same deadlines and isolation, at the cost of a spawn and base64 encoding per file.
+1. First-party extractors run in process through the native adapter, with conformance tests through the wire adapter. The alternative was bundled subprocess plugins, which cost a spawn and base64 encoding per file. In process, an extractor gives up crash and memory isolation: an abort or panic in it affects the host process. Its deadline is cooperative and checked between parts, while the host cancels and kills a subprocess plugin.
 2. PNG discovery uses `.drawio.png`, `.excalidraw.png` and explicit includes. The alternative was to sniff every PNG.
 3. Binary input on stdin is rejected in 3.0.
 4. Macro and template variants are included and read-only.
