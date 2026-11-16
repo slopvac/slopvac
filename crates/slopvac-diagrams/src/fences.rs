@@ -295,11 +295,10 @@ mod tests {
 
     #[test]
     fn block_quote_labels_are_found_at_their_source_offsets() {
-        let md = "> ```mermaid\n> flowchart TD\n> A[One] --> B[Two]\n> ```\n";
-        // "> ```mermaid\n" is 13 bytes and "> flowchart TD\n" is 15, so line 3 starts at 28.
-        // After the two-byte prefix and `A[`, "One" is 32..35; "Two" follows 13 bytes
-        // later, at 43..46.
-        assert_eq!(labels(md), [("One", 32..35), ("Two", 43..46)]);
+        let md = "> ```mermaid\n> sequenceDiagram\n> participant A as Alice\n> ```\n";
+        // "> ```mermaid\n" is 13 bytes and "> sequenceDiagram\n" is 18, so line 3 starts at 31.
+        // The prefix is 2 bytes and `participant A as ` is 17, so "Alice" is 50..55.
+        assert_eq!(labels(md), [("Alice", 50..55)]);
     }
 
     #[test]
@@ -312,10 +311,10 @@ mod tests {
 
     #[test]
     fn nested_list_in_quote_labels_keep_source_offsets() {
-        let md = "> - item\n>\n>   ```mermaid\n>   flowchart TD\n>   A[One] --> B[Two]\n>   ```\n";
-        // "> - item\n" 9, ">\n" 2, ">   ```mermaid\n" 15 and ">   flowchart TD\n" 17 put
-        // line 5 at byte 43. Its prefix is 4 bytes, so "One" is 43+4+2 = 49..52 and
-        // "Two" follows 13 bytes later, at 60..63.
-        assert_eq!(labels(md), [("One", 49..52), ("Two", 60..63)]);
+        let md = "> - item\n>\n>   ```mermaid\n>   sequenceDiagram\n>   participant A as Alice\n>   ```\n";
+        // "> - item\n" 9, ">\n" 2, ">   ```mermaid\n" 15 and ">   sequenceDiagram\n" 20 put
+        // line 5 at byte 46. Its prefix is 4 bytes and `participant A as ` is 17, so
+        // "Alice" is 67..72.
+        assert_eq!(labels(md), [("Alice", 67..72)]);
     }
 }
