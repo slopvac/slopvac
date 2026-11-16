@@ -65,30 +65,14 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
     cmd
 }
 
-/// Commands whose implementation another epic owns, with their owner bead.
+/// Commands whose implementation another crate has not exposed yet.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 5] = [
-    (
-        "plugins",
-        "Manage plugins and packs: sync, trust, update.",
-        "slopvac-8l4.9",
-    ),
-    ("packs", "List installed rule packs.", "slopvac-8l4.9"),
-    (
-        "onboard",
-        "Print the agent onboarding text.",
-        "slopvac-8l4.12.10",
-    ),
-    (
-        "reference",
-        "Generate or check the rules reference.",
-        "slopvac-8l4.12.10",
-    ),
-    (
-        "report",
-        "Preview or submit an issue report.",
-        "slopvac-8l4.12.6",
-    ),
+pub const PLACEHOLDERS: [(&str, &str); 5] = [
+    ("plugins", "Manage plugins and packs: sync, trust, update."),
+    ("packs", "List installed rule packs."),
+    ("onboard", "Print the agent onboarding text."),
+    ("reference", "Generate or check the rules reference."),
+    ("report", "Preview or submit an issue report."),
 ];
 
 fn placeholder(name: &'static str, about: &'static str) -> Command {
@@ -400,7 +384,7 @@ pub fn command() -> Command {
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
-    for (name, about, _owner) in PLACEHOLDERS {
+    for (name, about) in PLACEHOLDERS {
         cmd = cmd.subcommand(placeholder(name, about));
     }
     cmd

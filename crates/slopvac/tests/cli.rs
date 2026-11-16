@@ -162,12 +162,12 @@ fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
 }
 
 #[test]
-fn unwired_commands_exit_2_naming_the_owner() {
+fn unwired_commands_exit_2_without_naming_anyone() {
     slopvac()
         .arg("packs")
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("not available in this build yet"));
+        .stderr(predicate::str::contains("is not available in this build."));
 }
 
 #[test]

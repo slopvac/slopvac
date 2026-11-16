@@ -241,23 +241,10 @@ fn dispatch(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
         ),
-        Some((name, _)) => {
-            let owner = cli::PLACEHOLDERS
-                .iter()
-                .find(|(n, ..)| *n == name)
-                .map(|(_, _, o)| *o)
-                .or(match name {
-                    "rules" | "explain" => Some("slopvac-8l4.12.11"),
-                    _ => None,
-                });
-            Err(CliError::new(
-                "command-not-wired",
-                format!(
-                    "`slopvac {name}` is not available in this build yet ({}).",
-                    owner.unwrap_or("not wired")
-                ),
-            ))
-        }
+        Some((name, _)) => Err(CliError::new(
+            "command-not-wired",
+            format!("`slopvac {name}` is not available in this build."),
+        )),
         None => {
             let mut cmd = cli::command();
             write_stdout(out, cmd.render_help().to_string().as_bytes())
