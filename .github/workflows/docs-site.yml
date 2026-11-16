@@ -1,50 +1,24 @@
-name: Docs site
+name: Docs site build
 # Generates the reference pages, lints the generated Markdown, builds the Starlight site,
-# adds the rustdoc output, checks internal links, and publishes that same artifact to
-# GitHub Pages. Pull requests build everything and deploy nothing.
+# adds the rustdoc output, and checks internal links. Called from test.yml when the
+# docs-site path class matches (.github/ci-paths.yml owns the paths) and builds only.
+# docs-deploy.yml calls it with upload set and publishes the artifact to GitHub Pages
+# from main. This workflow holds no Pages permissions.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/docs-site.yml"
-      - "site/**"
-      - "docs/site.toml"
-      - "docs/site-lint.toml"
-      - "scripts/docs/**"
-      - "tests/docs/**"
-      - "schemas/**"
-      - "packages/slopvac-lint/src/slopvac/rules/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "mise.toml"
-  pull_request:
-    paths:
-      - ".github/workflows/docs-site.yml"
-      - "site/**"
-      - "docs/site.toml"
-      - "docs/site-lint.toml"
-      - "scripts/docs/**"
-      - "tests/docs/**"
-      - "schemas/**"
-      - "packages/slopvac-lint/src/slopvac/rules/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "mise.toml"
+  workflow_call:
+    inputs:
+      upload:
+        description: Upload the built site as the Pages artifact.
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: docs-site-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   build:
+    name: Build the docs site
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -116,23 +90,7 @@ jobs:
             "$RUNNER_TEMP/lychee-root/$base/index.html" \
             "$RUNNER_TEMP/lychee-root/$base/v3/**/*.html"
       - name: Upload the Pages artifact
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ inputs.upload }}
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site/dist
-
-  deploy:
-    needs: build
-    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
