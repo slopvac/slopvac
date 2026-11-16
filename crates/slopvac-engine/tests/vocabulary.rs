@@ -34,7 +34,7 @@ fn owner() -> Value {
 }
 
 fn list(entries: &[(&str, &str)]) -> Blocklist {
-    let mut text = String::new();
+    let mut text = String::from("schema_version = 3\n");
     for (word, pos) in entries {
         let _ = write!(
             text,
