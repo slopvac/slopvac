@@ -10,6 +10,8 @@ use crate::tree::LineIndex;
 /// Stable identifier of a diagnostic, printed in brackets and matched by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Code {
+    /// A file could not be read.
+    Io,
     /// The file is not valid TOML or YAML.
     Parse,
     /// A key the schema does not define.
@@ -20,6 +22,18 @@ pub enum Code {
     InvalidValue,
     /// A required key is absent.
     MissingKey,
+    /// A 2.x config: no `schema_version`, or version 2.
+    LegacyVersion,
+    /// A `schema_version` newer than this build supports.
+    UnsupportedVersion,
+    /// An `extends` chain that loops back on itself.
+    ExtendsCycle,
+    /// An `extends` entry that names no readable config.
+    ExtendsMissing,
+    /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
+    DuplicateScope,
+    /// A front-matter field that `[frontmatter] allow` does not list.
+    FrontmatterFieldDenied,
 }
 
 impl Code {
@@ -27,11 +41,18 @@ impl Code {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Code::Io => "config-io",
             Code::Parse => "config-parse",
             Code::UnknownKey => "config-unknown-key",
             Code::InvalidType => "config-invalid-type",
             Code::InvalidValue => "config-invalid-value",
             Code::MissingKey => "config-missing-key",
+            Code::LegacyVersion => "config-legacy-version",
+            Code::UnsupportedVersion => "config-unsupported-version",
+            Code::ExtendsCycle => "config-extends-cycle",
+            Code::ExtendsMissing => "config-extends-missing",
+            Code::DuplicateScope => "config-duplicate-scope",
+            Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
         }
     }
 }

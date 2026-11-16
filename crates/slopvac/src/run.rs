@@ -6,12 +6,12 @@ use std::process::ExitCode;
 
 use clap::ArgMatches;
 
-use crate::cli::{self, REMOVED_LINT_OPTIONS};
+use crate::cli;
 use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, logging, offline, stdin};
+use crate::{exit, generate, inspect, logging, offline, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +62,9 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
-    main_with_stdout(args, env, &mut std::io::stdout().lock())
+    // Not locked for the whole run: `slopvac lsp` writes from its own thread, which would
+    // wait forever on a lock held here.
+    main_with_stdout(args, env, &mut std::io::stdout())
 }
 
 /// Like [`main_with`], with the standard output stream supplied by the caller.
@@ -145,11 +147,26 @@ fn dispatch(
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("lint", m)) => lint(m, err_out),
+        Some(("lsp", m)) => slopvac_lsp::run(m)
+            .map(|exit| match exit {
+                slopvac_lsp::Exit::AfterShutdown => exit::PASS,
+                // LSP says `exit` without `shutdown` ends the process with status 1.
+                slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
+            })
+            .map_err(|e| CliError::new("lsp-failed", e.to_string())),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
                 .expect("required");
             write_stdout(out, &generate::completions(shell))
+        }
+        Some(("rules", m)) => {
+            reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
+            inspect::rules(m, out)
+        }
+        Some(("explain", m)) => {
+            reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
+            inspect::explain(m, out)
         }
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
@@ -165,7 +182,6 @@ fn dispatch(
                 .or(match name {
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
                     "self" => Some("slopvac-8l4.12.4"),
-                    "lsp" => Some("slopvac-8l4.12.7"),
                     _ => None,
                 });
             Err(CliError::new(
@@ -216,6 +232,18 @@ fn doctor(
     })
 }
 
+/// Fail with the 3.0 pointer when a removed 2.x option was given.
+fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
+    for name in names {
+        if m.contains_id(name)
+            && let Some(message) = cli::removed_message(name)
+        {
+            return Err(CliError::new("removed-option", message));
+        }
+    }
+    Ok(())
+}
+
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
     out.write_all(bytes)
         .and_then(|()| out.flush())
@@ -254,11 +282,7 @@ fn lint_with(
     linter: &dyn Linter,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    for (name, message) in REMOVED_LINT_OPTIONS {
-        if m.contains_id(name) {
-            return Err(CliError::new("removed-option", message));
-        }
-    }
+    reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
         tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");

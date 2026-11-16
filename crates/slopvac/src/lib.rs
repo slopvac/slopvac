@@ -11,9 +11,11 @@ pub mod env;
 pub mod errors;
 pub mod exit;
 pub mod generate;
+pub mod inspect;
 pub mod logging;
 pub mod offline;
 pub mod redact;
+pub mod rule_catalog;
 mod run;
 pub mod stdin;
 
