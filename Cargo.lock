@@ -2420,6 +2420,7 @@ dependencies = [
  "slopvac-model",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-update",
  "snapbox",
  "tempfile",
  "toml",
@@ -2679,6 +2680,26 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "slopvac-update"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "crossbeam-channel",
+ "flate2",
+ "minisign",
+ "minisign-verify",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "ureq",
 ]
 
 [[package]]

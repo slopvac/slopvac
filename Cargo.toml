@@ -79,6 +79,7 @@ slopvac-sanitize = { path = "crates/slopvac-sanitize" }
 slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-terms = { path = "crates/slopvac-terms" }
 slopvac-text = { path = "crates/slopvac-text" }
+slopvac-update = { path = "crates/slopvac-update" }
 snapbox = "1.2"
 strsim = "0.11.1"
 tar = { version = "0.4", default-features = false }

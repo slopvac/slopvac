@@ -312,6 +312,237 @@ fn usage_errors_keep_clap_styling_when_colour_is_forced() {
         .stderr(predicate::str::starts_with("error[usage]:"));
 }
 
+#[test]
+fn version_json_prints_a_document_with_notices() {
+    let cache = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .env("SLOPVAC_OFFLINE", "1")
+        .args(["--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(doc["name"], "slopvac");
+    assert_eq!(doc["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(doc["notices"], serde_json::json!([]));
+}
+
+#[test]
+fn self_update_on_an_unmanaged_install_names_the_upgrade_command() {
+    // The test binary is not an installer install, so `self update` explains instead of fetching.
+    slopvac()
+        .env("SLOPVAC_OFFLINE", "1")
+        .env("AXOUPDATER_CONFIG_PATH", "/nonexistent")
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[self-update-unmanaged]"));
+}
+
+/// A project directory with a `slopvac.toml` that holds `network_toml`.
+fn project(network_toml: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\n[network]\n{network_toml}"),
+    )
+    .unwrap();
+    dir
+}
+
+/// A command with every update opt-out variable removed.
+fn update_enabled() -> Command {
+    let mut cmd = slopvac();
+    for var in [
+        "CI",
+        "NO_UPDATE_NOTIFIER",
+        "SLOPVAC_NO_UPDATE_CHECK",
+        "DO_NOT_TRACK",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
+/// A cache directory that says 99.0.0 is out.
+fn cache_with_newer_release() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("update-check.json"),
+        r#"{"checked_at":4102444800,"latest":"99.0.0"}"#,
+    )
+    .unwrap();
+    dir
+}
+
+fn version_json(cmd: &mut Command, cache: &std::path::Path) -> serde_json::Value {
+    let out = cmd
+        .env("SLOPVAC_CACHE_DIR", cache)
+        .args(["--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[test]
+fn project_update_check_false_suppresses_the_notice() {
+    let cache = cache_with_newer_release();
+    let with_notice = version_json(&mut update_enabled(), cache.path());
+    assert_eq!(with_notice["notices"][0]["x-latest"], "99.0.0");
+
+    let dir = project("update_check = false\n");
+    let silenced = version_json(update_enabled().current_dir(dir.path()), cache.path());
+    assert_eq!(silenced["notices"], serde_json::json!([]));
+}
+
+#[test]
+fn project_offline_blocks_self_update_before_any_request() {
+    // Make the test binary look like an installer install, so only offline mode can stop it.
+    let exe = slopvac().get_program().to_owned();
+    let prefix = std::path::Path::new(&exe).parent().unwrap().to_owned();
+    let receipts = tempfile::tempdir().unwrap();
+    fs::write(
+        receipts.path().join("slopvac-receipt.json"),
+        serde_json::json!({
+            "install_prefix": prefix,
+            "source": {"app_name": "slopvac"},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let dir = project("offline = true\n");
+    slopvac()
+        .current_dir(dir.path())
+        .env("AXOUPDATER_CONFIG_PATH", receipts.path())
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error[offline-network-needed]: offline: self update needs the network",
+        ));
+}
+
+#[test]
+fn version_json_accepts_flags_in_any_order() {
+    let cache = cache_with_newer_release();
+    for args in [
+        &["--json", "--version"][..],
+        &["--color", "never", "--version", "--json"],
+        &["--color=never", "--json", "-V"],
+        &["--no-color", "--version", "--json"],
+    ] {
+        let out = update_enabled()
+            .env("SLOPVAC_CACHE_DIR", cache.path())
+            .args(args)
+            .assert()
+            .code(0)
+            .get_output()
+            .stdout
+            .clone();
+        let doc: serde_json::Value =
+            serde_json::from_slice(&out).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+        assert_eq!(doc["name"], "slopvac", "{args:?}");
+    }
+}
+
+#[test]
+fn unreadable_project_config_exits_two_before_any_command_runs() {
+    // A directory, an oversize file and (on unix) a FIFO all fail the same way and never hang.
+    let mut cases: Vec<(&str, tempfile::TempDir)> = Vec::new();
+
+    let dir_case = tempfile::tempdir().unwrap();
+    fs::create_dir(dir_case.path().join("slopvac.toml")).unwrap();
+    cases.push(("not a regular file", dir_case));
+
+    let big = tempfile::tempdir().unwrap();
+    fs::write(big.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
+    cases.push(("larger than 1048576 bytes", big));
+
+    #[cfg(unix)]
+    {
+        let fifo_case = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("mkfifo")
+            .arg(fifo_case.path().join("slopvac.toml"))
+            .status()
+            .expect("mkfifo");
+        assert!(status.success());
+        cases.push(("not a regular file", fifo_case));
+    }
+
+    for (message, dir) in &cases {
+        for args in [
+            &["--version", "--json"][..],
+            &["self", "update"],
+            &["--help"],
+        ] {
+            slopvac()
+                .current_dir(dir.path())
+                .timeout(std::time::Duration::from_secs(20))
+                .args(args)
+                .assert()
+                .code(2)
+                .stderr(predicate::str::contains("error[config-unreadable]"))
+                .stderr(predicate::str::contains(*message));
+        }
+    }
+}
+
+#[test]
+fn config_read_errors_do_not_print_absolute_paths() {
+    // policies.md 1.7: paths in errors are relative to the project root, or `<external>/<name>`.
+    let base = tempfile::Builder::new()
+        .prefix("sentinel-secret-")
+        .tempdir()
+        .unwrap();
+    let sentinel = base
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    fs::create_dir(base.path().join("slopvac.toml")).unwrap();
+    let sub = base.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+
+    // The config sits above the working directory, so it is outside the root.
+    let outside = slopvac()
+        .current_dir(&sub)
+        .arg("--version")
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let outside = String::from_utf8(outside).unwrap();
+    assert!(!outside.contains(&sentinel), "{outside}");
+    assert!(
+        outside.contains("error[config-unreadable]: <external>/slopvac.toml: not a regular file"),
+        "{outside}"
+    );
+
+    // The config sits in the working directory: shown relative to it.
+    let inside = slopvac()
+        .current_dir(base.path())
+        .arg("--version")
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let inside = String::from_utf8(inside).unwrap();
+    assert!(!inside.contains(&sentinel), "{inside}");
+    assert!(
+        inside.contains("error[config-unreadable]: slopvac.toml: not a regular file"),
+        "{inside}"
+    );
+}
+
 fn frame(body: &str) -> String {
     format!("Content-Length: {}\r\n\r\n{body}", body.len())
 }
