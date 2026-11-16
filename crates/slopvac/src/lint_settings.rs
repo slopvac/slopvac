@@ -27,6 +27,7 @@ use slopvac_rules::{MatchKind, RuleSet};
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
 
 use crate::errors::CliError;
+use crate::lint_terms::casing_pack;
 
 /// What the command line adds on top of the files.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -84,6 +85,7 @@ fn legacy_style(profile: &str) -> &'static Style {
 }
 
 fn rule_id_of(rules: &RuleSet, key: &str) -> Option<RuleId> {
+    // A bare key belongs to the core pack. The term-casing pack is addressed by its own id.
     let qualified = if key.contains(':') {
         key.to_owned()
     } else {
@@ -91,15 +93,20 @@ fn rule_id_of(rules: &RuleSet, key: &str) -> Option<RuleId> {
     };
     rules
         .rules()
+        .chain(casing_pack().rules())
         .find(|r| r.id().as_str() == qualified)
         .map(|r| r.id().clone())
 }
 
 fn category_of(rules: &RuleSet, key: &str) -> Option<String> {
-    let bare = key.strip_prefix("core:").unwrap_or(key);
+    let bare = key
+        .strip_prefix("core:")
+        .or_else(|| key.strip_prefix("terms:"))
+        .unwrap_or(key);
     rules
         .categories()
         .iter()
+        .chain(casing_pack().categories())
         .find(|c| c.id().as_str() == bare)
         .map(|c| c.id().as_str().to_owned())
 }
@@ -381,7 +388,7 @@ pub fn build(
         .unwrap_or(0);
     let disabled = selected(rules, &cli.disable)?;
     let only = selected(rules, &cli.only_categories)?;
-    for category in rules.categories() {
+    for category in rules.categories().iter().chain(casing_pack().categories()) {
         let name = category.id().as_str();
         let qualified = format!(
             "{}:{name}",
