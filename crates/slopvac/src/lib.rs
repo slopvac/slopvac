@@ -14,6 +14,7 @@ pub mod init;
 pub mod inspect;
 pub mod logging;
 pub mod offline;
+pub mod output;
 pub mod redact;
 pub mod rule_catalog;
 mod run;

@@ -2410,6 +2410,7 @@ dependencies = [
  "jsonschema",
  "predicates",
  "proptest",
+ "roxmltree",
  "rstest",
  "serde",
  "serde_json",
