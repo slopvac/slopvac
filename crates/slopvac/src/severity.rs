@@ -10,9 +10,9 @@ use std::sync::Arc;
 use clap::ArgMatches;
 use slopvac_config::{ConfigError, Discovery, Inputs, Rejected, Resolved, describe, load_labeled};
 use slopvac_rules::{LoadedRule, MatchKind};
+use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
-use crate::presets::{BuiltinPresets, style_names};
 use crate::redact;
 
 /// A rule's severity after the layers.
@@ -78,7 +78,7 @@ impl Severities {
     /// that does not ship, and the config error code for a file that is refused.
     pub fn load(m: &ArgMatches) -> Result<Self, CliError> {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let presets = BuiltinPresets;
+        let presets = StylePresets(BuiltinSource);
         let config = if let Some(path) = m.get_one::<std::path::PathBuf>("config") {
             let shown = redact::shown_path(path, &cwd);
             if !path.is_file() {
@@ -110,12 +110,12 @@ impl Severities {
             .flatten()
             .filter_map(|v| v.as_str())
         {
-            if !BuiltinPresets::has(name) {
+            if !BuiltinSource::names().any(|n| n == name) {
                 return Err(CliError::new(
                     "unknown-style",
                     format!(
                         "unknown style {name:?}; the styles that ship are: {}.",
-                        style_names().join(", ")
+                        BuiltinSource::names().collect::<Vec<_>>().join(", ")
                     ),
                 ));
             }

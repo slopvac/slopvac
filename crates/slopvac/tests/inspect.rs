@@ -396,7 +396,7 @@ fn a_bundled_style_changes_severities_and_names_the_style() {
     let (_dir, file) = config("schema_version = 3\nstyles = [\"google\"]\n");
     let v = rule_json(&["explain", "core:ste-punctuation.semicolon-used"], &file);
     assert_eq!(v["effective_severity"], "off");
-    assert_eq!(v["severity_from"], "style");
+    assert_eq!(v["severity_from"], "style preset:google:22:1");
 }
 
 #[test]
@@ -562,7 +562,7 @@ fn the_ste_style_lowers_a_rule_through_its_category() {
     let v = rule_json(&["explain", "core:ste-punctuation.semicolon-used"], &file);
     assert_eq!(v["severity"], "warning");
     assert_eq!(v["effective_severity"], "suggestion");
-    assert_eq!(v["severity_from"], "style");
+    assert_eq!(v["severity_from"], "style preset:ste:12:21");
 }
 
 #[test]
