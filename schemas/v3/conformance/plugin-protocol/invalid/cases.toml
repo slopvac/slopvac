@@ -85,3 +85,7 @@
 "binary-extract-format-trailing-lf.json" = "/params/documents/0/format"
 "BinaryExtractResult--locator-1024-trailing-lf.json" = "/results/0/segments/0/locator"
 "BinaryExtractResult--role-trailing-lf.json" = "/results/0/segments/0/role"
+"binary-extract-path-trailing-lf.json" = "/params/documents/0/path"
+"BinaryExtractResult--part-trailing-lf.json" = "/results/0/segments/0/part"
+"PluginDeclaration--binary-extractor-format-trailing-lf.json" = "/hooks/0/formats/0"
+"binary-extract-path-trailing-dotdot.json" = "/params/documents/0/path"
