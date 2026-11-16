@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{Cursor, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -22,8 +22,10 @@ use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
     SignError, Statement,
 };
-use slopvac_plugins::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError};
-use slopvac_plugins::update::{Outcome, UpdateError, UpdateReport, Updater};
+use slopvac_plugins::sync::{
+    ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, Store, SyncError, Syncer,
+};
+use slopvac_plugins::update::{GUARD_PATH, Outcome, UpdateError, UpdateReport, Updater};
 
 const FLOOR: &str = "2026-11-01T00:00:00Z";
 const LATER: &str = "2026-11-10T00:00:00Z";
@@ -235,7 +237,7 @@ impl Env {
         }
     }
     fn lock_path(&self) -> PathBuf {
-        self.dir.path().join("packs.lock")
+        self.dir.path().join(".slopvac/packs.lock")
     }
     fn write_lock(&self, entries: &[String]) -> String {
         let mut text = String::from("schema_version = 3\n");
@@ -243,6 +245,7 @@ impl Env {
             text.push_str(e);
         }
         let canonical = Lockfile::parse(&text).unwrap().to_toml();
+        fs::create_dir_all(self.dir.path().join(".slopvac")).unwrap();
         fs::write(self.lock_path(), &canonical).unwrap();
         canonical
     }
@@ -260,6 +263,15 @@ impl Env {
             ),
         )));
     }
+    fn revocations(&self) -> Revocations {
+        Revocations::new(
+            self.dir.path().join("state"),
+            vec![self.root.public()],
+            self.list.source(),
+            NOW,
+        )
+        .unwrap()
+    }
     fn update(
         &self,
         network: Network<'_>,
@@ -267,14 +279,18 @@ impl Env {
         ranges: &BTreeMap<PackId, VersionReq>,
         only: &[PackId],
     ) -> Result<UpdateReport, UpdateError> {
-        let revocations = Revocations::new(
-            self.dir.path().join("state"),
-            vec![self.root.public()],
-            self.list.source(),
-            NOW,
-        )
-        .unwrap();
-        Updater::new(network, policy, &revocations).update(&self.lock_path(), ranges, only)
+        self.update_at(self.dir.path(), network, policy, ranges, only)
+    }
+    fn update_at(
+        &self,
+        project: &Path,
+        network: Network<'_>,
+        policy: &KeyPolicy,
+        ranges: &BTreeMap<PackId, VersionReq>,
+        only: &[PackId],
+    ) -> Result<UpdateReport, UpdateError> {
+        let revocations = self.revocations();
+        Updater::new(network, policy, &revocations).update(project, ranges, only)
     }
 }
 
@@ -576,7 +592,8 @@ fn offline_update_is_refused_with_exit_2_and_touches_nothing() {
 
     assert!(matches!(err, UpdateError::Offline), "{err:?}");
     assert_eq!(err.exit_code(), 2);
-    assert_eq!(err.code(), "offline-update");
+    assert_eq!(err.code(), "offline-network-needed");
+    assert_eq!(err.to_string(), "offline: plugins update needs the network");
     assert!(server.requests().is_empty());
     assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
 }
@@ -753,4 +770,252 @@ fn a_pack_without_a_range_is_left_alone() {
 
     assert!(matches!(report.packs[0].outcome, Outcome::Unchanged));
     assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+fn assert_refused_lock(err: &UpdateError) {
+    assert!(matches!(err, UpdateError::Lock { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_lock_directory_is_refused_and_the_target_lock_is_untouched() {
+    let key = Key::new();
+    let (v120, v130) = (
+        release(&key, "style", "1.2.0", FLOOR),
+        release(&key, "style", "1.3.0", LATER),
+    );
+    let server = registry(&[("style", &[&v120, &v130])]);
+    // Another project holds a valid lock; this checkout's `.slopvac` links to it.
+    let other = Env::new();
+    let before = other.write_lock(&[entry("style", &server.registry(), &v120, true)]);
+    let env = Env::new();
+    std::os::unix::fs::symlink(
+        other.dir.path().join(".slopvac"),
+        env.dir.path().join(".slopvac"),
+    )
+    .unwrap();
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[&key]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert_refused_lock(&err);
+    assert_eq!(fs::read_to_string(other.lock_path()).unwrap(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_lock_file_is_refused_and_its_target_is_untouched() {
+    let key = Key::new();
+    let (v120, v130) = (
+        release(&key, "style", "1.2.0", FLOOR),
+        release(&key, "style", "1.3.0", LATER),
+    );
+    let server = registry(&[("style", &[&v120, &v130])]);
+    let env = Env::new();
+    let before = env.write_lock(&[entry("style", &server.registry(), &v120, true)]);
+    let real = env.dir.path().join("real.lock");
+    fs::rename(env.lock_path(), &real).unwrap();
+    std::os::unix::fs::symlink(&real, env.lock_path()).unwrap();
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[&key]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert_refused_lock(&err);
+    assert_eq!(fs::read_to_string(&real).unwrap(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lock_that_links_to_an_endless_device_is_refused_without_reading_it() {
+    let env = Env::new();
+    fs::create_dir_all(env.dir.path().join(".slopvac")).unwrap();
+    std::os::unix::fs::symlink("/dev/zero", env.lock_path()).unwrap();
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert_refused_lock(&err);
+}
+
+#[test]
+fn a_lock_over_the_size_limit_is_refused_and_left_alone() {
+    let env = Env::new();
+    fs::create_dir_all(env.dir.path().join(".slopvac")).unwrap();
+    let huge = vec![b'#'; 1024 * 1024 + 1];
+    fs::write(env.lock_path(), &huge).unwrap();
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert_refused_lock(&err);
+    assert!(err.to_string().contains("size limit"), "{err}");
+    assert_eq!(fs::read(env.lock_path()).unwrap(), huge);
+}
+
+#[test]
+fn an_update_waits_for_a_concurrent_one_and_keeps_its_changes() {
+    let key = Key::new();
+    let (s120, s130) = (
+        release(&key, "style", "1.2.0", FLOOR),
+        release(&key, "style", "1.3.0", LATER),
+    );
+    let (o100, o110) = (
+        release(&key, "other", "1.0.0", FLOOR),
+        release(&key, "other", "1.1.0", LATER),
+    );
+    let server = registry(&[("style", &[&s120, &s130]), ("other", &[&o100, &o110])]);
+    let reg = server.registry();
+    let env = Env::new();
+    env.write_lock(&[
+        entry("style", &reg, &s120, true),
+        entry("other", &reg, &o100, true),
+    ]);
+    // A concurrent update holds the guard and is about to commit `other` 1.1.0.
+    let holder = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(env.dir.path().join(GUARD_PATH))
+        .unwrap();
+    holder.lock().unwrap();
+
+    let c = client();
+    let pol = policy(&[&key]);
+    let wanted = ranges(&[("style", "^1.2")]);
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let report = env.update(Network::Online(&c), &pol, &wanted, &[]);
+            done_tx.send(report.is_ok()).unwrap();
+        });
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_millis(500))
+                .is_err(),
+            "update ran while another held the lock"
+        );
+        env.write_lock(&[
+            entry("style", &reg, &s120, true),
+            entry("other", &reg, &o110, true),
+        ]);
+        drop(holder);
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .unwrap()
+        );
+    });
+
+    let lock = env.lock();
+    assert_eq!(
+        lock.get(&pack_id("style")).unwrap().version,
+        version("1.3.0")
+    );
+    assert_eq!(
+        lock.get(&pack_id("other")).unwrap().version,
+        version("1.1.0")
+    );
+}
+
+#[test]
+fn a_synced_updated_lock_installs_the_new_content_and_stays_unchanged() {
+    let key = Key::new();
+    let (v120, v130) = (
+        release(&key, "style", "1.2.0", FLOOR),
+        release(&key, "style", "1.3.0", LATER),
+    );
+    let server = registry(&[("style", &[&v120, &v130])]);
+    let env = Env::new();
+    env.write_lock(&[entry("style", &server.registry(), &v120, true)]);
+    let c = client();
+    let pol = policy(&[&key]);
+    env.update(
+        Network::Online(&c),
+        &pol,
+        &ranges(&[("style", "^1.2")]),
+        &[],
+    )
+    .unwrap();
+    let written = fs::read(env.lock_path()).unwrap();
+
+    let lock = env.lock();
+    let store = Store::new(env.dir.path().join("slopvac"));
+    let revocations = env.revocations();
+    let report = Syncer::new(
+        &store,
+        Network::Online(&c),
+        &pol,
+        env.dir.path(),
+        &revocations,
+    )
+    .sync(&lock)
+    .unwrap();
+
+    assert_eq!(report.packs[0].change, Change::Installed);
+    assert_eq!(report.packs[0].version, version("1.3.0"));
+    assert_eq!(
+        fs::read(report.packs[0].tree.join("pack.toml")).unwrap(),
+        b"version = \"1.3.0\"\n"
+    );
+    assert_eq!(fs::read(env.lock_path()).unwrap(), written);
+}
+
+#[test]
+fn hostile_path_characters_are_escaped_in_error_text() {
+    let hostile = "evil\u{1b}[31m\n\u{202e}";
+    let err = UpdateError::Write {
+        path: format!("/p/{hostile}/.slopvac/packs.lock"),
+        source: std::io::Error::other("disk"),
+    };
+    let text = err.to_string();
+    assert!(!text.chars().any(char::is_control), "{text:?}");
+    assert!(!text.contains('\u{202e}'), "{text:?}");
+    assert!(text.contains("\\u{1b}[31m\\u{a}"), "{text}");
+
+    // And through a real failure: the project root has such a name.
+    let env = Env::new();
+    let root = env.dir.path().join("a\u{1b}[31mb\nc");
+    fs::create_dir_all(&root).unwrap();
+    let c = client();
+    let err = env
+        .update_at(
+            &root,
+            Network::Online(&c),
+            &policy(&[]),
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap_err();
+    let text = err.to_string();
+    assert!(!text.chars().any(char::is_control), "{text:?}");
+    assert!(text.contains("\\u{1b}"), "{text}");
 }

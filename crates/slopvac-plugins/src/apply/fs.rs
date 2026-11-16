@@ -173,12 +173,23 @@ fn link_count(f: &cap_std::fs::File, _: &cap_std::fs::Metadata) -> std::io::Resu
 ///
 /// Refuses a symlink, a non-regular file and a file with several hard links.
 pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Current, ApplyError> {
-    read_current_at(parent, name, shown, &mut |_| {}).map(|(current, _)| current)
+    read_current_at(parent, name, shown, None, &mut |_| {}).map(|(current, _)| current)
+}
+
+/// Like [`read_current`], but reads at most `max` bytes: a longer file is an
+/// error, and no more than `max + 1` bytes are ever held.
+pub(crate) fn read_current_limited(
+    parent: &Dir,
+    name: &OsStr,
+    shown: &str,
+    max: u64,
+) -> Result<Current, ApplyError> {
+    read_current_at(parent, name, shown, Some(max), &mut |_| {}).map(|(current, _)| current)
 }
 
 /// Make the open return at once for a pipe or device that was swapped in.
 #[cfg(unix)]
-fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
+pub(crate) fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
     use cap_std::fs::OpenOptionsExt;
     let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
         .map_err(|_| ApplyError::Io("O_NONBLOCK does not fit".into()))?;
@@ -188,7 +199,7 @@ fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
 
 #[cfg(not(unix))]
 #[allow(clippy::unnecessary_wraps)]
-fn nonblocking(_: &mut OpenOptions) -> Result<(), ApplyError> {
+pub(crate) fn nonblocking(_: &mut OpenOptions) -> Result<(), ApplyError> {
     Ok(())
 }
 
@@ -197,6 +208,7 @@ fn read_current_at(
     parent: &Dir,
     name: &OsStr,
     shown: &str,
+    max: Option<u64>,
     hook: &mut dyn FnMut(Stage),
 ) -> Result<(Current, Option<Permissions>), ApplyError> {
     // A cheap look first, so that a pipe or device is never opened for reading.
@@ -238,8 +250,15 @@ fn read_current_at(
         return Err(ApplyError::Hardlinked(shown.into()));
     }
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
+    let mut reader = (&mut file).take(max.map_or(u64::MAX, |m| m.saturating_add(1)));
+    reader
+        .read_to_end(&mut bytes)
         .map_err(|e| ApplyError::io(shown, &e))?;
+    if max.is_some_and(|m| bytes.len() as u64 > m) {
+        return Err(ApplyError::Io(format!(
+            "{shown}: larger than the size limit"
+        )));
+    }
     Ok((Current::File(bytes), Some(meta.permissions())))
 }
 
@@ -304,7 +323,7 @@ pub(crate) fn replace(
     new: &[u8],
     hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
-    let (first, perms) = read_current_at(parent, name, shown, hook)?;
+    let (first, perms) = read_current_at(parent, name, shown, None, hook)?;
     let changed = || ApplyError::SourceChanged(shown.into());
     if !expect.holds(&first) {
         return Err(changed());
@@ -355,7 +374,7 @@ pub(crate) fn remove(
     hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
     let changed = || ApplyError::SourceChanged(shown.into());
-    let (first, _) = read_current_at(parent, name, shown, hook)?;
+    let (first, _) = read_current_at(parent, name, shown, None, hook)?;
     if !expect.holds(&first) {
         return Err(changed());
     }
@@ -539,7 +558,7 @@ mod tests {
         std::fs::write(&target, "original").unwrap();
         std::fs::write(tmp.path().join("other"), "other").unwrap();
         let parent = dir(tmp.path());
-        let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", &mut |s| {
+        let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", None, &mut |s| {
             if s == Stage::BeforeOpen {
                 std::fs::remove_file(&target).unwrap();
                 std::os::unix::fs::symlink("other", &target).unwrap();
@@ -629,7 +648,7 @@ mod tests {
         std::thread::spawn(move || {
             let parent = dir(&path);
             let target = path.join("a.md");
-            let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", &mut |s| {
+            let got = read_current_at(&parent, OsStr::new("a.md"), "a.md", None, &mut |s| {
                 if s == Stage::BeforeOpen {
                     std::fs::remove_file(&target).unwrap();
                     let made = std::process::Command::new("mkfifo")

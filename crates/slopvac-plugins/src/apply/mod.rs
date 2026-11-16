@@ -45,7 +45,7 @@
 //!   cannot expand them.
 
 mod edits;
-mod fs;
+pub(crate) mod fs;
 mod plan;
 pub mod sensitive;
 

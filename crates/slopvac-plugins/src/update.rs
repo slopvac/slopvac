@@ -33,6 +33,10 @@
 //!
 //! The new lock is written in canonical form through a temporary file and a
 //! rename, only when it differs from the file, so a second run changes nothing.
+//! The lock is `.slopvac/packs.lock` under the project root. Update reaches it
+//! through a directory handle that never follows a link, reads at most 1 MiB,
+//! and holds an exclusive lock on a guard file ([`GUARD_PATH`]) from read to
+//! write.
 //! Update does not extract anything; `plugins sync` installs the new lock.
 //!
 //! `slopvac_api` and `requires` are carried over from the old entry.
@@ -41,12 +45,19 @@
 // changes them needs a hand edit of the lock.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io::Write;
+use std::ffi::OsStr;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::str::FromStr;
 
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions};
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
+
+use crate::apply::ApplyError;
+use crate::apply::fs::{self, Current, Expect, nonblocking};
 
 use crate::lock::{
     LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, Signature, Source, SourceKind,
@@ -57,18 +68,27 @@ use crate::revoke::{RevocationError, RevocationList, RevocationNotice, Revocatio
 use crate::sign::{Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, fetch_and_verify};
 use crate::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError, available_versions};
 
+/// The lock file, relative to the project root.
+pub const LOCK_PATH: &str = ".slopvac/packs.lock";
+/// The guard file next to the lock. An exclusive lock on it serialises updates.
+/// It stays after the run; keep it out of version control.
+pub const GUARD_PATH: &str = ".slopvac/packs.lock.guard";
+const LOCK_DIR: &str = ".slopvac";
+const LOCK_NAME: &str = "packs.lock";
+const GUARD_NAME: &str = "packs.lock.guard";
+
 /// Why update could not run at all. Every variant makes the command exit 2.
 /// A refusal of one pack is not an error; see [`Outcome::Refused`].
 #[derive(Debug, Error)]
 pub enum UpdateError {
     /// Offline mode. Update has no cache to resolve from.
-    #[error("offline: `plugins update` needs the network; run it online or use `plugins sync`")]
+    #[error("offline: plugins update needs the network")]
     Offline,
     /// A named pack is not in the lock.
     #[error("pack `{0}` is not in the lock")]
     UnknownPack(PackId),
     /// The lock file is unreadable, too large or invalid.
-    #[error("lock file {path}: {message}")]
+    #[error("lock file {}: {message}", esc(path))]
     Lock {
         /// The file.
         path: String,
@@ -79,7 +99,7 @@ pub enum UpdateError {
     #[error(transparent)]
     Revocation(#[from] RevocationError),
     /// The new lock could not be written.
-    #[error("writing {path}: {source}")]
+    #[error("writing {}: {source}", esc(path))]
     Write {
         /// The file.
         path: String,
@@ -101,7 +121,7 @@ impl UpdateError {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Offline => "offline-update",
+            Self::Offline => "offline-network-needed",
             Self::Revocation(e) => e.code(),
             _ => "update-failed",
         }
@@ -182,7 +202,14 @@ impl<'a> Updater<'a> {
         }
     }
 
-    /// Updates the lock file at `lock_path`.
+    /// Updates `.slopvac/packs.lock` under `project_root`.
+    ///
+    /// All lock I/O goes through a directory handle for the project root and
+    /// never follows a link: a `.slopvac` directory or lock file that is a
+    /// link, or a lock that is not a regular file, is refused. The lock is read
+    /// with a 1 MiB cap. An exclusive lock on [`GUARD_PATH`] is held from the
+    /// read to the write, so two updates cannot lose each other's changes; the
+    /// write also checks that the lock still holds the bytes that were read.
     ///
     /// `ranges` are the config version requirements by pack id; a pack with no
     /// range stays as it is. `only` limits the run to the named packs; an empty
@@ -193,19 +220,21 @@ impl<'a> Updater<'a> {
     /// fails a check is reported in the [`UpdateReport`] instead.
     pub fn update(
         &self,
-        lock_path: &Path,
+        project_root: &Path,
         ranges: &BTreeMap<PackId, VersionReq>,
         only: &[PackId],
     ) -> Result<UpdateReport, UpdateError> {
         let Network::Online(client) = self.network else {
             return Err(UpdateError::Offline);
         };
-        let shown = lock_path.display().to_string();
+        let shown = project_root.join(LOCK_PATH).display().to_string();
         let lock_error = |message: String| UpdateError::Lock {
             path: shown.clone(),
             message,
         };
-        let text = read_lock(lock_path).map_err(lock_error)?;
+        let dir = open_lock_dir(project_root).map_err(|e| lock_error(e.to_string()))?;
+        let _guard = take_guard(&dir).map_err(|e| lock_error(e.to_string()))?;
+        let text = read_lock(&dir, &shown).map_err(|e| lock_error(e.to_string()))?;
         let lock = Lockfile::parse(&text).map_err(|e: LockError| lock_error(e.to_string()))?;
         if let Some(missing) = only.iter().find(|id| lock.get(id).is_none()) {
             return Err(UpdateError::UnknownPack(missing.clone()));
@@ -282,9 +311,17 @@ impl<'a> Updater<'a> {
         let updated = Lockfile::new(next).map_err(|e| lock_error(e.to_string()))?;
         let canonical = updated.to_toml();
         if canonical != text {
-            write_atomic(lock_path, canonical.as_bytes()).map_err(|source| UpdateError::Write {
-                path: shown,
-                source,
+            fs::replace(
+                &dir,
+                OsStr::new(LOCK_NAME),
+                &shown,
+                &Expect::Bytes(text.as_bytes()),
+                canonical.as_bytes(),
+                &mut |_| {},
+            )
+            .map_err(|e| UpdateError::Write {
+                path: shown.clone(),
+                source: std::io::Error::other(e.to_string()),
             })?;
             report.wrote_lock = true;
         }
@@ -292,23 +329,49 @@ impl<'a> Updater<'a> {
     }
 }
 
-fn read_lock(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| e.to_string())?;
-    if bytes.len() > MAX_LOCK_BYTES {
-        return Err(format!("larger than {MAX_LOCK_BYTES} bytes"));
-    }
-    String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned())
+/// Opens `.slopvac` under the project root without following links.
+fn open_lock_dir(project_root: &Path) -> Result<Dir, ApplyError> {
+    let root = Dir::open_ambient_dir(project_root, ambient_authority())
+        .map_err(|e| ApplyError::io(project_root.display(), &e))?;
+    root.open_dir_nofollow(LOCK_DIR).map_err(|e| {
+        ApplyError::PathRefused(format!("`{LOCK_DIR}` is not a plain directory ({e})"))
+    })
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
-    let mut tmp = tempfile::Builder::new()
-        .prefix(".packs.lock-")
-        .tempfile_in(dir.unwrap_or_else(|| Path::new(".")))?;
-    tmp.write_all(bytes)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+/// Takes the exclusive guard lock; it is released when the file is dropped.
+fn take_guard(dir: &Dir) -> Result<std::fs::File, ApplyError> {
+    let name = OsStr::new(GUARD_NAME);
+    match dir.symlink_metadata(name) {
+        Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(GUARD_PATH.into())),
+        Ok(_) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(ApplyError::io(GUARD_PATH, &e)),
+    }
+    let mut opts = OpenOptions::new();
+    opts.write(true).create(true).follow(FollowSymlinks::No);
+    nonblocking(&mut opts)?;
+    let file = dir
+        .open_with(name, &opts)
+        .map_err(|e| ApplyError::io(GUARD_PATH, &e))?;
+    if !file
+        .metadata()
+        .map_err(|e| ApplyError::io(GUARD_PATH, &e))?
+        .is_file()
+    {
+        return Err(ApplyError::NotRegularFile(GUARD_PATH.into()));
+    }
+    let file = file.into_std();
+    file.lock().map_err(|e| ApplyError::io(GUARD_PATH, &e))?;
+    Ok(file)
+}
+
+fn read_lock(dir: &Dir, shown: &str) -> Result<String, ApplyError> {
+    let max = MAX_LOCK_BYTES as u64;
+    let bytes = match fs::read_current_limited(dir, OsStr::new(LOCK_NAME), shown, max)? {
+        Current::File(bytes) => bytes,
+        Current::Absent => return Err(ApplyError::Io(format!("{LOCK_PATH}: no such file"))),
+    };
+    String::from_utf8(bytes).map_err(|_| ApplyError::Io(format!("{LOCK_PATH}: not UTF-8")))
 }
 
 fn reference_of(pack: &LockedPack, text: &str) -> Result<Reference, SyncError> {
