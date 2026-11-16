@@ -120,13 +120,24 @@ fn hostile_shapes(n: usize) -> Vec<(&'static str, String)> {
     ]
 }
 
+/// How far the work for the second step of `n` repeats may differ from the first.
+///
+/// The count is deterministic, and for linear work the steps match: measured at `n` = 5,000,
+/// every shape's steps are equal except `many cells` and `tables restarting`, which differ
+/// by 67 units. The slack does not grow with the input, so super-linear work fails:
+///
+/// - `100 r ln r` units for `r` repeats gives steps of 4,951,744 and 5,213,368, which differ
+///   by 261,624. Even `r ln r` differs by 2,616.
+/// - `c r²` units gives steps that differ by `c` × 50,000,000.
+const SLOPE_SLACK: usize = 256;
+
 #[test]
 fn hostile_input_shapes_cost_linear_work_within_the_bound_and_stay_valid() {
     // Every size repeats each shape far past the depth cap (512) and the table cap (16), so
     // every cap is in force. Work, not time: the count does not depend on how loaded the
-    // machine is. Linear work grows by the same amount for each further `n` repeats, while a
-    // quadratic cost grows by more each time at any size, so the inputs can stay small enough
-    // for a debug build.
+    // machine is. Linear work grows by the same amount for each further `n` repeats, and
+    // super-linear work grows by more each time at any size, so the inputs can stay small
+    // enough for a debug build.
     let n = 5_000;
     let sizes = [
         hostile_shapes(n),
@@ -146,11 +157,41 @@ fn hostile_input_shapes_cost_linear_work_within_the_bound_and_stay_valid() {
             );
             stats.work
         });
-        let (first, second) = (two.saturating_sub(one), three.saturating_sub(two));
+        let (first, second) = (two - one, three - two);
         assert!(
-            second <= first + first / 8 + 4_096,
+            second.abs_diff(first) <= SLOPE_SLACK,
             "{name}: work {one}, {two}, {three} for 1, 2 and 3 times {n} repeats"
         );
+    }
+}
+
+#[test]
+fn text_past_the_stand_in_rollover_keeps_its_text_and_positions() {
+    // The scan hands each non-whitespace character to the tree builder as one of 65,534
+    // stand-ins and reuses them in turn. Four such characters a unit over 35,000 units make
+    // 140,000, which wraps the stand-ins twice. Each token must still map to its own source.
+    let unit = [("x", "x"), ("&", "&amp;"), ("y", "y"), ("A", "&#x41;")];
+    let units = 35_000;
+    let body = unit
+        .iter()
+        .map(|(_, src)| *src)
+        .collect::<String>()
+        .repeat(units);
+    let source = format!("<p>{body}</p>");
+    let (doc, _) = checked(&source, whole(&source));
+    assert_eq!(doc.blocks.len(), 1);
+    let projection = doc.blocks[0].projection.as_ref().unwrap();
+    let expected = unit
+        .iter()
+        .map(|(text, _)| *text)
+        .collect::<String>()
+        .repeat(units);
+    assert_eq!(projection.text(), expected);
+    let tokens = projection.tokens();
+    assert_eq!(tokens.len(), unit.len() * units);
+    for (i, (token, (text, src))) in tokens.iter().zip(unit.iter().cycle()).enumerate() {
+        let found = &source[token.src.start()..token.src.end()];
+        assert_eq!((token.text.as_str(), found), (*text, *src), "token {i}");
     }
 }
 
