@@ -92,7 +92,7 @@ pub fn is_unsafe(c: char) -> bool {
 }
 
 fn push_escape(out: &mut String, c: char) {
-    let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+    write!(out, "\\u{{{:x}}}", u32::from(c)).ok();
 }
 
 fn map(text: &str, mut each: impl FnMut(char, &mut String)) -> String {
@@ -122,7 +122,7 @@ fn guard_commands(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.split_inclusive('\n') {
         let rest = line.trim_start_matches(char::is_whitespace);
-        out.push_str(&line[..line.len() - rest.len()]);
+        out.push_str(line.strip_suffix(rest).unwrap_or_default());
         match rest.strip_prefix("::") {
             Some(tail) => {
                 out.push_str("\\u{3a}:");
@@ -387,7 +387,7 @@ mod tests {
         }
         let bad: Vec<String> = (0..0x11_0000_u32)
             .filter_map(char::from_u32)
-            .filter(|&c| is_unsafe(c) != want[c as usize])
+            .filter(|&c| is_unsafe(c) != want[usize::try_from(u32::from(c)).unwrap()])
             .map(|c| format!("{:#x}", u32::from(c)))
             .collect();
         assert!(bad.is_empty(), "{bad:?}");
