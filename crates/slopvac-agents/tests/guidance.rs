@@ -134,6 +134,15 @@ fn no_skill_flag_wins_over_enabled_guidance() {
 }
 
 #[test]
+fn no_skill_flag_needs_no_valid_config() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("slopvac.toml"), "mode = \"2.x\"\n").unwrap();
+    run_setup(dir.path(), &["--no-skill"]).unwrap();
+    assert!(dir.path().join("CLAUDE.md").exists());
+    assert!(!skill_installed(dir.path()));
+}
+
+#[test]
 fn list_and_remove_work_with_a_broken_config() {
     let dir = tempfile::tempdir().unwrap();
     run_setup(dir.path(), &[]).unwrap();
