@@ -305,8 +305,16 @@ fn plan_document(
         return;
     };
     let label = rel(root, path);
-    let (mut text, unknown) = rewrite_directives(&old, renames);
-    dropped.extend(unknown.into_iter().map(|u| Dropped {
+    let (mut text, found) = rewrite_directives(&old, renames);
+    plan.notes.extend(found.removed.iter().map(|r| {
+        format!(
+            "{}:{}: removed slopvac-allow rule={}: the rule no longer exists in 3.0",
+            label.display(),
+            r.line,
+            r.id
+        )
+    }));
+    dropped.extend(found.unknown.into_iter().map(|u| Dropped {
         file: label.display().to_string(),
         key: format!("slopvac-allow rule={}", u.id),
         line: u.line,

@@ -11,15 +11,34 @@ pub struct UnknownId {
     pub line: usize,
 }
 
+/// A directive for a rule that 3.0 removed. The rewrite deletes the directive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovedId {
+    /// The 2.x id as written.
+    pub id: String,
+    /// One-based line of the directive.
+    pub line: usize,
+}
+
+/// Ids found while rewriting directives.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Found {
+    /// Ids that the rename table does not know; those directives stay unchanged.
+    pub unknown: Vec<UnknownId>,
+    /// Ids of removed rules; those directives are deleted.
+    pub removed: Vec<RemovedId>,
+}
+
 /// Rewrite 2.x rule ids in `slopvac-allow` directives to 3.0 qualified ids.
 ///
 /// Directives inside fenced code or inline code spans are documentation and stay as
-/// they are. The second value lists ids that the rename table does not know; those
-/// directives are left unchanged.
+/// they are. The second value lists ids that the rename table does not know (those
+/// directives are left unchanged) and ids of removed rules (those directives are
+/// deleted).
 #[must_use]
-pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<UnknownId>) {
+pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) {
     let mut out = String::with_capacity(text.len());
-    let mut unknown = Vec::new();
+    let mut found = Found::default();
     let mut fence: Option<(char, usize)> = None;
     let mut paragraph = String::new();
     // One-based line of the first line in `paragraph`.
@@ -29,7 +48,7 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<Unk
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
+            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
             paragraph.clear();
             out.push_str(line);
         } else {
@@ -39,8 +58,8 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<Unk
             paragraph.push_str(line);
         }
     }
-    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
-    (out, unknown)
+    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+    (out, found)
 }
 
 fn is_indented_code(line: &str) -> bool {
@@ -131,7 +150,7 @@ fn rewrite_paragraph(
     text: &str,
     start_line: usize,
     renames: &RenameTable,
-    unknown: &mut Vec<UnknownId>,
+    found: &mut Found,
 ) -> String {
     if text.is_empty() {
         return String::new();
@@ -150,7 +169,16 @@ fn rewrite_paragraph(
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && comment.contains("slopvac-allow") {
             let line = start_line + text[..start].matches('\n').count();
-            out.push_str(&rewrite_comment(comment, line, renames, unknown));
+            if let Some(new) = rewrite_comment(comment, line, renames, found) {
+                out.push_str(&new);
+            } else {
+                // A deleted directive that filled its line takes the line with it.
+                let alone = out.is_empty() || out.ends_with('\n');
+                if alone && text[end..].starts_with('\n') {
+                    consumed = end + 1;
+                    continue;
+                }
+            }
         } else {
             out.push_str(comment);
         }
@@ -164,10 +192,10 @@ fn rewrite_comment(
     comment: &str,
     line: usize,
     renames: &RenameTable,
-    unknown: &mut Vec<UnknownId>,
-) -> String {
+    found: &mut Found,
+) -> Option<String> {
     let Some(pos) = comment.find("rule=") else {
-        return comment.to_owned();
+        return Some(comment.to_owned());
     };
     let id_start = pos + 5;
     let id_len = comment[id_start..]
@@ -176,21 +204,27 @@ fn rewrite_comment(
     let raw = &comment[id_start..id_start + id_len];
     let id = raw.strip_suffix("-->").unwrap_or(raw);
     if id.contains(':') {
-        return comment.to_owned();
+        return Some(comment.to_owned());
     }
-    if let Some(new) = renames.rule(id) {
-        format!(
+    if renames.is_removed(id) {
+        found.removed.push(RemovedId {
+            id: id.to_owned(),
+            line,
+        });
+        None
+    } else if let Some(new) = renames.rule(id) {
+        Some(format!(
             "{}{}{}",
             &comment[..id_start],
             new,
             &comment[id_start + id.len()..]
-        )
+        ))
     } else {
-        unknown.push(UnknownId {
+        found.unknown.push(UnknownId {
             id: id.to_owned(),
             line,
         });
-        comment.to_owned()
+        Some(comment.to_owned())
     }
 }
 
@@ -199,7 +233,37 @@ mod tests {
     use super::*;
 
     fn run(text: &str) -> (String, Vec<UnknownId>) {
-        rewrite_directives(text, &RenameTable::bundled())
+        let (out, found) = rewrite_directives(text, &RenameTable::bundled());
+        (out, found.unknown)
+    }
+
+    #[test]
+    fn a_directive_for_a_removed_rule_is_deleted_and_reported() {
+        let text = "Intro
+<!-- slopvac-allow: rule=ste-sentences.vertical-list-item-punctuation reason=x -->
+Body <!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=x --> end.
+";
+        let (out, found) = rewrite_directives(text, &RenameTable::bundled());
+        assert_eq!(
+            out,
+            "Intro
+Body  end.
+"
+        );
+        assert_eq!(
+            found.removed,
+            vec![
+                RemovedId {
+                    id: "ste-sentences.vertical-list-item-punctuation".to_owned(),
+                    line: 2
+                },
+                RemovedId {
+                    id: "ste-words.inconsistent-term-for-same-thing".to_owned(),
+                    line: 3
+                },
+            ]
+        );
+        assert_eq!(found.unknown, Vec::<UnknownId>::new());
     }
 
     #[test]

@@ -220,3 +220,36 @@ fn locale_comments_follow_their_values() {
     );
     assert!(out.contains("# skip these\nallow = [\"x\"]"), "{out}");
 }
+const REMOVED: [&str; 5] = [
+    "ste-practices.inconsistent-wording-for-same-step",
+    "ste-safety.safety-block-missing-consequence",
+    "ste-sentences.vertical-list-item-punctuation",
+    "ste-sentences.vertical-list-lead-in-missing-colon",
+    "ste-words.inconsistent-term-for-same-thing",
+];
+
+#[test]
+fn removed_rules_leave_the_top_level_and_overrides_with_a_note() {
+    for id in REMOVED {
+        let text = format!(
+            "[rules]\n\"{id}\" = \"error\"\n\"prose-format.no-unicode-dash\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{id}\" = \"off\"\n"
+        );
+        let r = migrate_config(
+            &text,
+            "slopvac.toml",
+            &RenameTable::bundled(),
+            Options::default(),
+        )
+        .unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        assert!(!r.text.contains(id), "{id}: {}", r.text);
+        assert!(
+            r.text
+                .contains("\"core:prose-format.no-unicode-dash\" = \"warning\""),
+            "{id}: {}",
+            r.text
+        );
+        let notes: Vec<_> = r.notes.iter().filter(|n| n.contains(id)).collect();
+        assert_eq!(notes.len(), 2, "{id}: {:?}", r.notes);
+        assert!(notes.iter().all(|n| n.contains("no longer exists in 3.0")));
+    }
+}
