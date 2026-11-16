@@ -377,7 +377,7 @@ impl Transport {
         Self::with_test_net(allow_loopback_http, timeouts, &TestNet::default())
     }
 
-    /// [`Transport::new`] with the test settings of `net`.
+    /// A transport with the test settings of `net`.
     pub(crate) fn with_test_net(
         allow_loopback_http: bool,
         timeouts: Timeouts,

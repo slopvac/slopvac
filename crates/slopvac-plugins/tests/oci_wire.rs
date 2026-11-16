@@ -215,6 +215,27 @@ fn a_download_followed_by_a_trailer_flood_is_refused() {
 }
 
 #[test]
+fn a_chunked_blob_with_a_short_trailer_still_downloads() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for mut conn in listener.incoming().flatten() {
+            if read_head(&mut &conn).is_none() {
+                continue;
+            }
+            let _ = conn.write_all(
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Sum: 1\r\n\r\n",
+            );
+        }
+    });
+    let desc = Descriptor::for_bytes("x", b"hello");
+    let r = Reference::parse(&format!("127.0.0.1:{port}/a/b:1")).unwrap();
+    let mut out = Vec::new();
+    client().pull_blob(&r, &desc, &mut out).unwrap();
+    assert_eq!(out, b"hello");
+}
+
+#[test]
 fn a_plain_download_still_works() {
     let reg = registry(|_, _| Route::ok(b"archive"));
     let url = format!("https://127.0.0.1:{}/archive", reg.port);
