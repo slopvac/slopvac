@@ -44,6 +44,7 @@ jobs:
       pull-requests: read # read the pull request's draft flag
     outputs:
       eligible: ${{ steps.check.outputs.eligible }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
     steps:
       - name: Find the pull request for the run
         id: check
@@ -57,22 +58,33 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
-          # The draft flag of each open pull request from the run's head branch whose
-          # head repository and commit are the ones the event names. Capture first so
-          # an API failure stops the job instead of reading as "no pull request".
-          drafts="$(gh api -X GET "repos/$REPO/pulls" --paginate \
+          # Number and draft flag of each open pull request from the run's head branch
+          # whose head repository and commit are the ones the event names. Capture
+          # first so an API failure stops the job instead of reading as "no pull
+          # request".
+          matches="$(gh api -X GET "repos/$REPO/pulls" --paginate \
             -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
-            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .draft')"
-          if [[ -z "$drafts" ]]; then
+            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO)
+              | [.number, .draft] | @tsv')"
+          eligible=false
+          number=""
+          if [[ -z "$matches" ]]; then
             echo "No open pull request at $HEAD_SHA; nothing to report."
-            eligible=false
-          elif false; then
-            echo "The pull request at $HEAD_SHA is a draft; nothing to report."
-            eligible=false
+          elif [[ "$matches" == *$'\n'* ]]; then
+            echo "::notice::More than one open pull request matches $HEAD_SHA; not reporting."
           else
-            eligible=true
+            IFS=$'\t' read -r number draft <<< "$matches"
+            if [[ ! "$number" =~ ^[1-9][0-9]{0,8}$ ]]; then
+              echo "::error::invalid PR number"; exit 1
+            elif [[ "$draft" != "false" ]]; then
+              echo "The pull request at $HEAD_SHA is a draft; nothing to report."
+              number=""
+            else
+              eligible=true
+            fi
           fi
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$number" >> "$GITHUB_OUTPUT"
 
   comment:
     needs: eligible
@@ -191,6 +203,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RESOLVED_PR: ${{ needs.eligible.outputs.pr_number }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -208,6 +221,9 @@ jobs:
             [[ "$other" == "$number" ]] || { echo "::error::artifacts disagree on the PR number"; exit 1; }
           done
           [[ "$number" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "::error::invalid PR number in artifact"; exit 1; }
+          # The eligible job resolved the pull request from the event and the API. The
+          # artifact's claim must be that same pull request.
+          [[ "$number" == "$RESOLVED_PR" ]] || { echo "::error::artifact PR number is not the resolved PR"; exit 1; }
           # The number is only a claim. Accept it when that PR is open here and its head
           # is the commit the triggering run tested.
           state="$(gh api "repos/$REPO/pulls/$number" --jq '[.state, .head.sha] | @tsv')"
@@ -230,6 +246,7 @@ jobs:
           # this commit id to the PR in CI_PULL_REQUEST (cienv.go GetBuildInfo, then
           # NewGitHubPullRequest in cmd/reviewdog/main.go at v0.21.3).
           CI_COMMIT: ${{ steps.pr.outputs.sha }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           CI_PULL_REQUEST: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
@@ -241,13 +258,16 @@ jobs:
           root="$PWD/findings"
           cd "$RUNNER_TEMP/rd"
           run_reviewdog() {
-            # Re-check the head right before posting. A push between this check and
-            # reviewdog's API call is a residual window of about a second: the comment
-            # then lands on a commit that is no longer the PR head, and GitHub marks
-            # it outdated. The PR number and the commit cannot be swapped, because
-            # both come from the checks above and not from the artifact.
-            head="$(gh api "repos/$REPO/pulls/$CI_PULL_REQUEST" --jq '.head.sha')"
-            [[ "$head" == "$CI_COMMIT" ]] || { echo "PR head moved to $head; skipping."; return 0; }
+            # Re-check the resolved pull request right before posting: still open, not a
+            # draft, same head commit and head repository. This narrows the window but
+            # cannot close it: a push or a draft conversion between this call and
+            # reviewdog's own API call (about a second) still lands the comment, which
+            # GitHub then marks outdated. The PR number and the commit cannot be
+            # swapped, because both come from the eligible job and not the artifact.
+            state="$(gh api "repos/$REPO/pulls/$CI_PULL_REQUEST" \
+              --jq '[.state, .draft, .head.sha, .head.repo.full_name] | @tsv')"
+            [[ "$state" == "open"$'\tfalse\t'"$CI_COMMIT"$'\t'"$HEAD_REPO" ]] \
+              || { echo "PR $CI_PULL_REQUEST changed since the check; skipping."; return 0; }
             env -u GITHUB_ACTIONS "$RUNNER_TEMP/bin/reviewdog" "$@" -reporter=github-pr-review \
               -filter-mode=added -fail-level=none
           }
@@ -291,43 +311,12 @@ jobs:
             "https://github.com/reviewdog/reviewdog/releases/download/v${REVIEWDOG_VERSION}/${name}"
           echo "${REVIEWDOG_SHA256}  $RUNNER_TEMP/$name" | sha256sum --check --strict -
           tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP/bin" reviewdog
-      - name: Find the pull request
-        id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
-          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          set -euo pipefail
-          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
-          # Open pull requests from the run's own head branch, kept when the head
-          # repository and commit are the ones the event names. Exactly one may match.
-          # Capture first so an API failure stops the job instead of reading as "no PR".
-          listing="$(gh api -X GET "repos/$REPO/pulls" --paginate \
-            -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
-            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .number')"
-          numbers=()
-          if [[ -n "$listing" ]]; then
-            mapfile -t numbers <<< "$listing"
-          fi
-          if (( ${#numbers[@]} == 0 )); then
-            echo "No open pull request at $HEAD_SHA; nothing to report."
-            echo "number=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          (( ${#numbers[@]} == 1 )) || { echo "::error::ambiguous pull request for $HEAD_SHA"; exit 1; }
-          [[ "${numbers[0]}" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "::error::invalid PR number"; exit 1; }
-          echo "number=${numbers[0]}" >> "$GITHUB_OUTPUT"
       - name: Fetch and validate the findings
-        if: ${{ steps.pr.outputs.number != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-          EXPECTED_PR: ${{ steps.pr.outputs.number }}
+          EXPECTED_PR: ${{ needs.eligible.outputs.pr_number }}
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
           MAX_ARCHIVE_BYTES: "1000000"
         run: |
@@ -357,16 +346,16 @@ jobs:
           # runs on the hosted image, so there is no dependency to pin or install.
           python3 scripts/fork_review.py extract "$RUNNER_TEMP/slopvac-findings.zip" "$RUNNER_TEMP/findings-v3"
       - name: Post review comments
-        if: ${{ steps.pr.outputs.number != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
           CI_REPO_OWNER: ${{ github.repository_owner }}
           CI_REPO_NAME: ${{ github.event.repository.name }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           # Event and API values, never the artifact's claims (see job comment).
           CI_COMMIT: ${{ github.event.workflow_run.head_sha }}
-          CI_PULL_REQUEST: ${{ steps.pr.outputs.number }}
+          CI_PULL_REQUEST: ${{ needs.eligible.outputs.pr_number }}
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/findings-v3/findings.rdjsonl"
@@ -376,7 +365,14 @@ jobs:
           fi
           git init -q "$RUNNER_TEMP/rd"
           cd "$RUNNER_TEMP/rd"
-          head="$(gh api "repos/$REPO/pulls/$CI_PULL_REQUEST" --jq '.head.sha')"
-          [[ "$head" == "$CI_COMMIT" ]] || { echo "PR head moved to $head; skipping."; exit 0; }
+          # Re-check the resolved pull request right before posting: still open, not a
+          # draft, same head commit and head repository. This narrows the window but
+          # cannot close it: a push or a draft conversion between this call and
+          # reviewdog's own API call (about a second) still lands the comment, which
+          # GitHub then marks outdated.
+          state="$(gh api "repos/$REPO/pulls/$CI_PULL_REQUEST" \
+            --jq '[.state, .draft, .head.sha, .head.repo.full_name] | @tsv')"
+          [[ "$state" == "open"$'\tfalse\t'"$CI_COMMIT"$'\t'"$HEAD_REPO" ]] \
+            || { echo "PR $CI_PULL_REQUEST changed since the check; skipping."; exit 0; }
           env -u GITHUB_ACTIONS "$RUNNER_TEMP/bin/reviewdog" -f=rdjsonl -name=slopvac \
             -reporter=github-pr-review -filter-mode=added -fail-level=none < "$report"

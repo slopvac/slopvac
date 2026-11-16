@@ -605,7 +605,8 @@ ELIGIBLE_STEP = REVIEWDOG["eligible"]["steps"][0]
 SHA = "a" * 40
 FAKE_GH = """#!/usr/bin/env bash
 # Stands in for `gh api`: records the call and applies its --jq filter to $FAKE_PULLS.
-printf '%s\\n' "$@" > "$FAKE_ARGS"
+printf '%s\\n' "$@" >> "$FAKE_ARGS"
+if [[ -n "${FAKE_FAIL:-}" ]]; then echo "gh: HTTP 502" >&2; exit 4; fi
 while (( $# )); do
   if [[ "$1" == --jq ]]; then jq -r "$2" <<< "$FAKE_PULLS"; exit; fi
   shift
@@ -614,15 +615,24 @@ exit 1
 """
 
 
-def pull(draft: bool, sha: str = SHA, repo: str = "srobroek/slopvac") -> dict:
+def pull(
+    draft: bool,
+    sha: str = SHA,
+    repo: str = "srobroek/slopvac",
+    number: int = 7,
+    state: str = "open",
+) -> dict:
     return {
-        "number": 7,
+        "number": number,
+        "state": state,
         "draft": draft,
         "head": {"sha": sha, "repo": {"full_name": repo}},
     }
 
 
-def run_eligibility(tmp_path: Path, pulls: list[dict], head_sha: str = SHA):
+def run_eligibility(
+    tmp_path: Path, pulls: list[dict], head_sha: str = SHA, fail: bool = False
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "gh").write_text(FAKE_GH)
@@ -634,6 +644,7 @@ def run_eligibility(tmp_path: Path, pulls: list[dict], head_sha: str = SHA):
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "FAKE_PULLS": json.dumps(pulls),
         "FAKE_ARGS": str(tmp_path / "args"),
+        "FAKE_FAIL": "1" if fail else "",
         "GITHUB_OUTPUT": str(output),
         "REPO": "srobroek/slopvac",
         "HEAD_SHA": head_sha,
@@ -651,24 +662,49 @@ def run_eligibility(tmp_path: Path, pulls: list[dict], head_sha: str = SHA):
     return proc, output.read_text()
 
 
+NO_PR = "eligible=false\npr_number=\n"
+
+
 @pytest.mark.parametrize(
-    ("pulls", "eligible"),
+    ("pulls", "output"),
     [
-        ([pull(draft=False)], "true"),
-        ([pull(draft=True)], "false"),
-        ([], "false"),
-        ([pull(draft=False, sha="b" * 40)], "false"),
-        ([pull(draft=False, repo="fork/slopvac")], "false"),
-        ([pull(draft=False), pull(draft=True)], "false"),
+        ([pull(draft=False, number=42)], "eligible=true\npr_number=42\n"),
+        ([pull(draft=True)], NO_PR),
+        ([], NO_PR),
+        ([pull(draft=False, sha="b" * 40)], NO_PR),
+        ([pull(draft=False, repo="fork/slopvac")], NO_PR),
+        ([pull(draft=False, number=1), pull(draft=False, number=2)], NO_PR),
+        ([pull(draft=False, number=1), pull(draft=True, number=2)], NO_PR),
     ],
-    ids=["ready", "draft", "none", "other-head", "other-repo", "one-draft"],
+    ids=[
+        "ready",
+        "draft",
+        "none",
+        "other-head",
+        "other-repo",
+        "two-ready",
+        "one-draft",
+    ],
 )
-def test_reviewdog_eligibility_requires_an_open_ready_pull_request(
-    tmp_path, pulls, eligible
+def test_reviewdog_eligibility_resolves_one_open_ready_pull_request(
+    tmp_path, pulls, output
 ):
-    proc, output = run_eligibility(tmp_path, pulls)
+    proc, written = run_eligibility(tmp_path, pulls)
     assert proc.returncode == 0, proc.stderr
-    assert output == f"eligible={eligible}\n"
+    assert written == output
+
+
+def test_reviewdog_eligibility_notices_an_ambiguous_match(tmp_path):
+    proc, _ = run_eligibility(
+        tmp_path, [pull(draft=False, number=1), pull(draft=False, number=2)]
+    )
+    assert "::notice::" in proc.stdout
+
+
+def test_reviewdog_eligibility_propagates_an_api_failure(tmp_path):
+    proc, written = run_eligibility(tmp_path, [pull(draft=False)], fail=True)
+    assert proc.returncode != 0
+    assert written == ""
 
 
 def test_reviewdog_eligibility_asks_for_open_pull_requests_from_the_head_branch(
@@ -723,3 +759,79 @@ def test_a_guard_comparing_draft_to_a_string_is_caught(operator):
     # 'true' to NaN), so such a guard would run the job. The root-job tests catch it.
     guard = f"github.event.pull_request.draft {operator} 'true'"
     assert condition(guard, ctx(DRAFT_PR)) is (operator == "!=")
+
+
+# --- the recheck right before posting ------------------------------------------
+
+FAKE_REVIEWDOG = """#!/usr/bin/env bash
+echo posted >> "$POST_LOG"
+"""
+
+
+def run_post(tmp_path: Path, job: str, current: dict, fail: bool = False):
+    """Run the job's real posting step against a fake gh and a fake reviewdog."""
+    step = next(
+        s for s in REVIEWDOG[job]["steps"] if s["name"] == "Post review comments"
+    )
+    bin_dir = tmp_path / "bin"
+    runner = tmp_path / "runner"
+    (runner / "bin").mkdir(parents=True)
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "gh").chmod(0o755)
+    (runner / "bin" / "reviewdog").write_text(FAKE_REVIEWDOG)
+    (runner / "bin" / "reviewdog").chmod(0o755)
+    (tmp_path / "findings" / "reviewdog-prose").mkdir(parents=True)
+    (tmp_path / "findings" / "reviewdog-prose" / "findings.sarif").write_text("{}")
+    (runner / "findings-v3").mkdir()
+    (runner / "findings-v3" / "findings.rdjsonl").write_text("{}\n")
+    (tmp_path / "posts").touch()
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_PULLS": json.dumps(current),
+        "FAKE_ARGS": str(tmp_path / "args"),
+        "FAKE_FAIL": "1" if fail else "",
+        "POST_LOG": str(tmp_path / "posts"),
+        "RUNNER_TEMP": str(runner),
+        "REPO": "srobroek/slopvac",
+        "CI_COMMIT": SHA,
+        "CI_PULL_REQUEST": "7",
+        "HEAD_REPO": "srobroek/slopvac",
+    }
+    proc = subprocess.run(
+        ["bash", "-c", step["run"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc, (tmp_path / "posts").read_text().count("posted")
+
+
+@pytest.mark.parametrize(
+    ("current", "posts"),
+    [
+        (pull(draft=False), 1),
+        (pull(draft=True), 0),
+        (pull(draft=False, sha="b" * 40), 0),
+        (pull(draft=False, state="closed"), 0),
+        (pull(draft=False, repo="fork/slopvac"), 0),
+    ],
+    ids=["unchanged", "now-draft", "sha-changed", "closed", "other-repo"],
+)
+@pytest.mark.parametrize("job", ["comment", "comment-v3"])
+def test_reviewdog_rechecks_the_pull_request_before_posting(
+    tmp_path, job, current, posts
+):
+    proc, count = run_post(tmp_path, job, current)
+    assert proc.returncode == 0, proc.stderr
+    assert count == posts
+
+
+@pytest.mark.parametrize("job", ["comment", "comment-v3"])
+def test_reviewdog_does_not_post_when_the_recheck_api_fails(tmp_path, job):
+    proc, count = run_post(tmp_path, job, pull(draft=False), fail=True)
+    assert proc.returncode != 0
+    assert count == 0
