@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -355,9 +355,9 @@ pub fn run(
 }
 
 /// A relative `path` with `/` between components on every platform, so output reads the
-/// same on Windows. An absolute path keeps its native form.
+/// same on Windows. A path with a root or a drive prefix (`C:foo`) keeps its native form.
 fn slash_path(path: &Path) -> String {
-    if path.has_root() {
+    if path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_))) {
         return path.display().to_string();
     }
     path.components()

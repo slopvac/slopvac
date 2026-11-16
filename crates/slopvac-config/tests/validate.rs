@@ -250,6 +250,20 @@ fn a_path_that_does_not_exist_makes_the_check_incomplete() {
     );
 }
 
+#[test]
+fn a_missing_nested_path_is_shown_with_forward_slashes() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    // Native separators, so on Windows the argument is `docs\\nope.md`.
+    let arg = std::path::Path::new("docs").join("nope.md");
+    let (code, out) = p.validate(&[arg.to_str().unwrap()]);
+    assert_eq!(code, 2);
+    assert!(
+        out.contains("error[config-io]: cannot read docs/nope.md: no such file"),
+        "{out}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_directory_that_cannot_be_read_makes_the_check_incomplete() {
