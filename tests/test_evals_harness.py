@@ -145,3 +145,44 @@ def test_ab_flags_a_recall_loss_and_ignores_identical_arms():
     report = ab.ab(MANIFEST, RESULTS, worse, resamples=50)
     assert report["rules"][R1]["recall"]["point"] == -0.5
     assert f"{R1}:recall" in ab.regressions(report)
+
+
+def _llm_card():
+    manifest = {
+        "documents": [
+            doc("h1", "human"),
+            doc("l1", "stated-llm"),
+            doc("t1", "model-twin", parents=["h1"]),
+        ]
+    }
+    results = {
+        "schema": 1,
+        "engine": {"name": "fake"},
+        "corpus": {"manifest_sha256": runner.manifest_digest(manifest)},
+        "documents": {
+            "h1": result(200, finding(R1, 4)),
+            "l1": result(100, finding(R1, 1), finding(R1, 2), finding(R1, 3)),
+            "t1": result(100, finding(R1, 7), finding(R2, 8)),
+        },
+    }
+    return scoring.score(manifest, results, resamples=10)
+
+
+def test_llm_rate_pools_stated_llm_and_model_twin_text():
+    # R1: 3 findings on the stated-LLM answer and 1 on the twin, in 200 words.
+    entry = _llm_card()["rules"][R1]
+    assert entry["llm_findings"] == 4
+    assert entry["llm_per_100_words"] == 2.0
+    assert entry["human_per_100_words"] == 0.5  # the human count is untouched
+
+
+def test_llm_rate_lists_a_rule_that_fires_only_on_llm_text():
+    entry = _llm_card()["rules"][R2]
+    assert (entry["llm_findings"], entry["llm_per_100_words"]) == (1, 0.5)
+    assert entry["human_findings"] == 0
+
+
+def test_llm_rate_is_undefined_without_llm_words():
+    card = scoring.score(MANIFEST, RESULTS, resamples=10)
+    assert card["rules"][R1]["llm_findings"] == 0
+    assert card["rules"][R1]["llm_per_100_words"] is None
