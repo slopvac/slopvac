@@ -753,7 +753,9 @@ fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
 
 /// 300 MiB of a repeating pattern, with the last byte set to `last`.
 fn huge(last: u8) -> Vec<u8> {
-    let mut data: Vec<u8> = (0..300usize << 20).map(|i| (i % 251) as u8).collect();
+    let mut data: Vec<u8> = (0..300usize << 20)
+        .map(|i| u8::try_from(i % 251).unwrap())
+        .collect();
     *data.last_mut().unwrap() = last;
     data
 }
@@ -771,7 +773,8 @@ fn a_deep_delta_chain_to_a_huge_object_is_stopped_by_the_memory_cap() {
     let remote = Remote::with_files(files, &[]);
     let env = Env::new();
     let c = client();
-    let lock = remote.lock(&expected_digest(files));
+    // The digest is never reached: the fetch must already have failed.
+    let lock = remote.lock(&format!("sha256:{}", "0".repeat(64)));
     let limits = Limits {
         expanded_bytes: 1 << 31,
         ..Limits::default()
