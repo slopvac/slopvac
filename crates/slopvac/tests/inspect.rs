@@ -723,3 +723,68 @@ fn every_diagnostic_after_the_first_keeps_its_code() {
         "the second diagnostic lost its code: {err}"
     );
 }
+
+/// A readable external base file and a project config that extends it, in sibling directories.
+fn external_base(base: &str, project_extra: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let outer = tempfile::Builder::new()
+        .prefix("SENTINEL-outer")
+        .tempdir()
+        .unwrap();
+    let shared = outer.path().join("shared dir");
+    let proj = outer.path().join("proj");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(shared.join("base.toml"), base).unwrap();
+    std::fs::write(
+        proj.join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [\"../shared dir/base.toml\"]\n{project_extra}"),
+    )
+    .unwrap();
+    let file = proj.join("slopvac.toml");
+    (outer, file)
+}
+
+fn refused_at(file: &std::path::Path) -> String {
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config"])
+        .arg(file)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn an_invalid_value_in_a_readable_external_base_hides_its_directories() {
+    let (outer, file) = external_base("schema_version = 3\nlocale = \"klingon\"\n", "");
+    let err = refused_at(&file);
+    assert!(err.starts_with("error[config-invalid-value]: "), "{err}");
+    assert!(err.contains(" --> <external>/base.toml:2:10"), "{err}");
+    for leaked in [
+        "SENTINEL",
+        "shared dir",
+        &outer.path().display().to_string(),
+    ] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}
+
+#[test]
+fn an_extends_cycle_through_an_external_file_hides_its_directories() {
+    let (outer, file) = external_base(
+        "schema_version = 3\nextends = [\"../proj/slopvac.toml\"]\n",
+        "",
+    );
+    let err = refused_at(&file);
+    assert!(err.starts_with("error[config-extends-cycle]: "), "{err}");
+    assert!(err.contains("<external>/base.toml"), "{err}");
+    for leaked in [
+        "SENTINEL",
+        "shared dir",
+        &outer.path().display().to_string(),
+    ] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}
