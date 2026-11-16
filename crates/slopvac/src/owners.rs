@@ -74,8 +74,30 @@ fn terms_error(err: &TermsError) -> CliError {
     CliError::new(code, message)
 }
 
+/// Name an owner's error from its fields, with every path shown through `shown_path`.
 fn agents_error(err: &AgentsError) -> CliError {
-    CliError::new(err.code(), redact::redact_root(&err.to_string(), &cwd()))
+    let cwd = cwd();
+    let path = |p: &Path| redact::shown_path(p, &cwd);
+    let message = match err {
+        AgentsError::UnsafeTarget(target) => {
+            format!("unsafe steering target: {}", path(Path::new(target)))
+        }
+        AgentsError::MalformedMarkers(p) => format!(
+            "malformed or ambiguous slopvac markers in {}; repair the begin/end pair first",
+            path(p)
+        ),
+        AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
+        AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
+        AgentsError::NotManaged(p) => format!(
+            "{} is not a slopvac-managed file; move it aside to install it",
+            path(p)
+        ),
+        AgentsError::Io { path: p, source } => format!("{}: {source}", path(p)),
+        AgentsError::Usage(m)
+        | AgentsError::Coded { message: m, .. }
+        | AgentsError::Config { message: m, .. } => m.clone(),
+    };
+    CliError::new(err.code(), message)
 }
 
 /// `slopvac terms`.
@@ -87,7 +109,15 @@ pub fn terms(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac genre`.
 pub fn genre(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = slopvac_context::run(m).map_err(|e| CliError::new("genre-failed", e.to_string()))?;
+    let text = slopvac_context::run(m).map_err(|e| {
+        // The owner words a read failure as `<path as typed>: <reason>`. Replace each file
+        // argument, exactly as typed, with its shown form.
+        let mut message = e.to_string();
+        for file in m.get_many::<String>("files").into_iter().flatten() {
+            message = message.replace(file.as_str(), &shown(file));
+        }
+        CliError::new("genre-failed", message)
+    })?;
     write(out, &text)?;
     Ok(exit::PASS)
 }

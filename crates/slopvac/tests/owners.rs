@@ -43,22 +43,6 @@ fn every_wired_command_has_help() {
 }
 
 #[test]
-fn wired_commands_are_not_placeholders_any_more() {
-    let dir = tempfile::tempdir().unwrap();
-    for args in [
-        &["terms", "list"][..],
-        &["validate"][..],
-        &["setup", "--list"][..],
-        &["prime"][..],
-    ] {
-        slopvac(dir.path())
-            .args(args)
-            .assert()
-            .stderr(predicate::str::contains("command-not-wired").not());
-    }
-}
-
-#[test]
 fn terms_lists_the_built_in_terms() {
     let dir = tempfile::tempdir().unwrap();
     slopvac(dir.path())
@@ -244,4 +228,97 @@ fn prime_refuses_an_unknown_topic_as_a_usage_error() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[usage]: "));
+}
+
+/// A directory whose absolute path holds a space and a sentinel.
+fn external() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("SENTINEL ext")
+        .tempdir()
+        .unwrap()
+}
+
+fn assert_clean(text: &str, outside: &tempfile::TempDir) {
+    for leaked in ["SENTINEL", &outside.path().display().to_string()] {
+        assert!(!text.contains(leaked), "{leaked} leaked: {text}");
+    }
+}
+
+#[test]
+fn setup_error_under_an_external_root_names_the_file_without_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    // A lone begin marker makes the steering file malformed.
+    fs::write(outside.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root"])
+        .arg(outside.path())
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[steering-malformed]: malformed or ambiguous slopvac markers in <external>/AGENTS.md;"),
+        "{err}"
+    );
+    assert_clean(&err, &outside);
+}
+
+#[test]
+fn genre_error_for_an_unreadable_external_file_hides_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    let missing = outside.path().join("gone.md");
+    let out = slopvac(work.path())
+        .arg("genre")
+        .arg(&missing)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[genre-failed]: <external>/gone.md: "),
+        "{err}"
+    );
+    assert_clean(&err, &outside);
+}
+
+#[test]
+fn validate_names_a_missing_external_document_without_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    fs::write(work.path().join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    let outside = external();
+    let out = slopvac(work.path())
+        .arg("validate")
+        .arg(outside.path().join("gone.md"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        text.contains("error[config-io]: cannot read <external>/gone.md: no such file"),
+        "{text}"
+    );
+    assert_clean(&text, &outside);
+}
+
+#[test]
+fn validate_names_an_external_directory_entry_without_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    fs::write(work.path().join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    let outside = external();
+    fs::write(
+        outside.path().join("doc.md"),
+        "---\nslopvac:\n  locale: klingon\n---\n\nText.\n",
+    )
+    .unwrap();
+    let out = slopvac(work.path())
+        .arg("validate")
+        .arg(outside.path())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(text.contains(" --> <external>/doc.md:3:3"), "{text}");
+    assert_clean(&text, &outside);
 }

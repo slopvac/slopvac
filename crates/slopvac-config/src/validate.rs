@@ -153,7 +153,7 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
         } else {
             cwd.join(p)
         };
-        let shown = slash_path(p.strip_prefix(cwd).unwrap_or(&p));
+        let shown = shown_path(&p, cwd);
         if p.is_dir() {
             let mut found = Vec::new();
             for entry in WalkBuilder::new(&p)
@@ -212,7 +212,7 @@ fn has_document_extension(path: &Path) -> bool {
 }
 
 fn check_document(file: &Path, cwd: &Path, config: Option<&LoadedConfig>, report: &mut Report) {
-    let shown = slash_path(file.strip_prefix(cwd).unwrap_or(file));
+    let shown = shown_path(file, cwd);
     if let Some(c) = config
         && let Ok(canon) = fs::canonicalize(file)
         && let Ok(rel) = canon.strip_prefix(&c.root)
@@ -352,6 +352,22 @@ pub fn run(
         )?;
     }
     Ok(report.exit_code())
+}
+
+/// How a document is named in the report: relative to `cwd` when it sits under it, else
+/// `<external>/<file name>`, so no run prints the directories above or beside the project
+/// (policies.md, 1.7).
+fn shown_path(path: &Path, cwd: &Path) -> String {
+    match path.strip_prefix(cwd) {
+        Ok(rel) => slash_path(rel),
+        Err(_) if path.is_absolute() => {
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            format!("<external>/{name}")
+        }
+        Err(_) => slash_path(path),
+    }
 }
 
 /// A relative `path` with `/` between components on every platform, so output reads the
