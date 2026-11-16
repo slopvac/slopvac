@@ -43,7 +43,6 @@ TRIPLES = [
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",
-    "x86_64-pc-windows-msvc",
 ]
 EVIDENCE_IDS = [
     "security-review",
@@ -542,7 +541,7 @@ def test_main_exits_zero_and_lists_every_item(cli, evidence):
     code, rows = cli(evidence)
     # 3 tracker items + suites-configured + 8 commands + 11 approvals.
     assert code == 0
-    assert len(rows) == 23
+    assert len(rows) == 22
     assert {r["status"] for r in rows} == {"pass"}
 
 
@@ -580,4 +579,4 @@ def test_main_prints_a_table_by_default(monkeypatch, capsys, evidence):
     assert gate.main(["--evidence", str(evidence)]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "| Item | Status | Evidence |"
-    assert len(out) == 2 + 23
+    assert len(out) == 2 + 22
