@@ -135,6 +135,9 @@ pub enum EngineError {
     /// prose it was given.
     #[error("diagram checker returned a bad range: {0}")]
     BadRange(String),
+    /// A terms file could not be read or is not valid.
+    #[error("terms file: {0}")]
+    Terms(String),
     /// A value the engine built broke a model invariant. This is a bug.
     #[error("internal error: {0}")]
     Internal(String),
@@ -327,6 +330,36 @@ impl Engine {
     pub fn with_terms(mut self, terms: TermSet) -> Self {
         self.terms = terms;
         self
+    }
+
+    /// Set the terms from project terms files, then the built-in list. A spelling in an
+    /// earlier file wins over a later file and over the built-in list. The paths are the
+    /// resolved `terms.files` of the configuration and the `terms` of the active styles.
+    ///
+    /// # Errors
+    /// A file cannot be read or is not a valid terms file.
+    pub fn with_term_files<P: AsRef<std::path::Path>>(
+        mut self,
+        files: &[P],
+    ) -> Result<Self, EngineError> {
+        let mut entries = Vec::new();
+        for path in files {
+            entries.extend(
+                slopvac_terms::TermsFile::load(path.as_ref())
+                    .map_err(|e| EngineError::Terms(e.to_string()))?
+                    .terms,
+            );
+        }
+        entries.extend(slopvac_terms::TermsFile::builtin().terms);
+        self.terms = TermSet::new(entries);
+        Ok(self)
+    }
+
+    /// Whether `id` is a term-casing rule.
+    pub(crate) fn is_term_casing(&self, id: &RuleId) -> bool {
+        self.casing_rules
+            .iter()
+            .any(|a| self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id)
     }
 
     /// Replace the exception detectors.

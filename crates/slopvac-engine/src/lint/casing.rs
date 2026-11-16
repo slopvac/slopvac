@@ -7,11 +7,12 @@
 
 use slopvac_model::{Edit, Finding, Fix};
 use slopvac_rules::Scope;
+use slopvac_text::TextType;
 
 use super::{Candidate, Run};
 use crate::lint::EngineError;
-use crate::matching::format_message;
-use crate::skip;
+use crate::matching::{allowlisted, format_message};
+use crate::skip::{self, SkipRanges};
 
 impl Run<'_> {
     /// Findings of the term-casing rules.
@@ -29,20 +30,35 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
-            let skip = skip::build(
-                self.parsed,
-                rule.exclude_blocks.as_deref().unwrap_or(&[]),
-                self.front_matter,
-                true,
-            );
+            // As for lexical rules: raw text has no inline code to skip, and a rule that names
+            // no excluded blocks still skips inline code in prose.
+            let skip = match (&rule.exclude_blocks, rule.scope) {
+                (Some(kinds), scope) => {
+                    skip::build(self.parsed, kinds, self.front_matter, scope != Scope::Raw)
+                }
+                (None, Scope::Raw) => SkipRanges::default(),
+                (None, _) => skip::build(self.parsed, &[], None, true),
+            };
             let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
             let detectors: Vec<&str> = rule
                 .exceptions()
                 .iter()
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
-            for unit in self.prepared.units(Scope::Prose)? {
+            for unit in self.prepared.units(rule.scope)? {
                 for hit in engine.terms.check_casing(unit.text, &[]) {
+                    if rule.text_type != TextType::Any {
+                        let at = unit.base() + hit.span.start;
+                        let typed = unit
+                            .sentences
+                            .and_then(|s| s.iter().find(|s| s.start <= at && at < s.end));
+                        if typed.is_none_or(|s| s.text_type != rule.text_type) {
+                            continue;
+                        }
+                    }
+                    if allowlisted(loaded, unit.text, &hit.span) {
+                        continue;
+                    }
                     let span = unit.span(&hit.span);
                     if skip.hides(span)
                         || allowed.iter().any(|w| w.eq_ignore_ascii_case(&hit.found))
