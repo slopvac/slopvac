@@ -6,8 +6,10 @@ name: CI
 on:
   # Draft pull requests do no work: the root jobs below skip, and the gate fails
   # so no required check turns green. Marking the PR ready starts the real run.
+  # Converting a PR to a draft starts a draft run, which cancels the ready run in
+  # the same concurrency group.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
   # The merge queue builds each entry on gh-readonly-queue/main/pr-N-<sha>. The

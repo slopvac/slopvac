@@ -5,7 +5,7 @@ name: Action 3.0 contract
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "action-v3/**"
       - "scripts/action_v3.py"

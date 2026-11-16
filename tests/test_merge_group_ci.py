@@ -8,6 +8,7 @@ A queue entry runs on ``refs/heads/gh-readonly-queue/main/pr-N-<sha>`` with a
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -25,66 +26,185 @@ def load(name: str) -> dict:
     return yaml.load((WORKFLOWS / name).read_text(), Loader=yaml.BaseLoader)
 
 
-def evaluate(template: str, context: dict) -> str:
-    """Evaluate a `${{ }}` template over the `||`, `&&`, `==`, `!=` and property subset.
+# --- a typed subset of the Actions expression language -------------------------
+#
+# Semantics follow docs.github.com/en/actions/reference/workflows-and-actions/
+# expressions: values keep their types (null, boolean, number, string, object).
+# `==` and `!=` compare strings case-insensitively; operands of different types are
+# both coerced to numbers (null 0, false 0, true 1, a string is parsed as a number,
+# '' is 0, anything else is NaN, which equals nothing). `a || b` and `a && b`
+# return an operand, not a boolean. A missing property is null. Interpolation
+# writes null as '', booleans as 'true'/'false'.
 
-    Missing properties are empty strings, booleans and the `true`/`false` literals
-    are "true"/"false", and `a || b` yields the first truthy operand.
-    """
+_TOKEN = re.compile(
+    r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<num>-?\d+(?:\.\d+)?)"
+    r"|(?P<op>\|\||&&|==|!=|!|\(|\))|(?P<name>[A-Za-z_][\w.-]*))"
+)
+
+
+def _tokens(text: str) -> list[tuple[str, str]]:
+    out, pos, text = [], 0, text.strip()
+    while pos < len(text):
+        m = _TOKEN.match(text, pos)
+        assert m and m.end() > pos, f"unsupported expression at {text[pos:]!r}"
+        out.append((m.lastgroup, m.group(m.lastgroup)))
+        pos = m.end()
+    return out
+
+
+class _Parser:
+    def __init__(self, text: str, context: dict):
+        self.tokens, self.i, self.context = _tokens(text), 0, context
+
+    def peek(self) -> str | None:
+        return self.tokens[self.i][1] if self.i < len(self.tokens) else None
+
+    def take(self) -> tuple[str, str]:
+        self.i += 1
+        return self.tokens[self.i - 1]
+
+    def parse(self):
+        value = self.or_()
+        assert self.i == len(self.tokens), f"trailing tokens {self.tokens[self.i :]}"
+        return value
+
+    def or_(self):
+        value = self.and_()
+        while self.peek() == "||":
+            self.take()
+            right = self.and_()
+            value = value if truthy(value) else right
+        return value
+
+    def and_(self):
+        value = self.compare()
+        while self.peek() == "&&":
+            self.take()
+            right = self.compare()
+            value = right if truthy(value) else value
+        return value
+
+    def compare(self):
+        value = self.unary()
+        if self.peek() in ("==", "!="):
+            op = self.take()[1]
+            equal = loose_equal(value, self.unary())
+            value = equal if op == "==" else not equal
+        return value
+
+    def unary(self):
+        if self.peek() == "!":
+            self.take()
+            return not truthy(self.unary())
+        return self.primary()
+
+    def primary(self):
+        kind, text = self.take()
+        if text == "(":
+            value = self.or_()
+            assert self.take()[1] == ")"
+            return value
+        if kind == "str":
+            return text[1:-1].replace("''", "'")
+        if kind == "num":
+            return float(text) if "." in text else int(text)
+        assert kind == "name", text
+        if text in ("true", "false", "null"):
+            return {"true": True, "false": False, "null": None}[text]
+        value = self.context
+        for key in text.split("."):
+            value = value.get(key) if isinstance(value, dict) else None
+        return value
+
+
+def _number(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        if value.strip() == "":
+            return 0.0
+        if re.fullmatch(r"\s*-?\d+(\.\d+)?([eE][-+]?\d+)?\s*", value):
+            return float(value)
+    return math.nan
+
+
+def loose_equal(left, right) -> bool:
+    if type(left) is type(right) or (
+        isinstance(left, (int, float))
+        and isinstance(right, (int, float))
+        and not isinstance(left, bool)
+        and not isinstance(right, bool)
+    ):
+        if isinstance(left, str):
+            return left.casefold() == right.casefold()
+        if isinstance(left, (dict, list)):
+            return left is right
+        return left == right
+    return _number(left) == _number(right)
+
+
+def truthy(value) -> bool:
+    if isinstance(value, float) and math.isnan(value):
+        return False
+    return value not in (None, False, 0, "")
+
+
+def value_of(expression: str, context: dict):
+    """The typed value of one expression, with or without its `${{ }}` wrapper."""
+    text = " ".join(expression.split())
+    if m := re.fullmatch(r"\$\{\{(.*)\}\}", text):
+        text = m.group(1)
+    return _Parser(text, context).parse()
+
+
+def condition(expression: str, context: dict) -> bool:
+    """Whether an `if:` with this expression runs."""
+    return truthy(value_of(expression, context))
+
+
+def _interpolate(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def evaluate(template: str, context: dict) -> str:
+    """Interpolate every `${{ }}` in a template, as Actions writes it to a string."""
     assert "${{" in template, template
     return re.sub(
         r"\$\{\{(.*?)\}\}",
-        lambda m: _expression(m.group(1), context),
+        lambda m: _interpolate(_Parser(m.group(1), context).parse()),
         template,
         flags=re.DOTALL,
     )
 
 
-def _expression(text: str, context: dict) -> str:
-    expr = " ".join(text.split())
-    while inner := re.search(r"\(([^()]*)\)", expr):
-        value = _or(inner.group(1), context)
-        expr = expr[: inner.start()] + f"'{value}'" + expr[inner.end() :]
-    return _or(expr, context)
-
-
-def _or(expr: str, context: dict) -> str:
-    result = ""
-    for part in expr.split(" || "):
-        result = _and(part, context)
-        if result:
-            return result
-    return result
-
-
-def _and(expr: str, context: dict) -> str:
-    result = ""
-    for part in expr.split(" && "):
-        result = _compare(part.strip(), context)
-        if not result:
-            return result
-    return result
-
-
-def _compare(expr: str, context: dict) -> str:
-    for op in ("==", "!="):
-        if f" {op} " in expr:
-            left, right = (_operand(x.strip(), context) for x in expr.split(f" {op} "))
-            return "true" if (left == right) == (op == "==") else ""
-    return _operand(expr, context)
-
-
-def _operand(token: str, context: dict) -> str:
-    if token.startswith("'"):
-        return token.strip("'")
-    if token in ("true", "false"):
-        return token
-    value = context
-    for key in token.split("."):
-        value = value.get(key, "") if isinstance(value, dict) else ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
+@pytest.mark.parametrize(
+    ("expression", "context", "expected"),
+    [
+        ("x == 'true'", {"x": True}, False),
+        ("x != 'true'", {"x": True}, True),
+        ("x == true", {"x": True}, True),
+        ("x != true", {}, True),
+        ("x == false", {}, True),
+        ("x == 'TRUE'", {"x": "true"}, True),
+        ("x == 0", {"x": ""}, True),
+        ("x == 'abc'", {"x": 0}, False),
+        ("x || 'b'", {"x": ""}, "b"),
+        ("x && 'b'", {"x": 0}, 0),
+        ("!(x == 'a') && y", {"x": "b", "y": "c"}, "c"),
+    ],
+)
+def test_evaluator_models_actions_types_and_coercion(expression, context, expected):
+    assert value_of(expression, context) == expected
 
 
 PULL_REQUEST = {
@@ -262,15 +382,12 @@ def test_agnix_diff_base_uses_the_merge_group_base():
 def test_secret_scan_of_a_queue_entry_is_bounded_by_the_group_range():
     steps = load("security.yml")["jobs"]["trufflehog"]["steps"]
     queue = next(s for s in steps if s["name"] == "Scan merge queue entry")
-    assert evaluate("${{ " + queue["if"] + " }}", ctx(MERGE_GROUP)) == "true"
-    assert evaluate("${{ " + queue["if"] + " }}", ctx(PULL_REQUEST)) == ""
+    assert condition(queue["if"], ctx(MERGE_GROUP))
+    assert not condition(queue["if"], ctx(PULL_REQUEST))
     assert evaluate(queue["with"]["base"], ctx(MERGE_GROUP)) == "b" * 40
     assert evaluate(queue["with"]["head"], ctx(MERGE_GROUP)) == "c" * 40
     pushed = next(s for s in steps if s["name"] == "Scan pushed commits")
-    assert (
-        evaluate("${{ " + " ".join(pushed["if"].split()) + " }}", ctx(MERGE_GROUP))
-        == ""
-    )
+    assert not condition(pushed["if"], ctx(MERGE_GROUP))
 
 
 # --- dependency review -------------------------------------------------------
@@ -303,8 +420,9 @@ def test_dependency_review_refs_stay_unset_on_pull_request():
     ],
 )
 def test_dependency_review_job_condition(context, dependencies, runs):
-    full = {**ctx(context), "inputs": {"dependencies": "true" if dependencies else ""}}
-    assert bool(evaluate(REVIEW_JOB["if"], full)) is runs
+    # A boolean workflow_call input arrives as a boolean, not a string.
+    full = {**ctx(context), "inputs": {"dependencies": dependencies}}
+    assert condition(REVIEW_JOB["if"], full) is runs
 
 
 # --- security-gate script ----------------------------------------------------
@@ -361,6 +479,14 @@ def test_security_gate_expects_dependency_review_skipped_on_push():
 
 DRAFT_PR = {**PULL_REQUEST, "event": {"pull_request": {"number": 7, "draft": True}}}
 READY_PR = {**PULL_REQUEST, "event": {"pull_request": {"number": 7, "draft": False}}}
+# A ready PR converted back to a draft.
+CONVERTED = {
+    **PULL_REQUEST,
+    "event": {
+        "action": "converted_to_draft",
+        "pull_request": {"number": 7, "draft": True},
+    },
+}
 MAIN_PUSH = {"event_name": "push", "ref": "refs/heads/main"}
 TAG_PUSH = {"event_name": "push", "ref": "refs/tags/v3.0.0"}
 NOT_DRAFT = [READY_PR, MERGE_GROUP, MAIN_PUSH, TAG_PUSH]
@@ -379,9 +505,8 @@ def pull_request_workflows() -> dict[str, dict]:
     return found
 
 
-def runs(condition: str, context: dict) -> bool:
-    template = condition if "${{" in condition else "${{ " + condition + " }}"
-    return evaluate(template, ctx(context)) == "true"
+def runs(expression: str, context: dict) -> bool:
+    return condition(expression, ctx(context))
 
 
 def test_every_pull_request_workflow_runs_when_a_draft_is_marked_ready():
@@ -398,6 +523,7 @@ def test_every_pull_request_workflow_runs_when_a_draft_is_marked_ready():
             "synchronize",
             "reopened",
             "ready_for_review",
+            "converted_to_draft",
         ], name
 
 
@@ -420,9 +546,10 @@ def test_every_job_that_needs_nothing_is_listed_as_a_root():
     assert roots == ROOT_JOBS
 
 
+@pytest.mark.parametrize("context", [DRAFT_PR, CONVERTED], ids=["draft", "converted"])
 @pytest.mark.parametrize(("workflow", "job"), ROOT_JOBS)
-def test_root_jobs_skip_a_draft(workflow, job):
-    assert not runs(load(workflow)["jobs"][job]["if"], DRAFT_PR)
+def test_root_jobs_skip_a_draft(workflow, job, context):
+    assert not runs(load(workflow)["jobs"][job]["if"], context)
 
 
 @pytest.mark.parametrize("context", NOT_DRAFT, ids=NOT_DRAFT_IDS)
@@ -440,4 +567,159 @@ def test_the_gate_sees_a_draft():
 
 @pytest.mark.parametrize("context", NOT_DRAFT, ids=NOT_DRAFT_IDS)
 def test_the_gate_sees_no_draft_otherwise(context):
-    assert evaluate(GATE_DRAFT, ctx(context)) != "true"
+    assert evaluate(GATE_DRAFT, ctx(context)) == "false"
+
+
+def literal_or_evaluated(value: str, context: dict) -> str:
+    return evaluate(value, context) if "${{" in value else value
+
+
+_CI_GATE_RUN = load("test.yml")["jobs"]["gate"]["steps"][0]["run"]
+CI_GATE_SCRIPT = re.search(r"python3 - <<'PY'\n(.*?)\nPY\n", _CI_GATE_RUN, re.DOTALL)[1]
+
+
+def test_converting_to_draft_replaces_the_ready_run_with_a_failing_one():
+    concurrency = load("test.yml")["concurrency"]
+    assert evaluate(concurrency["group"], ctx(CONVERTED)) == evaluate(
+        concurrency["group"], ctx(READY_PR)
+    )
+    assert literal_or_evaluated(concurrency["cancel-in-progress"], ctx(CONVERTED)) == (
+        "true"
+    )
+    draft = evaluate(GATE_DRAFT, ctx(CONVERTED))
+    gate = subprocess.run(
+        [sys.executable, "-c", CI_GATE_SCRIPT],
+        env={**os.environ, "DRAFT": draft, "RESULTS": "{}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert gate.returncode == 1
+    assert "draft pull request" in gate.stdout
+
+
+# --- reviewdog posts only for open, ready pull requests -----------------------
+
+REVIEWDOG = load("reviewdog.yml")["jobs"]
+ELIGIBLE_STEP = REVIEWDOG["eligible"]["steps"][0]
+SHA = "a" * 40
+FAKE_GH = """#!/usr/bin/env bash
+# Stands in for `gh api`: records the call and applies its --jq filter to $FAKE_PULLS.
+printf '%s\\n' "$@" > "$FAKE_ARGS"
+while (( $# )); do
+  if [[ "$1" == --jq ]]; then jq -r "$2" <<< "$FAKE_PULLS"; exit; fi
+  shift
+done
+exit 1
+"""
+
+
+def pull(draft: bool, sha: str = SHA, repo: str = "srobroek/slopvac") -> dict:
+    return {
+        "number": 7,
+        "draft": draft,
+        "head": {"sha": sha, "repo": {"full_name": repo}},
+    }
+
+
+def run_eligibility(tmp_path: Path, pulls: list[dict], head_sha: str = SHA):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "gh").chmod(0o755)
+    output = tmp_path / "output"
+    output.touch()
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_PULLS": json.dumps(pulls),
+        "FAKE_ARGS": str(tmp_path / "args"),
+        "GITHUB_OUTPUT": str(output),
+        "REPO": "srobroek/slopvac",
+        "HEAD_SHA": head_sha,
+        "HEAD_OWNER": "srobroek",
+        "HEAD_REPO": "srobroek/slopvac",
+        "HEAD_BRANCH": "feature",
+    }
+    proc = subprocess.run(
+        ["bash", "-c", ELIGIBLE_STEP["run"]],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc, output.read_text()
+
+
+@pytest.mark.parametrize(
+    ("pulls", "eligible"),
+    [
+        ([pull(draft=False)], "true"),
+        ([pull(draft=True)], "false"),
+        ([], "false"),
+        ([pull(draft=False, sha="b" * 40)], "false"),
+        ([pull(draft=False, repo="fork/slopvac")], "false"),
+        ([pull(draft=False), pull(draft=True)], "false"),
+    ],
+    ids=["ready", "draft", "none", "other-head", "other-repo", "one-draft"],
+)
+def test_reviewdog_eligibility_requires_an_open_ready_pull_request(
+    tmp_path, pulls, eligible
+):
+    proc, output = run_eligibility(tmp_path, pulls)
+    assert proc.returncode == 0, proc.stderr
+    assert output == f"eligible={eligible}\n"
+
+
+def test_reviewdog_eligibility_asks_for_open_pull_requests_from_the_head_branch(
+    tmp_path,
+):
+    run_eligibility(tmp_path, [pull(draft=False)])
+    args = (tmp_path / "args").read_text().splitlines()
+    assert args[:3] == ["api", "-X", "GET"]
+    assert "state=open" in args
+    assert "head=srobroek:feature" in args
+
+
+def test_reviewdog_eligibility_rejects_a_malformed_head_sha(tmp_path):
+    proc, output = run_eligibility(tmp_path, [pull(draft=False)], head_sha="main")
+    assert proc.returncode == 1
+    assert output == ""
+
+
+@pytest.mark.parametrize("job", ["comment", "comment-v3"])
+def test_reviewdog_comment_jobs_wait_for_eligibility(job):
+    assert REVIEWDOG[job]["needs"] == "eligible"
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure"])
+@pytest.mark.parametrize(
+    ("eligible", "runs"), [("true", True), ("false", False), ("", False)]
+)
+@pytest.mark.parametrize("job", ["comment", "comment-v3"])
+def test_reviewdog_comment_jobs_run_only_when_eligible(job, eligible, runs, conclusion):
+    context = {
+        "github": {
+            "event": {
+                "workflow_run": {"event": "pull_request", "conclusion": conclusion}
+            }
+        },
+        "needs": {"eligible": {"outputs": {"eligible": eligible}}},
+    }
+    assert condition(REVIEWDOG[job]["if"], context) is runs
+
+
+@pytest.mark.parametrize(
+    ("event", "runs"), [("pull_request", True), ("push", False), ("merge_group", False)]
+)
+def test_reviewdog_eligibility_runs_for_pull_request_ci_only(event, runs):
+    context = {"github": {"event": {"workflow_run": {"event": event}}}}
+    assert condition(REVIEWDOG["eligible"]["if"], context) is runs
+
+
+@pytest.mark.parametrize("operator", ["!=", "=="])
+def test_a_guard_comparing_draft_to_a_string_is_caught(operator):
+    # draft is a boolean: `draft != 'true'` is true for a draft (true is coerced to 1,
+    # 'true' to NaN), so such a guard would run the job. The root-job tests catch it.
+    guard = f"github.event.pull_request.draft {operator} 'true'"
+    assert condition(guard, ctx(DRAFT_PR)) is (operator == "!=")

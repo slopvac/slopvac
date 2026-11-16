@@ -34,13 +34,12 @@ WORKFLOW = Path(".github/workflows/release.yml")
 
 _TRIGGER = ("      - '**[0-9]+.[0-9]+.[0-9]+*'\n", "      - 'v[0-9]+.[0-9]+.[0-9]+'\n")
 
-# Marking a draft ready must start a run; the route job skips drafts.
+# Marking a draft ready must start a run, and so must converting a PR back to a
+# draft, so the draft run replaces a ready run in flight. The route job skips drafts.
+_PR_TYPES = "[opened, synchronize, reopened, ready_for_review, converted_to_draft]"
 _PR_TRIGGER = (
     "on:\n  pull_request:\n  push:\n",
-    (
-        "on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n"
-        "  push:\n"
-    ),
+    f"on:\n  pull_request:\n    types: {_PR_TYPES}\n  push:\n",
 )
 
 _VALIDATE = """\

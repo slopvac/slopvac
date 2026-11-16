@@ -31,9 +31,53 @@ env:
   REVIEWDOG_SHA256: "7029c2faf54e1237454cae8f1adf876c965b3d13d054f1a392206459091af4a1"
 
 jobs:
+  # CI on a draft pull request runs no suite and uploads nothing, and the
+  # workflow_run payload carries no draft flag. Look the pull request up once
+  # here, so the comment jobs start only for an open pull request that is ready.
+  # A failed run still qualifies: its findings are the ones worth posting.
+  eligible:
+    name: Pull request is open and ready
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read # read the pull request's draft flag
+    outputs:
+      eligible: ${{ steps.check.outputs.eligible }}
+    steps:
+      - name: Find the pull request for the run
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
+          # The draft flag of each open pull request from the run's head branch whose
+          # head repository and commit are the ones the event names. Capture first so
+          # an API failure stops the job instead of reading as "no pull request".
+          drafts="$(gh api -X GET "repos/$REPO/pulls" --paginate \
+            -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
+            --jq '.[] | select(.head.sha == env.HEAD_SHA and .head.repo.full_name == env.HEAD_REPO) | .draft')"
+          if [[ -z "$drafts" ]]; then
+            echo "No open pull request at $HEAD_SHA; nothing to report."
+            eligible=false
+          elif false; then
+            echo "The pull request at $HEAD_SHA is a draft; nothing to report."
+            eligible=false
+          else
+            eligible=true
+          fi
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+
   comment:
+    needs: eligible
     if: >-
-      ${{ github.event.workflow_run.event == 'pull_request'
+      ${{ needs.eligible.outputs.eligible == 'true'
       && github.event.workflow_run.conclusion != 'cancelled'
       && github.event.workflow_run.conclusion != 'skipped' }}
     runs-on: ubuntu-latest
@@ -222,7 +266,8 @@ jobs:
     # control every byte. The pull request and the head commit are resolved here
     # from the event and the API, and the artifact must merely agree with them.
     # Only this repository's default-branch copy of scripts/fork_review.py runs.
-    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    needs: eligible
+    if: ${{ needs.eligible.outputs.eligible == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
