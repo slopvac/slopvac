@@ -48,7 +48,7 @@ pub enum ConfigError {
 }
 
 /// A fixed phrase per error kind, so the message does not change with the operating system.
-fn reason(e: &io::Error) -> &'static str {
+pub(crate) fn reason(e: &io::Error) -> &'static str {
     match e.kind() {
         io::ErrorKind::NotFound => "no such file",
         io::ErrorKind::PermissionDenied => "permission denied",

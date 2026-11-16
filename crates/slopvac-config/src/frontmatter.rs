@@ -153,6 +153,18 @@ pub struct Policy {
 }
 
 impl Policy {
+    /// The core defaults, for a document with no config.
+    #[must_use]
+    pub fn core() -> Self {
+        Self {
+            enabled: true,
+            allow: ["genre", "locale", "terms"]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+        }
+    }
+
     /// The policy a loaded config sets, with the core defaults under it.
     #[must_use]
     pub fn from_config(config: &LoadedConfig) -> Self {

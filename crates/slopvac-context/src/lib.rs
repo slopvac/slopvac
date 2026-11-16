@@ -6,7 +6,9 @@ mod cli;
 mod declarative;
 mod declared;
 mod genre;
+mod mixed;
 mod pattern;
+mod reference;
 mod schema;
 mod structural;
 mod tag;
@@ -24,7 +26,9 @@ pub use genre::{
     GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
     SignalKind, files_match, parse_genres,
 };
+pub use mixed::{MIXED_TYPES_RULE_ID, mixed_types_entry, mixed_types_rule};
 pub use pattern::{Pattern, normalize_path};
+pub use reference::reference_pages;
 pub use structural::{FrontmatterCondition, Scope, StructuralSpec, StructuralTagger, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{

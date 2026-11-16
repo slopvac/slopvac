@@ -2,6 +2,7 @@
 
 use std::io::{self, BufRead, Read, Write};
 
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 /// Longest header line, without its line ending.
@@ -13,7 +14,7 @@ pub const MAX_HEADER_LINES: usize = 8;
 #[derive(Debug, Error)]
 pub enum FrameError {
     /// The bytes break the framing rules. Fatal for the connection.
-    #[error("{0}")]
+    #[error("{}", esc(.0))]
     Framing(String),
     /// The stream failed.
     #[error("read failed: {0}")]

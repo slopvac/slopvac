@@ -1,0 +1,465 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 0.784,
+        "over_budget": true,
+        "per_100_words": 0.784,
+        "score": 47.6,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.784,
+        "over_budget": true,
+        "per_100_words": 1.569,
+        "score": 56.7,
+        "suggestions": 0,
+        "warnings": 4
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 2,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 35,
+        "end_column": 59,
+        "end_line": 20,
+        "line": 20,
+        "matched_text": "cmd-join-phase-preflight",
+        "message": "This hyphen group joins more than three words (\"cmd-join-phase-preflight\").",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.hyphen-group-too-long",
+        "severity": "warning",
+        "span": {
+          "end": 650,
+          "start": 626
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 47,
+        "end_column": 83,
+        "end_line": 28,
+        "line": 28,
+        "matched_text": "cmd-join-phase-control-plane-prepare",
+        "message": "This hyphen group joins more than three words (\"cmd-join-phase-control-plane-prepare\").",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.hyphen-group-too-long",
+        "severity": "warning",
+        "span": {
+          "end": 936,
+          "start": 900
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 32,
+        "line": 32,
+        "matched_text": "",
+        "message": "This sentence has 34 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 1009,
+          "start": 1009
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 39,
+        "end_column": 67,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "cmd-join-phase-kubelet-start",
+        "message": "This hyphen group joins more than three words (\"cmd-join-phase-kubelet-start\").",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.hyphen-group-too-long",
+        "severity": "warning",
+        "span": {
+          "end": 1762,
+          "start": 1734
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 44,
+        "end_column": 77,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "cmd-join-phase-control-plane-join",
+        "message": "This hyphen group joins more than three words (\"cmd-join-phase-control-plane-join\").",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.hyphen-group-too-long",
+        "severity": "warning",
+        "span": {
+          "end": 2078,
+          "start": 2045
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-descriptive",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "",
+        "message": "This sentence has 29 words. Use twenty-five or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-descriptive.sentence-too-long-descriptive",
+        "severity": "error",
+        "span": {
+          "end": 2148,
+          "start": 2148
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "2 error(s), limit 0",
+        "1.57 severity-weighted findings per 100 words, budget 1.5",
+        "score 68.9, minimum 85.0",
+        "ste-descriptive at 0.78 severity-weighted findings per 100 words, budget 0.4",
+        "ste-punctuation at 0.78 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 11,
+    "path": "corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf.md",
+    "per_100_words": 2.353,
+    "profile": "strict",
+    "prose": {
+      "errors": 2,
+      "findings": 6,
+      "per_100_words": 2.353,
+      "warnings": 4
+    },
+    "score": 68.9,
+    "sentences": 22,
+    "suggestions": 0,
+    "total_findings": 6,
+    "unchecked": [],
+    "warnings": 4,
+    "words": 255
+  },
+  "exit_code": 1
+}

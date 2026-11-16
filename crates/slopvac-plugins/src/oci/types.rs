@@ -29,13 +29,17 @@ impl Digest {
     /// # Errors
     /// [`OciError::Invalid`] unless the string is `sha256:` plus 64 lowercase hex digits.
     pub fn parse(s: &str) -> Result<Self, OciError> {
+        Self::parse_raw(s).map_err(OciError::Invalid)
+    }
+
+    /// Like [`Digest::parse`], with the reason as raw text for a caller that
+    /// builds a larger message and escapes it once.
+    pub(crate) fn parse_raw(s: &str) -> Result<Self, String> {
         let hex = s
             .strip_prefix("sha256:")
-            .ok_or_else(|| OciError::Invalid(format!("digest `{s}` is not sha256")))?;
+            .ok_or_else(|| format!("digest `{s}` is not sha256"))?;
         if hex.len() != 64 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-            return Err(OciError::Invalid(format!(
-                "digest `{s}` is not 64 lowercase hex digits"
-            )));
+            return Err(format!("digest `{s}` is not 64 lowercase hex digits"));
         }
         Ok(Self(s.to_owned()))
     }
@@ -87,7 +91,7 @@ impl fmt::Debug for Digest {
 impl<'de> Deserialize<'de> for Digest {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        Self::parse(&s).map_err(serde::de::Error::custom)
+        Self::parse_raw(&s).map_err(serde::de::Error::custom)
     }
 }
 

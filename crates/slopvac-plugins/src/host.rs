@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
-use crate::process::{Group, Leader, TableSource, Teardown, sanitize_display};
+use crate::process::{Group, Leader, TableSource, Teardown};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
     PROTOCOL_VERSION, PluginDeclaration,
@@ -260,7 +260,7 @@ impl Shared {
         let ring = lock(&self.stderr);
         let bytes: Vec<u8> = ring.iter().copied().collect();
         let start = bytes.len().saturating_sub(STDERR_SHOWN);
-        let text = sanitize_display(&String::from_utf8_lossy(&bytes[start..]));
+        let text = String::from_utf8_lossy(&bytes[start..]);
         let text = text.trim_end();
         if text.is_empty() {
             String::new()
