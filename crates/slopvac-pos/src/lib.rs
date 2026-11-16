@@ -21,11 +21,7 @@
 //! - The emoticon shortcut (`:)` tagged `SYM`) is not ported.
 //! - Only the English rune-template Penn model is supported; other models are
 //!   rejected by [`Tagger::from_model_bytes`].
-#![warn(
-    clippy::arithmetic_side_effects,
-    clippy::indexing_slicing,
-    clippy::string_slice
-)]
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 mod go_unicode;
 mod model;

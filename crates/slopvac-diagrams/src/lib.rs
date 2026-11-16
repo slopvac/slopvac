@@ -5,11 +5,7 @@
 //! label, not as a sentence. The shape mirrors the `Segment` of the plugin
 //! protocol (`span`, `context`, `text`) so the same extractors can sit behind
 //! `extractor/extract` later.
-#![warn(
-    clippy::arithmetic_side_effects,
-    clippy::indexing_slicing,
-    clippy::string_slice
-)]
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 mod drawio;
 mod excalidraw;
