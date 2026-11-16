@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use crate::go_unicode;
+use crate::tokenize::work;
 
 /// Why a model file was rejected.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -202,6 +203,7 @@ impl Model {
 
     /// Tags one sentence; the result has one tag per word.
     pub(crate) fn tag<'a>(&'a self, words: &[&str]) -> Vec<&'a str> {
+        work::tick(words.len() + 4);
         let mut ctx: Vec<String> = Vec::with_capacity(words.len() + 4);
         ctx.push("-START-".to_owned());
         ctx.push("-START2-".to_owned());
@@ -209,6 +211,7 @@ impl Model {
         ctx.push("-END-".to_owned());
         ctx.push("-END2-".to_owned());
 
+        work::tick(self.classes.len());
         let mut scratch = Scratch {
             scores: vec![0.0; self.classes.len()],
             key: String::new(),
@@ -217,6 +220,7 @@ impl Model {
         let mut p2: &'a str = "-START2-";
         let mut out: Vec<&'a str> = Vec::with_capacity(words.len());
         for (i, &word) in words.iter().enumerate() {
+            work::tick(1);
             let tag = if let Some(tag) = fixed(word) {
                 tag
             } else if let Some(&id) = self.unambiguous.get(word) {
@@ -238,7 +242,9 @@ impl Model {
         for part in parts {
             key.push_str(part);
         }
+        work::tick(1 + key.len());
         if let Some(&(lo, hi)) = self.features.get(key.as_str()) {
+            work::tick((hi - lo) as usize);
             for k in lo as usize..hi as usize {
                 scores[usize::from(self.class_ids[k])] += self.weights[k];
             }
@@ -258,6 +264,7 @@ impl Model {
         p2: &str,
     ) -> &str {
         let Scratch { scores, key } = scratch;
+        work::tick(scores.len());
         scores.fill(0.0);
         let suffix = suffix_chars(word, 3);
         // One entry per feature, in the order prose builds them; each is
@@ -288,6 +295,7 @@ impl Model {
             self.accumulate(key, parts, scores);
         }
 
+        work::tick(scores.len());
         let mut best = f32::NEG_INFINITY;
         let mut best_id = 0;
         for (id, &score) in scores.iter().enumerate() {
@@ -327,6 +335,7 @@ fn prefix_chars(word: &str, n: usize) -> &str {
 /// anything else. Character classes are Go's (`unicode.IsUpper` and so on),
 /// not Rust's.
 fn shape(word: &str) -> &'static str {
+    work::tick(word.len());
     let (mut upper, mut lower, mut digit, mut punct) = (0_usize, 0_usize, 0_usize, 0_usize);
     for c in word.chars() {
         if go_unicode::is_upper(c) {
@@ -362,6 +371,7 @@ fn shape(word: &str) -> &'static str {
 
 /// Maps a word onto the form the model was trained against.
 fn normalize(word: &str) -> String {
+    work::tick(1 + word.len());
     let Some(&first) = word.as_bytes().first() else {
         return String::new();
     };
@@ -526,5 +536,34 @@ mod tests {
         ] {
             assert_eq!(shape(word), want, "{word}");
         }
+    }
+}
+
+/// Tagging with a defect put back, for the work-budget tests.
+#[cfg(test)]
+pub(crate) mod oracle {
+    use super::*;
+
+    /// `Model::tag`, with the context of every word built again from the
+    /// whole sentence: quadratic in the sentence length.
+    pub(crate) fn tag_rebuilding_context<'a>(model: &'a Model, words: &[&str]) -> Vec<&'a str> {
+        let mut scratch = Scratch {
+            scores: vec![0.0; model.classes.len()],
+            key: String::new(),
+        };
+        let (mut p1, mut p2): (&'a str, &'a str) = ("-START-", "-START2-");
+        let mut out = Vec::with_capacity(words.len());
+        for (i, &word) in words.iter().enumerate() {
+            work::tick(words.len() + 4);
+            let mut ctx: Vec<String> = vec!["-START-".to_owned(), "-START2-".to_owned()];
+            ctx.extend(words.iter().map(|w| normalize(w)));
+            ctx.push("-END-".to_owned());
+            ctx.push("-END2-".to_owned());
+            let tag = model.predict(&mut scratch, i + 2, &ctx, word, p1, p2);
+            p2 = p1;
+            p1 = tag;
+            out.push(tag);
+        }
+        out
     }
 }
