@@ -41,9 +41,9 @@ dependencies = [
 dev = ["pytest>=8.2", "pytest-cov>=5.0"]
 
 [project.urls]
-Homepage = "https://github.com/slopvac/slopvac"
-Repository = "https://github.com/slopvac/slopvac"
-Issues = "https://github.com/slopvac/slopvac/issues"
+Homepage = "https://github.com/srobroek/slopvac"
+Repository = "https://github.com/srobroek/slopvac"
+Issues = "https://github.com/srobroek/slopvac/issues"
 
 [project.scripts]
 slopvac = "slopvac.cli:main"
