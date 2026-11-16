@@ -395,17 +395,14 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutco
     }
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
-    let mut first = true;
+    let mut spare = Some(rules);
     for (settings, indexes) in groups.into_values() {
         // The engine owns its rule set, and a set does not clone: reload it for later groups.
-        if !first {
-            rules = match rule_catalog::core() {
-                Ok(rules) => rules,
-                Err(err) => return failed(request, run, &err),
-            };
-        }
-        first = false;
-        let engine = match Engine::new(vec![std::mem::replace(&mut rules, empty_set())], settings) {
+        let set = match spare.take().map_or_else(rule_catalog::core, Ok) {
+            Ok(set) => set,
+            Err(err) => return failed(request, run, &err),
+        };
+        let engine = match Engine::new(vec![set], settings) {
             Ok(engine) => engine.with_project_roots(vec![request.root.clone()]),
             Err(err) => {
                 return failed(

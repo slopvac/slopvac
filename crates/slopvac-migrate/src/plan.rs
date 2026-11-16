@@ -74,9 +74,14 @@ const SKIP_DIRS: &[&str] = &[
 
 /// Plan the migration of the project under `root`.
 ///
-/// Reads only. Every unrepresentable setting across all files comes back together in
+/// `steering` is the 3.0 managed block, as `slopvac setup` writes it. Reads only. Every unrepresentable setting across all files comes back together in
 /// [`Error::Dropped`].
-pub fn plan(root: &Path, renames: &RenameTable, options: Options) -> Result<Plan, Error> {
+pub fn plan(
+    root: &Path,
+    renames: &RenameTable,
+    options: Options,
+    steering: &str,
+) -> Result<Plan, Error> {
     let mut plan = Plan::default();
     let mut dropped: Vec<Dropped> = Vec::new();
     let mut dirs = Vec::new();
@@ -86,7 +91,7 @@ pub fn plan(root: &Path, renames: &RenameTable, options: Options) -> Result<Plan
         plan_dir(root, &dir, renames, options, &mut plan, &mut dropped)?;
     }
     for doc in docs {
-        plan_document(root, &doc, renames, &mut plan);
+        plan_document(root, &doc, renames, steering, &mut plan);
     }
     if dropped.is_empty() {
         Ok(plan)
@@ -285,7 +290,7 @@ fn extract_tool_table(text: &str) -> Option<(String, String)> {
     Some((standalone.to_string(), doc.to_string()))
 }
 
-fn plan_document(root: &Path, path: &Path, renames: &RenameTable, plan: &mut Plan) {
+fn plan_document(root: &Path, path: &Path, renames: &RenameTable, steering: &str, plan: &mut Plan) {
     let Ok(old) = fs::read_to_string(path) else {
         return;
     };
@@ -297,7 +302,7 @@ fn plan_document(root: &Path, path: &Path, renames: &RenameTable, plan: &mut Pla
             label.display()
         ));
     }
-    match rewrite_steering(&text) {
+    match rewrite_steering(&text, steering) {
         Ok(Some(new)) => text = new,
         Ok(None) => {}
         Err(msg) => plan.warnings.push(format!("{}: {msg}", label.display())),

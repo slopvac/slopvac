@@ -2545,6 +2545,7 @@ dependencies = [
  "jsonschema",
  "serde_json",
  "similar 3.2.1",
+ "slopvac-agents",
  "tempfile",
  "thiserror",
  "toml",
