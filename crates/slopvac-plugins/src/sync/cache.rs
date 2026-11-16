@@ -141,6 +141,15 @@ impl Store {
             .map_err(|e| SyncError::Store(format!("creating a download file: {e}")))
     }
 
+    /// A private scratch directory for work that must not outlive the sync
+    /// (a git fetch). It sits beside the download files, in the checked store.
+    pub(super) fn scratch_dir(&self) -> Result<tempfile::TempDir, SyncError> {
+        tempfile::Builder::new()
+            .prefix("work-")
+            .tempdir_in(self.blobs().join(".tmp"))
+            .map_err(|e| SyncError::Store(format!("creating a scratch directory: {e}")))
+    }
+
     /// Move a finished download into place, after hashing it once more.
     ///
     /// # Errors

@@ -9,8 +9,12 @@
 //! `sync` installs exactly the lock, nothing newer. For each entry it:
 //!
 //! 1. resolves the source: an OCI reference (fetched by the lock's manifest
-//!    digest, never by tag), an `https://` archive, or a path in the project;
-//! 2. checks the digest the lock pins before anything is trusted;
+//!    digest, never by tag), an `https://` archive, a `git+https://` repository
+//!    pinned to a full commit, or a path in the project;
+//! 2. checks the digest the lock pins before anything is trusted. For git the
+//!    digest is the tree hash of the commit's files, computed from an export
+//!    without a checkout by a `git` subprocess with a scrubbed environment (no
+//!    hooks, filters, links or submodules);
 //! 3. for OCI, verifies the minisign statement against the keys in
 //!    [`KeyPolicy`] and checks that it is the signature the lock records (key
 //!    id and `notBefore` floor). A first-party namespace with no compiled key
@@ -37,6 +41,10 @@
 //! and the digest. A cached tree that no longer matches its record is removed
 //! (threat model E8): online it is installed again, offline sync exits 2.
 //!
+//! A git pack has no archive to cache: the stored tree is the cache, found by
+//! its hash (the digest) and hashed again on every use, so a warm cache needs
+//! neither the network nor `git`.
+//!
 //! Sync never trusts a record to say which tree belongs to a digest: it
 //! extracts again from the verified blob and records the resulting tree hash.
 //! Whatever loads a pack at run time recomputes the tree hash itself.
@@ -46,18 +54,22 @@
 
 mod cache;
 mod error;
+mod git;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use semver::{Version, VersionReq};
 
 pub use cache::{Store, StoreLock, TreeState};
 pub use error::SyncError;
 
-use crate::extract::{ExtractError, Limits, extract_targz, tree_hash};
+use crate::extract::{
+    ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, verify_tree,
+};
 use crate::lock::{
     LockedPack, Lockfile, PackId, ResolvedPack, SourceKind, diff, outdated as lock_outdated,
 };
@@ -77,6 +89,8 @@ pub const ARTIFACT_TYPE_PACK: &str = "application/vnd.slopvac.pack.v1";
 /// Media type of the layer that holds the pack as a `.tar.gz`.
 pub const MEDIA_PACK_LAYER: &str = "application/vnd.slopvac.pack.layer.v1.tar+gzip";
 const MAX_MINISIG_BYTES: u64 = 4 * 1024;
+/// Longest the git commands of one pack may take together.
+const GIT_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Whether sync may use the network.
 #[derive(Clone, Copy)]
@@ -127,6 +141,11 @@ pub struct SyncReport {
 enum Acquired {
     /// A verified archive in the blob cache.
     Archive(PathBuf),
+    /// A tree fetched from a pinned git commit, hashed and equal to the lock,
+    /// not yet in the store.
+    Staged(Box<StagedTree>),
+    /// A tree already in the store whose hash is the locked digest.
+    Stored(PathBuf),
     /// A verified directory in the project.
     InPlace(PathBuf),
 }
@@ -140,6 +159,15 @@ pub struct Syncer<'a> {
     revocations: &'a Revocations,
     limits: Limits,
     executables: BTreeMap<PackId, HashSet<String>>,
+    git: GitSettings,
+}
+
+/// How git sources are fetched. Production uses the defaults; tests may allow
+/// a local repository in place of the locked HTTPS URL.
+struct GitSettings {
+    timeout: Duration,
+    /// `(locked URL prefix, replacement prefix)`, tests only.
+    rewrite: Option<(String, String)>,
 }
 
 impl<'a> Syncer<'a> {
@@ -162,7 +190,32 @@ impl<'a> Syncer<'a> {
             revocations,
             limits: Limits::default(),
             executables: BTreeMap::new(),
+            git: GitSettings {
+                timeout: GIT_TIMEOUT,
+                rewrite: None,
+            },
         }
+    }
+
+    /// Test seam: fetch a git source whose locked URL starts with `from` from
+    /// the URL that starts with `to` instead, and allow `file://` there.
+    ///
+    /// Production code never calls this: locks accept only `git+https://`
+    /// sources, and nothing in a lock or in configuration can switch a local
+    /// transport on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_git_rewrite_for_tests(mut self, from: &str, to: &str) -> Self {
+        self.git.rewrite = Some((from.to_owned(), to.to_owned()));
+        self
+    }
+
+    /// Test seam: a shorter time limit for the git commands of one pack.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_git_timeout_for_tests(mut self, timeout: Duration) -> Self {
+        self.git.timeout = timeout;
+        self
     }
 
     /// Use other extraction limits.
@@ -209,7 +262,7 @@ impl<'a> Syncer<'a> {
 
         let mut states = Vec::with_capacity(acquired.len());
         for (pack, how) in &acquired {
-            if matches!(how, Acquired::Archive(_)) {
+            if matches!(how, Acquired::Archive(_) | Acquired::Staged(_)) {
                 let state = self.store.inspect(&pack.digest)?;
                 let mut set_aside = None;
                 if let TreeState::Tampered(dir) = &state {
@@ -233,7 +286,7 @@ impl<'a> Syncer<'a> {
             ..SyncReport::default()
         };
         for ((pack, how), (before, aside)) in acquired.into_iter().zip(states) {
-            let mut outcome = self.install(pack, &how, &before)?;
+            let mut outcome = self.install(pack, how, &before)?;
             // A modified tree too large to delete was moved aside; keep reporting it.
             outcome.quarantined = outcome.quarantined.or(aside);
             report.packs.push(outcome);
@@ -244,7 +297,7 @@ impl<'a> Syncer<'a> {
     fn install(
         &self,
         pack: &LockedPack,
-        how: &Acquired,
+        how: Acquired,
         before: &TreeState,
     ) -> Result<PackOutcome, SyncError> {
         let outcome = |change, tree, quarantined| PackOutcome {
@@ -254,15 +307,31 @@ impl<'a> Syncer<'a> {
             tree,
             quarantined,
         };
-        let blob = match how {
-            Acquired::InPlace(dir) => return Ok(outcome(Change::InPlace, dir.clone(), None)),
-            Acquired::Archive(blob) => blob,
-        };
         let extract = |source| SyncError::Extract {
             id: pack.id.clone(),
             source,
         };
-        let file = File::open(blob).map_err(|e| {
+        let blob = match how {
+            Acquired::InPlace(dir) => return Ok(outcome(Change::InPlace, dir, None)),
+            Acquired::Stored(dir) => {
+                // The tree hash is the digest: link the digest to it again in case
+                // the record was lost.
+                let hash = Self::locked_tree_hash(pack)?;
+                self.store.record(&pack.digest, &hash)?;
+                return Ok(outcome(Change::Unchanged, dir, None));
+            }
+            Acquired::Staged(staged) => {
+                let done = staged.install(&self.store.trees()).map_err(extract)?;
+                self.store.record(&pack.digest, &done.hash)?;
+                let change = match before {
+                    TreeState::Tampered(_) => Change::Reinstalled,
+                    _ => Change::Installed,
+                };
+                return Ok(outcome(change, done.root, done.quarantined));
+            }
+            Acquired::Archive(blob) => blob,
+        };
+        let file = File::open(&blob).map_err(|e| {
             extract(ExtractError::Io {
                 what: format!("opening {}", blob.display()),
                 source: e,
@@ -284,12 +353,7 @@ impl<'a> Syncer<'a> {
             SourceKind::Oci(text) => self.acquire_oci(pack, text, revoked),
             SourceKind::Archive(url) => self.acquire_archive(pack, url),
             SourceKind::Path(rel) => self.acquire_path(pack, rel),
-            // STUB(slopvac-8l4.9.27): a pinned-commit clone needs a git subprocess or a
-            // new dependency (gitoxide); the brief asks for approval first.
-            SourceKind::Git { .. } => Err(SyncError::Unsupported {
-                id: pack.id.clone(),
-                reason: "git sources are not supported yet".into(),
-            }),
+            SourceKind::Git { url, commit } => self.acquire_git(pack, url, commit),
         }
     }
 
@@ -515,6 +579,84 @@ impl<'a> Syncer<'a> {
             })?;
         self.store.put_blob(&desc.digest, &bytes)?;
         Ok(bytes)
+    }
+
+    fn locked_tree_hash(pack: &LockedPack) -> Result<TreeHash, SyncError> {
+        TreeHash::parse(pack.digest.as_str()).map_err(|e| SyncError::Source {
+            id: pack.id.clone(),
+            why: e.to_string(),
+        })
+    }
+
+    /// A git source: the digest is the hash of the tree at the pinned commit.
+    /// A stored tree with that hash is used as is (offline too); otherwise the
+    /// commit is fetched, exported without a checkout and hashed. The tree
+    /// reaches the store only in the install step, after every pack verified.
+    fn acquire_git(
+        &self,
+        pack: &LockedPack,
+        url: &str,
+        commit: &str,
+    ) -> Result<Acquired, SyncError> {
+        let id = &pack.id;
+        let extract = |source| SyncError::Extract {
+            id: id.clone(),
+            source,
+        };
+        let expected = Self::locked_tree_hash(pack)?;
+        let dir = self.store.tree_dir(&expected);
+        if fs::symlink_metadata(&dir).is_ok() {
+            match verify_tree(&dir, &expected) {
+                Ok(()) => return Ok(Acquired::Stored(dir)),
+                Err(ExtractError::Tampered { .. }) => {
+                    if matches!(self.network, Network::Offline) {
+                        let aside = cache::evict_tree(&dir)?;
+                        return Err(SyncError::CacheTampered {
+                            id: id.clone(),
+                            path: aside.unwrap_or(dir),
+                        });
+                    }
+                }
+                Err(source) => return Err(extract(source)),
+            }
+        }
+        self.client(pack, "git tree")?;
+
+        let (url, allow_file) = match &self.git.rewrite {
+            Some((from, to)) if url.starts_with(from.as_str()) => {
+                (format!("{to}{}", &url[from.len()..]), true)
+            }
+            _ => (url.to_owned(), false),
+        };
+        let git_failed = |why: String| SyncError::Git {
+            id: id.clone(),
+            why,
+        };
+        let program = git::find_git()
+            .ok_or_else(|| git_failed("git was not found on an absolute PATH entry".into()))?;
+        let scratch = self.store.scratch_dir()?;
+        let mut staged = StagedTree::new(&self.store.trees()).map_err(extract)?;
+        let request = git::Request {
+            git: &program,
+            url: &url,
+            commit,
+            allow_file,
+            timeout: self.git.timeout,
+            limits: self.limits,
+        };
+        git::export_commit(&request, scratch.path(), &mut staged).map_err(|e| match e {
+            git::GitError::Failed(msg) => git_failed(msg),
+            git::GitError::Extract(source) => extract(source),
+        })?;
+        let actual = staged.hash().map_err(extract)?;
+        if actual != expected {
+            return Err(SyncError::DigestMismatch {
+                id: id.clone(),
+                expected: expected.to_string(),
+                actual: actual.to_string(),
+            });
+        }
+        Ok(Acquired::Staged(Box::new(staged)))
     }
 
     fn acquire_archive(&self, pack: &LockedPack, url: &str) -> Result<Acquired, SyncError> {

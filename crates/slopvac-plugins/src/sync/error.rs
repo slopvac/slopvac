@@ -23,20 +23,21 @@ pub enum SyncError {
         /// What is missing.
         what: String,
     },
-    /// The source kind is not implemented yet.
-    #[error("pack `{id}`: {reason}")]
-    Unsupported {
-        /// Pack id.
-        id: PackId,
-        /// Why.
-        reason: String,
-    },
     /// The lock entry cannot be resolved as written.
     #[error("pack `{id}`: {why}")]
     Source {
         /// Pack id.
         id: PackId,
         /// What is wrong.
+        why: String,
+    },
+    /// Fetching or exporting a pinned git commit failed, or the commit holds
+    /// something a pack may not (a link or a submodule).
+    #[error("pack `{id}`: git source: {why}")]
+    Git {
+        /// Pack id.
+        id: PackId,
+        /// What went wrong.
         why: String,
     },
     /// The registry or the network failed.
