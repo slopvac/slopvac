@@ -815,14 +815,14 @@
       "ai_register": {
         "strong": {
           "errors": 0,
-          "findings": 12,
-          "per_100_words": 0.1,
+          "findings": 7,
+          "per_100_words": 0.058,
           "warnings": 0
         },
         "weak": {
           "errors": 0,
           "findings": 62,
-          "per_100_words": 0.518,
+          "per_100_words": 0.517,
           "warnings": 8
         }
       },
@@ -884,10 +884,10 @@
         {
           "category": "ai-tells-structure",
           "errors": 0,
-          "findings": 55,
-          "per_100_words": 0.459,
-          "score": 99.3,
-          "suggestions": 54,
+          "findings": 50,
+          "per_100_words": 0.417,
+          "score": 99.5,
+          "suggestions": 49,
           "warnings": 1
         },
         {
@@ -903,7 +903,7 @@
           "category": "orwell",
           "errors": 0,
           "findings": 10,
-          "per_100_words": 0.084,
+          "per_100_words": 0.083,
           "score": 99.4,
           "suggestions": 10,
           "warnings": 0
@@ -930,7 +930,7 @@
           "category": "prose-discipline",
           "errors": 0,
           "findings": 22,
-          "per_100_words": 0.184,
+          "per_100_words": 0.183,
           "score": 99.4,
           "suggestions": 22,
           "warnings": 0
@@ -1064,19 +1064,19 @@
       ],
       "documents": 34,
       "errors": 3,
-      "findings": 199,
+      "findings": 194,
       "passed": false,
-      "per_100_words": 1.662,
+      "per_100_words": 1.618,
       "prose": {
         "errors": 3,
         "findings": 125,
-        "per_100_words": 1.044,
+        "per_100_words": 1.042,
         "warnings": 25
       },
-      "score": 96.1,
-      "suggestions": 163,
+      "score": 96.3,
+      "suggestions": 158,
       "warnings": 33,
-      "words": 11975
+      "words": 11992
     }
   },
   "prose:mdx": {
