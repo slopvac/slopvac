@@ -1,6 +1,6 @@
 //! The generated CLI reference names every visible flag, argument and command.
 
-#[path = "../examples/reference.rs"]
+#[path = "../examples/cli-reference.rs"]
 #[allow(dead_code)]
 mod reference;
 

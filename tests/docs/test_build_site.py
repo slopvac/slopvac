@@ -144,9 +144,11 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
-<<<<<<< HEAD
     for name in ("plugin-protocol", "pack-manifest", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
+    (schemas / "config.schema.json").write_text(
+        _schema("config.schema.json", **FIXTURE_CONFIG)
+    )
     packs = tmp_path / "packs"
     for pack_id, body in (("style-pack", DATA_PACK), ("plug", PLUGIN_PACK)):
         (packs / pack_id).mkdir(parents=True)
@@ -154,24 +156,6 @@ def sources(tmp_path: Path) -> dict[str, Path]:
     contract = tmp_path / "contract"
     contract.mkdir()
     (contract / "plugin-protocol.md").write_text(CONTRACT)
-=======
-    (schemas / "plugin-protocol.schema.json").write_text(
-        _schema(
-            "plugin-protocol.schema.json",
-            description="Messages <of> v1.",
-            **{
-                "$defs": {
-                    "Zed": {"type": "object", "description": "A | <b>"},
-                    "Alpha": {"oneOf": []},
-                }
-            },
-        )
-    )
-    (schemas / "config.schema.json").write_text(
-        _schema("config.schema.json", **FIXTURE_CONFIG)
-    )
-    (schemas / "common.schema.json").write_text(_schema("common.schema.json"))
->>>>>>> 77887c088c (docs: generate CLI and config reference pages)
     config = tmp_path / "site.toml"
     config.write_text(
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
@@ -599,7 +583,6 @@ def test_genre_pages_come_from_the_registry_for_every_builtin_genre(
     )
 
 
-<<<<<<< HEAD
 # --- folded allOf branches -------------------------------------------------
 
 
@@ -876,7 +859,8 @@ def test_link_like_text_in_a_rule_example_survives_the_site_rewrite(
     assert _run(sources, "--starlight", str(_site(sources))) == 0
     page = _starlight_page(sources, "rules/more/no-link.md")
     assert "```text\nSee [the page](protocol.md) here.\n```" in page
-=======
+
+
 def _json_keys(node: object) -> set[str]:
     """Every key of every ``properties`` object in a schema, by plain recursion."""
     found: set[str] = set()
@@ -928,4 +912,3 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
->>>>>>> 77887c088c (docs: generate CLI and config reference pages)
