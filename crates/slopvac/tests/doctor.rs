@@ -906,3 +906,102 @@ fn a_cached_version_that_is_not_semver_counts_as_unknown() {
         assert_eq!(doc["update"]["checked_at"], Value::Null, "{garbage:?}");
     }
 }
+/// Source rows as `(layer, file, status)`.
+fn rows(doc: &Value) -> Vec<(String, String, String)> {
+    doc["config"]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["layer"].as_str().unwrap().to_owned(),
+                s["file"].as_str().unwrap().to_owned(),
+                s["status"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_lockfile_comes_from_the_project_root_not_from_the_first_extended_file() {
+    let w = World::new();
+    w.write("shared/mid.toml", "schema_version = 3\n");
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"shared/mid.toml\"]\n",
+    );
+    // A damaged lockfile at the project root; none beside the extended file.
+    w.write(
+        ".slopvac/packs.lock",
+        "schema_version = 3\n[[packs]]\nid = \"BAD ID\"\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(doc["packs"]["lockfile"]["file"], ".slopvac/packs.lock");
+    assert_eq!(doc["packs"]["lockfile"]["status"], "invalid");
+    assert_eq!(doc["ok"], false);
+}
+
+#[test]
+fn an_extended_file_outside_the_project_prints_no_external_names_in_json_or_text() {
+    let w = World::new();
+    let sibling = w.root.path().join("sibling-marker-dir");
+    fs::create_dir(&sibling).unwrap();
+    fs::write(sibling.join("x.toml"), "schema_version = 3\n").unwrap();
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"../sibling-marker-dir/x.toml\"]\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 0);
+    assert_eq!(
+        rows(&doc)[0],
+        (
+            "extends".to_owned(),
+            "<external>/x.toml".to_owned(),
+            "ok".to_owned()
+        )
+    );
+    let text = String::from_utf8(w.doctor().output().unwrap().stdout).unwrap();
+    assert!(text.contains("<external>/x.toml"), "{text}");
+    assert!(!text.contains("sibling-marker-dir"), "{text}");
+}
+
+#[test]
+fn a_refused_extended_file_keeps_its_layer_and_its_location_in_the_project() {
+    let w = World::new();
+    w.write("shared/bad.toml", "schema_version = 3\n{{{\n");
+    w.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"shared/bad.toml\"]\n",
+    );
+    let (code, doc) = w.json(&[], |_| {});
+    assert_eq!(code, 2);
+    assert_eq!(
+        rows(&doc),
+        [(
+            "extends".to_owned(),
+            "shared/bad.toml".to_owned(),
+            "invalid".to_owned()
+        )]
+    );
+    assert_eq!(
+        doc["config"]["sources"][0]["error"],
+        "refused: config-parse at line 2"
+    );
+}
+
+#[test]
+fn a_refused_project_file_keeps_its_project_location() {
+    let w = World::new();
+    w.write("slopvac.toml", "schema_version = 3\n{{{\n");
+    let (_, doc) = w.json(&[], |_| {});
+    assert_eq!(
+        rows(&doc),
+        [(
+            "project".to_owned(),
+            "slopvac.toml".to_owned(),
+            "invalid".to_owned()
+        )]
+    );
+}

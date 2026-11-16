@@ -342,7 +342,7 @@ impl Loader<'_> {
         &mut self,
         tree: &Node,
         added: usize,
-        display: &str,
+        (display, layer): (&str, Layer),
         text: &str,
     ) -> Option<ConfigError> {
         self.entries += added;
@@ -352,6 +352,8 @@ impl Loader<'_> {
         let span = tree.get("extends").map_or(0..0, |n| n.span.clone());
         Some(ConfigError::Rejected(Box::new(Rejected {
             file: display.to_owned(),
+            layer: Some(layer),
+            root: Some(self.root.to_path_buf()),
             text: text.to_owned(),
             diagnostics: vec![Diagnostic {
                 code: Code::ExtendsLimit,
@@ -417,6 +419,8 @@ impl Loader<'_> {
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
                 file: label.clone(),
+                layer: Some(layer),
+                root: Some(self.root.to_path_buf()),
                 text,
                 diagnostics,
             }))
@@ -473,7 +477,7 @@ impl Loader<'_> {
             return Err(reject(text, diagnostics));
         }
         self.stack.push((key.clone(), display.to_owned()));
-        let extended = self.extend(&tree, key, &text, display);
+        let extended = self.extend(&tree, key, &text, display, layer);
         self.stack.pop();
         let mut closure = extended?;
         let settings = flatten_with(
@@ -614,6 +618,7 @@ impl Loader<'_> {
         key: &Key,
         text: &str,
         display: &str,
+        layer: Layer,
     ) -> Result<Vec<usize>, ConfigError> {
         let Some(Node {
             value: Value::Array(entries),
@@ -622,16 +627,20 @@ impl Loader<'_> {
         else {
             return Ok(Vec::new());
         };
-        if let Some(rejection) = self.entries_exceeded(tree, entries.len(), display, text) {
+        if let Some(rejection) = self.entries_exceeded(tree, entries.len(), (display, layer), text)
+        {
             return Err(rejection);
         }
         let mut acc = Ordered::default();
+        let root = self.root;
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let label = self.error_label(key, display);
             let fail = |code: Code, message: String, help: Option<String>| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: label.clone(),
+                    layer: Some(layer),
+                    root: Some(root.to_path_buf()),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code,

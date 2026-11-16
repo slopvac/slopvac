@@ -6,7 +6,7 @@
 //! every other command.
 
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use slopvac_config::{ConfigError, Discovery, Layer, LoadedConfig, NoPresets};
 use slopvac_update::policy::policy_of;
@@ -28,6 +28,10 @@ impl ConfigSources for LayerConfigSources {
             Ok(Some(config)) => scan_loaded(&config, explicit.is_some()),
             Ok(None) => ConfigScan::default(),
             Err(err) => ConfigScan {
+                root: match &err {
+                    ConfigError::Rejected(r) => r.root.clone(),
+                    ConfigError::Io { .. } => None,
+                },
                 sources: vec![failed(&err, cwd, explicit.is_some())],
                 offline: false,
                 update_check: None,
@@ -47,20 +51,41 @@ fn scan_loaded(config: &LoadedConfig, explicit: bool) -> ConfigScan {
                 _ if explicit => "explicit",
                 _ => "project",
             },
-            path: config.root.join(&file.display),
+            path: located(&config.root, &file.display),
             status: SourceStatus::Ok,
             error: None,
         })
         .collect();
     ConfigScan {
         sources,
+        root: Some(config.root.clone()),
         offline: policy.offline,
         update_check: policy.update_check,
     }
 }
 
+/// `shown` under `root` with `.` and `..` resolved by text, so a path that leaves the project is
+/// redacted as external instead of keeping its `..` segments.
+fn located(root: &Path, shown: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in root.join(shown).components() {
+        match part {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn failed(err: &ConfigError, cwd: &Path, explicit: bool) -> RawSource {
-    let layer = if explicit { "explicit" } else { "project" };
+    let own = if explicit { "explicit" } else { "project" };
+    let layer = match err {
+        ConfigError::Rejected(r) if r.layer == Some(Layer::Extends) => "extends",
+        _ => own,
+    };
     match err {
         ConfigError::Io { path, source } => {
             let (status, text) = match source.kind() {
@@ -103,7 +128,10 @@ fn failed(err: &ConfigError, cwd: &Path, explicit: bool) -> RawSource {
             };
             RawSource {
                 layer,
-                path: PathBuf::from(&rejected.file),
+                path: rejected.root.as_ref().map_or_else(
+                    || PathBuf::from(&rejected.file),
+                    |root| located(root, &rejected.file),
+                ),
                 status,
                 error: Some(text),
             }
