@@ -162,6 +162,76 @@ def test_rust_cache_is_saved_only_from_main(where, context, saves):
     assert evaluate(step["with"]["save-if"], ctx(context)) == saves
 
 
+# --- per-event matrices -------------------------------------------------------
+
+TEST_JOBS = load("test.yml")["jobs"]
+
+
+def matrix_axis(job: str, axis: str, context: dict) -> list:
+    template = " ".join(TEST_JOBS[job]["strategy"]["matrix"][axis].split())
+    inner = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", template).group(1)
+    return json.loads(evaluate("${{ " + inner + " }}", ctx(context)))
+
+
+# Leg name -> (runner, cross target). Copied from the static matrix this replaced.
+EVERY_RUST_LEG = {
+    "linux-x64": ("ubuntu-latest", None),
+    "linux-arm64": ("ubuntu-24.04-arm", None),
+    "linux-x64-musl": ("ubuntu-latest", "x86_64-unknown-linux-musl"),
+    "linux-arm64-musl": ("ubuntu-24.04-arm", "aarch64-unknown-linux-musl"),
+    "macos-arm64": ("macos-latest", None),
+    "macos-x64": ("macos-15-intel", None),
+}
+EVERY_PYTHON = ["3.11", "3.12", "3.13", "3.14"]
+
+
+def test_pull_requests_test_rust_on_linux_x64_only():
+    assert matrix_axis("rust", "include", PULL_REQUEST) == [
+        {"name": "linux-x64", "os": "ubuntu-latest"}
+    ]
+
+
+@pytest.mark.parametrize("context", [MERGE_GROUP, PUSH_MAIN], ids=["queue", "main"])
+def test_queue_and_main_test_every_rust_leg(context):
+    legs = matrix_axis("rust", "include", context)
+    by_name = {leg["name"]: (leg["os"], leg.get("target")) for leg in legs}
+    assert by_name == EVERY_RUST_LEG
+    assert len(legs) == len(EVERY_RUST_LEG)
+    assert all(leg.get("musl", False) == ("target" in leg) for leg in legs)
+
+
+@pytest.mark.parametrize(
+    ("context", "versions"),
+    [
+        (PULL_REQUEST, ["3.11", "3.14"]),
+        (MERGE_GROUP, EVERY_PYTHON),
+        (PUSH_MAIN, EVERY_PYTHON),
+    ],
+    ids=["pull_request", "queue", "main"],
+)
+def test_python_versions_per_event(context, versions):
+    assert matrix_axis("lint-package", "python", context) == versions
+
+
+@pytest.mark.parametrize(
+    "context",
+    [PULL_REQUEST, MERGE_GROUP, PUSH_MAIN],
+    ids=["pull_request", "queue", "main"],
+)
+def test_rules_reference_check_runs_on_exactly_one_python_leg(context):
+    step = next(
+        s
+        for s in TEST_JOBS["lint-package"]["steps"]
+        if s["name"] == "The rules reference is current"
+    )
+    runs = [
+        v
+        for v in matrix_axis("lint-package", "python", context)
+        if evaluate("${{ " + step["if"] + " }}", {"matrix": {"python": v}})
+    ]
+    assert len(runs) == 1
+
+
 @pytest.mark.parametrize(
     "workflow", ["test.yml", "lint.yml", "security.yml", "cli-e2e.yml"]
 )

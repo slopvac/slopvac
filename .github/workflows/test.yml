@@ -184,24 +184,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Pull requests test linux-x64 only. The merge queue and pushes to main run
+        # every leg, so a platform break cannot reach main. Each event gets a
+        # complete list: GitHub turns an `include` entry that matches no
+        # combination into a new one, so legs cannot be filtered out of one list.
         # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
-        include:
-          - name: linux-x64
-            os: ubuntu-latest
-          - name: linux-arm64
-            os: ubuntu-24.04-arm
-          - name: linux-x64-musl
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            musl: true
-          - name: linux-arm64-musl
-            os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            musl: true
-          - name: macos-arm64
-            os: macos-latest
-          - name: macos-x64
-            os: macos-15-intel
+        include: >-
+          ${{ fromJSON(github.event_name == 'pull_request'
+          && '[{"name": "linux-x64", "os": "ubuntu-latest"}]'
+          || '[{"name": "linux-x64", "os": "ubuntu-latest"},
+          {"name": "linux-arm64", "os": "ubuntu-24.04-arm"},
+          {"name": "linux-x64-musl", "os": "ubuntu-latest",
+          "target": "x86_64-unknown-linux-musl", "musl": true},
+          {"name": "linux-arm64-musl", "os": "ubuntu-24.04-arm",
+          "target": "aarch64-unknown-linux-musl", "musl": true},
+          {"name": "macos-arm64", "os": "macos-latest"},
+          {"name": "macos-x64", "os": "macos-15-intel"}]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -383,7 +381,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        # Pull requests test the oldest and newest supported Python; the merge
+        # queue and pushes to main test every version.
+        python: >-
+          ${{ fromJSON(github.event_name == 'pull_request'
+          && '["3.11", "3.14"]'
+          || '["3.11", "3.12", "3.13", "3.14"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -429,7 +432,7 @@ jobs:
           done
 
       - name: The rules reference is current
-        if: matrix.python == '3.13'
+        if: matrix.python == '3.14'
         working-directory: packages/slopvac-lint
         run: slopvac reference --write docs/rules.md --check
 
