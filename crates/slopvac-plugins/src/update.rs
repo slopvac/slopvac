@@ -50,6 +50,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -443,7 +444,7 @@ fn list_candidates(
             }
         }
     }
-    let mut spent: u64 = 0;
+    let allowance = AtomicU64::new(budget);
     for packs in groups.into_values() {
         let fail = |pack: &LockedPack, why: SyncErrorKind| match why {
             SyncErrorKind::Fetch(source) => SyncError::Fetch {
@@ -455,21 +456,15 @@ fn list_candidates(
                 why: format!("registry tag lists exceed the {budget}-byte budget for one update"),
             },
         };
-        let tags = if spent >= budget {
-            Err(SyncErrorKind::Budget)
-        } else {
-            client
-                .list_tags(&packs[0].1)
-                .map_err(SyncErrorKind::Fetch)
-                .and_then(|tags| {
-                    spent += tags.iter().map(|t| t.len() as u64 + 1).sum::<u64>();
-                    if spent > budget {
-                        Err(SyncErrorKind::Budget)
-                    } else {
-                        Ok(tags)
-                    }
-                })
-        };
+        let tags = client
+            .list_tags_within(&packs[0].1, &allowance)
+            .map_err(|e| {
+                if allowance.load(Ordering::Relaxed) == 0 {
+                    SyncErrorKind::Budget
+                } else {
+                    SyncErrorKind::Fetch(e)
+                }
+            });
         let tags = match tags {
             Ok(tags) => tags,
             Err(why) => {

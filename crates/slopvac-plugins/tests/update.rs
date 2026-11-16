@@ -1136,7 +1136,7 @@ fn oversized_tags_are_ignored_before_they_reach_semver() {
 }
 
 #[test]
-fn tag_lists_past_the_budget_refuse_the_packs_and_exit_2() {
+fn the_listing_budget_is_shared_across_repositories() {
     let key = Key::new();
     let (style, other) = two_packs(&key);
     let server = registry(&[
@@ -1145,7 +1145,7 @@ fn tag_lists_past_the_budget_refuse_the_packs_and_exit_2() {
     ]);
     let reg = server.registry();
     let env = Env::new();
-    let before = env.write_lock(&[
+    env.write_lock(&[
         entry("style", &reg, &style[0], true),
         entry("other", &reg, &other[0], true),
     ]);
@@ -1153,12 +1153,83 @@ fn tag_lists_past_the_budget_refuse_the_packs_and_exit_2() {
     let revocations = env.revocations();
     let pol = policy(&[&key]);
 
-    // One list is "1.2.0","1.3.0" = 12 bytes; a 5-byte budget trips on the first.
+    // Each list is `{"tags":["1.2.0","1.3.0"]}`, 27 bytes. 40 bytes cover one
+    // list and not two. Repositories are listed in name order: `other` first.
     let report = Updater::new(Network::Online(&c), &pol, &revocations)
-        .with_listing_budget(5)
+        .with_listing_budget(40)
         .update(
             env.dir.path(),
             &ranges(&[("style", "^1.2"), ("other", "^1.0")]),
+            &[],
+        )
+        .unwrap();
+
+    assert_eq!(report.exit_code(), 2);
+    let by_id = |id: &str| report.packs.iter().find(|p| p.id.as_str() == id).unwrap();
+    assert!(matches!(by_id("other").outcome, Outcome::Updated { .. }));
+    assert!(matches!(by_id("style").outcome, Outcome::Refused(_)));
+    let lock = env.lock();
+    assert_eq!(
+        lock.get(&pack_id("other")).unwrap().version,
+        version("1.1.0")
+    );
+    assert_eq!(
+        lock.get(&pack_id("style")).unwrap().version,
+        version("1.2.0")
+    );
+}
+
+#[test]
+fn bytes_read_before_a_late_page_failure_still_count_against_the_budget() {
+    let key = Key::new();
+    let releases: Vec<Release> = ["r1", "r2", "r3"]
+        .iter()
+        .map(|id| release(&key, id, "1.2.0", FLOOR))
+        .collect();
+    // Page one is about 1.5 KiB and links to a page two that is not JSON.
+    let padding: Vec<String> = (0..12)
+        .map(|i| format!("1.0.{i}-{}", "a".repeat(100)))
+        .collect();
+    let page_one = serde_json::json!({ "tags": padding }).to_string();
+    let server = Server::start(move |req| {
+        if !req.path.contains("/tags/list") {
+            return Response::new(404);
+        }
+        if req.path.contains("page=2") {
+            return Response::new(200).body("{ not json");
+        }
+        let repo = req
+            .path
+            .split("/tags/list")
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        Response::new(200)
+            .header("Content-Type", "application/json")
+            .header(
+                "Link",
+                &format!("<{repo}/tags/list?n=1000&page=2>; rel=\"next\""),
+            )
+            .body(page_one.clone())
+    });
+    let reg = server.registry();
+    let env = Env::new();
+    let entries: Vec<String> = releases
+        .iter()
+        .zip(["r1", "r2", "r3"])
+        .map(|(r, id)| entry(id, &reg, r, true))
+        .collect();
+    let before = env.write_lock(&entries);
+    let c = client();
+    let revocations = env.revocations();
+    let pol = policy(&[&key]);
+
+    // One first page and its failing second page use most of the budget; the second repository runs out, so the third gets no request.
+    let report = Updater::new(Network::Online(&c), &pol, &revocations)
+        .with_listing_budget(1500)
+        .update(
+            env.dir.path(),
+            &ranges(&[("r1", "^1.2"), ("r2", "^1.2"), ("r3", "^1.2")]),
             &[],
         )
         .unwrap();
@@ -1171,6 +1242,7 @@ fn tag_lists_past_the_budget_refuse_the_packs_and_exit_2() {
             .all(|p| matches!(p.outcome, Outcome::Refused(_))),
         "{report:?}"
     );
+    assert_eq!(server.count("/v2/acme/r3/tags/list"), 0);
     assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
 }
 
