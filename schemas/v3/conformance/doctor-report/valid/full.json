@@ -8,6 +8,7 @@
   "config": {
     "ok": false,
     "sources": [
+      {"layer": "extends", "file": "base.toml", "status": "ok", "error": null},
       {"layer": "explicit", "file": "ci/slopvac.toml", "status": "legacy", "error": "2.x configuration: run `slopvac migrate`"},
       {"layer": "project", "file": "slopvac.toml", "status": "ok", "error": null}
     ]
