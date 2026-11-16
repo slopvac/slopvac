@@ -1,4 +1,5 @@
 //! Safety and fidelity tests for `slopvac setup`: containment, scale, line endings.
+#![cfg(test)]
 
 use std::fmt::Write as _;
 use std::fs;

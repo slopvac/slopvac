@@ -46,13 +46,10 @@ pub fn state(project: &Project, rel: &Path, expected: Option<&str>) -> State {
     if !has_marker(&text) {
         return State::Malformed;
     }
-    match expected {
-        None => State::Stale,
-        Some(e) => {
-            let n = text.replace("\r\n", "\n").replace('\r', "\n");
-            if n == e { State::Current } else { State::Stale }
-        }
-    }
+    expected.map_or(State::Stale, |e| {
+        let n = text.replace("\r\n", "\n").replace('\r', "\n");
+        if n == e { State::Current } else { State::Stale }
+    })
 }
 
 /// Write `expected`, or delete the file when `None`. Refuses files setup did

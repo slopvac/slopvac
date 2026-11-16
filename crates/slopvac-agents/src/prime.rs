@@ -82,16 +82,15 @@ fn split_summary(source: &str) -> (&str, &str) {
     let Some(first) = source.lines().next() else {
         return ("", source);
     };
-    match first
+    first
         .strip_prefix("<!-- summary:")
         .and_then(|s| s.strip_suffix("-->"))
-    {
-        Some(summary) => (
-            summary.trim(),
-            source[first.len()..].trim_start_matches(['\r', '\n']),
-        ),
-        None => ("", source),
-    }
+        .map_or(("", source), |summary| {
+            (
+                summary.trim(),
+                source[first.len()..].trim_start_matches(['\r', '\n']),
+            )
+        })
 }
 
 struct CommandLine {
@@ -357,7 +356,7 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
         root,
     )?;
     if !out.ends_with('\n') {
-        let _ = writeln!(out);
+        writeln!(out).ok();
     }
     Ok(out)
 }

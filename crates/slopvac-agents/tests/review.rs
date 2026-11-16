@@ -1,4 +1,5 @@
 //! Behaviour tests for the review workflow: type, scope, models, payloads, consent.
+#![cfg(test)]
 
 use std::cell::Cell;
 use std::fs;

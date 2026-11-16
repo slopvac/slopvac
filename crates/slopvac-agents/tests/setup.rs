@@ -1,4 +1,5 @@
 //! Behaviour tests for `slopvac setup` through its public interface.
+#![cfg(test)]
 
 use std::fs;
 use std::path::Path;

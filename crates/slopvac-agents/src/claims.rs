@@ -509,9 +509,13 @@ fn compare_with(
     })
 }
 
-#[allow(clippy::cast_precision_loss, reason = "sentence counts are tiny")]
 fn ratio(part: usize, whole: usize) -> f64 {
-    part as f64 / whole as f64
+    count(part) / count(whole)
+}
+
+/// A sentence count as a float; counts are far below `u32::MAX`.
+pub(crate) fn count(n: usize) -> f64 {
+    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
 fn dropped_facts(
@@ -585,15 +589,15 @@ pub fn command() -> Command {
 pub fn render_text(report: &Report) -> String {
     let mut out = String::new();
     for c in &report.claims {
-        let _ = writeln!(out, "{} line {}: {}", c.change, c.line, c.text);
+        writeln!(out, "{} line {}: {}", c.change, c.line, c.text).ok();
         for l in &c.literals_removed {
-            let _ = writeln!(out, "  removed {} {}", l.kind, l.text);
+            writeln!(out, "  removed {} {}", l.kind, l.text).ok();
         }
         for l in &c.literals_added {
-            let _ = writeln!(out, "  added {} {}", l.kind, l.text);
+            writeln!(out, "  added {} {}", l.kind, l.text).ok();
         }
         if c.negation_changed {
-            let _ = writeln!(out, "  negation changed");
+            writeln!(out, "  negation changed").ok();
         }
     }
     for d in &report.dropped {
@@ -602,7 +606,7 @@ pub fn render_text(report: &Report) -> String {
         } else {
             "dropped, covered"
         };
-        let _ = writeln!(out, "{tag} line {}: {}", d.line, d.text);
+        writeln!(out, "{tag} line {}: {}", d.line, d.text).ok();
     }
     out
 }

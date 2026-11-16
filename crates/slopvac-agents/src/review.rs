@@ -112,12 +112,11 @@ impl ChangeStats {
         }
     }
 
-    #[allow(clippy::cast_precision_loss, reason = "sentence counts are tiny")]
     fn share(&self) -> f64 {
         if self.original_sentences == 0 {
             1.0
         } else {
-            self.churn as f64 / self.original_sentences as f64
+            crate::claims::count(self.churn) / crate::claims::count(self.original_sentences)
         }
     }
 }

@@ -58,7 +58,11 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
     for part in Path::new(relative).components() {
         match part {
             Component::Normal(p) if !is_git(p) => clean.push(p),
-            _ => return Err(bad()),
+            Component::Normal(_)
+            | Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => return Err(bad()),
         }
     }
     if clean.extension().and_then(|e| e.to_str()) != Some("md") {
@@ -221,7 +225,7 @@ impl Project {
             parent.rename(&tmp_name, &parent, name)
         };
         finish().map_err(|e| {
-            let _ = parent.remove_file(&tmp_name);
+            parent.remove_file(&tmp_name).ok();
             self.map(&rel, e)
         })?;
         Ok(true)
@@ -238,7 +242,7 @@ impl Project {
         // Windows cannot delete a directory while a handle to it is open.
         drop(parent);
         if let Some(dir) = rel.parent().filter(|p| !p.as_os_str().is_empty()) {
-            let _ = self.dir.remove_dir(dir);
+            self.dir.remove_dir(dir).ok();
         }
         Ok(())
     }

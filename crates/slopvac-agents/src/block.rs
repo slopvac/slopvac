@@ -47,7 +47,7 @@ fn read_utf8(project: &Project, rel: &Path) -> Result<Option<(Vec<u8>, String)>,
         return Ok(None);
     };
     let text = String::from_utf8(bytes.clone())
-        .map_err(|_| AgentsError::NotUtf8(project.display(rel).into()))?;
+        .map_err(|_err| AgentsError::NotUtf8(project.display(rel).into()))?;
     Ok(Some((bytes, text)))
 }
 

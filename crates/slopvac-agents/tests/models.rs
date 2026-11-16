@@ -1,4 +1,5 @@
 //! Reviewer model recommendations: parsing, ranking, generated doc and prime text.
+#![cfg(test)]
 
 use std::path::PathBuf;
 

@@ -1,4 +1,5 @@
 //! `[guidance]` read from real config files by `prime` and `setup`.
+#![cfg(test)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,10 @@ fn write_config(dir: &Path, name: &str, guidance: &str) -> PathBuf {
     path
 }
 
+#[expect(
+    clippy::unwrap_in_result,
+    reason = "test helper: a malformed argument list is a test bug and should fail loudly"
+)]
 fn prime_out(root: &Path, args: &[&str]) -> Result<String, AgentsError> {
     let words = std::iter::once("prime").chain(args.iter().copied());
     let m = prime::command().try_get_matches_from(words).unwrap();
@@ -93,6 +98,10 @@ fn level_flag_skips_loading_the_config() {
     assert!(prime_out(dir.path(), &["--level", "full"]).is_ok());
 }
 
+#[expect(
+    clippy::unwrap_in_result,
+    reason = "test helper: a malformed argument list is a test bug and should fail loudly"
+)]
 fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError> {
     let root = root.to_str().unwrap();
     let words = ["setup", "claude", "--root", root]

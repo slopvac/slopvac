@@ -1,4 +1,5 @@
 //! Behaviour tests for `slopvac prime` through its public interface.
+#![cfg(test)]
 
 use std::fs;
 

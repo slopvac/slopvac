@@ -38,10 +38,10 @@ impl Guidance {
     /// `slopvac.toml` from `root` upward applies. With no config the schema defaults hold.
     pub fn load(root: &Path, explicit: Option<&Path>) -> Result<Self, AgentsError> {
         let discovery = Discovery::new(&NoPresets);
-        let config = match explicit {
-            Some(path) => Some(discovery.explicit(path)),
-            None => discovery.nearest(root).transpose(),
-        };
+        let config = explicit.map_or_else(
+            || discovery.nearest(root).transpose(),
+            |path| Some(discovery.explicit(path)),
+        );
         match config {
             None => Ok(Self::default()),
             Some(Ok(config)) => Ok(Self::from_config(&config)),

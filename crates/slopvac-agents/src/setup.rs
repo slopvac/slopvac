@@ -21,7 +21,7 @@ pub const EXIT_INCOMPLETE: u8 = 2;
 
 /// What one setup invocation asks for.
 #[derive(Debug, Clone)]
-#[allow(clippy::struct_excessive_bools, reason = "one bool per CLI flag")]
+#[expect(clippy::struct_excessive_bools, reason = "one bool per CLI flag")]
 pub struct Options {
     /// The harness, required unless `list`.
     pub harness: Option<String>,
