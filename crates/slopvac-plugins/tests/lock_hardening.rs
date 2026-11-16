@@ -221,6 +221,33 @@ fn sources_of_every_kind_reject_hostile_characters() {
     }
 }
 
+/// Classes the shared sanitiser covers beyond the older lock list: the soft
+/// hyphen (Cf), fillers and a reserved code point that Unicode marks
+/// `Default_Ignorable` (U+2065), tag characters, private use and noncharacters.
+#[test]
+fn sources_reject_format_ignorable_private_use_and_noncharacter_code_points() {
+    for c in [
+        "\u{ad}",
+        "\u{34f}",
+        "\u{3164}",
+        "\u{fe0f}",
+        "\u{2065}",
+        "\u{e0041}",
+        "\u{e000}",
+        "\u{fdd0}",
+        "\u{ffff}",
+        "\u{10ffff}",
+    ] {
+        for source in [
+            format!("oci://ghcr.io/a{c}b:1"),
+            format!("https://example.org/a{c}b"),
+            format!("packs/a{c}b"),
+        ] {
+            assert!(source.parse::<Source>().is_err(), "accepted {source:?}");
+        }
+    }
+}
+
 #[test]
 fn a_source_displays_as_the_text_it_was_parsed_from() {
     let git = format!("git+https://example.org/a@{COMMIT}");

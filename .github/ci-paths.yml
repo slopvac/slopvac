@@ -28,6 +28,8 @@ code:
   - 'scripts/contract/**'
   - 'tests/contract/**'
   - 'crates/slopvac-text/**'
+  - 'crates/slopvac-migrate/data/**'
+  - 'crates/slopvac-migrate/tests/fixtures/**'
   - 'evals/**'
 
 # Rust workspace under crates/. Build, format, lint and test run across three
@@ -41,6 +43,34 @@ rust:
   - 'rustfmt.toml'
   - 'deny.toml'
   - '.config/nextest.toml'
+
+# Reference-engine eval ratchet. Rule data, the Python engine, the eval corpus
+# and the contracts the corpus is scored against.
+evals:
+  - '.github/workflows/**'
+  - 'evals/**'
+  - 'packages/slopvac-lint/src/**'
+  - 'packages/slopvac-lint/vale/**'
+  - 'scripts/install_vale.py'
+  - 'schemas/**'
+  - 'docs/contract/**'
+
+# Docs site build (generated reference pages, Starlight, rustdoc, link check).
+# Pull requests build only; the Pages deploy lives in docs-deploy.yml.
+docs-site:
+  - '.github/workflows/**'
+  - 'site/**'
+  - 'docs/site.toml'
+  - 'docs/site-lint.toml'
+  - 'scripts/docs/**'
+  - 'tests/docs/**'
+  - 'schemas/**'
+  - 'packages/slopvac-lint/src/slopvac/rules/**'
+  - 'crates/**'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
+  - 'mise.toml'
 
 package:
   - '.github/workflows/**'

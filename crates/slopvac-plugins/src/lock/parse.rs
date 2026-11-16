@@ -46,7 +46,7 @@ impl<'a> Obj<'a> {
     fn parsed<T: std::str::FromStr<Err = ValueError>>(&self, key: &str) -> Result<T, LockError> {
         self.string(key)?
             .parse()
-            .map_err(|e: ValueError| err(&self.at(key), e.to_string()))
+            .map_err(|e: ValueError| err(&self.at(key), e.raw()))
     }
 }
 
@@ -161,7 +161,7 @@ fn requires(obj: &Obj<'_>) -> Result<Vec<PackId>, LockError> {
             item.as_str()
                 .ok_or_else(|| err(&at, "must be a string"))?
                 .parse()
-                .map_err(|e: ValueError| err(&at, e.to_string()))
+                .map_err(|e: ValueError| err(&at, e.raw()))
         })
         .collect()
 }

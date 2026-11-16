@@ -34,7 +34,7 @@ Run `just docs-check` locally after `just docs` to check that `build/site-src` m
 
 Run `just docs-site` to build the Starlight site in `site/dist` and copy the rustdoc output to `site/dist/api`. It needs Node from `mise.toml`. Dependabot watches `site/package.json`.
 
-GitHub Pages publishes the site from `.github/workflows/docs-site.yml`. The workflow runs on pushes to `main` and on pull requests. A pull request builds everything and deploys nothing. The steps are:
+GitHub Pages publishes the site from `.github/workflows/docs-deploy.yml` on pushes to `main`. It calls `.github/workflows/docs-site.yml`, which also runs from `test.yml` on pull requests when the `docs-site` path class matches. A pull request builds everything and deploys nothing. The build steps are:
 
 1. Run the generator tests.
 2. Generate the pages into a temporary directory.
@@ -42,7 +42,7 @@ GitHub Pages publishes the site from `.github/workflows/docs-site.yml`. The work
 4. Build the Starlight site.
 5. Build rustdoc with warnings denied and copy it to `dist/api`.
 6. Check internal links with lychee.
-7. Upload the site as the Pages artifact, and deploy that same artifact.
+7. On `main` only, upload the site as the Pages artifact and deploy that same artifact.
 
 The repository publishes with the GitHub Actions source. Changing the source in the repository settings stops deployment.
 

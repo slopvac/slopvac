@@ -18,6 +18,10 @@ The client supports HTTP; it does not support FTP.
 
 The client supports HTTP.
 
+The control acknowledges the run; it does not confirm that it started.
+
+The control acknowledges the run.
+
 Testing is not a phase. It is a habit.
 
 Run the tests on every push.

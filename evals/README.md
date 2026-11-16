@@ -158,4 +158,4 @@ The interval is the wider of the Wilson interval and the document-cluster bootst
 
 Tuning and holdout are compared separately against their own baselines. Tune rules against `tuning`. Use `holdout` to check that a gain generalises.
 
-The ratchet starts in report mode. The workflow `evals-ratchet.yml` runs on rule, engine and eval changes and writes the table to the job summary. Set the repository variable `SLOPVAC_EVALS_GATE` to `enforce`, or pass `--mode enforce`, to fail the run. The run is deterministic for a given engine and corpus, and a baseline from another manifest is rejected with exit 2. After a corpus or label change, rebuild the baseline in the same pull request and say why.
+The ratchet starts in report mode. The workflow `evals-ratchet.yml` runs from `test.yml` on rule, engine and eval changes and writes the table to the job summary. Set the repository variable `SLOPVAC_EVALS_GATE` to `enforce`, or pass `--mode enforce`, to fail the run. The run is deterministic for a given engine and corpus, and a baseline from another manifest is rejected with exit 2. After a corpus or label change, rebuild the baseline in the same pull request and say why.
