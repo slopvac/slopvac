@@ -30,6 +30,8 @@ pub enum Code {
     ExtendsCycle,
     /// An `extends` entry that names no readable config.
     ExtendsMissing,
+    /// An `extends` graph over the depth, file-count or byte limit.
+    ExtendsLimit,
     /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
     DuplicateScope,
     /// A front-matter field that `[frontmatter] allow` does not list.
@@ -51,6 +53,7 @@ impl Code {
             Code::UnsupportedVersion => "config-unsupported-version",
             Code::ExtendsCycle => "config-extends-cycle",
             Code::ExtendsMissing => "config-extends-missing",
+            Code::ExtendsLimit => "config-extends-limit",
             Code::DuplicateScope => "config-duplicate-scope",
             Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
         }
