@@ -18,6 +18,7 @@ Each rule gives a source. A source named as a skill (for example "lang-rust-pack
 
 ## Logging and output
 
+- Every user-facing message comes from one message registry. This covers CLI output, error and diagnostic messages, notices, help text, and language server and report text. No literal message at a call site. Each stable error code maps to a message template with named parameters. The docs generator reads the same registry. A CI check rejects bypassing literals. Why: one source keeps wording, codes and generated docs in step. Source: `docs/contract/policies.md` section 3.5. Target: after the message-registry design bead.
 - Libraries stay silent. No `println!`, `eprintln!` or `dbg!` in a library crate. They emit `tracing` events and spans and return values. Why: the binary owns the streams. Source: lang-rust-libraries, Logging.
 - The binary installs one stderr subscriber, enabled by `SLOPVAC_LOG`. Logging is off when the variable is unset. No log file. Sources: `crates/slopvac/src/logging.rs` and `docs/contract/policies.md` section 1.7.
 - The language server writes only protocol frames to stdout. Why: stdout is the transport. Source: `docs/design/slopvac-3.md`, Language and runtime (`lsp-server`).
@@ -28,7 +29,8 @@ Each rule gives a source. A source named as a skill (for example "lang-rust-pack
 
 - No `unwrap()` in library code. Source: lang-rust-quality, Lint.
 - Use `expect` only for an invariant from local construction or bundled data (a regex literal, an embedded table). Mark the site `#[expect(clippy::expect_used, reason = "...")]`. Do not call `expect` on input from a file, the network, a plugin or the user. Return an error. Target: after the clippy-gates bead.
-- Every `#[allow]` and `#[expect]` has a `reason`. Prefer `#[expect]` so a stale suppression fails. Target: after the clippy-gates bead.
+- Every `#[allow]` and `#[expect]` has a `reason`. Use `#[expect(..., reason = "...")]` for a local suppression, so a stale one fails. A workspace-level allow carries `reason = "..."`. A crate-level temporary allow names the burn-down bead in its reason. Target: after the lint-config bead.
+- Set `[workspace.lints.clippy]` to `pedantic = warn`. CI denies warnings through `-D warnings`. Add these restriction and nursery lints at least: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `dbg_macro`, `allow_attributes_without_reason`, `undocumented_unsafe_blocks` and `clone_on_ref_ptr`. Add `print_stdout` and `print_stderr` for library crates, and `indexing_slicing` and `string_slice` for parser crates. Why: a reviewer cannot check by eye what a lint can check on every build. Source: lang-rust-quality, Lint. Target: after the lint-config bead.
 - `unsafe` is forbidden. The workspace sets `unsafe_code = "forbid"`. Source: `Cargo.toml`, `[workspace.lints.rust]`.
 - Code builds clean under the workspace lints. `cargo clippy --workspace --all-targets -- -D warnings` passes. Source: `CONTRIBUTING.md`, Rust workspace.
 
@@ -140,7 +142,8 @@ Each departure from a standard below has a recorded reason. Where a reason is no
 - [ ] No log, panic or error text carries document text, secrets or absolute paths outside the root.
 - [ ] Output escaping goes through `slopvac-sanitize`.
 - [ ] No `unwrap()` in library code. Each `expect` guards a local invariant and has `#[expect(..., reason)]` (target).
-- [ ] Every `#[allow]` and `#[expect]` has a `reason` (target).
+- [ ] Every `#[allow]` and `#[expect]` has a `reason`, and the workspace clippy lint set is in place (target).
+- [ ] Every user-facing message comes from the message registry (target).
 - [ ] No `unsafe`.
 - [ ] Dependencies are declared in `[workspace.dependencies]`, and the crate sets `lints.workspace = true`.
 - [ ] `lib.rs` is a thin facade with private modules, `pub(crate)` by default and no glob re-exports.
