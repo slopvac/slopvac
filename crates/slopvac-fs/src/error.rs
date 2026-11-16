@@ -1,6 +1,11 @@
 //! Errors for the crate.
+//!
+//! Display text never carries a path, so an error chain can reach a log or a report without
+//! leaking where the project lives (docs/contract/policies.md section 1.7). The path stays on
+//! the error: read it with [`Error::path`] and render it with [`crate::display_under_root`].
 
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 /// What can go wrong in this crate.
 #[derive(Debug, thiserror::Error)]
@@ -14,20 +19,55 @@ pub enum Error {
     /// No home directory is known, so no per-user directory can be chosen.
     #[error("cannot determine the home directory")]
     NoHomeDir,
-    /// An I/O operation failed. The path is the one the caller passed.
-    #[error("{op} {path}: {source}")]
+    /// An I/O operation on a path failed. Read the path with [`Error::path`].
+    #[error("{op} failed")]
     Io {
         /// The operation, such as `write`.
         op: &'static str,
-        /// The path the operation acted on.
+        /// The path the operation acted on. Not part of the Display text.
         path: PathBuf,
-        /// The underlying error.
+        /// The underlying error, reduced to its OS code or kind.
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     /// Reading from a reader failed.
-    #[error("read failed: {0}")]
-    Read(#[source] std::io::Error),
+    #[error("read failed")]
+    Read(#[source] io::Error),
+}
+
+impl Error {
+    /// The path the failed operation acted on, when the error has one.
+    ///
+    /// The path is as the caller passed it. Redact it with [`crate::display_under_root`] before
+    /// it leaves the process.
+    #[must_use]
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Io { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn io(op: &'static str, path: &Path, source: &io::Error) -> Self {
+        Self::Io {
+            op,
+            path: path.to_path_buf(),
+            source: scrub(source),
+        }
+    }
+
+    pub(crate) fn read(source: &io::Error) -> Self {
+        Self::Read(scrub(source))
+    }
+}
+
+/// Keep the OS code or the kind of `e` and drop its message and inner error.
+///
+/// Libraries such as `tempfile` wrap an I/O error together with the path it concerned, and
+/// that path would appear in the chain.
+fn scrub(e: &io::Error) -> io::Error {
+    e.raw_os_error()
+        .map_or_else(|| io::Error::from(e.kind()), io::Error::from_raw_os_error)
 }
 
 /// A result with this crate's [`Error`].

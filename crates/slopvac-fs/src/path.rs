@@ -50,7 +50,10 @@ pub fn lexical_normalize(path: &Path) -> PathBuf {
 pub fn display_under_root(path: &Path, root: &Path) -> String {
     let path = lexical_normalize(path);
     let root = lexical_normalize(root);
-    let rel = if path.is_absolute() == root.is_absolute() {
+    let rel = if root == Path::new(".") {
+        // An empty or `.` root is the working directory: a relative path is already below it.
+        path.is_relative().then(|| path.clone())
+    } else if path.is_absolute() == root.is_absolute() {
         path.strip_prefix(&root).ok().map(Path::to_path_buf)
     } else if path.is_relative() {
         Some(path.clone())
@@ -136,6 +139,25 @@ mod tests {
                 want,
                 "{path}"
             );
+        }
+    }
+
+    #[test]
+    fn display_with_cwd_root() {
+        for root in ["", "."] {
+            for (path, want) in [
+                ("docs/a.md", "docs/a.md"),
+                (".", "."),
+                ("./docs/../a.md", "a.md"),
+                ("../a.md", "<external>/a.md"),
+                ("/abs/a.md", "<external>/a.md"),
+            ] {
+                assert_eq!(
+                    display_under_root(Path::new(path), Path::new(root)),
+                    want,
+                    "{root:?} {path}"
+                );
+            }
         }
     }
 

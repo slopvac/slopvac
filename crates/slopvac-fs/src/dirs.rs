@@ -1,8 +1,10 @@
 //! Per-user directories.
+//!
+//! `etcetera` reads the process environment directly and has no injection point. These
+//! functions apply its Unix (XDG) rules to an injected lookup instead, so a test can isolate
+//! every input. A test below keeps the production result equal to `etcetera`'s.
 
 use std::path::PathBuf;
-
-use etcetera::BaseStrategy;
 
 use crate::{Error, Result};
 
@@ -11,52 +13,113 @@ pub const CACHE_DIR_VAR: &str = "SLOPVAC_CACHE_DIR";
 
 const APP: &str = "slopvac";
 
-/// The cache directory: `SLOPVAC_CACHE_DIR` when set and non-empty, else the per-user cache
-/// directory that `etcetera` reports, plus `slopvac`.
-pub fn cache_dir() -> Result<PathBuf> {
-    cache_dir_with(&|name| std::env::var(name).ok())
+/// Look up an environment variable. `None` means unset.
+pub type Lookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+fn process_env(name: &str) -> Option<String> {
+    // A value that is not valid UTF-8 counts as unset, as in the other lookups.
+    std::env::var(name).ok()
 }
 
-/// [`cache_dir`] with an injectable lookup for the override variable.
-///
-/// Only the override reads through `lookup`. `etcetera` reads `XDG_CACHE_HOME` and the home
-/// directory from the process environment itself, and offers no way to inject them.
-pub fn cache_dir_with(lookup: &dyn Fn(&str) -> Option<String>) -> Result<PathBuf> {
+/// The cache directory: `SLOPVAC_CACHE_DIR` when set and non-empty, else `XDG_CACHE_HOME`
+/// (absolute), else `~/.cache`, plus `slopvac`.
+pub fn cache_dir() -> Result<PathBuf> {
+    cache_dir_with(&process_env)
+}
+
+/// [`cache_dir`] reading `SLOPVAC_CACHE_DIR`, `XDG_CACHE_HOME` and `HOME` through `lookup`.
+pub fn cache_dir_with(lookup: Lookup<'_>) -> Result<PathBuf> {
     if let Some(dir) = lookup(CACHE_DIR_VAR).filter(|v| !v.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
-    Ok(strategy()?.cache_dir().join(APP))
+    xdg(lookup, "XDG_CACHE_HOME", ".cache")
 }
 
-/// The per-user configuration directory that `etcetera` reports, plus `slopvac`.
+/// The configuration directory: `XDG_CONFIG_HOME` (absolute), else `~/.config`, plus `slopvac`.
 pub fn config_dir() -> Result<PathBuf> {
-    Ok(strategy()?.config_dir().join(APP))
+    config_dir_with(&process_env)
 }
 
-fn strategy() -> Result<impl BaseStrategy> {
-    etcetera::choose_base_strategy().map_err(|_| Error::NoHomeDir)
+/// [`config_dir`] reading `XDG_CONFIG_HOME` and `HOME` through `lookup`.
+pub fn config_dir_with(lookup: Lookup<'_>) -> Result<PathBuf> {
+    xdg(lookup, "XDG_CONFIG_HOME", ".config")
+}
+
+/// An XDG base directory: the variable when it is an absolute path, else `$HOME/<default>`.
+fn xdg(lookup: Lookup<'_>, var: &str, default: &str) -> Result<PathBuf> {
+    let base = match lookup(var).map(PathBuf::from).filter(|p| p.is_absolute()) {
+        Some(dir) => dir,
+        None => home(lookup)?.join(default),
+    };
+    Ok(base.join(APP))
+}
+
+/// `HOME` through the lookup; with no lookup value, the standard library's home directory.
+fn home(lookup: Lookup<'_>) -> Result<PathBuf> {
+    match lookup("HOME").filter(|h| !h.is_empty()) {
+        Some(h) => Ok(PathBuf::from(h)),
+        None => etcetera::home_dir().map_err(|_| Error::NoHomeDir),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::Path;
+
+    use etcetera::BaseStrategy;
 
     use super::*;
 
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |k| map.get(k).cloned()
+    }
+
     #[test]
     fn override_wins() {
-        let got = cache_dir_with(&|n| (n == CACHE_DIR_VAR).then(|| "/custom/c".to_owned()));
-        assert_eq!(got.unwrap(), Path::new("/custom/c"));
+        let e = env(&[
+            (CACHE_DIR_VAR, "/custom/c"),
+            ("XDG_CACHE_HOME", "/x"),
+            ("HOME", "/h"),
+        ]);
+        assert_eq!(cache_dir_with(&e).unwrap(), Path::new("/custom/c"));
     }
 
     #[test]
-    fn empty_override_falls_back_to_the_user_cache() {
-        let got = cache_dir_with(&|_| Some(String::new())).unwrap();
-        assert_eq!(got.file_name().unwrap(), "slopvac");
+    fn xdg_cache_home_beats_home() {
+        let e = env(&[("XDG_CACHE_HOME", "/x"), ("HOME", "/h")]);
+        assert_eq!(cache_dir_with(&e).unwrap(), Path::new("/x/slopvac"));
     }
 
     #[test]
-    fn config_dir_ends_in_the_app_name() {
-        assert_eq!(config_dir().unwrap().file_name().unwrap(), "slopvac");
+    fn empty_override_and_relative_xdg_fall_back_to_home() {
+        let e = env(&[
+            (CACHE_DIR_VAR, ""),
+            ("XDG_CACHE_HOME", "rel"),
+            ("HOME", "/h"),
+        ]);
+        assert_eq!(cache_dir_with(&e).unwrap(), Path::new("/h/.cache/slopvac"));
+    }
+
+    #[test]
+    fn config_dir_cases() {
+        let e = env(&[("XDG_CONFIG_HOME", "/xc"), ("HOME", "/h")]);
+        assert_eq!(config_dir_with(&e).unwrap(), Path::new("/xc/slopvac"));
+        let e = env(&[("HOME", "/h")]);
+        assert_eq!(
+            config_dir_with(&e).unwrap(),
+            Path::new("/h/.config/slopvac")
+        );
+    }
+
+    #[test]
+    fn production_matches_etcetera() {
+        let s = etcetera::choose_base_strategy().unwrap();
+        assert_eq!(cache_dir().unwrap(), s.cache_dir().join(APP));
+        assert_eq!(config_dir().unwrap(), s.config_dir().join(APP));
     }
 }

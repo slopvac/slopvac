@@ -15,8 +15,9 @@ pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
     reader
         .take(cap.saturating_add(1))
         .read_to_end(&mut buf)
-        .map_err(Error::Read)?;
-    if buf.len() as u64 > cap {
+        .map_err(|e| Error::read(&e))?;
+    // A length always fits in u64; the fallback keeps the check total without a cast.
+    if u64::try_from(buf.len()).map_or(true, |len| len > cap) {
         return Err(Error::CapExceeded { cap });
     }
     Ok(buf)
@@ -38,11 +39,7 @@ pub struct WriteOptions {
 /// `path`, and then the directory is synced so the rename survives a crash. An existing target
 /// keeps its permission bits. The temporary file is removed on failure.
 pub fn write_atomic(path: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()> {
-    let io = |op, source| Error::Io {
-        op,
-        path: path.to_path_buf(),
-        source,
-    };
+    let io = |op, source: std::io::Error| Error::io(op, path, &source);
     let dir = match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
@@ -76,7 +73,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()>
 
 #[cfg(test)]
 mod tests {
-    use std::io::repeat;
+    use std::io::{Read, repeat};
 
     use super::*;
 
@@ -116,6 +113,36 @@ mod tests {
         assert_eq!(fs::read(&p).unwrap(), b"two");
         let names: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(names.len(), 1, "no temporary file is left behind");
+    }
+
+    #[test]
+    fn replacement_is_atomic_for_readers() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        write_atomic(&p, b"old", WriteOptions::default()).unwrap();
+        let mut before = File::open(&p).unwrap();
+        write_atomic(&p, b"new content", WriteOptions::default()).unwrap();
+        let mut seen = String::new();
+        before.read_to_string(&mut seen).unwrap();
+        assert_eq!(seen, "old", "a reader opened earlier keeps the old file");
+        assert_eq!(fs::read(&p).unwrap(), b"new content");
+    }
+
+    #[test]
+    fn io_error_hides_the_path_but_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("missing/f");
+        let err = write_atomic(&p, b"x", WriteOptions::default()).unwrap_err();
+        assert_eq!(err.path(), Some(p.as_path()));
+        let mut chain = err.to_string();
+        let mut src = std::error::Error::source(&err);
+        while let Some(e) = src {
+            chain.push_str(&e.to_string());
+            src = e.source();
+        }
+        let secret = dir.path().to_string_lossy().into_owned();
+        assert!(!chain.contains(&secret), "{chain}");
+        assert!(!chain.contains('/'), "{chain}");
     }
 
     #[test]
