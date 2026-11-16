@@ -68,5 +68,9 @@
 # sync.remote: "git+ssh://git@github.com/srobroek/slopvac"
 export:
     auto: true
+    # A full export takes seconds on this ledger and runs inside the write that
+    # triggers it. Export at most every 5 minutes; the pre-commit hook still
+    # exports a current issues.jsonl for every commit.
+    interval: 5m
 sync:
     remote: "git+https://github.com/srobroek/slopvac.git"
