@@ -90,10 +90,16 @@ fn linked_packages(lock: &toml::Table) -> Vec<(String, String, Option<String>)> 
 /// The only source this check can resolve exactly: the crates.io index.
 const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
+/// The cache directory Cargo uses for the crates.io git index. The name is the host plus a
+/// hash of the index URL, so it is fixed for `https://github.com/rust-lang/crates.io-index`.
+/// Any other `github.com-*` directory belongs to a different GitHub-hosted registry.
+const GIT_INDEX_DIR: &str = "github.com-1ecc6299db9ec823";
+
 /// Registry cache directories that hold crates.io sources. The sparse protocol unpacks
-/// under `index.crates.io-<hash>`, the git protocol under `github.com-<hash>`.
+/// under `index.crates.io-<hash>`, where the host name is part of the directory name, so
+/// only crates.io produces it. The hash differs between Cargo versions.
 fn is_crates_io_cache(dir_name: &str) -> bool {
-    dir_name.starts_with("index.crates.io-") || dir_name.starts_with("github.com-")
+    dir_name.starts_with("index.crates.io-") || dir_name == GIT_INDEX_DIR
 }
 
 /// Every unpacked copy of the linked package, identified by its `Cargo.lock` source.
@@ -441,4 +447,26 @@ fn a_copy_under_another_registry_cache_is_not_used() {
         "int parser;",
     );
     assert!(resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).is_err());
+}
+
+#[test]
+fn only_another_github_registry_copy_is_not_used() {
+    let home = Scratch::new("resolve-other-github");
+    home.write(
+        "registry/src/github.com-0123456789abcdef/tree-sitter-fake-1.0.0/src/parser.c",
+        "int parser;",
+    );
+    let error = resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO))
+        .expect_err("not crates.io");
+    assert!(error.contains("not unpacked"), "{error}");
+}
+
+#[test]
+fn the_canonical_names_are_the_only_ones_accepted() {
+    assert!(is_crates_io_cache("index.crates.io-1949cf8c6b5b557f"));
+    assert!(is_crates_io_cache("index.crates.io-6f17d22bba15001f"));
+    assert!(is_crates_io_cache("github.com-1ecc6299db9ec823"));
+    assert!(!is_crates_io_cache("github.com-1ecc6299db9ec824"));
+    assert!(!is_crates_io_cache("github.com-"));
+    assert!(!is_crates_io_cache("index.example.com-1949cf8c6b5b557f"));
 }
