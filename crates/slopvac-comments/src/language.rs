@@ -4,8 +4,7 @@
     feature = "lang-c",
     feature = "lang-go",
     feature = "lang-java",
-    feature = "lang-proto",
-    feature = "lang-clojure"
+    feature = "lang-proto"
 ))]
 use tree_sitter::Language as Grammar;
 
@@ -199,7 +198,6 @@ impl Language {
             Self::Go if cfg!(feature = "lang-go") => Backend::TreeSitter,
             Self::Java if cfg!(feature = "lang-java") => Backend::TreeSitter,
             Self::Proto if cfg!(feature = "lang-proto") => Backend::TreeSitter,
-            Self::Clojure if cfg!(feature = "lang-clojure") => Backend::TreeSitter,
             _ => Backend::Lexer,
         }
     }
@@ -209,8 +207,7 @@ impl Language {
         feature = "lang-c",
         feature = "lang-go",
         feature = "lang-java",
-        feature = "lang-proto",
-        feature = "lang-clojure"
+        feature = "lang-proto"
     ))]
     pub(crate) fn grammar(self) -> Option<Grammar> {
         match self {
@@ -222,8 +219,6 @@ impl Language {
             Self::Java => Some(tree_sitter_java::LANGUAGE.into()),
             #[cfg(feature = "lang-proto")]
             Self::Proto => Some(tree_sitter_proto::LANGUAGE.into()),
-            #[cfg(feature = "lang-clojure")]
-            Self::Clojure => Some(tree_sitter_clojure_orchard::LANGUAGE.into()),
             _ => None,
         }
     }

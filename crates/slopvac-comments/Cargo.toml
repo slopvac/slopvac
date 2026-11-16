@@ -12,9 +12,8 @@ publish.workspace = true
 default = ["all-languages"]
 # Tree-sitter grammars. Each is a language whose grammar has no external scanner; every
 # other language is read by the lexer, which needs no feature.
-all-languages = ["lang-c", "lang-clojure", "lang-go", "lang-java", "lang-proto"]
+all-languages = ["lang-c", "lang-go", "lang-java", "lang-proto"]
 lang-c = ["dep:tree-sitter", "dep:tree-sitter-c"]
-lang-clojure = ["dep:tree-sitter", "dep:tree-sitter-clojure-orchard"]
 lang-go = ["dep:tree-sitter", "dep:tree-sitter-go"]
 lang-java = ["dep:tree-sitter", "dep:tree-sitter-java"]
 lang-proto = ["dep:tree-sitter", "dep:tree-sitter-proto"]
@@ -23,13 +22,12 @@ lang-proto = ["dep:tree-sitter", "dep:tree-sitter-proto"]
 thiserror.workspace = true
 tree-sitter = { workspace = true, optional = true }
 tree-sitter-c = { workspace = true, optional = true }
-tree-sitter-clojure-orchard = { workspace = true, optional = true }
 tree-sitter-go = { workspace = true, optional = true }
 tree-sitter-java = { workspace = true, optional = true }
 tree-sitter-proto = { workspace = true, optional = true }
 
 [dev-dependencies]
-serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

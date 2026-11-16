@@ -133,8 +133,7 @@ pub fn extract_with(
         feature = "lang-c",
         feature = "lang-go",
         feature = "lang-java",
-        feature = "lang-proto",
-        feature = "lang-clojure"
+        feature = "lang-proto"
     ))]
     if language.backend() == crate::Backend::TreeSitter {
         return crate::treesitter::extract(language, source, limits);

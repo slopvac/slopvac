@@ -326,7 +326,6 @@ fn only_grammars_without_an_external_scanner_use_tree_sitter() {
         ("go", cfg!(feature = "lang-go")),
         ("java", cfg!(feature = "lang-java")),
         ("proto", cfg!(feature = "lang-proto")),
-        ("clojure", cfg!(feature = "lang-clojure")),
     ]
     .into_iter()
     .filter_map(|(name, on)| on.then_some(name))

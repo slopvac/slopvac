@@ -9,7 +9,6 @@ fn a_language_uses_tree_sitter_only_when_its_feature_is_on() {
         (Language::Go, cfg!(feature = "lang-go")),
         (Language::Java, cfg!(feature = "lang-java")),
         (Language::Proto, cfg!(feature = "lang-proto")),
-        (Language::Clojure, cfg!(feature = "lang-clojure")),
     ] {
         let want = if enabled {
             Backend::TreeSitter
@@ -25,7 +24,7 @@ fn every_other_language_uses_the_lexer_in_every_build() {
     for language in Language::all() {
         if !matches!(
             language,
-            Language::C | Language::Go | Language::Java | Language::Proto | Language::Clojure
+            Language::C | Language::Go | Language::Java | Language::Proto
         ) {
             assert_eq!(language.backend(), Backend::Lexer, "{language:?}");
         }

@@ -10,72 +10,93 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-use serde_json::Value;
 
 /// Grammar crates that may be linked. Each has `src/parser.c` only.
 const ALLOWED: &[&str] = &[
     "tree-sitter-c",
-    "tree-sitter-clojure-orchard",
     "tree-sitter-go",
     "tree-sitter-java",
     "tree-sitter-proto",
 ];
 
-fn metadata() -> Value {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = Command::new(cargo)
-        .args(["metadata", "--format-version", "1", "--locked", "--offline"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .expect("cargo metadata runs");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).expect("metadata is JSON")
+/// The workspace `Cargo.lock`.
+fn lock() -> toml::Table {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
+    text.parse().expect("Cargo.lock is TOML")
 }
 
-/// Names and manifest directories of every normal dependency of this crate, direct or not.
-fn linked_packages(metadata: &Value) -> Vec<(String, PathBuf)> {
-    let packages = metadata["packages"].as_array().expect("packages");
-    let nodes = metadata["resolve"]["nodes"].as_array().expect("nodes");
-    let root = packages
-        .iter()
-        .find(|p| p["name"] == "slopvac-comments")
-        .expect("this crate")["id"]
-        .as_str()
-        .expect("id")
-        .to_owned();
+/// `name` and `version` of a lock `dependencies` entry, which reads `name` or
+/// `name version` or `name version (source)`.
+fn dependency_key(entry: &str) -> (String, Option<String>) {
+    let mut parts = entry.split(' ');
+    let name = parts.next().expect("name").to_owned();
+    (name, parts.next().map(str::to_owned))
+}
+
+/// Every package `slopvac-comments` can link, direct or not, as `(name, version)`.
+/// The lock lists optional dependencies whether or not a feature is on, so this is the
+/// largest set a build could link.
+fn linked_packages(lock: &toml::Table) -> Vec<(String, String)> {
+    let packages = lock["package"].as_array().expect("packages");
+    let version_of = |name: &str, wanted: Option<&str>| -> String {
+        packages
+            .iter()
+            .filter(|p| p["name"].as_str() == Some(name))
+            .map(|p| p["version"].as_str().expect("version").to_owned())
+            .find(|version| wanted.is_none_or(|w| w == version))
+            .unwrap_or_else(|| panic!("{name} is not in Cargo.lock"))
+    };
     let mut seen = BTreeSet::new();
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        if !seen.insert(id.clone()) {
+    let mut stack = vec![(
+        "slopvac-comments".to_owned(),
+        version_of("slopvac-comments", None),
+    )];
+    while let Some((name, version)) = stack.pop() {
+        if !seen.insert((name.clone(), version.clone())) {
             continue;
         }
-        let node = nodes.iter().find(|n| n["id"] == id.as_str()).expect("node");
-        for dep in node["deps"].as_array().expect("deps") {
-            let normal = dep["dep_kinds"]
-                .as_array()
-                .is_some_and(|kinds| kinds.iter().any(|k| k["kind"].is_null()));
-            if normal {
-                stack.push(dep["pkg"].as_str().expect("pkg").to_owned());
-            }
+        let package = packages
+            .iter()
+            .find(|p| p["name"].as_str() == Some(&name) && p["version"].as_str() == Some(&version))
+            .expect("package");
+        for entry in package
+            .get("dependencies")
+            .and_then(toml::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let (dep, wanted) = dependency_key(entry.as_str().expect("dependency"));
+            let dep_version = version_of(&dep, wanted.as_deref());
+            stack.push((dep, dep_version));
         }
     }
-    packages
-        .iter()
-        .filter(|p| seen.contains(p["id"].as_str().expect("id")))
-        .map(|p| {
-            let manifest = Path::new(p["manifest_path"].as_str().expect("manifest"));
-            (
-                p["name"].as_str().expect("name").to_owned(),
-                manifest.parent().expect("dir").to_owned(),
-            )
-        })
-        .collect()
+    seen.into_iter().collect()
+}
+
+/// The unpacked source of a registry crate. Fails if it is not there: a grammar whose
+/// sources cannot be found cannot be shown to be scanner-free.
+fn registry_dir(name: &str, version: &str) -> Result<PathBuf, String> {
+    let home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
+        .ok_or("neither CARGO_HOME nor HOME is set")?;
+    let sources = home.join("registry").join("src");
+    let entries = std::fs::read_dir(&sources)
+        .map_err(|error| format!("cannot read {}: {error}", sources.display()))?;
+    for entry in entries {
+        let index =
+            entry.map_err(|error| format!("bad entry in {}: {error}", sources.display()))?;
+        let candidate = index.path().join(format!("{name}-{version}"));
+        if candidate.is_dir() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "{name} {version} is not unpacked under {}",
+        sources.display()
+    ))
 }
 
 /// Whether a directory name holds sources that do not ship in the grammar's library.
@@ -127,9 +148,13 @@ fn inspect(name: &str, dir: &Path) -> Result<(), String> {
 }
 
 fn grammar_crates() -> Vec<(String, PathBuf)> {
-    linked_packages(&metadata())
+    linked_packages(&lock())
         .into_iter()
         .filter(|(name, _)| name.starts_with("tree-sitter-") && name != "tree-sitter-language")
+        .map(|(name, version)| {
+            let dir = registry_dir(&name, &version).unwrap_or_else(|error| panic!("{error}"));
+            (name, dir)
+        })
         .collect()
 }
 

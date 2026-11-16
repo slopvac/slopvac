@@ -84,16 +84,14 @@ snapbox = "1.2"
 strsim = "0.11.1"
 tar = { version = "0.4", default-features = false }
 tempfile = "3"
-slopvac-comments = { path = "crates/slopvac-comments" }
-tree-sitter = "0.26"
-tree-sitter-c = "0.24"
-tree-sitter-clojure-orchard = "0.2"
-tree-sitter-go = "0.25"
-tree-sitter-java = "0.23"
-tree-sitter-proto = "0.6"
 thiserror = "2"
 toml = "1"
 toml_edit = "0.25"
+tree-sitter = "0.26"
+tree-sitter-c = "0.24"
+tree-sitter-go = "0.25"
+tree-sitter-java = "0.23"
+tree-sitter-proto = "0.6"
 unicode-normalization = "0.1"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",

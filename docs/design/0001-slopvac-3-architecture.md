@@ -219,7 +219,7 @@ Markdown uses `pulldown-cmark` and MDX uses `markdown-rs`. HTML uses `html5ever`
 - Evidence: none from a spike. AsciiDoc is new, so it ships as experimental.
 - Detail: plan section "Language and runtime" table.
 - Code comments: the default is a pure-Rust lexer that ports the 2.x comment projection. It tracks block comments and strings in one pass, so a comment marker inside a string is not a comment. It links no C code.
-- Tree-sitter: it reads a language only when the grammar has no external scanner. Five grammars qualify, and the binary carries no other grammar. They cover C, Go and Java, plus Proto and Clojure.
+- Tree-sitter: it reads a language only when the grammar has no external scanner. Four grammars qualify: C, Go, Java and Proto. The binary carries no other grammar.
 - Reason: a scanner is hand-written C that keeps its own state in raw memory. Review found hangs and memory corruption in the F#, Kotlin and Swift scanners on hostile input. The Dart scanner also crashed on a multi-byte character at a read edge. Rust safety rules and parse budgets cannot contain C code.
 - Checks: the lexer is linear. The crate has a fuzz target, and a test fails if a linked grammar gains a scanner.
 - Rejected: tree-sitter with every grammar. It added 60 MiB to a release binary and put unaudited C scanners on the path of every source file.

@@ -10,8 +10,8 @@
 //! The default is a pure-Rust lexer ([`extract_lexical`]) that ports the 2.x projection:
 //! one pass that knows block comments and strings, so a `//` inside a string is not a
 //! comment. It links no C code. A tree-sitter grammar reads a language only when the
-//! grammar has no external scanner and its `lang-*` feature is on: C, Go, Java, Proto
-//! and Clojure. Scanner-bearing grammars ship C code that reads and writes raw memory,
+//! grammar has no external scanner and its `lang-*` feature is on: C, Go, Java and
+//! Proto. Scanner-bearing grammars ship C code that reads and writes raw memory,
 //! and the F#, Kotlin and Swift scanners hung or corrupted memory on hostile input, so
 //! none is linked. [`Language::backend`] reports which backend a language uses.
 //!
@@ -44,8 +44,7 @@ mod strip;
     feature = "lang-c",
     feature = "lang-go",
     feature = "lang-java",
-    feature = "lang-proto",
-    feature = "lang-clojure"
+    feature = "lang-proto"
 ))]
 mod treesitter;
 
