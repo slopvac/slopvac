@@ -2437,6 +2437,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "slopvac-config",
  "slopvac-migrate",
  "slopvac-text",
  "tempfile",

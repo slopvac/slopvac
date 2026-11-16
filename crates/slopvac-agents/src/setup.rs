@@ -8,6 +8,7 @@ use crate::block::{self, State};
 use crate::content::{self, BlockKind};
 use crate::error::AgentsError;
 use crate::fsx::Project;
+use crate::guidance::Guidance;
 use crate::harness::{self, Harness};
 use crate::managed;
 
@@ -96,7 +97,12 @@ pub fn options(matches: &ArgMatches) -> Options {
 
 /// Run the parsed `setup` command.
 pub fn run(matches: &ArgMatches) -> Result<Outcome, AgentsError> {
-    execute(&options(matches))
+    let mut opts = options(matches);
+    // `guidance.write = "off"` means the project wants no skill, as `--no-skill` does.
+    if !Guidance::load(&opts.root, None)?.write {
+        opts.no_skill = true;
+    }
+    execute(&opts)
 }
 
 fn usage(message: &str) -> AgentsError {
