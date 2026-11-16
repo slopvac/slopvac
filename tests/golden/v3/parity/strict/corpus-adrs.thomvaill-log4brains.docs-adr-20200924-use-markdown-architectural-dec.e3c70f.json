@@ -1,0 +1,674 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 4,
+        "per_100_words": 2.21,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 4,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 2.21,
+        "score": 94.5,
+        "suggestions": 4,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.105,
+        "over_budget": true,
+        "per_100_words": 1.105,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 3,
+        "gating_per_100_words": 0.829,
+        "over_budget": true,
+        "per_100_words": 1.657,
+        "score": 69.2,
+        "suggestions": 0,
+        "warnings": 3
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 4,
+        "findings": 4,
+        "gating_per_100_words": 2.21,
+        "over_budget": true,
+        "per_100_words": 2.21,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.552,
+        "over_budget": true,
+        "per_100_words": 0.552,
+        "score": 50.4,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.105,
+        "over_budget": true,
+        "per_100_words": 1.105,
+        "score": 28.9,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.105,
+        "over_budget": true,
+        "per_100_words": 1.105,
+        "score": 41.8,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 11,
+    "findings": [
+      {
+        "ai_signal": "none",
+        "category": "ste-nouns",
+        "column": 1,
+        "end_column": 1,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "",
+        "message": "This noun stack has 4 words. Use three or fewer.",
+        "replacement": null,
+        "rule_id": "core:ste-nouns.multiword-noun-too-long",
+        "severity": "error",
+        "span": {
+          "end": 0,
+          "start": 0
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 3,
+        "end_column": 46,
+        "end_line": 1,
+        "line": 1,
+        "matched_text": "Use Markdown Architectural Decision Records",
+        "message": "title-case heading: Use Markdown Architectural Decision Records -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 45,
+          "start": 2
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 33,
+        "end_line": 6,
+        "line": 6,
+        "matched_text": "Context and Problem Statement",
+        "message": "title-case heading: Context and Problem Statement -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 118,
+          "start": 89
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 8,
+        "line": 8,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 123,
+          "start": 120
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 28,
+        "end_column": 34,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "error",
+        "span": {
+          "end": 217,
+          "start": 211
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 22,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "Considered Options",
+        "message": "title-case heading: Considered Options -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 262,
+          "start": 244
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-format",
+        "column": 45,
+        "end_column": 46,
+        "end_line": 14,
+        "line": 14,
+        "matched_text": "–",
+        "message": "em/en dash: – -- write `--` instead, or a comma, colon, or two sentences",
+        "replacement": null,
+        "rule_id": "core:prose-format.no-unicode-dash",
+        "severity": "error",
+        "span": {
+          "end": 377,
+          "start": 374
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-format",
+        "column": 109,
+        "end_column": 110,
+        "end_line": 15,
+        "line": 15,
+        "matched_text": "–",
+        "message": "em/en dash: – -- write `--` instead, or a comma, colon, or two sentences",
+        "replacement": null,
+        "rule_id": "core:prose-format.no-unicode-dash",
+        "severity": "error",
+        "span": {
+          "end": 542,
+          "start": 539
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-format",
+        "column": 116,
+        "end_column": 117,
+        "end_line": 16,
+        "line": 16,
+        "matched_text": "–",
+        "message": "em/en dash: – -- write `--` instead, or a comma, colon, or two sentences",
+        "replacement": null,
+        "rule_id": "core:prose-format.no-unicode-dash",
+        "severity": "error",
+        "span": {
+          "end": 701,
+          "start": 698
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-format",
+        "column": 12,
+        "end_column": 13,
+        "end_line": 18,
+        "line": 18,
+        "matched_text": "–",
+        "message": "em/en dash: – -- write `--` instead, or a comma, colon, or two sentences",
+        "replacement": null,
+        "rule_id": "core:prose-format.no-unicode-dash",
+        "severity": "error",
+        "span": {
+          "end": 831,
+          "start": 828
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 20,
+        "end_line": 20,
+        "line": 20,
+        "matched_text": "Decision Outcome",
+        "message": "title-case heading: Decision Outcome -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 897,
+          "start": 881
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 24,
+        "end_column": 30,
+        "end_line": 24,
+        "line": 24,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "error",
+        "span": {
+          "end": 988,
+          "start": 982
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 31,
+        "end_column": 38,
+        "end_line": 24,
+        "line": 24,
+        "matched_text": "be made",
+        "message": "Passive voice \"be made\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 996,
+          "start": 989
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 36,
+        "end_column": 40,
+        "end_line": 27,
+        "line": 27,
+        "matched_text": "our ",
+        "message": "first-person plural: our  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 1243,
+          "start": 1239
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 44,
+        "end_column": 55,
+        "end_line": 28,
+        "line": 28,
+        "matched_text": "facilitates",
+        "message": "wordy: use 'help|ease' instead of 'facilitates'",
+        "replacement": null,
+        "rule_id": "core:prose-craft.wordiness",
+        "severity": "warning",
+        "span": {
+          "end": 1316,
+          "start": 1305
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 71,
+        "end_column": 75,
+        "end_line": 30,
+        "line": 30,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 1441,
+          "start": 1437
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 24,
+        "end_column": 46,
+        "end_line": 33,
+        "line": 33,
+        "matched_text": "performs the following",
+        "message": "Nominalized action \"performs the following\". Use the verb.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.nominalized-action",
+        "severity": "error",
+        "span": {
+          "end": 1543,
+          "start": 1521
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 14,
+        "end_column": 17,
+        "end_line": 35,
+        "line": 35,
+        "matched_text": "ADR",
+        "message": "internal reference: ADR -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 1601,
+          "start": 1598
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "11 error(s), limit 0",
+        "4 Unicode dash(es), limit 0",
+        "6.91 severity-weighted findings per 100 words, budget 1.5",
+        "score 0.0, minimum 85.0",
+        "docs-discipline at 1.10 severity-weighted findings per 100 words, budget 0.2",
+        "prose-craft at 0.83 severity-weighted findings per 100 words, budget 0.8",
+        "prose-format at 2.21 severity-weighted findings per 100 words, budget 0.2",
+        "ste-nouns at 0.55 severity-weighted findings per 100 words, budget 0.3",
+        "ste-verbs at 1.10 severity-weighted findings per 100 words, budget 0.4",
+        "ste-words at 1.10 severity-weighted findings per 100 words, budget 0.5"
+      ]
+    },
+    "paragraphs": 3,
+    "path": "corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f.md",
+    "per_100_words": 9.945,
+    "profile": "strict",
+    "prose": {
+      "errors": 11,
+      "findings": 14,
+      "per_100_words": 7.735,
+      "warnings": 3
+    },
+    "score": 0.0,
+    "sentences": 27,
+    "suggestions": 4,
+    "total_findings": 18,
+    "unchecked": [],
+    "warnings": 3,
+    "words": 181
+  },
+  "exit_code": 1
+}

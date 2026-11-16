@@ -720,7 +720,7 @@ fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
     // The lexical rules: tokens, substitution and pattern.
-    assert_eq!(cov.findings.len(), 145);
+    assert_eq!(cov.findings.len(), 146);
     assert!(
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"
