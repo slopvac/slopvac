@@ -271,7 +271,8 @@ fn doctor(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    use crate::doctor::config::LayerConfigSources;
+    use crate::doctor::stubs::{EnvDirs, LocalUpdateProbe};
     let cwd = std::env::current_dir().unwrap_or_default();
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
@@ -280,7 +281,7 @@ fn doctor(
         explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
         version: env!("CARGO_PKG_VERSION"),
         update: &LocalUpdateProbe,
-        config: &LocalConfigSources,
+        config: &LayerConfigSources,
         dirs: &EnvDirs,
         walk_limit: crate::doctor::WALK_LIMIT,
     });

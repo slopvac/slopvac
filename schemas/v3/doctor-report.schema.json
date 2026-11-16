@@ -165,8 +165,8 @@
       "type": "object",
       "properties": {
         "layer": {
-          "description": "`explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`.",
-          "enum": ["explicit", "project"]
+          "description": "`explicit` for a file named with `--config`, `project` for the nearest `slopvac.toml`, `extends` for a file either of them extends.",
+          "enum": ["explicit", "project", "extends"]
         },
         "file": {
           "$ref": "#/$defs/Path"

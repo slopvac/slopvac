@@ -4,6 +4,7 @@
 //! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
 //! the traits below; [`stubs`] holds the local stand-ins.
 
+pub mod config;
 pub mod read;
 pub mod stubs;
 
@@ -79,7 +80,7 @@ pub enum SourceStatus {
 /// A config file that was found, before path redaction.
 #[derive(Debug, Clone)]
 pub struct RawSource {
-    /// `explicit` or `project`.
+    /// `explicit`, `project` or `extends`.
     pub layer: &'static str,
     /// Where the file is.
     pub path: PathBuf,
@@ -736,7 +737,7 @@ mod tests {
             explicit_config: None,
             version,
             update: &Fixed(cached.map(|v| (v.to_owned(), 7))),
-            config: &stubs::LocalConfigSources,
+            config: &config::LayerConfigSources,
             dirs: &stubs::EnvDirs,
             walk_limit: WALK_LIMIT,
         })
@@ -780,7 +781,7 @@ mod tests {
             explicit_config: None,
             version: "3.0.0",
             update: &Fixed(None),
-            config: &stubs::LocalConfigSources,
+            config: &config::LayerConfigSources,
             dirs: &Dirs(dir.to_owned()),
             walk_limit,
         });

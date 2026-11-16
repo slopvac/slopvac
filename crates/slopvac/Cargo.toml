@@ -41,7 +41,6 @@ slopvac-rules.workspace = true
 slopvac-styles.workspace = true
 slopvac-update.workspace = true
 tempfile.workspace = true
-toml.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "ansi",
