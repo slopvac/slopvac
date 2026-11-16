@@ -8,10 +8,12 @@ PyPI matches the publishing workflow by file name and environment. Candidates up
 
 | Field | Value |
 | --- | --- |
-| Owner | `srobroek` |
+| Owner | `slopvac` |
 | Repository name | `slopvac` |
 | Workflow name | `candidate.yml` |
 | Environment name | `pypi` |
+
+The PyPI trusted publisher owner is the `slopvac` GitHub organisation. The release GitHub App is installed on the `slopvac` organisation.
 
 Stable releases keep the registration of `publish-lint.yml` that already exists. If a later change publishes stable wheels from another workflow, register that file the same way.
 

@@ -88,7 +88,7 @@ Open a pull request with a concise description and a list of checks you ran. CI 
 
 ## Report a problem or propose a rule
 
-Choose an issue form at [New issue](https://github.com/srobroek/slopvac/issues/new/choose):
+Choose an issue form at [New issue](https://github.com/slopvac/slopvac/issues/new/choose):
 
 The forms cover these categories:
 

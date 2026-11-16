@@ -7,7 +7,7 @@ Slopvac ships hooks for pre-commit and prek, and the same command works in lefth
 Put `slopvac` on `PATH` before the first commit. Any install method works:
 
 ```sh
-brew install srobroek/tap/slopvac
+brew install slopvac/tap/slopvac
 uv tool install slopvac
 ```
 
@@ -17,7 +17,7 @@ The shell installer attached to each GitHub release also works.
 
 ```yaml
 repos:
-  - repo: https://github.com/srobroek/slopvac
+  - repo: https://github.com/slopvac/slopvac
     rev: v3.0.0
     hooks:
       - id: slopvac

@@ -638,7 +638,7 @@ the final judge, and filtered candidates must remain visible in coverage
 measurement. This work lives on the separate `feat/judgement-rewrite` branch.
 It is not part of the current CLI or deterministic exit status. See the
 [project overview](../../README.md#agentic-judgment)
-and [issue #162](https://github.com/srobroek/slopvac/issues/162).
+and [issue #162](https://github.com/slopvac/slopvac/issues/162).
 
 ## Sources
 
