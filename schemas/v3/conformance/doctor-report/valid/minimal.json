@@ -1,0 +1,16 @@
+{
+  "schema_version": 3,
+  "ok": true,
+  "slopvac": {"version": "3.0.0", "install_method": "unknown", "upgrade_command": null},
+  "platform": {"os": "linux", "arch": "x86_64"},
+  "update": {"checks": "enabled", "disabled_by": null, "state": "unknown", "latest": null, "checked_at": null},
+  "offline": {"effective": false, "sources": []},
+  "config": {"ok": true, "sources": []},
+  "packs": {"lockfile": {"file": ".slopvac/packs.lock", "status": "absent", "error": null}, "items": []},
+  "trust": {"status": "absent", "error": null, "trusted_plugins": 0, "pinned_keys": []},
+  "directories": {
+    "cache": {"path": "<external>/slopvac", "source": "default", "exists": false, "bytes": null, "truncated": false},
+    "data": {"path": "<external>/slopvac", "source": "default", "exists": false, "bytes": null, "truncated": false},
+    "state": {"path": "<external>/slopvac", "source": "default", "exists": false, "bytes": null, "truncated": false}
+  }
+}

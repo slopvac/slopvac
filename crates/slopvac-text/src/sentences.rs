@@ -30,8 +30,65 @@ pub struct Sentence {
 
 static LIST_MARKER: LazyLock<Regex> = LazyLock::new(|| re(r"^(?:[-*+]|\d+[.)]|[A-Za-z][.)])\s+"));
 static COLON_END: LazyLock<Regex> = LazyLock::new(|| re(r":\s*\z"));
-static DOTTED_INITIALISM: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z"));
+/// The reference tests `(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z` on the prefix ending at each
+/// full stop, and a pattern scan from the start of the prefix makes the split quadratic.
+/// `runs[i]` is the number of `X.` pairs that end at byte `i`; only a maximal run can pass
+/// the lookbehind, because a shorter start follows a full stop.
+fn dotted_runs(bytes: &[u8]) -> Vec<usize> {
+    let mut runs = vec![0; bytes.len()];
+    for i in 1..bytes.len() {
+        if bytes[i] == b'.' && bytes[i - 1].is_ascii_alphabetic() {
+            runs[i] = 1 + if i >= 2 { runs[i - 2] } else { 0 };
+        }
+    }
+    runs
+}
+
+/// Whether the prefix `bytes[..=index]` ends in a dotted initialism such as `e.g.`.
+fn ends_in_dotted_initialism(bytes: &[u8], runs: &[usize], index: usize, work: &mut Work) -> bool {
+    work.tick(1);
+    let pairs = runs[index];
+    if pairs < 2 {
+        return false;
+    }
+    let start = index + 1 - 2 * pairs;
+    work.tick(1);
+    start == 0 || !(bytes[start - 1].is_ascii_alphabetic() || bytes[start - 1] == b'.')
+}
+
+/// Protected spans sorted by start, with a running maximum of their ends so that the first
+/// span containing a byte is a binary search instead of a scan.
+struct Protected {
+    ranges: Vec<(usize, usize)>,
+    max_end: Vec<usize>,
+}
+
+impl Protected {
+    fn new(ranges: Vec<(usize, usize)>) -> Self {
+        let mut top = 0;
+        let max_end = ranges
+            .iter()
+            .map(|&(_, e)| {
+                top = top.max(e);
+                top
+            })
+            .collect();
+        Self { ranges, max_end }
+    }
+
+    /// End of the first span (in start order) with `start <= index < end`.
+    fn end_containing(&self, index: usize, work: &mut Work) -> Option<usize> {
+        let starts = self.ranges.partition_point(|&(s, _)| {
+            work.tick(1);
+            s <= index
+        });
+        let first = self.max_end.partition_point(|&e| {
+            work.tick(1);
+            e <= index
+        });
+        (first < starts).then(|| self.ranges[first].1)
+    }
+}
 
 static INITIALISM_OPENER: LazyLock<Regex> = LazyLock::new(|| re(r"^[A-Z][a-z]*\b"));
 
@@ -61,19 +118,28 @@ fn is_initialism_opener(text: &str) -> Result<bool, TextError> {
         .is_some_and(|&(start, end)| INITIALISM_SENTENCE_OPENERS.contains(&&text[start..end])))
 }
 
+/// Per-chunk lookup tables, built in one pass each.
+struct Scan {
+    protected: Protected,
+    runs: Vec<usize>,
+}
+
 fn terminal_cut(
     text: &str,
     index: usize,
-    protected: &[(usize, usize)],
+    scan: &Scan,
+    work: &mut Work,
 ) -> Result<Option<usize>, TextError> {
     let mut protected_end = None;
-    if let Some(&(_, end)) = protected.iter().find(|&&(s, e)| s <= index && index < e) {
+    if let Some(end) = scan.protected.end_containing(index, work) {
         if !text[index + 1..end].trim_matches(is_closer).is_empty() {
             return Ok(None);
         }
         protected_end = Some(end);
     }
-    if text.as_bytes()[index] == b'.' && DOTTED_INITIALISM.is_match(&text.as_bytes()[..=index])? {
+    if text.as_bytes()[index] == b'.'
+        && ends_in_dotted_initialism(text.as_bytes(), &scan.runs, index, work)
+    {
         // Python measures this gap with `re.match(r"\s*", ...)`: regex whitespace.
         let rest = &text[index + 1..];
         let gap_len = rest.find(|c| !regex_space(c)).unwrap_or(rest.len());
@@ -133,33 +199,67 @@ fn split_lines(text: &str) -> Vec<(usize, &str)> {
     out
 }
 
+/// For each line index, whether the non-empty lines after it exist and all start with a
+/// list marker.
+struct ListItemSuffixes {
+    /// `(any non-empty line from here on, all of them are list items)` per line index.
+    from: Vec<(bool, bool)>,
+}
+
+impl ListItemSuffixes {
+    fn all_items_after(&self, index: usize) -> bool {
+        let (any, all) = self.from[index + 1];
+        any && all
+    }
+}
+
+fn list_item_suffixes(
+    lines: &[(usize, &str)],
+    work: &mut Work,
+) -> Result<ListItemSuffixes, TextError> {
+    let mut from = vec![(false, true); lines.len() + 1];
+    for (k, (_, line)) in lines.iter().enumerate().rev() {
+        work.tick(1);
+        let part = py_strip(line);
+        from[k] = if part.is_empty() {
+            from[k + 1]
+        } else {
+            (true, from[k + 1].1 && matches_start(&LIST_MARKER, part)?)
+        };
+    }
+    Ok(ListItemSuffixes { from })
+}
+
 /// Split a lead-in and its list items, keeping each item's source offset.
-fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
+fn split_vertical_list<'a>(
+    text: &'a str,
+    work: &mut Work,
+) -> Result<Vec<(&'a str, usize)>, TextError> {
     let lines = split_lines(text);
     if lines.len() < 2 {
         return Ok(vec![(text, 0)]);
     }
+    let mut items = None;
     for (index, (_, line)) in lines.iter().enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
         if !COLON_END.is_match(body.as_bytes())? {
             continue;
         }
+        // One backward pass answers "are all non-empty lines from here on list items".
+        let items = match &items {
+            Some(items) => items,
+            None => items.insert(list_item_suffixes(&lines, work)?),
+        };
+        if !items.all_items_after(index) {
+            continue;
+        }
         let mut tail: Vec<(usize, &str)> = Vec::new();
         for (k, (_, l)) in lines[index + 1..].iter().enumerate() {
+            work.tick(1);
             let part = py_strip(l);
             if !part.is_empty() {
                 tail.push((index + 1 + k, part));
             }
-        }
-        let mut all_items = !tail.is_empty();
-        for (_, part) in &tail {
-            if !matches_start(&LIST_MARKER, part)? {
-                all_items = false;
-                break;
-            }
-        }
-        if !all_items {
-            continue;
         }
         let head_end = lines[index].0 + lines[index].1.len();
         let head_all = &text[..head_end];
@@ -179,12 +279,33 @@ fn split_vertical_list(text: &str) -> Result<Vec<(&str, usize)>, TextError> {
 
 /// Split prose into sentences, applying vertical-list structure before punctuation.
 pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
+    split_sentences_counted(text, &mut Work::default())
+}
+
+/// Units of scanning the splitter does outside the single pass each pattern makes over a
+/// chunk. One unit is a byte handed to a matcher, a span or table entry visited by a
+/// lookup, or a line visited while building a list tail. Tests bound it by the input
+/// length, so a hot path that scans per terminator or per line shows up as a large count.
+#[derive(Debug, Default)]
+struct Work(usize);
+
+impl Work {
+    fn tick(&mut self, units: usize) {
+        self.0 += units;
+    }
+}
+
+fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>, TextError> {
     if py_strip(text).is_empty() {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for (chunk, chunk_offset) in split_vertical_list(text)? {
-        let protected = protected_ranges(chunk)?;
+    for (chunk, chunk_offset) in split_vertical_list(text, work)? {
+        work.tick(chunk.len());
+        let scan = Scan {
+            protected: Protected::new(protected_ranges(chunk)?),
+            runs: dotted_runs(chunk.as_bytes()),
+        };
         let mut cuts = Vec::new();
         let mut index = 0;
         while index < chunk.len() {
@@ -193,7 +314,7 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
                 .next()
                 .expect("index on a char boundary");
             if matches!(c, '.' | '!' | '?')
-                && let Some(end) = terminal_cut(chunk, index, &protected)?
+                && let Some(end) = terminal_cut(chunk, index, &scan, work)?
             {
                 cuts.push(end);
                 index = end;
@@ -222,4 +343,94 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shapes() -> Vec<(&'static str, String)> {
+        let n = 3000;
+        vec![
+            ("a. ", "a. ".repeat(n)),
+            (". ", ". ".repeat(n)),
+            ("- ", "- ".repeat(n)),
+            ("A ", "A ".repeat(n)),
+            ("a.b.", "a.b.".repeat(n)),
+            ("x:\n", "x:\n".repeat(n)),
+            ("`a`. ", "`a`. ".repeat(n)),
+            ("(a). ", "(a). ".repeat(n)),
+            ("em space", "A.\u{2003}".repeat(n)),
+            ("nbsp", "a.\u{a0}".repeat(n)),
+            ("1. ", "1. ".repeat(n)),
+        ]
+    }
+
+    #[test]
+    fn splitting_does_linear_work_on_repetitive_input() {
+        for (name, text) in shapes() {
+            let mut work = Work::default();
+            split_sentences_counted(&text, &mut work).unwrap();
+            assert!(
+                work.0 <= 8 * text.len(),
+                "{name:?}: {} units for {} bytes",
+                work.0,
+                text.len()
+            );
+        }
+    }
+
+    /// Every string over a small alphabet up to this length.
+    fn all_strings(alphabet: &[char], max_len: usize) -> Vec<String> {
+        let mut all = vec![String::new()];
+        let mut layer = vec![String::new()];
+        for _ in 0..max_len {
+            layer = layer
+                .iter()
+                .flat_map(|s| alphabet.iter().map(move |c| format!("{s}{c}")))
+                .collect();
+            all.extend(layer.iter().cloned());
+        }
+        all
+    }
+
+    #[test]
+    fn the_dotted_initialism_scan_agrees_with_the_reference_pattern() {
+        let pattern = re(r"(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z");
+        for text in all_strings(&['a', 'B', '.', ' ', 'é'], 8) {
+            let bytes = text.as_bytes();
+            let runs = dotted_runs(bytes);
+            for index in (0..bytes.len()).filter(|&i| bytes[i] == b'.') {
+                assert_eq!(
+                    ends_in_dotted_initialism(bytes, &runs, index, &mut Work::default()),
+                    pattern.is_match(&bytes[..=index]).unwrap(),
+                    "{text:?} at {index}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_protected_lookup_returns_the_first_span_containing_the_byte() {
+        let spans: [&[(usize, usize)]; 4] = [
+            &[(0, 10), (2, 4), (5, 6)],
+            &[(0, 3), (1, 9), (4, 5), (4, 12)],
+            &[(2, 3), (2, 7), (8, 9)],
+            &[],
+        ];
+        for ranges in spans {
+            let protected = Protected::new(ranges.to_vec());
+            for index in 0..14 {
+                let expected = ranges
+                    .iter()
+                    .find(|&&(s, e)| s <= index && index < e)
+                    .map(|&(_, e)| e);
+                assert_eq!(
+                    protected.end_containing(index, &mut Work::default()),
+                    expected,
+                    "{ranges:?} {index}"
+                );
+            }
+        }
+    }
 }

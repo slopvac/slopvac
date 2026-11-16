@@ -109,6 +109,36 @@ CURATED = [
     "We asked the U.S.\x1fIt was late.",
 ]
 
+# Cases for the splitter's dotted-initialism check, protected-span lookup and list
+# suffix scan: initialisms at the text start and next to non-ASCII letters, overlapping
+# protected spans, and several colon-ended lines.
+EXTRA = [
+    "e.g. Use it. Then stop.",
+    "U.S. Army men came. Then left.",
+    "a.b. Next one here.",
+    "\u00e9.g. Next one.",
+    "\u00e9U.S. Army rose. Next.",
+    "Z\u00fc.S. Army rose. Next.",
+    "x.U.S. Army rose. Next.",
+    "Wait.A.B. Army rose. Next.",
+    "We saw A.B.C. Delta. Next.",
+    "The U.S.A. Government said so. Then left.",
+    "See (`a. b`) now. Next one.",
+    "Open `a (b. c)` now. Next one.",
+    'He said "stop. Go" quickly. Next one.',
+    "Use (see 'a. b. c') then stop. Next one.",
+    "Visit http://a.b/c. Then go. Next one.",
+    "Edit /etc/a.b. Then go.",
+    "The x.y. Then z.w. Then stop.",
+    "Note: (a. B. C.) done. Next.",
+    "Do this:\n- a.\n- b.\n",
+    "A:\nB:\n- one\n- two",
+    "Intro:\nMore:\n\n- one\n- two",
+    "x:\nnot a list\n- a",
+    "Lead:\n\n   \n1. one\n2) two",
+    "One:\nTwo:\nThree:\n- a\n- b\nnot item",
+]
+
 
 def paragraphs(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
@@ -153,6 +183,7 @@ def build() -> str:
         if not path.exists():
             raise SystemExit(f"missing fixture source: {name}")
         inputs.extend(paragraphs(path)[:40])
+    inputs.extend(EXTRA)
     return dump([case(t) for t in inputs])
 
 
