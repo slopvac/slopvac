@@ -216,6 +216,29 @@ fn a_compressed_drawio_label_reports_its_text_at_the_payload_span() {
     );
 }
 
+#[test]
+fn a_compressed_drawio_message_fills_match_with_the_decoded_label() {
+    let rule = common::rule(
+        "label-run-on",
+        &serde_json::json!({"kind": "structure", "check": "diagram-label-run-on"}),
+        &serde_json::json!({"message": "Cut {match}.", "scope": "prose"}),
+    );
+    let engine = Engine::new(
+        vec![ruleset(vec![category("diagram", &[rule])])],
+        settings(),
+    )
+    .unwrap();
+    let source = format!("<mxfile><diagram name=\"P\">{COMPRESSED_PAGE}</diagram></mxfile>");
+    let doc = engine
+        .lint(&Input::diagram("a.drawio", &source, Format::Drawio))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(
+        doc.findings[0].message.as_str(),
+        "Cut This label has far too many words in it."
+    );
+}
+
 /// A checker that flags every fragment, to show the dispatch hands over each one.
 struct EveryFragment;
 
