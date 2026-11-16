@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use clap::{ArgMatches, parser::ValueSource};
 use slopvac_report::{Format, render};
 
-use crate::engine_stub::RunOutcome;
+use crate::engine::RunOutcome;
 use crate::errors::CliError;
 
 /// The format a run uses.

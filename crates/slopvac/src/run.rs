@@ -8,10 +8,10 @@ use clap::ArgMatches;
 
 use crate::cli;
 use crate::color::{self, ColorChoice};
-use crate::engine_stub::{LintRequest, Linter, StubLinter};
+use crate::engine::{EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, stdin};
+use crate::{exit, generate, init, inspect, lint_settings, logging, offline, output, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,8 +252,7 @@ fn lint(
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
-    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, out, err_out)
+    lint_with(m, &mut std::io::stdin().lock(), &EngineLinter, out, err_out)
 }
 
 fn lint_with(
@@ -293,6 +292,20 @@ fn lint_with(
         targets,
         stdin,
         stdin_plan: plan,
+        config: m.get_one::<PathBuf>("config").cloned(),
+        code_comments: m.get_one::<String>("mode").map(String::as_str) == Some("code-comments"),
+        overrides: lint_settings::Overrides {
+            min_score: m.get_one::<f64>("min-score").copied(),
+            max_per_100_words: m.get_one::<f64>("max-per-100-words").copied(),
+            only_categories: m
+                .get_many::<String>("category")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default(),
+            disable: m
+                .get_many::<String>("disable")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default(),
+        },
     });
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
@@ -311,7 +324,7 @@ fn lint_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine_stub::RunOutcome;
+    use crate::engine::RunOutcome;
     use crate::env::MapEnv;
     use crate::stdin::StdinPlan;
     use std::cell::RefCell;
