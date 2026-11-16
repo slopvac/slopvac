@@ -217,6 +217,68 @@ fn tm5_a_fork_loop_ends_at_the_wall_clock_cap_and_every_fork_dies() {
     assert!(left.is_empty(), "forks {left:?} survived");
 }
 
+/// A loader hook that writes, for each process it loads into, that process's
+/// open-file limit and name.
+#[cfg(target_os = "linux")]
+const PRELOAD_C: &str = r#"#include <stdio.h>
+#include <stdlib.h>
+#include <sys/resource.h>
+__attribute__((constructor)) static void mark(void) {
+    const char *out = getenv("SLOPVAC_TEST_PRELOAD_LOG");
+    if (!out) return;
+    FILE *f = fopen(out, "a");
+    if (!f) return;
+    char comm[64] = {0};
+    FILE *c = fopen("/proc/self/comm", "r");
+    if (c) { if (!fgets(comm, sizeof comm, c)) comm[0] = 0; fclose(c); }
+    struct rlimit r;
+    getrlimit(RLIMIT_NOFILE, &r);
+    fprintf(f, "%llu %s", (unsigned long long) r.rlim_cur, comm);
+    fclose(f);
+}
+"#;
+
+/// A manifest variable such as `LD_PRELOAD` reaches the plugin and never the
+/// launcher, so it runs only once the limits are in place.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_manifest_loader_hook_runs_in_the_plugin_under_its_limits_and_never_in_the_launcher() {
+    let dir = scratch("preload");
+    std::fs::write(dir.join("hook.c"), PRELOAD_C).unwrap();
+    let so = dir.join("hook.so");
+    let built = std::process::Command::new("cc")
+        .args(["-shared", "-fPIC", "-o"])
+        .arg(&so)
+        .arg(dir.join("hook.c"))
+        .status()
+        .expect("a C compiler (`cc`) builds the test's loader hook");
+    assert!(built.success(), "cc failed: {built:?}");
+    let log = dir.join("loaded");
+    let mut s = spec("ok");
+    s.env.push(("LD_PRELOAD".into(), so.display().to_string()));
+    s.env
+        .push(("SLOPVAC_TEST_PRELOAD_LOG".into(), log.display().to_string()));
+    let mut c = cfg();
+    c.caps.open_files = 64;
+    let p = Plugin::start(&s, &c, &Allow).expect("plugin starts");
+    let tagged = p.tag("main", &docs(1));
+    drop(p);
+    let lines = std::fs::read_to_string(&log).unwrap_or_default();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(tagged.is_ok(), "{tagged:?}");
+    let loaded: Vec<&str> = lines.lines().collect();
+    // (open-file limit, process name) for each process the hook ran in.
+    assert!(!loaded.is_empty(), "the hook never ran in the plugin");
+    assert!(
+        loaded.iter().all(|l| !l.contains("slopvac")),
+        "the hook ran in the launcher: {loaded:?}"
+    );
+    assert!(
+        loaded.iter().all(|l| l.starts_with("64 ")),
+        "the hook ran before the limits: {loaded:?}"
+    );
+}
+
 #[test]
 fn the_plugin_runs_under_the_configured_resource_limits() {
     let mut c = cfg();
