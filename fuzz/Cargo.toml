@@ -1,0 +1,40 @@
+# cargo-fuzz harness. It is outside the workspace (see `workspace.exclude` in the root
+# Cargo.toml), so stable builds, `cargo test --workspace` and the release-please crate
+# list never see it. Fuzzing needs nightly: run `just fuzz <target>`.
+[package]
+name = "slopvac-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[[bin]]
+name = "frontmatter_spans"
+path = "fuzz_targets/frontmatter_spans.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_load"
+path = "fuzz_targets/config_load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_document"
+path = "fuzz_targets/parse_document.rs"
+test = false
+doc = false
+bench = false
+
+[dependencies]
+frontmatter-spans = { path = "../crates/frontmatter-spans" }
+libfuzzer-sys = "0.4"
+slopvac-config = { path = "../crates/slopvac-config" }
+slopvac-model = { path = "../crates/slopvac-model" }
+slopvac-parse = { path = "../crates/slopvac-parse" }

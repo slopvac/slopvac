@@ -21,6 +21,14 @@ release VERSION:
 sync-release-please:
     python3 scripts/sync_release_please_crates.py
 
+# Run cargo-mutants over the workspace, or over PACKAGE (a crate name). Slow; needs cargo-mutants.
+mutants PACKAGE="":
+    cargo mutants --locked {{ if PACKAGE == "" { "" } else { "--package " + quote(PACKAGE) } }}
+
+# Fuzz TARGET (see fuzz/fuzz_targets) for SECONDS on nightly. Needs cargo-fuzz.
+fuzz TARGET SECONDS="60":
+    cargo +nightly fuzz run {{quote(TARGET)}} -- -max_total_time={{quote(SECONDS)}} -rss_limit_mb=4096
+
 # Wait for a normal system load before measuring.
 perf-wait-idle:
     uv run --group profile python scripts/perf/perf.py wait-idle

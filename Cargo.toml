@@ -4,6 +4,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The cargo-fuzz harness needs nightly and is built only by `just fuzz`.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.0"
