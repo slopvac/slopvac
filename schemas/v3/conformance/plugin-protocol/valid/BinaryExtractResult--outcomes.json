@@ -1,0 +1,33 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "empty"
+    },
+    {
+      "document": "d2",
+      "outcome": "no-source",
+      "segments": []
+    },
+    {
+      "document": "d3",
+      "error": {
+        "code": -32009,
+        "message": "bad CRC in chunk 4",
+        "data": {
+          "slopvac_code": "binary-malformed"
+        }
+      }
+    },
+    {
+      "document": "d4",
+      "error": {
+        "code": -32004,
+        "message": "segments do not fit the reply",
+        "data": {
+          "slopvac_code": "message-too-large"
+        }
+      }
+    }
+  ]
+}

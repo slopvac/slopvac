@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "empty",
+      "error": {
+        "code": -32008,
+        "message": "encrypted",
+        "data": {
+          "slopvac_code": "binary-unsupported"
+        }
+      }
+    }
+  ]
+}

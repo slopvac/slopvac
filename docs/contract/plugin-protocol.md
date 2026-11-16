@@ -1,6 +1,6 @@
 # Slopvac 3.0 plugin protocol v1
 
-Status: contract for 3.0. Bead `slopvac-8l4.2.6`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
+Status: contract for 3.0. Bead `slopvac-8l4.2.6`; section 5.5 is `slopvac-8l4.2.27`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
 
 A code plugin is a separate program. The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
 
@@ -122,6 +122,7 @@ Each hook kind has one method. The host sends it as a request. The schema holds 
 |---|---|---|---|---|
 | tagger | `tagger/tag` | [`TagParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/TagParams) | [`TagResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/TagResult) | Context tags with a span, a confidence and evidence. |
 | extractor | `extractor/extract` | [`ExtractParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/ExtractParams) | [`ExtractResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/ExtractResult) | Split a format such as AsciiDoc into prose segments. |
+| binary-extractor | `binary-extractor/extract` | [`BinaryExtractParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryExtractParams) | [`BinaryExtractResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryExtractResult) | Read prose out of a binary file such as a docx file or a draw.io PNG (section 5.5). |
 | reporter | `reporter/render` | [`RenderParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/RenderParams) | [`RenderResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/RenderResult) | Render one lint report as text. |
 | fixer | `fixer/fix` | [`FixParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/FixParams) | [`FixResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/FixResult) | Propose edits for findings. |
 | scorer | `scorer/score` | [`ScoreParams`](../../schemas/v3/plugin-protocol.schema.json#/$defs/ScoreParams) | [`ScoreResult`](../../schemas/v3/plugin-protocol.schema.json#/$defs/ScoreResult) | Compute a score per document. |
@@ -133,7 +134,7 @@ The lifecycle methods are `initialize`, `initialized`, `shutdown`, `exit` and `$
 ### 5.2 Semantics that every hook shares
 
 - **Hooks are pure.** A hook reads the request and returns a result. It may keep a cache, but its result for a request must not depend on earlier requests. The host may retry or reorder requests, or skip them on a cache hit.
-- **Taggers, extractors, fixers and scorers are deterministic.** The same request gets the same result. Run-to-run differences would break the golden suite and the cache. A provider is the one exception.
+- **Taggers, extractors, binary extractors, fixers and scorers are deterministic.** The same request gets the same result. Run-to-run differences would break the golden suite and the cache. A provider is the one exception.
 - **A provider is the only hook that may use the network.** Slopvac core calls a provider only from `slopvac review`, and `lint` leaves every provider idle. The call needs a plugin that the user trusted and named under `[review] provider`. The host sends the text the review type needs and no more (policies.md section 1.5). The `model` in the result is the name the provider reports, and the host compares it with the author model.
 - **A fixer works inside host-authorized envelopes.** The request holds only the findings the user selected. Each edit names one of them by index in `finding` and must lie inside that finding's span, endpoints included. A zero-width edit at the start or end of the span counts as inside. The host rejects every edit of a document when one edit names a missing finding, lies outside its finding span, or overlaps another edit. It reports that document as failed with `plugin-output-invalid`. v1 has no approval path for wider edits, so a fixer that needs a wider range reports the finding unfixed. The host applies accepted edits atomically per file (section 11.2).
 - **A recipe writes nothing.** It returns a plan. The host checks each path, shows the plan, and applies it only when the command allows writes (section 8.2).
@@ -151,9 +152,105 @@ Each request names one hook id, so a batch holds documents for a single hook.
 
 ### 5.4 Positions
 
+The rules below cover hooks that receive a UTF-8 `Document`. Spans from a binary extractor follow section 5.5.3 instead.
+
 Spans use the `Span` def in `common.schema.json`. They are half-open byte ranges into the UTF-8 `text` of the document in the same request. A span must lie inside the text and on character boundaries. The host drops a span that does not. It counts that as `plugin-output-invalid`, which makes the run incomplete. Semantics for line and column conversion belong to `slopvac-8l4.2.11`. A plugin reports spans in bytes.
 
 A segment from an extractor keeps the span of the source it came from. When the converted `text` differs from the source, a finding inside it maps to the whole segment span. Finer mapping is outside v1.
+
+### 5.5 Binary extraction
+
+The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
+
+#### 5.5.1 Formats and eligibility
+
+A format is a kebab-case id. The 3.0 registry holds these ids:
+
+- Office Open XML: `docx`, `docm`, `dotx`, `dotm`, `pptx`, `pptm`, `potx`, `potm`, `xlsx`, `xlsm`, `xltx` and `xltm`. Macro and template variants are read as documents, and the extractor never runs a macro.
+- OpenDocument: `odt`, `odp` and `ods`.
+- PNG with an embedded diagram source: `drawio-png`, `excalidraw-png` and `plantuml-png`.
+
+The host sends a file to a binary extractor only under these rules:
+
+- A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3). A reader ignores a format id it does not know, as it ignores an unknown hook kind.
+- The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
+- When the signature and the name disagree, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
+- When no extractor reads the detected format, the host reports `binary-unsupported`, and the run exits 2.
+- The host sends a document only to a hook that lists its format, and to one binary extractor only. A plugin that gets a format it did not list answers that document with `binary-unsupported`.
+- Standard input is never a binary document in 3.0.
+
+#### 5.5.2 Request
+
+A [`BinaryDocument`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryDocument) carries the whole file inline. `bytes` holds standard base64 (RFC 4648 section 4) with padding and no line breaks, and `byte_length` holds the decoded length. Inline bytes keep the protocol free of a shared file system, and they close the race between a check of the file and its use. A plugin answers `invalid-params` for the whole request when `bytes` does not decode, or decodes to a length other than `byte_length`. `path` follows the `document-path` rule of section 8.1.
+
+The plugin gets every byte of the file. That includes images, revision history, comments, embedded objects and metadata. The host strips nothing (section 11.2).
+
+#### 5.5.3 Segments
+
+A [`BinarySegment`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinarySegment) has six fields, and all six are required:
+
+| Field | Meaning |
+|---|---|
+| `part` | The container member that holds the text. For a ZIP container, it is the entry name as stored, such as `word/document.xml`. For a PNG, it names the chunk, such as `tEXt:mxfile`. |
+| `locator` | The place of the text inside the part, such as `w:p[@w14:paraId=3F2A0B1C]`, `Sheet1!B4` or `drawio/Page-1/label[node-7]`. The format's extractor bead fixes the grammar. |
+| `span` | Physical provenance: a byte range into the decoded file. |
+| `text` | The extracted prose in UTF-8, at least one character long. Rules match this text. |
+| `context` | A context tag, as for `extractor`. |
+| `role` | The structural role, such as `body` or `comment`. |
+
+The span is a [`BinarySpan`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinarySpan). The schema defines it locally because the common `Span` does not fit:
+
+- The common `Span` is closed and requires character boundaries. A binary span indexes raw bytes, so it has no boundary rule, and it is an open object like every protocol message (section 9).
+- `start` is at most `end`, and `end` is at most `byte_length`. The host checks both bounds, and a breach is `plugin-output-invalid`.
+- The span is the smallest range the extractor can name that holds the source. For a stored entry, that is the bytes of the text. For a deflated entry or a compressed chunk, it is the whole compressed data. Two or more segments may share one span, and spans may overlap.
+- The span is provenance only. Matching, contexts, exclusions, fingerprints and rendered positions use byte offsets into `text`. A finding shows the locator and a line and column inside the segment, never a position in the container. Positions belong to `slopvac-8l4.2.28`, and the finding's `origin` belongs to `slopvac-8l4.2.29`.
+
+Identity and order follow these rules:
+
+- The pair of `part` and `locator` identifies a segment. It is unique within one document result, and a duplicate is `plugin-output-invalid`.
+- `part` and `locator` each hold 1 to 1024 characters. Neither may hold a control character (U+0000 to U+001F, U+007F to U+009F) or a bidirectional control (U+202A to U+202E, U+2066 to U+2069). The host still escapes both before it shows them.
+- A locator comes only from the structure of the file: ids stored in it, cell references and ordinal positions. A counter across documents, a clock or a random value is not an input, so the same bytes give the same locators.
+- Segments arrive in the reading order of the format, which the format's extractor bead defines. The host keeps that order. The same bytes give the same order.
+
+The 3.0 roles are `body`, `heading`, `list-item`, `table-cell`, `caption`, `text-box`, `header`, `footer`, `footnote`, `endnote`, `comment`, `notes`, `cell` and `label`. The set is extensible (section 9), and a reader keeps a role it does not know. In 3.0 no rule depends on the role. It labels where a finding comes from.
+
+#### 5.5.4 Outcomes
+
+Each document ends in exactly one outcome:
+
+| Outcome | Meaning | Wire form | Run |
+|---|---|---|---|
+| `extracted` | The file holds prose. | `outcome` `extracted` with one or more segments. | Complete. |
+| `empty` | A valid file of the format with no prose, such as a docx file with no text. | `outcome` `empty`, no segments. | Complete with no findings. |
+| `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | Incomplete. The host reports `binary-no-source`, and the run exits 2. |
+| `unsupported` | A file of the format that the extractor cannot read: encrypted, protected by a password, or a variant it does not handle. | Error -32008 `binary-unsupported`. | Exit 2. |
+| `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `binary-malformed`. | Exit 2. |
+| `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `binary-budget`. | Exit 2. |
+
+- Extraction is all or nothing. A failed document returns no segments, and v1 has no partial result.
+- A malformed payload in a named format is `malformed`. It is never `empty` or `no-source`, so a broken file never passes as clean.
+- The native adapter returns the same six outcomes with the same codes.
+
+#### 5.5.5 Limits
+
+These limits hold for every binary extractor:
+
+| Limit | Value | On breach |
+|---|---|---|
+| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `binary-budget` from the extractor. Output over the limit is `plugin-output-invalid`. |
+| Segments | 1,000,000 per document | Same. |
+| `part` and `locator` | 1024 characters each | `plugin-output-invalid`. |
+| Time | The 30 s hook timeout of section 6.3 | `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative. |
+
+Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
+
+#### 5.5.6 Frames on the wire
+
+The negotiated `maxMessageBytes` of section 2.2 bounds both directions. v1 has no chunking and no path fallback.
+
+- **Requests.** The host serializes the whole request, envelope included, and sends it only when its size is at most `maxMessageBytes`. The size counts the bytes the host would write, so its serializer choices count too. A document whose request does not fit gets `message-too-large`, the host does not send it, and the run exits 2.
+- **Base64 growth.** A file of n bytes encodes to 4 × ⌈n / 3⌉ characters. A 12,582,912-byte file encodes to 16,777,216 characters, which is the whole default limit before any JSON, so that file never fits. The largest file that fits is about 3 × ⌊(`maxMessageBytes` − envelope) / 4⌋ bytes, where envelope is the size of the same request with an empty `bytes` string. The vectors in [`binary-frames.json`](../../schemas/v3/conformance/plugin-protocol/binary-frames.json) fix the exact boundary.
+- **Replies.** The reply must fit the limit as well, and JSON escaping can make it larger than the extracted text. A plugin whose reply would not fit answers one or more documents with `message-too-large` (-32004) in place of their segments, until the reply fits. Each segment it sends is complete. The host reads the reply under the limit of section 2.2.
 
 ## 6. Requests in flight, cancellation and timeouts
 
@@ -203,7 +300,7 @@ The config can change the hook timeouts for each plugin. The config bead owns th
 
 A plugin sees no path unless it required or asked for `document-path` and the host granted it. A granted `path` is relative to the project root. For standard input it is `<stdin>`, and for a file outside the root it is `<external>/<file name>`, as in policies.md section 1.7. It is relative, and has no `..` segment, no drive letter and no backslash. The host omits the project root, the home directory and the cache directory.
 
-The working directory of the plugin is its own installed directory, not the project.
+The working directory of the plugin is its own installed directory, not the project. This sets only where relative paths resolve. It is not containment: 3.0 ships no sandbox, and a plugin can read any file the user can (threat-model.md, residual risk R1).
 
 ### 8.2 Paths the plugin returns
 
@@ -214,7 +311,7 @@ Only recipes return paths. Each is relative to the project root with the same re
 - A reader ignores a field it does not know, in every message and at every depth. It may log the field at debug level.
 - A key with the prefix `x-` is ignored everywhere. Its meaning stays undefined. A plugin or host may use one for private data.
 - The schema leaves `additionalProperties` open on every protocol message. This differs from user-written files, where an unknown key is an error (policies.md section 3.3).
-- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds and feature names. Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
+- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names, binary format ids and segment roles (section 5.5). Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
 - A required field that is missing or has the wrong type makes the message invalid, however lenient the rest of the rules are.
 - Additive changes within version 1 are: a new optional field, a new hook kind, a new feature, a new optional notification. Everything else needs version 2.
 
@@ -236,6 +333,9 @@ Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is 
 | -32005 | `request-cancelled` | The plugin stopped a request after a cancel. |
 | -32006 | `document-invalid` | The plugin cannot process this document, for example binary content. |
 | -32007 | `offline` | A provider refused the call because offline mode is on. |
+| -32008 | `binary-unsupported` | A binary extractor cannot read this file: encrypted, protected, or an unhandled variant (section 5.5.4). |
+| -32009 | `binary-malformed` | The bytes break the format, or an embedded payload does not decode. |
+| -32010 | `binary-budget` | A binary extractor hit a limit. |
 
 The range -32099 to -32000 is the slopvac range. The plugin may add codes from -32050 to -32099 for its own use if it also sets `data.slopvac_code`, and the host treats them as `internal-error`. The host reserves the rest of the range.
 
@@ -252,6 +352,10 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `plugin-spawn-failed` | The program did not start. |
 | `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
 | `request-id-exhausted` | The request counter reached 2^53-1. |
+| `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
+| `binary-no-source` | A binary extractor found no embedded source in a valid container. |
+
+A first-party extractor reports `binary-unsupported`, `binary-malformed` and `binary-budget` with the same strings. The host also raises `binary-unsupported` when no extractor reads a format.
 
 Exit codes stay as policies.md section 3.5 defines them. Any plugin failure makes the affected run exit 2, never 0, and never 1 unless findings fail the gate.
 
@@ -266,7 +370,7 @@ The following hand-offs go to the threat-model bead. The threat model and indepe
 - The plugin runs from a verified copy. The host hashes the files, then runs them from a read-only, content-addressed directory, so a swap between check and use does not apply.
 - The environment is an allowlist: `PATH` set by the host, a locale, and variables the plugin manifest names and the user allowed. No tokens, no `HOME`, no CI variables. A provider that needs a key gets it by an explicit config entry.
 - All file descriptors other than the three standard streams are closed in the child.
-- The host sends only document text, findings and options. Paths, when granted, are relative.
+- The host sends only document text, findings and options. A binary extractor is the exception: it gets every byte of the file (section 5.5.2). Paths, when granted, are relative.
 - The host validates every result before use and never executes any part of it.
 
 ### 11.2 Hand-offs to `slopvac-8l4.9.11`
@@ -291,6 +395,7 @@ The following hand-offs go to the threat-model bead. The threat model and indepe
 | Fixer envelope | Whether the finding-span rule is tight enough, for example a fixer that rewrites a whole sentence through many one-finding edits. | Section 5.2. The model sets per-document limits on edit count and inserted bytes. |
 | Duplicate keys and parser differences | Ambiguity between the host parser and the plugin parser. | Section 2.2 rejects duplicate keys. |
 | Log leakage | Plugin standard error in host logs. | Section 7. The host cannot redact free text. |
+| Binary documents | What a binary extractor learns from a whole file, and what a hostile file can make it do. | Section 5.5. The plugin sees images, revision history, embedded objects and metadata. Extractors fetch no external relationship and run no embedded content. `slopvac-8l4.2.30` sets the container limits and the threat rows. |
 
 ## 12. Conformance test outline
 
@@ -337,6 +442,12 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H23 | Two documents whose batch exceeds `maxMessageBytes`. | The host sends two messages. |
 | H24 | A response with an unknown id, and a second response to a finished id. | Ignored and logged. |
 | H25 | A top-level array, a duplicate key, a nesting depth of 65. | Each is a framing error. |
+| H36 | `binary-extractor/extract` requests built from every case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. |
+| H37 | A binary result entry with both `outcome` and `error`, `extracted` with no segments, `empty` with segments, a span past `byte_length`, a duplicate `part` and `locator`, and a locator with a control or bidirectional character. | `plugin-output-invalid` for each. |
+| H38 | Binary documents that end `empty`, `no-source`, `binary-unsupported`, `binary-malformed` and `binary-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
+| H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `binary-unsupported`. No extractor gets the file. The run exits 2. |
+| H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
+| H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P22. |
 
 ### 12.2 Plugin
 
@@ -361,6 +472,9 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | P17 | A recipe plan. | Relative paths only. No write by the plugin. |
 | P18 | A fixer request with selected findings. | Every edit names a finding index and lies inside that finding's span. |
 | P19 | An initialize reply compared with the manifest. | Hooks, network and features are a subset of the manifest declaration. |
+| P20 | A `binary-extractor/extract` request for each declared format, sent twice. | Each entry has one outcome. Spans lie inside `byte_length`, `part` and `locator` pairs are unique, and both results are equal. |
+| P21 | A corrupt file in a declared format, and a valid container with no embedded source. | `binary-malformed`, and `no-source`. Neither is `empty`. |
+| P22 | A document whose segments do not fit `maxMessageBytes`. | That document gets `message-too-large`. The reply fits, and no segment is truncated. |
 
 ## 13. Owners
 
@@ -375,3 +489,6 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Threat model and review | `slopvac-8l4.9.11` |
 | Config keys for timeouts and the provider | `slopvac-8l4.4.2` |
 | Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
+| Binary extraction contract (section 5.5) | `slopvac-8l4.2.27` |
+| Shared binary extraction types and validator | `slopvac-8l4.20.1` |
+| Wire adapter for `binary-extractor/extract` | `slopvac-8l4.20.3` |
