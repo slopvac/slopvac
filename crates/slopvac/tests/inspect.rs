@@ -693,6 +693,7 @@ fn a_quoted_absolute_path_in_a_diagnostic_message_is_redacted() {
     // Three producers quote the user's value: a bad enum, a bad key and a bad name.
     for text in [
         "schema_version = 3\nlocale = \"/home/SENTINEL user 1234/secret dir\"\n",
+        "schema_version = 3\nprofile = \"/home/SENTINEL user 1234/secret dir\"\n",
         "schema_version = 3\n\"/home/SENTINEL user 1234/secret dir\" = 1\n",
         "schema_version = 3\n\n[rules]\n\"/home/SENTINEL user 1234/secret dir\" = \"off\"\n",
     ] {

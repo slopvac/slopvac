@@ -4,6 +4,7 @@
 //! from `--config`, else the nearest `slopvac.toml`, with the bundled style presets
 //! underneath (docs/contract/profiles.md, section 3).
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -90,7 +91,7 @@ fn describe_rejected(rejected: &Rejected, cwd: &Path) -> String {
                 format!("error[{}]: ", d.code.as_str())
             };
             text.push_str(&redact_quoted(&d.message, cwd));
-            text.push_str(&format!("\n --> {}:{line}:{column}", rejected.file));
+            let _ = write!(text, "\n --> {}:{line}:{column}", rejected.file);
             if let Some(help) = &d.help {
                 text.push_str("\nhelp: ");
                 text.push_str(&redact_quoted(help, cwd));
