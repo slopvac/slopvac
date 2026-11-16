@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn a_file_sharing_no_prefix_with_the_root_shows_as_external() {
-        // Two relative paths share no first component, as a path on another drive would not.
+        // Absolute paths on Unix always share `/`, so relative paths stand in for another drive.
         assert_eq!(
             relative_display(Path::new("other/base.toml"), Path::new("proj/dir")),
             "<external>/base.toml"
@@ -542,6 +542,53 @@ mod tests {
         assert_eq!(
             relative_display(Path::new("a/shared/base.toml"), Path::new("a/proj")),
             "../shared/base.toml"
+        );
+    }
+
+    // `Path` parses these prefixes on Windows without touching the filesystem, so no real
+    // drive or share is needed.
+    #[cfg(windows)]
+    #[test]
+    fn a_plain_and_a_verbatim_drive_are_one_place() {
+        assert_eq!(
+            relative_display(
+                Path::new(r"C:\w\shared\b.toml"),
+                Path::new(r"\\?\c:\w\proj")
+            ),
+            "../shared/b.toml"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn another_drive_shows_as_external() {
+        assert_eq!(
+            relative_display(Path::new(r"D:\w\b.toml"), Path::new(r"\\?\C:\w\proj")),
+            "<external>/b.toml"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_plain_and_a_verbatim_unc_share_are_one_place_ignoring_case() {
+        assert_eq!(
+            relative_display(
+                Path::new(r"\\SERVER\Share\w\shared\b.toml"),
+                Path::new(r"\\?\UNC\server\share\w\proj")
+            ),
+            "../shared/b.toml"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_different_unc_share_shows_as_external() {
+        assert_eq!(
+            relative_display(
+                Path::new(r"\\server\other\w\b.toml"),
+                Path::new(r"\\?\UNC\server\share\w\proj")
+            ),
+            "<external>/b.toml"
         );
     }
 }
