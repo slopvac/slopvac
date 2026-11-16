@@ -36,6 +36,7 @@ use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
+use crate::structure::{self, Check, Plan};
 use crate::tagging;
 use crate::terms;
 
@@ -199,6 +200,10 @@ pub struct Engine {
     pub(crate) terms: TermSet,
     /// Metric rules that run.
     metrics: Vec<Active>,
+    /// Structure rules that run, with their checks.
+    structure: Vec<(Active, Check)>,
+    /// Structure rules that run and stay silent, as in 2.x (see [`structure`]).
+    silent_structure: HashSet<String>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
     /// The rules that run a signal of `slopvac-diagrams`.
@@ -274,8 +279,8 @@ impl Engine {
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
-    /// Rules of kinds the engine does not run yet (structure checks and
-    /// capitalization, and metrics it does not measure) are skipped, and each document says
+    /// Rules of kinds the engine does not run yet (capitalization styles and metrics it does
+    /// not measure, and structure checks it does not know) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
         Self::new_shared(sets.into_iter().map(Arc::new).collect(), settings)
@@ -307,6 +312,8 @@ impl Engine {
             casing_rules: Vec::new(),
             terms: TermSet::default(),
             metrics: Vec::new(),
+            structure: Vec::new(),
+            silent_structure: HashSet::new(),
             diagram_rules: HashMap::new(),
             signal_rules: Vec::new(),
             catalog: HashMap::new(),
@@ -526,7 +533,23 @@ impl Engine {
                                     .insert(id, ActiveDiagram { severity, at });
                                 self.signal_rules.push((signal, rule));
                             } else {
-                                *unrun.entry("structure").or_default() += 1;
+                                let check = match &rule.match_ {
+                                    Match::Structure(m) => structure::plan(m.check.as_str()),
+                                    _ => Plan::Unknown,
+                                };
+                                match check {
+                                    Plan::Runs(check) => {
+                                        self.structure
+                                            .push((Active::new(s, c, r, severity), check));
+                                    }
+                                    Plan::Silent => {
+                                        self.silent_structure
+                                            .insert(loaded.id().as_str().to_owned());
+                                    }
+                                    Plan::Unknown => {
+                                        *unrun.entry("structure").or_default() += 1;
+                                    }
+                                }
                             }
                         }
                         MatchKind::Vocabulary => {
@@ -573,7 +596,13 @@ impl Engine {
             return Some("the rule is switched off or does not apply under the engine settings");
         }
         let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        if self.silent_structure.contains(id.as_str()) {
+            return Some(
+                "the engine reports nothing for this structure check, as 2.x did: it has no implementation",
+            );
+        }
         let executes = self.active.iter().any(|a| at(&a))
+            || self.structure.iter().any(|(a, _)| at(&a))
             || self.metrics.iter().any(|a| at(&a))
             || self.casing_rules.iter().any(|a| at(&a))
             || owner.is_some_and(|a| at(&a));
@@ -675,6 +704,7 @@ impl Engine {
         findings.extend(run.vocabulary()?);
         findings.extend(run.term_casing()?);
         findings.extend(run.metrics()?);
+        findings.extend(run.structure()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
@@ -1087,6 +1117,77 @@ impl Run<'_> {
                         source: None,
                     }),
                 });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Findings of structure rules that run. A heading finding covers the heading line, as
+    /// the 2.x script reported it. As in 2.x, a finding on a front matter line or on a line
+    /// that starts inside an HTML comment is dropped, though those lines still set the
+    /// heading level that the next heading is compared with.
+    fn structure(&self) -> Result<Vec<Finding>, EngineError> {
+        let engine = self.engine;
+        if engine.structure.is_empty() || matches!(self.input.kind, Kind::Diagram(_)) {
+            return Ok(Vec::new());
+        }
+        let source = self.input.source;
+        let skips = structure::heading_skips(source);
+        let (comments, _) = structure::html_comments(source);
+        let mut out = Vec::new();
+        for (active, check) in &engine.structure {
+            let Check::HeadingHierarchy = check;
+            let set = &engine.sets[active.set];
+            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let rule = loaded.rule();
+            let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
+            let detectors: Vec<&str> = rule
+                .exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect();
+            let exclusions = rule
+                .exclude_blocks
+                .as_ref()
+                .map(|kinds| skip::build(self.parsed, kinds, self.front_matter, true));
+            let mut next_comment = 0;
+            for line in &skips.lines {
+                // The lines come in order, so the comments before this one are done with.
+                while comments
+                    .get(next_comment)
+                    .is_some_and(|c| c.end <= line.start)
+                {
+                    next_comment += 1;
+                }
+                if self.front_matter.is_some_and(|f| line.start < f.end())
+                    || comments
+                        .get(next_comment)
+                        .is_some_and(|c| c.start <= line.start)
+                {
+                    continue;
+                }
+                let span = Span::new(line.start, line.end)
+                    .map_err(|e| EngineError::Internal(e.to_string()))?;
+                let text = &source[line.clone()];
+                if exclusions.as_ref().is_some_and(|skip| skip.hides(span))
+                    || self.guarded(rule, &detectors, text, &(0..text.len()), span, &[])
+                    || self.suppressed(loaded.id().as_str(), &exceptions, span)
+                {
+                    continue;
+                }
+                out.push(self.finding(Candidate {
+                    rule_id: loaded.id(),
+                    pack: set.pack(),
+                    category: loaded.category().clone(),
+                    severity: active.severity,
+                    message: format_message(rule.message.as_str(), "", ""),
+                    span,
+                    matched_text: text.to_owned(),
+                    ai_signal: rule.ai_signal,
+                    fix: None,
+                    extra_context: None,
+                    covering: Vec::new(),
+                })?);
             }
         }
         Ok(out)
