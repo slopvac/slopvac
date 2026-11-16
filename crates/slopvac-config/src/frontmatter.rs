@@ -112,13 +112,17 @@ pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseE
 /// The first entry, in document order, whose key an earlier entry of the same table has.
 fn first_duplicate(node: &Node) -> Option<&Entry> {
     match &node.value {
-        Value::Table(entries) => entries.iter().enumerate().find_map(|(i, e)| {
-            if entries[..i].iter().any(|earlier| earlier.key == e.key) {
-                Some(e)
-            } else {
-                first_duplicate(&e.node)
-            }
-        }),
+        Value::Table(entries) => {
+            // A set per table keeps the check linear in the number of keys.
+            let mut seen = std::collections::HashSet::with_capacity(entries.len());
+            entries.iter().find_map(|e| {
+                if seen.insert(e.key.as_str()) {
+                    first_duplicate(&e.node)
+                } else {
+                    Some(e)
+                }
+            })
+        }
         Value::Array(items) => items.iter().find_map(first_duplicate),
         _ => None,
     }
