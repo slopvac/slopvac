@@ -416,6 +416,18 @@ pub fn block_shape() -> Shape {
     )
 }
 
+/// The shape of an inline directive: the front-matter fields, with no version.
+#[must_use]
+pub fn directive_shape() -> Shape {
+    let Shape::Table(mut t) = block_shape() else {
+        unreachable!("the block shape is a table");
+    };
+    t.fields.retain(|(name, _)| *name != "v");
+    t.required.clear();
+    t.scope = Some("an inline directive");
+    Shape::Table(t)
+}
+
 struct Ctx<'a> {
     text: &'a str,
     out: Vec<Diagnostic>,
@@ -535,12 +547,19 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => match node.value {
             Value::Int(3) => {}
+            Value::Int(n) if n > 3 => ctx.value_error(
+                node,
+                path,
+                format!("version {n} is newer than this slopvac reads"),
+                "this build reads version 3",
+                Some("upgrade slopvac".into()),
+            ),
             Value::Int(n) => ctx.value_error(
                 node,
                 path,
-                format!("the version is {n}, and only 3 is valid"),
+                format!("version {n} is not supported; this build reads version 3"),
                 "must be 3",
-                None,
+                Some("run `slopvac migrate` for a 2.x config".into()),
             ),
             _ => ctx.type_error(node, path, "the integer 3", None),
         },
@@ -801,5 +820,21 @@ pub fn validate_frontmatter(root: &Node, text: &str) -> Vec<Diagnostic> {
         return Vec::new();
     };
     check(&mut ctx, block, &block_shape(), &["slopvac".to_owned()]);
+    ctx.out
+}
+
+/// Check the fields of one inline directive, parsed into a table.
+#[must_use]
+pub fn validate_directive(node: &Node, text: &str) -> Vec<Diagnostic> {
+    let mut ctx = Ctx {
+        text,
+        out: Vec::new(),
+    };
+    check(
+        &mut ctx,
+        node,
+        &directive_shape(),
+        &["directive".to_owned()],
+    );
     ctx.out
 }

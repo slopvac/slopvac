@@ -2,30 +2,44 @@
 
 use crate::RenameTable;
 
+/// A directive rule id that the rename table does not know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownId {
+    /// The 2.x id as written.
+    pub id: String,
+    /// One-based line of the directive.
+    pub line: usize,
+}
+
 /// Rewrite 2.x rule ids in `slopvac-allow` directives to 3.0 qualified ids.
 ///
 /// Directives inside fenced code or inline code spans are documentation and stay as
 /// they are. The second value lists ids that the rename table does not know; those
 /// directives are left unchanged.
 #[must_use]
-pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<String>) {
+pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<UnknownId>) {
     let mut out = String::with_capacity(text.len());
     let mut unknown = Vec::new();
     let mut fence: Option<(char, usize)> = None;
     let mut paragraph = String::new();
-    for line in text.split_inclusive('\n') {
+    // One-based line of the first line in `paragraph`.
+    let mut start = 1;
+    for (index, line) in text.split_inclusive('\n').enumerate() {
         let in_fence = fence_step(&mut fence, line);
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, renames, &mut unknown));
+            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
             paragraph.clear();
             out.push_str(line);
         } else {
+            if paragraph.is_empty() {
+                start = index + 1;
+            }
             paragraph.push_str(line);
         }
     }
-    out.push_str(&rewrite_paragraph(&paragraph, renames, &mut unknown));
+    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
     (out, unknown)
 }
 
@@ -113,7 +127,12 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
     spans
 }
 
-fn rewrite_paragraph(text: &str, renames: &RenameTable, unknown: &mut Vec<String>) -> String {
+fn rewrite_paragraph(
+    text: &str,
+    start_line: usize,
+    renames: &RenameTable,
+    unknown: &mut Vec<UnknownId>,
+) -> String {
     if text.is_empty() {
         return String::new();
     }
@@ -130,7 +149,8 @@ fn rewrite_paragraph(text: &str, renames: &RenameTable, unknown: &mut Vec<String
         let comment = &text[start..end];
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && comment.contains("slopvac-allow") {
-            out.push_str(&rewrite_comment(comment, renames, unknown));
+            let line = start_line + text[..start].matches('\n').count();
+            out.push_str(&rewrite_comment(comment, line, renames, unknown));
         } else {
             out.push_str(comment);
         }
@@ -140,7 +160,12 @@ fn rewrite_paragraph(text: &str, renames: &RenameTable, unknown: &mut Vec<String
     out
 }
 
-fn rewrite_comment(comment: &str, renames: &RenameTable, unknown: &mut Vec<String>) -> String {
+fn rewrite_comment(
+    comment: &str,
+    line: usize,
+    renames: &RenameTable,
+    unknown: &mut Vec<UnknownId>,
+) -> String {
     let Some(pos) = comment.find("rule=") else {
         return comment.to_owned();
     };
@@ -161,7 +186,10 @@ fn rewrite_comment(comment: &str, renames: &RenameTable, unknown: &mut Vec<Strin
             &comment[id_start + id.len()..]
         )
     } else {
-        unknown.push(id.to_owned());
+        unknown.push(UnknownId {
+            id: id.to_owned(),
+            line,
+        });
         comment.to_owned()
     }
 }
@@ -170,7 +198,7 @@ fn rewrite_comment(comment: &str, renames: &RenameTable, unknown: &mut Vec<Strin
 mod tests {
     use super::*;
 
-    fn run(text: &str) -> (String, Vec<String>) {
+    fn run(text: &str) -> (String, Vec<UnknownId>) {
         rewrite_directives(text, &RenameTable::bundled())
     }
 
@@ -183,95 +211,110 @@ mod tests {
             out,
             "<!-- slopvac-allow: rule=core:prose-format.no-unicode-dash reason=quotation -->\nText.\n"
         );
-        assert_eq!(unknown, Vec::<String>::new());
+        assert_eq!(unknown, Vec::<UnknownId>::new());
     }
 
     #[test]
     fn leaves_fenced_and_inline_examples_alone() {
-        let text = "```md\n<!-- slopvac-allow: rule=a.b reason=x -->\n```\nUse `<!-- slopvac-allow: rule=a.b reason=x -->` here.\n";
+        let text = "```md\n<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n```\nUse `<!-- slopvac-allow: rule=orwell.not-un reason=x -->` here.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn double_backtick_span_holding_a_single_backtick_is_quoted() {
-        let text = "Write ``a ` <!-- slopvac-allow: rule=a.b reason=x -->`` here.\n";
+        let text = "Write ``a ` <!-- slopvac-allow: rule=orwell.not-un reason=x -->`` here.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn code_span_that_wraps_across_lines_is_quoted() {
-        let text = "Use `the directive\n<!-- slopvac-allow: rule=a.b reason=x --> in` prose.\n";
+        let text =
+            "Use `the directive\n<!-- slopvac-allow: rule=orwell.not-un reason=x --> in` prose.\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn unmatched_backtick_does_not_quote_the_directive() {
-        let (out, _) = run("A stray ` tick <!-- slopvac-allow: rule=a.b reason=x -->\n");
+        let (out, _) = run("A stray ` tick <!-- slopvac-allow: rule=orwell.not-un reason=x -->\n");
         assert_eq!(
             out,
-            "A stray ` tick <!-- slopvac-allow: rule=core:a.b reason=x -->\n"
+            "A stray ` tick <!-- slopvac-allow: rule=core:orwell.not-un reason=x -->\n"
         );
     }
 
     #[test]
     fn a_blank_line_ends_a_code_span() {
-        let (out, _) = run("Open `tick\n\n<!-- slopvac-allow: rule=a.b reason=x --> `\n");
+        let (out, _) = run("Open `tick\n\n<!-- slopvac-allow: rule=orwell.not-un reason=x --> `\n");
         assert_eq!(
             out,
-            "Open `tick\n\n<!-- slopvac-allow: rule=core:a.b reason=x --> `\n"
+            "Open `tick\n\n<!-- slopvac-allow: rule=core:orwell.not-un reason=x --> `\n"
         );
     }
 
     #[test]
     fn indented_code_is_left_alone() {
-        let text = "    <!-- slopvac-allow: rule=a.b reason=x -->\n";
+        let text = "    <!-- slopvac-allow: rule=orwell.not-un reason=x -->\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn longer_fence_is_not_closed_by_a_shorter_one() {
-        let text = "````md\n```\n<!-- slopvac-allow: rule=a.b reason=x -->\n````\n";
+        let text = "````md\n```\n<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n````\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn a_backslash_before_the_closing_backtick_does_not_escape_it() {
         // `a\` is a complete code span, so the directive after it is prose.
-        let (out, _) = run("`a\\` x <!-- slopvac-allow: rule=a.b reason=x --> `\n");
+        let (out, _) = run("`a\\` x <!-- slopvac-allow: rule=orwell.not-un reason=x --> `\n");
         assert_eq!(
             out,
-            "`a\\` x <!-- slopvac-allow: rule=core:a.b reason=x --> `\n"
+            "`a\\` x <!-- slopvac-allow: rule=core:orwell.not-un reason=x --> `\n"
         );
     }
 
     #[test]
     fn a_backslash_escapes_an_opening_backtick_outside_a_span() {
-        let text = "\\`not a span <!-- slopvac-allow: rule=a.b reason=x --> still prose`\n";
+        let text =
+            "\\`not a span <!-- slopvac-allow: rule=orwell.not-un reason=x --> still prose`\n";
         let (out, _) = run(text);
         assert_eq!(
             out,
-            "\\`not a span <!-- slopvac-allow: rule=core:a.b reason=x --> still prose`\n"
+            "\\`not a span <!-- slopvac-allow: rule=core:orwell.not-un reason=x --> still prose`\n"
         );
     }
 
     #[test]
     fn qualified_ids_stay() {
-        let text = "<!-- slopvac-allow: rule=core:a.b reason=x -->\n";
+        let text = "<!-- slopvac-allow: rule=core:orwell.not-un reason=x -->\n";
         assert_eq!(run(text).0, text);
     }
 
     #[test]
     fn id_ending_the_comment_without_reason() {
-        let (out, _) = run("<!-- slopvac-allow: rule=a.b-->\n");
-        assert_eq!(out, "<!-- slopvac-allow: rule=core:a.b-->\n");
+        let (out, _) = run("<!-- slopvac-allow: rule=orwell.not-un-->\n");
+        assert_eq!(out, "<!-- slopvac-allow: rule=core:orwell.not-un-->\n");
     }
 
     #[test]
-    fn unknown_ids_are_reported_and_kept() {
-        let text = "<!-- slopvac-allow: rule=Nope reason=x -->\n";
+    fn unknown_ids_are_reported_with_their_line_and_kept() {
+        let text = "Intro\n\n<!-- slopvac-allow: rule=prose-craft.no-such-rule reason=x -->\n\
+                    text\n<!-- slopvac-allow: rule=orwell.gone reason=x -->\n";
         let (out, unknown) = run(text);
         assert_eq!(out, text);
-        assert_eq!(unknown, vec!["Nope".to_owned()]);
+        assert_eq!(
+            unknown,
+            vec![
+                UnknownId {
+                    id: "prose-craft.no-such-rule".to_owned(),
+                    line: 3
+                },
+                UnknownId {
+                    id: "orwell.gone".to_owned(),
+                    line: 5
+                },
+            ]
+        );
     }
 
     #[test]

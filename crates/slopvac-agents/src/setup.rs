@@ -258,7 +258,16 @@ fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
     })
 }
 
-fn install(p: &Plan) -> Result<Outcome, AgentsError> {
+/// Whether `install` removes managed files that this run did not ask for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Unrequested {
+    /// `setup` semantics: no skill or reviewer text means delete the managed file.
+    Remove,
+    /// `init` semantics: leave such files alone.
+    Keep,
+}
+
+fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     let project = &p.project;
     let preamble = if p.harness.name == "kiro" && !project.exists(&p.steering)? {
         "---\ninclusion: always\n---"
@@ -267,11 +276,15 @@ fn install(p: &Plan) -> Result<Outcome, AgentsError> {
     };
     let changed = block::update_block(project, &p.steering, &p.block_text, preamble)?;
     let mut lines = vec![status(project, "updated", changed, &p.steering)];
-    if let Some(s) = &p.skill {
+    if let Some(s) = &p.skill
+        && (p.skill_text.is_some() || unrequested == Unrequested::Remove)
+    {
         let changed = managed::sync(project, s, p.skill_text.as_deref())?;
         lines.push(status(project, "updated", changed, s));
     }
-    if let Some(a) = &p.agent {
+    if let Some(a) = &p.agent
+        && (p.agent_text.is_some() || unrequested == Unrequested::Remove)
+    {
         let changed = managed::sync(project, a, p.agent_text.as_deref())?;
         lines.push(status(project, "updated", changed, a));
     }
@@ -300,6 +313,21 @@ pub fn execute(opts: &Options) -> Result<Outcome, AgentsError> {
     } else if opts.remove {
         remove(&p)
     } else {
-        install(&p)
+        install(&p, Unrequested::Remove)
     }
+}
+
+/// Install steering without touching what the options do not ask for.
+///
+/// `--no-skill` leaves an existing managed skill in place, and an options set
+/// without `agent` leaves an existing managed reviewer file in place. `execute`
+/// deletes both. `slopvac init` uses this form so a re-run never removes files.
+///
+/// # Errors
+/// As [`execute`]; also a usage error when `list`, `remove` or `check` is set.
+pub fn install_keeping_unrequested(opts: &Options) -> Result<Outcome, AgentsError> {
+    if opts.list || opts.remove || opts.check {
+        return Err(usage("install takes no --list, --remove or --check."));
+    }
+    install(&plan(opts)?, Unrequested::Keep)
 }

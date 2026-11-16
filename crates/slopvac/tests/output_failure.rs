@@ -62,3 +62,33 @@ fn help_and_version_go_through_the_supplied_writer() {
         assert!(stderr.is_empty(), "{args:?}: {stderr}");
     }
 }
+
+/// Accepts writes but fails on flush, as a closed pipe can after buffering.
+struct FlushFails;
+
+impl Write for FlushFails {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+    }
+}
+
+#[test]
+fn lint_report_write_and_flush_failures_exit_2_with_a_code() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = dir.path().join("doc.md");
+    std::fs::write(&doc, "one two\n").expect("write");
+    let doc = doc.to_str().expect("utf-8 path");
+    for format in ["text", "json"] {
+        let args = ["lint", doc, "--format", format];
+        let (code, stderr) = run(&args, &mut FailingWriter);
+        assert_eq!(code, ExitCode::from(2), "write {format}");
+        assert!(stderr.starts_with("error[output-failed]: "), "{stderr}");
+        let (code, stderr) = run(&args, &mut FlushFails);
+        assert_eq!(code, ExitCode::from(2), "flush {format}");
+        assert!(stderr.starts_with("error[output-failed]: "), "{stderr}");
+    }
+}

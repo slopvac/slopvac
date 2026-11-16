@@ -80,7 +80,13 @@ impl fmt::Display for LockDiff {
                 write!(f, " version {} -> {}", d.locked, d.resolved)?;
             }
             if let Some(d) = &change.source {
-                write!(f, " source {} -> {}", d.locked, d.resolved)?;
+                // A source is free text; ids, versions and digests are validated.
+                write!(
+                    f,
+                    " source {} -> {}",
+                    slopvac_sanitize::line(&d.locked.to_string()),
+                    slopvac_sanitize::line(&d.resolved.to_string())
+                )?;
             }
             if let Some(d) = &change.digest {
                 write!(f, " digest {} -> {}", d.locked, d.resolved)?;

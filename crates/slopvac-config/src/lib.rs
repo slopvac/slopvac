@@ -5,16 +5,20 @@
 //! merges the layers for one file with per-value provenance, and renders
 //! failures as coded diagnostics.
 
+mod comments;
 pub mod diag;
+pub mod directives;
 pub mod discover;
 pub mod error;
 pub mod flatten;
+pub mod frontmatter;
 pub mod load;
 pub mod presets;
 pub mod resolve;
 pub mod schema;
 pub mod source;
 pub mod tree;
+pub mod validate;
 pub mod version;
 
 pub use diag::{Code, Diagnostic, SourceFile, render};

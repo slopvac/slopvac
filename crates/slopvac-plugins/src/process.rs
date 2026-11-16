@@ -1000,30 +1000,9 @@ mod unix {
     }
 }
 
-/// Replace control characters other than newline and tab, plus bidi overrides.
-#[must_use]
-pub fn sanitize_display(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            let bidi = matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
-            if (c.is_control() && c != '\n' && c != '\t') || bidi {
-                '\u{FFFD}'
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sanitize_keeps_newline_and_tab_and_replaces_escapes() {
-        let got = sanitize_display("a\nb\tc\u{1b}[31m\u{9b}\u{7f}\u{202e}x");
-        assert_eq!(got, "a\nb\tc\u{FFFD}[31m\u{FFFD}\u{FFFD}\u{FFFD}x");
-    }
 
     #[cfg(unix)]
     #[test]

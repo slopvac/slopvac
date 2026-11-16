@@ -26,6 +26,8 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       package: ${{ steps.filter.outputs.package }}
       rust: ${{ steps.filter.outputs.rust }}
+      evals: ${{ steps.filter.outputs.evals }}
+      docs-site: ${{ steps.filter.outputs.docs-site }}
       action: ${{ steps.filter.outputs.action }}
       docs: ${{ steps.filter.outputs.docs }}
       ci: ${{ steps.filter.outputs.ci }}
@@ -237,6 +239,23 @@ jobs:
           echo "$RUNNER_TEMP/rst-venv/bin" >> "$GITHUB_PATH"
           echo "SLOPVAC_RST_LIVE=1" >> "$GITHUB_ENV"
 
+      # The managed-Python plugin tests build real uv environments. With SLOPVAC_PYENV_LIVE
+      # set, they fail instead of skipping when uv is missing. Managed environments are
+      # refused on Windows, so only linux-x64 runs them. The cache holds uv's downloaded
+      # CPython builds, scoped to the ref by GitHub's standard cache rules.
+      - name: Install uv for the managed-Python tests
+        if: matrix.name == 'linux-x64'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-python: true
+          cache-suffix: rust-pyenv
+          ignore-nothing-to-cache: true
+
+      - name: Require the managed-Python tests
+        if: matrix.name == 'linux-x64'
+        run: echo "SLOPVAC_PYENV_LIVE=1" >> "$GITHUB_ENV"
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
 
@@ -325,6 +344,10 @@ jobs:
         run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install minisign
+        # The release signing tests run the real binary; the script checks its sha256.
+        run: bash scripts/install_minisign.sh
 
       - name: Install ast-grep
         run: |
@@ -500,6 +523,26 @@ jobs:
       filesystem: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.filesystem == 'true' }}
       secrets: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.secrets == 'true' }}
 
+  evals-ratchet:
+    name: Eval ratchet
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs.evals == 'true'
+    uses: ./.github/workflows/evals-ratchet.yml
+    permissions:
+      contents: read
+
+  docs-site:
+    name: Docs site build
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs['docs-site'] == 'true'
+    uses: ./.github/workflows/docs-site.yml
+    permissions:
+      contents: read
+
   # Keep the established required-check name, but make it the single source of
   # truth for the whole CI graph. It enforces exact skip semantics: a suite must
   # succeed when its path class matched and must be skipped when it did not.
@@ -521,6 +564,8 @@ jobs:
       - lint
       - markdown-audit
       - security
+      - evals-ratchet
+      - docs-site
     if: always()
     steps:
       - name: Verify required runs and valid skips
@@ -536,6 +581,8 @@ jobs:
           SECRETS: ${{ needs.changes.outputs.secrets }}
           DEPENDENCIES: ${{ needs.changes.outputs.dependencies }}
           FILESYSTEM: ${{ needs.changes.outputs.filesystem }}
+          EVALS: ${{ needs.changes.outputs.evals }}
+          DOCS_SITE: ${{ needs.changes.outputs['docs-site'] }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -561,6 +608,8 @@ jobs:
           secrets = os.environ["SECRETS"] == "true"
           dependencies = os.environ["DEPENDENCIES"] == "true"
           filesystem = os.environ["FILESYSTEM"] == "true"
+          evals = os.environ["EVALS"] == "true"
+          docs_site = os.environ["DOCS_SITE"] == "true"
 
           expected = {
               "quick-lint": True,
@@ -575,6 +624,8 @@ jobs:
               "lint": force_all or lint,
               "markdown-audit": force_all or docs,
               "security": force_all or secrets or code or dependencies or filesystem,
+              "evals-ratchet": force_all or evals,
+              "docs-site": force_all or docs_site,
           }
 
           for name, should_run in expected.items():
