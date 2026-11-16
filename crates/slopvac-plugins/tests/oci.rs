@@ -1430,3 +1430,81 @@ fn docker_config_auth_keys_match_the_host_case_insensitively_and_the_port_exactl
         assert!(creds.credential(other).unwrap().is_none(), "{other}");
     }
 }
+
+mod config_key_case {
+    use super::*;
+
+    fn creds_with(cfg: &serde_json::Value) -> (tempfile::TempDir, DefaultCredentials) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), cfg.to_string()).unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(dir.path().to_path_buf()),
+            ..DefaultCredentials::default()
+        };
+        (dir, creds)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cred_helpers_key_matches_the_host_case_insensitively_and_beats_creds_store() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, mut creds) = creds_with(&json!({
+            "credHelpers": {"Registry.Example:5000": "mine"},
+            "credsStore": "fallback",
+        }));
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        for (name, user) in [
+            ("mine", "from-cred-helpers"),
+            ("fallback", "from-creds-store"),
+        ] {
+            let p = bin.join(format!("docker-credential-{name}"));
+            std::fs::write(
+                &p,
+                format!("#!/bin/sh\ncat >/dev/null; echo '{{\"Username\":\"{user}\",\"Secret\":\"s\"}}'\n"),
+            )
+            .unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        creds.helper_search_path = Some(bin.into_os_string());
+        creds.helper_timeout = Some(std::time::Duration::from_secs(30));
+        let user = |host: &str| creds.credential(host).unwrap().unwrap().username;
+        assert_eq!(user("registry.example:5000"), "from-cred-helpers");
+        assert_eq!(user("REGISTRY.EXAMPLE:5000"), "from-cred-helpers");
+        assert_eq!(user("registry.example:5001"), "from-creds-store");
+    }
+
+    #[test]
+    fn auths_keys_that_differ_only_in_host_case_and_disagree_are_refused() {
+        let (_dir, creds) = creds_with(&json!({"auths": {
+            "registry.example": {"auth": base64_std(b"alice:one")},
+            "REGISTRY.example": {"auth": base64_std(b"bob:two")},
+        }}));
+        for host in ["registry.example", "Registry.Example"] {
+            let err = creds.credential(host).unwrap_err();
+            assert!(matches!(err, OciError::Credential(_)), "{err:?}");
+            assert!(err.to_string().contains("conflicting"), "{err}");
+        }
+    }
+
+    #[test]
+    fn auths_keys_that_differ_only_in_host_case_and_agree_give_that_credential() {
+        let (_dir, creds) = creds_with(&json!({"auths": {
+            "registry.example": {"auth": base64_std(b"alice:one")},
+            "REGISTRY.example": {"auth": base64_std(b"alice:one")},
+        }}));
+        let c = creds.credential("registry.example").unwrap().unwrap();
+        assert_eq!((c.username.as_str(), c.secret.as_str()), ("alice", "one"));
+    }
+
+    #[test]
+    fn cred_helpers_keys_that_differ_only_in_host_case_and_disagree_are_refused() {
+        let (_dir, creds) = creds_with(&json!({"credHelpers": {
+            "registry.example": "one",
+            "REGISTRY.example": "two",
+        }}));
+        let err = creds.credential("registry.example").unwrap_err();
+        assert!(matches!(err, OciError::Credential(_)), "{err:?}");
+        assert!(err.to_string().contains("conflicting"), "{err}");
+    }
+}
