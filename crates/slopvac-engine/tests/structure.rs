@@ -7,8 +7,8 @@ mod common;
 
 use common::{category, engine, id, places, rule, ruleset, settings};
 use serde_json::{Value, json};
-use slopvac_engine::cases::{Outcome, run_cases};
-use slopvac_engine::{Engine, Input, Level, Mode};
+use slopvac_engine::cases::run_cases;
+use slopvac_engine::{Detector, Detectors, Engine, Input, Level, MatchSite, Mode};
 use slopvac_model::{Document, NoticeLevel};
 
 fn hierarchy(extra: &Value) -> Value {
@@ -184,68 +184,6 @@ fn the_severity_follows_the_rule() {
     assert_eq!((doc.errors, doc.warnings), (1, 0));
 }
 
-// The five checks 2.x never implemented: rule id, and the `bad` example from the rule data.
-const SILENT: [(&str, &str); 5] = [
-    (
-        "vertical-list-lead-in-missing-colon",
-        "The manifest sets these values.\n- The image tag\n- The replica count\n",
-    ),
-    (
-        "vertical-list-item-punctuation",
-        "The manifest sets these values:\n- the image tag,\n- the replica count;\n- the resource limits\n",
-    ),
-    (
-        "safety-block-missing-consequence",
-        "WARNING: Do not use the force flag on a production database.\n",
-    ),
-    (
-        "inconsistent-term-for-same-thing",
-        "The worker reads the task queue. Later, the job runner drains the work list.\n",
-    ),
-    (
-        "inconsistent-wording-for-same-step",
-        "Step 3. Apply the migration with the CLI.\n\nStep 9. Use the CLI to run the migration.\n",
-    ),
-];
-
-#[test]
-fn the_checks_that_2x_never_implemented_report_nothing_and_add_no_notice() {
-    for (check, bad) in SILENT {
-        let r = rule(
-            check,
-            &json!({"kind": "structure", "check": check}),
-            &json!({"scope": "paragraph"}),
-        );
-        let doc = lint(&engine(&[r]), bad);
-        assert!(doc.findings.is_empty(), "{check}: {:?}", doc.findings);
-        assert!(doc.unchecked.is_empty(), "{check}: {:?}", doc.unchecked);
-        assert!(doc.gate.is_passed(), "{check}");
-    }
-}
-
-#[test]
-fn the_case_runner_never_passes_a_check_that_does_not_run() {
-    for (check, bad) in SILENT {
-        let r = rule(
-            check,
-            &json!({"kind": "structure", "check": check}),
-            &json!({"cases": [{"input": bad, "want": 0}]}),
-        );
-        let report = run_cases(&engine(&[r]), None).unwrap();
-        assert_eq!(report.passed(), 0, "{check}");
-        let incomplete: Vec<_> = report.incomplete().map(|r| &r.outcome).collect();
-        assert_eq!(
-            incomplete,
-            [&Outcome::Incomplete(
-                "the engine reports nothing for this structure check, as 2.x did: it has no \
-                 implementation"
-                    .to_owned()
-            )],
-            "{check}"
-        );
-    }
-}
-
 #[test]
 fn a_check_the_engine_does_not_know_is_still_reported_as_not_run() {
     let r = rule(
@@ -303,4 +241,171 @@ fn the_reported_lines_match_the_2x_reference_on_probe_documents() {
     for (text, want) in probes {
         assert_eq!(lines(text), want, "{text:?}");
     }
+}
+
+#[test]
+fn headings_are_found_after_lf_crlf_and_lone_cr_line_ends() {
+    // An h1 then an h4 in a CR-only document: the skip is on line 3.
+    assert_eq!(lines("# One\rBody.\r#### Four\r"), [3]);
+    assert_eq!(lines("# One\r\nBody.\r\n#### Four\r\n"), [3]);
+    assert_eq!(lines("# One\nBody.\r#### Four\r\nBody\n"), [3]);
+}
+
+#[test]
+fn a_lone_cr_heading_finding_covers_the_heading_text_only() {
+    let doc = lint(
+        &engine(&[hierarchy(&json!({}))]),
+        "# One\rBody.\r#### Four\rMore.\r",
+    );
+    assert_eq!(doc.findings[0].matched_text, "#### Four");
+}
+
+#[test]
+fn fences_work_with_lone_cr_line_ends() {
+    assert_eq!(lines("# One\r```\r#### x\r```\r#### y\r"), [5]);
+}
+
+#[test]
+fn a_fence_indented_four_spaces_is_not_a_fence() {
+    assert_eq!(lines("# One\n\n    ```\n#### x\n"), [4]);
+}
+
+#[test]
+fn an_unclosed_fence_hides_the_rest() {
+    assert_eq!(lines("# One\n\n```\n#### x\n"), Vec::<usize>::new());
+}
+
+#[test]
+fn a_fence_hides_its_lines_and_any_fence_line_closes_it() {
+    assert_eq!(lines("# a\n\n```\n#### x\n~~~\n\n#### y\n"), [7]);
+}
+
+#[test]
+fn a_skipped_level_is_flagged_and_a_step_down_is_not() {
+    assert_eq!(lines("# a\n## b\n#### c\n"), [3]);
+    assert_eq!(lines("# a\n## b\n### c\n"), Vec::<usize>::new());
+}
+
+#[test]
+fn the_first_heading_may_start_at_any_level() {
+    assert_eq!(lines("### a\n"), Vec::<usize>::new());
+}
+
+#[test]
+fn a_heading_after_a_skip_compares_with_the_skipped_one() {
+    assert_eq!(lines("# a\n#### b\n##### c\n###### d\n"), [2]);
+}
+
+#[test]
+fn going_back_up_and_then_down_by_one_is_fine() {
+    assert_eq!(lines("# a\n## b\n### c\n# d\n## e\n"), Vec::<usize>::new());
+}
+
+#[test]
+fn lines_that_are_not_atx_headings_do_not_count() {
+    for text in [
+        "  #### indented",
+        "#nospace",
+        "####",
+        "#\ttab",
+        "> #### quoted",
+        "- #### item",
+    ] {
+        assert_eq!(
+            lines(&format!("# a\n\n{text}\n")),
+            Vec::<usize>::new(),
+            "{text:?} is not a heading"
+        );
+    }
+}
+
+#[test]
+fn deep_and_empty_headings_count() {
+    assert_eq!(lines("# a\n\n####### b\n"), [3]);
+    assert_eq!(lines("# a\n\n#### \n"), [3]);
+}
+
+#[test]
+fn an_opener_does_not_close_on_its_own_dashes() {
+    // `<!-->` is not a closed comment, so the next line is reported.
+    assert_eq!(lines("# One\n<!-->\n#### Four\n"), [3]);
+    // A comment closed later hides the heading that starts inside it.
+    assert_eq!(lines("# One\n<!-->\n#### Four\n-->\n"), Vec::<usize>::new());
+}
+
+struct Marked;
+
+impl Detector for Marked {
+    fn name(&self) -> &'static str {
+        "marked"
+    }
+
+    fn detects(&self, site: &MatchSite<'_>) -> bool {
+        site.text.contains("legacy")
+    }
+}
+
+fn marked_engine(extra: &Value) -> Engine {
+    let mut detectors = Detectors::builtin();
+    detectors.register(Box::new(Marked)).unwrap();
+    engine(&[hierarchy(extra)]).with_detectors(detectors)
+}
+
+#[test]
+fn an_exception_detector_suppresses_the_finding_it_detects() {
+    let extra = json!({"exceptions": [{"name": "marked", "detector": "marked"}]});
+    let doc = lint(
+        &marked_engine(&extra),
+        "# One\n\n#### legacy Four\n\n###### Six\n",
+    );
+    assert_eq!(
+        places(&doc),
+        [("core:cat.heading-hierarchy".to_owned(), 5, 1)]
+    );
+    // Control: without the exception both skips are reported.
+    let control = lint(
+        &marked_engine(&json!({})),
+        "# One\n\n#### legacy Four\n\n###### Six\n",
+    );
+    assert_eq!(control.findings.len(), 2);
+}
+
+#[test]
+fn a_named_exemption_suppresses_the_finding_it_covers() {
+    let extra = json!({"exceptions": [{"name": "legacy-layout"}]});
+    let e = engine(&[hierarchy(&extra)]);
+    let allowed = "# One\n\n<!-- slopvac-allow: rule=core:cat.heading-hierarchy reason=legacy-layout -->\n#### Four\n";
+    assert_eq!(lint(&e, allowed).findings.len(), 0);
+    // Control: the same heading without the directive is reported.
+    assert_eq!(lint(&e, "# One\n\n#### Four\n").findings.len(), 1);
+}
+
+#[test]
+fn raw_scoped_rules_keep_findings_in_front_matter_and_comments() {
+    let raw = |extra: Value| {
+        let mut merged = json!({"scope": "raw"});
+        for (k, v) in extra.as_object().into_iter().flatten() {
+            merged[k] = v.clone();
+        }
+        engine(&[hierarchy(&merged)])
+    };
+    let count = |e: &Engine, text: &str| lint(e, text).findings.len();
+    // A skip in front matter and a skip in a comment.
+    let in_front = "---\n# c\n### d\n---\n# One\n";
+    let in_comment = "# One\n\n<!--\n#### x\n-->\n";
+    let document = engine(&[hierarchy(&json!({}))]);
+    assert_eq!(count(&document, in_front), 0);
+    assert_eq!(count(&document, in_comment), 0);
+    let raw_engine = raw(json!({}));
+    assert_eq!(count(&raw_engine, in_front), 1);
+    assert_eq!(count(&raw_engine, in_comment), 1);
+}
+
+#[test]
+fn explicit_exclusions_still_hide_raw_scoped_findings() {
+    let e = engine(&[hierarchy(
+        &json!({"scope": "raw", "exclude_blocks": ["front-matter"]}),
+    )]);
+    assert_eq!(lint(&e, "---\n# c\n### d\n---\n# One\n").findings.len(), 0);
+    assert_eq!(lint(&e, "# One\n\n<!--\n#### x\n-->\n").findings.len(), 1);
 }

@@ -34,14 +34,14 @@ fn resolve_with(
 #[test]
 fn a_value_from_a_preset_names_the_preset_and_its_line() {
     let (_, resolved) = resolve_project("schema_version = 3\nstyles = [\"ste\"]\n");
-    // presets/ste.toml line 32: "ste-verbs.passive-voice" = "suggestion"
+    // presets/ste.toml line 31: "ste-verbs.passive-voice" = "suggestion"
     let source = resolved
         .source(&["rules", "ste-verbs.passive-voice"])
         .unwrap();
     assert_eq!(source.layer, Layer::Style);
     assert_eq!(source.file.as_deref(), Some("preset:ste"));
-    assert_eq!((source.line, source.column), (Some(32), Some(1)));
-    assert_eq!(describe(source), "style preset:ste:32:1");
+    assert_eq!((source.line, source.column), (Some(31), Some(1)));
+    assert_eq!(describe(source), "style preset:ste:31:1");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn explain_shows_a_project_value_replacing_a_preset_value() {
         block,
         [
             "rules.\"ste-verbs.passive-voice\" = \"error\"  [project slopvac.toml:4:1]",
-            "    replaced \"suggestion\"  [style preset:ste:32:1]",
+            "    replaced \"suggestion\"  [style preset:ste:31:1]",
         ]
     );
 }

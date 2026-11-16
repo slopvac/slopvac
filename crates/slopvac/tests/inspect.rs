@@ -44,9 +44,9 @@ const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 #[test]
 fn rules_lists_every_core_rule_with_a_count_line() {
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 238, "237 rules and the count line");
+    assert_eq!(text.lines().count(), 233, "232 rules and the count line");
     assert!(
-        text.ends_with("237 rule(s) in 26 category(ies)\n"),
+        text.ends_with("232 rule(s) in 26 category(ies)\n"),
         "{text}"
     );
 }
@@ -91,7 +91,7 @@ fn kind_filter_counts_match_the_data() {
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 232);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 227);
 }
 
 #[test]
@@ -241,6 +241,25 @@ fn unknown_rule_is_an_incomplete_run() {
         .stderr(predicate::str::starts_with(
             "error[unknown-rule]: unknown rule: core:no.such-rule.",
         ));
+}
+
+#[test]
+fn the_removed_structure_rules_are_unknown_rules() {
+    for id in [
+        "core:ste-sentences.vertical-list-lead-in-missing-colon",
+        "core:ste-sentences.vertical-list-item-punctuation",
+        "core:ste-safety.safety-block-missing-consequence",
+        "core:ste-words.inconsistent-term-for-same-thing",
+        "core:ste-practices.inconsistent-wording-for-same-step",
+    ] {
+        slopvac()
+            .args(["explain", id])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::starts_with(format!(
+                "error[unknown-rule]: unknown rule: {id}."
+            )));
+    }
 }
 
 #[test]

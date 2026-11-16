@@ -223,7 +223,6 @@
 "ste-practices.ambiguous-preposition-with" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
 "ste-practices.false-friend-term" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-practices.gendered-or-exclusionary-language" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
-"ste-practices.inconsistent-wording-for-same-step" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-practices.latin-abbreviation" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-practices.omitted-conjunction-that" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-practices.phrasal-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
@@ -244,14 +243,11 @@
 "ste-punctuation.semicolon-used" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-safety.risk-level-word-missing-or-wrong" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "enforced" }
 "ste-safety.safety-block-does-not-start-with-command" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
-"ste-safety.safety-block-missing-consequence" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
 "ste-sentences.complex-text-not-in-vertical-list" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-sentences.missing-article-or-determiner" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-sentences.missing-connector-between-related-sentences" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-sentences.omitted-subject" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
 "ste-sentences.sentence-not-short-or-clear" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
-"ste-sentences.vertical-list-item-punctuation" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
-"ste-sentences.vertical-list-lead-in-missing-colon" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-verbs.auxiliary-stacking" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
 "ste-verbs.complex-tense" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
 "ste-verbs.gerund-outside-noun-use" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
@@ -264,7 +260,6 @@
 "ste-words.domain-noun-not-organization-approved" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-words.domain-noun-too-long-or-unclear" = { kind = "judgement", strict = "advisory", normal = "advisory", relaxed = "excluded" }
 "ste-words.domain-verb-category-membership" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
-"ste-words.inconsistent-term-for-same-thing" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-words.noun-used-as-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-words.obligation-word-substitution" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-words.slang-or-jargon-term" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }

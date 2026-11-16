@@ -36,6 +36,18 @@ CHECK_KINDS = frozenset({"structure", "vocabulary"})
 # The only 2.x rule that carries an ALLOWED_WORDS placeholder; the 2.x loader
 # (rules._inject_heading_allow) substitutes it for this rule id alone.
 PLACEHOLDER_RULE_ID = "title-case-heading"
+# 2.x rules that 3.0 does not ship, as `<category>.<rule>`. They never had an
+# implementation. The converter and the generators that list 2.x rules skip them.
+REMOVED_RULES = frozenset(
+    {
+        "ste-sentences.vertical-list-lead-in-missing-colon",
+        "ste-sentences.vertical-list-item-punctuation",
+        "ste-safety.safety-block-missing-consequence",
+        "ste-words.inconsistent-term-for-same-thing",
+        "ste-practices.inconsistent-wording-for-same-step",
+    }
+)
+
 CATEGORY_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
 _UNICODE_ESCAPE = re.compile(
@@ -214,7 +226,11 @@ def convert_category(category: dict) -> dict:
     for key in ("weight", "max_per_100_words", "recommended_for"):
         if key in category:
             out[key] = category[key]
-    out["rules"] = [convert_rule(r) for r in category["rules"]]
+    out["rules"] = [
+        convert_rule(r)
+        for r in category["rules"]
+        if f"{category['id']}.{r['id']}" not in REMOVED_RULES
+    ]
     return out
 
 
@@ -223,7 +239,7 @@ def extract_tiers(category: dict) -> dict[str, dict[str, str]]:
     return {
         f"{category['id']}.{r['id']}": dict(r["tiers"])
         for r in category["rules"]
-        if "tiers" in r
+        if "tiers" in r and f"{category['id']}.{r['id']}" not in REMOVED_RULES
     }
 
 

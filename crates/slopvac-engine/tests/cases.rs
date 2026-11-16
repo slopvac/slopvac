@@ -491,8 +491,6 @@ const KNOWN_FAILURES: &[(&str, &str)] = &[];
 
 const METRIC: &str = "metric rule: no cases, and examples do not run for non-lexical rules";
 const STRUCTURE: &str = "structure rule: no cases or checkable examples";
-const NOT_IN_2X: &str =
-    "structure check that 2.x never implemented: the engine reports nothing for it";
 const VOCABULARY: &str = "vocabulary rule: no cases, and it needs a word blocklist to run";
 
 /// Core rules with no executable check, with the reason. They report `Incomplete`, so the
@@ -513,30 +511,14 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
     ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
     ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
     ("core:ste-nouns.multiword-noun-too-long", METRIC),
-    (
-        "core:ste-practices.inconsistent-wording-for-same-step",
-        NOT_IN_2X,
-    ),
     ("core:ste-procedural.sentence-too-long-procedural", METRIC),
     (
         "core:ste-punctuation.colon-terminates-sentence-for-count",
         METRIC,
     ),
     (
-        "core:ste-safety.safety-block-missing-consequence",
-        NOT_IN_2X,
-    ),
-    (
         "core:ste-sentences.complex-text-not-in-vertical-list",
         METRIC,
-    ),
-    (
-        "core:ste-sentences.vertical-list-lead-in-missing-colon",
-        NOT_IN_2X,
-    ),
-    (
-        "core:ste-sentences.vertical-list-item-punctuation",
-        NOT_IN_2X,
     ),
     ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
     (
@@ -551,7 +533,6 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
         "core:ste-words.verb-or-adjective-form-not-permitted",
         VOCABULARY,
     ),
-    ("core:ste-words.inconsistent-term-for-same-thing", NOT_IN_2X),
 ];
 
 fn names(list: &[(&str, &str)]) -> Vec<String> {

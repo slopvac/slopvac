@@ -19,6 +19,19 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def removed_rules() -> frozenset[str]:
+    """The 2.x rules 3.0 does not ship, from the rule converter."""
+    import importlib.util
+
+    path = Path(__file__).with_name("convert_rules_v2_to_v3.py")
+    spec = importlib.util.spec_from_file_location("convert_rules_v2_to_v3", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("convert_rules_v2_to_v3", module)
+    spec.loader.exec_module(module)
+    return module.REMOVED_RULES
+
 OUT = ROOT / "docs" / "contract" / "compat" / "profiles"
 MAPPING_JSON = OUT / "mapping.json"
 PROFILES = ("strict", "normal", "relaxed")
@@ -74,6 +87,7 @@ def build_style(profile: str) -> dict:
     ruleset, resolved, states = engine_states(profile)
     shipped = shipped_severity(ruleset)
     categories: dict[str, dict] = {}
+    removed = removed_rules()
     for rule in ruleset.all_rules:
         if rule.category not in resolved.categories:
             raise SystemExit(f"{profile}: category {rule.category} has no profile entry")
@@ -88,6 +102,8 @@ def build_style(profile: str) -> dict:
     rules: dict[str, str] = {}
     for rule in ruleset.all_rules:
         qid = rule.qualified_id
+        if qid in removed:
+            continue
         want = states[qid][1]
         if rule.kind.value == "judgement":
             rules[qid] = want
@@ -106,6 +122,7 @@ def rule_defaults(profile: str) -> dict[str, str]:
     return {
         name: settings.severity.value
         for name, settings in sorted(profile_rule_defaults(Profile(profile)).items())
+        if name not in removed_rules()
     }
 
 

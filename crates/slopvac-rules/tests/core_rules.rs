@@ -55,8 +55,8 @@ fn every_core_category_file_validates_against_both_schemas() {
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
     assert_eq!(set.categories().len(), 26);
-    assert_eq!(set.len(), 237);
-    assert_eq!(set.rules().count(), 237);
+    assert_eq!(set.len(), 232);
+    assert_eq!(set.rules().count(), 232);
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn rules_are_counted_by_kind() {
     assert_eq!(count(MatchKind::Tokens), 17);
     assert_eq!(count(MatchKind::Judgement), 68);
     assert_eq!(count(MatchKind::Metric), 13);
-    assert_eq!(count(MatchKind::Structure), 6);
+    assert_eq!(count(MatchKind::Structure), 1);
     assert_eq!(count(MatchKind::Vocabulary), 4);
     assert_eq!(count(MatchKind::Capitalization), 0);
 }

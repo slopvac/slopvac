@@ -48,6 +48,21 @@ from slopvac.vocabulary import load_blocklist
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
+
+
+def _removed_rules() -> frozenset[str]:
+    """The 2.x rules that 3.0 does not ship, from the rule converter."""
+    import importlib.util
+
+    path = ROOT / "scripts/contract/convert_rules_v2_to_v3.py"
+    spec = importlib.util.spec_from_file_location("convert_rules_v2_to_v3", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("convert_rules_v2_to_v3", module)
+    spec.loader.exec_module(module)
+    return module.REMOVED_RULES
+
+
+REMOVED_RULES = _removed_rules()
 FIXTURE = HERE / "engine-parity.json"
 
 LEXICAL = {RuleKind.TOKENS, RuleKind.PATTERN, RuleKind.SUBSTITUTION}
@@ -199,6 +214,8 @@ def settings(rules, config):
     scoped = {r.qualified_id for r in scope}
     levels = {}
     for rule in rules.rules:
+        if rule.qualified_id in REMOVED_RULES:
+            continue
         key = f"core:{rule.qualified_id}"
         runs = rule.qualified_id in scoped or rule.kind is RuleKind.VOCABULARY
         levels[key] = engine.severity_for(rule).value if runs else "off"

@@ -2,7 +2,7 @@
 
 # 2.x compatibility matrix
 
-Totals: migrate 3, preserve 108, remove 30, 141 rows.
+Totals: migrate 3, preserve 108, remove 35, 146 rows.
 
 | Row | Disposition | 3.0 note | Owner | Test |
 | --- | --- | --- | --- | --- |
@@ -56,6 +56,11 @@ Totals: migrate 3, preserve 108, remove 30, 141 rows.
 | `behavior:reference-write` | preserve | reference --write regenerates the rules reference. | slopvac-8l4.12.10 | pending |
 | `behavior:report-out-open` | preserve | --out writes the report; --open shows it. | slopvac-8l4.12.2 | pending |
 | `behavior:rst-linting` | preserve | reStructuredText lints through a bundled docutils adapter. | slopvac-8l4.3.21 | pending |
+| `behavior:rule:ste-practices.inconsistent-wording-for-same-step` | remove | Removed in 3.0. `slopvac migrate` drops references to it. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-safety.safety-block-missing-consequence` | remove | Removed in 3.0. `slopvac migrate` drops references to it. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-sentences.vertical-list-item-punctuation` | remove | Removed in 3.0. `slopvac migrate` drops references to it. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-sentences.vertical-list-lead-in-missing-colon` | remove | Removed in 3.0. `slopvac migrate` drops references to it. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-words.inconsistent-term-for-same-thing` | remove | Removed in 3.0. `slopvac migrate` drops references to it. | slopvac-8l4.3.43 | n/a |
 | `behavior:setup-list-remove-check` | preserve | setup --list, --remove and --check; remove deletes only what setup wrote. | slopvac-8l4.11.2 | pending |
 | `behavior:setup-root` | preserve | setup --root targets another directory. | slopvac-8l4.11.2 | pending |
 | `behavior:stdin-invalid-utf8` | preserve | Invalid UTF-8 on stdin fails with a clear error and exit code. | slopvac-8l4.12.9 | pending |

@@ -36,7 +36,7 @@ use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
-use crate::structure::{self, Check, Plan};
+use crate::structure::{self, Check};
 use crate::tagging;
 use crate::terms;
 
@@ -202,8 +202,6 @@ pub struct Engine {
     metrics: Vec<Active>,
     /// Structure rules that run, with their checks.
     structure: Vec<(Active, Check)>,
-    /// Structure rules that run and stay silent, as in 2.x (see [`structure`]).
-    silent_structure: HashSet<String>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
     /// The rules that run a signal of `slopvac-diagrams`.
@@ -313,7 +311,6 @@ impl Engine {
             terms: TermSet::default(),
             metrics: Vec::new(),
             structure: Vec::new(),
-            silent_structure: HashSet::new(),
             diagram_rules: HashMap::new(),
             signal_rules: Vec::new(),
             catalog: HashMap::new(),
@@ -534,21 +531,13 @@ impl Engine {
                                 self.signal_rules.push((signal, rule));
                             } else {
                                 let check = match &rule.match_ {
-                                    Match::Structure(m) => structure::plan(m.check.as_str()),
-                                    _ => Plan::Unknown,
+                                    Match::Structure(m) => Check::named(m.check.as_str()),
+                                    _ => None,
                                 };
-                                match check {
-                                    Plan::Runs(check) => {
-                                        self.structure
-                                            .push((Active::new(s, c, r, severity), check));
-                                    }
-                                    Plan::Silent => {
-                                        self.silent_structure
-                                            .insert(loaded.id().as_str().to_owned());
-                                    }
-                                    Plan::Unknown => {
-                                        *unrun.entry("structure").or_default() += 1;
-                                    }
+                                if let Some(check) = check {
+                                    self.structure.push((Active::new(s, c, r, severity), check));
+                                } else {
+                                    *unrun.entry("structure").or_default() += 1;
                                 }
                             }
                         }
@@ -596,11 +585,6 @@ impl Engine {
             return Some("the rule is switched off or does not apply under the engine settings");
         }
         let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
-        if self.silent_structure.contains(id.as_str()) {
-            return Some(
-                "the engine reports nothing for this structure check, as 2.x did: it has no implementation",
-            );
-        }
         let executes = self.active.iter().any(|a| at(&a))
             || self.structure.iter().any(|(a, _)| at(&a))
             || self.metrics.iter().any(|a| at(&a))
@@ -1123,8 +1107,8 @@ impl Run<'_> {
     }
 
     /// Findings of structure rules that run. A heading finding covers the heading line, as
-    /// the 2.x script reported it. As in 2.x, a finding on a front matter line or on a line
-    /// that starts inside an HTML comment is dropped, though those lines still set the
+    /// the 2.x script reported it. A finding on a front matter line or on a line that starts
+    /// inside an HTML comment is dropped, unless the rule is `raw`; those lines still set the
     /// heading level that the next heading is compared with.
     fn structure(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
@@ -1146,10 +1130,16 @@ impl Run<'_> {
                 .iter()
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
-            let exclusions = rule
-                .exclude_blocks
-                .as_ref()
-                .map(|kinds| skip::build(self.parsed, kinds, self.front_matter, true));
+            let exclusions = rule.exclude_blocks.as_ref().map(|kinds| {
+                skip::build(
+                    self.parsed,
+                    kinds,
+                    self.front_matter,
+                    rule.scope != Scope::Raw,
+                )
+            });
+            // Front matter and comments hide a finding only from rules that are not `raw`.
+            let hides_automatically = rule.scope != Scope::Raw;
             let mut next_comment = 0;
             for line in &skips.lines {
                 // The lines come in order, so the comments before this one are done with.
@@ -1159,10 +1149,11 @@ impl Run<'_> {
                 {
                     next_comment += 1;
                 }
-                if self.front_matter.is_some_and(|f| line.start < f.end())
-                    || comments
-                        .get(next_comment)
-                        .is_some_and(|c| c.start <= line.start)
+                if hides_automatically
+                    && (self.front_matter.is_some_and(|f| line.start < f.end())
+                        || comments
+                            .get(next_comment)
+                            .is_some_and(|c| c.start <= line.start))
                 {
                     continue;
                 }

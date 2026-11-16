@@ -20,10 +20,8 @@ conflicts = ["ste"]
 "ai-tells-formatting.title-case-heading" = "warning"
 # Semicolons are allowed; STE bans them.
 "ste-punctuation.semicolon-used" = "off"
-# Google does not ask for a vertical list for complex content or its punctuation.
+# Google does not ask for a vertical list for complex content.
 "ste-sentences.complex-text-not-in-vertical-list" = "off"
-"ste-sentences.vertical-list-lead-in-missing-colon" = "off"
-"ste-sentences.vertical-list-item-punctuation" = "off"
 # Say "for example", not "e.g." (the one Latin-abbreviation checker).
 "ste-practices.latin-abbreviation" = "warning"
 # Inclusive terms such as allowlist and blocklist (the one terminology checker).

@@ -109,6 +109,8 @@ def test_every_rule_resolves_to_its_2x_state(truth):
     layers = [style_layer(profile)]
     wrong = {}
     for rule in ruleset.all_rules:
+        if rule.qualified_id in mapping.removed_rules():
+            continue
         got = resolve(
             layers,
             rule.category,
@@ -465,6 +467,8 @@ def test_expansion_reproduces_2x_for_each_file(name, ruleset):
         )
         wrong = {}
         for rule in ruleset.all_rules:
+            if rule.qualified_id in mapping.removed_rules():
+                continue
             got = resolve(
                 layers,
                 rule.category,

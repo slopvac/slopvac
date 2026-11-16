@@ -254,7 +254,6 @@ weight = 0.8
 "ste-safety.risk-level-word-missing-or-wrong" = "error"
 "ste-sentences.omitted-subject" = "suggestion"
 "ste-sentences.sentence-not-short-or-clear" = "error"
-"ste-sentences.vertical-list-item-punctuation" = "suggestion"
 "ste-sentences.missing-connector-between-related-sentences" = "suggestion"
 "ste-sentences.missing-article-or-determiner" = "suggestion"
 "ste-verbs.verb-form-not-listed" = "suggestion"
