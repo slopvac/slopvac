@@ -123,11 +123,21 @@ fn reports_every_dropped_setting_at_once() {
 }
 
 #[test]
-fn unknown_rule_name_is_dropped() {
-    assert_eq!(
-        dropped("[rules]\n\"Not A Rule\" = \"off\"\n"),
-        vec![("rules.Not A Rule".to_owned(), 2)]
-    );
+fn unknown_names_are_dropped() {
+    let cases = [
+        ("[rules]\n\"Not A Rule\" = \"off\"\n", "rules.Not A Rule"),
+        (
+            "[rules]\n\"prose-craft.no-such-rule\" = \"off\"\n",
+            "rules.prose-craft.no-such-rule",
+        ),
+        (
+            "[categories]\nno-such-category = \"off\"\n",
+            "categories.no-such-category",
+        ),
+    ];
+    for (text, key) in cases {
+        assert_eq!(dropped(text), vec![(key.to_owned(), 2)], "{text}");
+    }
 }
 
 #[test]
