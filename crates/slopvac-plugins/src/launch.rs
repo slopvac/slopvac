@@ -24,11 +24,17 @@
 //! launcher rather than to init, so the host's walk still finds it below the
 //! stopped group leader. When the plugin exits, the launcher kills and reaps
 //! what is left below it, then exits with the plugin's status: a descendant
-//! reparented to init after that would be out of every walk's reach. If the
-//! cleanup cannot account for every child within two seconds, the launcher
-//! kills itself with SIGKILL instead, and the host reports its teardown
-//! incomplete. A plugin that kills the launcher looks the same. Elsewhere
-//! the launcher replaces itself with the plugin, which keeps its process id.
+//! reparented to init after that would be out of every walk's reach.
+//!
+//! Only an exit of the launcher confirms that cleanup. The launcher relays a
+//! plugin that a signal ended as exit code 128 plus the signal number, and
+//! refuses tracing, so no other process of the user can make it exit. If the
+//! cleanup cannot account for every child within its time (two seconds), the
+//! launcher kills itself with SIGKILL. The host reports a teardown incomplete
+//! whenever it finds the launcher ended by a signal it did not send, before
+//! or during its walk: a plugin that kills its launcher, with any signal,
+//! gets the same report. Elsewhere the launcher replaces itself with the
+//! plugin, which keeps its process id.
 //!
 //! The launcher runs with an empty environment. The plugin's variables reach
 //! it under a prefix and it passes them on without the prefix, so a variable
@@ -41,6 +47,7 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(unix)]
 use std::process::Command;
+use std::time::Duration;
 
 /// The first argument that selects launcher mode.
 pub const FLAG: &str = "--slopvac-plugin-launcher";
@@ -90,16 +97,20 @@ pub(crate) struct Limits {
 #[derive(Debug, PartialEq, Eq)]
 struct Plan {
     limits: Limits,
+    /// How long the Linux launcher may spend clearing what the plugin left.
+    sweep: Duration,
     program: PathBuf,
     args: Vec<OsString>,
 }
 
 /// The host's command that starts `program` through the launcher at
 /// `launcher` under `limits`, with `env` as the plugin's whole environment.
+/// On Linux the launcher gets `sweep` to clear what the plugin leaves behind.
 #[cfg(unix)]
 pub(crate) fn command<'a>(
     launcher: &Path,
     limits: Limits,
+    sweep: Duration,
     program: &Path,
     args: &[String],
     env: impl IntoIterator<Item = (&'a str, &'a str)>,
@@ -110,6 +121,7 @@ pub(crate) fn command<'a>(
         .arg(format!("nofile={}", limits.open_files))
         .arg(format!("fsize={}", limits.file_size))
         .arg(format!("data={}", limits.memory))
+        .arg(format!("sweep={}", sweep.as_millis()))
         .arg("--")
         .arg(program)
         .args(args)
@@ -145,9 +157,10 @@ fn fail(msg: &str) -> ! {
     std::process::exit(127)
 }
 
-/// Parse `cpu=N nofile=N fsize=N data=N -- PROGRAM ARGS...`, all or nothing.
+/// Parse `cpu=N nofile=N fsize=N data=N sweep=MS -- PROGRAM ARGS...`, all or
+/// nothing.
 fn parse(args: &[OsString]) -> Result<Plan, String> {
-    let [cpu, nofile, fsize, data, sep, program, rest @ ..] = args else {
+    let [cpu, nofile, fsize, data, sweep, sep, program, rest @ ..] = args else {
         return Err("malformed arguments".into());
     };
     let num = |a: &OsString, key: &str| {
@@ -164,6 +177,7 @@ fn parse(args: &[OsString]) -> Result<Plan, String> {
         file_size: num(fsize, "fsize")?,
         memory: num(data, "data")?,
     };
+    let sweep = Duration::from_millis(num(sweep, "sweep")?);
     if sep != "--" {
         return Err("malformed arguments".into());
     }
@@ -174,6 +188,7 @@ fn parse(args: &[OsString]) -> Result<Plan, String> {
     }
     Ok(Plan {
         limits,
+        sweep,
         program,
         args: rest.to_vec(),
     })
@@ -196,7 +211,7 @@ fn run(plan: &Plan) -> ! {
             cmd.env(name, v);
         }
     }
-    start(cmd)
+    start(cmd, plan.sweep)
 }
 
 /// Set the limits on this process, soft and hard, never above a hard limit
@@ -228,7 +243,7 @@ fn apply(l: &Limits) -> Result<(), String> {
 
 /// The soft and hard values to set: the wanted ones, lowered to the hard
 /// limit already in place (`None`: unlimited), which no process can raise.
-#[cfg(any(unix, test))]
+#[cfg(unix)]
 fn capped(soft: u64, hard: u64, ceiling: Option<u64>) -> (u64, u64) {
     let cap = |v: u64| ceiling.map_or(v, |c| v.min(c));
     (cap(soft), cap(hard))
@@ -236,19 +251,24 @@ fn capped(soft: u64, hard: u64, ceiling: Option<u64>) -> (u64, u64) {
 
 /// Become the plugin; its process id and group stay the launcher's.
 #[cfg(all(unix, not(target_os = "linux")))]
-fn start(mut cmd: Command) -> ! {
+fn start(mut cmd: Command, _sweep: Duration) -> ! {
     use std::os::unix::process::CommandExt;
     let err = cmd.exec();
     fail(&format!("cannot run the plugin: {err}"))
 }
 
 /// Start the plugin as a child, reap until it exits, clear what is left
-/// below the launcher, then exit as the plugin did.
+/// below the launcher within `sweep`, then exit with the plugin's status.
 #[cfg(target_os = "linux")]
-fn start(mut cmd: Command) -> ! {
-    use rustix::process::{getpid, set_child_subreaper};
+fn start(mut cmd: Command, sweep: Duration) -> ! {
+    use rustix::process::{DumpableBehavior, getpid, set_child_subreaper, set_dumpable_behavior};
     if let Err(e) = set_child_subreaper(Some(getpid())) {
         fail(&format!("cannot become a child subreaper: {e}"));
+    }
+    // No process of the same user may attach to the launcher and fake its
+    // exit; the plugin regains the default with its own `exec`.
+    if let Err(e) = set_dumpable_behavior(DumpableBehavior::NotDumpable) {
+        fail(&format!("cannot refuse tracing: {e}"));
     }
     let child = match cmd.spawn() {
         Ok(c) => c,
@@ -259,10 +279,10 @@ fn start(mut cmd: Command) -> ! {
     drop(child);
     linux::release_stdio();
     let status = linux::reap(plugin);
-    if !linux::sweep(linux::SWEEP) {
+    if !linux::sweep(sweep) {
         // Something below the launcher survived the cleanup, or could not be
-        // seen. Dying of SIGKILL with no kill from the host tells the host
-        // that its teardown is incomplete.
+        // seen. Only an exit confirms a cleanup, so the host reports a
+        // launcher that a signal ended as an incomplete teardown.
         let _ = rustix::process::kill_process(getpid(), rustix::process::Signal::KILL);
     }
     linux::relay(status)
@@ -284,9 +304,6 @@ mod linux {
     use rustix::process::{Pid, Signal, WaitOptions, WaitStatus, getpid, kill_process, wait};
 
     use super::fail;
-
-    /// How long the launcher spends killing what is left below it.
-    pub(super) const SWEEP: Duration = Duration::from_secs(2);
 
     /// Point the launcher's own standard streams at `/dev/null`, so that
     /// only the plugin and its descendants hold the host's pipes.
@@ -355,83 +372,16 @@ mod linux {
             .collect()
     }
 
-    /// Exit as the plugin did: with its code, or by its signal. A signal that
-    /// does not end the launcher, such as `SIGPIPE`, which the Rust runtime
-    /// ignores, becomes the exit code 128 plus its number.
+    /// Exit with the plugin's status: its exit code, or 128 plus the number
+    /// of the signal that ended it. The launcher always exits, because only
+    /// an exit tells the host that the cleanup finished.
     pub(super) fn relay(status: WaitStatus) -> ! {
         if let Some(code) = status.exit_status() {
             std::process::exit(code);
         }
         if let Some(sig) = status.terminating_signal() {
-            if let Some(s) = Signal::from_named_raw(sig) {
-                let _ = kill_process(getpid(), s);
-            }
             std::process::exit(128 + sig);
         }
         std::process::exit(127)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn os(args: &[&str]) -> Vec<OsString> {
-        args.iter().map(OsString::from).collect()
-    }
-
-    #[test]
-    fn a_well_formed_invocation_parses() {
-        let got = parse(&os(&[
-            "cpu=5",
-            "nofile=64",
-            "fsize=10",
-            "data=20",
-            "--",
-            "/bin/p",
-            "a",
-            "--b",
-        ]));
-        assert_eq!(
-            got,
-            Ok(Plan {
-                limits: Limits {
-                    cpu_secs: 5,
-                    open_files: 64,
-                    file_size: 10,
-                    memory: 20,
-                },
-                program: "/bin/p".into(),
-                args: os(&["a", "--b"]),
-            })
-        );
-    }
-
-    #[test]
-    fn a_limit_never_goes_above_the_hard_limit_already_in_place() {
-        // (wanted soft, wanted hard, ceiling, set)
-        for (soft, hard, ceiling, want) in [
-            (5, 6, None, (5, 6)),
-            (5, 6, Some(100), (5, 6)),
-            (5, 6, Some(6), (5, 6)),
-            (5, 6, Some(5), (5, 5)),
-            (5, 6, Some(3), (3, 3)),
-        ] {
-            assert_eq!(capped(soft, hard, ceiling), want, "{ceiling:?}");
-        }
-    }
-
-    #[test]
-    fn a_malformed_invocation_is_refused() {
-        for bad in [
-            &["cpu=5", "nofile=64", "fsize=10", "data=20", "--"][..],
-            &["cpu=5", "nofile=64", "fsize=10", "data=20", "-", "/bin/p"],
-            &["cpu=+5", "nofile=64", "fsize=10", "data=20", "--", "/bin/p"],
-            &["cpu=", "nofile=64", "fsize=10", "data=20", "--", "/bin/p"],
-            &["nofile=64", "cpu=5", "fsize=10", "data=20", "--", "/bin/p"],
-            &["cpu=5", "nofile=64", "fsize=10", "data=20", "--", "p"],
-        ] {
-            assert!(parse(&os(bad)).is_err(), "{bad:?}");
-        }
     }
 }

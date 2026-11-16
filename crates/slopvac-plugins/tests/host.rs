@@ -289,6 +289,57 @@ fn tm4_children_in_the_group_after_setsid_and_by_double_fork_die_with_a_hung_plu
     assert!(gone, "children {pids:?} survived");
 }
 
+/// A process name that is not UTF-8 hides nothing from the walk.
+#[cfg(target_os = "linux")]
+#[test]
+fn tm4_a_child_outside_the_group_with_a_name_that_is_not_utf8_dies_with_the_plugin() {
+    let dir = scratch("tm4-odd-name");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("odd-name:stay", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    let pids = pids_n(&pidfile, 1);
+    let out = p.shutdown();
+    let gone = wait_gone(&pids);
+    if !gone {
+        end(&pids);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "the child {pids:?} survived");
+    assert!(out.teardown.is_complete(), "{out:?}");
+}
+
+/// The same child, left behind by a plugin that exits on its own, dies in
+/// the launcher's cleanup.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_child_with_a_name_that_is_not_utf8_left_by_an_exiting_plugin_dies() {
+    let dir = scratch("odd-name-exit");
+    let pidfile = dir.join("pids");
+    let p = Plugin::start(
+        &spec_with("odd-name:exit", &json!({}), Some(&pidfile), decl()),
+        &cfg(),
+        &Allow,
+    )
+    .unwrap();
+    let pids = pids_n(&pidfile, 1);
+    let gone = wait_gone(&pids);
+    let end_at = Instant::now() + NO_HANG;
+    while p.failure().is_none() && Instant::now() < end_at {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let left = p.teardown();
+    if !gone {
+        end(&pids);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "the child {pids:?} survived");
+    assert!(left.is_complete(), "{left:?}");
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn tm4_a_child_of_a_child_that_left_the_group_dies_with_the_plugin() {

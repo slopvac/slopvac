@@ -223,21 +223,50 @@ def spawn_daemon():
     return int(wait_for(inner))
 
 
+def loop_started():
+    """Mark that a loop is running, so a test knows the cap did not end the
+    plugin before the loop."""
+    if pidfile:
+        write_pids(pidfile + ".loop", [os.getpid()])
+
+
 def fork_loop():
     """Fork a sleeping child every 10 ms until the host ends the plugin."""
+    first = True
     while True:
         if os.fork() == 0:
             time.sleep(300)
             os._exit(0)
+        if first:
+            loop_started()
+            first = False
         time.sleep(0.01)
 
 
 def allocate():
-    """Allocate and touch 1 MiB every 10 ms until an allocation fails."""
-    held = []
+    """Allocate and touch 1 MiB every 20 ms until an allocation fails."""
+    held = [bytearray(1 << 20)]
+    loop_started()
     while True:
         held.append(bytearray(1 << 20))
-        time.sleep(0.01)
+        time.sleep(0.02)
+
+
+ODD_NAME = """import os, sys, time
+with open("/proc/self/comm", "wb") as f:
+    f.write(b"\\xff(x) ")
+with open(sys.argv[1] + ".tmp", "w") as f:
+    f.write(str(os.getpid()))
+os.rename(sys.argv[1] + ".tmp", sys.argv[1])
+time.sleep(300)
+"""
+
+
+def spawn_odd_name():
+    """A child in a new session whose process name is not UTF-8."""
+    inner = pidfile + ".odd"
+    subprocess.Popen([sys.executable, "-c", ODD_NAME, inner], start_new_session=True)
+    return int(wait_for(inner))
 
 
 def limits_evidence():
@@ -346,6 +375,20 @@ while True:
             sys.stderr.flush()
             if pidfile:
                 write_pids(pidfile, [os.getpid()])
+        if mode == "detach-then-term":
+            # On Linux the parent is the launcher, and the daemon is its child.
+            write_pids(pidfile, [spawn_daemon()])
+            os.kill(os.getppid(), 15)
+            time.sleep(300)
+        if mode == "leave-and-exit":
+            # A child in the group, one after `setsid` and one by double fork.
+            write_pids(pidfile, spawn_children(write=False) + [spawn_daemon()])
+            sys.exit(3)
+        if mode.startswith("odd-name:"):
+            write_pids(pidfile, [spawn_odd_name()])
+            if mode == "odd-name:exit":
+                sys.exit(0)
+            time.sleep(300)
         if mode == "kill-launcher":
             # On Linux the parent is the launcher.
             os.kill(os.getppid(), 9)
@@ -397,6 +440,17 @@ while True:
         if mode in ("hang", "cancel-ok", "cancel-late-answer"):
             pending_tag = id_
             pending_params = msg["params"]
+        elif mode == "slow-frame":
+            # Half a frame, a pause longer than the stall limit, then the rest.
+            body = json.dumps(
+                {"jsonrpc": "2.0", "id": id_, "result": tags_for(msg["params"])}
+            ).encode()
+            head = b"Content-Length: %d\r\n\r\n" % len(body)
+            out.write(head + body[:10])
+            out.flush()
+            time.sleep(1.0)
+            out.write(body[10:])
+            out.flush()
         elif mode == "orphan-tag":
             spawn_orphan()
             sys.exit(3)

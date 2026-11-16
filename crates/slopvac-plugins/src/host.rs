@@ -163,6 +163,14 @@ pub struct HostConfig {
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
     pub process_table: Option<TableSource>,
+    /// Test seam: how long the Linux launcher may spend clearing what a
+    /// plugin left behind. Production keeps two seconds.
+    #[doc(hidden)]
+    pub launcher_sweep: Duration,
+    /// Test seam: a pause between the `initialize` reply and installing the
+    /// negotiated limits. Production keeps zero.
+    #[doc(hidden)]
+    pub limits_pause: Duration,
 }
 
 impl Default for HostConfig {
@@ -180,6 +188,8 @@ impl Default for HostConfig {
             caps: RunCaps::default(),
             launcher: Launcher::CurrentExe,
             process_table: None,
+            launcher_sweep: Duration::from_secs(2),
+            limits_pause: Duration::ZERO,
         }
     }
 }
@@ -1005,6 +1015,9 @@ impl Plugin {
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
         // The reader stopped after the reply; it resumes under the new limit.
         if let Some(ready) = conn.limits_ready.take() {
+            if !cfg.limits_pause.is_zero() {
+                thread::sleep(cfg.limits_pause);
+            }
             let _ = ready.send(());
         }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
@@ -1210,7 +1223,16 @@ fn spawn_watchdog(shared: &Arc<Shared>, stop: Receiver<()>, cap: Duration, stall
 #[cfg(unix)]
 fn limit_hit(status: ExitStatus, caps: &RunCaps) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
-    let sig = status.signal()?;
+    // On Linux the launcher relays a plugin that a signal ended as exit code
+    // 128 plus the signal number.
+    let relayed = || {
+        status
+            .code()
+            .filter(|_| cfg!(target_os = "linux"))
+            .and_then(|c| c.checked_sub(128))
+            .filter(|&n| n > 0)
+    };
+    let sig = status.signal().or_else(relayed)?;
     if sig == rustix::process::Signal::XCPU.as_raw() {
         Some(format!(
             "the CPU time limit of {:?} was reached",
@@ -1257,6 +1279,7 @@ fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
         Ok(crate::launch::command(
             &launcher,
             limits,
+            cfg.launcher_sweep,
             &spec.program,
             &spec.args,
             env,

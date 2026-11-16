@@ -301,6 +301,29 @@ echo "{v} $leader {v} S $t"
     assert!(untouched, "the unrelated process was signalled");
 }
 
+/// A descendant the walk has not stopped yet can kill the launcher while the
+/// host walks. The launcher's orphans then go to init, so the teardown must
+/// not report complete. The table helper stands in for that descendant.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_killed_during_the_walk_leaves_the_teardown_incomplete() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let script = format!(
+        "if mkdir \"$1/killed\" 2>/dev/null; then kill -KILL \"$(cat \"$1/pids.leader\")\"; fi\n{PS}"
+    );
+    let (dir, cfg) = seam("killed-mid-walk", &script, WALK);
+    let p = start_mode("hang", &dir, &cfg);
+    let _ = pids_n(&dir.join("pids"), 1);
+    let left = kill_all_live();
+    let ran = dir.join("killed").exists();
+    drop(p);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(ran, "the helper never ran");
+    assert!(left.incomplete, "{left:?}");
+}
+
 /// Reaching the cap on held descendants ends the walk as incomplete, and the
 /// descendant it already holds still dies.
 #[cfg(target_os = "linux")]

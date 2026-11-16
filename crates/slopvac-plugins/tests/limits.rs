@@ -29,6 +29,29 @@ fn start_with(mode: &str, c: &HostConfig) -> Plugin {
     Plugin::start(&spec(mode), c, &Allow).expect("plugin starts")
 }
 
+/// A wall-clock cap that leaves a loaded runner time to finish the handshake
+/// and start the fixture's loop before it fires.
+const LOOP_CAP: Duration = Duration::from_secs(6);
+
+/// `<pidfile><suffix>`, a file the fixture writes next to its pid file.
+fn beside(pidfile: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut p = pidfile.as_os_str().to_owned();
+    p.push(suffix);
+    p.into()
+}
+
+/// Start `mode` with a pid file in a new scratch directory.
+fn start_logged(name: &str, mode: &str, c: &HostConfig) -> (std::path::PathBuf, Plugin) {
+    let dir = scratch(name);
+    let p = Plugin::start(
+        &spec_with(mode, &json!({}), Some(&dir.join("pids")), decl()),
+        c,
+        &Allow,
+    )
+    .expect("plugin starts");
+    (dir, p)
+}
+
 #[test]
 fn tm5_a_busy_loop_ends_at_the_cpu_time_limit_with_a_diagnostic() {
     let mut c = cfg();
@@ -61,9 +84,8 @@ fn a_write_past_the_file_size_limit_ends_the_plugin_with_a_diagnostic() {
     );
 }
 
-/// The launcher dies of SIGKILL on its own only when its cleanup missed a
-/// descendant; a plugin that kills it looks the same, and its orphans may
-/// have left the host's reach.
+/// Only a launcher that exits on its own has finished its cleanup. One that
+/// a signal ended, whatever the signal, may have lost its orphans to init.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_launcher_that_dies_of_sigkill_without_a_host_kill_leaves_the_teardown_incomplete() {
@@ -71,6 +93,58 @@ fn a_launcher_that_dies_of_sigkill_without_a_host_kill_leaves_the_teardown_incom
     let err = failure_within(&p, NO_HANG).expect("the launcher's death was not noticed");
     assert_eq!(err.slopvac_code(), "plugin-exited", "{err}");
     assert!(p.teardown().incomplete, "{:?}", p.teardown());
+}
+
+/// The plugin double-forks a daemon in a new session, which the launcher
+/// holds as a child, then ends the launcher with SIGTERM. The daemon moves
+/// to init, out of the host's reach.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_ended_by_sigterm_after_a_detached_descendant_leaves_the_teardown_incomplete() {
+    let (dir, p) = start_logged("term-launcher", "detach-then-term", &cfg());
+    let daemon = pids_n(&dir.join("pids"), 1);
+    let err = failure_within(&p, NO_HANG).expect("the launcher's death was not noticed");
+    let left = p.teardown();
+    end(&daemon);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(err.slopvac_code(), "plugin-exited", "{err}");
+    assert!(left.incomplete, "{left:?}");
+}
+
+/// A plugin that exits on its own leaves a child in its group, one after
+/// `setsid` and a double-forked daemon. The launcher kills all three before
+/// it exits, and passes the plugin's status on.
+#[cfg(target_os = "linux")]
+#[test]
+fn descendants_of_a_plugin_that_exits_on_its_own_die_and_its_status_is_kept() {
+    let (dir, p) = start_logged("sweep", "leave-and-exit", &cfg());
+    let pids = pids_n(&dir.join("pids"), 3);
+    let err = failure_within(&p, NO_HANG).expect("the exit was not noticed");
+    let gone = wait_gone(&pids);
+    let left = p.teardown();
+    if !gone {
+        end(&pids);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "descendants {pids:?} survived");
+    assert!(left.is_complete(), "{left:?}");
+    assert!(err.to_string().contains("exit status: 3"), "{err}");
+}
+
+/// With no time to clear what the plugin left, the launcher cannot confirm
+/// a clean exit, and the teardown is incomplete.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_cleanup_that_runs_out_of_time_leaves_the_teardown_incomplete() {
+    let mut c = cfg();
+    c.launcher_sweep = Duration::ZERO;
+    let (dir, p) = start_logged("sweep-fails", "leave-and-exit", &c);
+    let pids = pids_n(&dir.join("pids"), 3);
+    let _ = failure_within(&p, NO_HANG).expect("the exit was not noticed");
+    let left = p.teardown();
+    end(&pids);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(left.incomplete, "{left:?}");
 }
 
 /// Linux enforces the data limit on every private writable mapping.
@@ -91,9 +165,12 @@ fn tm5_an_allocation_loop_ends_at_the_memory_limit_with_a_diagnostic() {
 #[test]
 fn tm5_an_allocation_loop_ends_at_the_wall_clock_cap_with_a_diagnostic() {
     let mut c = cfg();
-    c.caps.wall_clock = Duration::from_secs(3);
-    let p = start_with("alloc", &c);
+    c.caps.wall_clock = LOOP_CAP;
+    let (dir, p) = start_logged("tm5-alloc", "alloc", &c);
     let err = failure_within(&p, NO_HANG).expect("the allocation loop was not ended");
+    let looped = beside(&dir.join("pids"), ".loop").exists();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(looped, "the cap fired before the loop started");
     assert_eq!(err.slopvac_code(), "plugin-timeout", "{err}");
     assert!(err.to_string().contains("wall-clock cap"), "{err}");
 }
@@ -118,20 +195,14 @@ fn members(pgid: i32) -> Vec<i32> {
 
 #[test]
 fn tm5_a_fork_loop_ends_at_the_wall_clock_cap_and_every_fork_dies() {
-    let dir = scratch("tm5-fork");
-    let pidfile = dir.join("pids");
     let mut c = cfg();
-    c.caps.wall_clock = Duration::from_secs(3);
-    let p = Plugin::start(
-        &spec_with("fork-loop", &json!({}), Some(&pidfile), decl()),
-        &c,
-        &Allow,
-    )
-    .unwrap();
-    let mut leader = pidfile.as_os_str().to_owned();
-    leader.push(".leader");
-    let group = pids_n(std::path::Path::new(&leader), 1)[0];
+    c.caps.wall_clock = LOOP_CAP;
+    let (dir, p) = start_logged("tm5-fork", "fork-loop", &c);
+    let pidfile = dir.join("pids");
+    let group = pids_n(&beside(&pidfile, ".leader"), 1)[0];
     let err = failure_within(&p, NO_HANG).expect("the fork loop was not ended");
+    // Written after the first fork.
+    let looped = beside(&pidfile, ".loop").exists();
     let until = Instant::now() + NO_HANG;
     let mut left = members(group);
     while !left.is_empty() && Instant::now() < until {
@@ -140,6 +211,7 @@ fn tm5_a_fork_loop_ends_at_the_wall_clock_cap_and_every_fork_dies() {
     }
     end(&left);
     std::fs::remove_dir_all(&dir).unwrap();
+    assert!(looped, "the cap fired before the loop started");
     assert_eq!(err.slopvac_code(), "plugin-timeout", "{err}");
     assert!(err.to_string().contains("wall-clock cap"), "{err}");
     assert!(left.is_empty(), "forks {left:?} survived");
@@ -174,6 +246,33 @@ fn a_partial_frame_outside_any_request_is_a_protocol_violation_once_it_stalls() 
     let p = start_with("stall-idle", &c);
     let err = failure_within(&p, NO_HANG).expect("the stalled frame was not noticed");
     assert_eq!(err.slopvac_code(), "plugin-protocol-violation", "{err}");
+}
+
+/// The request's deadline, not the stall rule, covers silence inside a
+/// request.
+#[test]
+fn a_partial_reply_that_pauses_past_the_stall_limit_within_its_deadline_succeeds() {
+    let mut c = cfg();
+    c.timeouts.stalled_frame = Duration::from_millis(200);
+    // The fixture pauses 1 s halfway through its reply.
+    let p = start_with("slow-frame", &c);
+    let r = p.tag("main", &docs(1));
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(p.failure(), None);
+}
+
+/// After the `initialize` reply the reader stops until the negotiated limits
+/// are in place. A frame it already buffered then is not a stalled frame.
+#[test]
+fn a_frame_buffered_while_the_limits_are_installed_is_not_stalled() {
+    let mut c = cfg();
+    c.timeouts.stalled_frame = Duration::from_millis(100);
+    c.limits_pause = Duration::from_secs(1);
+    // The reply and a 100-byte notification arrive in one write.
+    let p = Plugin::start(&spec("init-then:100"), &c, &Allow);
+    let p = p.expect("plugin starts");
+    assert_eq!(p.failure(), None);
+    assert!(p.tag("main", &docs(1)).is_ok());
 }
 
 #[test]

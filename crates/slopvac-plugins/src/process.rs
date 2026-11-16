@@ -105,8 +105,9 @@ pub struct Teardown {
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
     /// deadline or the cap on held descendants was reached. On Linux, also
-    /// a launcher that died of SIGKILL before any kill from the host: its
-    /// cleanup missed something, or the plugin killed it. On Windows,
+    /// a launcher that a signal ended before any kill from the host, or
+    /// during the walk: its cleanup missed something, or the plugin or a
+    /// descendant killed it. On Windows,
     /// `taskkill` did not exit with status 0; it does not run after the
     /// plugin answered `shutdown` and exited with status 0 without a kill.
     /// Descendants it did not reach may still run.
@@ -258,14 +259,6 @@ impl Group {
     fn kill_once(&self, st: &mut State) {
         if !st.killed {
             st.killed = true;
-            // The host has sent no SIGKILL yet. On Linux the launcher dies of
-            // one before that only if its cleanup could not account for every
-            // descendant, or if the plugin killed it; either way something
-            // may have escaped.
-            #[cfg(target_os = "linux")]
-            if unix::died_of_sigkill(self.pid) {
-                st.left.incomplete = true;
-            }
             let left = tear_down(self.pid, self.table.as_ref(), Then::Kill);
             st.left.merge(left);
         }
@@ -480,7 +473,20 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
         },
     );
     let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
-    unix::walk(leader, table, Instant::now() + within).kill()
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(unused_mut, reason = "only the launcher's end is checked")
+    )]
+    let mut left = unix::walk(leader, table, Instant::now() + within).kill();
+    // The host has sent the leader nothing but SIGSTOP and SIGCONT so far.
+    // On Linux the leader is the launcher, which confirms its cleanup only by
+    // exiting. A launcher that a signal ended, before this teardown or during
+    // its walk, may have lost its orphans to init.
+    #[cfg(target_os = "linux")]
+    if unix::ended_by_signal(leader) {
+        left.incomplete = true;
+    }
+    left
 }
 
 #[cfg(not(unix))]
@@ -584,10 +590,10 @@ mod unix {
         i32::try_from(raw).ok().and_then(Pid::from_raw)
     }
 
-    /// Whether the unreaped `leader` has died of SIGKILL, observed without
-    /// reaping it.
+    /// Whether the unreaped `leader` has ended by a signal, observed without
+    /// reaping it. A leader still running, or one that exited, has not.
     #[cfg(target_os = "linux")]
-    pub(super) fn died_of_sigkill(leader: u32) -> bool {
+    pub(super) fn ended_by_signal(leader: u32) -> bool {
         use rustix::process::{WaitId, WaitIdOptions, waitid};
         let Some(p) = pid(leader) else {
             return false;
@@ -595,7 +601,7 @@ mod unix {
         let opts = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
         matches!(
             waitid(WaitId::Pid(p), opts),
-            Ok(Some(s)) if s.terminating_signal() == Some(Signal::KILL.as_raw())
+            Ok(Some(s)) if s.terminating_signal().is_some()
         )
     }
 
