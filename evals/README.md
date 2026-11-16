@@ -178,7 +178,7 @@ just eval-diagrams --details          # list each miss and false positive
 just eval-diagrams --findings f.json  # score stored engine output without an engine
 ```
 
-The runner reads the findings of `crates/slopvac-engine/examples/diagram_eval.rs`, which lints each file with the diagram pack. It reports recall (labels found over labels) and precision (correct findings over findings) per rule, each with a Wilson interval.
+The runner reads the findings of `crates/slopvac-engine/examples/diagram_eval.rs`, which lints each file with the diagram pack. It reports recall (labels found over labels) and precision (correct findings over findings) per rule, each with a Wilson interval. Within one sample and rule, labels and findings pair one to one (a maximum matching), so one finding never credits two labels and repeated findings for one label count as false positives. `tests/fixtures/diagram_eval_output.json` records the adapter output for one sample per format; set `SLOPVAC_EVALS_LIVE_ENGINE=1` to check it against a live build.
 
 ### Results
 

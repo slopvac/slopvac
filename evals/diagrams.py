@@ -15,10 +15,11 @@ array of `{"file", "findings": [{"rule", "line", "matched"}]}`.
 `crates/slopvac-engine/examples/diagram_eval.rs` is that command for the Rust
 engine. The Python reference has no diagram extractor.
 
-A label matches a finding of the same rule whose matched text contains the label
-text. An empty label text matches any finding of the rule in the document, for
-`diagram.prose-restates-labels`, which reports a paragraph. An unmatched label is
-a miss and an unmatched finding is a false positive.
+A label can match a finding of the same rule whose matched text contains the label
+text. An empty label text can match any finding of the rule in the document, for
+`diagram.prose-restates-labels`, which reports a paragraph. Labels and findings
+pair one to one within a sample and a rule. An unpaired label is a miss and an
+unpaired finding is a false positive.
 """
 
 from __future__ import annotations
@@ -124,49 +125,80 @@ def _matches(label: Mapping[str, str], finding: Mapping[str, Any]) -> bool:
     return label["rule"] == finding["rule"] and label["text"] in finding["matched"]
 
 
+def _assign(
+    labels: Sequence[Mapping[str, str]], findings: Sequence[Mapping[str, Any]]
+) -> dict[int, int]:
+    """Pair labels with findings one to one; return label index -> finding index.
+
+    A finding satisfies at most one label and a label takes at most one finding,
+    so a finding that contains two label texts credits only one of them, and
+    findings that repeat one label count once. The pairing is a maximum
+    bipartite matching (augmenting paths, labels and findings in source order),
+    so the number of pairs does not depend on the order of the labels.
+    """
+    owner: dict[int, int] = {}  # finding index -> label index
+
+    def place(li: int, seen: set[int]) -> bool:
+        for fi, f in enumerate(findings):
+            if fi in seen or not _matches(labels[li], f):
+                continue
+            seen.add(fi)
+            if fi not in owner or place(owner[fi], seen):
+                owner[fi] = li
+                return True
+        return False
+
+    for li in range(len(labels)):
+        place(li, set())
+    return {li: fi for fi, li in owner.items()}
+
+
 def score(
     labels: Mapping[str, Any],
     findings_by_sample: Mapping[str, Sequence[Mapping[str, Any]]],
 ) -> dict[str, Any]:
-    """Count true positives, misses and false positives per rule.
+    """Count matches, misses and false positives per rule.
 
     `findings_by_sample` maps a sample id to its findings. A sample that has no
-    entry counts as having no findings.
+    entry counts as having no findings. Within a sample and a rule, labels and
+    findings are paired one to one (see `_assign`). A paired label is a hit, an
+    unpaired label is a miss and an unpaired finding is a false positive, so
+    recall is matched/labels and precision is matched/findings.
     """
     counts: dict[str, dict[str, Any]] = {
         r: {
             "labels": 0,
-            "found": 0,
             "findings": 0,
-            "correct": 0,
+            "matched": 0,
             "misses": [],
             "false_positives": [],
         }
         for r in RULES
     }
     for sid, entry in labels.items():
-        found = [f for f in findings_by_sample.get(sid, ()) if f["rule"] in counts]
-        for label in entry["labels"]:
-            row = counts[label["rule"]]
-            row["labels"] += 1
-            if any(_matches(label, f) for f in found):
-                row["found"] += 1
-            else:
-                row["misses"].append({"sample": sid, "text": label["text"]})
-        for f in found:
-            row = counts[f["rule"]]
-            row["findings"] += 1
-            if any(_matches(label, f) for label in entry["labels"]):
-                row["correct"] += 1
-            else:
-                row["false_positives"].append(
-                    {"sample": sid, "line": f["line"], "matched": f["matched"]}
-                )
+        for rule, row in counts.items():
+            mine = [lb for lb in entry["labels"] if lb["rule"] == rule]
+            found = [f for f in findings_by_sample.get(sid, ()) if f["rule"] == rule]
+            pairs = _assign(mine, found)
+            row["labels"] += len(mine)
+            row["findings"] += len(found)
+            row["matched"] += len(pairs)
+            row["misses"] += [
+                {"sample": sid, "text": lb["text"]}
+                for i, lb in enumerate(mine)
+                if i not in pairs
+            ]
+            used = set(pairs.values())
+            row["false_positives"] += [
+                {"sample": sid, "line": f["line"], "matched": f["matched"]}
+                for i, f in enumerate(found)
+                if i not in used
+            ]
     for row in counts.values():
-        row["recall"] = metrics.rate(row["found"], row["labels"])
-        row["recall_ci"] = metrics.wilson(row["found"], row["labels"])
-        row["precision"] = metrics.rate(row["correct"], row["findings"])
-        row["precision_ci"] = metrics.wilson(row["correct"], row["findings"])
+        row["recall"] = metrics.rate(row["matched"], row["labels"])
+        row["recall_ci"] = metrics.wilson(row["matched"], row["labels"])
+        row["precision"] = metrics.rate(row["matched"], row["findings"])
+        row["precision_ci"] = metrics.wilson(row["matched"], row["findings"])
     return counts
 
 
@@ -179,12 +211,13 @@ def _ci(interval: tuple[float, float] | None) -> str:
 
 
 def table(counts: Mapping[str, Mapping[str, Any]]) -> str:
-    head = "| rule | labelled | found | recall | recall 95% CI | findings | correct | precision | precision 95% CI |"
-    lines = [head, "|" + " --- |" * 9]
+    head = "| rule | labels | findings | matched | recall | recall 95% CI | precision | precision 95% CI |"
+    lines = [head, "|" + " --- |" * 8]
     for rule, c in counts.items():
         lines.append(
-            f"| {rule} | {c['labels']} | {c['found']} | {_pct(c['recall'])} | {_ci(c['recall_ci'])} "
-            f"| {c['findings']} | {c['correct']} | {_pct(c['precision'])} | {_ci(c['precision_ci'])} |"
+            f"| {rule} | {c['labels']} | {c['findings']} | {c['matched']} "
+            f"| {_pct(c['recall'])} | {_ci(c['recall_ci'])} "
+            f"| {_pct(c['precision'])} | {_ci(c['precision_ci'])} |"
         )
     return "\n".join(lines)
 

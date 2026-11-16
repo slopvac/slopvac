@@ -1,4 +1,5 @@
 set shell := ["bash", "-cu"]
+set positional-arguments
 
 # Dispatch stable publishing for an existing version tag; approve it in GitHub.
 release VERSION:
@@ -99,7 +100,7 @@ eval-run ENGINE="python" OUT="evals/.cache/results/latest.json":
 
 # Recall and precision of the diagram rule pack on the LLM-written diagram set.
 eval-diagrams *ARGS:
-    uv run python -m evals.diagrams {{ARGS}}
+    uv run python -m evals.diagrams "$@"
 
 # Offline tier: score stored results without starting an engine.
 eval-score RESULTS SPLIT="all":
