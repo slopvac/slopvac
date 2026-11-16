@@ -7,7 +7,7 @@ use crate::resolve::apply_order;
 ///
 /// `LoadedConfig::resolve` in `slopvac-config` asks for each name in `styles`. The answer
 /// is the settings of the style and of everything it extends, parents first, so a value in
-/// the explain output names the preset that set it. [`crate::resolve`] checks the list for
+/// the explain output names the preset that set it. [`fn`] checks the list for
 /// cycles, malformed files and conflicts; this adapter has no error channel, so a style
 /// that fails to load contributes nothing.
 #[derive(Debug, Clone, Copy)]
