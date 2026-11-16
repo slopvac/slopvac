@@ -1,8 +1,12 @@
-# STUB(slopvac-8l4.14.6): rules, explain and lint arguments are guesses until the clap CLI lands.
 # Scenarios for the installed Rust binary, mirroring scenarios.toml (2.x).
 # `{root}` expands to the repository root. A scenario whose command exits with a
-# code outside accept_exits is recorded as "error" and not measured, so
-# scenarios can be listed before the command exists.
+# code outside accept_exits is recorded as "error" and not measured. Arguments
+# follow the clap tree in crates/slopvac/src/cli.rs; tests/test_binary_bench.py
+# runs every scenario against a built binary and rejects exit 2.
+#
+# No plugin start-up scenario yet: `slopvac plugins` and `packs` still exit 2
+# with command-not-wired (slopvac-8l4.9). The scenario is tracked in the bead
+# that wires them.
 
 [[scenario]]
 name = "startup --version"
@@ -13,8 +17,12 @@ name = "startup rules json"
 args = ["rules", "--format", "json"]
 
 [[scenario]]
+name = "startup rules judgement json"
+args = ["rules", "--kind", "judgement", "--format", "json"]
+
+[[scenario]]
 name = "startup explain"
-args = ["explain", "ste-practices.gendered-or-exclusionary-language"]
+args = ["explain", "core:ai-residue.chat-leakage"]
 
 [[scenario]]
 name = "lint fixture warm"
@@ -37,3 +45,8 @@ name = "lint README cold"
 args = ["lint", "{root}/packages/slopvac-lint/README.md"]
 accept_exits = [0, 1]
 cold = true
+
+[[scenario]]
+name = "lint comments source"
+args = ["lint", "--mode", "code-comments", "{root}/scripts/perf/fixtures/comments/example.py"]
+accept_exits = [0, 1]

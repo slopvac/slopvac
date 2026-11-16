@@ -1,0 +1,63 @@
+# Numeric budgets for scripts/perf/binary_bench.py (slopvac-8l4.14.6).
+# Upper bounds, checked by `binary_bench.py run --budgets FILE [--enforce]`.
+# This file only records them; no workflow enforces them yet (slopvac-8l4.14.5
+# gates releases on them).
+#
+# Measured: release build (`cargo build --release -p slopvac`, version 0.0.0,
+# 3.0 work in progress), Apple M4 Pro, 14 cores, macOS arm64, 30 runs after
+# 5 warm-up runs, on a busy developer machine, 2026-11-16.
+# Headroom rule, so shared CI runners (slower, noisier) pass:
+#   median_ms     = max(100, 5 x measured median), rounded up to 25
+#   p95_ms        = max(250, 5 x measured p95), rounded up to 50
+#   peak_rss_kb   = max(16384, 4 x measured peak), rounded up to 1024
+#   binary_size_bytes = 2 x measured size, rounded up to 1 MiB
+# Re-derive them from fresh measurements when the engine lands real work
+# (measured lint peak RSS is near the --version baseline) and tighten.
+# Every scenario in binary-scenarios.toml needs an entry (tests enforce it).
+
+binary_size_bytes = 18874368
+
+[scenario."startup --version"]
+median_ms = 275  # measured 51.986
+p95_ms = 650  # measured 124.145
+peak_rss_kb = 16384  # measured 2928
+
+[scenario."startup rules json"]
+median_ms = 400  # measured 78.435
+p95_ms = 750  # measured 147.191
+peak_rss_kb = 59392  # measured 14736
+
+[scenario."startup rules judgement json"]
+median_ms = 400  # measured 76.22
+p95_ms = 500  # measured 99.916
+peak_rss_kb = 47104  # measured 11568
+
+[scenario."startup explain"]
+median_ms = 400  # measured 77.442
+p95_ms = 450  # measured 87.661
+peak_rss_kb = 41984  # measured 10432
+
+[scenario."lint fixture warm"]
+median_ms = 275  # measured 51.361
+p95_ms = 400  # measured 71.431
+peak_rss_kb = 16384  # measured 3040
+
+[scenario."lint fixture cold"]
+median_ms = 225  # measured 41.919
+p95_ms = 400  # measured 70.05
+peak_rss_kb = 16384  # measured 3024
+
+[scenario."lint README warm"]
+median_ms = 200  # measured 37.952
+p95_ms = 250  # measured 44.568
+peak_rss_kb = 16384  # measured 3088
+
+[scenario."lint README cold"]
+median_ms = 175  # measured 33.473
+p95_ms = 250  # measured 48.659
+peak_rss_kb = 16384  # measured 3072
+
+[scenario."lint comments source"]
+median_ms = 225  # measured 41.665
+p95_ms = 350  # measured 62.255
+peak_rss_kb = 16384  # measured 3024

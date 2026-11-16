@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -91,3 +94,40 @@ def test_enforce_fails_when_over_budget(tmp_path):
 
 def test_shipped_scenarios_load_with_unique_names():
     assert len(bb.load_scenarios()) >= 5
+
+
+BUDGETS = bb.ROOT / "scripts/perf/binary-budgets.toml"
+BUDGET_KEYS = {"median_ms", "p95_ms", "peak_rss_kb"}
+
+
+def test_shipped_scenarios_do_not_accept_usage_errors():
+    for scenario in bb.load_scenarios():
+        assert 2 not in scenario.get("accept_exits", [0]), scenario["name"]
+
+
+def test_every_shipped_scenario_has_a_complete_budget():
+    with BUDGETS.open("rb") as handle:
+        budgets = tomllib.load(handle)
+    names = {s["name"] for s in bb.load_scenarios()}
+    assert set(budgets["scenario"]) == names
+    assert budgets["binary_size_bytes"] > 0
+    for name, limits in budgets["scenario"].items():
+        assert set(limits) == BUDGET_KEYS, name
+        assert all(value > 0 for value in limits.values()), name
+
+
+def built_binary() -> Path | None:
+    candidates = [os.environ.get("SLOPVAC_BIN", "")]
+    candidates += [str(bb.ROOT / f"target/{p}/slopvac") for p in ("release", "debug")]
+    return next((Path(c) for c in candidates if c and Path(c).is_file()), None)
+
+
+@pytest.mark.skipif(built_binary() is None, reason="no built slopvac binary")
+def test_real_binary_accepts_every_shipped_scenario():
+    binary = built_binary()
+    failures = []
+    for scenario in bb.load_scenarios():
+        result = bb.measure(binary, scenario, runs=1, warmup=0)
+        if result["status"] != "ok":
+            failures.append(f"{scenario['name']}: exit {result['exit_code']}")
+    assert failures == []
