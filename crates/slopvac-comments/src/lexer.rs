@@ -206,6 +206,15 @@ fn code(
             ));
         }
     }
+    if syntax.backslash_char && here.first() == Some(&b'\\') {
+        // One character, then any letters or digits (`\newline`, `\u0041`).
+        let first = source.get(at + 1..)?.chars().next()?;
+        let mut end = at + 1 + first.len_utf8();
+        while bytes.get(end).is_some_and(u8::is_ascii_alphanumeric) {
+            end += 1;
+        }
+        return Some((end, State::Code));
+    }
     // A leading `#![` is a Rust inner attribute, not a shebang.
     let shebang = at == bom
         && here.get(2) != Some(&b'[')

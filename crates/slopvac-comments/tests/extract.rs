@@ -440,3 +440,24 @@ fn lua_long_brackets_hold_strings_and_comments() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+#[test]
+fn clojure_character_literals_do_not_open_strings_or_comments() {
+    let mut wrong = Vec::new();
+    for (source, want) in [
+        ("(def q \\\")\n; yes\n", vec!["yes"]),
+        ("(def s \\;) ; yes\n", vec!["yes"]),
+        ("[\\newline \\u0041 \\a] ; yes\n", vec!["yes"]),
+        ("(def s \"a ; not\") ; yes\n", vec!["yes"]),
+        (";; one\n;; two\n", vec!["one two"]),
+    ] {
+        let got: Vec<String> = pairs(Language::Clojure, source)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if got != want {
+            wrong.push(format!("{source:?}: want {want:?}, got {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

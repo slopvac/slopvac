@@ -303,6 +303,8 @@ pub(crate) struct Syntax {
     pub(crate) leaders: &'static [char],
     /// A backslash before the line end continues a line comment onto the next line.
     pub(crate) continuation: bool,
+    /// A backslash starts a character literal (`\"`, `\;`, `\newline`, `\u0041`).
+    pub(crate) backslash_char: bool,
     /// Strings may use Lua long brackets, `[[ ... ]]` and `[==[ ... ]==]`.
     pub(crate) long_strings: bool,
     /// Block forms, checked in order, before line forms.
@@ -368,6 +370,7 @@ const fn syntax(
         leaders: &[],
         continuation: false,
         long_strings: false,
+        backslash_char: false,
         blocks,
         strings,
     }
@@ -460,4 +463,7 @@ const FSHARP: Syntax = Syntax {
     line_doc: &["///"],
     ..syntax(&["//"], &[plain("(*", "*)", true)], &[TDQ, DQ, CHAR])
 };
-const CLOJURE: Syntax = syntax(&[";"], &[], &[MDQ]);
+const CLOJURE: Syntax = Syntax {
+    backslash_char: true,
+    ..syntax(&[";"], &[], &[MDQ])
+};

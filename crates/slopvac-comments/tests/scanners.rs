@@ -38,7 +38,7 @@ fn dependency_key(entry: &str) -> (String, Option<String>) {
 /// Every package `slopvac-comments` can link, direct or not, as `(name, version)`.
 /// The lock lists optional dependencies whether or not a feature is on, so this is the
 /// largest set a build could link.
-fn linked_packages(lock: &toml::Table) -> Vec<(String, String)> {
+fn linked_packages(lock: &toml::Table) -> Vec<(String, String, Option<String>)> {
     let packages = lock["package"].as_array().expect("packages");
     let version_of = |name: &str, wanted: Option<&str>| -> String {
         packages
@@ -72,31 +72,76 @@ fn linked_packages(lock: &toml::Table) -> Vec<(String, String)> {
             stack.push((dep, dep_version));
         }
     }
-    seen.into_iter().collect()
+    seen.into_iter()
+        .map(|(name, version)| {
+            let source = packages
+                .iter()
+                .find(|p| {
+                    p["name"].as_str() == Some(&name) && p["version"].as_str() == Some(&version)
+                })
+                .and_then(|p| p.get("source"))
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned);
+            (name, version, source)
+        })
+        .collect()
 }
 
-/// The unpacked source of a registry crate. Fails if it is not there: a grammar whose
-/// sources cannot be found cannot be shown to be scanner-free.
-fn registry_dir(name: &str, version: &str) -> Result<PathBuf, String> {
-    let home = std::env::var_os("CARGO_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
-        .ok_or("neither CARGO_HOME nor HOME is set")?;
-    let sources = home.join("registry").join("src");
+/// The only source this check can resolve exactly: the crates.io index.
+const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
+
+/// The unpacked source of the linked package, identified by its `Cargo.lock` source.
+///
+/// A path or git dependency, a patch, or another registry has a different source, and a
+/// cached crates.io copy of the same name and version is not what links. Those fail
+/// closed instead of inspecting the wrong files.
+fn resolve_source(
+    cargo_home: &Path,
+    name: &str,
+    version: &str,
+    source: Option<&str>,
+) -> Result<PathBuf, String> {
+    if source != Some(CRATES_IO) {
+        return Err(format!(
+            "{name} {version}: source {source:?} cannot be resolved; only {CRATES_IO} is supported"
+        ));
+    }
+    let sources = cargo_home.join("registry").join("src");
     let entries = std::fs::read_dir(&sources)
         .map_err(|error| format!("cannot read {}: {error}", sources.display()))?;
+    let mut found = Vec::new();
     for entry in entries {
         let index =
             entry.map_err(|error| format!("bad entry in {}: {error}", sources.display()))?;
+        if !index
+            .file_name()
+            .to_string_lossy()
+            .starts_with("index.crates.io-")
+        {
+            continue;
+        }
         let candidate = index.path().join(format!("{name}-{version}"));
         if candidate.is_dir() {
-            return Ok(candidate);
+            found.push(candidate);
         }
     }
-    Err(format!(
-        "{name} {version} is not unpacked under {}",
-        sources.display()
-    ))
+    match found.len() {
+        1 => Ok(found.remove(0)),
+        0 => Err(format!(
+            "{name} {version} is not unpacked under {}",
+            sources.display()
+        )),
+        _ => Err(format!(
+            "{name} {version} is unpacked more than once: {found:?}"
+        )),
+    }
+}
+
+fn cargo_home() -> PathBuf {
+    std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
+        .expect("neither CARGO_HOME nor HOME is set")
 }
 
 /// Whether a directory name holds sources that do not ship in the grammar's library.
@@ -150,9 +195,10 @@ fn inspect(name: &str, dir: &Path) -> Result<(), String> {
 fn grammar_crates() -> Vec<(String, PathBuf)> {
     linked_packages(&lock())
         .into_iter()
-        .filter(|(name, _)| name.starts_with("tree-sitter-") && name != "tree-sitter-language")
-        .map(|(name, version)| {
-            let dir = registry_dir(&name, &version).unwrap_or_else(|error| panic!("{error}"));
+        .filter(|(name, _, _)| name.starts_with("tree-sitter-") && name != "tree-sitter-language")
+        .map(|(name, version, source)| {
+            let dir = resolve_source(&cargo_home(), &name, &version, source.as_deref())
+                .unwrap_or_else(|error| panic!("{error}"));
             (name, dir)
         })
         .collect()
@@ -290,4 +336,51 @@ fn an_unreadable_directory_fails_the_check() {
         let error = inspect("tree-sitter-fake", &crate_dir.0).expect_err("unreadable");
         assert!(error.contains("cannot read"), "{error}");
     }
+}
+
+/// A synthetic cargo home with a crates.io cache entry for `tree-sitter-fake 1.0.0`.
+fn cached_home(label: &str) -> Scratch {
+    let home = Scratch::new(label);
+    home.write(
+        "registry/src/index.crates.io-0000000000000000/tree-sitter-fake-1.0.0/src/parser.c",
+        "int parser;",
+    );
+    home
+}
+
+#[test]
+fn a_crates_io_package_resolves_to_its_cached_source() {
+    let home = cached_home("resolve-ok");
+    let dir = resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect("found");
+    assert!(dir.ends_with("tree-sitter-fake-1.0.0"));
+}
+
+#[test]
+fn a_path_override_does_not_fall_back_to_the_cached_original() {
+    // A path dependency has no `source` in Cargo.lock, but the cache holds the original.
+    let home = cached_home("resolve-path");
+    let error = resolve_source(&home.0, "tree-sitter-fake", "1.0.0", None).expect_err("path");
+    assert!(error.contains("cannot be resolved"), "{error}");
+}
+
+#[test]
+fn git_and_alternate_registry_sources_fail_closed() {
+    let home = cached_home("resolve-other");
+    for source in [
+        "git+https://example.com/tree-sitter-fake?rev=abc#abc",
+        "registry+https://example.com/index",
+        "sparse+https://example.com/index/",
+    ] {
+        assert!(resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(source)).is_err());
+    }
+}
+
+#[test]
+fn a_copy_under_another_registry_cache_is_not_used() {
+    let home = Scratch::new("resolve-other-index");
+    home.write(
+        "registry/src/index.example.com-0000000000000000/tree-sitter-fake-1.0.0/src/parser.c",
+        "int parser;",
+    );
+    assert!(resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).is_err());
 }

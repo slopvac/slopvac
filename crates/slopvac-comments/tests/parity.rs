@@ -37,6 +37,7 @@ fn language(file: &str) -> Language {
         Some("lua") => "lua",
         Some("java") => "java",
         Some("toml") => "toml",
+        Some("clj") => "clojure",
         other => panic!("no language for {other:?}"),
     };
     Language::from_name(name).expect("known language")
