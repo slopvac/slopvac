@@ -171,6 +171,10 @@ fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
     {
         // Patterns were validated as non-empty strings; a glob the matcher cannot compile is skipped
         // here and reported against its block or file by `compile`.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a glob the matcher cannot compile is skipped here and reported by `compile`"
+        )]
         let _ = builder.add_line(None, p);
     }
     builder.build().unwrap_or_else(|_| Gitignore::empty())
@@ -192,7 +196,10 @@ fn normalise(path: &Path) -> PathBuf {
             {
                 out.pop();
             }
-            other => out.push(other),
+            other @ (Component::Prefix(_)
+            | Component::RootDir
+            | Component::ParentDir
+            | Component::Normal(_)) => out.push(other),
         }
     }
     out
@@ -237,7 +244,8 @@ fn relative_display(file: &Path, root: &Path) -> String {
     // `/` on every platform, so provenance reads the same in reports on Windows.
     let mut parts: Vec<String> = vec!["..".to_owned(); r.len() - common];
     parts.extend(
-        f[common..]
+        f.get(common..)
+            .unwrap_or_default()
             .iter()
             .map(|c| c.as_os_str().to_string_lossy().into_owned()),
     );
@@ -454,8 +462,13 @@ impl Loader<'_> {
                 (Key::Path(joined), shown, None)
             };
             if let Some(at) = self.stack.iter().position(|(k, _)| *k == target) {
-                let mut chain: Vec<String> =
-                    self.stack[at..].iter().map(|(_, d)| d.clone()).collect();
+                let mut chain: Vec<String> = self
+                    .stack
+                    .get(at..)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|(_, d)| d.clone())
+                    .collect();
                 chain.push(shown);
                 return Err(fail(
                     Code::ExtendsCycle,

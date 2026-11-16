@@ -3,7 +3,7 @@
 //! The CLI crate wires `command` and `run` into its tree. The checks are plain functions so the
 //! language server and tests call them directly.
 
-use std::fmt::Write as _;
+use crate::append;
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -77,10 +77,10 @@ pub fn validate(
 ) -> Report {
     let mut report = Report::default();
     let discovery = Discovery::new(presets);
-    let config = match explicit {
-        Some(p) => discovery.explicit_in(cwd, p).map(Some),
-        None => discovery.nearest(cwd),
-    };
+    let config = explicit.map_or_else(
+        || discovery.nearest(cwd),
+        |p| discovery.explicit_in(cwd, p).map(Some),
+    );
     let config = match config {
         Ok(c) => c,
         Err(e) => {
@@ -96,7 +96,7 @@ pub fn validate(
     let files = collect(paths, cwd, &mut report);
     for file in files {
         let config = match (&config, explicit) {
-            (Some(c), Some(_)) => Some(c.clone()),
+            (Some(c), Some(_)) => Some(std::sync::Arc::clone(c)),
             _ => match file.parent().map(|d| discovery.nearest(d)) {
                 Some(Ok(c)) => c,
                 Some(Err(e)) => {
@@ -267,12 +267,14 @@ fn missing_term_files(config: &LoadedConfig) -> Vec<Problem> {
             {
                 if !crate::load::normalise_join(&dir, name).is_file() {
                     let mut msg = String::new();
-                    let _ = write!(
-                        msg,
-                        "error[config-invalid-value]: `terms.{key}` names `{name}`, which is not a file\n --> {}:{}:{}",
-                        file.display,
-                        s.source.line.unwrap_or(1),
-                        s.source.column.unwrap_or(1),
+                    append(
+                        &mut msg,
+                        format_args!(
+                            "error[config-invalid-value]: `terms.{key}` names `{name}`, which is not a file\n --> {}:{}:{}",
+                            file.display,
+                            s.source.line.unwrap_or(1),
+                            s.source.column.unwrap_or(1),
+                        ),
                     );
                     out.push(Problem {
                         file: file.display.clone(),

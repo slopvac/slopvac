@@ -55,7 +55,13 @@ impl Node {
     pub fn entry(&self, key: &str) -> Option<&Entry> {
         match &self.value {
             Value::Table(entries) => entries.iter().find(|e| e.key == key),
-            _ => None,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Datetime(_)
+            | Value::Array(_) => None,
         }
     }
 
@@ -85,7 +91,13 @@ impl Node {
     pub fn as_str(&self) -> Option<&str> {
         match &self.value {
             Value::Str(s) => Some(s),
-            _ => None,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Datetime(_)
+            | Value::Array(_)
+            | Value::Table(_) => None,
         }
     }
 
@@ -121,7 +133,12 @@ impl Node {
                     e.node.shift(offset);
                 }
             }
-            _ => {}
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Datetime(_) => {}
         }
     }
 }
@@ -297,7 +314,9 @@ fn yaml_node(n: &MarkedYaml<'_>, idx: &ByteIndex) -> Node {
         YamlData::Value(Scalar::String(s)) | YamlData::Representation(s, ..) => {
             Value::Str(s.to_string())
         }
-        _ => Value::Null,
+        YamlData::Value(_) | YamlData::Tagged(..) | YamlData::Alias(_) | YamlData::BadValue => {
+            Value::Null
+        }
     };
     Node { span, value }
 }
@@ -309,7 +328,11 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
         YamlData::Value(Scalar::Boolean(b)) => b.to_string(),
         YamlData::Value(Scalar::FloatingPoint(f)) => f.0.to_string(),
         YamlData::Value(Scalar::Null) => "null".to_owned(),
-        _ => "?".to_owned(),
+        YamlData::Sequence(_)
+        | YamlData::Mapping(_)
+        | YamlData::Tagged(..)
+        | YamlData::Alias(_)
+        | YamlData::BadValue => "?".to_owned(),
     }
 }
 
@@ -346,9 +369,14 @@ impl<'a> LineIndex<'a> {
     /// One-based line and column of a byte offset. The column counts code points.
     #[must_use]
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
-        let offset = offset.clamp(self.starts[0], self.text.len());
-        let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        let start = self.starts[line];
+        let first = self.starts.first().copied().unwrap_or(0);
+        let offset = offset.clamp(first, self.text.len());
+        // `starts[0]` is at most `offset`, so at least one start precedes it.
+        let line = self
+            .starts
+            .partition_point(|&s| s <= offset)
+            .saturating_sub(1);
+        let start = self.starts.get(line).copied().unwrap_or(first);
         let col = self
             .text
             .get(start..offset)
@@ -360,9 +388,10 @@ impl<'a> LineIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sub;
 
     fn text_at<'a>(text: &'a str, r: &Range<usize>) -> &'a str {
-        &text[r.clone()]
+        sub(text, r.clone())
     }
 
     #[test]

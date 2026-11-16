@@ -4,6 +4,7 @@
 //! and `schemas/v3/style.schema.json`. The conformance corpus under
 //! `schemas/v3/conformance/` is the shared test of both.
 
+use crate::sub;
 use std::ops::Range;
 
 use crate::diag::{Code, Diagnostic, closest};
@@ -475,8 +476,10 @@ pub fn block_shape() -> Shape {
 /// The shape of an inline directive: the front-matter fields, with no version.
 #[must_use]
 pub fn directive_shape() -> Shape {
-    let Shape::Table(mut t) = block_shape() else {
-        unreachable!("the block shape is a table");
+    let shape = block_shape();
+    // The block shape is a table; any other shape would be returned as it is.
+    let Shape::Table(mut t) = shape else {
+        return shape;
     };
     t.fields.retain(|(name, _)| *name != "v");
     t.required.clear();
@@ -542,7 +545,7 @@ impl Ctx<'_> {
     /// The first line of a node, so a missing key points at a header and not at a whole file.
     fn head(&self, node: &Node) -> Range<usize> {
         let start = node.span.start.min(self.text.len());
-        let end = self.text[start..]
+        let end = sub(self.text, start..)
             .find('\n')
             .map_or(node.span.end, |i| start + i)
             .min(node.span.end.max(start));
@@ -556,6 +559,10 @@ fn child(path: &[String], seg: &str) -> Vec<String> {
     p
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the match names every Shape variant, one arm each, so a new shape fails to compile"
+)]
 fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
     match shape {
         Shape::NonEmptyStr => match &node.value {
@@ -569,7 +576,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 );
             }
             Value::Str(_) => {}
-            _ => ctx.type_error(node, path, "a string", None),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Datetime(_)
+            | Value::Array(_)
+            | Value::Table(_) => ctx.type_error(node, path, "a string", None),
         },
         Shape::Pattern { name, check } => match &node.value {
             Value::Str(s) if check(s) => {}
@@ -580,7 +593,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 "not valid here",
                 None,
             ),
-            _ => ctx.type_error(node, path, "a string", None),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Datetime(_)
+            | Value::Array(_)
+            | Value::Table(_) => ctx.type_error(node, path, "a string", None),
         },
         Shape::Bool => {
             if !matches!(node.value, Value::Bool(_)) {
@@ -597,7 +616,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 "not accepted",
                 Some("use a number, or `none` to clear the budget".into()),
             ),
-            _ => check_num(ctx, node, Some(0.0), None, path),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Datetime(_)
+            | Value::Array(_)
+            | Value::Table(_) => check_num(ctx, node, Some(0.0), None, path),
         },
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
@@ -617,7 +642,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 "must be 3",
                 Some("run `slopvac migrate` for a 2.x config".into()),
             ),
-            _ => ctx.type_error(node, path, "the integer 3", None),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Datetime(_)
+            | Value::Array(_)
+            | Value::Table(_) => ctx.type_error(node, path, "the integer 3", None),
         },
         Shape::List {
             item,
@@ -646,7 +677,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                     check(ctx, &e.node, value, &p);
                 }
             }
-            _ => ctx.type_error(node, path, "a table", None),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Datetime(_)
+            | Value::Array(_) => ctx.type_error(node, path, "a table", None),
         },
         Shape::Either { scalar, table } => {
             if matches!(node.value, Value::Table(_)) {
@@ -658,9 +695,16 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
+/// `i` as the nearest `f64`: the high half (signed) times 2^32 plus the low half, both exact
+/// in an `f64`, so the one rounding is the same as the cast's.
+#[expect(
+    clippy::many_single_char_names,
+    reason = "the eight bytes of an i64, named in order"
+)]
 fn as_f64(i: i64) -> f64 {
-    i as f64
+    let [a, b, c, d, e, f, g, h] = i.to_be_bytes();
+    f64::from(i32::from_be_bytes([a, b, c, d])) * 4_294_967_296.0
+        + f64::from(u32::from_be_bytes([e, f, g, h]))
 }
 
 fn check_int(ctx: &mut Ctx<'_>, node: &Node, min: Option<i64>, max: Option<i64>, path: &[String]) {
@@ -683,7 +727,12 @@ fn check_num(ctx: &mut Ctx<'_>, node: &Node, min: Option<f64>, max: Option<f64>,
     let n = match node.value {
         Value::Int(i) => as_f64(i),
         Value::Float(f) => f,
-        _ => {
+        Value::Null
+        | Value::Bool(_)
+        | Value::Str(_)
+        | Value::Datetime(_)
+        | Value::Array(_)
+        | Value::Table(_) => {
             ctx.type_error(node, path, "a number", None);
             return;
         }
@@ -731,7 +780,12 @@ fn check_choice(
             );
         }
         Value::Table(_) => ctx.type_error(node, path, &expected, table_help.map(str::to_owned)),
-        _ => ctx.type_error(node, path, &expected, None),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Datetime(_)
+        | Value::Array(_) => ctx.type_error(node, path, &expected, None),
     }
 }
 
@@ -758,7 +812,12 @@ fn check_list(
     }
     for (i, it) in items.iter().enumerate() {
         check(ctx, it, item, &child(path, &i.to_string()));
-        if unique && items[..i].iter().any(|prev| prev.to_json() == it.to_json()) {
+        if unique
+            && items
+                .iter()
+                .take(i)
+                .any(|prev| prev.to_json() == it.to_json())
+        {
             ctx.value_error(
                 it,
                 &child(path, &i.to_string()),

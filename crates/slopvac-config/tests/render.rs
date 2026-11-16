@@ -3,6 +3,10 @@
 use slopvac_config::tree::parse_toml;
 use slopvac_config::{SourceFile, render, validate_config};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rendered(text: &str) -> String {
     let root = parse_toml(text).unwrap();
     let diags = validate_config(&root, text);
@@ -64,6 +68,10 @@ fn multiple_problems_render_in_document_order() {
     ));
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rendered_with(text: &str, name: &str) -> String {
     let root = parse_toml(text).unwrap();
     let diags = validate_config(&root, text);

@@ -6,6 +6,10 @@ use std::path::Path;
 use serde_json::Value;
 use slopvac_config::tree::{LineIndex, parse_toml};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn vectors() -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../schemas/v3/conformance/positions/vectors.json");

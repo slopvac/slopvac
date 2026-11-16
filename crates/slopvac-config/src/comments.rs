@@ -17,11 +17,15 @@
 //! - CSS, which has block comments only, is scanned with the C rules, so `//` in a `url(…)`
 //!   at the start of a line reads as a comment.
 
+use crate::sub;
 use std::ops::Range;
 
 /// What a family of languages does with strings and comments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // independent language features, not a state
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent language features, not a state"
+)]
 pub(crate) struct Family {
     /// `//` and `/* */` comments.
     c_like: bool,
@@ -107,9 +111,9 @@ pub(crate) fn comments(doc: &str, fam: Family) -> Vec<Comment> {
     let b = doc.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
-    while i < b.len() {
+    while let Some(&current) = b.get(i) {
         let next = b.get(i + 1).copied();
-        match b[i] {
+        match current {
             b'/' if fam.c_like && next == Some(b'/') => {
                 let end = line_end(b, i);
                 out.push(Comment {
@@ -162,12 +166,15 @@ pub(crate) fn comments(doc: &str, fam: Family) -> Vec<Comment> {
 }
 
 fn ident_before(b: &[u8], i: usize) -> bool {
-    i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')
+    i.checked_sub(1)
+        .and_then(|p| b.get(p))
+        .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
 }
 
 /// The offset of the next line terminator at or after `from`, or the end of the text.
 fn line_end(b: &[u8], from: usize) -> usize {
-    b[from..]
+    b.get(from..)
+        .unwrap_or_default()
         .iter()
         .position(|&c| c == b'\n' || c == b'\r')
         .map_or(b.len(), |p| from + p)
@@ -177,14 +184,14 @@ fn line_end(b: &[u8], from: usize) -> usize {
 fn block_end(b: &[u8], from: usize, nested: bool) -> (usize, bool) {
     let mut depth = 1usize;
     let mut i = from;
-    while i < b.len() {
-        if b[i] == b'*' && b.get(i + 1) == Some(&b'/') {
+    while let Some(&current) = b.get(i) {
+        if current == b'*' && b.get(i + 1) == Some(&b'/') {
             depth -= 1;
             i += 2;
             if depth == 0 {
                 return (i, true);
             }
-        } else if nested && b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+        } else if nested && current == b'/' && b.get(i + 1) == Some(&b'*') {
             depth += 1;
             i += 2;
         } else {
@@ -194,24 +201,33 @@ fn block_end(b: &[u8], from: usize, nested: bool) -> (usize, bool) {
     (b.len(), false)
 }
 
+/// How many `#` start at `from`.
+fn hash_run(b: &[u8], from: usize) -> usize {
+    b.get(from..)
+        .unwrap_or_default()
+        .iter()
+        .take_while(|&&c| c == b'#')
+        .count()
+}
+
 /// The end of a Rust raw string (`r"…"`, `r#"…"#`, `br"…"`) that starts at `i`, if one does.
 fn raw_string_end(b: &[u8], i: usize) -> Option<usize> {
     let mut j = i;
-    if b[j] == b'b' {
+    if b.get(j) == Some(&b'b') {
         j += 1;
     }
     if b.get(j) != Some(&b'r') {
         return None;
     }
     j += 1;
-    let hashes = b[j..].iter().take_while(|&&c| c == b'#').count();
+    let hashes = hash_run(b, j);
     j += hashes;
     if b.get(j) != Some(&b'"') {
         return None;
     }
     j += 1;
-    while j < b.len() {
-        if b[j] == b'"' && b[j + 1..].iter().take_while(|&&c| c == b'#').count() >= hashes {
+    while let Some(&c) = b.get(j) {
+        if c == b'"' && hash_run(b, j + 1) >= hashes {
             return Some(j + 1 + hashes);
         }
         j += 1;
@@ -222,13 +238,17 @@ fn raw_string_end(b: &[u8], i: usize) -> Option<usize> {
 /// The offset after the string, character literal or template literal that starts at `i`.
 fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
     let b = doc.as_bytes();
-    let quote = b[i];
+    let Some(&quote) = b.get(i) else {
+        return i + 1;
+    };
     if quote == b'\'' && fam.rust {
         return rust_quote(doc, i);
     }
     if quote == b'`' {
         if fam.raw_backtick {
-            return b[i + 1..]
+            return b
+                .get(i + 1..)
+                .unwrap_or_default()
                 .iter()
                 .position(|&c| c == b'`')
                 .map_or(b.len(), |p| i + 1 + p + 1);
@@ -239,16 +259,17 @@ fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
             i + 1
         };
     }
-    if quote == b'"' && fam.triple && b[i..].starts_with(b"\"\"\"") {
+    let here = b.get(i..).unwrap_or_default();
+    if quote == b'"' && fam.triple && here.starts_with(b"\"\"\"") {
         return triple_end(b, i + 3, *b"\"\"\"");
     }
-    if quote == b'\'' && fam.triple && fam.hash && b[i..].starts_with(b"'''") {
+    if quote == b'\'' && fam.triple && fam.hash && here.starts_with(b"'''") {
         return triple_end(b, i + 3, *b"'''");
     }
     let spans_lines = fam.rust;
     let mut j = i + 1;
-    while j < b.len() {
-        match b[j] {
+    while let Some(&current) = b.get(j) {
+        match current {
             b'\\' => j += 2,
             c if c == quote => return j + 1,
             b'\n' | b'\r' if !spans_lines => return j,
@@ -262,10 +283,10 @@ fn skip_string(doc: &str, i: usize, fam: Family) -> usize {
 /// byte, so an escaped delimiter does not close the string.
 fn triple_end(b: &[u8], from: usize, delim: [u8; 3]) -> usize {
     let mut j = from;
-    while j < b.len() {
-        if b[j] == b'\\' {
+    while let Some(&current) = b.get(j) {
+        if current == b'\\' {
             j += 2;
-        } else if b[j..].starts_with(&delim) {
+        } else if b.get(j..).unwrap_or_default().starts_with(&delim) {
             return j + 3;
         } else {
             j += 1;
@@ -284,7 +305,7 @@ fn rust_quote(doc: &str, i: usize) -> usize {
                 .map_or(b.len(), |p| i + 3 + p + 1)
         });
     }
-    match doc[i + 1..].chars().next() {
+    match sub(doc, i + 1..).chars().next() {
         Some(c) if b.get(i + 1 + c.len_utf8()) == Some(&b'\'') => i + 1 + c.len_utf8() + 1,
         _ => i + 1,
     }
@@ -294,8 +315,8 @@ fn rust_quote(doc: &str, i: usize) -> usize {
 /// hold strings and templates of its own.
 fn skip_template(b: &[u8], from: usize) -> usize {
     let mut j = from;
-    while j < b.len() {
-        match b[j] {
+    while let Some(&current) = b.get(j) {
+        match current {
             b'\\' => j += 2,
             b'`' => return j + 1,
             b'$' if b.get(j + 1) == Some(&b'{') => j = skip_braces(b, j + 2),
@@ -309,8 +330,8 @@ fn skip_template(b: &[u8], from: usize) -> usize {
 fn skip_braces(b: &[u8], from: usize) -> usize {
     let mut depth = 1usize;
     let mut j = from;
-    while j < b.len() {
-        match b[j] {
+    while let Some(&current) = b.get(j) {
+        match current {
             b'{' => depth += 1,
             b'}' => {
                 depth -= 1;
@@ -332,8 +353,8 @@ fn skip_braces(b: &[u8], from: usize) -> usize {
             }
             q @ (b'"' | b'\'') => {
                 j += 1;
-                while j < b.len() && b[j] != q && b[j] != b'\n' {
-                    j += if b[j] == b'\\' { 2 } else { 1 };
+                while b.get(j).is_some_and(|&c| c != q && c != b'\n') {
+                    j += if b.get(j) == Some(&b'\\') { 2 } else { 1 };
                 }
             }
             _ => {}

@@ -39,7 +39,14 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
             help: Some("upgrade slopvac".into()),
             path,
         }),
-        _ => Ok(()),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Str(_)
+        | Value::Datetime(_)
+        | Value::Array(_)
+        | Value::Table(_) => Ok(()),
     }
 }
 
@@ -50,6 +57,7 @@ fn first_line(text: &str) -> std::ops::Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sub;
     use crate::tree::parse_toml;
 
     fn gate(text: &str) -> Option<Code> {
@@ -87,6 +95,6 @@ mod tests {
             d.help.as_deref(),
             Some("run `slopvac migrate` to convert it")
         );
-        assert_eq!(&text[d.span], "mode = \"prose\"");
+        assert_eq!(sub(text, d.span), "mode = \"prose\"");
     }
 }
