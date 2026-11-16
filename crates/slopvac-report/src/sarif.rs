@@ -26,7 +26,7 @@ fn uri(path: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
             out.push(char::from(b));
         } else {
-            let _ = write!(out, "%{b:02X}");
+            write!(out, "%{b:02X}").ok();
         }
     }
     out
@@ -34,17 +34,19 @@ fn uri(path: &str) -> String {
 
 fn region(doc: &DocIndex<'_>, finding: &Finding) -> Result<Value, RenderError> {
     let at = doc.locate(finding, ColumnUnit::Utf16)?;
-    Ok(match at.end {
-        Some(end) => json!({
-            "startLine": at.start.line,
-            "startColumn": at.start.column,
-            "endLine": end.line,
-            "endColumn": end.column,
-        }),
-        // No source range: the stored column counts code points, which SARIF does not
-        // declare, so the location carries the line only.
-        None => json!({"startLine": at.start.line}),
-    })
+    // Without a source range the stored column counts code points, which SARIF does not
+    // declare, so the location carries the line only.
+    Ok(at.end.map_or_else(
+        || json!({"startLine": at.start.line}),
+        |end| {
+            json!({
+                "startLine": at.start.line,
+                "startColumn": at.start.column,
+                "endLine": end.line,
+                "endColumn": end.column,
+            })
+        },
+    ))
 }
 
 fn fix(doc: &DocIndex<'_>, path: &str, finding: &Finding) -> Result<Option<Value>, RenderError> {

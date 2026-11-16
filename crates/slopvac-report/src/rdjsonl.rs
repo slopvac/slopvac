@@ -22,10 +22,10 @@ pub(crate) fn render(
             let at = doc.locate(f, ColumnUnit::Utf8)?;
             // Without a source range the stored column counts code points, not bytes, so a
             // document-level finding carries the line only. The proto makes the column optional.
-            let range = match at.end {
-                Some(end) => json!({"start": pos(at.start), "end": pos(end)}),
-                None => json!({"start": {"line": at.start.line}}),
-            };
+            let range = at.end.map_or_else(
+                || json!({"start": {"line": at.start.line}}),
+                |end| json!({"start": pos(at.start), "end": pos(end)}),
+            );
             let severity = match f.severity {
                 Severity::Error => "ERROR",
                 Severity::Warning => "WARNING",

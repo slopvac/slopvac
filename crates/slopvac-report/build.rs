@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-fn main() {
-    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets the manifest dir");
+fn main() -> Result<(), std::env::VarError> {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR")?;
     let path = Path::new(&manifest).join("../../docs/site.toml");
     println!("cargo:rerun-if-changed={}", path.display());
     let Ok(text) = std::fs::read_to_string(&path) else {
-        return;
+        return Ok(());
     };
     for line in text.lines() {
         let Some((key, value)) = line.split_once('=') else {
@@ -23,4 +23,5 @@ fn main() {
             println!("cargo:rustc-env=SLOPVAC_DOCS_BASE={url}");
         }
     }
+    Ok(())
 }

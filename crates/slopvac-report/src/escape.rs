@@ -13,7 +13,7 @@ pub(crate) fn xml(text: &str) -> String {
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&#39;"),
             '\t' | '\n' | '\r' => out.push(c),
-            c if (c as u32) < 0x20 || c == '\u{fffe}' || c == '\u{ffff}' => out.push('\u{fffd}'),
+            c if u32::from(c) < 0x20 || c == '\u{fffe}' || c == '\u{ffff}' => out.push('\u{fffd}'),
             c => out.push(c),
         }
     }

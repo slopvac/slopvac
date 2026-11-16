@@ -1,4 +1,5 @@
 //! Full-output conformance: each format against its pinned specification, parsed back.
+#![cfg(test)]
 
 use std::collections::HashMap;
 

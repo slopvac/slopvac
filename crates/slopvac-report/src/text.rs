@@ -18,10 +18,10 @@ pub(crate) fn render(report: &Report) -> String {
         document(&mut out, doc);
     }
     for notice in &report.notices {
-        let _ = writeln!(out, "notice[{}]: {}", notice.code, notice.message);
+        writeln!(out, "notice[{}]: {}", notice.code, notice.message).ok();
     }
     let s = &report.summary;
-    let _ = writeln!(
+    writeln!(
         out,
         "{} documents, {} findings ({} errors, {} warnings, {} suggestions), score {:.1}: {}",
         s.documents,
@@ -31,13 +31,14 @@ pub(crate) fn render(report: &Report) -> String {
         s.suggestions,
         f64::from(s.score),
         if s.passed { "PASS" } else { "FAIL" }
-    );
+    )
+    .ok();
     out
 }
 
 fn document(out: &mut String, doc: &Document) {
     for f in &doc.findings {
-        let _ = writeln!(
+        writeln!(
             out,
             "{}:{}:{} {} {} {}",
             doc.path,
@@ -46,19 +47,21 @@ fn document(out: &mut String, doc: &Document) {
             severity_word(f.severity),
             f.rule_id,
             f.message
-        );
+        )
+        .ok();
     }
     for n in &doc.unchecked {
-        let _ = writeln!(out, "{}: UNCHECKED [{}] {}", doc.path, n.code, n.message);
+        writeln!(out, "{}: UNCHECKED [{}] {}", doc.path, n.code, n.message).ok();
     }
     let verdict = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
-    let _ = writeln!(
+    writeln!(
         out,
         "{}: {verdict} score {:.1}",
         doc.path,
         f64::from(doc.score)
-    );
+    )
+    .ok();
     for reason in doc.gate.reasons() {
-        let _ = writeln!(out, "{}: {reason}", doc.path);
+        writeln!(out, "{}: {reason}", doc.path).ok();
     }
 }

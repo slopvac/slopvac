@@ -20,10 +20,11 @@ pub(crate) fn render(report: &Report) -> String {
         .iter()
         .filter(|d| !d.gate.is_passed())
         .count();
-    let _ = writeln!(
+    writeln!(
         out,
         "<testsuites name=\"slopvac\" tests=\"{tests}\" failures=\"{failures}\">"
-    );
+    )
+    .ok();
     for doc in &report.documents {
         suite(&mut out, doc);
     }
@@ -33,21 +34,23 @@ pub(crate) fn render(report: &Report) -> String {
 
 fn suite(out: &mut String, doc: &Document) {
     let path = xml_attr(doc.path.as_str());
-    let _ = writeln!(
+    writeln!(
         out,
         "  <testsuite name=\"{path}\" tests=\"{}\" failures=\"{}\">",
         doc.findings.len() + 1,
         usize::from(!doc.gate.is_passed())
-    );
+    )
+    .ok();
     for f in &doc.findings {
-        let _ = write!(
+        write!(
             out,
             "    <testcase classname=\"{path}\" name=\"{} {}:{}\">",
             xml_attr(f.rule_id.as_str()),
             f.start.line(),
             f.start.column()
-        );
-        let _ = write!(
+        )
+        .ok();
+        write!(
             out,
             "<system-out>{}:{} {} {}: {}</system-out>",
             f.start.line(),
@@ -55,18 +58,20 @@ fn suite(out: &mut String, doc: &Document) {
             severity_word(f.severity),
             xml(f.rule_id.as_str()),
             xml(f.message.as_str())
-        );
+        )
+        .ok();
         out.push_str("</testcase>\n");
     }
-    let _ = write!(out, "    <testcase classname=\"{path}\" name=\"gate\">");
+    write!(out, "    <testcase classname=\"{path}\" name=\"gate\">").ok();
     if !doc.gate.is_passed() {
         let reasons = doc.gate.reasons().join("; ");
-        let _ = write!(
+        write!(
             out,
             "<failure type=\"gate\" message=\"{}\">{}</failure>",
             xml_attr(&reasons),
             xml(&reasons)
-        );
+        )
+        .ok();
     }
     out.push_str("</testcase>\n  </testsuite>\n");
 }

@@ -1,4 +1,5 @@
 //! Every output format against the shared position vectors and injection cases.
+#![cfg(test)]
 
 use serde_json::{Value, json};
 use slopvac_model::Report;

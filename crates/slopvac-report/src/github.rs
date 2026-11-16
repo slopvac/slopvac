@@ -15,7 +15,7 @@ pub(crate) fn render(report: &Report) -> String {
                 Severity::Warning => "warning",
                 Severity::Suggestion => "notice",
             };
-            let _ = writeln!(
+            writeln!(
                 out,
                 "::{level} file={},line={},col={},title={}::{}",
                 github_property(doc.path.as_str()),
@@ -23,7 +23,8 @@ pub(crate) fn render(report: &Report) -> String {
                 f.start.column(),
                 github_property(f.rule_id.as_str()),
                 github_data(f.message.as_str())
-            );
+            )
+            .ok();
         }
     }
     out
