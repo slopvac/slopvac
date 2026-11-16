@@ -45,7 +45,7 @@ A newer release does not make `ok` false.
 
 ### 2.3 Configuration
 
-Each entry has a `layer` (`explicit` for `--config`, `project` for the nearest `slopvac.toml`), a `file` and a `status`:
+Each file of the stack has one entry, in load order: files that the project extends first, then the project file. An entry has a `layer` (`extends`, `project`, or `explicit` for the `--config` file), a `file` and a `status`. A file that cannot be read or is refused is the only entry, because the stack did not load. The stack comes from the config layer, so `[network]` settings follow `extends` and precedence:
 
 | Status | Meaning |
 |---|---|

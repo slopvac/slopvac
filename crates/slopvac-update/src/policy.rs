@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use slopvac_config::{Code, ConfigError, Discovery, Inputs, NoPresets};
+use slopvac_config::{Code, ConfigError, Discovery, Inputs, LoadedConfig, NoPresets};
 
 /// Why a config was refused, kept for the commands that need the network.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +89,12 @@ pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
         }
         Err(err) => return Err(PolicyError(err)),
     };
+    Ok(policy_of(&config))
+}
+
+/// The network settings of an already loaded config.
+#[must_use]
+pub fn policy_of(config: &LoadedConfig) -> NetworkPolicy {
     let resolved = config.resolve(
         Path::new(""),
         &Inputs {
@@ -103,11 +109,11 @@ pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
         Some(serde_json::Value::Bool(false)) => Some(false),
         _ => None,
     };
-    Ok(NetworkPolicy {
+    NetworkPolicy {
         refused: None,
         offline: resolved.is_offline(),
         update_check,
-    })
+    }
 }
 
 #[cfg(test)]

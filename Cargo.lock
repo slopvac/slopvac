@@ -2407,6 +2407,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-agents",
+ "slopvac-config",
  "slopvac-lsp",
  "slopvac-migrate",
  "slopvac-model",
@@ -2417,7 +2418,6 @@ dependencies = [
  "slopvac-update",
  "snapbox",
  "tempfile",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]
