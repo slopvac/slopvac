@@ -95,7 +95,7 @@ BREAKING = {
     "new-required": (
         schema(required=["a"]),
         schema(required=["a", "b"]),
-        "/required",
+        "/required/b",
         "required-added",
     ),
     "type-narrowed": (
@@ -176,11 +176,33 @@ BREAKING = {
         "/anyOf/1",
         "alternative-removed",
     ),
-    "ref-changed": (
-        schema(properties={"r": {"$ref": "#/$defs/A"}}),
-        schema(properties={"r": {"$ref": "#/$defs/B"}}),
+    "ref-retargeted-to-narrower-def": (
+        schema(
+            properties={"r": {"$ref": "#/$defs/A"}},
+            **{
+                "$defs": {
+                    "A": {"type": "string"},
+                    "B": {"type": "string", "minLength": 3},
+                }
+            },
+        ),
+        schema(
+            properties={"r": {"$ref": "#/$defs/B"}},
+            **{
+                "$defs": {
+                    "A": {"type": "string"},
+                    "B": {"type": "string", "minLength": 3},
+                }
+            },
+        ),
+        "/properties/r/$ref(thing.schema.json#/$defs/B)/minLength",
+        "bound-tightened",
+    ),
+    "unresolvable-ref": (
+        schema(properties={"r": {"$ref": "#/$defs/Missing"}}),
+        schema(properties={"r": {"$ref": "#/$defs/Missing"}}),
         "/properties/r/$ref",
-        "ref-changed",
+        "unverified",
     ),
     "id-changed": (
         schema(),
@@ -191,7 +213,7 @@ BREAKING = {
     "allof-member-added": (
         schema(allOf=[{}]),
         schema(allOf=[{}, {"required": ["z"]}]),
-        "/allOf/1/required",
+        "/allOf/1/required/z",
         "required-added",
     ),
     "if-changed": (
@@ -301,7 +323,9 @@ def test_removed_file_is_reported(tmp_path):
 
 def test_finding_renders_file_pointer_kind_old_new(tmp_path):
     findings = run(tmp_path, schema(required=[]), schema(required=["b"]))
-    assert findings[0].render() == f'{FILE}:/required: required-added: (absent) -> "b"'
+    assert (
+        findings[0].render() == f'{FILE}:/required/b: required-added: (absent) -> "b"'
+    )
 
 
 def entry(**over: str) -> object:
@@ -361,8 +385,14 @@ def test_malformed_allow_entry_is_an_error(tmp_path, body):
         compat.load_allow(path)
 
 
-def test_committed_allow_file_has_no_entries():
-    assert compat.load_allow(ROOT / "schemas" / "v3" / "compat-allow.toml") == []
+def test_header_only_allow_file_has_no_entries(tmp_path):
+    path = tmp_path / "allow.toml"
+    path.write_text("# reviewed exceptions\n", encoding="utf-8")
+    assert compat.load_allow(path) == []
+
+
+def test_missing_allow_file_has_no_entries(tmp_path):
+    assert compat.load_allow(tmp_path / "absent.toml") == []
 
 
 CORPUS_OLD = schema(properties={"n": {"type": "integer"}})
@@ -445,3 +475,570 @@ def test_git_ref_baseline_is_read_through_git_show(tmp_path):
     assert snapshot.corpus == {"thing/valid/ok.json": "{}"}
     with pytest.raises(compat.CompatError):
         compat.snapshot_from_ref(repo, "no-such-ref")
+
+
+TIGHTENING = {
+    "format-added": (
+        {"type": "string"},
+        {"type": "string", "format": "uri"},
+        "/properties/x/format",
+        "constraint-added",
+    ),
+    "format-changed": (
+        {"type": "string", "format": "uri"},
+        {"type": "string", "format": "email"},
+        "/properties/x/format",
+        "constraint-added",
+    ),
+    "multiple-of-added": (
+        {"type": "integer"},
+        {"type": "integer", "multipleOf": 5},
+        "/properties/x/multipleOf",
+        "constraint-added",
+    ),
+    "unique-items-added": (
+        {"type": "array"},
+        {"type": "array", "uniqueItems": True},
+        "/properties/x/uniqueItems",
+        "constraint-added",
+    ),
+    "not-added": (
+        {"type": "string"},
+        {"type": "string", "not": {"const": "forbidden"}},
+        "/properties/x/not",
+        "constraint-added",
+    ),
+    "dependent-required-extended": (
+        {"dependentRequired": {"a": ["b"]}},
+        {"dependentRequired": {"a": ["b", "c"]}},
+        "/properties/x/dependentRequired/a/c",
+        "required-added",
+    ),
+    "dependent-required-new-key": (
+        {"type": "object"},
+        {"type": "object", "dependentRequired": {"a": ["b"]}},
+        "/properties/x/dependentRequired/a/b",
+        "required-added",
+    ),
+    "min-contains-raised": (
+        {"contains": {"type": "string"}, "minContains": 1},
+        {"contains": {"type": "string"}, "minContains": 2},
+        "/properties/x/minContains",
+        "bound-tightened",
+    ),
+    "max-contains-lowered": (
+        {"contains": {"type": "string"}, "maxContains": 5},
+        {"contains": {"type": "string"}, "maxContains": 3},
+        "/properties/x/maxContains",
+        "bound-tightened",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), TIGHTENING.values(), ids=TIGHTENING.keys()
+)
+def test_tightening_keyword_is_reported(tmp_path, old, new, pointer, kind):
+    findings = run(
+        tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
+    )
+    assert kinds(findings) == [(pointer, kind)]
+
+
+LOOSENING = {
+    "format-removed": ({"format": "uri"}, {}),
+    "multiple-of-removed": ({"multipleOf": 5}, {}),
+    "unique-items-dropped": ({"uniqueItems": True}, {"uniqueItems": False}),
+    "not-removed": ({"not": {"const": "x"}}, {}),
+    "dependent-required-shrunk": (
+        {"dependentRequired": {"a": ["b", "c"]}},
+        {"dependentRequired": {"a": ["b"]}},
+    ),
+    "max-contains-raised": (
+        {"contains": {}, "maxContains": 3},
+        {"contains": {}, "maxContains": 5},
+    ),
+}
+
+
+@pytest.mark.parametrize(("old", "new"), LOOSENING.values(), ids=LOOSENING.keys())
+def test_loosened_keyword_is_allowed(tmp_path, old, new):
+    findings = run(
+        tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
+    )
+    assert findings == []
+
+
+UNMODELLED = {
+    "added": ({}, {"contentMediaType": "application/json"}, "contentMediaType"),
+    "changed": (
+        {"contentEncoding": "base64"},
+        {"contentEncoding": "base32"},
+        "contentEncoding",
+    ),
+    "removed": ({"$anchor": "a"}, {}, "$anchor"),
+    "default-changed": ({"default": 1}, {"default": 2}, "default"),
+    "default-added": ({}, {"default": 1}, "default"),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "keyword"), UNMODELLED.values(), ids=UNMODELLED.keys()
+)
+def test_unmodelled_keyword_change_fails_closed(tmp_path, old, new, keyword):
+    findings = run(
+        tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
+    )
+    assert kinds(findings) == [(f"/properties/x/{keyword}", "unverified")]
+
+
+def test_unmodelled_keyword_is_suppressed_by_an_allow_entry(tmp_path):
+    allow = entry(pointer="/properties/x/default", kind="unverified")
+    findings = run(
+        tmp_path,
+        schema(properties={"x": {"default": 1}}),
+        schema(properties={"x": {"default": 2}}),
+        allow=[allow],
+    )
+    assert findings == []
+
+
+ANNOTATIONS = [
+    ("description", "a", "b"),
+    ("title", "a", "b"),
+    ("examples", [1], [2]),
+    ("$comment", "a", "b"),
+    ("deprecated", False, True),
+    ("readOnly", False, True),
+    ("writeOnly", False, True),
+]
+
+
+@pytest.mark.parametrize(
+    ("keyword", "old", "new"), ANNOTATIONS, ids=[a[0] for a in ANNOTATIONS]
+)
+def test_annotation_change_is_allowed(tmp_path, keyword, old, new):
+    findings = run(
+        tmp_path,
+        schema(properties={"x": {keyword: old}}),
+        schema(properties={"x": {keyword: new}}),
+    )
+    assert findings == []
+
+
+A, B, C = {"title": "A"}, {"title": "B"}, {"title": "C"}
+REORDERED = {
+    "anyOf-swapped": ("anyOf", [A, B], [B, A], "/anyOf"),
+    "oneOf-swapped": ("oneOf", [A, B], [B, A], "/oneOf"),
+    "allOf-swapped": ("allOf", [A, B], [B, A], "/allOf"),
+    "prefixItems-swapped": ("prefixItems", [A, B], [B, A], "/prefixItems"),
+    "anyOf-inserted-first": ("anyOf", [A, B], [C, A, B], "/anyOf"),
+}
+
+
+@pytest.mark.parametrize(
+    ("keyword", "old", "new", "pointer"), REORDERED.values(), ids=REORDERED.keys()
+)
+def test_reordered_list_fails_closed(tmp_path, keyword, old, new, pointer):
+    findings = run(tmp_path, schema(**{keyword: old}), schema(**{keyword: new}))
+    assert kinds(findings) == [(pointer, "list-reordered")]
+
+
+def test_reordered_list_is_suppressed_by_an_allow_entry(tmp_path):
+    allow = entry(pointer="/anyOf", kind="list-reordered")
+    findings = run(tmp_path, schema(anyOf=[A, B]), schema(anyOf=[B, A]), allow=[allow])
+    assert findings == []
+
+
+def test_list_member_appended_is_not_a_reorder(tmp_path):
+    assert run(tmp_path, schema(anyOf=[A, B]), schema(anyOf=[A, B, C])) == []
+
+
+COMMON_ID = "https://example.test/schemas/v3/common.schema.json"
+
+
+def common(**defs: object) -> dict:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": COMMON_ID,
+        "$defs": defs,
+    }
+
+
+def referrer(ref: str) -> dict:
+    return schema(properties={"p": {"$ref": ref}})
+
+
+def run_files(tmp_path: Path, old: dict, new: dict) -> list:
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", old))
+    return compat.check(base, write_dir(tmp_path / "new", new), [])
+
+
+REF_FORMS = ["common.schema.json#/$defs/D", f"{COMMON_ID}#/$defs/D"]
+
+
+@pytest.mark.parametrize("ref", REF_FORMS, ids=["relative", "absolute"])
+def test_narrowed_shared_def_is_reported_against_the_referrer(tmp_path, ref):
+    old = {
+        "common.schema.json": common(D={"type": "string", "minLength": 1}),
+        FILE: referrer(ref),
+    }
+    new = {
+        "common.schema.json": common(D={"type": "string", "minLength": 2}),
+        FILE: referrer(ref),
+    }
+    findings = run_files(tmp_path, old, new)
+    pointer = "/properties/p/$ref(common.schema.json#/$defs/D)/minLength"
+    assert (FILE, pointer, "bound-tightened") in [
+        (f.file, f.pointer, f.kind) for f in findings
+    ]
+    assert ("common.schema.json", "/$defs/D/minLength", "bound-tightened") in [
+        (f.file, f.pointer, f.kind) for f in findings
+    ]
+
+
+def test_removed_property_of_shared_def_is_reported_against_the_referrer(tmp_path):
+    ref = "common.schema.json#/$defs/D"
+    old = {
+        "common.schema.json": common(D={"properties": {"k": {}}}),
+        FILE: referrer(ref),
+    }
+    new = {"common.schema.json": common(D={"properties": {}}), FILE: referrer(ref)}
+    found = [(f.file, f.pointer, f.kind) for f in run_files(tmp_path, old, new)]
+    assert (
+        FILE,
+        "/properties/p/$ref(common.schema.json#/$defs/D)/properties/k",
+        "property-removed",
+    ) in found
+
+
+def test_unchanged_ref_with_widened_target_passes(tmp_path):
+    ref = "common.schema.json#/$defs/D"
+    old = {
+        "common.schema.json": common(D={"type": "string", "minLength": 2}),
+        FILE: referrer(ref),
+    }
+    new = {
+        "common.schema.json": common(D={"type": "string", "minLength": 1}),
+        FILE: referrer(ref),
+    }
+    assert run_files(tmp_path, old, new) == []
+
+
+def test_ref_added_to_a_narrower_def_is_reported(tmp_path):
+    ref = "common.schema.json#/$defs/D"
+    defs = common(D={"type": "string", "minLength": 2})
+    old = {"common.schema.json": defs, FILE: schema(properties={"p": {}})}
+    new = {"common.schema.json": defs, FILE: referrer(ref)}
+    found = [(f.pointer, f.kind) for f in run_files(tmp_path, old, new)]
+    assert (
+        "/properties/p/$ref(common.schema.json#/$defs/D)/minLength",
+        "bound-tightened",
+    ) in found
+
+
+def tree(min_length: int) -> dict:
+    return common(
+        Tree={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": min_length},
+                "child": {"$ref": "#/$defs/Tree"},
+            },
+        }
+    )
+
+
+def test_self_referencing_def_terminates_and_reports_once_per_path(tmp_path):
+    ref = "common.schema.json#/$defs/Tree"
+    old = {"common.schema.json": tree(1), FILE: referrer(ref)}
+    new = {"common.schema.json": tree(2), FILE: referrer(ref)}
+    found = [(f.file, f.pointer, f.kind) for f in run_files(tmp_path, old, new)]
+    assert (
+        FILE,
+        "/properties/p/$ref(common.schema.json#/$defs/Tree)/properties/name/minLength",
+        "bound-tightened",
+    ) in found
+
+
+def test_unchanged_self_referencing_def_passes(tmp_path):
+    ref = "common.schema.json#/$defs/Tree"
+    files = {"common.schema.json": tree(1), FILE: referrer(ref)}
+    assert run_files(tmp_path, files, files) == []
+
+
+def test_mutual_cycle_across_files_terminates(tmp_path):
+    a = schema(
+        **{
+            "$defs": {
+                "A": {"properties": {"b": {"$ref": "other.schema.json#/$defs/B"}}}
+            }
+        }
+    )
+    b = {
+        **schema(
+            **{
+                "$defs": {
+                    "B": {"properties": {"a": {"$ref": "thing.schema.json#/$defs/A"}}}
+                }
+            }
+        ),
+        "$id": "https://example.test/schemas/v3/other.schema.json",
+    }
+    files = {FILE: a, "other.schema.json": b}
+    assert run_files(tmp_path, files, files) == []
+
+
+def test_unreadable_schema_is_a_chained_read_error(tmp_path):
+    directory = write_dir(tmp_path / "bad", {})
+    (directory / FILE).write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(compat.CompatError) as caught:
+        compat.snapshot_from_dir(directory)
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+def test_schema_path_that_is_a_directory_is_a_chained_read_error(tmp_path):
+    directory = write_dir(tmp_path / "bad", {})
+    (directory / FILE).mkdir()
+    with pytest.raises(compat.CompatError) as caught:
+        compat.snapshot_from_dir(directory)
+    assert isinstance(caught.value.__cause__, OSError)
+
+
+def test_unreadable_corpus_file_is_a_chained_read_error(tmp_path):
+    directory = write_dir(tmp_path / "bad", {FILE: schema()})
+    target = directory / "conformance" / "thing" / "valid" / "x.json"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"\xff\xfe")
+    with pytest.raises(compat.CompatError) as caught:
+        compat.snapshot_from_dir(directory)
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+def test_unreadable_allow_file_is_a_chained_read_error(tmp_path):
+    path = tmp_path / "allow.toml"
+    path.write_bytes(b"\xff\xfe")
+    with pytest.raises(compat.CompatError) as caught:
+        compat.load_allow(path)
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+def test_cli_exits_2_for_unreadable_schema_or_allow_file(tmp_path):
+    good = write_dir(tmp_path / "good", {FILE: schema()})
+    bad = write_dir(tmp_path / "bad", {FILE: schema()})
+    (bad / FILE).write_bytes(b"\xff\xfe")
+    allow = tmp_path / "allow.toml"
+    allow.write_bytes(b"\xff\xfe")
+    base = ["--baseline-dir", str(good), "--repo", str(tmp_path)]
+    assert compat.main([*base, "--schemas-dir", str(bad)]) == 2
+    assert compat.main(["--baseline-dir", str(bad), "--schemas-dir", str(good)]) == 2
+    assert (
+        compat.main([*base, "--schemas-dir", str(good), "--allow-file", str(allow)])
+        == 2
+    )
+
+
+SCALAR_AS_BOOL = {
+    "const-1-to-true": ({"const": 1}, {"const": True}, "const"),
+    "const-0-to-false": ({"const": 0}, {"const": False}, "const"),
+    "const-true-to-1": ({"const": True}, {"const": 1}, "const"),
+    "enum-member-1-to-true": ({"enum": [1, 2]}, {"enum": [True, 2]}, "enum"),
+    "enum-member-0-to-false": ({"enum": ["a", 0]}, {"enum": ["a", False]}, "enum"),
+    "nested-enum-member": ({"enum": [[1]]}, {"enum": [[True]]}, "enum"),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "keyword"), SCALAR_AS_BOOL.values(), ids=SCALAR_AS_BOOL.keys()
+)
+def test_bool_is_not_equal_to_the_matching_number(tmp_path, old, new, keyword):
+    findings = run(
+        tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
+    )
+    assert kinds(findings) == [(f"/properties/x/{keyword}", f"{keyword}-narrowed")]
+
+
+JSON_EQUAL = {
+    "int-to-float": ({"const": 1}, {"const": 1.0}),
+    "enum-reordered-members": ({"enum": [1, 2]}, {"enum": [2.0, 1]}),
+}
+
+
+@pytest.mark.parametrize(("old", "new"), JSON_EQUAL.values(), ids=JSON_EQUAL.keys())
+def test_numerically_equal_values_are_not_a_change(tmp_path, old, new):
+    findings = run(
+        tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
+    )
+    assert findings == []
+
+
+MEMBER = {"properties": {"gone": {"type": "string"}}}
+DELETED_SUBTREE = {
+    "items": (
+        schema(items=MEMBER),
+        schema(),
+        "/items/properties/gone",
+        "property-removed",
+    ),
+    "then": (
+        schema(**{"if": {"required": ["k"]}, "then": MEMBER}),
+        schema(**{"if": {"required": ["k"]}}),
+        "/then/properties/gone",
+        "property-removed",
+    ),
+    "else": (
+        schema(**{"if": {"required": ["k"]}, "else": MEMBER}),
+        schema(**{"if": {"required": ["k"]}}),
+        "/else/properties/gone",
+        "property-removed",
+    ),
+    "allOf-member": (
+        schema(allOf=[{}, MEMBER]),
+        schema(allOf=[{}]),
+        "/allOf/1/properties/gone",
+        "property-removed",
+    ),
+    "deleted-def-inside-items": (
+        schema(items={"$defs": {"D": {}}}),
+        schema(),
+        "/items/$defs/D",
+        "def-removed",
+    ),
+    "deleted-pattern-property": (
+        schema(items={"patternProperties": {"^x-": {}}}),
+        schema(),
+        "/items/patternProperties/^x-",
+        "pattern-property-removed",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"),
+    DELETED_SUBTREE.values(),
+    ids=DELETED_SUBTREE.keys(),
+)
+def test_removed_enclosing_schema_reports_what_it_described(
+    tmp_path, old, new, pointer, kind
+):
+    assert kinds(run(tmp_path, old, new)) == [(pointer, kind)]
+
+
+ADDED_ENTRIES = {
+    "pattern-property-with-type": (
+        {"patternProperties": {"^n-": {"type": "integer"}}},
+        "/patternProperties/^n-/type",
+        "type-narrowed",
+    ),
+    "pattern-property-with-bound": (
+        {"patternProperties": {"^n-": {"minimum": 1}}},
+        "/patternProperties/^n-/minimum",
+        "bound-tightened",
+    ),
+    "pattern-property-with-required": (
+        {"patternProperties": {"^n-": {"required": ["k"]}}},
+        "/patternProperties/^n-/required/k",
+        "required-added",
+    ),
+    "dependent-schema-with-required": (
+        {"dependentSchemas": {"a": {"required": ["b"]}}},
+        "/dependentSchemas/a/required/b",
+        "required-added",
+    ),
+    "dependent-schema-with-enum": (
+        {"dependentSchemas": {"a": {"enum": [1]}}},
+        "/dependentSchemas/a/enum",
+        "enum-narrowed",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("addition", "pointer", "kind"), ADDED_ENTRIES.values(), ids=ADDED_ENTRIES.keys()
+)
+def test_added_restrictive_entry_is_reported(tmp_path, addition, pointer, kind):
+    assert kinds(run(tmp_path, schema(), schema(**addition))) == [(pointer, kind)]
+
+
+EXEMPT_ADDITIONS = {
+    "unrestricted-pattern-property": {"patternProperties": {"^x-": {}}},
+    "unrestricted-dependent-schema": {"dependentSchemas": {"a": {}}},
+    "new-def": {"$defs": {"D": {"type": "string", "minLength": 9}}},
+    "new-optional-property": {"properties": {"p": {"type": "string", "minLength": 9}}},
+}
+
+
+@pytest.mark.parametrize(
+    "addition", EXEMPT_ADDITIONS.values(), ids=EXEMPT_ADDITIONS.keys()
+)
+def test_allowed_addition_is_not_reported(tmp_path, addition):
+    assert run(tmp_path, schema(), schema(**addition)) == []
+
+
+MAYBE_NARROWING = {
+    "anyOf-introduced": (schema(), schema(anyOf=[{"type": "object"}]), "/anyOf"),
+    "oneOf-introduced": (schema(), schema(oneOf=[{"type": "object"}]), "/oneOf"),
+    "oneOf-branch-appended": (
+        schema(oneOf=[{"required": ["a"]}]),
+        schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}]),
+        "/oneOf/1",
+    ),
+    "prefixItems-appended": (
+        schema(prefixItems=[{"type": "string"}]),
+        schema(prefixItems=[{"type": "string"}, {"type": "integer"}]),
+        "/prefixItems/1",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer"), MAYBE_NARROWING.values(), ids=MAYBE_NARROWING.keys()
+)
+def test_addition_that_may_narrow_fails_closed(tmp_path, old, new, pointer):
+    assert kinds(run(tmp_path, old, new)) == [(pointer, "narrowing-possible")]
+
+
+def test_narrowing_possible_is_suppressed_by_an_allow_entry(tmp_path):
+    allow = entry(pointer="/oneOf/1", kind="narrowing-possible")
+    findings = run(
+        tmp_path,
+        schema(oneOf=[{"required": ["a"]}]),
+        schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}]),
+        allow=[allow],
+    )
+    assert findings == []
+
+
+def test_each_added_required_field_has_its_own_finding(tmp_path):
+    findings = run(tmp_path, schema(), schema(required=["a", "b"]))
+    assert kinds(findings) == [
+        ("/required/a", "required-added"),
+        ("/required/b", "required-added"),
+    ]
+
+
+def test_allow_entry_for_one_required_field_leaves_the_others(tmp_path):
+    allow = entry(pointer="/required/a", kind="required-added")
+    findings = run(tmp_path, schema(), schema(required=["a", "b"]), allow=[allow])
+    assert kinds(findings) == [("/required/b", "required-added")]
+
+
+def test_deleted_definition_used_by_the_corpus_is_a_read_error(tmp_path):
+    old = schema(**{"$defs": {"D": {"type": "string"}}})
+    new = schema(**{"$defs": {}})
+    corpus = {"thing/valid/D--ok.json": '"text"'}
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: old}, corpus))
+    new_dir = write_dir(tmp_path / "new", {FILE: new})
+    with pytest.raises(compat.CompatError):
+        compat.check(base, new_dir, [])
+
+
+def test_cli_exits_2_when_the_corpus_uses_a_deleted_definition(tmp_path):
+    old = write_dir(
+        tmp_path / "old",
+        {FILE: schema(**{"$defs": {"D": {"type": "string"}}})},
+        {"thing/valid/D--ok.json": '"text"'},
+    )
+    new = write_dir(tmp_path / "new", {FILE: schema(**{"$defs": {}})})
+    args = ["--baseline-dir", str(old), "--schemas-dir", str(new)]
+    assert compat.main(args) == 2

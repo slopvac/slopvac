@@ -342,6 +342,16 @@ It then validates every `valid/` instance of the baseline corpus against the new
 
 **Baseline.** Before the first 3.0 release candidate, the baseline is the pull request's merge-base with `origin/main` (`--base <git-ref>`). This catches accidental breaks in each change. At the release candidate, a snapshot is committed under `schemas/v3/baseline/` and replaces the ref (`--baseline-dir`).
 
+**Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
+
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`.
+- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
+- A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
+- Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
+- The check compares `enum` and `const` as JSON values: a Boolean is not a number.
+- If the corpus needs a definition that the new schema deleted, the check exits 2.
+- A merge-queue entry uses the base commit that the queue built it on as its baseline.
+
 **Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. A matching entry suppresses that finding. An entry that matches no finding fails the check, so stale entries cannot pile up. The file starts empty.
 
 Owner: `slopvac-8l4.2.50`.
