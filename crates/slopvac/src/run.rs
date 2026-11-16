@@ -438,7 +438,7 @@ fn lint_with(
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
-    output::deliver(m, &outcome, out)?;
+    output::deliver(m, &outcome, out, err_out)?;
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
         exit::INCOMPLETE
