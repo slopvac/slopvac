@@ -4,6 +4,7 @@
 //! functions apply its Unix (XDG) rules to an injected lookup instead, so a test can isolate
 //! every input. A test below keeps the production result equal to `etcetera`'s.
 
+use std::env::VarError;
 use std::path::PathBuf;
 
 use crate::{Error, Result};
@@ -16,9 +17,17 @@ const APP: &str = "slopvac";
 /// Look up an environment variable. `None` means unset.
 pub type Lookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 
+/// A variable that is not valid UTF-8 counts as unset: no path is built from it, and the
+/// lookup has no error channel. The fallback location is used instead.
+#[expect(
+    clippy::manual_ok_err,
+    reason = "both error variants are named on purpose, to document that NotUnicode is unset"
+)]
 fn process_env(name: &str) -> Option<String> {
-    // A value that is not valid UTF-8 counts as unset, as in the other lookups.
-    std::env::var(name).ok()
+    match std::env::var(name) {
+        Ok(value) => Some(value),
+        Err(VarError::NotPresent | VarError::NotUnicode(_)) => None,
+    }
 }
 
 /// The cache directory: `SLOPVAC_CACHE_DIR` when set and non-empty, else `XDG_CACHE_HOME`
@@ -117,9 +126,25 @@ mod tests {
     }
 
     #[test]
-    fn production_matches_etcetera() {
+    fn xdg_rules_match_etcetera() {
+        // The process environment minus the slopvac override, which etcetera does not know.
+        let no_override = |n: &str| {
+            if n == CACHE_DIR_VAR {
+                None
+            } else {
+                process_env(n)
+            }
+        };
         let s = etcetera::choose_base_strategy().unwrap();
-        assert_eq!(cache_dir().unwrap(), s.cache_dir().join(APP));
+        assert_eq!(
+            cache_dir_with(&no_override).unwrap(),
+            s.cache_dir().join(APP)
+        );
         assert_eq!(config_dir().unwrap(), s.config_dir().join(APP));
+    }
+
+    #[test]
+    fn unset_process_variable_is_none() {
+        assert_eq!(process_env("SLOPVAC_FS_TEST_SURELY_UNSET"), None);
     }
 }

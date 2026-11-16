@@ -50,7 +50,14 @@ pub fn write_atomic(path: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()>
     let mut tmp = tempfile::Builder::new()
         .prefix(".slopvac-tmp-")
         .tempfile_in(dir)
-        .map_err(|e| io("create temporary file for", e))?;
+        .map_err(|e| {
+            // `tempfile` wraps its error with the path and drops the OS code. When the
+            // directory itself is the problem, probing it recovers the real error.
+            match fs::metadata(dir) {
+                Err(probe) if probe.kind() == e.kind() => io("create temporary file for", probe),
+                _ => io("create temporary file for", e),
+            }
+        })?;
     tmp.write_all(bytes).map_err(|e| io("write", e))?;
     let perms = match fs::metadata(path) {
         Ok(meta) => Some(meta.permissions()),
@@ -96,6 +103,62 @@ mod tests {
             read_capped(repeat(b'x'), 1024),
             Err(Error::CapExceeded { .. })
         ));
+    }
+
+    struct Failing(Option<std::io::Error>);
+
+    impl Read for Failing {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(self.0.take().expect("read called once"))
+        }
+    }
+
+    fn chain(err: &Error) -> String {
+        let mut text = err.to_string();
+        let mut src = std::error::Error::source(err);
+        while let Some(e) = src {
+            text.push_str(&e.to_string());
+            src = e.source();
+        }
+        text
+    }
+
+    #[test]
+    fn read_error_with_a_message_is_redacted_and_keeps_its_kind() {
+        let cause = std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "no access to /secret/dir/f",
+        );
+        let err = read_capped(Failing(Some(cause)), 8).unwrap_err();
+        assert!(!chain(&err).contains("/secret"), "{}", chain(&err));
+        let Error::Read(source) = err else {
+            panic!("expected Error::Read")
+        };
+        assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(source.raw_os_error(), None);
+    }
+
+    #[test]
+    fn read_error_from_an_os_code_keeps_the_code() {
+        // 2 is ENOENT on every Unix.
+        let err = read_capped(Failing(Some(std::io::Error::from_raw_os_error(2))), 8).unwrap_err();
+        let Error::Read(source) = err else {
+            panic!("expected Error::Read")
+        };
+        assert_eq!(source.raw_os_error(), Some(2));
+        assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn write_error_keeps_kind_and_os_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let err =
+            write_atomic(&dir.path().join("no/such/f"), b"x", WriteOptions::default()).unwrap_err();
+        let Error::Io { source, .. } = err else {
+            panic!("expected Error::Io")
+        };
+        assert_eq!(source.raw_os_error(), Some(2), "ENOENT");
+        assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]

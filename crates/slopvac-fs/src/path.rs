@@ -54,7 +54,10 @@ pub fn display_under_root(path: &Path, root: &Path) -> String {
         // An empty or `.` root is the working directory: a relative path is already below it.
         path.is_relative().then(|| path.clone())
     } else if path.is_absolute() == root.is_absolute() {
-        path.strip_prefix(&root).ok().map(Path::to_path_buf)
+        match path.strip_prefix(&root) {
+            Ok(rel) => Some(rel.to_path_buf()),
+            Err(_) => None,
+        }
     } else if path.is_relative() {
         Some(path.clone())
     } else {
