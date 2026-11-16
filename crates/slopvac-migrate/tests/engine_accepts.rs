@@ -1,4 +1,4 @@
-//! The 3.0 engine accepts what `migrate` writes for directives.
+//! The 3.0 engine against what `migrate` writes for directives.
 
 #![allow(missing_docs)]
 
@@ -41,22 +41,38 @@ fn engine() -> Engine {
     Engine::new(vec![set], settings).unwrap()
 }
 
-#[test]
-fn a_directive_with_two_surviving_ids_migrates_to_directives_the_engine_accepts() {
-    // `cat.one` and `cat.two` stand in for two 2.x ids; the table maps both into core.
-    let table = RenameTable::parse(
+/// `cat.one` and `cat.two` stand in for two 2.x ids; the table maps both into core.
+fn table() -> RenameTable {
+    RenameTable::parse(
         "[rules]\n\"cat.one\" = \"core:cat.one\"\n\"cat.two\" = \"core:cat.two\"\n[categories]\n[removed]\nrules = [\"cat.gone\"]\n",
     )
-    .unwrap();
-    let old = "<!-- slopvac-allow: rule=cat.one,cat.gone,cat.two reason=ok -->\nalpha beta\n";
-    let (migrated, _) = rewrite_directives(old, &table);
-    let doc = engine().lint(&Input::markdown("a.md", &migrated)).unwrap();
+    .unwrap()
+}
+
+fn rules_found(source: &str) -> Vec<String> {
+    let doc = engine().lint(&Input::markdown("a.md", source)).unwrap();
+    doc.findings.iter().map(|f| f.rule_id.to_string()).collect()
+}
+
+#[test]
+fn a_renamed_single_id_directive_suppresses_in_3_0() {
+    let old = "<!-- slopvac-allow: rule=cat.one reason=ok -->\nalpha\n";
+    let (migrated, _) = rewrite_directives(old, &table());
+    assert_eq!(rules_found(&migrated), Vec::<String>::new(), "{migrated}");
+}
+
+#[test]
+fn a_comma_list_is_left_as_written_and_the_engine_still_rejects_it() {
+    let old = "<!-- slopvac-allow: rule=cat.one,cat.two reason=ok -->\nalpha beta\n";
+    let (migrated, _) = rewrite_directives(old, &table());
+    assert_eq!(migrated, old);
+    // The invalid directive suppresses nothing: both hits stay next to the error.
     assert_eq!(
-        doc.findings
-            .iter()
-            .map(|f| f.rule_id.as_str())
-            .collect::<Vec<_>>(),
-        Vec::<&str>::new(),
-        "{migrated}"
+        rules_found(&migrated),
+        [
+            "core:meta.invalid-suppression",
+            "core:cat.one",
+            "core:cat.two"
+        ],
     );
 }
