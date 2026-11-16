@@ -3,7 +3,7 @@
 //! A rule lists its exceptions by name. An exception with a `detector` drops a finding on
 //! its own, with no annotation in the document. [`Detectors`] resolves the detector name:
 //!
-//! - `quotation` and `code-span` are built in.
+//! - `quotation`, `code-span` and `negated-antecedent` are built in.
 //! - A name registered with [`Detectors::register`] runs that detector.
 //! - Any other name is a context tag, so `requirement` and `enforced-invariant` come from
 //!   the taggers in `slopvac-context`, and a pack's own tag works the same way. The finding
@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 
 use slopvac_model::Span;
 use slopvac_parse::Document;
-use slopvac_text::Pattern;
+use slopvac_text::{Pattern, split_sentences};
 
 /// A candidate finding, as a detector sees it.
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +102,129 @@ impl Detector for CodeSpan {
     }
 }
 
+/// How many sentences back `negated-antecedent` looks.
+const ANTECEDENT_SENTENCES: usize = 2;
+
+/// Words that never name the negated thing: articles, determiners, prepositions, pronouns
+/// and intensifiers. Lowercase.
+const FUNCTION_WORDS: &[&str] = &[
+    "a", "all", "also", "always", "an", "and", "any", "anymore", "are", "as", "at", "be", "by",
+    "each", "even", "ever", "every", "for", "from", "here", "his", "her", "in", "into", "is", "it",
+    "its", "itself", "just", "more", "most", "much", "never", "of", "on", "one", "only", "onto",
+    "other", "our", "over", "same", "some", "still", "such", "that", "the", "their", "them",
+    "there", "these", "they", "this", "those", "to", "under", "very", "with", "yet", "your",
+];
+
+/// Words that end the negated clause: a conjunction or subordinator opens a new clause, so
+/// what follows no longer belongs to the negated phrase.
+const CLAUSE_OPENERS: &[&str] = &[
+    "and", "because", "but", "if", "or", "so", "than", "that", "unless", "when", "where", "which",
+    "while", "who", "whom", "whose",
+];
+
+/// The words of `text`, lowercase: runs of letters and digits, with inner `-` and `_`.
+fn words(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
+        .map(|w| w.trim_matches(['-', '_']))
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+}
+
+/// A word reduced to a comparison key: a plural `-s` is dropped (`servers` and `server`
+/// agree), and nothing else is stemmed.
+fn stem(word: &str) -> &str {
+    match word.strip_suffix('s') {
+        Some(rest) if rest.len() >= 3 && !rest.ends_with('s') => rest,
+        _ => word,
+    }
+}
+
+/// The negated term of a contrastive-appositive match, as a comparison key.
+///
+/// The match has the form `X does A; it does not B`. The negated term is the last content
+/// word of `B`, the head of its closing noun phrase: `yaml` in `it does not read YAML`,
+/// `judge` in `it does not judge`. `B` ends at the first conjunction or subordinator, so
+/// `it does not confirm that it started` yields `confirm`. A content word is any word that
+/// is not in [`FUNCTION_WORDS`]. A match with no `;` or `,` followed by `not` has no
+/// negated term.
+fn negated_term(matched: &str) -> Option<String> {
+    let (_, negation) = matched.split_once([';', ','])?;
+    let mut tokens = words(negation);
+    // The negator is `not`, alone or after a subject and an auxiliary: `it does not`.
+    tokens.by_ref().take(3).find(|w| w == "not")?;
+    tokens
+        .take_while(|w| !CLAUSE_OPENERS.contains(&w.as_str()))
+        .filter(|w| !FUNCTION_WORDS.contains(&w.as_str()))
+        .last()
+        .map(|w| stem(&w).to_owned())
+}
+
+/// A contrastive-appositive match whose negated term already appeared in the previous two
+/// sentences. In `The server accepts sockets. Pipes are slower. It reads JSON; it does not
+/// read sockets.` the reader has met the term, so the negation answers something already
+/// said and the contrast is not an invented foil. A term is repeated when a word of those
+/// sentences has the same lowercase form, ignoring a plural `-s`.
+///
+/// The sentences come from the text before the match in its own block, then, when fewer
+/// than [`ANTECEDENT_SENTENCES`] are there, from the nearest earlier block that has prose.
+/// A sentence three or more back does not count, and neither does a block before that.
+struct NegatedAntecedent;
+
+impl NegatedAntecedent {
+    /// The last [`ANTECEDENT_SENTENCES`] sentences before the match, nearest last.
+    fn preceding(site: &MatchSite<'_>) -> Option<Vec<String>> {
+        let blocks = &site.document.blocks;
+        let owner = blocks.iter().rposition(|b| {
+            b.projection.is_some()
+                && b.span.start() <= site.span.start()
+                && site.span.end() <= b.span.end()
+        });
+        // `site.text` may be a part of the block, so the block text gives the full prefix.
+        let block_text = owner.and_then(|i| {
+            blocks[i]
+                .projection
+                .as_ref()
+                .map(slopvac_parse::Projection::text)
+        });
+        let before = match block_text.and_then(|t| t.find(site.text).map(|at| (t, at))) {
+            Some((t, at)) => &t[..at + site.range.start],
+            None => &site.text[..site.range.start],
+        };
+        let mut sentences = split_sentences(before).ok()?;
+        if sentences.len() < ANTECEDENT_SENTENCES
+            && let Some(i) = owner
+            && let Some(previous) = blocks[..i].iter().rev().find_map(|b| b.projection.as_ref())
+        {
+            let mut earlier = split_sentences(previous.text()).ok()?;
+            earlier.append(&mut sentences);
+            sentences = earlier;
+        }
+        let keep = sentences.len().saturating_sub(ANTECEDENT_SENTENCES);
+        Some(
+            sentences
+                .split_off(keep)
+                .into_iter()
+                .map(|s| s.text)
+                .collect(),
+        )
+    }
+}
+
+impl Detector for NegatedAntecedent {
+    fn name(&self) -> &'static str {
+        "negated-antecedent"
+    }
+
+    fn detects(&self, site: &MatchSite<'_>) -> bool {
+        // Any failure leaves the finding in place: the exception only ever removes.
+        let Some(term) = site.text.get(site.range.clone()).and_then(negated_term) else {
+            return false;
+        };
+        Self::preceding(site)
+            .is_some_and(|sentences| sentences.iter().any(|s| words(s).any(|w| stem(&w) == term)))
+    }
+}
+
 /// The detectors of a run.
 pub struct Detectors {
     by_name: BTreeMap<String, Box<dyn Detector>>,
@@ -114,13 +237,17 @@ impl Default for Detectors {
 }
 
 impl Detectors {
-    /// The built-in detectors: `quotation` and `code-span`.
+    /// The built-in detectors: `quotation`, `code-span` and `negated-antecedent`.
     #[must_use]
     pub fn builtin() -> Self {
         let mut detectors = Self {
             by_name: BTreeMap::new(),
         };
-        for detector in [Box::new(Quotation) as Box<dyn Detector>, Box::new(CodeSpan)] {
+        for detector in [
+            Box::new(Quotation) as Box<dyn Detector>,
+            Box::new(CodeSpan),
+            Box::new(NegatedAntecedent),
+        ] {
             detectors
                 .register(detector)
                 .expect("built-in detector names are distinct");
@@ -150,5 +277,127 @@ impl Detectors {
         self.by_name
             .get(detector)
             .map_or_else(|| site.tags.contains(&detector), |d| d.detects(site))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slopvac_parse::parse_markdown;
+
+    use super::*;
+
+    const NEEDLE: &str = "The parser reads JSON; it does not read YAML";
+
+    /// Whether `negated-antecedent` drops a match of `needle` in `source`. The match is the
+    /// first occurrence of `needle`, taken in the prose of the block that holds it.
+    fn detects(source: &str, needle: &str) -> bool {
+        let document = parse_markdown(source, Span::new(0, source.len()).unwrap()).unwrap();
+        let at = source.find(needle).expect("needle is in the source");
+        let span = Span::new(at, at + needle.len()).unwrap();
+        let block = document
+            .blocks
+            .iter()
+            .rfind(|b| {
+                b.projection.is_some()
+                    && b.span.start() <= span.start()
+                    && span.end() <= b.span.end()
+            })
+            .expect("a block holds the needle");
+        let text = block.projection.as_ref().unwrap().text();
+        let start = text.find(needle).expect("needle is in the prose");
+        let range = start..start + needle.len();
+        let site = MatchSite {
+            text,
+            range: &range,
+            span,
+            document: &document,
+            tags: &[],
+        };
+        Detectors::builtin().detects("negated-antecedent", &site)
+    }
+
+    #[test]
+    fn the_negated_term_is_the_last_content_word_of_the_negated_clause() {
+        for (matched, want) in [
+            ("The parser reads JSON; it does not read YAML", Some("yaml")),
+            (
+                "The client speaks HTTP, not the old FTP protocol",
+                Some("protocol"),
+            ),
+            ("The tool checks prose; it does not judge", Some("judge")),
+            (
+                "It acknowledges the run; it does not confirm that it started",
+                Some("confirm"),
+            ),
+            (
+                "The hosts list servers; it is not about servers",
+                Some("server"),
+            ),
+            ("The parser reads JSON", None),
+            ("The parser reads JSON; it reads nothing else", None),
+        ] {
+            assert_eq!(negated_term(matched).as_deref(), want, "{matched}");
+        }
+    }
+
+    #[test]
+    fn a_term_in_the_previous_sentence_of_the_same_block_is_detected() {
+        let doc = format!("The module loads YAML files. {NEEDLE}.\n");
+        assert!(detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn a_plural_and_a_different_case_count_as_the_same_term() {
+        let doc = "Teams edit yaml by hand. The parser reads JSON; it does not read YAMLs.\n";
+        assert!(detects(
+            doc,
+            "The parser reads JSON; it does not read YAMLs"
+        ));
+    }
+
+    #[test]
+    fn a_term_two_sentences_back_is_detected() {
+        let doc = format!("We ship YAML. It is small. {NEEDLE}.\n");
+        assert!(detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn a_term_three_sentences_back_is_not_detected() {
+        let doc = format!("We ship YAML. It is small. It is fast. {NEEDLE}.\n");
+        assert!(!detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn a_term_that_never_appeared_is_not_detected() {
+        let doc = format!("The module loads files. {NEEDLE}.\n");
+        assert!(!detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn a_term_in_the_preceding_block_is_detected() {
+        let doc = format!("The module loads YAML files.\n\n{NEEDLE}.\n");
+        assert!(detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn the_sentence_budget_runs_across_the_block_boundary() {
+        // Two sentences back: the last two of the previous block reach the term.
+        let near = format!("We ship YAML. It is small.\n\n{NEEDLE}.\n");
+        assert!(detects(&near, NEEDLE));
+        // Three sentences back: the first sentence of the previous block is out of range.
+        let far = format!("We ship YAML. It is small. It is fast.\n\n{NEEDLE}.\n");
+        assert!(!detects(&far, NEEDLE));
+    }
+
+    #[test]
+    fn a_block_two_back_is_not_read() {
+        let doc = format!("We ship YAML.\n\nThe module loads files.\n\n{NEEDLE}.\n");
+        assert!(!detects(&doc, NEEDLE));
+    }
+
+    #[test]
+    fn a_match_without_a_negated_clause_is_not_detected() {
+        let doc = "The module loads YAML files. The parser reads JSON.\n";
+        assert!(!detects(doc, "The parser reads JSON"));
     }
 }
