@@ -334,4 +334,6 @@ def test_genre_pages_come_from_the_registry_for_every_builtin_genre(
     index = _read(sources, "genres/index.md")
     assert "not generated yet" not in index
     assert all(f"({i}.md)" in index for i in ids)
-    assert "Keep it short and direct." in _read(sources, "genres/informal.md")
+    assert "Issue comments, discussions, blogs, drafts." in _read(
+        sources, "genres/informal.md"
+    )

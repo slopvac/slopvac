@@ -5,96 +5,170 @@
 
 use std::fmt::Write as _;
 
-use crate::{DetectSignal, GenreRegistry, GenreSpec, builtin_genres};
+use crate::{
+    Budget, CategoryTable, GenreRegistry, GenreSpec, RuleLevel, Scalar, Signal, SignalKind,
+    builtin_genres,
+};
 
-fn signal(s: &DetectSignal) -> String {
-    let weight = s.weight;
-    if let Some(h) = &s.heading {
-        format!("Heading matches `{h}` (weight {weight})")
-    } else if let Some(p) = &s.path {
-        format!("Path matches `{p}` (weight {weight})")
-    } else if let Some(f) = &s.frontmatter {
-        match &f.matches {
-            Some(m) => format!("Front matter `{}` matches `{m}` (weight {weight})", f.key),
-            None => format!("Front matter `{}` is present (weight {weight})", f.key),
-        }
-    } else {
-        format!("Unspecified signal (weight {weight})")
+fn level(l: RuleLevel) -> &'static str {
+    match l {
+        RuleLevel::Error => "error",
+        RuleLevel::Warning => "warning",
+        RuleLevel::Suggestion => "suggestion",
+        RuleLevel::Off => "off",
     }
+}
+
+fn scalar(s: &Scalar) -> String {
+    match s {
+        Scalar::Bool(b) => b.to_string(),
+        Scalar::Int(i) => i.to_string(),
+        Scalar::Float(f) => f.to_string(),
+        Scalar::Str(s) => s.clone(),
+    }
+}
+
+fn signal(s: &Signal) -> String {
+    let weight = s.weight;
+    let glob = s.glob.as_deref().unwrap_or_default();
+    let pattern = s.pattern.as_deref().unwrap_or_default();
+    match s.kind {
+        SignalKind::Path => format!("Path matches the glob `{glob}` (weight {weight})"),
+        SignalKind::Heading => format!("Heading matches `{pattern}` (weight {weight})"),
+        SignalKind::Text => format!("Text matches `{pattern}` (weight {weight})"),
+        SignalKind::FrontMatter => {
+            let key = s.key.as_deref().unwrap_or_default();
+            match &s.equals {
+                Some(v) => format!(
+                    "Front matter `{key}` equals `{}` (weight {weight})",
+                    scalar(v)
+                ),
+                None => format!("Front matter `{key}` is present (weight {weight})"),
+            }
+        }
+    }
+}
+
+fn category(name: &str, t: &CategoryTable) -> String {
+    let mut dials = Vec::new();
+    if let Some(l) = t.severity {
+        dials.push(format!("severity `{}`", level(l)));
+    }
+    if let Some(l) = t.minimum_severity {
+        dials.push(format!("minimum severity `{}`", level(l)));
+    }
+    match t.max_per_100_words {
+        Some(Budget::Limit(n)) => dials.push(format!("budget {n} findings per 100 words")),
+        Some(Budget::None(_)) => dials.push("no budget".to_string()),
+        None => {}
+    }
+    if let Some(w) = t.weight {
+        dials.push(format!("weight {w}"));
+    }
+    format!("- `{name}`: {}", dials.join(", "))
 }
 
 fn index(reg: &GenreRegistry) -> String {
     let mut out = String::from(
         "# Genres\n\n\
-         A genre describes what a document is for. slopvac detects it from the path, headings \
-         and front matter. Config or front matter can set it instead. Each genre sets a profile, rule \
-         severities and context tags. Each page lists the detection signals and \
-         the snippet that `slopvac prime write` prints.\n\n",
+         A genre describes what a document is for. slopvac detects the genre from signals in \
+         the document. Config or front matter can set it instead. A genre can set a profile and \
+         styles. It can also set category settings, rule levels and context tags. A genre can \
+         extend other genres and inherit their settings.\n\n",
     );
     for id in reg.ids() {
         let spec = reg.spec(id).expect("ids come from the registry");
-        let _ = writeln!(out, "- [`{id}`]({id}.md): {}", spec.description);
+        let _ = write!(out, "- [`{id}`]({id}.md)");
+        if let Some(d) = &spec.description {
+            let _ = write!(out, ": {d}");
+        }
+        out.push('\n');
     }
     out
 }
 
+fn list_or(out: &mut String, items: &[String], none: &str) {
+    if items.is_empty() {
+        let _ = writeln!(out, "{none}");
+    }
+    for i in items {
+        let _ = writeln!(out, "{i}");
+    }
+}
+
 fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     let id = &spec.id;
-    let chain: Vec<String> = reg
-        .chain(id)
-        .expect("a registry validates every chain")
-        .iter()
-        .map(|s| format!("`{}`", s.id))
-        .collect();
-    let mut out = format!("# {id}\n\n{}\n\n## Settings\n\n", spec.description);
-    match &spec.extends {
-        Some(parent) => {
-            let _ = writeln!(out, "- Extends: `{parent}` (chain: {})", chain.join(" → "));
-        }
-        None => out.push_str("- Extends: none\n"),
+    let valid = "a registry validates every chain";
+    let title = spec.title.as_deref().unwrap_or(id);
+    let mut out = format!("# {title}\n\n");
+    if let Some(d) = &spec.description {
+        let _ = write!(out, "{d}\n\n");
     }
-    if spec.is_abstract {
-        out.push_str("- Abstract: never detected or chosen by default\n");
+    if let Some(s) = &spec.surfaces {
+        let _ = write!(out, "Typical documents: {s}\n\n");
     }
-    match reg.profile(id).expect("a registry validates every chain") {
+    out.push_str("## Settings\n\n");
+    let _ = writeln!(out, "- Id: `{id}`");
+    if spec.extends.is_empty() {
+        out.push_str("- Extends: none\n");
+    } else {
+        let direct: Vec<String> = spec.extends.iter().map(|e| format!("`{e}`")).collect();
+        let _ = writeln!(out, "- Extends: {}", direct.join(", "));
+        let chain: Vec<String> = reg
+            .chain(id)
+            .expect(valid)
+            .iter()
+            .map(|s| format!("`{}`", s.id))
+            .collect();
+        let _ = writeln!(out, "- Resolved chain, lowest first: {}", chain.join(" → "));
+    }
+    match reg.profile(id).expect(valid) {
         Some(p) => {
-            let _ = writeln!(out, "- Profile: `{p}`");
+            let _ = writeln!(out, "- Profile: `{}`", p.as_str());
         }
         None => out.push_str("- Profile: none (the configured profile applies)\n"),
     }
-    let _ = write!(out, "- Detection threshold: {}\n\n", spec.threshold);
-    out.push_str("## Detection signals\n\n");
-    if spec.detect.is_empty() {
-        out.push_str("None. Config, front matter or the default choose this genre.\n");
-    }
-    for s in &spec.detect {
-        let _ = writeln!(out, "- {}", signal(s));
-    }
-    out.push_str("\n## Rule severities\n\n");
-    let tolerances = reg
-        .tolerances(id)
-        .expect("a registry validates every chain");
-    if tolerances.is_empty() {
-        out.push_str("This genre sets no rule severities.\n");
-    }
-    for (rule, severity) in &tolerances {
-        let _ = writeln!(out, "- `{rule}`: `{severity}`");
-    }
-    out.push_str("\n## Context tags\n\n");
-    let contexts = reg.contexts(id).expect("a registry validates every chain");
-    if contexts.is_empty() {
-        out.push_str("This genre sets no context tags.\n");
-    }
-    for c in &contexts {
-        let _ = writeln!(out, "- `{c}`");
-    }
-    out.push_str("\n## Prime snippet\n\n");
-    match &spec.prime {
-        Some(p) => {
-            let _ = writeln!(out, "> {p}");
+    out.push_str("\n## Detection signals\n\n");
+    match &spec.detect {
+        None => out.push_str("None. Config or front matter choose this genre.\n"),
+        Some(d) => {
+            let _ = write!(out, "Minimum score: {}\n\n", d.min_score);
+            for s in &d.signals {
+                let _ = writeln!(out, "- {}", signal(s));
+            }
         }
-        None => out.push_str("This genre has no prime snippet.\n"),
     }
+    out.push_str("\n## Styles\n\n");
+    let styles: Vec<String> = spec.styles.iter().map(|s| format!("- `{s}`")).collect();
+    list_or(&mut out, &styles, "This genre sets no styles.");
+    out.push_str("\n## Category settings\n\n");
+    let categories: Vec<String> = reg
+        .categories(id)
+        .expect(valid)
+        .iter()
+        .map(|(name, t)| category(name, t))
+        .collect();
+    list_or(
+        &mut out,
+        &categories,
+        "This genre sets no category settings.",
+    );
+    out.push_str("\n## Rule levels\n\n");
+    let rules: Vec<String> = reg
+        .rules(id)
+        .expect(valid)
+        .iter()
+        .map(|(rule, l)| format!("- `{rule}`: `{}`", level(*l)))
+        .collect();
+    list_or(&mut out, &rules, "This genre sets no rule levels.");
+    out.push_str("\n## Context tags\n\n");
+    let contexts: Vec<String> = reg
+        .contexts(id)
+        .expect(valid)
+        .iter()
+        .map(|c| format!("- `{c}`"))
+        .collect();
+    list_or(&mut out, &contexts, "This genre sets no context tags.");
     out
 }
 
@@ -108,4 +182,33 @@ pub fn reference_pages() -> Vec<(String, String)> {
         pages.push((format!("genres/{id}.md"), page(&reg, spec)));
     }
     pages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse_genres;
+
+    // The built-in genres set no categories or styles, so a custom registry covers them.
+    #[test]
+    fn a_page_shows_styles_and_category_dials() {
+        let specs = parse_genres(
+            "- schema_version: 3\n  id: base\n  title: Base genre\n  surfaces: READMEs\n  \
+               styles: [ste, google]\n  categories:\n    ai-register: warning\n    \
+               ste-verbs: { minimum_severity: suggestion, max_per_100_words: 0.4, weight: 2 }\n    \
+               ste-words: { max_per_100_words: none }\n",
+        )
+        .unwrap();
+        let reg = GenreRegistry::new(specs, "base").unwrap();
+        let page = page(&reg, reg.spec("base").unwrap());
+        assert!(page.starts_with("# Base genre\n"));
+        assert!(page.contains("Typical documents: READMEs\n"));
+        assert!(page.contains("## Styles\n\n- `ste`\n- `google`\n"));
+        assert!(page.contains("- `ai-register`: severity `warning`\n"));
+        assert!(page.contains(
+            "- `ste-verbs`: minimum severity `suggestion`, budget 0.4 findings per 100 words, \
+             weight 2\n"
+        ));
+        assert!(page.contains("- `ste-words`: no budget\n"));
+    }
 }
