@@ -83,7 +83,7 @@ impl<'p> Discovery<'p> {
             }
             visited.push(dir.to_path_buf());
             let candidate = dir.join(FILE_NAME);
-            if candidate.is_file() {
+            if fs::symlink_metadata(&candidate).is_ok() {
                 result = Some(candidate);
                 break;
             }
@@ -144,12 +144,14 @@ fn read(path: &Path) -> Result<String, ConfigError> {
     let label = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    fs::read_to_string(path).map_err(|source| ConfigError::io(label, source))
+    crate::read::read_text(path).map_err(|source| ConfigError::io(label, source))
 }
 
 fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str) -> ConfigError {
     ConfigError::Rejected(Box::new(Rejected {
         file: file.to_owned(),
+        layer: None,
+        root: None,
         text,
         diagnostics: vec![Diagnostic {
             code: Code::LegacyVersion,

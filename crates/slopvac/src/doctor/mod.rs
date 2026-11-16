@@ -4,6 +4,7 @@
 //! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
 //! the traits below; [`stubs`] holds the local stand-ins.
 
+pub mod config;
 pub mod read;
 pub mod stubs;
 
@@ -79,7 +80,7 @@ pub enum SourceStatus {
 /// A config file that was found, before path redaction.
 #[derive(Debug, Clone)]
 pub struct RawSource {
-    /// `explicit` or `project`.
+    /// `explicit`, `project` or `extends`.
     pub layer: &'static str,
     /// Where the file is.
     pub path: PathBuf,
@@ -94,6 +95,9 @@ pub struct RawSource {
 pub struct ConfigScan {
     /// Sources in layer order.
     pub sources: Vec<RawSource>,
+    /// The project root: the directory of the project (or `--config`) file. Packs and the
+    /// lockfile live under it, whatever the first source is.
+    pub root: Option<PathBuf>,
     /// `[network] offline = true` in a source.
     pub offline: bool,
     /// `[network] update_check` in a source.
@@ -555,11 +559,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
         None => ("unknown", None, None),
     };
 
-    let project_root = scan
-        .sources
-        .first()
-        .and_then(|s| s.path.parent())
-        .map_or_else(|| i.cwd.to_owned(), Path::to_owned);
+    let project_root = scan.root.clone().unwrap_or_else(|| i.cwd.to_owned());
 
     let packs = packs_report(&project_root, i.cwd, data.path.as_deref());
     let trust = trust_report(state.path.as_deref());
@@ -736,7 +736,7 @@ mod tests {
             explicit_config: None,
             version,
             update: &Fixed(cached.map(|v| (v.to_owned(), 7))),
-            config: &stubs::LocalConfigSources,
+            config: &config::LayerConfigSources,
             dirs: &stubs::EnvDirs,
             walk_limit: WALK_LIMIT,
         })
@@ -780,7 +780,7 @@ mod tests {
             explicit_config: None,
             version: "3.0.0",
             update: &Fixed(None),
-            config: &stubs::LocalConfigSources,
+            config: &config::LayerConfigSources,
             dirs: &Dirs(dir.to_owned()),
             walk_limit,
         });

@@ -45,7 +45,7 @@ A newer release does not make `ok` false.
 
 ### 2.3 Configuration
 
-Each entry has a `layer` (`explicit` for `--config`, `project` for the nearest `slopvac.toml`), a `file` and a `status`:
+Each file of the stack has one entry, in load order: files that the project extends first, then the project file. An entry has a `layer` (`extends`, `project`, or `explicit` for the `--config` file), a `file` and a `status`. A file that cannot be read or is refused is the only entry, because the stack did not load. The stack comes from the config layer, so `[network]` settings follow `extends` and precedence:
 
 | Status | Meaning |
 |---|---|
@@ -87,10 +87,9 @@ A path in the report is relative to the working directory, or `<external>/<file 
 
 ## 4. Build status
 
-Three inputs come from local stand-ins until the beads that own them land:
+Two inputs come from local stand-ins until the beads that own them land:
 
 - The install method is always `unknown`, and doctor starts no update refresh. `slopvac-8l4.12.22` swaps in `slopvac-update`.
-- Configuration discovery handles one `slopvac.toml` and ignores `extends`. `slopvac-8l4.12.23` swaps in the config layer.
 - The directory locations come from the environment. `slopvac-8l4.12.24` swaps in the shared resolver.
 
 ## 5. Conformance

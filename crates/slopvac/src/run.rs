@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, output, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,13 +106,13 @@ where
         // config scan shows the unreadable file (and exits 2 itself).
         Err(_) if invokes_doctor(&args, &tree) => slopvac_update::policy::NetworkPolicy::default(),
         Err(err) => {
-            // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
-            let message = format!(
-                "{}: {}",
-                redact::path_for_log(err.path(), &cwd),
-                err.problem()
+            // policies.md 1.7: the loader names files by name or by path relative to the root.
+            let _ = writeln!(
+                err_out,
+                "error[{}]: {}",
+                err.code(),
+                err.message().trim_end()
             );
-            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
             return exit::code(exit::INCOMPLETE);
         }
     };
@@ -174,7 +174,7 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
+    match dispatch(&matches, globals, &policy, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -194,14 +194,18 @@ fn invokes_doctor(args: &[OsString], tree: &clap::Command) -> bool {
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
-    update_check: Option<bool>,
+    policy: &slopvac_update::policy::NetworkPolicy,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("self", m)) => {
-            let rt = update_runtime(env, globals.offline, update_check);
+            // `self update` needs the network, so a refused config stops it with the reason.
+            if let Some(refusal) = &policy.refused {
+                return Err(CliError::new(refusal.code, refusal.message.clone()));
+            }
+            let rt = update_runtime(env, globals.offline, policy.update_check);
             let text = slopvac_update::command::run(m, &rt)
                 .map_err(|f| CliError::new(f.code, f.message))?;
             write_stdout(out, text.as_bytes())
@@ -267,7 +271,8 @@ fn doctor(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    use crate::doctor::config::LayerConfigSources;
+    use crate::doctor::stubs::{EnvDirs, LocalUpdateProbe};
     let cwd = std::env::current_dir().unwrap_or_default();
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
@@ -276,7 +281,7 @@ fn doctor(
         explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
         version: env!("CARGO_PKG_VERSION"),
         update: &LocalUpdateProbe,
-        config: &LocalConfigSources,
+        config: &LayerConfigSources,
         dirs: &EnvDirs,
         walk_limit: crate::doctor::WALK_LIMIT,
     });

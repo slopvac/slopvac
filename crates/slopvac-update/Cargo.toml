@@ -8,10 +8,6 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Opens `slopvac.toml` without blocking and reads it through the handle.
-[target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["fs"] }
-
 [dependencies]
 clap.workspace = true
 crossbeam-channel.workspace = true
@@ -20,10 +16,10 @@ minisign-verify.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+slopvac-config.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-toml.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]

@@ -3,12 +3,17 @@
 use std::io;
 
 use crate::diag::{Code, Diagnostic, SourceFile, render};
+use crate::source::Layer;
 
 /// A file whose text slopvac refused, with the reasons.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rejected {
     /// Path shown in messages, relative to the project root.
     pub file: String,
+    /// The layer of the refused file, when the loader knows it.
+    pub layer: Option<Layer>,
+    /// The project root that `file` is relative to, when the loader knows it.
+    pub root: Option<std::path::PathBuf>,
     /// The full text the diagnostic spans index into.
     pub text: String,
     /// What is wrong, in document order.
@@ -53,6 +58,8 @@ pub(crate) fn reason(e: &io::Error) -> &'static str {
         io::ErrorKind::NotFound => "no such file",
         io::ErrorKind::PermissionDenied => "permission denied",
         io::ErrorKind::InvalidData => "not valid UTF-8",
+        io::ErrorKind::InvalidInput => "not a regular file",
+        io::ErrorKind::FileTooLarge => "larger than 1048576 bytes",
         _ => "the file cannot be read",
     }
 }
