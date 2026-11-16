@@ -135,7 +135,15 @@ fn differing_keys(a: &Style, b: &Style) -> Vec<String> {
     };
     let (va, vb) = (last(a), last(b));
     va.iter()
-        .filter(|(path, value)| vb.get(*path).is_some_and(|other| other != *value))
+        .filter(|(path, value)| vb.get(*path).is_some_and(|other| !same(value, other)))
         .map(|(path, _)| path.join("."))
         .collect()
+}
+
+/// Equal values. Numbers compare by value, so `1` and `1.0` match; lists compare item by item.
+fn same(a: &Json, b: &Json) -> bool {
+    match (a, b) {
+        (Json::Number(x), Json::Number(y)) => x.as_f64() == y.as_f64(),
+        _ => a == b,
+    }
 }

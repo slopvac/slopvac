@@ -331,10 +331,13 @@ impl LoadedConfig {
             .project_value(&["styles"])
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
-        for name in styles.iter().filter_map(Json::as_str) {
-            if let Some(settings) = inputs.presets.style(name) {
-                out.apply_all(settings);
-            }
+        let listed: Vec<String> = styles
+            .iter()
+            .filter_map(Json::as_str)
+            .map(str::to_owned)
+            .collect();
+        for settings in inputs.presets.style_layers(&listed) {
+            out.apply_all(settings);
         }
 
         // The genre can come from any layer above the genre layer, so pick the winner first.

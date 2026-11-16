@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use slopvac_config::flatten::{Origin, flatten};
 use slopvac_config::tree::parse_toml;
-use slopvac_config::{Layer, Setting, SourceFile, render, validate_style, version};
+use slopvac_config::{
+    Code, Diagnostic, Layer, Setting, SourceFile, render, validate_style, version,
+};
 
 use crate::StyleError;
 use crate::types::{CategoryPatch, Level, Terms};
@@ -51,7 +53,17 @@ impl Style {
         let file = origin_name(name);
         let root = parse_toml(text).map_err(|e| StyleError::Parse {
             style: name.to_owned(),
-            message: e.message,
+            message: render(
+                SourceFile { name: &file, text },
+                &[Diagnostic {
+                    code: Code::Parse,
+                    message: format!("not valid TOML: {}", e.message),
+                    label: "the parser stopped here".into(),
+                    span: e.span.unwrap_or(0..0),
+                    help: None,
+                    path: Vec::new(),
+                }],
+            ),
         })?;
         let mut diagnostics = version::check_version(&root, text)
             .err()

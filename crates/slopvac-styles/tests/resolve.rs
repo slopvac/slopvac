@@ -101,6 +101,20 @@ fn category_dials_merge_per_field() {
         get(&r, &["categories", "ste-words", "severity"]),
         &json!("error")
     );
+    // Nothing the styles left unset appears.
+    for (cat, field) in [
+        ("ste-nouns", "minimum_severity"),
+        ("ste-nouns", "max_per_100_words"),
+        ("ste-words", "minimum_severity"),
+        ("ste-words", "max_per_100_words"),
+        ("ste-words", "weight"),
+    ] {
+        assert_eq!(
+            r.resolved.get(&["categories", cat, field]),
+            None,
+            "{cat}.{field}"
+        );
+    }
     assert_eq!(history(&r, &["categories", "ste-nouns", "weight"]).len(), 2);
     assert_eq!(
         history(&r, &["categories", "ste-nouns", "severity"]).len(),
@@ -360,4 +374,14 @@ fn dir_source_loads_files_and_rejects_path_names() {
         StyleError::NotFound("nope".into())
     );
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn conflict_keys_compare_numbers_by_value_and_lists_by_item() {
+    let a = "schema_version = 3\nconflicts = [\"b\"]\n[categories.c]\nweight = 1\n[rules]\nx = \"off\"\n";
+    let b = "schema_version = 3\n[categories.c]\nweight = 1.0\n[rules]\nx = \"error\"\n";
+    let src = MapSource::new().with("a", a).with("b", b);
+    let r = resolve(&names(&["a", "b"]), &src, false).unwrap();
+    // 1 and 1.0 are the same weight, so only the rule level differs.
+    assert_eq!(r.conflicts[0].keys, ["rules.x"]);
 }
