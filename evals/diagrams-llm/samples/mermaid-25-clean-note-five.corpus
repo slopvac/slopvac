@@ -1,0 +1,13 @@
+# Retries
+
+Callers retry on timeout.
+
+```mermaid
+sequenceDiagram
+  participant A
+  participant B
+  A->>B: Call
+  Note over A: Retries only on timeout errors
+```
+
+The limit is three attempts.

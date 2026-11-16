@@ -33,6 +33,20 @@ The `--help` snapshot in `testing_toolkit.rs` changes whenever the command tree 
 
 proptest saves failing cases to a `<test file>.proptest-regressions` file next to an integration test, for example `crates/slopvac/tests/cli.proptest-regressions`. For a test inside `src/`, it uses a `proptest-regressions/` directory. Commit these files so a fixed bug stays fixed. Keep generators small: a property that needs thousands of cases to find a fault belongs in the nightly fuzzing job instead.
 
+## Fuzzing
+
+The `fuzz/` crate holds cargo-fuzz targets for the parsers that read untrusted text: `frontmatter_spans`, `config_load` and `parse_document` (Markdown, MDX and HTML). Each target must not panic on any input. The crate is excluded from the workspace and needs the nightly toolchain, so stable builds never compile it.
+
+```sh
+just fuzz frontmatter_spans 120   # target, then seconds (default 60)
+```
+
+The scheduled workflow `rust-fuzz.yml` runs every target for 5 minutes each night and uploads crashing inputs as artifacts. Reproduce one with `cargo +nightly fuzz run <target> <artifact>`. Fix the bug, then add a regression test that uses the minimised input.
+
+## Mutation testing
+
+`just mutants` runs cargo-mutants, which changes the code and reports changes that no test catches. Pass a crate name to limit the run: `just mutants slopvac-text`. Settings live in `.cargo/mutants.toml`. A full run takes hours, so `rust-mutants.yml` runs it weekly and on demand. It does not gate pull requests, and it uploads `mutants.out`. Read `missed.txt` there: each line is behaviour a test should pin down.
+
 ## Dependencies
 
 Declare test tools once under `[workspace.dependencies]` and use `.workspace = true` in a crate's `[dev-dependencies]`. `cargo shear` fails on an unused one.

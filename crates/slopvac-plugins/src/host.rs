@@ -24,9 +24,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, Sender, bounded, select};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select};
 use serde_json::{Value, json};
 
+use crate::budget::RunBudget;
 use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
@@ -48,6 +49,8 @@ const STDERR_SHOWN: usize = 4 * 1024;
 /// How long a drop waits for a killed leader to be reaped. A leader that is
 /// still unreaped after this stays registered for `kill_all_live`.
 const REAP_WAIT: Duration = Duration::from_secs(5);
+/// How long shutdown waits for the output readers to reach end of stream.
+const DRAIN_WAIT: Duration = Duration::from_millis(500);
 
 /// Timers from plugin-protocol.md section 6.3. Zero is invalid.
 #[derive(Debug, Clone, Copy)]
@@ -103,6 +106,25 @@ impl Default for RunCaps {
     }
 }
 
+/// Test seam: called by the standard error reader with the plugin's running
+/// byte count, after each read and before the read is charged.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ReadHook(Arc<dyn Fn(u64) + Send + Sync>);
+
+impl ReadHook {
+    /// Wrap `f`.
+    pub fn new(f: impl Fn(u64) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for ReadHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReadHook")
+    }
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -126,10 +148,16 @@ pub struct HostConfig {
     pub timeouts: Timeouts,
     /// Run caps.
     pub caps: RunCaps,
+    /// Whole-run budget. Clones of one config share it, so every plugin
+    /// started from them draws on the same counters.
+    pub budget: Arc<RunBudget>,
     /// Test seam: where a teardown reads the process table. `None`, the
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
     pub process_table: Option<TableSource>,
+    /// Test seam for the standard error reader; production code never sets it.
+    #[doc(hidden)]
+    pub stderr_read_hook: Option<ReadHook>,
 }
 
 impl Default for HostConfig {
@@ -145,7 +173,9 @@ impl Default for HostConfig {
             max_in_flight: 16,
             timeouts: Timeouts::default(),
             caps: RunCaps::default(),
+            budget: Arc::default(),
             process_table: None,
+            stderr_read_hook: None,
         }
     }
 }
@@ -232,7 +262,11 @@ struct Shared {
     frames: Mutex<Option<Sender<Vec<u8>>>>,
     stderr: Mutex<VecDeque<u8>>,
     stderr_done: Receiver<()>,
+    /// Disconnects when the standard output reader has ended.
+    reader_done: Receiver<()>,
     caps: RunCaps,
+    budget: Arc<RunBudget>,
+    stderr_read_hook: Option<ReadHook>,
     exit_timeout: Duration,
 }
 
@@ -332,13 +366,15 @@ impl Shared {
         }
         let unmatched = |n: &mut u32| {
             *n += 1;
+            // Counts even when the message also crosses the plugin's own cap.
+            let charged = self.budget.charge_unsolicited();
             if *n > self.caps.unsolicited_messages {
                 Err(format!(
                     "more than {} unsolicited messages",
                     self.caps.unsolicited_messages
                 ))
             } else {
-                Ok(false)
+                charged.map(|()| false)
             }
         };
         if obj.contains_key("method") {
@@ -375,12 +411,21 @@ impl Shared {
 struct Counted<R> {
     inner: R,
     read: u64,
+    budget: Arc<RunBudget>,
+    /// Set when a read broke the whole-run budget.
+    breach: Option<String>,
 }
 
 impl<R: Read> Read for Counted<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.read = self.read.saturating_add(n as u64);
+        // Charged as bytes leave the pipe: partial frames, read-ahead and
+        // failed streams count too.
+        if let Err(m) = self.budget.charge_stdout(n as u64) {
+            self.breach = Some(m);
+            return Err(io::Error::other("whole-run budget exceeded"));
+        }
         Ok(n)
     }
 }
@@ -397,11 +442,17 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
     let mut r = BufReader::new(Counted {
         inner: stdout,
         read: 0,
+        budget: Arc::clone(&shared.budget),
+        breach: None,
     });
     let mut unsolicited = 0u32;
     let mut negotiated = false;
     loop {
-        match read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst)) {
+        let frame = read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst));
+        if let Some(m) = r.get_mut().breach.take() {
+            return shared.violation(m);
+        }
+        match frame {
             Ok(None) | Err(FrameError::Io(_)) => return shared.on_stream_end(),
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
@@ -442,6 +493,13 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                     ring.extend(&buf[..n]);
                     let excess = ring.len().saturating_sub(STDERR_RING);
                     ring.drain(..excess);
+                }
+                if let Some(hook) = &shared.stderr_read_hook {
+                    (hook.0)(total);
+                }
+                if let Err(m) = shared.budget.charge_stderr(n as u64) {
+                    shared.violation(m);
+                    break;
                 }
                 if total > shared.caps.stderr_bytes {
                     shared.fail(PluginError::ProtocolViolation(format!(
@@ -817,11 +875,25 @@ impl Plugin {
         cfg: &HostConfig,
         gate: &dyn SpawnGate,
     ) -> Result<Self, StartError> {
+        if let Some(m) = cfg.budget.breach() {
+            return Err(StartError {
+                error: PluginError::ProtocolViolation(format!("{}: {m}", spec.name)),
+                teardown: Teardown::default(),
+            });
+        }
         prespawn(spec, cfg, gate).map_err(|error| StartError {
             error,
             teardown: Teardown::default(),
         })?;
-        let conn = spawn(spec, cfg)?;
+        // The breach is published under the lock that guards the spawn, so a
+        // start that waited in its gate cannot spawn after a breach.
+        let conn = cfg
+            .budget
+            .admit(|| spawn(spec, cfg))
+            .map_err(|m| StartError {
+                error: PluginError::ProtocolViolation(format!("{}: {m}", spec.name)),
+                teardown: Teardown::default(),
+            })??;
         let group = Arc::clone(&conn.shared.group);
         // A failed handshake drops the connection, which kills the group and
         // waits for the reap, so the teardown is final here.
@@ -985,7 +1057,21 @@ impl Plugin {
         shared.group.kill();
         // The waiter reaps a killed leader; its status belongs in the report.
         let _ = shared.group.wait_done(REAP_WAIT);
+        // Output that is still in the pipes counts against the caps, so read
+        // both streams to the end before the verdict.
+        // A reader that is still running when the wait ends has not finished
+        // its accounting.
+        let stderr_drained =
+            shared.stderr_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
+        let stdout_drained =
+            shared.reader_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
+        let violation = match lock(&shared.dead).as_ref() {
+            Some(PluginError::ProtocolViolation(m)) => Some(m.clone()),
+            _ => None,
+        };
         Shutdown {
+            accounting_incomplete: !(stderr_drained && stdout_drained),
+            violation,
             acknowledged,
             left,
             status: shared.group.exit_status(),
@@ -1014,6 +1100,13 @@ pub struct Shutdown {
     pub status: Option<ExitStatus>,
     /// What the teardowns left undone.
     pub teardown: Teardown,
+    /// The protocol violation that ended the plugin, such as output past a
+    /// cap that arrived after the shutdown acknowledgement.
+    pub violation: Option<String>,
+    /// A standard output or standard error reader was still running when the
+    /// drain wait ended, for example because a descendant holds the pipe, so
+    /// output may be uncounted.
+    pub accounting_incomplete: bool,
 }
 
 impl Shutdown {
@@ -1022,7 +1115,9 @@ impl Shutdown {
     /// running that they found.
     #[must_use]
     pub fn clean(&self) -> bool {
-        self.acknowledged
+        self.violation.is_none()
+            && !self.accounting_incomplete
+            && self.acknowledged
             && self.left
             && self.status.is_some_and(|s| s.success())
             && self.teardown.is_complete()
@@ -1082,6 +1177,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     };
     let (frames_tx, frames_rx) = bounded::<Vec<u8>>(2 * cfg.max_in_flight + 4);
     let (stderr_done_tx, stderr_done) = bounded::<()>(0);
+    let (reader_done_tx, reader_done) = bounded::<()>(0);
     let (limits_ready, limits_rx) = bounded::<()>(1);
     let (watchdog_stop, watchdog_rx) = bounded::<()>(0);
     let shared = Arc::new(Shared {
@@ -1094,7 +1190,10 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         frames: Mutex::new(Some(frames_tx)),
         stderr: Mutex::new(VecDeque::new()),
         stderr_done,
+        reader_done,
         caps: cfg.caps,
+        budget: Arc::clone(&cfg.budget),
+        stderr_read_hook: cfg.stderr_read_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
     });
     {
@@ -1125,7 +1224,10 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     }
     {
         let shared = Arc::clone(&shared);
-        thread::spawn(move || reader_loop(&shared, stdout, &limits_rx));
+        thread::spawn(move || {
+            let _done = reader_done_tx;
+            reader_loop(&shared, stdout, &limits_rx);
+        });
     }
     Ok(Conn {
         shared,

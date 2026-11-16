@@ -1,0 +1,12 @@
+# Services
+
+Payment services live in one trust zone.
+
+```mermaid
+flowchart TB
+  subgraph payments["Payment and fulfilment services that process every incoming order"]
+    A[Charge] --> B[Ship]
+  end
+```
+
+The zone has its own network policy.
