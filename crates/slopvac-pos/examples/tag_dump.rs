@@ -6,6 +6,11 @@ use std::process::ExitCode;
 
 use slopvac_pos::Tagger;
 
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "this example is a command-line tool that reports on the standard streams"
+)]
 fn main() -> ExitCode {
     let tagger = Tagger::english();
     let mut status = ExitCode::SUCCESS;
@@ -23,17 +28,18 @@ fn main() -> ExitCode {
             .collect();
         // `PATH.blocks` lists one block per line as "start end" byte offsets;
         // without it the whole file is one block.
-        let blocks: Vec<std::ops::Range<usize>> =
-            match std::fs::read_to_string(format!("{path}.blocks")) {
-                Ok(list) => list
-                    .lines()
-                    .filter_map(|l| {
-                        let (a, b) = l.split_once(' ')?;
-                        Some(a.parse().ok()?..b.parse().ok()?)
-                    })
-                    .collect(),
-                Err(_) => std::iter::once(0..text.len()).collect(),
-            };
+        let blocks: Vec<std::ops::Range<usize>> = std::fs::read_to_string(format!("{path}.blocks"))
+            .map_or_else(
+                |_| std::iter::once(0..text.len()).collect(),
+                |list| {
+                    list.lines()
+                        .filter_map(|l| {
+                            let (a, b) = l.split_once(' ')?;
+                            Some(a.parse().ok()?..b.parse().ok()?)
+                        })
+                        .collect()
+                },
+            );
         for token in tagger.tag_blocks(&text, &blocks) {
             let line = line_starts.partition_point(|&s| s <= token.span.start);
             let start = line_starts[line - 1];

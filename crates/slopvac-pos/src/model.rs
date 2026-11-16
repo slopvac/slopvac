@@ -57,26 +57,36 @@ impl<'a> Reader<'a> {
         self.bytes.len() - self.pos
     }
 
+    /// The next `N` bytes as an array.
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], ModelError> {
+        self.take(N)?
+            .first_chunk::<N>()
+            .copied()
+            .ok_or(ModelError::Truncated)
+    }
+
     fn u32(&mut self) -> Result<u32, ModelError> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        Ok(u32::from_le_bytes(self.array::<4>()?))
     }
 
     fn len(&mut self) -> Result<usize, ModelError> {
-        usize::try_from(self.u32()?).map_err(|_| ModelError::Corrupt("length overflows usize"))
+        usize::try_from(self.u32()?)
+            .ok()
+            .ok_or(ModelError::Corrupt("length overflows usize"))
     }
 
     fn u8(&mut self) -> Result<u8, ModelError> {
-        Ok(self.take(1)?[0])
+        let [byte] = self.array::<1>()?;
+        Ok(byte)
     }
 
     fn str16(&mut self) -> Result<Box<str>, ModelError> {
-        let b = self.take(2)?;
-        let n = usize::from(u16::from_le_bytes([b[0], b[1]]));
+        let n = usize::from(u16::from_le_bytes(self.array::<2>()?));
         let raw = self.take(n)?;
         std::str::from_utf8(raw)
+            .ok()
             .map(Box::from)
-            .map_err(|_| ModelError::Corrupt("string is not UTF-8"))
+            .ok_or(ModelError::Corrupt("string is not UTF-8"))
     }
 
     fn offsets(&mut self, n: usize) -> Result<Vec<u32>, ModelError> {
@@ -90,11 +100,16 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// A `u32` table value as an index, or `None` on a target where it does not fit.
+fn index(value: u32) -> Option<usize> {
+    usize::try_from(value).ok()
+}
+
 /// Checks that `offsets` is non-decreasing, starts at 0 and ends at `end`.
 fn check_offsets(offsets: &[u32], end: usize) -> Result<(), ModelError> {
     let ok = offsets.first() == Some(&0)
-        && offsets.windows(2).all(|w| w[0] <= w[1])
-        && offsets.last().map(|&l| l as usize) == Some(end);
+        && offsets.is_sorted()
+        && offsets.last().and_then(|&l| index(l)) == Some(end);
     if ok {
         Ok(())
     } else {
@@ -170,10 +185,17 @@ impl Model {
         }
 
         let mut features = HashMap::with_capacity(feature_count);
-        for j in 0..feature_count {
-            let key = std::str::from_utf8(&blob[feat_off[j] as usize..feat_off[j + 1] as usize])
-                .map_err(|_| ModelError::Corrupt("feature key is not UTF-8"))?;
-            features.insert(Box::from(key), (pair_off[j], pair_off[j + 1]));
+        let feat_ranges = feat_off.iter().zip(feat_off.iter().skip(1));
+        let pair_ranges = pair_off.iter().zip(pair_off.iter().skip(1));
+        for ((&key_lo, &key_hi), (&pair_lo, &pair_hi)) in feat_ranges.zip(pair_ranges) {
+            let key = index(key_lo)
+                .zip(index(key_hi))
+                .and_then(|(lo, hi)| blob.get(lo..hi))
+                .ok_or(ModelError::Corrupt("feature key is out of range"))?;
+            let key = std::str::from_utf8(key)
+                .ok()
+                .ok_or(ModelError::Corrupt("feature key is not UTF-8"))?;
+            features.insert(Box::from(key), (pair_lo, pair_hi));
         }
 
         let model = Self {
@@ -201,6 +223,12 @@ impl Model {
         self.meta.get(key).map_or("", |v| &**v)
     }
 
+    /// The name of class `id`. The parser checked every id a table holds, so the empty
+    /// fallback is unreachable.
+    fn class(&self, id: usize) -> &str {
+        self.classes.get(id).map_or("", |c| &**c)
+    }
+
     /// Tags one sentence; the result has one tag per word.
     pub(crate) fn tag<'a>(&'a self, words: &[&str]) -> Vec<&'a str> {
         work::tick(words.len() + 4);
@@ -216,18 +244,18 @@ impl Model {
             scores: vec![0.0; self.classes.len()],
             key: String::new(),
         };
-        let mut p1: &'a str = "-START-";
-        let mut p2: &'a str = "-START2-";
+        let mut p1 = "-START-";
+        let mut p2 = "-START2-";
         let mut out: Vec<&'a str> = Vec::with_capacity(words.len());
         for (i, &word) in words.iter().enumerate() {
             work::tick(1);
-            let tag = if let Some(tag) = fixed(word) {
-                tag
-            } else if let Some(&id) = self.unambiguous.get(word) {
-                &*self.classes[usize::from(id)]
-            } else {
-                self.predict(&mut scratch, i + 2, &ctx, word, p1, p2)
-            };
+            let tag = fixed(word)
+                .or_else(|| {
+                    self.unambiguous
+                        .get(word)
+                        .map(|&id| self.class(usize::from(id)))
+                })
+                .unwrap_or_else(|| self.predict(&mut scratch, i + 2, &ctx, word, p1, p2));
             p2 = p1;
             p1 = tag;
             out.push(tag);
@@ -244,9 +272,14 @@ impl Model {
         }
         work::tick(1 + key.len());
         if let Some(&(lo, hi)) = self.features.get(key.as_str()) {
-            work::tick((hi - lo) as usize);
-            for k in lo as usize..hi as usize {
-                scores[usize::from(self.class_ids[k])] += self.weights[k];
+            work::tick(index(hi - lo).unwrap_or(usize::MAX));
+            let range = index(lo).unwrap_or(usize::MAX)..index(hi).unwrap_or(usize::MAX);
+            let ids = self.class_ids.get(range.clone()).unwrap_or_default();
+            let weights = self.weights.get(range).unwrap_or_default();
+            for (&id, &weight) in ids.iter().zip(weights) {
+                if let Some(score) = scores.get_mut(usize::from(id)) {
+                    *score += weight;
+                }
             }
         }
     }
@@ -269,6 +302,7 @@ impl Model {
         let suffix = suffix_chars(word, 3);
         // One entry per feature, in the order prose builds them; each is
         // the feature letter followed by its parts.
+        let at = |j: usize| ctx.get(j).map_or("", String::as_str);
         let features: [&[&str]; 20] = [
             &["a"],
             &["b", suffix],
@@ -276,14 +310,14 @@ impl Model {
             &["d", p1],
             &["e", p2],
             &["f", p1, " ", p2],
-            &["g", &ctx[i]],
-            &["h", p1, " ", &ctx[i]],
-            &["i", &ctx[i - 1]],
-            &["j", suffix_chars(&ctx[i - 1], 3)],
-            &["k", &ctx[i - 2]],
-            &["l", &ctx[i + 1]],
-            &["m", suffix_chars(&ctx[i + 1], 3)],
-            &["n", &ctx[i + 2]],
+            &["g", at(i)],
+            &["h", p1, " ", at(i)],
+            &["i", at(i - 1)],
+            &["j", suffix_chars(at(i - 1), 3)],
+            &["k", at(i - 2)],
+            &["l", at(i + 1)],
+            &["m", suffix_chars(at(i + 1), 3)],
+            &["n", at(i + 2)],
             &["o", suffix_chars(word, 2)],
             &["p", suffix_chars(word, 4)],
             &["q", prefix_chars(word, 2)],
@@ -304,7 +338,7 @@ impl Model {
                 best_id = id;
             }
         }
-        &self.classes[best_id]
+        self.class(best_id)
     }
 }
 
@@ -321,13 +355,13 @@ fn suffix_chars(word: &str, n: usize) -> &str {
         .rev()
         .nth(n.saturating_sub(1))
         .map_or(0, |(i, _)| i);
-    &word[start..]
+    word.get(start..).unwrap_or_default()
 }
 
 /// The first `n` characters of `word`, or all of it if shorter.
 fn prefix_chars(word: &str, n: usize) -> &str {
     let end = word.char_indices().nth(n).map_or(word.len(), |(i, _)| i);
-    &word[..end]
+    word.get(..end).unwrap_or(word)
 }
 
 /// Casing and makeup of a word in a few letters: `Xx` capitalized, `XX` all
@@ -418,12 +452,11 @@ fn fixed(word: &str) -> Option<&'static str> {
 /// Go: `^(?:0|\*[\w?]\*|\*\-\d{1,3}|\*[A-Z]+\*\-\d{1,3}|\*)$`.
 fn is_trace(word: &str) -> bool {
     let digits = |s: &str| (1..=3).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit());
-    let b = word.as_bytes();
     if word == "0" || word == "*" {
         return true;
     }
-    if b.len() == 3 && b[0] == b'*' && b[2] == b'*' {
-        return b[1].is_ascii_alphanumeric() || b[1] == b'_' || b[1] == b'?';
+    if let [b'*', mid, b'*'] = word.as_bytes() {
+        return mid.is_ascii_alphanumeric() || matches!(mid, b'_' | b'?');
     }
     if let Some(rest) = word.strip_prefix("*-") {
         return digits(rest);

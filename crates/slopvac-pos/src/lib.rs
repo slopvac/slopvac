@@ -80,6 +80,10 @@ impl Tagger {
     ///
     /// Never in a released build: a test decodes the embedded model.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "the model is embedded at build time and a test decodes it"
+    )]
     pub fn english() -> &'static Self {
         static ENGLISH: OnceLock<Tagger> = OnceLock::new();
         ENGLISH.get_or_init(|| {
@@ -152,10 +156,17 @@ impl Tagger {
         let mut out = Vec::new();
         for block in blocks {
             let base = block.start;
-            let slice = &text[block.clone()];
-            let tokens = match masks {
-                None => tokenize::tokenize(slice),
-                Some(masks) => {
+            let slice = text.get(block.clone());
+            assert!(
+                slice.is_some(),
+                "a block is out of bounds or splits a UTF-8 sequence"
+            );
+            let Some(slice) = slice else {
+                continue;
+            };
+            let tokens = masks.map_or_else(
+                || tokenize::tokenize(slice),
+                |masks| {
                     let local: Vec<(Range<usize>, usize)> = masks
                         .iter()
                         .filter(|m| m.range.start < block.end && m.range.end > block.start)
@@ -168,24 +179,34 @@ impl Tagger {
                         })
                         .collect();
                     assert!(
-                        local.windows(2).all(|w| w[0].0.end <= w[1].0.start),
+                        local
+                            .windows(2)
+                            .all(|w| matches!(w, [a, b] if a.0.end <= b.0.start)),
                         "masks must ascend and not overlap"
                     );
+                    assert!(
+                        local
+                            .iter()
+                            .all(|(range, _)| slice.get(range.clone()).is_some()),
+                        "a mask is out of bounds or splits a UTF-8 sequence"
+                    );
                     tokenize::tokenize_masked(slice, &local)
-                }
-            };
+                },
+            );
             for sentence in tokenize::sentences(slice, &tokens) {
                 work::tick(sentence.len());
-                let words: Vec<&str> = tokens[sentence.clone()]
-                    .iter()
-                    .map(|t| t.word.as_str())
-                    .collect();
+                let Some(sentence_tokens) = tokens.get(sentence) else {
+                    continue;
+                };
+                let words: Vec<&str> = sentence_tokens.iter().map(|t| t.word.as_str()).collect();
                 let tags = self.model.tag(&words);
-                for (token, tag) in tokens[sentence].iter().zip(tags) {
-                    if !token.placeholder {
-                        let span = base + token.span.start..base + token.span.end;
+                for (token, tag) in sentence_tokens.iter().zip(tags) {
+                    let span = base + token.span.start..base + token.span.end;
+                    if let Some(token_text) = text.get(span.clone())
+                        && !token.placeholder
+                    {
                         out.push(TaggedToken {
-                            text: &text[span.clone()],
+                            text: token_text,
                             span,
                             tag,
                         });
@@ -255,7 +276,7 @@ mod tests {
             .flat_map(|b| {
                 let base = b.start;
                 tagger
-                    .tag_text(&text[b])
+                    .tag_text(text.get(b).unwrap_or_default())
                     .into_iter()
                     .map(move |t| (t.text.to_owned(), t.span.start + base, t.tag.to_owned()))
             })
@@ -265,7 +286,11 @@ mod tests {
             .map(|t| (t.text.to_owned(), t.span.start, t.tag.to_owned()))
             .collect();
         assert_eq!(got, alone);
-        assert!(blocks.iter().all(|t| &text[t.span.clone()] == t.text));
+        assert!(
+            blocks
+                .iter()
+                .all(|t| text.get(t.span.clone()) == Some(t.text))
+        );
         assert_eq!(blocks.first().map(|t| t.text), Some("Ensure"));
         assert_eq!(blocks.last().map(|t| t.text), Some("feature"));
     }
@@ -332,7 +357,7 @@ mod tests {
             range: 1..4,
             stars: 1,
         }];
-        let _ = Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks);
+        drop(Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks));
     }
 
     /// Work units allowed per input byte for tokenizing and tagging together,
@@ -342,7 +367,7 @@ mod tests {
     const ALLOWANCE: u64 = 1_000;
 
     fn budget(text: &str) -> u64 {
-        PER_BYTE * text.len() as u64 + ALLOWANCE
+        PER_BYTE * u64::try_from(text.len()).unwrap() + ALLOWANCE
     }
 
     fn work_of(f: impl FnOnce()) -> u64 {
@@ -395,7 +420,7 @@ mod tests {
             } else {
                 40_000
             };
-            let text = tokenize::adversarial::adversarial(name, n);
+            let text = tokenize::adversarial::adversarial(name, n).unwrap();
             let lined = one_line_per_hundred_words(&text);
             for (api, measure) in measures {
                 let input = if api == "tag_blocks" { &lined } else { &text };
@@ -409,7 +434,7 @@ mod tests {
                 let doubled_input = if api == "tag_blocks" {
                     format!("{input}{input}")
                 } else {
-                    tokenize::adversarial::adversarial(name, 2 * n)
+                    tokenize::adversarial::adversarial(name, 2 * n).unwrap()
                 };
                 let doubled = measure(&doubled_input);
                 assert!(
@@ -424,7 +449,7 @@ mod tests {
     /// the budget, which is what makes the gate above meaningful.
     #[test]
     fn the_budget_rejects_a_context_rebuilt_for_every_word() {
-        let text = tokenize::adversarial::adversarial("long sentence", 20_000);
+        let text = tokenize::adversarial::adversarial("long sentence", 20_000).unwrap();
         let used = work_of(|| {
             let tokens = tokenize::tokenize(&text);
             for sentence in tokenize::sentences(&text, &tokens) {

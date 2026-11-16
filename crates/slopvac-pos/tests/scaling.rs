@@ -28,15 +28,15 @@ fn best_of_three(text: &str) -> Duration {
             start.elapsed()
         })
         .min()
-        .unwrap()
+        .unwrap_or_default()
 }
 
 #[test]
 #[ignore = "wall-clock benchmark; run with --ignored"]
 fn tagging_time_grows_linearly_on_adversarial_inputs() {
     for name in adversarial::NAMES {
-        let small = best_of_three(&adversarial::adversarial(name, SMALL));
-        let big = best_of_three(&adversarial::adversarial(name, BIG));
+        let small = best_of_three(&adversarial::adversarial(name, SMALL).unwrap());
+        let big = best_of_three(&adversarial::adversarial(name, BIG).unwrap());
         let ratio = big.as_secs_f64() / small.as_secs_f64().max(1e-6);
         eprintln!("{name}: {small:?} -> {big:?} (x{ratio:.2})");
     }

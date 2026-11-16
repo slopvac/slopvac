@@ -6,7 +6,7 @@ use slopvac_pos::{ModelError, Tagger};
 
 /// Appends a `u16`-prefixed string.
 fn str16(out: &mut Vec<u8>, s: &str) {
-    out.extend_from_slice(&u16::try_from(s.len()).unwrap().to_le_bytes());
+    out.extend_from_slice(&u16::try_from(s.len()).unwrap_or(u16::MAX).to_le_bytes());
     out.extend_from_slice(s.as_bytes());
 }
 
@@ -24,7 +24,7 @@ fn model(meta: &[(&str, &str)], declared_words: u32) -> Vec<u8> {
     out.extend_from_slice(&0_u32.to_le_bytes()); // pair offsets: [0]
     out.extend_from_slice(&declared_words.to_le_bytes());
     if declared_words == 0 {
-        out.extend_from_slice(&u32::try_from(meta.len()).unwrap().to_le_bytes());
+        out.extend_from_slice(&u32::try_from(meta.len()).unwrap_or(u32::MAX).to_le_bytes());
         for (k, v) in meta {
             str16(&mut out, k);
             str16(&mut out, v);
