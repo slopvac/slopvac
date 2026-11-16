@@ -104,7 +104,11 @@ pub(crate) fn compile(
             s.ignore_case,
             s.match_all_caps,
         ),
-        _ => return Ok(None),
+        Match::Metric(_)
+        | Match::Structure(_)
+        | Match::Capitalization(_)
+        | Match::Vocabulary(_)
+        | Match::Judgement(_) => return Ok(None),
     };
     let pattern = Pattern::new(&source, ignore_case).map_err(|e| CompileError {
         message: e.to_string(),
@@ -217,7 +221,10 @@ fn pattern_source(p: &PatternMatch, options: &CompileOptions) -> String {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::single_range_in_vec_init)]
+    #![allow(
+        clippy::single_range_in_vec_init,
+        reason = "tests compare against one-element range vectors"
+    )]
 
     use super::*;
     use serde_json::json;

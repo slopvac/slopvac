@@ -1,6 +1,10 @@
 //! Loading reports every problem with its file and line, and validates examples.
-
-#![allow(missing_docs, clippy::single_range_in_vec_init)]
+#![cfg(test)]
+#![allow(
+    missing_docs,
+    clippy::single_range_in_vec_init,
+    reason = "integration test crate; it compares against one-element range vectors"
+)]
 
 use std::path::PathBuf;
 

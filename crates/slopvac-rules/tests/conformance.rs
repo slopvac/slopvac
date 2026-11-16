@@ -5,8 +5,12 @@
 //! * the schema generated from the Rust types does the same;
 //! * `Deserialize` accepts every valid instance, and rejects each invalid one for the
 //!   reason the instance names.
-
-#![allow(missing_docs, clippy::single_range_in_vec_init)]
+#![cfg(test)]
+#![allow(
+    missing_docs,
+    clippy::single_range_in_vec_init,
+    reason = "integration test crate; it compares against one-element range vectors"
+)]
 
 mod common;
 

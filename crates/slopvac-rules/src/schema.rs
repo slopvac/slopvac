@@ -39,10 +39,14 @@ fn not_nullable(value: &mut Value) {
             map.values_mut().for_each(not_nullable);
         }
         Value::Array(items) => items.iter_mut().for_each(not_nullable),
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a derived schema always serializes to a schema object"
+)]
 fn generate<T: JsonSchema>() -> Schema {
     let schema = SchemaSettings::draft2020_12()
         .for_deserialize()

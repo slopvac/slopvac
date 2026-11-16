@@ -1,6 +1,10 @@
 //! Shared helpers for the integration tests.
 
-#![allow(dead_code, unreachable_pub)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    reason = "each test crate that includes this module uses a different subset"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,10 +70,10 @@ fn registry() -> jsonschema::Registry<'static> {
 /// A validator for a published schema, or for one of its `$defs` (`Rule`).
 pub fn published(file: &str, def: Option<&str>) -> jsonschema::Validator {
     let root = serde_json::json!({
-        "$ref": match def {
-            Some(d) => format!("{BASE}/{file}#/$defs/{d}"),
-            None => format!("{BASE}/{file}"),
-        }
+        "$ref": def.map_or_else(
+            || format!("{BASE}/{file}"),
+            |d| format!("{BASE}/{file}#/$defs/{d}"),
+        )
     });
     jsonschema::options()
         .with_registry(&registry())

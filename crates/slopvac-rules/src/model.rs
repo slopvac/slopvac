@@ -6,7 +6,10 @@
 //! [`crate::rule_file_schema`] and [`crate::category_schema`].
 
 // `PlaceholderSource` has one variant today and gains more when a second source appears.
-#![allow(clippy::zero_sized_map_values)]
+#![allow(
+    clippy::zero_sized_map_values,
+    reason = "PlaceholderSource gains variants when a second source appears"
+)]
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -58,12 +61,13 @@ fn is_ste_ref(s: &str) -> bool {
     if !digits(issue) {
         return false;
     }
-    match rest.strip_prefix("GR-") {
-        Some(n) => digits(n),
-        None => rest
-            .split_once('.')
-            .is_some_and(|(a, b)| digits(a) && digits(b)),
-    }
+    rest.strip_prefix("GR-").map_or_else(
+        || {
+            rest.split_once('.')
+                .is_some_and(|(a, b)| digits(a) && digits(b))
+        },
+        digits,
+    )
 }
 
 /// A PCRE2 pattern (10.43 or later). It holds no `\uXXXX` or `\UXXXXXXXX` escape: write the
@@ -281,12 +285,18 @@ fn default_true() -> bool {
     true
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if passes a reference"
+)]
 fn is_true(b: &bool) -> bool {
     *b
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if passes a reference"
+)]
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -335,7 +345,10 @@ pub struct PatternMatch {
     ext: Extensions,
 }
 
-#[allow(clippy::zero_sized_map_values)] // `PlaceholderSource` gains variants when a second source appears.
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "PlaceholderSource gains variants when a second source appears"
+)]
 fn non_empty_placeholders<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<BTreeMap<PlaceholderName, PlaceholderSource>>, D::Error> {

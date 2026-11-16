@@ -38,6 +38,10 @@ pub enum LoadErrorKind {
 }
 
 impl fmt::Display for LoadErrorKind {
+    #[expect(
+        clippy::use_debug,
+        reason = "Debug quotes and escapes the example text, which can hold control characters"
+    )]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read(e) => write!(f, "cannot read: {e}"),

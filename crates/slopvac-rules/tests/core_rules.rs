@@ -1,10 +1,10 @@
 //! The shipped core rules, converted from the 2.x files (`fixtures/core-v3`, written by
 //! `fixtures/generate.py`), load, compile and match like the Python reference.
-
+#![cfg(test)]
 #![allow(
     missing_docs,
     clippy::single_range_in_vec_init,
-    clippy::cast_possible_truncation
+    reason = "integration test crate; it compares against one-element range vectors"
 )]
 
 mod common;
@@ -163,8 +163,8 @@ fn spans_at(
                 .iter()
                 .map(|p| {
                     (
-                        at[p[0].as_u64().unwrap() as usize],
-                        at[p[1].as_u64().unwrap() as usize],
+                        at[usize::try_from(p[0].as_u64().unwrap()).unwrap()],
+                        at[usize::try_from(p[1].as_u64().unwrap()).unwrap()],
                     )
                 })
                 .collect()

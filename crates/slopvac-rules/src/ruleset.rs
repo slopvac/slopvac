@@ -329,6 +329,10 @@ fn load_rules(
                 continue;
             }
         }
+        #[expect(
+            clippy::expect_used,
+            reason = "pack, category and rule ids are validated slugs by this point"
+        )]
         let id = RuleId::new(format!("{pack}:{category}.{local}"))
             .expect("pack, category and rule ids are valid slugs");
         loaded.push(LoadedRule {
