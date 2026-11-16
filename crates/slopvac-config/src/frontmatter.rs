@@ -45,19 +45,83 @@ fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
 }
 
 /// Find the front-matter block at the start of `doc`.
+///
+/// A fence line closes or opens a block when it equals the fence once all trailing Unicode
+/// whitespace is trimmed, as in 2.x. `frontmatter_spans::detect` trims only spaces and tabs and
+/// no contract text says which is right, so the old rule stays here. A JSON object goes to the
+/// crate unchanged.
 #[must_use]
 pub fn extract(doc: &str) -> Option<Block> {
-    frontmatter_spans::detect(doc)
+    let start = if doc.starts_with('\u{feff}') {
+        '\u{feff}'.len_utf8()
+    } else {
+        0
+    };
+    let rest = &doc[start..];
+    let (format, fence) = if rest.starts_with('{') {
+        return frontmatter_spans::detect(doc);
+    } else if rest.starts_with("---") {
+        (Format::Yaml, "---")
+    } else if rest.starts_with("+++") {
+        (Format::Toml, "+++")
+    } else {
+        return None;
+    };
+    let mut lines = lines_with_offsets(rest);
+    let (_, first) = lines.next()?;
+    if first.trim_end() != fence {
+        return None;
+    }
+    let content_start = start + first.len();
+    for (offset, line) in lines {
+        let t = line.trim_end();
+        if t == fence || (format == Format::Yaml && t == "...") {
+            let line_start = start + offset;
+            let terminator = line.len() - line.trim_end_matches(['\r', '\n']).len();
+            return Some(Block {
+                format,
+                outer: start..line_start + line.len() - terminator,
+                content: content_start..line_start,
+                body_start: line_start + line.len(),
+            });
+        }
+    }
+    None
 }
 
 /// Parse a block found in `doc`. Every span in the tree indexes `doc`, not the block.
+///
+/// A repeated key in a table is an error in every format. YAML and TOML refuse it in their
+/// parsers; JSON keeps every member, so the check runs here, with the message YAML gives.
 pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseError> {
-    FrontMatter::parse_block_with(doc, block.clone(), &Limits::default())
+    let node = FrontMatter::parse_block_with(doc, block.clone(), &Limits::default())
         .map(|fm| convert(&fm.root))
         .map_err(|e| crate::tree::ParseError {
             message: e.message,
             span: e.span.map(|s| s.range),
-        })
+        })?;
+    match first_duplicate(&node) {
+        Some(entry) => Err(crate::tree::ParseError {
+            message: format!("duplicate key `{}`", entry.key),
+            span: Some(entry.key_span.clone()),
+        }),
+        None => Ok(node),
+    }
+}
+
+/// The first entry, in document order, whose key an earlier entry of the same table has.
+fn first_duplicate(node: &Node) -> Option<&Entry> {
+    match &node.value {
+        Value::Table(entries) => entries.iter().enumerate().find_map(|(i, e)| {
+            if entries[..i].iter().any(|earlier| earlier.key == e.key) {
+                Some(e)
+            } else {
+                first_duplicate(&e.node)
+            }
+        }),
+        Value::Array(items) => items.iter().find_map(first_duplicate),
+        _ => None,
+    }
 }
 
 /// The crate's tree as this crate's tree, so validation and flattening do not depend on it.
