@@ -706,19 +706,50 @@ def test_every_update_task_passes_when_the_change_is_made_everywhere(update_task
         assert not models.score_author(task, task["source"], NO_FINDINGS)["success"]
 
 
+@pytest.mark.parametrize(
+    ("passage", "old", "eligible"),
+    [
+        # The 40 is part of a code span: it cannot be changed as a bare number.
+        ("Set `retries=40` before you start.", "40", False),
+        ("Run `limit 40` to cap the list.", "40", False),
+        # Even a lone bare 40 elsewhere does not rescue a span that also holds one.
+        ("Set `retries=40` to 40 here.", "40", False),
+        # The number is glued into an identifier token.
+        ("See issue_1234 for the background.", "1234", False),
+        ("Call Foo.bar1234 to reset it.", "1234", False),
+        # A bare number in running prose can be changed on its own.
+        ("The cache holds 40 items.", "40", True),
+        # Code elsewhere in the passage does not matter.
+        ("Set `retries` to 40 seconds.", "40", True),
+        # An issue reference in running prose is a bare number.
+        ("Fixed in #1234 last week.", "1234", True),
+        (
+            "See [Requests #1234](https://github.com/psf/requests/issues/1234).",
+            "1234",
+            True,
+        ),
+        # An issue reference inside a code span is code, alone or inside a link.
+        ("Fixed in `#1234` last week.", "1234", False),
+        ("See [`#1234`](https://github.com/psf/requests/issues/1234).", "1234", False),
+        # The old value must appear at all.
+        ("The cache holds 41 items.", "40", False),
+    ],
+)
 def test_update_tasks_only_change_numbers_that_stand_alone_in_the_passage(
-    update_tasks,
+    passage, old, eligible
 ):
-    for task in update_tasks:
-        old = task["expected"][0]["old"]
-        found = facts.extract(task["source"])
-        assert found["number"][old] >= 1, task["source"]
-        embedded = re.compile(rf"(?<!\d){re.escape(old)}(?!\d)")
-        assert not any(
-            embedded.search(fact)
-            for kind in ("code", "identifier")
-            for fact in found[kind]
-        ), task["source"]
+    assert models._stands_alone(passage, old) is eligible
+
+
+def test_a_bare_issue_reference_in_prose_is_scored_as_a_number_update():
+    task = {
+        "type": "update",
+        "source": "Fixed in #1234 last week.",
+        "expected": [{"kind": "number", "old": "1234", "new": "1301"}],
+    }
+    done = models.score_author(task, "Fixed in #1301 last week.", NO_FINDINGS)
+    undone = models.score_author(task, "Fixed in #1234 last week.", NO_FINDINGS)
+    assert (done["success"], undone["success"]) == (True, False)
 
 
 def test_the_pydantic_update_with_a_repeated_number_is_well_posed(update_tasks):
@@ -753,3 +784,51 @@ def test_authored_reviews_of_identical_candidates_get_distinct_journal_jobs(tmp_
     # another author's journal entry.
     assert len(asked) == 18
     assert len([r for r in out["runs"] if r.get("variant") == "authored"]) == 18
+
+
+def test_identical_review_prompts_from_two_source_tasks_stay_independent(tmp_path):
+    first = next(t for t in tiny_tasks() if t["id"] == "a2")
+    second = {**first, "id": "a3"}  # same passage and prompt, another source task
+    tasks = [first, second]
+    asked = []
+    lock = threading.Lock()
+
+    def ask_for(model):
+        def ask(prompt):
+            if prompt.startswith("Rewrite the passage"):
+                return "Cache items."
+            with lock:
+                asked.append(prompt)
+                # A different answer on every call, so a reused entry shows.
+                problem = f"40 lost, call {len(asked)}"
+            return json.dumps([{"quote": "z", "problem": problem}])
+
+        return ask
+
+    def run(journal):
+        return models.execute(
+            tasks,
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=ask_for,
+            journal=journal,
+        )
+
+    def reviews(out):
+        return {
+            (r["task"], r["model"], r["repeat"]): r["output_sha256"]
+            for r in out["runs"]
+            if r.get("variant") == "authored"
+        }
+
+    path = tmp_path / "j.jsonl"
+    before = run(models.Journal(path))
+    # 2 source tasks x 3 authors x 2 other reviewers x 3 repeats.
+    assert len(asked) == 36
+    assert len(set(reviews(before).values())) == 36
+
+    asked.clear()
+    after = run(models.Journal(path))
+    assert asked == []  # the resume asked nothing
+    assert reviews(after) == reviews(before)  # each entry went back to its own job
