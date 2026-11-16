@@ -37,6 +37,7 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import mdlinks
 import plugin_pages
 import starlight
 import yaml
@@ -309,21 +310,18 @@ def build(
     return pages
 
 
-_LINK = re.compile(r"\]\(([^)#:]+\.(?:md|json))(?:#[^)]*)?\)")
-
-
 def broken_links(pages: Pages) -> list[str]:
     """Relative links that point at no generated file."""
     problems = []
     for path, text in pages.items():
         if not path.endswith(".md"):
             continue
-        for target in _LINK.findall(text):
+        for link in mdlinks.find_links(text):
             resolved = posixpath.normpath(
-                posixpath.join(posixpath.dirname(path), target)
+                posixpath.join(posixpath.dirname(path), link.target)
             )
             if resolved not in pages:
-                problems.append(f"{path}: broken link {target}")
+                problems.append(f"{path}: broken link {link.target}")
     return problems
 
 

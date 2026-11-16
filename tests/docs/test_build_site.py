@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from markdown_it import MarkdownIt
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "docs"))
@@ -613,10 +614,10 @@ slopvac_api = 1
 kind = "plugin"
 description = "Use <script>alert(1)</script> or [click](javascript:alert(1)) | now"
 license = "MIT`<img src=x onerror=alert(1)>"
-homepage = "https://example.test/`x`"
+homepage = "https://example.test/docs"
 
 [provides]
-styles = ["a`<script>alert(2)</script>`b.toml", "line\\nbreak|pipe.toml"]
+styles = ["a`<script>alert(2)</script>`b.toml", "line\\nbreak|pipe.toml", "`lead`"]
 
 [plugin]
 command = "py`<b>x</b>`"
@@ -651,7 +652,7 @@ def test_no_hostile_manifest_value_leaves_raw_html_outside_code_spans(
 def test_values_with_backticks_get_a_longer_fence(sources: dict[str, Path]) -> None:
     page = _hostile(sources)
     assert "| License | ``MIT`<img src=x onerror=alert(1)>`` |" in page
-    assert "| Homepage | `` https://example.test/`x` `` |" in page
+    assert "| Homepage | `https://example.test/docs` |" in page
     assert "Command: ``py`<b>x</b>` -c `tick` pad``" in page
 
 
@@ -660,7 +661,7 @@ def test_newlines_in_paths_become_spaces_and_list_pipes_stay_literal(
 ) -> None:
     page = _hostile(sources)
     assert (
-        "- styles: ``a`<script>alert(2)</script>`b.toml``, `line break|pipe.toml`"
+        "- styles: ``a`<script>alert(2)</script>`b.toml``, `line break|pipe.toml`, `` `lead` ``"
         in page
     )
 
@@ -752,3 +753,88 @@ def test_a_malformed_error_table_row_stops_the_build(
     _with_contract(sources, row)
     with pytest.raises(SystemExit, match="malformed"):
         _run(sources)
+
+
+# --- URLs and link structure -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "homepage",
+    [
+        "ftp://example.test/",
+        "javascript:alert(1)",
+        "../manifest.md",
+        "https://",
+        "https:///no-host",
+        "https://example.test/a b",
+        "https://example.test/a\\tb",
+        "https://example.test/`x`",
+        "https://example.test/../a.md",
+        "https://example.test/a..b",
+    ],
+)
+def test_a_homepage_that_is_not_a_plain_http_url_stops_the_build(
+    sources: dict[str, Path], homepage: str
+) -> None:
+    folder = sources["packs"] / "hostile"
+    folder.mkdir()
+    body = HOSTILE_PACK.replace("https://example.test/docs", homepage)
+    (folder / "slopvac-pack.toml").write_text(body)
+    with pytest.raises(SystemExit, match="homepage"):
+        _run(sources)
+
+
+@pytest.mark.parametrize("homepage", ["https://example.test/docs", "http://a.test"])
+def test_a_plain_http_or_https_homepage_is_kept(
+    sources: dict[str, Path], homepage: str
+) -> None:
+    body = HOSTILE_PACK.replace("https://example.test/docs", homepage)
+    assert f"| Homepage | `{homepage}` |" in _hostile(sources, body)
+
+
+def _site(sources: dict[str, Path]) -> Path:
+    return sources["out"].parent / "site"
+
+
+def _starlight_page(sources: dict[str, Path], route: str) -> str:
+    return (_site(sources) / "src/content/docs/v3" / route).read_text()
+
+
+def test_hostile_values_stay_inside_their_code_spans_in_the_site_pages(
+    sources: dict[str, Path],
+) -> None:
+    # A license that opens a link, and a description that closes one.
+    body = HOSTILE_PACK.replace("MIT`<img src=x onerror=alert(1)>", "](../")
+    folder = sources["packs"] / "hostile"
+    folder.mkdir()
+    (folder / "slopvac-pack.toml").write_text(body)
+    assert _run(sources, "--starlight", str(_site(sources))) == 0
+    page = _starlight_page(sources, "plugins/packs/hostile/index.md")
+    assert "| License | `](../` |\n| Homepage | `https://example.test/docs` |" in page
+    parser = MarkdownIt("commonmark", {"html": True}).enable("table")
+    tokens = [t for block in parser.parse(page) for t in (block.children or [block])]
+    html = [t for t in tokens if t.type.startswith("html")]
+    assert not [t for t in html if "<script" in t.content]
+    assert any(t.type == "code_inline" and "<script>" in t.content for t in tokens)
+
+
+def test_link_like_text_in_a_code_span_is_not_checked_or_rewritten(
+    sources: dict[str, Path],
+) -> None:
+    body = DATA_PACK.replace("styles/*.toml", "a](nothing.md)")
+    (sources["packs"] / "style-pack" / "slopvac-pack.toml").write_text(body)
+    assert _run(sources, "--starlight", str(_site(sources))) == 0
+    page = _starlight_page(sources, "plugins/packs/style-pack/index.md")
+    assert "- styles: `a](nothing.md)`" in page
+
+
+def test_link_like_text_in_a_rule_example_survives_the_site_rewrite(
+    sources: dict[str, Path],
+) -> None:
+    extra = RULES_YAML.replace("no-foo", "no-link").replace(
+        "Use foo here.", "See [the page](protocol.md) here."
+    )
+    (sources["rules"] / "link.yml").write_text(extra.replace("id: demo", "id: more"))
+    assert _run(sources, "--starlight", str(_site(sources))) == 0
+    page = _starlight_page(sources, "rules/more/no-link.md")
+    assert "```text\nSee [the page](protocol.md) here.\n```" in page

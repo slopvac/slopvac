@@ -18,6 +18,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from mdtext import cell, code, text, untrusted, untrusted_cell
 
@@ -511,6 +512,26 @@ def _validate(schemas: SchemaSet, path: Path, manifest: dict) -> None:
             for e in errors
         )
         raise SystemExit(f"{path}: manifest does not match {MANIFEST_SCHEMA}: {detail}")
+    _check_homepage(path, manifest.get("homepage"))
+
+
+def _check_homepage(path: Path, homepage: object) -> None:
+    """The schema marks homepage as a URI but does not check it. A page shows
+    it as text, so it must be a plain http(s) URL with nothing odd in it."""
+    if homepage is None:
+        return
+    parts = urlsplit(str(homepage))
+    plain = (
+        parts.scheme in ("http", "https")
+        and parts.netloc
+        and not re.search(r"[\s\x00-\x1f\x7f`]", str(homepage))
+        and ".." not in str(homepage)
+    )
+    if not plain:
+        raise SystemExit(
+            f"{path}: homepage must be an http or https URL without whitespace, "
+            f"backticks or '..': {str(homepage)!r}"
+        )
 
 
 def free(value: object) -> str | None:
