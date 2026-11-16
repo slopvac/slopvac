@@ -1,7 +1,8 @@
-//! Word blocklists in the 2.x `[[entries]]` format.
+//! Word blocklists in the `[[entries]]` word, part of speech and reason format.
 //!
 //! A blocklist is opt-in and every entry needs a reason. Loading fails on a
-//! missing `entries` array, an unknown part of speech, a missing reason or a
+//! missing or wrong `schema_version` (a 2.x blocklist has none), a missing
+//! `entries` array, an unknown key that does not start with `x-`, an unknown part of speech, a missing reason or a
 //! duplicate word and part of speech pair, so a typo cannot turn into a clean
 //! report. TOML, JSON and YAML (`.yml`, `.yaml`) load.
 
@@ -74,6 +75,7 @@ pub struct Blocklist {
 
 #[derive(Deserialize)]
 struct Raw {
+    schema_version: Option<u32>,
     entries: Option<Vec<RawEntry>>,
     #[serde(flatten)]
     #[allow(clippy::zero_sized_map_values)] // only the key names are reported
@@ -81,12 +83,28 @@ struct Raw {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RawEntry {
     word: Option<String>,
     pos: Option<String>,
     reason: Option<String>,
     replacement: Option<String>,
+    #[serde(flatten)]
+    #[allow(clippy::zero_sized_map_values)] // only the key names are checked
+    other: BTreeMap<String, serde::de::IgnoredAny>,
+}
+
+/// Require `schema_version = 3`. A 2.x blocklist has none.
+fn check_version(path: &str, declared: Option<u32>) -> Result<(), TermsError> {
+    match declared {
+        Some(3) => Ok(()),
+        Some(found) => Err(TermsError::SchemaVersion {
+            path: path.to_owned(),
+            found,
+        }),
+        None => Err(TermsError::MissingSchemaVersion {
+            path: path.to_owned(),
+        }),
+    }
 }
 
 impl Blocklist {
@@ -159,6 +177,7 @@ impl Blocklist {
                 )));
             }
         };
+        check_version(path, raw.schema_version)?;
         let Some(records) = raw.entries else {
             let named = raw
                 .other
@@ -174,6 +193,13 @@ impl Blocklist {
                 "no `entries` array; it defines {named}. Each word is an `[[entries]]` table"
             )));
         };
+        let unknown = |key: String| TermsError::UnknownKey {
+            path: path.to_owned(),
+            key,
+        };
+        if let Some(key) = raw.other.keys().find(|k| !k.starts_with("x-")) {
+            return Err(unknown(key.clone()));
+        }
         let entry_err = |message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
@@ -182,6 +208,9 @@ impl Blocklist {
         let mut at: BTreeMap<(String, Pos), usize> = BTreeMap::new();
         for (index, record) in records.into_iter().enumerate() {
             let number = index + 1;
+            if let Some(key) = record.other.keys().find(|k| !k.starts_with("x-")) {
+                return Err(unknown(format!("entries[{number}].{key}")));
+            }
             let word = record.word.unwrap_or_default().trim().to_lowercase();
             if word.is_empty() {
                 return Err(entry_err(format!("entry {number} has no `word`")));
