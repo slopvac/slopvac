@@ -59,6 +59,11 @@
 //!
 //! The functions are total and never panic. They do not truncate. The caller
 //! bounds the length.
+#![warn(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::string_slice
+)]
 
 use std::fmt::Write as _;
 

@@ -24,7 +24,7 @@ base64 = "0.23"
 cap-fs-ext = "4"
 cap-std = "4"
 caseless = "0.2"
-clap = { version = "4.6", features = ["derive"] }
+clap = "4.6"
 crossbeam-channel = "0.5"
 flate2 = "1.1"
 frontmatter-spans = { path = "crates/frontmatter-spans" }
@@ -110,10 +110,50 @@ missing_crate_level_docs = "deny"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-# Pedantic lints that mostly add noise for a text-processing codebase.
-module_name_repetitions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
+# Allowed pedantic lints (each with its reason).
+module_name_repetitions = "allow" # reason: crate-prefixed type names read better at call sites in a text-processing codebase
+missing_errors_doc = "allow"      # reason: error enums are documented on the type, not on every fallible fn
+missing_panics_doc = "allow"      # reason: panics are banned by lint instead; docs would duplicate that
+# Restriction and nursery lints that guard against panics and silent failure.
+unwrap_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exit = "warn"
+mem_forget = "warn"
+get_unwrap = "warn"
+unwrap_in_result = "warn"
+clone_on_ref_ptr = "warn"
+redundant_type_annotations = "warn"
+redundant_clone = "warn"
+use_debug = "warn"
+string_add = "warn"
+needless_pass_by_ref_mut = "warn"
+expect_used = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+let_underscore_must_use = "warn"
+map_err_ignore = "warn"
+str_to_string = "warn"
+wildcard_enum_match_arm = "warn"
+as_conversions = "warn"
+significant_drop_tightening = "warn"
+option_if_let_else = "warn"
+# Span and parser crates opt in with `#![warn(...)]` in lib.rs; the rest of the workspace
+# does not index, slice or do offset arithmetic on untrusted text.
+indexing_slicing = "allow"          # reason: span crates opt in
+string_slice = "allow"              # reason: span crates opt in
+arithmetic_side_effects = "allow"   # reason: span crates opt in
+# Skipped restriction lints.
+missing_docs_in_private_items = "allow" # reason: rustc `missing_docs` covers the public API; private docs are noise
+missing_assert_message = "allow"        # reason: assertions in tests name the behaviour through the test name
+undocumented_unsafe_blocks = "allow"    # reason: `unsafe_code` is forbidden here; slopvac-pcre2 denies this lint itself
+impl_trait_in_params = "allow"          # reason: `impl Trait` arguments are idiomatic and read better than generics
+renamed_function_params = "allow"       # reason: trait impls rename parameters to fit the implementing type
 
 [profile.release]
 lto = "thin"

@@ -1,6 +1,11 @@
 //! Text analysis shared by the engine: word counting, sentence splitting and the
 //! procedural/descriptive classifier. A port of the Python reference
 //! (`packages/slopvac-lint/src/slopvac/analyze.py`); offsets are UTF-8 bytes.
+#![warn(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::string_slice
+)]
 
 mod classify;
 mod lexicon;

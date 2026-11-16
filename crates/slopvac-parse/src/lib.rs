@@ -8,6 +8,11 @@
 //! Front matter detection is a separate concern. The caller passes the body span and the
 //! parser reads only that range, but every position it returns is relative to the whole
 //! source.
+#![warn(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::string_slice
+)]
 
 mod align;
 mod code;
