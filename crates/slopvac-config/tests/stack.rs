@@ -875,6 +875,66 @@ fn level_precedence_follows_the_profile_contract() {
     }
 }
 
+/// A rule or category may be written qualified (`core:r`) or bare (`r`). The layer that wrote
+/// the entry decides, not the spelling of its key.
+#[test]
+fn level_by_any_key_follows_layers_not_spelling() {
+    use slopvac_config::LevelFrom::{Category, Rule};
+    type Want = Option<(&'static str, slopvac_config::LevelFrom)>;
+    let cases: Vec<(&str, &str, &str, Want)> = vec![
+        (
+            "a project bare rule key beats an extended qualified one",
+            "[rules]\n\"core:r\" = \"error\"\n",
+            "[rules]\nr = \"suggestion\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "a project qualified rule key beats an extended bare one",
+            "[rules]\nr = \"error\"\n",
+            "[rules]\n\"core:r\" = \"suggestion\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "a qualified category key is read",
+            "",
+            "[categories]\n\"core:cat\" = \"warning\"\n",
+            Some(("warning", Category)),
+        ),
+        (
+            "a project bare category key beats an extended qualified one",
+            "[categories]\n\"core:cat\" = \"error\"\n",
+            "[categories]\ncat = \"suggestion\"\n",
+            Some(("suggestion", Category)),
+        ),
+        (
+            "a project category beats an extended rule entry",
+            "[rules]\nr = \"error\"\n",
+            "[categories]\n\"core:cat\" = \"suggestion\"\n",
+            Some(("suggestion", Category)),
+        ),
+        (
+            "a rule entry at off holds against a category entry in the same file",
+            "",
+            "[rules]\nr = \"off\"\n[categories]\n\"core:cat\" = \"error\"\n",
+            Some(("off", Rule)),
+        ),
+    ];
+    for (name, base, project, want) in cases {
+        let fx = Fixture::new();
+        fx.write("base.toml", &format!("schema_version = 3\n\n{base}"));
+        fx.write(
+            "slopvac.toml",
+            &format!("schema_version = 3\nextends = [\"base.toml\"]\n\n{project}"),
+        );
+        let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
+        let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+        let got = r
+            .level_by_any(&["core:r", "r"], &["core:cat", "cat"])
+            .map(|l| (l.level, l.from));
+        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+    }
+}
+
 #[test]
 fn a_read_failure_renders_with_its_code() {
     let err = load(Path::new("missing/slopvac.toml"), &NoPresets).unwrap_err();
