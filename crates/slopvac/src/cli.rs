@@ -4,6 +4,7 @@
 //! for their commands and get wired in here. Until then a command is a
 //! placeholder that accepts any arguments (see [`PLACEHOLDERS`]).
 
+use crate::onboard;
 use clap::{Arg, ArgAction, Command, value_parser};
 
 /// Output formats accepted by `lint --format`.
@@ -67,7 +68,7 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
+pub const PLACEHOLDERS: [(&str, &str, &str); 8] = [
     (
         "terms",
         "Check and list the project terms.",
@@ -100,21 +101,17 @@ pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
         "slopvac-8l4.11",
     ),
     (
-        "onboard",
-        "Print the agent onboarding text.",
-        "slopvac-8l4.12.10",
-    ),
-    (
-        "reference",
-        "Generate or check the rules reference.",
-        "slopvac-8l4.12.10",
-    ),
-    (
         "report",
         "Preview or submit an issue report.",
         "slopvac-8l4.12.6",
     ),
 ];
+
+/// 2.x `reference`: the generated docs site replaced it. The command stays hidden so that
+/// using it gets the pointer in [`crate::onboard::REFERENCE_REMOVED`].
+fn removed_reference() -> Command {
+    placeholder("reference", "Removed in 3.0.").hide(true)
+}
 
 fn placeholder(name: &'static str, about: &'static str) -> Command {
     Command::new(name).about(about).arg(
@@ -419,6 +416,8 @@ pub fn command() -> Command {
         .subcommand(slopvac_migrate::command())
         .subcommand(completions())
         .subcommand(man())
+        .subcommand(onboard::command())
+        .subcommand(removed_reference())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
     for (name, about, _owner) in PLACEHOLDERS {
         cmd = cmd.subcommand(placeholder(name, about));

@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, onboard, output, redact, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +230,8 @@ fn dispatch(
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::explain(m, out)
         }
+        Some(("onboard", _)) => write_stdout(out, onboard::TEXT.as_bytes()),
+        Some(("reference", _)) => Err(CliError::new("command-removed", onboard::REFERENCE_REMOVED)),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
