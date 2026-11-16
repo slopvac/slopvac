@@ -28,7 +28,7 @@ fn sentence_tags(
         for s in doc.sentences(&b) {
             if let Some(evidence) = test(s.text)? {
                 out.push(Tag {
-                    kind: kind.to_string(),
+                    kind: kind.to_owned(),
                     span: s.span,
                     confidence,
                     evidence,
@@ -72,7 +72,7 @@ impl Tagger for RequirementTagger {
                 return Ok(Some(format!("requirement: normative marker `{word}`")));
             }
             if self.negated_imperative.is_match(&cleaned)? {
-                return Ok(Some("requirement: negated imperative".to_string()));
+                return Ok(Some("requirement: negated imperative".to_owned()));
             }
             Ok(self
                 .negated_literal

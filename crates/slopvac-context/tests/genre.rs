@@ -1,11 +1,14 @@
 //! Genre registry behaviour through the public API.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
     Budget, Error, GenreAssignment, GenreRegistry, GenreSource, NoBudget, PlainDocument, Profile,
     ResolveOptions, RuleLevel, builtin_genres, parse_genres,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn resolve(path: &str, src: &str) -> slopvac_context::GenreResult {
     builtin_genres()
         .unwrap()
@@ -168,6 +171,10 @@ const CHAIN: &str = "
   categories: { prose-scope: { max_per_100_words: none } }
 ";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn chain() -> GenreRegistry {
     GenreRegistry::new(parse_genres(CHAIN).unwrap(), "child")
         .unwrap()
@@ -306,7 +313,7 @@ fn a_genre_without_detect_is_never_detected() {
     let doc = PlainDocument::from_markdown("secret.md", "# T\n\nBody.\n");
     let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
     assert_eq!((r.id.as_str(), r.source), ("child", GenreSource::Default));
-    assert!(r.scores.is_empty());
+    assert_eq!(r.scores, []);
 }
 
 #[test]

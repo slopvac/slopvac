@@ -20,7 +20,7 @@ fn there_is_an_index_and_one_page_per_builtin_genre() {
         .iter()
         .map(|id| format!("genres/{id}.md"))
         .collect();
-    want.push("genres/index.md".to_string());
+    want.push("genres/index.md".to_owned());
     want.sort();
     assert_eq!(pages().keys().cloned().collect::<Vec<_>>(), want);
 }

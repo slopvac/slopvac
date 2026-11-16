@@ -38,13 +38,15 @@ fn signal(s: &Signal) -> String {
         SignalKind::Text => format!("Text matches `{pattern}` (weight {weight})"),
         SignalKind::FrontMatter => {
             let key = s.key.as_deref().unwrap_or_default();
-            match &s.equals {
-                Some(v) => format!(
-                    "Front matter `{key}` equals `{}` (weight {weight})",
-                    scalar(v)
-                ),
-                None => format!("Front matter `{key}` is present (weight {weight})"),
-            }
+            s.equals.as_ref().map_or_else(
+                || format!("Front matter `{key}` is present (weight {weight})"),
+                |v| {
+                    format!(
+                        "Front matter `{key}` equals `{}` (weight {weight})",
+                        scalar(v)
+                    )
+                },
+            )
         }
     }
 }
@@ -59,7 +61,7 @@ fn category(name: &str, t: &CategoryTable) -> String {
     }
     match t.max_per_100_words {
         Some(Budget::Limit(n)) => dials.push(format!("budget {n} findings per 100 words")),
-        Some(Budget::None(_)) => dials.push("no budget".to_string()),
+        Some(Budget::None(_)) => dials.push("no budget".to_owned()),
         None => {}
     }
     if let Some(w) = t.weight {
@@ -68,6 +70,10 @@ fn category(name: &str, t: &CategoryTable) -> String {
     format!("- `{name}`: {}", dials.join(", "))
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn index(reg: &GenreRegistry) -> String {
     let mut out = String::from(
         "# Genres\n\n\
@@ -76,8 +82,12 @@ fn index(reg: &GenreRegistry) -> String {
          styles. It can also set category settings, rule levels and context tags. A genre can \
          extend other genres and inherit their settings.\n\n",
     );
-    for id in reg.ids() {
-        let spec = reg.spec(id).expect("ids come from the registry");
+    // Ids come from the registry, so every one has a spec.
+    for (id, spec) in reg
+        .ids()
+        .into_iter()
+        .filter_map(|id| Some((id, reg.spec(id)?)))
+    {
         let _ = write!(out, "- [`{id}`]({id}.md)");
         if let Some(d) = &spec.description {
             let _ = write!(out, ": {d}");
@@ -87,6 +97,10 @@ fn index(reg: &GenreRegistry) -> String {
     out
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn list_or(out: &mut String, items: &[String], none: &str) {
     if items.is_empty() {
         let _ = writeln!(out, "{none}");
@@ -96,9 +110,14 @@ fn list_or(out: &mut String, items: &[String], none: &str) {
     }
 }
 
-fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
+/// The page of one genre, or `None` when the registry cannot resolve it. A registry
+/// validates every chain when it is built, so that does not happen.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn page(reg: &GenreRegistry, spec: &GenreSpec) -> Option<String> {
     let id = &spec.id;
-    let valid = "a registry validates every chain";
     let title = spec.title.as_deref().unwrap_or(id);
     let mut out = format!("# {title}\n\n");
     if let Some(d) = &spec.description {
@@ -116,13 +135,13 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
         let _ = writeln!(out, "- Extends: {}", direct.join(", "));
         let chain: Vec<String> = reg
             .chain(id)
-            .expect(valid)
+            .ok()?
             .iter()
             .map(|s| format!("`{}`", s.id))
             .collect();
         let _ = writeln!(out, "- Resolved chain, lowest first: {}", chain.join(" → "));
     }
-    match reg.profile(id).expect(valid) {
+    match reg.profile(id).ok()? {
         Some(p) => {
             let _ = writeln!(out, "- Profile: `{}`", p.as_str());
         }
@@ -144,7 +163,7 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Category settings\n\n");
     let categories: Vec<String> = reg
         .categories(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|(name, t)| category(name, t))
         .collect();
@@ -156,7 +175,7 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Rule levels\n\n");
     let rules: Vec<String> = reg
         .rules(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|(rule, l)| format!("- `{rule}`: `{}`", level(*l)))
         .collect();
@@ -164,22 +183,28 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Context tags\n\n");
     let contexts: Vec<String> = reg
         .contexts(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|c| format!("- `{c}`"))
         .collect();
     list_or(&mut out, &contexts, "This genre sets no context tags.");
-    out
+    Some(out)
 }
 
 /// `genres/index.md` and one `genres/<id>.md` per built-in genre.
 #[must_use]
 pub fn reference_pages() -> Vec<(String, String)> {
-    let reg = builtin_genres().expect("the built-in genres are valid");
-    let mut pages = vec![("genres/index.md".to_string(), index(&reg))];
+    // The tests validate the built-in genres, so the empty fallback does not occur.
+    let Ok(reg) = builtin_genres() else {
+        return Vec::new();
+    };
+    let mut pages = vec![("genres/index.md".to_owned(), index(&reg))];
     for id in reg.ids() {
-        let spec = reg.spec(id).expect("ids come from the registry");
-        pages.push((format!("genres/{id}.md"), page(&reg, spec)));
+        if let Some(spec) = reg.spec(id)
+            && let Some(text) = page(&reg, spec)
+        {
+            pages.push((format!("genres/{id}.md"), text));
+        }
     }
     pages
 }
@@ -200,7 +225,7 @@ mod tests {
         )
         .unwrap();
         let reg = GenreRegistry::new(specs, "base").unwrap();
-        let page = page(&reg, reg.spec("base").unwrap());
+        let page = page(&reg, reg.spec("base").unwrap()).unwrap();
         assert!(page.starts_with("# Base genre\n"));
         assert!(page.contains("Typical documents: READMEs\n"));
         assert!(page.contains("## Styles\n\n- `ste`\n- `google`\n"));

@@ -1,15 +1,22 @@
 //! Registry, declarative tagger and gate behaviour through the public API.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
     BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, StructuralSpec, TagIndex,
     TagRegistry, Tagger,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn tagger(yaml: &str) -> Box<dyn Tagger> {
     Box::new(StructuralSpec::from_yaml(yaml).unwrap().compile().unwrap())
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn run(yaml: &str, path: &str, src: &str) -> TagIndex {
     let mut reg = TagRegistry::new();
     reg.register(tagger(yaml)).unwrap();
@@ -44,7 +51,10 @@ fn section_scope_stops_at_the_next_peer_and_keeps_subsections() {
     let at = |s: &str| src.find(s).unwrap();
     assert_eq!(idx.kinds_at(&(at("A text.")..at("A text.") + 7)), vec!["k"]);
     assert_eq!(idx.kinds_at(&(at("D text.")..at("D text.") + 7)), vec!["k"]);
-    assert!(idx.kinds_at(&(at("B text.")..at("B text.") + 7)).is_empty());
+    assert_eq!(
+        idx.kinds_at(&(at("B text.")..at("B text.") + 7)),
+        Vec::<&str>::new()
+    );
     assert_eq!(idx.kinds_at(&(at("C text.")..at("C text.") + 7)), vec!["k"]);
     let first_end = at("## Other") - 2;
     assert!(idx.tags().iter().any(|t| t.span.end == first_end));
@@ -62,7 +72,7 @@ fn identically_named_sibling_headings_are_tagged_independently() {
     let second = src.find("Nothing else here.").unwrap();
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.kinds_at(&(first..first + 17)), vec!["k"]);
-    assert!(idx.kinds_at(&(second..second + 18)).is_empty());
+    assert_eq!(idx.kinds_at(&(second..second + 18)), Vec::<&str>::new());
     let second_heading = src.rfind("## Notes").unwrap();
     assert!(idx.tags()[0].span.end <= second_heading);
 }
@@ -86,7 +96,7 @@ fn document_scope_covers_the_whole_source_from_a_path_condition() {
     let hit = run(y, "docs/CHANGELOG.md", DOC);
     let miss = run(y, "docs/guide.md", DOC);
     assert_eq!(hit.tags()[0].span, 0..DOC.len());
-    assert!(miss.tags().is_empty());
+    assert_eq!(miss.tags(), []);
 }
 
 #[test]
@@ -107,10 +117,9 @@ fn frontmatter_condition_checks_the_value() {
     let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  frontmatter:\n    key: type\n    matches: release\n";
     let src = "---\ntype: release-notes\n---\n# T\n\nBody.\n";
     assert_eq!(run(y, "a.md", src).tags().len(), 1);
-    assert!(
-        run(y, "a.md", &src.replace("release-notes", "guide"))
-            .tags()
-            .is_empty()
+    assert_eq!(
+        run(y, "a.md", &src.replace("release-notes", "guide")).tags(),
+        []
     );
 }
 
@@ -170,7 +179,7 @@ fn kinds_at_needs_the_tag_to_contain_the_span() {
     let inside = DOC.find("gone").unwrap();
     assert_eq!(idx.kinds_at(&(inside..inside + 4)), vec!["change-note"]);
     let outside = DOC.find("Run it").unwrap();
-    assert!(idx.kinds_at(&(outside..outside + 3)).is_empty());
+    assert_eq!(idx.kinds_at(&(outside..outside + 3)), Vec::<&str>::new());
     assert_eq!(idx.kinds_seen(), vec!["change-note"]);
 }
 
@@ -261,7 +270,6 @@ fn piece(kind: &str, span: std::ops::Range<usize>, group: usize) -> (slopvac_con
 }
 
 #[test]
-#[allow(clippy::single_range_in_vec_init)]
 fn ranges_on_different_pieces_of_one_tag_are_covered_by_it() {
     // One tag in two pieces (two lines of a cell), and an unrelated tag of the same kind.
     let idx = TagIndex::from_pieces(vec![
@@ -271,12 +279,15 @@ fn ranges_on_different_pieces_of_one_tag_are_covered_by_it() {
     ]);
     assert_eq!(idx.kinds_covering(&[10..14, 40..46]), ["requirement"]);
     // A range inside the other tag's piece is not covered by the first tag's pieces.
-    assert!(idx.kinds_covering(&[10..14, 80..85]).is_empty());
+    assert_eq!(idx.kinds_covering(&[10..14, 80..85]), Vec::<&str>::new());
     // A range between the pieces is covered by none.
-    assert!(idx.kinds_covering(&[10..14, 20..25]).is_empty());
+    assert_eq!(idx.kinds_covering(&[10..14, 20..25]), Vec::<&str>::new());
     // One range is the plain containment check.
-    assert_eq!(idx.kinds_covering(&[3..5]), idx.kinds_at(&(3..5)));
-    assert!(idx.kinds_covering(&[]).is_empty());
+    assert_eq!(
+        idx.kinds_covering(std::slice::from_ref(&(3..5))),
+        idx.kinds_at(&(3..5))
+    );
+    assert_eq!(idx.kinds_covering(&[]), Vec::<&str>::new());
 }
 
 fn block(
@@ -319,7 +330,6 @@ fn a_section_runs_to_the_furthest_end_of_its_blocks() {
 }
 
 #[test]
-#[allow(clippy::single_range_in_vec_init)]
 fn overlapping_groups_keep_every_piece_they_share() {
     // Group 0 is one piece. Group 1 has the same first piece and a second one.
     let idx = TagIndex::from_pieces(vec![
@@ -329,7 +339,7 @@ fn overlapping_groups_keep_every_piece_they_share() {
     ]);
     assert_eq!(idx.kinds_covering(&[10..14, 40..46]), ["requirement"]);
     // Group 0 alone does not reach the second range.
-    assert!(idx.kinds_covering(&[10..14, 60..65]).is_empty());
+    assert_eq!(idx.kinds_covering(&[10..14, 60..65]), Vec::<&str>::new());
     // Equal pieces of one group are still one piece.
     let same = TagIndex::from_pieces(vec![
         piece("requirement", 2..14, 0),

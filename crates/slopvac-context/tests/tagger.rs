@@ -1,5 +1,4 @@
 //! Declarative tagger behaviour (`tagger.schema.json`) through the public API.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{BlockKind, OwnedBlock, PlainDocument, TagRegistry, Tagger, TaggerSpec};
 
@@ -8,6 +7,10 @@ fn spec(yaml: &str) -> Result<Box<dyn Tagger>, slopvac_context::Error> {
 }
 
 /// The text each tag covers, in document order.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn tagged(yaml: &str, src: &str) -> Vec<String> {
     let mut reg = TagRegistry::new();
     reg.register(spec(yaml).unwrap()).unwrap();

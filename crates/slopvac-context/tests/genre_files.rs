@@ -1,5 +1,4 @@
 //! `[[genres]]` file matching and the `genre` command path.
-#![allow(clippy::assert_is_empty)]
 
 use std::path::PathBuf;
 
@@ -8,7 +7,7 @@ use slopvac_context::{
 };
 
 fn pats(p: &[&str]) -> Vec<String> {
-    p.iter().map(|s| (*s).to_string()).collect()
+    p.iter().map(|s| (*s).to_owned()).collect()
 }
 
 #[test]
@@ -68,6 +67,10 @@ fn an_excluded_file_falls_through_to_the_earlier_block() {
     assert_eq!(genre_of("docs/api/a.md"), "consumer");
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn scratch(name: &str, body: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("genre-run");
     std::fs::create_dir_all(&dir).unwrap();
@@ -76,6 +79,11 @@ fn scratch(name: &str, body: &str) -> PathBuf {
     path
 }
 
+#[expect(
+    clippy::unwrap_in_result,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn run_args(args: &[&str]) -> Result<String, slopvac_context::Error> {
     let m = command()
         .try_get_matches_from(std::iter::once("genre").chain(args.iter().copied()))

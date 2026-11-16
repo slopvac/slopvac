@@ -65,7 +65,7 @@ pub(super) fn clean(s: &str) -> String {
         }
         i += 1;
     }
-    out.trim().to_string()
+    out.trim().to_owned()
 }
 
 #[cfg(test)]

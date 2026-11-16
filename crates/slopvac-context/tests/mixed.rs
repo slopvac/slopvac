@@ -4,6 +4,10 @@ use slopvac_context::{
     ChecklistEntry, MIXED_TYPES_RULE_ID, PlainDocument, builtin_genres, mixed_types_entry,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn entry(path: &str, src: &str) -> Option<ChecklistEntry> {
     mixed_types_entry(
         &builtin_genres().unwrap(),

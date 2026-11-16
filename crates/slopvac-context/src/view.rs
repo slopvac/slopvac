@@ -154,7 +154,7 @@ impl PlainDocument {
     #[must_use]
     pub fn from_markdown(path: &str, src: &str) -> Self {
         let mut doc = PlainDocument {
-            path: path.to_string(),
+            path: path.to_owned(),
             source_len: src.len(),
             ..Default::default()
         };
@@ -169,7 +169,7 @@ impl PlainDocument {
             for line in rest[..end].lines() {
                 if let Some((k, v)) = line.split_once(':') {
                     doc.front_matter
-                        .push((k.trim().to_string(), v.trim().trim_matches('"').to_string()));
+                        .push((k.trim().to_owned(), v.trim().trim_matches('"').to_owned()));
                 }
             }
             front_end = 4 + end + 4;
@@ -220,7 +220,7 @@ impl PlainDocument {
                     } else {
                         t
                     }
-                    .to_string()
+                    .to_owned()
                 };
                 heads.retain(|h| h.0 < hashes);
                 heads.push((hashes, text.clone()));

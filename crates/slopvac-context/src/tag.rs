@@ -42,7 +42,7 @@ impl TagRegistry {
     /// Add a tagger. Ids are unique.
     pub fn register(&mut self, tagger: Box<dyn Tagger>) -> Result<(), Error> {
         if self.taggers.iter().any(|t| t.id() == tagger.id()) {
-            return Err(Error::DuplicateTagger(tagger.id().to_string()));
+            return Err(Error::DuplicateTagger(tagger.id().to_owned()));
         }
         self.taggers.push(tagger);
         Ok(())

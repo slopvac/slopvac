@@ -33,6 +33,10 @@ pub fn command() -> Command {
 
 /// Render one result as text.
 #[must_use]
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 pub fn render(path: &str, r: &GenreResult) -> String {
     let source = match r.source {
         GenreSource::Explicit => "explicit",
@@ -69,8 +73,8 @@ fn parse_assignments(matches: &ArgMatches) -> Result<Vec<GenreAssignment>, Error
                 .split_once('=')
                 .ok_or_else(|| Error::Parse(format!("`--assign {raw}` needs GLOB=GENRE")))?;
             Ok(GenreAssignment {
-                files: vec![glob.to_string()],
-                genre: genre.to_string(),
+                files: vec![glob.to_owned()],
+                genre: genre.to_owned(),
             })
         })
         .collect()
@@ -84,8 +88,9 @@ fn explain(
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
     let src = std::fs::read_to_string(path).map_err(|e| Error::Parse(format!("{path}: {e}")))?;
     let doc = PlainDocument::from_markdown(path, &src);
+    let view: &dyn DocumentView = &doc;
     let result = registry.resolve(
-        &doc as &dyn DocumentView,
+        view,
         &ResolveOptions {
             assignments,
             relative_path: None,

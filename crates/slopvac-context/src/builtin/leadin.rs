@@ -30,17 +30,22 @@ impl Tagger for ListLeadInTagger {
         for b in &blocks {
             match b.kind {
                 BlockKind::ListItem if leading => out.push(Tag {
-                    kind: "change-note".to_string(),
+                    kind: "change-note".to_owned(),
                     span: b.span.clone(),
                     confidence: 0.6,
-                    evidence: "change-note-list-lead-in: list under a version lead-in".to_string(),
+                    evidence: "change-note-list-lead-in: list under a version lead-in".to_owned(),
                 }),
                 BlockKind::ListItem => {}
                 BlockKind::Paragraph => {
                     let t = b.text.trim_end();
                     leading = t.ends_with(':') && self.version.is_match(t)?;
                 }
-                _ => leading = false,
+                BlockKind::Heading
+                | BlockKind::TableRow
+                | BlockKind::CodeBlock
+                | BlockKind::Quote => {
+                    leading = false;
+                }
             }
         }
         Ok(out)
