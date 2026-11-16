@@ -200,3 +200,33 @@ The misses and false positives show four things:
 - `diagram.prose-restates-labels` fires on both hard negatives, where the prose names every label but adds a limit, a reason and a failure mode. It checks token overlap only.
 
 Each count is small, so every interval is wide. Treat the table as a sanity check on the severities, not a ranking.
+
+## Model evals
+
+These evals compare models on the three review types: `mechanical`, `update` and `rewrite`. Their results feed the dated recommendation table in prime and the docs. Reviewer tasks cover rewrites only for now; mechanical and update reviewer tasks are tracked in slopvac-8l4.15.8.
+
+```sh
+python -m evals models plan --models models.json            # count the calls and input size
+python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>
+python -m evals models summarize evals/results/models/<date>.json
+```
+
+`models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. The adapter resolves the AWS profile with `aws configure export-credentials` (set `AWS_PROFILE` and `AWS_REGION`, or pass `--aws-profile` and `--aws-region`), then starts opencode with an empty `HOME`, its own XDG directories and an allow-listed environment. The adapter re-exports credentials on every attempt. If they have under 10 minutes left, it waits up to 330 seconds for the CLI to hand out fresh ones, inside the same attempt, and then gives up. Your opencode config, plugins, rules and auth never load, and opencode finds no AWS profile files. On a timeout the harness kills the whole process group, including opencode and its children. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. A journal without a ledger is refused, because its spent calls are unknown: start with a fresh `--out` path. Ask the lead before you run a paid provider.
+
+`--max-invocations` is a hard ceiling on spawned model commands, retries included. The harness writes and syncs a reservation to `<out>.ledger.jsonl` before it starts each process. A crash cannot hide a spawn. A lock on the ledger stops a second run from starting on the same ceiling. On resume, every earlier reservation counts as spent. Each finished call goes to a journal next to the output (`<out>.journal.jsonl`) as it completes. The journal holds the full model responses, so git ignores it; the results file stores only output hashes. If a lint leaves rules unchecked (for example Vale is missing), the author run is unscored: its row carries `score: null` and an `unscored` reason, and the summary leaves it out. Ctrl-C cancels pending calls and kills running model process groups. Rerun the same command to resume: the journal supplies finished jobs by a stable id, failed jobs are asked again, and attempts already spent count against the ceiling. `--workers` sets the thread count.
+
+Tasks come from the corpus:
+
+| Task | Role | Source | Success |
+| --- | --- | --- | --- |
+| mechanical | author | A seeded sentence and its rule | The rule does not fire on the output and no fact is lost. |
+| update | author | A planted number change | The new number appears, the old one is gone, nothing else moves. |
+| rewrite | author | A prose paragraph | No fact is lost and findings per word do not rise. |
+| rewrite | reviewer, planted | A rewrite pair with planted damage | The reviewer quotes every planted edit with at most one false alarm. |
+| rewrite | reviewer, authored | Another model's rewrite | The reviewer names every fact the lexical alignment finds lost. |
+
+The reviewer is always a different model from the author. Every task repeats at least three times. The summary averages repeats within a task, then resamples tasks for a 95% interval, and ranks models per review type and role.
+
+Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output.
+
+The results file records the date, the prompt version, the task-set hash, the models and one row per run with an output hash. The model text itself is not stored.

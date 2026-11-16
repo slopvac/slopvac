@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "claude-sonnet-5-5",
+      "family": "anthropic",
+      "tier": "frontier",
+      "command": "python -m evals.opencode_model --model amazon-bedrock/global.anthropic.claude-sonnet-5-5"
+    },
+    {
+      "name": "claude-haiku-5-5",
+      "family": "anthropic",
+      "tier": "fast",
+      "command": "python -m evals.opencode_model --model amazon-bedrock/global.anthropic.claude-haiku-5-5"
+    },
+    {
+      "name": "gpt-6.1-sol",
+      "family": "openai",
+      "tier": "frontier",
+      "command": "python -m evals.opencode_model --model amazon-bedrock/global.openai.gpt-6.1-sol"
+    }
+  ]
+}
