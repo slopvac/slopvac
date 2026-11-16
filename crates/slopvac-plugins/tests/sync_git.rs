@@ -702,3 +702,85 @@ fn a_redirect_from_the_remote_is_not_followed() {
     );
     env.assert_no_trees();
 }
+/// Hostile text: an escape sequence, a literal backslash, a bidi override and a newline.
+const HOSTILE: &str = "a\u{1b}[31m\\b\u{202e}c\nd";
+/// What a reader must see: each unsafe character as a visible escape, the
+/// backslash doubled, and nothing escaped twice.
+const HOSTILE_SHOWN: &str = "a\\u{1b}[31m\\\\b\\u{202e}c\\u{a}d";
+
+#[test]
+fn git_error_text_is_escaped_once_with_a_doubled_backslash() {
+    let id: slopvac_plugins::lock::PackId = "style".parse().unwrap();
+    let git = SyncError::Git {
+        id: id.clone(),
+        why: HOSTILE.into(),
+    };
+    let limit = SyncError::GitLimit {
+        id,
+        why: HOSTILE.into(),
+    };
+
+    assert_eq!(
+        git.to_string(),
+        format!("pack `style`: git source: {HOSTILE_SHOWN}")
+    );
+    assert_eq!(
+        limit.to_string(),
+        format!("pack `style`: git source passes a limit: {HOSTILE_SHOWN}")
+    );
+}
+
+#[test]
+fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
+    // A symbolic link whose name is hostile: the refusal names it.
+    let name = "a\u{1b}[31m\\b";
+    let remote = Remote::build(|work| {
+        fs::write(work.join("pack.toml"), b"id = \"style\"\n").unwrap();
+        git(work, &["add", "pack.toml"]);
+        add_special(work, "120000", name, "target");
+    });
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(&[("pack.toml", b"id = \"style\"\n")]));
+
+    let err = env.sync(Network::Online(&c), &remote, &lock).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "pack `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
+    );
+}
+
+/// 300 MiB of a repeating pattern, with the last byte set to `last`.
+fn huge(last: u8) -> Vec<u8> {
+    let mut data: Vec<u8> = (0..300usize << 20).map(|i| (i % 251) as u8).collect();
+    *data.last_mut().unwrap() = last;
+    data
+}
+
+// Regression for the delta-memory residual of CWE-409 (threat model E4): two
+// near-identical huge blobs are sent as one base and one delta, and `index-pack`
+// rebuilds the delta in memory. With git run under the memory cap of
+// `slopvac-8l4.9.13`, the fetch must fail instead of completing. Until the
+// launcher exists nothing caps `git`, so the sync succeeds and this fails.
+#[test]
+#[ignore = "needs the plugin launcher (slopvac-8l4.9.13) to run git under a memory cap"]
+fn a_deep_delta_chain_to_a_huge_object_is_stopped_by_the_memory_cap() {
+    let (a, b) = (huge(1), huge(2));
+    let files: &[(&str, &[u8])] = &[("a.bin", &a), ("b.bin", &b)];
+    let remote = Remote::with_files(files, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(files));
+    let limits = Limits {
+        expanded_bytes: 1 << 31,
+        ..Limits::default()
+    };
+
+    let err = env
+        .sync_with(Network::Online(&c), &remote, &lock, limits)
+        .unwrap_err();
+
+    assert!(matches!(err, SyncError::Git { .. }), "{err:?}");
+    env.assert_no_trees();
+}

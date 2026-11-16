@@ -54,10 +54,11 @@
 //!
 //! # Residual risks
 //!
-//! `git` has no option to cap the memory of `index-pack`. A delta chain that
+//! `git` has no option to cap the memory of `index-pack`. Until the plugin
+//! launcher (`slopvac-8l4.9.13`) can run `git` under an `RLIMIT_AS` cap
+//! (`confine` is the stub; `unsafe` is forbidden here), a delta chain that
 //! expands one object past the memory of the machine is bounded only by the
-//! deadline and `core.deltaBaseCacheLimit`. A process memory limit needs the
-//! plugin launcher (`slopvac-8l4.9.13`), as `unsafe` is forbidden here.
+//! deadline and `core.deltaBaseCacheLimit`.
 //!
 //! The caller compares the resulting tree hash with the lock before anything
 //! reaches the store.
@@ -200,6 +201,24 @@ fn trusted_path(path: &Path, me: u32) -> bool {
     }
 }
 
+/// Most address space a `git` process may use (CWE-409, threat model E4).
+/// `index-pack` rebuilds delta chains in memory, and `git` has no setting that
+/// caps it.
+const GIT_MEMORY_BYTES: u64 = 2 << 30;
+
+/// Run `cmd` under a memory cap of `memory_bytes`.
+///
+/// STUB(slopvac-8l4.9.13): the cap is an `RLIMIT_AS` and `RLIMIT_DATA` limit set
+/// before `git` starts. `unsafe` is forbidden here, so it needs the plugin
+/// launcher of `slopvac-8l4.9.13`, which sets rlimits through `rustix` in a
+/// re-executed mode. Until that lands this returns `cmd` unchanged and a hostile
+/// delta chain is bounded only by the deadline. The ignored test
+/// `a_deep_delta_chain_to_a_huge_object_is_stopped_by_the_memory_cap` in
+/// `tests/sync_git.rs` is the regression to enable with it.
+fn confine(cmd: Command, _memory_bytes: u64) -> Command {
+    cmd
+}
+
 /// Fetch exactly `request.commit` into a scratch repository under `scratch`
 /// and write its files into `staged`.
 pub(super) fn export_commit(
@@ -307,7 +326,7 @@ impl<'a> Git<'a> {
         for entry in config {
             cmd.arg("-c").arg(entry);
         }
-        cmd
+        confine(cmd, GIT_MEMORY_BYTES)
     }
 
     /// A command that works on the scratch repository.
