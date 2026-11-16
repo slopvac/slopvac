@@ -160,7 +160,7 @@ fn a_comma_list_directive_is_left_alone_with_a_warning() {
     let text = "Intro\n<!-- slopvac-allow: rule=ste-sentences.vertical-list-item-punctuation,prose-craft.latinisms reason=x -->\nText\n";
     write(dir.path(), "docs/a.md", text);
     let p = plan_of(dir.path()).unwrap();
-    assert!(p.changes.is_empty());
+    assert_eq!(p.changes.len(), 0);
     assert_eq!(
         p.warnings,
         vec!["docs/a.md:2: invalid 2.x directive, left as is".to_owned()]
