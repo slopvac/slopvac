@@ -149,7 +149,27 @@ fn terms_file_needs_only_term() {
 fn terms_file_rejects_bad_input() {
     let cases = [
         ("schema_version = 2\n", "schema_version 2"),
-        ("schema_version = 3\nfoo = 1\n", "unknown key `foo`"),
+        (
+            "schema_version = 3\nterms = []\nfoo = 1\n",
+            "unknown key `foo`",
+        ),
+        ("schema_version = 3\n", "missing `terms`"),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\ncase = \"exact\"\n",
+            "unknown key `terms[1].case`",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nkind = \"Proper Noun\"\n",
+            "kebab-case",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nvariants = [\"a\", \"a\"]\n",
+            "variant `a` twice",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nvariants = [\"\"]\n",
+            "empty variant",
+        ),
         (
             "schema_version = 3\n[[terms]]\nterm = \"A\"\n[[terms]]\nterm = \"A\"\n",
             "duplicate term `A`",
@@ -167,7 +187,8 @@ fn terms_file_rejects_bad_input() {
 
 #[test]
 fn terms_file_ignores_x_keys() {
-    assert!(TermsFile::parse("t.toml", "schema_version = 3\nx-note = 1\n").is_ok());
+    let text = "schema_version = 3\nx-note = 1\n[[terms]]\nterm = \"A\"\nx-source = \"doc\"\n";
+    assert_eq!(TermsFile::parse("t.toml", text).unwrap().terms.len(), 1);
 }
 
 const BLOCK: &str = r#"
@@ -345,6 +366,52 @@ fn terms_file_loads_from_disk_and_reports_read_failures() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+const YAML_BLOCK: &str = "entries:
+  - word: Utilize
+    pos: v
+    reason: Use `use`.
+    replacement: use
+  - word: deploy
+    pos: noun
+    reason: The noun is `deployment`.
+";
+
+#[test]
+fn blocklist_loads_yml_and_yaml_files() {
+    let dir = scratch("blocklist-yaml");
+    for name in ["b.yml", "b.YAML"] {
+        let path = dir.join(name);
+        std::fs::write(&path, YAML_BLOCK).unwrap();
+        let b = Blocklist::load(&path).unwrap();
+        assert_eq!(b.len(), 2, "{name}");
+        let e = b.lookup("utilize", Pos::Verb).unwrap();
+        assert_eq!(e.reason, "Use `use`.");
+        assert_eq!(e.replacement.as_deref(), Some("use"));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn yaml_blocklist_entries_get_the_same_validation() {
+    let text = "entries:\n  - word: leverage\n    pos: verb\n";
+    let e = Blocklist::parse("b.yml", "yml", text).unwrap_err();
+    assert!(matches!(e, TermsError::Entry { .. }), "{e}");
+    assert!(e.to_string().contains("no `reason`"), "{e}");
+    let e = Blocklist::parse("b.yml", "yaml", "other: 1\n").unwrap_err();
+    assert!(e.to_string().contains("no `entries` array"), "{e}");
+}
+
+#[test]
+fn invalid_yaml_blocklist_names_the_file() {
+    let dir = scratch("blocklist-bad-yaml");
+    let path = dir.join("broken.yaml");
+    std::fs::write(&path, "entries: [unclosed\n").unwrap();
+    let e = Blocklist::load(&path).unwrap_err();
+    assert!(matches!(e, TermsError::Parse { .. }), "{e}");
+    assert!(e.to_string().contains("broken.yaml"), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn blocklist_load_dispatches_on_suffix() {
     let dir = scratch("blocklist");
@@ -358,15 +425,12 @@ fn blocklist_load_dispatches_on_suffix() {
         r#"{"entries":[{"word":"leverage","pos":"verb","reason":"r"}]}"#,
     )
     .unwrap();
-    std::fs::write(&yaml, "entries: []\n").unwrap();
+    std::fs::write(&yaml, "entries:\n  - {word: x, pos: n, reason: r}\n").unwrap();
     std::fs::write(&none, BLOCK).unwrap();
 
     assert_eq!(Blocklist::load(&toml).unwrap().len(), 2);
     assert_eq!(Blocklist::load(&json).unwrap().len(), 1);
-    assert!(matches!(
-        Blocklist::load(&yaml).unwrap_err(),
-        TermsError::Parse { .. }
-    ));
+    assert_eq!(Blocklist::load(&yaml).unwrap().len(), 1);
     assert!(matches!(
         Blocklist::load(&none).unwrap_err(),
         TermsError::Parse { .. }

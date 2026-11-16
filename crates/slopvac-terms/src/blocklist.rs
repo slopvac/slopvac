@@ -3,7 +3,7 @@
 //! A blocklist is opt-in and every entry needs a reason. Loading fails on a
 //! missing `entries` array, an unknown part of speech, a missing reason or a
 //! duplicate word and part of speech pair, so a typo cannot turn into a clean
-//! report. TOML and JSON load; YAML is not supported yet.
+//! report. TOML, JSON and YAML (`.yml`, `.yaml`) load.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -113,7 +113,7 @@ impl Blocklist {
         self.entries.values()
     }
 
-    /// Read a blocklist file. The suffix picks the format: `.toml` or `.json`.
+    /// Read a blocklist file. The suffix picks the format: `.toml`, `.json`, `.yml` or `.yaml`.
     ///
     /// # Errors
     /// Unreadable or malformed files and invalid entries.
@@ -131,7 +131,7 @@ impl Blocklist {
         Self::parse(&shown, &suffix, &text)
     }
 
-    /// Parse blocklist text of the given format (`toml` or `json`).
+    /// Parse blocklist text of the given format (`toml`, `json`, `yml` or `yaml`).
     ///
     /// # Errors
     /// As [`Blocklist::load`].
@@ -143,9 +143,10 @@ impl Blocklist {
         let raw: Raw = match format {
             "toml" => toml::from_str(text).map_err(|e| parse_err(e.to_string()))?,
             "json" => serde_json::from_str(text).map_err(|e| parse_err(e.to_string()))?,
+            "yml" | "yaml" => serde_saphyr::from_str(text).map_err(|e| parse_err(e.to_string()))?,
             other => {
                 return Err(parse_err(format!(
-                    "unrecognized suffix `{other}`; use .toml or .json"
+                    "unrecognized suffix `{other}`; use .toml, .json, .yml or .yaml"
                 )));
             }
         };
