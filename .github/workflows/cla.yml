@@ -55,7 +55,6 @@ jobs:
           PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           path-to-signatures: signatures/v1/cla.json
-          # STUB(slopvac-8l4.13.27): CLA text pending user approval
           path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
           branch: main # must not be protected
           allowlist: dependabot[bot],sjorsr-release-bot[bot],github-actions[bot],renovate[bot]
