@@ -13,9 +13,18 @@ set -euo pipefail
 root="${RUST_TOOLCHAIN_DIR:-$(dirname "${BASH_SOURCE[0]}")/../..}"
 file="$root/rust-toolchain.toml"
 
-channel="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1)"
+channel="$(python3 -c '
+import sys, tomllib
+
+path = sys.argv[1]
+try:
+    with open(path, "rb") as handle:
+        print(tomllib.load(handle)["toolchain"]["channel"])
+except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+    sys.exit(f"cannot read the toolchain channel from {path}: {error!r}")
+' "$file")"
 if [[ -z "$channel" ]]; then
-	echo "no channel found in $file" >&2
+	echo "empty channel in $file" >&2
 	exit 1
 fi
 
