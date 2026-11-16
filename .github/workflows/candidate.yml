@@ -215,7 +215,6 @@ jobs:
           name: archive-${{ matrix.target }}
           path: |
             target/distrib/*.tar.xz
-            target/distrib/*.zip
             target/distrib/*.sha256
           if-no-files-found: error
 
@@ -317,7 +316,6 @@ jobs:
         with:
           subject-path: |
             artifacts/*.tar.xz
-            artifacts/*.zip
             artifacts/*.whl
 
       # Draft first, then publish: with immutable releases on, a published release

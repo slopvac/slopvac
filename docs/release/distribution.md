@@ -4,14 +4,23 @@ The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives 
 
 ## What a release contains
 
-- Archives for macOS (arm64, x86_64), Linux (arm64 and x86_64 glibc, x86_64 musl).
+- Archives for five targets:
+  - macOS arm64 and x86_64.
+  - Linux arm64 and x86_64 (glibc).
+  - Linux x86_64 (musl).
 - A shell installer and a Homebrew formula pushed to `srobroek/homebrew-tap`.
 - GitHub build attestations, checksums, a CycloneDX SBOM, and binaries built with `cargo-auditable`.
 - A minisign signature (`<file>.minisig`) for every published file: archives, installers, the Homebrew formula, checksum files, the SBOM and `dist-manifest.json`.
 
 ## Windows
 
-3.0 ships no native Windows build. Windows users run the Linux build under WSL: the shell installer, Homebrew on Linux, or `uvx slopvac` all work inside a WSL distribution. Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`). The Windows target, the PowerShell installer and the Windows wheel are not built, and the release gate does not require a Windows item.
+3.0 ships no native Windows build. Windows users run the Linux build under WSL. Inside a WSL distribution, any of these installs work:
+
+- the shell installer.
+- Homebrew on Linux.
+- `uvx slopvac`.
+
+Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`). The release builds no Windows target, PowerShell installer or Windows wheel, and the release gate needs no Windows item.
 
 ## How a release flows
 
@@ -115,8 +124,8 @@ Each release of major 3 and later publishes in this order: build, upload to the 
 
 `.github/workflows/release-smoke.yml` installs a published release and runs `slopvac --version` for each route, then compares the output with the tag:
 
-- the archive for each of the five targets, after checking the published `.sha256` file;
-- the shell installer on Linux and macOS;
+- the archive for each of the five targets, after checking the published `.sha256` file.
+- the shell installer on Linux and macOS.
 - `brew install srobroek/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
 
 It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with `GITHUB_TOKEN`, which raises no event, and such a trigger could start before the assets exist. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.

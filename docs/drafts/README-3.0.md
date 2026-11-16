@@ -38,8 +38,13 @@ may need a Python runtime for its bundled docutils adapter. A plugin can need it
 and GitHub attestations.
 
 Release builds cover macOS (arm64, x86_64) and Linux (arm64, x86_64). Windows is supported through
-WSL: inside a WSL distribution, use the Linux build with the shell installer, Homebrew on Linux, or
-`uvx slopvac`. Native Windows is a 3.x feature.
+WSL. Inside a WSL distribution, use the Linux build:
+
+- the shell installer.
+- Homebrew on Linux.
+- `uvx slopvac`.
+
+Native Windows is a 3.x feature.
 
 `slopvac self update` updates an install that the slopvac installer made. For any other install, it
 prints the upgrade command for that channel.

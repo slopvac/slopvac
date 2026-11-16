@@ -119,7 +119,7 @@ Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship mini
 
 ### 12. Distribution: cargo-dist, Homebrew tap, and maturin wheels
 
-cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16 by decision 26: the earlier Windows target and PowerShell installer are superseded.
+cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
 
 ### 13. Dependabot only
 
@@ -265,9 +265,22 @@ Port the averaged-perceptron tagger from the `prose` library v3.3.1, which Vale 
 
 ### 26. No native Windows in 3.0
 
-Decided 2026-11-16. 3.0 ships with no native Windows support. Windows users run the Linux build under WSL, through the shell installer, Homebrew on Linux, or `uvx slopvac` inside WSL. Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
+Decided 2026-11-16. 3.0 ships with no native Windows support. Windows users run the Linux build under WSL. Inside WSL they install with one of these:
 
-- Supersedes every earlier Windows note for 3.0: the `x86_64-pc-windows-msvc` release target, the PowerShell installer, the Windows wheel, the Windows archive and installer smoke jobs, the Windows item in the signed-artifacts gate (the release gate of decision 24 now requires five targets), and the Windows build and test requirement for PCRE2. The Windows process-containment notes (job objects) in the plugin threat model and protocol are superseded for 3.0 in the same way; the contract owners decide how to word them.
+- the shell installer.
+- Homebrew on Linux.
+- `uvx slopvac`.
+
+Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
+
+- Supersedes these earlier Windows notes for 3.0:
+  - the `x86_64-pc-windows-msvc` release target.
+  - the PowerShell installer.
+  - the Windows wheel.
+  - the Windows archive and installer smoke jobs.
+  - the Windows item in the signed-artifacts gate. The release gate of decision 24 now needs five targets.
+  - the Windows build and test requirement for PCRE2.
+- This decision also supersedes, for 3.0, the Windows process-containment notes (job objects) in the plugin threat model and protocol. The contract owners decide how to word them.
 - Kept: the 2.x Python package keeps its existing Windows code paths. Windows CI jobs for the Rust workspace stay until the code-quality epic decides, because native Windows work continues in 3.x.
 - Tracking: bead `slopvac-8l4.13.26`.
 - Rejected: shipping a best-effort Windows build without a gate. It would carry an unverified signing and containment story.
