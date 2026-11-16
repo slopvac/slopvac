@@ -10,6 +10,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, mpsc};
+use std::time::Duration;
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -132,6 +134,14 @@ type Repo = (
 
 /// A registry with the repositories `acme/<name>`, each with its releases.
 fn registry(repos: &[(&str, &[&Release])]) -> Server {
+    registry_with(repos, || {})
+}
+
+/// Like [`registry`]; `on_tags` runs at each tag-list request, before the answer.
+fn registry_with(
+    repos: &[(&str, &[&Release])],
+    on_tags: impl Fn() + Send + Sync + 'static,
+) -> Server {
     let repos: Vec<Repo> = repos
         .iter()
         .map(|(name, releases)| {
@@ -152,6 +162,7 @@ fn registry(repos: &[(&str, &[&Release])]) -> Server {
         };
         let rest = &req.path[prefix.len()..];
         if rest.starts_with("tags/list") {
+            on_tags();
             let tags: Vec<&str> = manifests.iter().map(|(t, _, _)| t.as_str()).collect();
             return Response::new(200).json(&serde_json::json!({ "tags": tags }));
         }
@@ -881,58 +892,115 @@ fn a_lock_over_the_size_limit_is_refused_and_left_alone() {
     assert_eq!(fs::read(env.lock_path()).unwrap(), huge);
 }
 
+fn two_packs(key: &Key) -> (Vec<Release>, Vec<Release>) {
+    (
+        vec![
+            release(key, "style", "1.2.0", FLOOR),
+            release(key, "style", "1.3.0", LATER),
+        ],
+        vec![
+            release(key, "other", "1.0.0", FLOOR),
+            release(key, "other", "1.1.0", LATER),
+        ],
+    )
+}
+
+fn open_guard(env: &Env) -> fs::File {
+    fs::File::open(env.dir.path().join(GUARD_PATH)).unwrap()
+}
+
 #[test]
-fn an_update_waits_for_a_concurrent_one_and_keeps_its_changes() {
+fn an_update_gives_up_when_another_holds_the_guard() {
     let key = Key::new();
-    let (s120, s130) = (
-        release(&key, "style", "1.2.0", FLOOR),
-        release(&key, "style", "1.3.0", LATER),
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0], &style[1]])]);
+    let env = Env::new();
+    let before = env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let mut open = fs::OpenOptions::new();
+    open.create(true).truncate(false).write(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut open, 0o600);
+    let holder = open.open(env.dir.path().join(GUARD_PATH)).unwrap();
+    holder.lock().unwrap();
+    let c = client();
+    let revocations = env.revocations();
+    let pol = policy(&[&key]);
+
+    let err = Updater::new(Network::Online(&c), &pol, &revocations)
+        .with_guard_timeout(Duration::from_millis(200))
+        .update(env.dir.path(), &ranges(&[("style", "^1.2")]), &[])
+        .unwrap_err();
+
+    assert!(matches!(err, UpdateError::Busy { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "update-lock-busy");
+    assert!(
+        server.requests().is_empty(),
+        "nothing is resolved without the lock"
     );
-    let (o100, o110) = (
-        release(&key, "other", "1.0.0", FLOOR),
-        release(&key, "other", "1.1.0", LATER),
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+#[test]
+fn a_second_update_cannot_run_while_the_first_is_resolving() {
+    let key = Key::new();
+    let (style, other) = two_packs(&key);
+    // The first tag-list request announces itself, then waits to be released.
+    let (reached_tx, reached_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let gate = Mutex::new(Some((reached_tx, release_rx)));
+    let server = registry_with(
+        &[
+            ("style", &[&style[0], &style[1]]),
+            ("other", &[&other[0], &other[1]]),
+        ],
+        move || {
+            if let Some((reached, release)) = gate.lock().unwrap().take() {
+                reached.send(()).unwrap();
+                release.recv().unwrap();
+            }
+        },
     );
-    let server = registry(&[("style", &[&s120, &s130]), ("other", &[&o100, &o110])]);
     let reg = server.registry();
     let env = Env::new();
     env.write_lock(&[
-        entry("style", &reg, &s120, true),
-        entry("other", &reg, &o100, true),
+        entry("style", &reg, &style[0], true),
+        entry("other", &reg, &other[0], true),
     ]);
-    // A concurrent update holds the guard and is about to commit `other` 1.1.0.
-    let holder = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(env.dir.path().join(GUARD_PATH))
-        .unwrap();
-    holder.lock().unwrap();
-
     let c = client();
     let pol = policy(&[&key]);
-    let wanted = ranges(&[("style", "^1.2")]);
-    let (done_tx, done_rx) = std::sync::mpsc::channel();
+
     std::thread::scope(|scope| {
-        scope.spawn(|| {
-            let report = env.update(Network::Online(&c), &pol, &wanted, &[]);
-            done_tx.send(report.is_ok()).unwrap();
+        let first = scope.spawn(|| {
+            env.update(
+                Network::Online(&c),
+                &pol,
+                &ranges(&[("style", "^1.2")]),
+                &[pack_id("style")],
+            )
         });
+        reached_rx.recv().unwrap();
+        // The first update is inside resolution: it must hold the guard.
+        let probe = open_guard(&env).try_lock();
         assert!(
-            done_rx
-                .recv_timeout(std::time::Duration::from_millis(500))
-                .is_err(),
-            "update ran while another held the lock"
+            matches!(probe, Err(std::fs::TryLockError::WouldBlock)),
+            "the guard is free while an update resolves: {probe:?}"
         );
-        env.write_lock(&[
-            entry("style", &reg, &s120, true),
-            entry("other", &reg, &o110, true),
-        ]);
-        drop(holder);
+        // A second update cannot start meanwhile.
+        let revocations = env.revocations();
+        let second = Updater::new(Network::Online(&c), &pol, &revocations)
+            .with_guard_timeout(Duration::from_millis(200))
+            .update(
+                env.dir.path(),
+                &ranges(&[("other", "^1.0")]),
+                &[pack_id("other")],
+            );
         assert!(
-            done_rx
-                .recv_timeout(std::time::Duration::from_secs(30))
-                .unwrap()
+            matches!(second, Err(UpdateError::Busy { .. })),
+            "{second:?}"
         );
+        release_tx.send(()).unwrap();
+        first.join().unwrap().unwrap();
     });
 
     let lock = env.lock();
@@ -942,8 +1010,153 @@ fn an_update_waits_for_a_concurrent_one_and_keeps_its_changes() {
     );
     assert_eq!(
         lock.get(&pack_id("other")).unwrap().version,
-        version("1.1.0")
+        version("1.0.0")
     );
+}
+
+#[test]
+fn a_lock_that_grows_during_resolution_is_refused_without_reading_it_whole() {
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let env = Env::new();
+    let lock_path = env.lock_path();
+    let server = registry_with(&[("style", &[&style[0], &style[1]])], move || {
+        // A project writer enlarges the lock after update has read it.
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(&lock_path)
+            .unwrap();
+        f.write_all(&vec![b'#'; 4 * 1024 * 1024]).unwrap();
+    });
+    env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[&key]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert!(matches!(err, UpdateError::Write { .. }), "{err:?}");
+    assert!(err.to_string().contains("size limit"), "{err}");
+}
+
+/// An update that would change the lock, run through `run`.
+fn windows_refusal(
+    run: impl FnOnce(&Env, &Client, &KeyPolicy) -> Result<UpdateReport, UpdateError>,
+) {
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0], &style[1]])]);
+    let env = Env::new();
+    let before = env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let c = client();
+
+    let err = run(&env, &c, &policy(&[&key])).unwrap_err();
+
+    assert!(
+        matches!(err, UpdateError::UnsupportedOnWindows(_)),
+        "{err:?}"
+    );
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "unsupported-on-windows");
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+#[test]
+fn on_windows_a_lock_write_is_refused_and_the_lock_stays() {
+    windows_refusal(|env, c, pol| {
+        let revocations = env.revocations();
+        Updater::new(Network::Online(c), pol, &revocations).update_seam(
+            env.dir.path(),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+            true,
+        )
+    });
+}
+
+#[cfg(windows)]
+#[test]
+fn native_windows_update_refuses_to_write_the_lock() {
+    windows_refusal(|env, c, pol| {
+        env.update(Network::Online(c), pol, &ranges(&[("style", "^1.2")]), &[])
+    });
+}
+
+#[test]
+fn off_windows_the_same_update_writes_the_lock() {
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0], &style[1]])]);
+    let env = Env::new();
+    env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let c = client();
+    let revocations = env.revocations();
+    let pol = policy(&[&key]);
+
+    let report = Updater::new(Network::Online(&c), &pol, &revocations)
+        .update_seam(env.dir.path(), &ranges(&[("style", "^1.2")]), &[], false)
+        .unwrap();
+
+    assert!(report.wrote_lock);
+}
+
+#[cfg(unix)]
+#[test]
+fn the_guard_file_is_created_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0]])]);
+    let env = Env::new();
+    env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let c = client();
+
+    env.update(
+        Network::Online(&c),
+        &policy(&[&key]),
+        &ranges(&[("style", "^1.2")]),
+        &[],
+    )
+    .unwrap();
+
+    let mode = fs::metadata(env.dir.path().join(GUARD_PATH))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_guard_file_that_others_can_open_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0], &style[1]])]);
+    let env = Env::new();
+    let before = env.write_lock(&[entry("style", &server.registry(), &style[0], true)]);
+    let guard = env.dir.path().join(GUARD_PATH);
+    fs::write(&guard, b"").unwrap();
+    fs::set_permissions(&guard, fs::Permissions::from_mode(0o644)).unwrap();
+    let c = client();
+
+    let err = env
+        .update(
+            Network::Online(&c),
+            &policy(&[&key]),
+            &ranges(&[("style", "^1.2")]),
+            &[],
+        )
+        .unwrap_err();
+
+    assert_refused_lock(&err);
+    assert!(err.to_string().contains("private"), "{err}");
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
 }
 
 #[test]
@@ -1000,8 +1213,11 @@ fn hostile_path_characters_are_escaped_in_error_text() {
     assert!(!text.chars().any(char::is_control), "{text:?}");
     assert!(!text.contains('\u{202e}'), "{text:?}");
     assert!(text.contains("\\u{1b}[31m\\u{a}"), "{text}");
+}
 
-    // And through a real failure: the project root has such a name.
+#[cfg(unix)]
+#[test]
+fn a_hostile_project_directory_name_is_escaped_in_a_real_failure() {
     let env = Env::new();
     let root = env.dir.path().join("a\u{1b}[31mb\nc");
     fs::create_dir_all(&root).unwrap();

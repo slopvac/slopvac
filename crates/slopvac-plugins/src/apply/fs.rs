@@ -255,9 +255,7 @@ fn read_current_at(
         .read_to_end(&mut bytes)
         .map_err(|e| ApplyError::io(shown, &e))?;
     if max.is_some_and(|m| bytes.len() as u64 > m) {
-        return Err(ApplyError::Io(format!(
-            "{shown}: larger than the size limit"
-        )));
+        return Err(ApplyError::TooLarge(shown.into()));
     }
     Ok((Current::File(bytes), Some(meta.permissions())))
 }
@@ -271,6 +269,15 @@ pub(crate) enum Expect<'a> {
 }
 
 impl Expect<'_> {
+    /// The most bytes the target may hold for the expectation to hold. A
+    /// longer file is not read: reads stop one byte past this.
+    fn limit(&self) -> u64 {
+        match self {
+            Self::Bytes(want) => want.len() as u64,
+            Self::Absent => 0,
+        }
+    }
+
     fn holds(&self, now: &Current) -> bool {
         match (self, now) {
             (Self::Bytes(want), Current::File(have)) => have == want,
@@ -315,6 +322,8 @@ fn create_temp(parent: &Dir, shown: &str) -> Result<(OsString, cap_std::fs::File
 /// `expect`, write a private temporary file, give it the original mode, sync
 /// it, read the target again, and rename over it only if it is unchanged.
 /// Ownership is not copied: the replacement belongs to the user who applies it.
+///
+/// A target longer than `expect` is not read whole: it counts as changed.
 pub(crate) fn replace(
     parent: &Dir,
     name: &OsStr,
@@ -323,7 +332,24 @@ pub(crate) fn replace(
     new: &[u8],
     hook: &mut dyn FnMut(Stage),
 ) -> Result<WriteOutcome, ApplyError> {
-    let (first, perms) = read_current_at(parent, name, shown, None, hook)?;
+    replace_bounded(parent, name, shown, expect, new, hook).map_err(|e| match e {
+        ApplyError::TooLarge(shown) => ApplyError::SourceChanged(shown),
+        other => other,
+    })
+}
+
+/// [`replace`], but a target longer than `expect` fails with
+/// [`ApplyError::TooLarge`] instead of [`ApplyError::SourceChanged`].
+pub(crate) fn replace_bounded(
+    parent: &Dir,
+    name: &OsStr,
+    shown: &str,
+    expect: &Expect<'_>,
+    new: &[u8],
+    hook: &mut dyn FnMut(Stage),
+) -> Result<WriteOutcome, ApplyError> {
+    let limit = expect.limit();
+    let (first, perms) = read_current_at(parent, name, shown, Some(limit), hook)?;
     let changed = || ApplyError::SourceChanged(shown.into());
     if !expect.holds(&first) {
         return Err(changed());
@@ -345,7 +371,7 @@ pub(crate) fn replace(
         // Windows cannot rename a file while a handle to it is open.
         drop(file);
         hook(Stage::BeforeCommit);
-        if read_current(parent, name, shown)? != first {
+        if read_current_limited(parent, name, shown, limit)? != first {
             return Err(changed());
         }
         parent.rename(&tmp, parent, name).map_err(io)?;

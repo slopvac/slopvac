@@ -49,6 +49,7 @@ use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::str::FromStr;
+use std::time::{Duration, Instant};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -70,6 +71,8 @@ use crate::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError, avai
 
 /// The lock file, relative to the project root.
 pub const LOCK_PATH: &str = ".slopvac/packs.lock";
+/// How long update waits for the guard lock before it gives up.
+pub const GUARD_TIMEOUT: Duration = Duration::from_secs(30);
 /// The guard file next to the lock. An exclusive lock on it serialises updates.
 /// It stays after the run; keep it out of version control.
 pub const GUARD_PATH: &str = ".slopvac/packs.lock.guard";
@@ -84,6 +87,21 @@ pub enum UpdateError {
     /// Offline mode. Update has no cache to resolve from.
     #[error("offline: plugins update needs the network")]
     Offline,
+    /// Another update holds the guard lock and did not release it in time.
+    #[error("another `plugins update` holds the lock on {}; gave up after {} s", esc(path), timeout.as_secs_f32())]
+    Busy {
+        /// The guard file.
+        path: String,
+        /// How long update waited.
+        timeout: Duration,
+    },
+    /// Windows: the replacement primitive resolves paths in a way a junction
+    /// swap can redirect, so lock writes are refused (as in [`crate::apply`]).
+    #[error(
+        "`{}`: writes are not supported on Windows yet; the lock was not changed",
+        esc(.0)
+    )]
+    UnsupportedOnWindows(String),
     /// A named pack is not in the lock.
     #[error("pack `{0}` is not in the lock")]
     UnknownPack(PackId),
@@ -122,6 +140,8 @@ impl UpdateError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Offline => "offline-network-needed",
+            Self::Busy { .. } => "update-lock-busy",
+            Self::UnsupportedOnWindows(_) => "unsupported-on-windows",
             Self::Revocation(e) => e.code(),
             _ => "update-failed",
         }
@@ -188,6 +208,7 @@ pub struct Updater<'a> {
     network: Network<'a>,
     policy: &'a KeyPolicy,
     revocations: &'a Revocations,
+    guard_timeout: Duration,
 }
 
 impl<'a> Updater<'a> {
@@ -199,7 +220,15 @@ impl<'a> Updater<'a> {
             network,
             policy,
             revocations,
+            guard_timeout: GUARD_TIMEOUT,
         }
+    }
+
+    /// Waits at most `timeout` for the guard lock (default [`GUARD_TIMEOUT`]).
+    #[must_use]
+    pub fn with_guard_timeout(mut self, timeout: Duration) -> Self {
+        self.guard_timeout = timeout;
+        self
     }
 
     /// Updates `.slopvac/packs.lock` under `project_root`.
@@ -224,6 +253,29 @@ impl<'a> Updater<'a> {
         ranges: &BTreeMap<PackId, VersionReq>,
         only: &[PackId],
     ) -> Result<UpdateReport, UpdateError> {
+        self.update_on(project_root, ranges, only, cfg!(windows))
+    }
+
+    /// Test seam for [`Updater::update`]: pretend to run on `windows` (or
+    /// not). Not part of the supported API.
+    #[doc(hidden)]
+    pub fn update_seam(
+        &self,
+        project_root: &Path,
+        ranges: &BTreeMap<PackId, VersionReq>,
+        only: &[PackId],
+        windows: bool,
+    ) -> Result<UpdateReport, UpdateError> {
+        self.update_on(project_root, ranges, only, windows)
+    }
+
+    fn update_on(
+        &self,
+        project_root: &Path,
+        ranges: &BTreeMap<PackId, VersionReq>,
+        only: &[PackId],
+        windows: bool,
+    ) -> Result<UpdateReport, UpdateError> {
         let Network::Online(client) = self.network else {
             return Err(UpdateError::Offline);
         };
@@ -233,7 +285,16 @@ impl<'a> Updater<'a> {
             message,
         };
         let dir = open_lock_dir(project_root).map_err(|e| lock_error(e.to_string()))?;
-        let _guard = take_guard(&dir).map_err(|e| lock_error(e.to_string()))?;
+        let _guard = match take_guard(&dir, self.guard_timeout) {
+            Ok(guard) => guard,
+            Err(GuardError::Busy) => {
+                return Err(UpdateError::Busy {
+                    path: project_root.join(GUARD_PATH).display().to_string(),
+                    timeout: self.guard_timeout,
+                });
+            }
+            Err(GuardError::Refused(e)) => return Err(lock_error(e.to_string())),
+        };
         let text = read_lock(&dir, &shown).map_err(|e| lock_error(e.to_string()))?;
         let lock = Lockfile::parse(&text).map_err(|e: LockError| lock_error(e.to_string()))?;
         if let Some(missing) = only.iter().find(|id| lock.get(id).is_none()) {
@@ -242,34 +303,11 @@ impl<'a> Updater<'a> {
         let current = self.revocations.refresh(client)?;
 
         let in_scope = |pack: &&LockedPack| only.is_empty() || only.contains(&pack.id);
-        let mut results: BTreeMap<PackId, SyncError> = BTreeMap::new();
-        let mut repos: BTreeMap<PackId, Reference> = BTreeMap::new();
-        let mut available: BTreeMap<PackId, Vec<Version>> = BTreeMap::new();
-        for pack in lock.packs().iter().filter(in_scope) {
-            let SourceKind::Oci(text) = pack.source.kind() else {
-                continue;
-            };
-            if !ranges.contains_key(&pack.id) {
-                continue;
-            }
-            let listed = reference_of(pack, text).and_then(|r| {
-                available_versions(client, &r)
-                    .map(|v| (r, v))
-                    .map_err(|source| SyncError::Fetch {
-                        id: pack.id.clone(),
-                        source,
-                    })
-            });
-            match listed {
-                Ok((reference, versions)) => {
-                    repos.insert(pack.id.clone(), reference);
-                    available.insert(pack.id.clone(), versions);
-                }
-                Err(e) => {
-                    results.insert(pack.id.clone(), e);
-                }
-            }
-        }
+        let Listed {
+            mut results,
+            repos,
+            available,
+        } = list_candidates(client, &lock, ranges, in_scope);
         let newer = outdated(&lock, ranges, &available);
 
         let mut report = UpdateReport {
@@ -311,7 +349,10 @@ impl<'a> Updater<'a> {
         let updated = Lockfile::new(next).map_err(|e| lock_error(e.to_string()))?;
         let canonical = updated.to_toml();
         if canonical != text {
-            fs::replace(
+            if windows {
+                return Err(UpdateError::UnsupportedOnWindows(shown));
+            }
+            fs::replace_bounded(
                 &dir,
                 OsStr::new(LOCK_NAME),
                 &shown,
@@ -329,6 +370,54 @@ impl<'a> Updater<'a> {
     }
 }
 
+/// What listing the registries found, by pack id.
+struct Listed {
+    /// Packs whose listing failed.
+    results: BTreeMap<PackId, SyncError>,
+    repos: BTreeMap<PackId, Reference>,
+    available: BTreeMap<PackId, Vec<Version>>,
+}
+
+/// Lists the versions of every in-scope OCI pack that has a range.
+fn list_candidates(
+    client: &Client,
+    lock: &Lockfile,
+    ranges: &BTreeMap<PackId, VersionReq>,
+    in_scope: impl Fn(&&LockedPack) -> bool,
+) -> Listed {
+    let mut listed = Listed {
+        results: BTreeMap::new(),
+        repos: BTreeMap::new(),
+        available: BTreeMap::new(),
+    };
+    for pack in lock.packs().iter().filter(in_scope) {
+        let SourceKind::Oci(text) = pack.source.kind() else {
+            continue;
+        };
+        if !ranges.contains_key(&pack.id) {
+            continue;
+        }
+        let found = reference_of(pack, text).and_then(|r| {
+            available_versions(client, &r)
+                .map(|v| (r, v))
+                .map_err(|source| SyncError::Fetch {
+                    id: pack.id.clone(),
+                    source,
+                })
+        });
+        match found {
+            Ok((reference, versions)) => {
+                listed.repos.insert(pack.id.clone(), reference);
+                listed.available.insert(pack.id.clone(), versions);
+            }
+            Err(e) => {
+                listed.results.insert(pack.id.clone(), e);
+            }
+        }
+    }
+    listed
+}
+
 /// Opens `.slopvac` under the project root without following links.
 fn open_lock_dir(project_root: &Path) -> Result<Dir, ApplyError> {
     let root = Dir::open_ambient_dir(project_root, ambient_authority())
@@ -338,31 +427,76 @@ fn open_lock_dir(project_root: &Path) -> Result<Dir, ApplyError> {
     })
 }
 
-/// Takes the exclusive guard lock; it is released when the file is dropped.
-fn take_guard(dir: &Dir) -> Result<std::fs::File, ApplyError> {
+enum GuardError {
+    Busy,
+    Refused(ApplyError),
+}
+
+impl From<ApplyError> for GuardError {
+    fn from(e: ApplyError) -> Self {
+        Self::Refused(e)
+    }
+}
+
+/// Takes the exclusive guard lock, waiting at most `timeout`; it is released
+/// when the file is dropped.
+///
+/// The file is created private (0600). An existing one must be a plain file
+/// that the current user owns and that grants nothing to group or others,
+/// checked on the open handle: another user who could open it could also lock
+/// it and stall every update.
+fn take_guard(dir: &Dir, timeout: Duration) -> Result<std::fs::File, GuardError> {
     let name = OsStr::new(GUARD_NAME);
     match dir.symlink_metadata(name) {
-        Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(GUARD_PATH.into())),
+        Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(GUARD_PATH.into()).into()),
         Ok(_) => {}
         Err(e) if e.kind() == ErrorKind::NotFound => {}
-        Err(e) => return Err(ApplyError::io(GUARD_PATH, &e)),
+        Err(e) => return Err(ApplyError::io(GUARD_PATH, &e).into()),
     }
     let mut opts = OpenOptions::new();
     opts.write(true).create(true).follow(FollowSymlinks::No);
+    #[cfg(unix)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
     nonblocking(&mut opts)?;
     let file = dir
         .open_with(name, &opts)
         .map_err(|e| ApplyError::io(GUARD_PATH, &e))?;
-    if !file
+    let meta = file
         .metadata()
-        .map_err(|e| ApplyError::io(GUARD_PATH, &e))?
-        .is_file()
+        .map_err(|e| ApplyError::io(GUARD_PATH, &e))?;
+    if !meta.is_file() {
+        return Err(ApplyError::NotRegularFile(GUARD_PATH.into()).into());
+    }
+    #[cfg(unix)]
     {
-        return Err(ApplyError::NotRegularFile(GUARD_PATH.into()));
+        use cap_std::fs::MetadataExt;
+        let me = rustix::process::getuid().as_raw();
+        if meta.uid() != me || meta.mode() & 0o077 != 0 {
+            return Err(ApplyError::PathRefused(format!(
+                "`{GUARD_PATH}` must be owned by you and private (mode 0600)"
+            ))
+            .into());
+        }
     }
     let file = file.into_std();
-    file.lock().map_err(|e| ApplyError::io(GUARD_PATH, &e))?;
-    Ok(file)
+    let deadline = Instant::now() + timeout;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return Err(GuardError::Busy);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(ApplyError::io(GUARD_PATH, &e).into());
+            }
+        }
+    }
 }
 
 fn read_lock(dir: &Dir, shown: &str) -> Result<String, ApplyError> {

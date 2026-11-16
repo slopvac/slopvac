@@ -86,6 +86,9 @@ pub enum ApplyError {
     /// The file no longer holds the bytes the edits were computed against.
     #[error("`{}` changed since it was read", esc(.0))]
     SourceChanged(String),
+    /// The file is longer than the bound set for the read, so it was not read.
+    #[error("`{}` is larger than the size limit", esc(.0))]
+    TooLarge(String),
     /// A denied path was not approved. `needs` lists the paths to approve.
     #[error("`{}` is a sensitive path; approve {} to write it", esc(.path), quoted(.needs))]
     Sensitive {
