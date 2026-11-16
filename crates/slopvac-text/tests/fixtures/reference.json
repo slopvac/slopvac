@@ -4104,5 +4104,551 @@
     "text_type": "descriptive"
    }
   ]
+ },
+ {
+  "text": "e.g. Use it. Then stop.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "e.g. Use it.",
+    "start": 0,
+    "end": 12,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then stop.",
+    "start": 13,
+    "end": 23,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "U.S. Army men came. Then left.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "U.S. Army men came.",
+    "start": 0,
+    "end": 19,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then left.",
+    "start": 20,
+    "end": 30,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "a.b. Next one here.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "a.b.",
+    "start": 0,
+    "end": 4,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one here.",
+    "start": 5,
+    "end": 19,
+    "word_count": 3,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "é.g. Next one.",
+  "words": 3,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "é.g.",
+    "start": 0,
+    "end": 5,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one.",
+    "start": 6,
+    "end": 15,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "éU.S. Army rose. Next.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "éU.S. Army rose.",
+    "start": 0,
+    "end": 17,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 18,
+    "end": 23,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Zü.S. Army rose. Next.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Zü.S.",
+    "start": 0,
+    "end": 6,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Army rose.",
+    "start": 7,
+    "end": 17,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 18,
+    "end": 23,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "x.U.S. Army rose. Next.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "x.U.S. Army rose.",
+    "start": 0,
+    "end": 17,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 18,
+    "end": 23,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Wait.A.B. Army rose. Next.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Wait.A.B.",
+    "start": 0,
+    "end": 9,
+    "word_count": 1,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Army rose.",
+    "start": 10,
+    "end": 20,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 21,
+    "end": 26,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "We saw A.B.C. Delta. Next.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "We saw A.B.C. Delta.",
+    "start": 0,
+    "end": 20,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 21,
+    "end": 26,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The U.S.A. Government said so. Then left.",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The U.S.A. Government said so.",
+    "start": 0,
+    "end": 30,
+    "word_count": 5,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then left.",
+    "start": 31,
+    "end": 41,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "See (`a. b`) now. Next one.",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "See (`a. b`) now.",
+    "start": 0,
+    "end": 17,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one.",
+    "start": 18,
+    "end": 27,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Open `a (b. c)` now. Next one.",
+  "words": 5,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Open `a (b. c)` now.",
+    "start": 0,
+    "end": 20,
+    "word_count": 3,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Next one.",
+    "start": 21,
+    "end": 30,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "He said \"stop. Go\" quickly. Next one.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "He said \"stop. Go\" quickly.",
+    "start": 0,
+    "end": 27,
+    "word_count": 4,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one.",
+    "start": 28,
+    "end": 37,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Use (see 'a. b. c') then stop. Next one.",
+  "words": 6,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Use (see 'a. b. c') then stop.",
+    "start": 0,
+    "end": 30,
+    "word_count": 4,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Next one.",
+    "start": 31,
+    "end": 40,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Visit http://a.b/c. Then go. Next one.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Visit http://a.b/c.",
+    "start": 0,
+    "end": 19,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then go.",
+    "start": 20,
+    "end": 28,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next one.",
+    "start": 29,
+    "end": 38,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Edit /etc/a.b. Then go.",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Edit /etc/a.b.",
+    "start": 0,
+    "end": 14,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "Then go.",
+    "start": 15,
+    "end": 23,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "The x.y. Then z.w. Then stop.",
+  "words": 6,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "The x.y.",
+    "start": 0,
+    "end": 8,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then z.w.",
+    "start": 9,
+    "end": 18,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Then stop.",
+    "start": 19,
+    "end": 29,
+    "word_count": 2,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Note: (a. B. C.) done. Next.",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Note: (a. B. C.) done.",
+    "start": 0,
+    "end": 22,
+    "word_count": 3,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Next.",
+    "start": 23,
+    "end": 28,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Do this:\n- a.\n- b.\n",
+  "words": 4,
+  "text_type": "procedural",
+  "sentences": [
+   {
+    "text": "Do this:",
+    "start": 0,
+    "end": 8,
+    "word_count": 2,
+    "text_type": "procedural"
+   },
+   {
+    "text": "- a.",
+    "start": 9,
+    "end": 13,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- b.",
+    "start": 14,
+    "end": 18,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "A:\nB:\n- one\n- two",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "A:\nB:",
+    "start": 0,
+    "end": 5,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- one",
+    "start": 6,
+    "end": 11,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- two",
+    "start": 12,
+    "end": 17,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Intro:\nMore:\n\n- one\n- two",
+  "words": 4,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Intro:\nMore:",
+    "start": 0,
+    "end": 12,
+    "word_count": 2,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- one",
+    "start": 14,
+    "end": 19,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "- two",
+    "start": 20,
+    "end": 25,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "x:\nnot a list\n- a",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "x:\nnot a list\n- a",
+    "start": 0,
+    "end": 17,
+    "word_count": 5,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "Lead:\n\n   \n1. one\n2) two",
+  "words": 5,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "Lead:",
+    "start": 0,
+    "end": 5,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "1. one",
+    "start": 11,
+    "end": 17,
+    "word_count": 1,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "2) two",
+    "start": 18,
+    "end": 24,
+    "word_count": 1,
+    "text_type": "descriptive"
+   }
+  ]
+ },
+ {
+  "text": "One:\nTwo:\nThree:\n- a\n- b\nnot item",
+  "words": 7,
+  "text_type": "descriptive",
+  "sentences": [
+   {
+    "text": "One:\nTwo:\nThree:\n- a\n- b\nnot item",
+    "start": 0,
+    "end": 33,
+    "word_count": 7,
+    "text_type": "descriptive"
+   }
+  ]
  }
 ]
