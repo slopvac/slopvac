@@ -178,9 +178,21 @@ impl Resolved {
     /// layer names the rule, so it reports at the level of its definition.
     #[must_use]
     pub fn level(&self, rule: &str, category: Option<&str>) -> Option<ResolvedLevel> {
-        let last = |path: &[&str]| self.lookup(path).and_then(|(_, h)| h.last());
-        let by_rule = last(&["rules", rule]);
-        let by_category = category.and_then(|c| last(&["categories", c, "severity"]));
+        self.level_by_any(&[rule], category.as_slice())
+    }
+
+    /// [`Resolved::level`] for a rule and a category that a file may spell more than one way,
+    /// such as `core:r` and `r`. Every spelling in `rules` and `categories` is read, and the
+    /// layer that wrote an entry decides which one wins, not the spelling of its key. On a tie
+    /// the earlier spelling in the slice wins.
+    #[must_use]
+    pub fn level_by_any(&self, rules: &[&str], categories: &[&str]) -> Option<ResolvedLevel> {
+        let by_rule = self.newest(rules.iter().map(|r| vec!["rules", *r]));
+        let by_category = self.newest(
+            categories
+                .iter()
+                .map(|c| vec!["categories", *c, "severity"]),
+        );
         let as_level = |c: &Contribution, from| {
             Some(ResolvedLevel {
                 level: c.value.as_str()?.to_owned(),
@@ -190,18 +202,46 @@ impl Resolved {
         };
         match (by_rule, by_category) {
             (Some(r), Some(c)) if r.value != json!("off") && c.scope > r.scope => {
-                Some(self.floored(as_level(c, LevelFrom::Category)?, category))
+                Some(self.floored(as_level(c, LevelFrom::Category)?, categories))
             }
             (Some(r), _) => as_level(r, LevelFrom::Rule),
-            (None, Some(c)) => Some(self.floored(as_level(c, LevelFrom::Category)?, category)),
+            (None, Some(c)) => Some(self.floored(as_level(c, LevelFrom::Category)?, categories)),
             (None, None) => None,
         }
     }
 
-    fn floored(&self, mut level: ResolvedLevel, category: Option<&str>) -> ResolvedLevel {
-        let floor = category
-            .and_then(|c| self.get(&["categories", c, "minimum_severity"]))
-            .and_then(Json::as_str);
+    /// The contribution from the highest layer among the entries at `paths`.
+    fn newest<'a>(
+        &'a self,
+        paths: impl IntoIterator<Item = Vec<&'a str>>,
+    ) -> Option<&'a Contribution> {
+        let mut best: Option<&Contribution> = None;
+        for path in paths {
+            let Some(found) = self.lookup(&path).and_then(|(_, h)| h.last()) else {
+                continue;
+            };
+            if best.is_none_or(|b| found.scope > b.scope) {
+                best = Some(found);
+            }
+        }
+        best
+    }
+
+    /// The final value among the entries at `paths`, taken from the highest layer that wrote
+    /// one, for a key that a file may spell more than one way. A cleared budget is `null`.
+    #[must_use]
+    pub fn get_by_any<'a>(&'a self, paths: &[Vec<&'a str>]) -> Option<&'a Json> {
+        self.newest(paths.iter().cloned()).map(|c| &c.value)
+    }
+
+    fn floored(&self, mut level: ResolvedLevel, categories: &[&str]) -> ResolvedLevel {
+        let floor = self
+            .newest(
+                categories
+                    .iter()
+                    .map(|c| vec!["categories", *c, "minimum_severity"]),
+            )
+            .and_then(|c| c.value.as_str());
         if let Some(floor) = floor
             && let (Some(have), Some(min)) = (severity_rank(&level.level), severity_rank(floor))
             && have < min

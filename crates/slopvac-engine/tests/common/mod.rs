@@ -133,6 +133,7 @@ pub fn parity_engine() -> Engine {
                 level: None,
                 weight: dials["weight"].as_f64(),
                 max_per_100_words: dials["budget"].as_f64(),
+                ..Default::default()
             },
         );
     }

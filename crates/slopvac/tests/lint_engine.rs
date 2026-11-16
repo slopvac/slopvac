@@ -549,3 +549,132 @@ fn a_built_in_style_in_config_applies_and_an_unknown_one_is_an_error() {
         .code(2)
         .stderr(predicate::str::contains("error[unknown-style]"));
 }
+
+const SENTINEL_HOME: &str = "/home/SENTINEL-user-1234";
+
+#[test]
+fn a_missing_absolute_config_is_reported_without_its_directories() {
+    let out = slopvac()
+        .args(["lint", "--format", "json", "--config"])
+        .arg(format!("{SENTINEL_HOME}/proj/slopvac.toml"))
+        .arg(project("ok.md", CLEAN, None).1)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let everything = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!everything.contains("SENTINEL"), "{everything}");
+    assert!(
+        everything.contains("<external>/slopvac.toml"),
+        "{everything}"
+    );
+}
+
+#[test]
+fn a_refused_config_value_that_is_a_path_is_redacted_in_stderr_and_notices() {
+    let config = format!("schema_version = 3\nlocale = \"{SENTINEL_HOME}/secret dir\"\n");
+    let (_dir, path) = project("ok.md", CLEAN, Some(&config));
+    for format in ["text", "json", "sarif"] {
+        let out = slopvac()
+            .args(["lint", "--format", format])
+            .arg(&path)
+            .output()
+            .expect("run");
+        assert_eq!(out.status.code(), Some(2), "{format}");
+        let everything = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!everything.contains("SENTINEL"), "{format}: {everything}");
+    }
+}
+
+#[test]
+fn a_config_with_an_unknown_rule_is_rejected_even_when_no_file_is_left_to_lint() {
+    let config = "schema_version = 3\n\n[rules]\n\"core:orwell.nope\" = \"off\"\n";
+    let (dir, _) = project("ok.md", CLEAN, Some(config));
+    let empty = dir.path().join("empty");
+    fs::create_dir(&empty).expect("dir");
+    slopvac()
+        .arg("lint")
+        .arg(&empty)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+}
+
+#[test]
+fn an_excluded_file_is_never_read_so_bad_bytes_in_it_do_not_matter() {
+    let config = "schema_version = 3\nexclude = [\"binary.md\"]\n";
+    let (dir, path) = project("ok.md", CLEAN, Some(config));
+    fs::write(dir.path().join("binary.md"), [0xff, 0xfe, 0x00]).expect("write");
+    slopvac()
+        .arg("lint")
+        .arg(dir.path().join("binary.md"))
+        .arg(&path)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn a_local_file_named_like_a_renamed_external_identity_keeps_its_own_name_in_sarif() {
+    let (a, _) = outside();
+    let (b, _) = outside();
+    fs::write(a.path().join("doc.md"), CLEAN).expect("write");
+    fs::write(b.path().join("doc.md"), SLOPPY).expect("write");
+    // A relative path is shown as given, so this file's identity is literally `<external>/2/doc.md`.
+    let work = tempfile::tempdir().expect("tempdir");
+    let local = work.path().join("<external>/2");
+    fs::create_dir_all(&local).expect("dirs");
+    fs::write(local.join("doc.md"), SLOPPY).expect("write");
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["lint", "--format", "sarif"])
+        .arg(a.path().join("doc.md"))
+        .arg(b.path().join("doc.md"))
+        .arg("<external>/2/doc.md")
+        .output()
+        .expect("run");
+    let log: Value = serde_json::from_slice(&out.stdout).expect("sarif json");
+    let mut uris: Vec<String> = log["runs"][0]["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .map(|r| {
+            r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+                .as_str()
+                .expect("uri")
+                .to_owned()
+        })
+        .collect();
+    uris.sort();
+    uris.dedup();
+    // The two files that share a name and the local file get three different identities,
+    // and no result is lost to a collision.
+    assert_eq!(uris.len(), 2, "{uris:?}");
+    let report = {
+        let json = slopvac()
+            .current_dir(work.path())
+            .args(["lint", "--format", "json"])
+            .arg(a.path().join("doc.md"))
+            .arg(b.path().join("doc.md"))
+            .arg("<external>/2/doc.md")
+            .output()
+            .expect("run");
+        serde_json::from_slice::<Value>(&json.stdout).expect("json")
+    };
+    let mut paths: Vec<&str> = report["documents"]
+        .as_array()
+        .expect("documents")
+        .iter()
+        .map(|d| d["path"].as_str().expect("path"))
+        .collect();
+    paths.sort_unstable();
+    paths.dedup();
+    assert_eq!(paths.len(), 3, "{paths:?}");
+}

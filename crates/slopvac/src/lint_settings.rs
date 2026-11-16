@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use serde_json::Value as Json;
 use slopvac_config::{Inputs, Layer, PackFile, Presets};
-use slopvac_config::{LoadedConfig, Resolved, Setting, describe};
+use slopvac_config::{LevelFrom, LoadedConfig, Resolved, Setting, describe};
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
     CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, NonEmptyString,
@@ -104,56 +104,26 @@ fn category_of(rules: &RuleSet, key: &str) -> Option<String> {
         .map(|c| c.id().as_str().to_owned())
 }
 
-/// A style layer with its rule and category keys rewritten to the catalogue's names. An
-/// entry for a rule or category that this catalogue lacks is dropped: a style is shared data,
-/// and the config is where an unknown name is an error.
-fn canonical_layer(layer: &[Setting], rules: &RuleSet) -> Vec<Setting> {
-    layer
-        .iter()
-        .filter_map(|setting| {
-            let mut setting = setting.clone();
-            match setting.path.as_slice() {
-                [head, key, ..] if head == "rules" => {
-                    let id = rule_id_of(rules, key)?;
-                    id.as_str().clone_into(&mut setting.path[1]);
-                }
-                [head, key, ..] if head == "categories" => {
-                    let name = category_of(rules, key)?;
-                    setting.path[1] = name;
-                }
-                _ => {}
-            }
-            Some(setting)
-        })
-        .collect()
-}
-
-/// Rewrite the rule and category keys of `settings` to the catalogue's names.
-fn canonicalise(settings: &mut [Setting], rules: &RuleSet) -> Result<(), CliError> {
+/// Check the names a config uses against the catalogue. A key may be bare (`orwell.x`,
+/// `orwell`) or qualified (`core:orwell.x`, `core:orwell`); both resolve to the same rule or
+/// category, and the layer that wrote an entry decides which wins, never its spelling.
+fn check_names(settings: &[Setting], rules: &RuleSet) -> Result<(), CliError> {
     for setting in settings {
         let place = describe(&setting.source);
         match setting.path.as_slice() {
-            [head, key, ..] if head == "rules" => {
-                let id = rule_id_of(rules, key).ok_or_else(|| {
-                    CliError::new(
-                        "config-unknown-rule",
-                        format!(
-                            "{place}: unknown rule {key:?}; use a rule id from `slopvac rules`"
-                        ),
-                    )
-                })?;
-                id.as_str().clone_into(&mut setting.path[1]);
+            [head, key, ..] if head == "rules" && rule_id_of(rules, key).is_none() => {
+                return Err(CliError::new(
+                    "config-unknown-rule",
+                    format!("{place}: unknown rule {key:?}; use a rule id from `slopvac rules`"),
+                ));
             }
-            [head, key, ..] if head == "categories" => {
-                let name = category_of(rules, key).ok_or_else(|| {
-                    CliError::new(
-                        "config-unknown-category",
-                        format!(
-                            "{place}: unknown category {key:?}; use a category from `slopvac rules`"
-                        ),
-                    )
-                })?;
-                setting.path[1] = name;
+            [head, key, ..] if head == "categories" && category_of(rules, key).is_none() => {
+                return Err(CliError::new(
+                    "config-unknown-category",
+                    format!(
+                        "{place}: unknown category {key:?}; use a category from `slopvac rules`"
+                    ),
+                ));
             }
             _ => {}
         }
@@ -161,12 +131,12 @@ fn canonicalise(settings: &mut [Setting], rules: &RuleSet) -> Result<(), CliErro
     Ok(())
 }
 
-/// The config with its rule and category keys canonicalised.
+/// Check a config against the catalogue.
 ///
 /// # Errors
 /// `config-unknown-rule` or `config-unknown-category`, naming the file and line of the key,
 /// and `unknown-style` for a `styles` entry that does not ship.
-pub fn canonical_config(config: &LoadedConfig, rules: &RuleSet) -> Result<LoadedConfig, CliError> {
+pub fn validate(config: &LoadedConfig, rules: &RuleSet) -> Result<(), CliError> {
     let listed = config.project_value(&["styles"]);
     for name in listed
         .iter()
@@ -184,40 +154,31 @@ pub fn canonical_config(config: &LoadedConfig, rules: &RuleSet) -> Result<Loaded
             ));
         }
     }
-    let mut out = config.clone();
-    for file in &mut out.files {
-        canonicalise(&mut file.settings, rules)?;
-        for block in &mut file.blocks {
-            canonicalise(&mut block.settings, rules)?;
+    for file in &config.files {
+        check_names(&file.settings, rules)?;
+        for block in &file.blocks {
+            check_names(&block.settings, rules)?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The presets of one file: the legacy profile style first, then the built-in style
 /// presets that `styles` lists. So the profile is the lowest style layer and a listed style
 /// outranks it, and the project config outranks both.
-struct ProfilePresets<'a> {
+struct ProfilePresets {
     legacy: Vec<Setting>,
     styles: StylePresets<BuiltinSource>,
-    rules: &'a RuleSet,
 }
 
-impl Presets for ProfilePresets<'_> {
+impl Presets for ProfilePresets {
     fn style(&self, name: &str) -> Option<Vec<Setting>> {
-        self.styles
-            .style(name)
-            .map(|layer| canonical_layer(&layer, self.rules))
+        self.styles.style(name)
     }
 
     fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
         let mut layers = vec![self.legacy.clone()];
-        layers.extend(
-            self.styles
-                .style_layers(listed)
-                .iter()
-                .map(|layer| canonical_layer(layer, self.rules)),
-        );
+        layers.extend(self.styles.style_layers(listed));
         layers
     }
 
@@ -231,9 +192,8 @@ impl Presets for ProfilePresets<'_> {
 }
 
 /// The merged settings of the file at `rel`, with the legacy style of its profile underneath.
-/// `config` is already canonical.
 #[must_use]
-pub fn resolve(config: &LoadedConfig, rel: &Path, rules: &RuleSet) -> Resolved {
+pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     let styles = StylePresets(BuiltinSource);
     let inputs = |presets: &'_ dyn Presets| {
         config.resolve(
@@ -254,9 +214,8 @@ pub fn resolve(config: &LoadedConfig, rel: &Path, rules: &RuleSet) -> Resolved {
         .unwrap_or("normal")
         .to_owned();
     inputs(&ProfilePresets {
-        legacy: canonical_layer(legacy_style(&profile).layer(), rules),
+        legacy: legacy_style(&profile).layer().to_vec(),
         styles,
-        rules,
     })
 }
 
@@ -279,6 +238,28 @@ fn count(resolved: &Resolved, path: &[&str]) -> Option<usize> {
         .get(path)
         .and_then(Json::as_u64)
         .and_then(|n| usize::try_from(n).ok())
+}
+
+const RANKS: [&str; 4] = ["off", "suggestion", "warning", "error"];
+
+fn rank(name: &str) -> Option<usize> {
+    RANKS.iter().position(|r| *r == name)
+}
+
+/// Raise `level` to `floor`. `off` as the floor sets none.
+fn floored(level: Level, floor: Option<&str>) -> Level {
+    let (Level::On(severity), Some(floor)) = (level, floor) else {
+        return level;
+    };
+    let have = rank(match severity {
+        Severity::Suggestion => "suggestion",
+        Severity::Warning => "warning",
+        Severity::Error => "error",
+    });
+    match (have, rank(floor), level_of(floor)) {
+        (Some(h), Some(f), Some(raised)) if f > 1 && h < f => raised,
+        _ => level,
+    }
 }
 
 /// Move `level` along suggestion, warning, error by `shift`. `off` stays off.
@@ -382,27 +363,52 @@ pub fn build(
     let only = selected(rules, &cli.only_categories)?;
     for category in rules.categories() {
         let name = category.id().as_str();
-        let budget = resolved
-            .get(&["categories", name, "max_per_100_words"])
-            .and_then(Json::as_f64);
+        let qualified = format!(
+            "{}:{name}",
+            category.rules().first().map_or("core", |r| r.id().pack())
+        );
+        let field = |f: &'static str| {
+            vec![
+                vec!["categories", qualified.as_str(), f],
+                vec!["categories", name, f],
+            ]
+        };
+        // `"none"` clears the budget; it is stored as null and must not fall back to the
+        // budget in the rule data.
+        let budget = resolved.get_by_any(&field("max_per_100_words"));
         settings.categories.insert(
             CategoryId::new(name).map_err(|e| internal("category", e))?,
             CategoryDials {
                 level: None,
-                weight: number(resolved, &["categories", name, "weight"]),
-                max_per_100_words: budget,
+                weight: resolved.get_by_any(&field("weight")).and_then(Json::as_f64),
+                max_per_100_words: budget.and_then(Json::as_f64),
+                budget_cleared: budget.is_some_and(Json::is_null),
             },
         );
+        let floor = resolved
+            .get_by_any(&field("minimum_severity"))
+            .and_then(Json::as_str);
         for rule in category.rules() {
             let id = rule.id();
-            // A category entry never sets a judgement rule's level: only a `rules` entry does.
-            let category_key = (rule.kind() != MatchKind::Judgement).then_some(name);
-            let level = match resolved.level(id.as_str(), category_key) {
+            // A judgement rule has no finding to grade: a category entry never sets its
+            // level, only a `rules` entry does (docs/contract/profiles.md).
+            let categories: Vec<&str> = if rule.kind() == MatchKind::Judgement {
+                Vec::new()
+            } else {
+                vec![qualified.as_str(), name]
+            };
+            let named = resolved.level_by_any(&[id.as_str(), id.local()], &categories);
+            // `severity_shift` moves levels that come from rule definitions, styles and the
+            // genre chain. A level that the config sets is final. A category floor holds
+            // after the shift.
+            let level = match named {
                 Some(named) => level_of(&named.level).map(|l| {
-                    if is_inherited(named.source.layer) {
-                        shifted(l, shift)
-                    } else {
+                    if !is_inherited(named.source.layer) {
                         l
+                    } else if named.from == LevelFrom::Category {
+                        floored(shifted(l, shift), floor)
+                    } else {
+                        shifted(l, shift)
                     }
                 }),
                 None if shift != 0 => Some(shifted(Level::On(rule.rule().severity), shift)),
@@ -462,8 +468,8 @@ mod tests {
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");
         let loaded = load(&path, &NoPresets).expect("the config loads");
-        let config = canonical_config(&loaded, &rules)?;
-        let resolved = resolve(&config, Path::new("doc.md"), &rules);
+        validate(&loaded, &rules)?;
+        let resolved = resolve(&loaded, Path::new("doc.md"));
         build(&rules, &resolved, Vec::new(), &Overrides::default())
     }
 
@@ -577,6 +583,74 @@ mod tests {
         assert_eq!(
             level(&s, "core:ste-punctuation.semicolon-used"),
             Some(Level::On(Severity::Suggestion))
+        );
+    }
+
+    #[test]
+    fn a_qualified_and_a_bare_key_in_one_layer_resolve_the_same_in_either_order() {
+        let rule = "core:prose-inflation.slop-lexicon";
+        for entries in [
+            "\"core:prose-inflation.slop-lexicon\" = \"off\"\n\"prose-inflation.slop-lexicon\" = \"error\"\n",
+            "\"prose-inflation.slop-lexicon\" = \"error\"\n\"core:prose-inflation.slop-lexicon\" = \"off\"\n",
+        ] {
+            let s = settings(&format!("{HEAD}\n[rules]\n{entries}")).unwrap();
+            // The qualified key wins on a tie, whatever the order it was written in.
+            assert_eq!(level(&s, rule), Some(Level::Off), "{entries}");
+        }
+        for entries in [
+            "\"core:orwell\" = \"off\"\norwell = \"error\"\n",
+            "orwell = \"error\"\n\"core:orwell\" = \"off\"\n",
+        ] {
+            let s = settings(&format!("{HEAD}\n[categories]\n{entries}")).unwrap();
+            assert_eq!(
+                level(&s, "core:orwell.unsupported-evaluative"),
+                Some(Level::Off),
+                "{entries}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_none_budget_clears_the_budget_and_an_absent_one_keeps_the_rule_data() {
+        let id = CategoryId::new("orwell").unwrap();
+        let absent = settings(HEAD).unwrap();
+        assert!(!absent.categories[&id].budget_cleared);
+        let cleared = settings(&format!(
+            "{HEAD}\n[categories.orwell]\nmax_per_100_words = \"none\"\n"
+        ))
+        .unwrap();
+        assert!(cleared.categories[&id].budget_cleared);
+        assert_eq!(cleared.categories[&id].max_per_100_words, None);
+        let set = settings(&format!(
+            "{HEAD}\n[categories.\"core:orwell\"]\nmax_per_100_words = 2.5\n"
+        ))
+        .unwrap();
+        assert_eq!(set.categories[&id].max_per_100_words, Some(2.5));
+        assert!(!set.categories[&id].budget_cleared);
+    }
+
+    #[test]
+    fn the_category_floor_holds_after_the_severity_shift() {
+        // `ste-punctuation` is a suggestion category. A shift of -1 cannot go lower, and the
+        // floor of warning raises the shifted level.
+        let config = format!(
+            "{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
+             [categories.ste-punctuation]\nminimum_severity = \"warning\"\n"
+        );
+        let s = settings(&config).unwrap();
+        assert_eq!(
+            level(&s, "core:ste-punctuation.semicolon-used"),
+            Some(WARNING)
+        );
+        // A category at error shifted down by one lands on warning, which the floor allows.
+        let config = format!(
+            "{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
+             [categories.orwell]\nminimum_severity = \"warning\"\n"
+        );
+        let s = settings(&config).unwrap();
+        assert_eq!(
+            level(&s, "core:orwell.unsupported-evaluative"),
+            Some(WARNING)
         );
     }
 }

@@ -449,15 +449,19 @@ impl Engine {
                             .and_then(|d| d.weight)
                             .unwrap_or(category.weight().get()),
                     },
-                    budget: meta.and_then(|d| d.max_per_100_words).or_else(|| {
-                        category
-                            .max_per_100_words()
-                            .and_then(|m| {
-                                m.iter()
-                                    .find(|(p, _)| p.as_str() == self.settings.profile.as_str())
-                            })
-                            .map(|(_, d)| d.get())
-                    }),
+                    budget: if meta.is_some_and(|d| d.budget_cleared) {
+                        None
+                    } else {
+                        meta.and_then(|d| d.max_per_100_words).or_else(|| {
+                            category
+                                .max_per_100_words()
+                                .and_then(|m| {
+                                    m.iter()
+                                        .find(|(p, _)| p.as_str() == self.settings.profile.as_str())
+                                })
+                                .map(|(_, d)| d.get())
+                        })
+                    },
                 };
                 self.categories.insert(category.id().clone(), info);
                 for (r, loaded) in category.rules().iter().enumerate() {

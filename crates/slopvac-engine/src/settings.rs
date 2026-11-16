@@ -48,6 +48,9 @@ pub struct CategoryDials {
     pub weight: Option<f64>,
     /// The density budget. `None` keeps the budget the rule data gives for the profile.
     pub max_per_100_words: Option<f64>,
+    /// The config cleared the budget with `"none"`: the category has no budget, and the
+    /// budget in the rule data does not apply. Wins over `max_per_100_words`.
+    pub budget_cleared: bool,
 }
 
 /// The limits that fail a document's gate. An absent limit never fails.

@@ -480,7 +480,10 @@ impl Loader<'_> {
                     Key::Path(p) => fs::read_to_string(p).map_err(|e| {
                         fail(
                             Code::ExtendsMissing,
-                            format!("cannot read the extended config `{name}`: {e}"),
+                            format!(
+                                "cannot read the extended config `{}`: {e}",
+                                safe_display(p, self.root)
+                            ),
                             Some("paths are relative to the file that holds the entry".into()),
                         )
                     })?,
@@ -491,6 +494,23 @@ impl Loader<'_> {
         }
         Ok(())
     }
+}
+
+/// A path for a message: relative to the project root when it sits under it, else
+/// `<external>/<file name>`. Unlike [`relative_display`] it never shows the directories
+/// above or beside the root.
+fn safe_display(path: &Path, root: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    format!("<external>/{name}")
 }
 
 fn is_pack_ref(name: &str) -> bool {

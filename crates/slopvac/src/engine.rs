@@ -151,10 +151,72 @@ fn kind_of_language(plan: &StdinPlan) -> Result<Kind, &'static str> {
     }
 }
 
-fn config_error(err: &ConfigError) -> CliError {
-    let mut message = err.to_string();
+/// Redact every backtick-quoted absolute path in `text`.
+///
+/// The config diagnostics quote the user's own value in backticks, such as the value of a bad
+/// `locale` or an unknown key. When the quoted text is an absolute path, the whole quoted text
+/// is replaced with `redact::shown_path` (policies.md, 1.7).
+fn redact_quoted(text: &str, root: &Path) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let (head, tail) = rest.split_at(open);
+        out.push_str(head);
+        let tail = &tail[1..];
+        let Some(close) = tail.find('`') else {
+            out.push('`');
+            rest = tail;
+            continue;
+        };
+        let quoted = &tail[..close];
+        out.push('`');
+        if Path::new(quoted).is_absolute() {
+            out.push_str(&redact::shown_path(Path::new(quoted), root));
+        } else {
+            out.push_str(quoted);
+        }
+        out.push('`');
+        rest = &tail[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A refused config from its structured fields: each diagnostic's message, its
+/// `file:line:column` pointer and its help. The source excerpt is left out because it quotes
+/// the user's own text, paths included.
+fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String {
+    use std::fmt::Write as _;
+    rejected
+        .diagnostics
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let (line, column) = d.location(&rejected.text);
+            let mut text = if i == 0 {
+                String::new()
+            } else {
+                format!("error[{}]: ", d.code.as_str())
+            };
+            text.push_str(&redact_quoted(&d.message, root));
+            let _ = write!(text, "\n --> {}:{line}:{column}", rejected.file);
+            if let Some(help) = &d.help {
+                text.push_str("\nhelp: ");
+                text.push_str(&redact_quoted(help, root));
+            }
+            text
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn config_error(err: &ConfigError, root: &Path) -> CliError {
+    let mut message = match err {
+        ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
+        other @ ConfigError::Io { .. } => other.to_string(),
+    };
     if err.is_legacy() {
-        message.push_str(" Run `slopvac migrate` to convert it.");
+        message.push_str("\nhelp: run `slopvac migrate` to convert it");
     }
     CliError::new(err.code().as_str(), message)
 }
@@ -183,20 +245,71 @@ impl Linter for EngineLinter {
             explicit: None,
         };
         if let Some(given) = &request.config {
+            let shown = redact::shown_path(given, &request.root);
+            if !request.root.join(given).is_file() {
+                let error = CliError::new(
+                    "config-not-found",
+                    format!("--config {shown}: no such file"),
+                );
+                return failed(request, run, &error);
+            }
             match configs.discovery.explicit_in(&request.root, given) {
                 Ok(config) => configs.explicit = Some(config),
                 Err(err) => {
                     // A config that cannot be read lints nothing (policies V7).
-                    return failed(request, run, &config_error(&err));
+                    return failed(request, run, &config_error(&err, &request.root));
                 }
             }
+        }
+        let rules = match rule_catalog::core() {
+            Ok(rules) => rules,
+            Err(err) => return failed(request, run, &err),
+        };
+        if let Err(err) = validate_configs(request, &configs, &rules) {
+            return failed(request, run, &err);
         }
         let items = match collect(request, &configs, &mut run) {
             Ok(items) => items,
             Err(err) => return failed(request, run, &err),
         };
-        lint_items(request, items, run)
+        lint_items(request, items, rules, run)
     }
+}
+
+/// Check every config the run reaches against the catalogue, even when no input is left to
+/// lint: the config of each target, of standard input and the one named with `--config`.
+fn validate_configs(
+    request: &LintRequest,
+    configs: &Configs<'_>,
+    rules: &slopvac_rules::RuleSet,
+) -> Result<(), CliError> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if request.stdin.is_some() {
+        dirs.push(request.root.clone());
+    }
+    for target in &request.targets {
+        let path = request.root.join(target);
+        if path.is_dir() {
+            dirs.push(path);
+        } else if let Some(parent) = path.parent().filter(|p| p.is_dir()) {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    if dirs.is_empty() {
+        dirs.push(request.root.clone());
+    }
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        let found = configs
+            .of(&dir)
+            .map_err(|e| config_error(&e, &request.root))?;
+        if let Some(config) = found
+            && seen.insert(config.root.clone())
+        {
+            lint_settings::validate(&config, rules)?;
+        }
+    }
+    Ok(())
 }
 
 /// An outcome for a run that could not start.
@@ -234,18 +347,29 @@ fn collect(
 
 /// Two files outside the project can share a redacted name such as `<external>/a.md`. Each
 /// keeps a distinct identity in the report, so one does not replace the other in the source
-/// map that column-aware formats read.
+/// map that column-aware formats read. Every name in use is reserved first, so a number added
+/// to one file's name never lands on another file's own name.
 fn unique_identities(items: &mut [Item]) {
-    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut taken: HashSet<String> = items.iter().map(|i| i.shown.clone()).collect();
+    let mut first_seen: HashSet<String> = HashSet::new();
     for item in items {
-        let count = seen.entry(item.shown.clone()).or_insert(0);
-        *count += 1;
-        if *count > 1 {
-            item.shown = match item.shown.strip_prefix("<external>/") {
-                Some(rest) => format!("<external>/{count}/{rest}"),
-                None => format!("{}#{count}", item.shown),
-            };
+        if first_seen.insert(item.shown.clone()) {
+            continue;
         }
+        let original = item.shown.clone();
+        let mut n = 2;
+        let renamed = loop {
+            let candidate = match original.strip_prefix("<external>/") {
+                Some(rest) => format!("<external>/{n}/{rest}"),
+                None => format!("{original}#{n}"),
+            };
+            if !taken.contains(&candidate) {
+                break candidate;
+            }
+            n += 1;
+        };
+        taken.insert(renamed.clone());
+        item.shown = renamed;
     }
 }
 
@@ -345,6 +469,14 @@ fn collect_targets(
                 continue;
             }
             let shown = redact::shown_path(&file.path, &request.root);
+            let config = config_for(configs, &request.root, &canonical)?;
+            // Exclusions apply first, whether the config was found or named with `--config`,
+            // so an excluded file is never read, parsed or reported.
+            if let Some((loaded, rel)) = &config
+                && loaded.is_excluded(rel)
+            {
+                continue;
+            }
             let kind = match kind_of_file(&file.kind) {
                 Ok(kind) => kind,
                 Err(why) => {
@@ -371,13 +503,6 @@ fn collect_targets(
                 );
                 continue;
             };
-            let config = config_for(configs, &request.root, &canonical)?;
-            // Exclusions apply whether the config was found or named with `--config`.
-            if let Some((loaded, rel)) = &config
-                && loaded.is_excluded(rel)
-            {
-                continue;
-            }
             items.push(Item {
                 shown,
                 text,
@@ -407,7 +532,7 @@ fn config_for(
     } else {
         dir
     };
-    let found = configs.of(dir).map_err(|e| config_error(&e))?;
+    let found = configs.of(dir).map_err(|e| config_error(&e, root))?;
     Ok(found.map(|config| {
         let rel = absolute
             .strip_prefix(&config.root)
@@ -426,21 +551,13 @@ fn group_by_settings(
     rules: &slopvac_rules::RuleSet,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
-    // Each config is canonicalised against the catalogue once.
-    let mut canonical: HashMap<PathBuf, LoadedConfig> = HashMap::new();
     let none = LoadedConfig::without_files(request.root.clone());
     for (index, item) in items.iter().enumerate() {
         let (config, rel) = match &item.config {
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        if !canonical.contains_key(&config.root) {
-            canonical.insert(
-                config.root.clone(),
-                lint_settings::canonical_config(config, rules)?,
-            );
-        }
-        let resolved = lint_settings::resolve(&canonical[&config.root], &rel, rules);
+        let resolved = lint_settings::resolve(config, &rel);
         let files = config_files(config);
         let settings = lint_settings::build(
             rules,
@@ -483,11 +600,12 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutcome {
-    let rules = match rule_catalog::core() {
-        Ok(rules) => rules,
-        Err(err) => return failed(request, run, &err),
-    };
+fn lint_items(
+    request: &LintRequest,
+    items: Vec<Item>,
+    rules: slopvac_rules::RuleSet,
+    mut run: Run,
+) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -572,13 +690,15 @@ pub fn project_settings(
     let rules = rule_catalog::core()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
-    let found = discovery.nearest(root).map_err(|e| config_error(&e))?;
+    let found = discovery
+        .nearest(root)
+        .map_err(|e| config_error(&e, root))?;
     let (config, files) = match &found {
         Some(config) => (config.as_ref().clone(), config_files(config)),
         None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
     };
-    let config = lint_settings::canonical_config(&config, &rules)?;
-    let resolved = lint_settings::resolve(&config, Path::new(""), &rules);
+    lint_settings::validate(&config, &rules)?;
+    let resolved = lint_settings::resolve(&config, Path::new(""));
     let settings = lint_settings::build(
         &rules,
         &resolved,
