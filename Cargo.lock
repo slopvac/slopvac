@@ -2490,6 +2490,7 @@ dependencies = [
  "base64",
  "flate2",
  "roxmltree",
+ "rstest",
  "slopvac-model",
  "slopvac-parse",
 ]

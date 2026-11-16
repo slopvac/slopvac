@@ -118,13 +118,52 @@ fn label_text<'a>(source: &'a str, f: &'a Fragment) -> &'a str {
     f.text.as_deref().unwrap_or_else(|| &source[f.span.clone()])
 }
 
-/// Split a label into words. `<br>` tags separate words, and tokens without a letter or digit are dropped.
-fn words(label: &str) -> Vec<&str> {
+/// The length of a line break at the start of `s`: a newline, a literal backslash-n as
+/// `PlantUML` writes it, or an HTML `<br>` tag in any case, with optional spaces and a self-closing slash.
+fn break_len(s: &str) -> Option<usize> {
+    if s.starts_with("\\n") {
+        return Some(2);
+    }
+    if s.starts_with('\n') {
+        return Some(1);
+    }
+    let head = s.get(..3)?;
+    if !head.eq_ignore_ascii_case("<br") {
+        return None;
+    }
+    let rest = &s[3..];
+    let trimmed = rest.trim_start();
+    let trimmed = trimmed.strip_prefix('/').unwrap_or(trimmed).trim_start();
+    trimmed
+        .starts_with('>')
+        .then(|| s.len() - trimmed.len() + 1)
+}
+
+/// The first line break in `label` as `(start, length)`.
+fn find_break(label: &str) -> Option<(usize, usize)> {
     label
-        .split(|c: char| c.is_whitespace() || c == '<' || c == '>')
-        .filter(|w| w.chars().any(char::is_alphanumeric))
-        .filter(|w| !w.eq_ignore_ascii_case("br"))
-        .collect()
+        .char_indices()
+        .find_map(|(at, _)| break_len(&label[at..]).map(|len| (at, len)))
+}
+
+/// Split a label into words. Line breaks separate words, and tokens without a letter or digit are dropped.
+fn words(label: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = label;
+    loop {
+        let (line, next) = match find_break(rest) {
+            Some((at, len)) => (&rest[..at], Some(&rest[at + len..])),
+            None => (rest, None),
+        };
+        out.extend(
+            line.split(|c: char| c.is_whitespace() || c == '<' || c == '>')
+                .filter(|w| w.chars().any(char::is_alphanumeric)),
+        );
+        match next {
+            Some(n) => rest = n,
+            None => return out,
+        }
+    }
 }
 
 fn word_count(label: &str) -> usize {
@@ -147,16 +186,25 @@ fn is_code_token(word: &str) -> bool {
 }
 
 fn gloss_split(label: &str) -> Option<(&str, &str)> {
-    const BREAKS: [&str; 2] = ["\n", "<br"];
-    ["\n", "<br", ":", " - ", " – ", " / ", "("]
+    let line = find_break(label).map(|(at, len)| (at, len, true));
+    let other = [":", " - ", " – ", " / ", "("]
         .iter()
-        .filter_map(|sep| label.find(sep).map(|at| (at, *sep)))
-        .min_by_key(|&(at, _)| at)
-        .map(|(at, sep)| (&label[..at], &label[at + sep.len()..], sep))
-        // A line break between two names lists components, as in "Istio Sidecar" over
-        // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
-        .filter(|&(_, gloss, sep)| !BREAKS.contains(&sep) || !all_capitalised(gloss))
-        .map(|(head, gloss, _)| (head, gloss))
+        .filter_map(|sep| label.find(sep).map(|at| (at, sep.len(), false)))
+        .min_by_key(|&(at, ..)| at);
+    let (at, len, is_break) = match (line, other) {
+        (Some(l), Some(o)) => {
+            if o.0 < l.0 {
+                o
+            } else {
+                l
+            }
+        }
+        (l, o) => l.or(o)?,
+    };
+    let (head, gloss) = (&label[..at], &label[at + len..]);
+    // A line break between two names lists components, as in "Istio Sidecar" over
+    // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
+    (!is_break || !all_capitalised(gloss)).then_some((head, gloss))
 }
 
 /// Every word starts with a capital letter, so the text reads as a name.
@@ -403,6 +451,29 @@ mod tests {
             ),
             Vec::<Signal>::new()
         );
+    }
+
+    // "Order Service" is 2 words and "handles checkout and refunds" is 4, so each label has
+    // 6 words: below the run-on threshold of 7, and a name plus a gloss of 3 words or more.
+    #[rstest::rstest]
+    #[case::self_closing("Order Service<br/>handles checkout and refunds")]
+    #[case::spaced_self_closing("Order Service<br />handles checkout and refunds")]
+    #[case::bare("Order Service<br>handles checkout and refunds")]
+    #[case::upper_case("Order Service<BR/>handles checkout and refunds")]
+    #[case::inner_space("Order Service<br / >handles checkout and refunds")]
+    #[case::literal_backslash_n(r"Order Service\nhandles checkout and refunds")]
+    fn a_break_variant_separates_name_from_gloss_and_is_not_a_word(#[case] label: &str) {
+        let src = format!("{label}\n");
+        assert_eq!(
+            rules(&src, &[(Role::Node, label)]),
+            [Signal::LabelTitlePlusGloss]
+        );
+    }
+
+    #[test]
+    fn a_tag_that_only_starts_with_br_is_a_word_boundary_not_a_break() {
+        // `<brand>` is not a break: words are "brand" and the five around it.
+        assert_eq!(words("a <brand> b c d"), ["a", "brand", "b", "c", "d"]);
     }
 
     #[test]

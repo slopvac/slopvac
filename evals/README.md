@@ -182,21 +182,19 @@ The runner reads the findings of `crates/slopvac-engine/examples/diagram_eval.rs
 
 ### Results
 
-Measured on 2026-11-16 at the commit that added the set:
+Measured on 2026-11-16 after the engine counted every `<br>` form as a line break:
 
 | Rule | Labels | Recall | Findings | Precision |
 | --- | --- | --- | --- | --- |
-| `diagram.label-run-on` | 10 | 1.00 (0.72-1.00) | 12 | 0.83 (0.55-0.95) |
-| `diagram.label-title-plus-gloss` | 14 | 0.64 (0.39-0.84) | 9 | 1.00 (0.70-1.00) |
+| `diagram.label-run-on` | 10 | 1.00 (0.72-1.00) | 10 | 1.00 (0.72-1.00) |
+| `diagram.label-title-plus-gloss` | 14 | 0.71 (0.45-0.88) | 10 | 1.00 (0.72-1.00) |
 | `diagram.note-long` | 5 | 1.00 (0.57-1.00) | 5 | 1.00 (0.57-1.00) |
 | `diagram.meta-reference` | 6 | 1.00 (0.61-1.00) | 6 | 1.00 (0.61-1.00) |
 | `diagram.prose-restates-labels` | 4 | 1.00 (0.51-1.00) | 6 | 0.67 (0.30-0.90) |
 
-The misses and false positives show four things:
+The misses and false positives show two things:
 
-- Title-cased glosses after a line break cost gloss recall. The exemption for a list of names, such as `Istio Sidecar<br/>Envoy Pilot Proxy`, also skips `Ingest Service<br/>Validates Incoming Events`. Three labels are missed for this reason, and without them recall is 9 of 11. The exemption still keeps the list of names quiet in two negative samples. A title-cased gloss after a colon is found.
-- `<br/>` counts as a word, because only the bare `<br>` tag is dropped. A six-word label with `<br/>` reads as seven words, so `diagram.label-run-on` fires instead of the gloss rule. This accounts for both run-on false positives and one gloss miss.
-- A PlantUML label that breaks with a literal `\n` escape is not split, so its gloss is missed.
+- Title-cased glosses after a line break cost gloss recall. The exemption for a list of names, such as `Istio Sidecar<br/>Envoy Pilot Proxy`, also skips `Ingest Service<br/>Validates Incoming Events`. Four labels are missed for this reason (two in a Mermaid sample, one each in a PlantUML and a draw.io sample), and without them recall is 10 of 10. The exemption still keeps the list of names quiet in two negative samples. A title-cased gloss after a colon is found.
 - `diagram.prose-restates-labels` fires on both hard negatives, where the prose names every label but adds a limit, a reason and a failure mode. It checks token overlap only.
 
 Each count is small, so every interval is wide. Treat the table as a sanity check on the severities, not a ranking.
