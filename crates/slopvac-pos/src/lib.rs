@@ -27,6 +27,8 @@ mod model;
 mod tokenize;
 mod unicode_tables;
 
+use tokenize::work;
+
 use std::ops::Range;
 use std::sync::OnceLock;
 
@@ -168,6 +170,7 @@ impl Tagger {
                 }
             };
             for sentence in tokenize::sentences(slice, &tokens) {
+                work::tick(sentence.len());
                 let words: Vec<&str> = tokens[sentence.clone()]
                     .iter()
                     .map(|t| t.word.as_str())
@@ -325,5 +328,135 @@ mod tests {
             stars: 1,
         }];
         let _ = Tagger::english().tag_blocks_masked(text, &[0..3, 3..6], &masks);
+    }
+
+    /// Work units allowed per input byte for tokenizing and tagging together,
+    /// and a constant allowance. The linear code spends at most 175 units per
+    /// byte on these inputs (a word costs about 500 in the model).
+    const PER_BYTE: u64 = 200;
+    const ALLOWANCE: u64 = 1_000;
+
+    fn budget(text: &str) -> u64 {
+        PER_BYTE * text.len() as u64 + ALLOWANCE
+    }
+
+    fn work_of(f: impl FnOnce()) -> u64 {
+        work::take();
+        f();
+        work::take()
+    }
+
+    /// The same words, with a line break after every hundred spaces.
+    fn one_line_per_hundred_words(text: &str) -> String {
+        let mut out = String::with_capacity(text.len() + text.len() / 100);
+        for (i, piece) in text.split_inclusive(' ').enumerate() {
+            out.push_str(piece);
+            if i % 100 == 99 {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    fn tag_text_work(text: &str) -> u64 {
+        work_of(|| {
+            std::hint::black_box(Tagger::english().tag_text(text));
+        })
+    }
+
+    /// One block per line, as a scope layer would hand them over.
+    fn tag_blocks_work(text: &str) -> u64 {
+        let mut blocks = Vec::new();
+        let mut start = 0;
+        for line in text.split_inclusive('\n') {
+            blocks.push(start..start + line.len());
+            start += line.len();
+        }
+        if blocks.is_empty() {
+            blocks.push(0..0);
+        }
+        work_of(|| {
+            std::hint::black_box(Tagger::english().tag_blocks(text, &blocks));
+        })
+    }
+
+    #[test]
+    fn tagging_stays_within_a_linear_work_budget_on_adversarial_inputs() {
+        type Measure = (&'static str, fn(&str) -> u64);
+        let measures: [Measure; 2] = [("tag_text", tag_text_work), ("tag_blocks", tag_blocks_work)];
+        for name in tokenize::adversarial::NAMES {
+            let n = if name == "backtick runs" {
+                200_000
+            } else {
+                40_000
+            };
+            let text = tokenize::adversarial::adversarial(name, n);
+            let lined = one_line_per_hundred_words(&text);
+            for (api, measure) in measures {
+                let input = if api == "tag_blocks" { &lined } else { &text };
+                let used = measure(input);
+                assert!(
+                    used <= budget(input),
+                    "{api} on {name}: {used} units for {} bytes exceeds {}",
+                    input.len(),
+                    budget(input)
+                );
+                let doubled_input = if api == "tag_blocks" {
+                    format!("{input}{input}")
+                } else {
+                    tokenize::adversarial::adversarial(name, 2 * n)
+                };
+                let doubled = measure(&doubled_input);
+                assert!(
+                    doubled * 10 <= used * 22 + 10_000,
+                    "{api} on {name}: doubling the input took work from {used} to {doubled}"
+                );
+            }
+        }
+    }
+
+    /// Defects put back into the tagging path, one per loop. Each must exceed
+    /// the budget, which is what makes the gate above meaningful.
+    #[test]
+    fn the_budget_rejects_a_context_rebuilt_for_every_word() {
+        let text = tokenize::adversarial::adversarial("long sentence", 20_000);
+        let used = work_of(|| {
+            let tokens = tokenize::tokenize(&text);
+            for sentence in tokenize::sentences(&text, &tokens) {
+                let words: Vec<&str> = tokens[sentence].iter().map(|t| t.word.as_str()).collect();
+                std::hint::black_box(model::oracle::tag_rebuilding_context(
+                    &Tagger::english().model,
+                    &words,
+                ));
+            }
+        });
+        assert!(
+            used > budget(&text),
+            "only {used} units for {} bytes (budget {})",
+            text.len(),
+            budget(&text)
+        );
+    }
+
+    #[test]
+    fn the_budget_rejects_tagging_every_sentence_with_all_the_words_before_it() {
+        let text = "Yes! ".repeat(2_000);
+        let used = work_of(|| {
+            let tokens = tokenize::tokenize(&text);
+            for sentence in tokenize::sentences(&text, &tokens) {
+                work::tick(sentence.end);
+                let words: Vec<&str> = tokens[..sentence.end]
+                    .iter()
+                    .map(|t| t.word.as_str())
+                    .collect();
+                std::hint::black_box(Tagger::english().model.tag(&words));
+            }
+        });
+        assert!(
+            used > budget(&text),
+            "only {used} units for {} bytes (budget {})",
+            text.len(),
+            budget(&text)
+        );
     }
 }

@@ -71,7 +71,7 @@ AKS = "AKS"
 Caf = "Caf"
 
 # Deliberate misspellings in slopvac-config tests: the "did you mean" suggestion
-# for an unknown key (`max_eror` -> `max_error`, `modee` -> `mode`).
+# for an unknown key (`max_eror` -> `max_errors`, `modee` -> `mode`).
 eror = "eror"
 modee = "modee"
 
