@@ -1,22 +1,22 @@
 //! The engine settings of one file: the profile's legacy style, the project config, and the
 //! command line, merged by the precedence in `docs/contract/profiles.md`, section 3.
 //!
-//! The legacy profile style sits in the style layer of the same stack as the config files
-//! (`LoadedConfig::with_base_style`), so the resolver decides every level: a `rules` entry
+//! The legacy profile style is the lowest style layer of the same stack as the config files
+//! and the listed built-in styles, so the resolver decides every level: a `rules` entry
 //! at `off` in the style holds against a category entry above it, and a `minimum_severity`
 //! raises an inherited category level. Rule and category keys in the config are first
 //! canonicalised against the catalogue, and an unknown name is a config error.
 //!
-//! STUB(slopvac-8l4.12.29): the genre is the default `reference`, no `styles` or genre chain
-//! is loaded (`NoPresets`), and `terms.blocklists` files are not read. The swap bead lists
-//! each gap.
+//! STUB(slopvac-8l4.12.29): the genre is the default `reference` unless config sets it, no
+//! genre chain or pack style is loaded, and `terms.blocklists` files are not read. The swap
+//! bead lists each gap.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use serde_json::{Value as Json, json};
-use slopvac_config::{Inputs, Layer, NoPresets};
+use serde_json::Value as Json;
+use slopvac_config::{Inputs, Layer, PackFile, Presets};
 use slopvac_config::{LoadedConfig, Resolved, Setting, describe};
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
@@ -24,7 +24,7 @@ use slopvac_model::{
     RuleId, Severity,
 };
 use slopvac_rules::{MatchKind, RuleSet};
-use slopvac_styles::{SettingValue, Style};
+use slopvac_styles::{BuiltinSource, Style, StylePresets};
 
 use crate::errors::CliError;
 
@@ -43,15 +43,15 @@ pub struct Overrides {
 
 const LEGACY: [(&str, &str); 3] = [
     (
-        "strict",
+        "legacy-strict",
         include_str!("../../../docs/contract/compat/profiles/legacy-strict.toml"),
     ),
     (
-        "normal",
+        "legacy-normal",
         include_str!("../../../docs/contract/compat/profiles/legacy-normal.toml"),
     ),
     (
-        "relaxed",
+        "legacy-relaxed",
         include_str!("../../../docs/contract/compat/profiles/legacy-relaxed.toml"),
     ),
 ];
@@ -78,7 +78,9 @@ fn legacy_style(profile: &str) -> &'static Style {
             })
             .collect()
     });
-    styles.get(profile).unwrap_or_else(|| &styles["normal"])
+    styles
+        .get(format!("legacy-{profile}").as_str())
+        .unwrap_or_else(|| &styles["legacy-normal"])
 }
 
 fn rule_id_of(rules: &RuleSet, key: &str) -> Option<RuleId> {
@@ -102,40 +104,28 @@ fn category_of(rules: &RuleSet, key: &str) -> Option<String> {
         .map(|c| c.id().as_str().to_owned())
 }
 
-/// The legacy profile style as settings in the style layer, keyed by canonical names. An
-/// entry for a rule or category that this catalogue lacks is dropped.
-fn legacy_settings(profile: &str, rules: &RuleSet) -> Vec<Setting> {
-    let mut out = Vec::new();
-    for (key, value) in legacy_style(profile).settings.entries() {
-        let json = match value {
-            SettingValue::Level(l) => json!(format!("{l:?}").to_lowercase()),
-            SettingValue::Number(n) => json!(n),
-            SettingValue::List(items) => json!(items),
-            SettingValue::Cleared => json!("none"),
-        };
-        let path: Vec<String> = if let Some(rule) = key.strip_prefix("rules.") {
-            let Some(id) = rule_id_of(rules, rule) else {
-                continue;
-            };
-            vec!["rules".to_owned(), id.as_str().to_owned()]
-        } else if let Some(rest) = key.strip_prefix("categories.") {
-            let Some((category, field)) = rest.split_once('.') else {
-                continue;
-            };
-            let Some(category) = category_of(rules, category) else {
-                continue;
-            };
-            vec!["categories".to_owned(), category, field.to_owned()]
-        } else {
-            vec![key]
-        };
-        out.push(Setting {
-            path,
-            value: json,
-            source: slopvac_config::Source::bare(Layer::Style),
-        });
-    }
-    out
+/// A style layer with its rule and category keys rewritten to the catalogue's names. An
+/// entry for a rule or category that this catalogue lacks is dropped: a style is shared data,
+/// and the config is where an unknown name is an error.
+fn canonical_layer(layer: &[Setting], rules: &RuleSet) -> Vec<Setting> {
+    layer
+        .iter()
+        .filter_map(|setting| {
+            let mut setting = setting.clone();
+            match setting.path.as_slice() {
+                [head, key, ..] if head == "rules" => {
+                    let id = rule_id_of(rules, key)?;
+                    id.as_str().clone_into(&mut setting.path[1]);
+                }
+                [head, key, ..] if head == "categories" => {
+                    let name = category_of(rules, key)?;
+                    setting.path[1] = name;
+                }
+                _ => {}
+            }
+            Some(setting)
+        })
+        .collect()
 }
 
 /// Rewrite the rule and category keys of `settings` to the catalogue's names.
@@ -174,8 +164,26 @@ fn canonicalise(settings: &mut [Setting], rules: &RuleSet) -> Result<(), CliErro
 /// The config with its rule and category keys canonicalised.
 ///
 /// # Errors
-/// `config-unknown-rule` or `config-unknown-category`, naming the file and line of the key.
+/// `config-unknown-rule` or `config-unknown-category`, naming the file and line of the key,
+/// and `unknown-style` for a `styles` entry that does not ship.
 pub fn canonical_config(config: &LoadedConfig, rules: &RuleSet) -> Result<LoadedConfig, CliError> {
+    let listed = config.project_value(&["styles"]);
+    for name in listed
+        .iter()
+        .filter_map(Json::as_array)
+        .flatten()
+        .filter_map(Json::as_str)
+    {
+        if !BuiltinSource::names().any(|known| known == name) {
+            return Err(CliError::new(
+                "unknown-style",
+                format!(
+                    "slopvac.toml: unknown style {name:?}; the styles that ship are: {}.",
+                    BuiltinSource::names().collect::<Vec<_>>().join(", ")
+                ),
+            ));
+        }
+    }
     let mut out = config.clone();
     for file in &mut out.files {
         canonicalise(&mut file.settings, rules)?;
@@ -186,30 +194,70 @@ pub fn canonical_config(config: &LoadedConfig, rules: &RuleSet) -> Result<Loaded
     Ok(out)
 }
 
+/// The presets of one file: the legacy profile style first, then the built-in style
+/// presets that `styles` lists. So the profile is the lowest style layer and a listed style
+/// outranks it, and the project config outranks both.
+struct ProfilePresets<'a> {
+    legacy: Vec<Setting>,
+    styles: StylePresets<BuiltinSource>,
+    rules: &'a RuleSet,
+}
+
+impl Presets for ProfilePresets<'_> {
+    fn style(&self, name: &str) -> Option<Vec<Setting>> {
+        self.styles
+            .style(name)
+            .map(|layer| canonical_layer(&layer, self.rules))
+    }
+
+    fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
+        let mut layers = vec![self.legacy.clone()];
+        layers.extend(
+            self.styles
+                .style_layers(listed)
+                .iter()
+                .map(|layer| canonical_layer(layer, self.rules)),
+        );
+        layers
+    }
+
+    fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
+        self.styles.genre_chain(name)
+    }
+
+    fn pack_config(&self, name: &str) -> Option<PackFile> {
+        self.styles.pack_config(name)
+    }
+}
+
 /// The merged settings of the file at `rel`, with the legacy style of its profile underneath.
 /// `config` is already canonical.
 #[must_use]
 pub fn resolve(config: &LoadedConfig, rel: &Path, rules: &RuleSet) -> Resolved {
-    let inputs = Inputs {
-        presets: &NoPresets,
-        front_matter: &[],
-        directives: &[],
-        cli: &[],
-        env: &[],
+    let styles = StylePresets(BuiltinSource);
+    let inputs = |presets: &'_ dyn Presets| {
+        config.resolve(
+            rel,
+            &Inputs {
+                presets,
+                front_matter: &[],
+                directives: &[],
+                cli: &[],
+                env: &[],
+            },
+        )
     };
     // The profile can come from an override block, so find it before choosing the style.
-    let first = config.resolve(rel, &inputs);
-    let profile = first
+    let profile = inputs(&styles)
         .get(&["profile", "name"])
         .and_then(Json::as_str)
         .unwrap_or("normal")
         .to_owned();
-    config
-        .with_base_style(
-            &format!("profile {profile}"),
-            legacy_settings(&profile, rules),
-        )
-        .resolve(rel, &inputs)
+    inputs(&ProfilePresets {
+        legacy: canonical_layer(legacy_style(&profile).layer(), rules),
+        styles,
+        rules,
+    })
 }
 
 fn level_of(name: &str) -> Option<Level> {
@@ -491,6 +539,16 @@ mod tests {
         assert!(error.message.contains("slopvac.toml:"), "{}", error.message);
         let category = settings(&format!("{HEAD}\n[categories]\nnope = \"off\"\n"));
         assert_eq!(category.unwrap_err().code, "config-unknown-category");
+    }
+
+    #[test]
+    fn a_listed_built_in_style_outranks_the_profile_and_an_unknown_style_is_an_error() {
+        // The `ste` preset sets this rule to a suggestion, above the profile's category level.
+        let rule = "core:ste-nouns.multiword-noun-too-long";
+        let with = settings(&format!("{HEAD}styles = [\"ste\"]\n")).unwrap();
+        assert_eq!(level(&with, rule), Some(Level::On(Severity::Suggestion)));
+        let error = settings(&format!("{HEAD}styles = [\"nope\"]\n")).unwrap_err();
+        assert_eq!(error.code, "unknown-style");
     }
 
     #[test]

@@ -10,12 +10,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slopvac_config::{ConfigError, Discovery, LoadedConfig, NoPresets};
+use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{Engine, Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
+use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
@@ -176,7 +177,7 @@ impl Configs<'_> {
 impl Linter for EngineLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut run = Run::default();
-        let presets = NoPresets;
+        let presets = StylePresets(BuiltinSource);
         let mut configs = Configs {
             discovery: Discovery::new(&presets),
             explicit: None,
@@ -482,35 +483,11 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-/// A config that lists `styles` asks for presets that no pack supplies yet
-/// (STUB(slopvac-8l4.12.29)). Ignoring them would report a pass the config did not ask for,
-/// so the run is incomplete.
-fn note_unapplied_styles(items: &[Item], run: &mut Run) {
-    let mut seen = HashSet::new();
-    for (config, _) in items.iter().filter_map(|i| i.config.as_ref()) {
-        let styles = config
-            .project_value(&["styles"])
-            .and_then(|v| v.as_array().map(Vec::len))
-            .unwrap_or(0);
-        if styles > 0 && seen.insert(config.root.clone()) {
-            run.skip(
-                "styles-not-applied",
-                "slopvac.toml",
-                format!(
-                    "slopvac.toml: `styles` lists {styles} preset(s), but no style pack is \
-                     available yet, so none apply"
-                ),
-            );
-        }
-    }
-}
-
 fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutcome {
     let rules = match rule_catalog::core() {
         Ok(rules) => rules,
         Err(err) => return failed(request, run, &err),
     };
-    note_unapplied_styles(&items, &mut run);
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -593,7 +570,7 @@ pub fn project_settings(
     root: &Path,
 ) -> Result<(slopvac_rules::RuleSet, slopvac_engine::Settings), CliError> {
     let rules = rule_catalog::core()?;
-    let presets = NoPresets;
+    let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
     let found = discovery.nearest(root).map_err(|e| config_error(&e))?;
     let (config, files) = match &found {

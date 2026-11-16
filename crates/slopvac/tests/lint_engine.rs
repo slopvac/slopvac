@@ -529,16 +529,23 @@ fn a_directory_target_lints_every_markdown_file_in_it() {
     assert_eq!(report["summary"]["documents"], 2);
 }
 
-// STUB(slopvac-8l4.12.29): no style pack exists yet, so a config that lists `styles` cannot
-// be applied. The run says so instead of passing as if the styles were absent.
 #[test]
-fn configured_styles_that_cannot_apply_make_the_run_incomplete() {
-    let config = "schema_version = 3\nstyles = [\"ste\"]\n";
-    let (_dir, path) = project("ok.md", CLEAN, Some(config));
+fn a_built_in_style_in_config_applies_and_an_unknown_one_is_an_error() {
+    let (_dir, path) = project(
+        "ok.md",
+        CLEAN,
+        Some("schema_version = 3\nstyles = [\"ste\"]\n"),
+    );
+    slopvac().arg("lint").arg(&path).assert().code(0);
+    let (_dir, path) = project(
+        "ok.md",
+        CLEAN,
+        Some("schema_version = 3\nstyles = [\"nope\"]\n"),
+    );
     slopvac()
         .arg("lint")
         .arg(&path)
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("error[styles-not-applied]"));
+        .stderr(predicate::str::contains("error[unknown-style]"));
 }
