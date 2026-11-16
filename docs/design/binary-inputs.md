@@ -123,10 +123,13 @@ A moved sentence must appear once in the output.
 
 ### xlsx
 
-xlsx uses a cell-occurrence model. Each text cell becomes one segment, addressed by sheet and cell reference such as `Sheet1!B4`. Comments, headers and footers are separate segments. The design fixes these cases:
+xlsx uses a cell-occurrence model. Each text cell becomes one segment, addressed by sheet and cell reference such as `Sheet1!B4`. Comments, headers and footers are separate segments. The design record leaves hidden sheets, formulas and cached results open. This document proposes the handling below, pending binary-design sign-off, and the xlsx contract bead decides:
 
-- Hidden sheets are skipped, because a reader does not see them. The xlsx contract bead confirms or reverses this.
-- Formulas are not linted. Cached formula results are not linted either.
+- Proposal: skip hidden sheets, because a reader does not see them.
+- Proposal: do not lint formulas, and do not lint cached formula results.
+
+The design fixes these cases:
+
 - `sharedStrings.xml` is never linted as standalone prose. A shared string is linted once per cell that references it.
 - The number of occurrences is budgeted before allocation, because one shared string can fan out to millions of cells.
 

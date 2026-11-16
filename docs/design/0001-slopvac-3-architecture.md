@@ -13,9 +13,9 @@ Slopvac 2.x is a Python package. It generates Vale configuration, runs Vale, and
 - An ordinary Vale-enabled lint run starts a Python process and a Vale subprocess. `prime` does not call Vale, and `--no-vale` or a disabled config skips it.
 - Users install two tools, and the Vale version affects results.
 
-A documentation trial also found rule defects that need fixes. No 2.x release ships, so those fixes and a public data and plugin API land together in 3.0.0.
+A documentation trial (GitHub issue range [#252](https://github.com/slopvac/slopvac/issues/252) to [#257](https://github.com/slopvac/slopvac/issues/257)) also found rule defects that need fixes. No 2.x release ships, so those fixes and a public data and plugin API land together in 3.0.0.
 
-Labels in the experiments below come from one annotator, and the smaller samples hold 40 to 92 documents. Treat the figures as estimates for those corpora.
+Labels in the experiments below come from one annotator, and some samples are small (40 to 92 documents). Treat the figures as estimates for those corpora.
 
 ## Decision drivers
 
@@ -81,7 +81,7 @@ Use rayon for CPU work. Use dedicated threads for waiting work, joined by crossb
 
 Build the stack on `toml_edit`, `saphyr`, serde, and `schemars`. Record file, line, and column for every contribution.
 
-- Evidence (`slopvac-8l4.4.1`): both prototypes resolved 10,000 files with identical values, each in well under a millisecond per file.
+- Evidence (`slopvac-8l4.4.1`): both prototypes resolved 10,000 files within 9 µs per file with identical values.
   - `schematic` 0.20.12 has no per-list-element provenance, gives YAML errors without spans, reports the first error only, and overflows the stack on a cyclic `extends`. It adds 54 crates and 1.64 MB, and it was still pre-1.0.
   - The layer stack is about 850 lines. `schematic` would save about 25 to 30% of the code.
 - Rejected: `schematic`.
@@ -123,11 +123,11 @@ cargo-dist builds archives and installers and feeds a Homebrew tap (`slopvac/hom
 
 ### 13. Dependabot only
 
-Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
+Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x in [#260](https://github.com/slopvac/slopvac/pull/260), together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
 
 ### 14. reviewdog for PR reporting
 
-The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed. The 2.x repository already reports lint findings on pull requests with reviewdog.
+The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed. The 2.x repository already reports lint findings on pull requests with reviewdog, in [#262](https://github.com/slopvac/slopvac/pull/262).
 
 - Evidence (`slopvac-8l4.2.18`): reviewdog 0.21.3 parsed slopvac rdjsonl (151 diagnostics, 8 with replacements) and SARIF locally. The GitHub reporters were not tested.
 - Also: rumdl 0.3.4 reported 7,806 findings on the corpus with defaults. About 95% were style or flavor noise (MD013 3,381, MD033 1,712, MD051 689). It overlaps slopvac only on heading hierarchy, and partly on dashes and bold. The docs mention rumdl and nothing integrates it.
