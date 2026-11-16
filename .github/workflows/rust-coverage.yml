@@ -44,7 +44,9 @@ jobs:
           tool: nextest@0.9.152,cargo-llvm-cov@0.9.1
 
       - name: Run the tests with coverage
-        run: cargo llvm-cov nextest --workspace --locked --profile ci --no-tests=pass --lcov --output-path "$RUNNER_TEMP/lcov.info"
+        run: >-
+          cargo llvm-cov nextest --workspace --locked --profile ci --no-tests=pass
+          --lcov --output-path "$RUNNER_TEMP/lcov.info"
 
       - name: Summarise
         run: |
