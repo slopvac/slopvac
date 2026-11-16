@@ -5,6 +5,8 @@ use slopvac_context::{
     GenreSource, PlainDocument, Profile, ResolveOptions, RuleLevel, builtin_genres,
 };
 
+const HISTORY_RULE: &str = "docs-discipline.history-internal-reference";
+
 fn genre_of(path: &str, src: &str) -> (String, GenreSource) {
     let r = builtin_genres()
         .unwrap()
@@ -92,7 +94,11 @@ fn rule_levels_follow_the_content_type() {
         reg.rules("explanation").unwrap()["prose-scope.contrastive-inversion-frames"],
         RuleLevel::Off
     );
-    assert!(reg.rules("how-to").unwrap().is_empty());
+    // A content type inherits the consumer tolerance and adds none of its own.
+    assert_eq!(
+        reg.rules("how-to").unwrap().keys().collect::<Vec<_>>(),
+        [HISTORY_RULE]
+    );
 }
 
 #[test]

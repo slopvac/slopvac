@@ -89,10 +89,17 @@ fn a_declared_genre_has_no_detection_and_shows_its_context_tag() {
 
 #[test]
 fn empty_sections_say_so() {
-    let page = page("reference");
+    let page = page("informal");
     assert!(page.contains("- Extends: none\n"));
     assert!(page.contains("This genre sets no styles."));
     assert!(page.contains("This genre sets no category settings."));
     assert!(page.contains("This genre sets no rule levels."));
     assert!(page.contains("This genre sets no context tags."));
+}
+
+#[test]
+fn a_genre_rule_level_is_listed_with_its_level() {
+    assert!(
+        page("reference").contains("- `docs-discipline.history-internal-reference`: `warning`\n")
+    );
 }

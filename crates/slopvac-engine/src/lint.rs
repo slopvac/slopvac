@@ -296,6 +296,7 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         .get(id)
         .copied()
         .or_else(|| settings.categories.get(category).and_then(|d| d.level))
+        .or_else(|| settings.genre_levels.get(id).copied())
         .unwrap_or(Level::On(shipped))
 }
 
@@ -320,7 +321,16 @@ impl Engine {
     }
 
     /// Like [`Engine::new`], over rule sets that other engines share.
-    pub fn new_shared(sets: Vec<Arc<RuleSet>>, settings: Settings) -> Result<Self, EngineError> {
+    pub fn new_shared(
+        sets: Vec<Arc<RuleSet>>,
+        mut settings: Settings,
+    ) -> Result<Self, EngineError> {
+        // The run's genre sets the genre levels. Levels the caller already filled stay.
+        let genres =
+            slopvac_context::builtin_genres().map_err(|e| EngineError::Context(e.to_string()))?;
+        settings
+            .apply_genre_levels(&genres)
+            .map_err(|e| EngineError::Internal(e.to_string()))?;
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
