@@ -104,8 +104,9 @@ _SIGN_STEPS = """\
       - name: Sign the release artifacts
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          python3 scripts/release_signing.py sign artifacts
+          python3 scripts/release_signing.py sign artifacts --version "${RELEASE_TAG#v}"
 """
 _HOST_ENV = (
     "    env:\n"
