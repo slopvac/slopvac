@@ -8,7 +8,7 @@ use slopvac_pcre2::Regex;
 use crate::lexicon::{
     EXTRA_FINITE_STEMS, FINITE_VERB_FORMS, IMPERATIVE_VERBS, NON_NOUN_SECOND_TOKENS, is_imperative,
 };
-use crate::pattern::{TextError, matches_start, re, re_i};
+use crate::pattern::{TextError, matches_start, re, re_i, sub};
 use crate::pyrules::{casefold, py_strip, upper};
 use crate::tokens::{stepless_tokens, strip_step_number};
 
@@ -121,11 +121,14 @@ pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     let p = &*PATTERNS;
     let stripped = py_strip(text);
     if let Some(caps) = p.safety_marker.captures(stripped)? {
-        let whole = caps.get(0).expect("group 0 exists");
+        // Group 0 is the whole match.
+        let whole_end = caps.get(0).map_or(stripped.len(), |whole| whole.end);
         // The `marker` group is the first and only capture group of the pattern.
-        let marker = caps.get(1).map_or(String::new(), |m| upper(&stripped[m]));
+        let marker = caps
+            .get(1)
+            .map_or(String::new(), |m| upper(sub(stripped, m)));
         let body =
-            stripped[whole.end..].trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);
+            sub(stripped, whole_end..).trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);
         if imperative_start(p, body)? {
             return Ok(TextType::Procedural);
         }
@@ -142,14 +145,14 @@ pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     let stepless = strip_step_number(body)?;
     let tokens = stepless_tokens(stepless)?;
     let verb_first = tokens.first().is_some_and(|t| is_imperative(&casefold(t)));
-    if verb_first && tokens.len() >= 2 && is_finite_verb(&tokens[1]) {
+    if verb_first && tokens.get(1).is_some_and(|second| is_finite_verb(second)) {
         return Ok(TextType::Descriptive);
     }
     if verb_first
-        && tokens.len() >= 3
-        && !NON_NOUN_SECOND_TOKENS.contains(&casefold(&tokens[1]).as_str())
-        && !matches_start(&NUMERIC, &tokens[1])?
-        && is_finite_verb(&tokens[2])
+        && let (Some(second), Some(third)) = (tokens.get(1), tokens.get(2))
+        && !NON_NOUN_SECOND_TOKENS.contains(&casefold(second).as_str())
+        && !matches_start(&NUMERIC, second)?
+        && is_finite_verb(third)
     {
         return Ok(TextType::Descriptive);
     }

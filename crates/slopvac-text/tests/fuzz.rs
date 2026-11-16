@@ -3,8 +3,6 @@
 //!
 //! Set `PROPTEST_CASES` to change the case count (default 512).
 
-#![allow(missing_docs)]
-
 use proptest::prelude::*;
 use slopvac_text::Pattern;
 
@@ -117,12 +115,12 @@ proptest! {
 
     #[test]
     fn arbitrary_text_never_panics_the_compiler(source in ".{0,60}", caseless in any::<bool>()) {
-        let _ = Pattern::new(&source, caseless);
+        drop(Pattern::new(&source, caseless));
     }
 
     #[test]
     fn a_soup_of_pattern_tokens_never_panics_the_compiler(source in soup(), caseless in any::<bool>()) {
-        let _ = Pattern::new(&source, caseless);
+        drop(Pattern::new(&source, caseless));
     }
 
     #[test]
@@ -132,8 +130,8 @@ proptest! {
         caseless in any::<bool>(),
     ) {
         if let Ok(pattern) = Pattern::new(&source, caseless) {
-            let _ = pattern.find_all(&subject);
-            let _ = pattern.is_match(&subject);
+            drop(pattern.find_all(&subject));
+            drop(pattern.is_match(&subject));
         }
     }
 }

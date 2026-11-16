@@ -1,39 +1,39 @@
-#![allow(missing_docs, clippy::cast_possible_truncation)]
+//! Word counts, text types and sentences against the Python reference's recorded output.
 
 use serde_json::Value;
 use slopvac_text::{TextType, classify_text_type, count_words, split_sentences};
 
-fn cases() -> Vec<Value> {
-    serde_json::from_str::<Value>(include_str!("fixtures/reference.json"))
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .clone()
+fn cases() -> Result<Vec<Value>, serde_json::Error> {
+    serde_json::from_str(include_str!("fixtures/reference.json"))
 }
 
-fn kind(name: &str) -> TextType {
-    serde_json::from_value(Value::String(name.to_owned())).unwrap()
+fn kind(name: &str) -> Result<TextType, serde_json::Error> {
+    serde_json::from_value(Value::String(name.to_owned()))
+}
+
+/// A JSON number as a count or offset.
+fn index(value: &Value) -> usize {
+    value
+        .as_u64()
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(usize::MAX)
 }
 
 #[test]
 fn word_counts_match_the_python_reference() {
-    for c in cases() {
+    for c in cases().unwrap() {
         let text = c["text"].as_str().unwrap();
-        assert_eq!(
-            count_words(text).unwrap(),
-            c["words"].as_u64().unwrap() as usize,
-            "{text:?}"
-        );
+        assert_eq!(count_words(text).unwrap(), index(&c["words"]), "{text:?}");
     }
 }
 
 #[test]
 fn text_types_match_the_python_reference() {
-    for c in cases() {
+    for c in cases().unwrap() {
         let text = c["text"].as_str().unwrap();
         assert_eq!(
             classify_text_type(text).unwrap(),
-            kind(c["text_type"].as_str().unwrap()),
+            kind(c["text_type"].as_str().unwrap()).unwrap(),
             "{text:?}"
         );
     }
@@ -41,7 +41,7 @@ fn text_types_match_the_python_reference() {
 
 #[test]
 fn sentences_match_the_python_reference() {
-    for c in cases() {
+    for c in cases().unwrap() {
         let text = c["text"].as_str().unwrap();
         let got = split_sentences(text).unwrap();
         let want = c["sentences"].as_array().unwrap();
@@ -52,19 +52,15 @@ fn sentences_match_the_python_reference() {
         );
         for (g, w) in got.iter().zip(want) {
             assert_eq!(g.text, w["text"].as_str().unwrap(), "{text:?}");
-            assert_eq!(g.start, w["start"].as_u64().unwrap() as usize, "{text:?}");
-            assert_eq!(g.end, w["end"].as_u64().unwrap() as usize, "{text:?}");
-            assert_eq!(
-                g.word_count,
-                w["word_count"].as_u64().unwrap() as usize,
-                "{text:?}"
-            );
+            assert_eq!(g.start, index(&w["start"]), "{text:?}");
+            assert_eq!(g.end, index(&w["end"]), "{text:?}");
+            assert_eq!(g.word_count, index(&w["word_count"]), "{text:?}");
             assert_eq!(
                 g.text_type,
-                kind(w["text_type"].as_str().unwrap()),
+                kind(w["text_type"].as_str().unwrap()).unwrap(),
                 "{text:?}"
             );
-            assert_eq!(&text[g.start..g.end], g.text);
+            assert_eq!(text.get(g.start..g.end), Some(g.text.as_str()));
         }
     }
 }
@@ -89,7 +85,7 @@ fn list_lead_in_keeps_its_true_offset_after_leading_whitespace() {
         ]
     );
     for s in &got {
-        assert_eq!(&text[s.start..s.end], s.text);
+        assert_eq!(text.get(s.start..s.end), Some(s.text.as_str()));
     }
 }
 

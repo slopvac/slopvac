@@ -7,7 +7,7 @@ use slopvac_pcre2::Regex;
 
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
-use crate::pattern::{TextError, find_all, matches_start, re};
+use crate::pattern::{TextError, find_all, matches_start, re, sub};
 use crate::pyrules::{is_digit, is_upper, py_isspace, py_lstrip, py_strip, regex_space};
 use crate::tokens::{
     CODE_SPAN, IDENTIFIER, PAREN_SPAN, QUOTED_SPAN, URL_OR_PATH, WORDLIKE, count_words,
@@ -35,11 +35,22 @@ static COLON_END: LazyLock<Regex> = LazyLock::new(|| re(r":\s*\z"));
 /// `runs[i]` is the number of `X.` pairs that end at byte `i`; only a maximal run can pass
 /// the lookbehind, because a shorter start follows a full stop.
 fn dotted_runs(bytes: &[u8]) -> Vec<usize> {
-    let mut runs = vec![0; bytes.len()];
-    for i in 1..bytes.len() {
-        if bytes[i] == b'.' && bytes[i - 1].is_ascii_alphabetic() {
-            runs[i] = 1 + if i >= 2 { runs[i - 2] } else { 0 };
-        }
+    let mut runs: Vec<usize> = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        let after_letter = i
+            .checked_sub(1)
+            .and_then(|p| bytes.get(p))
+            .is_some_and(u8::is_ascii_alphabetic);
+        let run = if b == b'.' && after_letter {
+            1 + i
+                .checked_sub(2)
+                .and_then(|p| runs.get(p))
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        runs.push(run);
     }
     runs
 }
@@ -47,13 +58,17 @@ fn dotted_runs(bytes: &[u8]) -> Vec<usize> {
 /// Whether the prefix `bytes[..=index]` ends in a dotted initialism such as `e.g.`.
 fn ends_in_dotted_initialism(bytes: &[u8], runs: &[usize], index: usize, work: &mut Work) -> bool {
     work.tick(1);
-    let pairs = runs[index];
+    let pairs = runs.get(index).copied().unwrap_or(0);
     if pairs < 2 {
         return false;
     }
     let start = index + 1 - 2 * pairs;
     work.tick(1);
-    start == 0 || !(bytes[start - 1].is_ascii_alphabetic() || bytes[start - 1] == b'.')
+    start == 0
+        || !start
+            .checked_sub(1)
+            .and_then(|p| bytes.get(p))
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'.')
 }
 
 /// Protected spans sorted by start, with a running maximum of their ends so that the first
@@ -86,7 +101,10 @@ impl Protected {
             work.tick(1);
             e <= index
         });
-        (first < starts).then(|| self.ranges[first].1)
+        self.ranges
+            .get(first)
+            .filter(|_| first < starts)
+            .map(|r| r.1)
     }
 }
 
@@ -115,7 +133,7 @@ fn protected_ranges(text: &str) -> Result<Vec<(usize, usize)>, TextError> {
 fn is_initialism_opener(text: &str) -> Result<bool, TextError> {
     Ok(find_all(&INITIALISM_OPENER, text)?
         .first()
-        .is_some_and(|&(start, end)| INITIALISM_SENTENCE_OPENERS.contains(&&text[start..end])))
+        .is_some_and(|&(start, end)| INITIALISM_SENTENCE_OPENERS.contains(&sub(text, start..end))))
 }
 
 /// Per-chunk lookup tables, built in one pass each.
@@ -132,16 +150,16 @@ fn terminal_cut(
 ) -> Result<Option<usize>, TextError> {
     let mut protected_end = None;
     if let Some(end) = scan.protected.end_containing(index, work) {
-        if !text[index + 1..end].trim_matches(is_closer).is_empty() {
+        if !sub(text, index + 1..end).trim_matches(is_closer).is_empty() {
             return Ok(None);
         }
         protected_end = Some(end);
     }
-    if text.as_bytes()[index] == b'.'
+    if text.as_bytes().get(index) == Some(&b'.')
         && ends_in_dotted_initialism(text.as_bytes(), &scan.runs, index, work)
     {
         // Python measures this gap with `re.match(r"\s*", ...)`: regex whitespace.
-        let rest = &text[index + 1..];
+        let rest = sub(text, index + 1..);
         let gap_len = rest.find(|c| !regex_space(c)).unwrap_or(rest.len());
         let (gap, remainder) = rest.split_at(gap_len);
         if !remainder.is_empty()
@@ -152,16 +170,20 @@ fn terminal_cut(
         }
     }
     let mut end = protected_end.unwrap_or(index + 1);
-    while let Some(c) = text[end..].chars().next() {
+    while let Some(c) = sub(text, end..).chars().next() {
         if !is_closer(c) {
             break;
         }
         end += c.len_utf8();
     }
-    if text[end..].chars().next().is_some_and(|c| !py_isspace(c)) {
+    if sub(text, end..)
+        .chars()
+        .next()
+        .is_some_and(|c| !py_isspace(c))
+    {
         return Ok(None);
     }
-    Ok(match py_lstrip(&text[end..]).chars().next() {
+    Ok(match py_lstrip(sub(text, end..)).chars().next() {
         None => Some(end),
         Some(c) if is_upper(c) || is_digit(c) => Some(end),
         Some(_) => None,
@@ -189,12 +211,12 @@ fn split_lines(text: &str) -> Vec<(usize, &str)> {
             _ => {}
         }
         if let Some(e) = end {
-            out.push((start, &text[start..e]));
+            out.push((start, sub(text, start..e)));
             start = e;
         }
     }
     if start < text.len() {
-        out.push((start, &text[start..]));
+        out.push((start, sub(text, start..)));
     }
     out
 }
@@ -208,8 +230,9 @@ struct ListItemSuffixes {
 
 impl ListItemSuffixes {
     fn all_items_after(&self, index: usize) -> bool {
-        let (any, all) = self.from[index + 1];
-        any && all
+        self.from
+            .get(index + 1)
+            .is_some_and(|&(any, all)| any && all)
     }
 }
 
@@ -217,16 +240,18 @@ fn list_item_suffixes(
     lines: &[(usize, &str)],
     work: &mut Work,
 ) -> Result<ListItemSuffixes, TextError> {
-    let mut from = vec![(false, true); lines.len() + 1];
-    for (k, (_, line)) in lines.iter().enumerate().rev() {
+    let mut from = Vec::with_capacity(lines.len() + 1);
+    let mut next = (false, true);
+    from.push(next);
+    for (_, line) in lines.iter().rev() {
         work.tick(1);
         let part = py_strip(line);
-        from[k] = if part.is_empty() {
-            from[k + 1]
-        } else {
-            (true, from[k + 1].1 && matches_start(&LIST_MARKER, part)?)
-        };
+        if !part.is_empty() {
+            next = (true, next.1 && matches_start(&LIST_MARKER, part)?);
+        }
+        from.push(next);
     }
+    from.reverse();
     Ok(ListItemSuffixes { from })
 }
 
@@ -240,7 +265,7 @@ fn split_vertical_list<'a>(
         return Ok(vec![(text, 0)]);
     }
     let mut items = None;
-    for (index, (_, line)) in lines.iter().enumerate() {
+    for (index, &(line_start, line)) in lines.iter().enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
         if !COLON_END.is_match(body)? {
             continue;
@@ -253,22 +278,21 @@ fn split_vertical_list<'a>(
         if !items.all_items_after(index) {
             continue;
         }
-        let mut tail: Vec<(usize, &str)> = Vec::new();
-        for (k, (_, l)) in lines[index + 1..].iter().enumerate() {
+        let mut tail: Vec<(usize, &str, &str)> = Vec::new();
+        for &(offset, raw) in lines.get(index + 1..).unwrap_or_default() {
             work.tick(1);
-            let part = py_strip(l);
+            let part = py_strip(raw);
             if !part.is_empty() {
-                tail.push((index + 1 + k, part));
+                tail.push((offset, raw, part));
             }
         }
-        let head_end = lines[index].0 + lines[index].1.len();
-        let head_all = &text[..head_end];
+        let head_end = line_start + line.len();
+        let head_all = sub(text, ..head_end);
         // Divergence from the Python reference, which reports offset 0 here even when
         // the text starts with whitespace. See tests/fixtures/divergences.md.
         let lead = head_all.len() - py_lstrip(head_all).len();
         let mut result = vec![(py_strip(head_all), lead)];
-        for (line_index, part) in tail {
-            let (offset, raw) = lines[line_index];
+        for (offset, raw, part) in tail {
             let leading = raw.len() - py_lstrip(raw).len();
             result.push((part, offset + leading));
         }
@@ -308,11 +332,7 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
         };
         let mut cuts = Vec::new();
         let mut index = 0;
-        while index < chunk.len() {
-            let c = chunk[index..]
-                .chars()
-                .next()
-                .expect("index on a char boundary");
+        while let Some(c) = sub(chunk, index..).chars().next() {
             if matches!(c, '.' | '!' | '?')
                 && let Some(end) = terminal_cut(chunk, index, &scan, work)?
             {
@@ -325,7 +345,7 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
         let mut start = 0;
         cuts.push(chunk.len());
         for end in cuts {
-            let raw = &chunk[start..end];
+            let raw = sub(chunk, start..end);
             let part = py_strip(raw);
             let leading = raw.len() - py_lstrip(raw).len();
             let absolute = chunk_offset + start + leading;
@@ -403,7 +423,7 @@ mod tests {
             for index in (0..bytes.len()).filter(|&i| bytes[i] == b'.') {
                 assert_eq!(
                     ends_in_dotted_initialism(bytes, &runs, index, &mut Work::default()),
-                    pattern.is_match(&text[..=index]).unwrap(),
+                    pattern.is_match(text.get(..=index).unwrap()).unwrap(),
                     "{text:?} at {index}"
                 );
             }

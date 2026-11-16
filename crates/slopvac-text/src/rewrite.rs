@@ -6,6 +6,8 @@
 //! `\Q..\E` quote, a `(?#..)` or extended-mode comment, or after `\c`, and because a class
 //! changes what `\b` and `\W` are.
 
+use crate::pattern::sub;
+
 /// The Python `regex` module's `\w`, which follows UTS #18: Alphabetic, marks (M), decimal
 /// digits (Nd), connector punctuation (Pc) and `Join_Control`. PCRE2's UCP `\w` is L, N,
 /// Mn and Pc, so the pattern spells the class out. The last member is a class escape so a
@@ -75,7 +77,7 @@ pub(crate) fn tokenize(pattern: &str) -> Vec<Token<'_>> {
 
 impl<'a> Tokenizer<'a> {
     fn rest(&self) -> &'a str {
-        &self.src[self.pos..]
+        sub(self.src, self.pos..)
     }
 
     fn peek(&self) -> Option<char> {
@@ -100,7 +102,7 @@ impl<'a> Tokenizer<'a> {
     fn flush(&mut self) {
         if self.raw_start < self.pos {
             self.tokens
-                .push(Token::Raw(&self.src[self.raw_start..self.pos]));
+                .push(Token::Raw(sub(self.src, self.raw_start..self.pos)));
         }
     }
 
@@ -176,7 +178,7 @@ impl<'a> Tokenizer<'a> {
             // `(*NAME)` or `(*NAME:argument)` is a verb whose argument, which may hold `#`,
             // `[` or `\`, runs to the first `)`.
             let name = verb.split([':', ')']).next().unwrap_or("");
-            let opens_group = verb[name.len()..].starts_with(':')
+            let opens_group = sub(verb, name.len()..).starts_with(':')
                 && !name.is_empty()
                 && name.chars().all(|c| c.is_ascii_lowercase() || c == '_');
             if opens_group {
@@ -304,7 +306,7 @@ impl<'a> Tokenizer<'a> {
         let body = self.rest().strip_prefix("[:")?;
         let name = body.strip_prefix('^').unwrap_or(body);
         let letters = name.find(|c: char| !c.is_ascii_alphabetic())?;
-        name[letters..]
+        sub(name, letters..)
             .starts_with(":]")
             .then(|| self.rest().len() - name.len() + letters + 2)
     }
@@ -312,7 +314,7 @@ impl<'a> Tokenizer<'a> {
 
 fn push_raw<'a>(items: &mut Vec<ClassItem<'a>>, src: &'a str, from: usize, to: usize) {
     if from < to {
-        items.push(ClassItem::Raw(&src[from..to]));
+        items.push(ClassItem::Raw(sub(src, from..to)));
     }
 }
 
@@ -365,14 +367,14 @@ fn render_class(out: &mut String, negated: bool, items: &[ClassItem<'_>]) {
             ClassItem::NonWord => non_word = true,
             ClassItem::Hyphen => rest.push_str(r"\-"),
             ClassItem::Codepoint(c) => {
-                let _ = write!(rest, "\\x{{{c:X}}}");
+                write!(rest, "\\x{{{c:X}}}").unwrap_or_default();
             }
         }
     }
     if rest.starts_with('^') {
         rest.insert(0, '\\');
     }
-    let _ = match (non_word, negated, rest.is_empty()) {
+    match (non_word, negated, rest.is_empty()) {
         (false, _, _) => {
             out.push('[');
             if negated {
@@ -389,7 +391,8 @@ fn render_class(out: &mut String, negated: bool, items: &[ClassItem<'_>]) {
         (true, false, false) => write!(out, "(?:[^{WORD}]|[{rest}])"),
         (true, true, true) => write!(out, "[{WORD}]"),
         (true, true, false) => write!(out, "(?:(?![{rest}])[{WORD}])"),
-    };
+    }
+    .unwrap_or_default();
 }
 
 /// Rewrite `\w`, `\W`, `\b` and `\B` in `pattern` to the Python meaning.

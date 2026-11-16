@@ -9,7 +9,7 @@ use crate::unicode_data::{
 };
 
 fn in_ranges(ranges: &[(u32, u32)], c: char) -> bool {
-    let v = c as u32;
+    let v = u32::from(c);
     ranges
         .binary_search_by(|&(lo, hi)| {
             if hi < v {
@@ -27,7 +27,8 @@ fn mapped(table: &'static [(char, &'static str)], c: char) -> Option<&'static st
     table
         .binary_search_by_key(&c, |&(k, _)| k)
         .ok()
-        .map(|i| table[i].1)
+        .and_then(|i| table.get(i))
+        .map(|&(_, m)| m)
 }
 
 /// `str.isspace` for one character. This is Unicode `White_Space` plus U+001C to U+001F,
@@ -86,11 +87,15 @@ pub(crate) fn lower(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for (i, &c) in chars.iter().enumerate() {
         if c == '\u{3a3}' {
-            let before = chars[..i]
+            let before = chars
+                .get(..i)
+                .unwrap_or_default()
                 .iter()
                 .rev()
                 .find(|&&p| !in_ranges(CASE_IGNORABLE, p));
-            let after = chars[i + 1..]
+            let after = chars
+                .get(i + 1..)
+                .unwrap_or_default()
                 .iter()
                 .find(|&&n| !in_ranges(CASE_IGNORABLE, n));
             let is_final = before.is_some_and(|&p| in_ranges(CASED, p))
