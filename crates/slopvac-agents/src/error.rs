@@ -38,6 +38,9 @@ pub enum AgentsError {
         code: &'static str,
         /// The rendered diagnostics.
         message: String,
+        /// Each path, exactly as the message prints it, so a caller can replace it whole
+        /// instead of guessing where a path ends.
+        paths: Vec<String>,
     },
     /// An I/O failure.
     #[error("{path}: {source}")]

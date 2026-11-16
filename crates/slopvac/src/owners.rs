@@ -96,11 +96,20 @@ fn agents_error(err: &AgentsError) -> CliError {
         AgentsError::Usage(m) | AgentsError::Coded { message: m, .. } => m.clone(),
         // The config crate's rendered text, which leads with its own `error[code]:` and names
         // paths as the user typed them.
-        AgentsError::Config { code, message } => {
+        AgentsError::Config {
+            code,
+            message,
+            paths,
+        } => {
             let body = message
                 .strip_prefix(&format!("error[{code}]: "))
                 .unwrap_or(message);
-            redact::redact_absolute(body, &cwd)
+            // Replace each path the owner named, whole, before any text inference.
+            let mut body = body.to_owned();
+            for named in paths {
+                body = body.replace(named.as_str(), &shown(named));
+            }
+            redact::redact_absolute(&body, &cwd)
         }
     };
     CliError::new(err.code(), message)
