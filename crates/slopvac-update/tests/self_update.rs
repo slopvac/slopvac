@@ -393,3 +393,23 @@ fn version_json_never_starts_a_refresh() {
     assert_eq!(doc["notices"], serde_json::json!([]));
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn unknown_installs_point_to_the_slopvac_org_releases() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("somewhere/else/slopvac");
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"old binary").unwrap();
+    let fx = Fixture { dir, exe };
+    let srv = server("3.1.0");
+    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "self-update-unmanaged");
+    assert!(
+        err.message
+            .contains("download a release from https://github.com/slopvac/slopvac/releases"),
+        "{}",
+        err.message
+    );
+    assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
+}
