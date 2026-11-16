@@ -3,8 +3,8 @@
 //! A term is a product name, language, protocol or acronym with a canonical
 //! spelling. [`TermSet::check_casing`] flags case-insensitive matches that
 //! differ from the canonical spelling and from every declared variant.
-//! Plurals and possessives need no declaration. Blocklists carry the 2.x
-//! `[[entries]]` word, part of speech and reason format.
+//! Plurals and possessives need no declaration. Blocklists use `[[entries]]`
+//! tables of word, part of speech and reason, under `schema_version = 3`.
 
 mod blocklist;
 mod casing;
