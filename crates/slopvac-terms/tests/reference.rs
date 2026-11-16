@@ -92,7 +92,7 @@ fn example() -> PathBuf {
     BUILT
         .get_or_init(|| {
             let output = Command::new(env!("CARGO"))
-                .args(["build", "--quiet", "--example", "reference"])
+                .args(["build", "--quiet", "--example", "terms-reference"])
                 .args(["--profile", &profile(), "--message-format=json"])
                 .args([
                     "--manifest-path",
@@ -106,7 +106,7 @@ fn example() -> PathBuf {
                 .lines()
                 .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
                 .filter(|m| {
-                    m["reason"] == "compiler-artifact" && m["target"]["name"] == "reference"
+                    m["reason"] == "compiler-artifact" && m["target"]["name"] == "terms-reference"
                 })
                 .find_map(|m| m["executable"].as_str().map(PathBuf::from))
                 .expect("cargo reported no executable for the example")

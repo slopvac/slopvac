@@ -15,18 +15,17 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 import build_site
 
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
+CORE = ROOT / "crates" / "slopvac-rules" / "tests" / "fixtures" / "core-v3"
+RULE_NAME = next(
+    r["name"]
+    for r in json.loads((CORE / "orwell.json").read_text())["rules"]
+    if r["id"] == "not-un"
+)
 PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
 
 
 @pytest.fixture
 def site_dir(tmp_path: Path) -> Path:
-    rules = tmp_path / "rules"
-    rules.mkdir()
-    (rules / "demo.yml").write_text(
-        "id: demo\ntitle: Demo\ndescription: A demo.\nrules:\n"
-        "  - id: no-foo\n    name: Avoid foo\n    kind: pattern\n"
-        "    message: 'foo \"quoted\"'\n"
-    )
     schemas = tmp_path / "schemas"
     schemas.mkdir()
     (schemas / "a.schema.json").write_text(
@@ -49,7 +48,6 @@ def site_dir(tmp_path: Path) -> Path:
         [
             "--out", str(tmp_path / "out"),
             "--config", str(config),
-            "--rules-dir", str(rules),
             "--schemas-dir", str(schemas),
             "--packs-dir", str(tmp_path / "packs"),
             "--starlight", str(site),
@@ -64,15 +62,15 @@ def _page(site: Path, route: str) -> str:
 
 
 def test_title_moves_into_front_matter(site_dir: Path) -> None:
-    page = _page(site_dir, "rules/demo/no-foo.md")
-    assert page.startswith('---\ntitle: "Avoid foo"\n---\n')
-    assert "\n# Avoid foo" not in page
+    page = _page(site_dir, "rules/orwell/not-un.md")
+    assert page.startswith(f'---\ntitle: "{RULE_NAME}"\n---\n')
+    assert f"\n# {RULE_NAME}" not in page
 
 
 def test_links_become_route_relative_for_trailing_slash_urls(site_dir: Path) -> None:
-    assert "(../)" in _page(site_dir, "rules/demo/no-foo.md")
-    assert "(no-foo/)" in _page(site_dir, "rules/demo/index.md")
-    assert "(demo/)" in _page(site_dir, "rules/index.md")
+    assert "(../)" in _page(site_dir, "rules/orwell/not-un.md")
+    assert "(not-un/)" in _page(site_dir, "rules/orwell/index.md")
+    assert "(orwell/)" in _page(site_dir, "rules/index.md")
     assert "(rules/)" in _page(site_dir, "index.md")
 
 
@@ -96,7 +94,6 @@ def test_stale_generated_pages_are_removed_on_rebuild(site_dir: Path) -> None:
         [
             "--out", str(site_dir.parent / "out"),
             "--config", str(site_dir.parent / "site.toml"),
-            "--rules-dir", str(site_dir.parent / "rules"),
             "--schemas-dir", str(site_dir.parent / "schemas"),
             "--starlight", str(site_dir),
         ]

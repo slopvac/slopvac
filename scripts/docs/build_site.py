@@ -14,18 +14,16 @@ site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
 Rules, schemas, the plugin protocol and pack manifest references, the pack
-pages, styles, terms and genres come from real data. The styles, terms and
-genres pages come from each crate's ``reference`` example, which the builder
+pages, styles, terms and genres come from real data. The rules, styles, terms and
+genres pages come from each crate's reference example, which the builder
 runs through cargo.
 """
 
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import posixpath
-import re
 import shutil
 import subprocess
 import sys
@@ -40,14 +38,10 @@ from urllib.parse import urlsplit
 import mdlinks
 import plugin_pages
 import starlight
-import yaml
-from mdtext import cell as _cell
 from mdtext import code, untrusted, untrusted_cell
-from mdtext import one_line as _one_line
 from mdtext import text as _text
 
 ROOT = Path(__file__).resolve().parents[2]
-RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 DEFAULT_OUT = ROOT / "build" / "site-src"
 # Pack manifests to document. The example plugin pack is the only committed one
@@ -95,114 +89,9 @@ def rule_url(category: str, rule: str, site: Site | None = None) -> str:
     return site.versioned_url(rule_page_path(category, rule).removesuffix(".md") + "/")
 
 
-_SLOT = re.compile(r"\{(\w+)\}")
-
-
-def _message(value: object) -> str:
-    """A message template with its ``{slot}`` markers shown as ``<slot>`` text."""
-    return _SLOT.sub(r"&lt;\1&gt;", _text(value))
-
-
-def _fenced(text: str) -> list[str]:
-    """A specimen as a fenced block longer than any backtick run it holds."""
-    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
-    fence = "`" * max(3, longest + 1)
-    return [f"{fence}text", *text.strip("\n").splitlines(), fence]
-
-
-def _example(number: int, example: dict) -> list[str]:
-    note = _one_line(example["note"]) if example.get("note") else ""
-    keep = note.startswith("preserve:")
-    label = "kept as written" if keep else "flagged"
-    lines = ["", f"### Example {number}: {label}", "", *_fenced(example["bad"])]
-    good = example.get("good")
-    if keep:
-        pass
-    elif good is None:
-        lines += ["", "No rewrite is given."]
-    elif not good.strip():
-        lines += ["", "Rewrite: delete the text."]
-    else:
-        lines += ["", "Rewrite:", "", *_fenced(good)]
-    if note:
-        text = note.removeprefix("preserve:").strip() if keep else note
-        lines += [
-            "",
-            f"{'Reason' if keep else 'Note'}: {html.escape(text, quote=False)}",
-        ]
-    return lines
-
-
-def _rule_page(category: dict, rule: dict) -> str:
-    qualified = f"{category['id']}.{rule['id']}"
-    tiers = rule.get("tiers") or {
-        "strict": "enforced",
-        "normal": "enforced",
-        "relaxed": "excluded",
-    }
-    lines = [
-        f"# {_text(rule['name'])}",
-        "",
-        f"Rule `{qualified}` in the [{_text(category['title'])}](index.md) category.",
-        "",
-        "| Field | Value |",
-        "| --- | --- |",
-        f"| Kind | {_cell(rule['kind'])} |",
-        f"| Severity | {_cell(rule.get('severity', 'warning'))} |",
-        f"| Scope | {_cell(rule.get('scope', 'prose'))} |",
-    ]
-    lines += [f"| Profile `{name}` | `{_cell(tier)}` |" for name, tier in tiers.items()]
-    lines += ["", "## Message", "", _message(rule["message"])]
-    if rule.get("fix"):
-        lines += ["", "## Fix", "", _text(rule["fix"])]
-    if rule.get("rationale"):
-        lines += ["", "## Rationale", "", _text(rule["rationale"])]
-    if rule.get("examples"):
-        lines += ["", "## Examples"]
-        for number, example in enumerate(rule["examples"], start=1):
-            lines += _example(number, example)
-    if rule.get("exceptions"):
-        lines += ["", "## Exceptions", ""]
-        lines += [f"- {_text(item)}" for item in rule["exceptions"]]
-    provenance = rule.get("provenance") or {}
-    if provenance.get("source"):
-        lines += ["", "## Provenance", "", _text(provenance["source"])]
-        if provenance.get("url"):
-            lines += ["", f"<{provenance['url']}>"]
-    return "\n".join(lines) + "\n"
-
-
-def load_categories(rules_dir: Path = RULES_DIR) -> list[dict]:
-    """Every category document; one file may hold several, separated by ``---``."""
-    texts = (path.read_text() for path in sorted(rules_dir.glob("*.yml")))
-    return [doc for text in texts for doc in yaml.safe_load_all(text) if doc]
-
-
-def generate_rules(rules_dir: Path = RULES_DIR) -> Pages:
-    # STUB(slopvac-8l4.19.8): reads the Python reference rule YAML; swap for the slopvac-rules loader.
-    pages: Pages = {}
-    index = ["# Rules", "", "One page per rule, grouped by category.", ""]
-    for category in sorted(load_categories(rules_dir), key=lambda c: c["id"]):
-        rules = sorted(category.get("rules", []), key=lambda r: r["id"])
-        cat_lines = [
-            f"# {_text(category['title'])}",
-            "",
-            _text(category.get("description", "")),
-            "",
-        ]
-        for rule in rules:
-            pages[rule_page_path(category["id"], rule["id"])] = _rule_page(
-                category, rule
-            )
-            cat_lines.append(
-                f"- [{_text(rule['name'])}]({rule['id']}.md): `{category['id']}.{rule['id']}`"
-            )
-        pages[f"rules/{category['id']}/index.md"] = "\n".join(cat_lines) + "\n"
-        index.append(
-            f"- [{_text(category['title'])}]({category['id']}/index.md): {len(rules)} rules"
-        )
-    pages["rules/index.md"] = "\n".join(index) + "\n"
-    return pages
+def generate_rules() -> Pages:
+    """Rule pages, printed by the ``slopvac-rules`` reference example."""
+    return rust_reference("slopvac-rules", "rules-reference")
 
 
 def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
@@ -238,7 +127,7 @@ def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
 
 
 @cache
-def rust_reference(crate: str, example: str = "reference") -> Pages:
+def rust_reference(crate: str, example: str) -> Pages:
     """Pages printed by a crate's reference example, keyed by site path."""
     with tempfile.TemporaryDirectory() as tmp:
         command = [CARGO, "run", "--quiet", "-p", crate, "--example", example]
@@ -254,15 +143,15 @@ def rust_reference(crate: str, example: str = "reference") -> Pages:
 
 
 def generate_styles() -> Pages:
-    return rust_reference("slopvac-styles")
+    return rust_reference("slopvac-styles", "styles-reference")
 
 
 def generate_terms() -> Pages:
-    return rust_reference("slopvac-terms")
+    return rust_reference("slopvac-terms", "terms-reference")
 
 
 def generate_genres() -> Pages:
-    return rust_reference("slopvac-context")
+    return rust_reference("slopvac-context", "genres-reference")
 
 
 def generate_cli() -> Pages:
@@ -414,7 +303,6 @@ def index_page() -> str:
 
 def build(
     site: Site,
-    rules_dir: Path = RULES_DIR,
     schemas_dir: Path = SCHEMAS_DIR,
     packs_dir: Path = PACKS_DIR,
     contract_dir: Path = CONTRACT_DIR,
@@ -422,7 +310,7 @@ def build(
     pages: Pages = {}
     schemas = plugin_pages.SchemaSet(schemas_dir)
     generated = (
-        generate_rules(rules_dir),
+        generate_rules(),
         generate_schemas(site, schemas_dir),
         plugin_pages.generate_protocol(schemas, contract_dir),
         plugin_pages.generate_manifest(schemas),
@@ -499,7 +387,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
-    parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
     parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
     parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
@@ -517,7 +404,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+        site, args.schemas_dir, args.packs_dir, args.contract_dir
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:

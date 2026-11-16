@@ -1,6 +1,6 @@
 //! Write the terms reference page under a directory.
 //!
-//! `cargo run -p slopvac-terms --example reference -- <out-dir>` writes
+//! `cargo run -p slopvac-terms --example terms-reference -- <out-dir>` writes
 //! `terms/index.md` below `<out-dir>`.
 
 use std::path::PathBuf;
