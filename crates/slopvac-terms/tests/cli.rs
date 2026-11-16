@@ -396,6 +396,13 @@ fn code_ranges_cover_fences_and_inline_spans() {
 }
 
 #[test]
+fn an_unclosed_backtick_run_at_the_end_of_text_opens_no_span() {
+    // The run ends at the end of the text, with no character after it.
+    assert_eq!(markdown_code_ranges("a ``"), []);
+    assert_eq!(markdown_code_ranges("`a` ```"), [0..3]);
+}
+
+#[test]
 fn importing_zero_words_into_a_new_file_leaves_a_loadable_file() {
     let dir = scratch("import-zero");
     std::fs::write(dir.join("accept.txt"), "# only a comment\n").unwrap();
