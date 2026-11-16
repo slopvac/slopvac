@@ -126,7 +126,7 @@ fn out_alone_never_opens_anything() {
         .arg(dir.path().join("r.html"))
         .assert()
         .code(0);
-    assert!(opener.calls().is_empty());
+    assert_eq!(opener.calls(), Vec::<String>::new());
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn ci_writes_the_report_but_does_not_open_it() {
         .code(0)
         .stderr("not opening the report: CI is set.\n");
     assert!(target.is_file());
-    assert!(opener.calls().is_empty());
+    assert_eq!(opener.calls(), Vec::<String>::new());
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn open_needs_an_html_report() {
         .stderr(predicate::str::starts_with(
             "error[usage]: --open shows an HTML report",
         ));
-    assert!(opener.calls().is_empty());
+    assert_eq!(opener.calls(), Vec::<String>::new());
 }
 
 #[test]
