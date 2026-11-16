@@ -17,6 +17,7 @@ toml_edit.workspace = true
 [dev-dependencies]
 jsonschema.workspace = true
 serde_json.workspace = true
+slopvac-agents.workspace = true
 tempfile.workspace = true
 toml.workspace = true
 

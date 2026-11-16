@@ -121,7 +121,12 @@ pub(crate) fn render(
             "message": {"text": n.message},
         }));
     }
-    let complete = !report.documents.iter().any(|d| !d.unchecked.is_empty());
+    // An unchecked entry or a warning root notice means the run did not finish cleanly.
+    let complete = !report
+        .notices
+        .iter()
+        .any(|n| n.level == NoticeLevel::Warning)
+        && !report.documents.iter().any(|d| !d.unchecked.is_empty());
     let sarif = json!({
         "$schema": SCHEMA,
         "version": "2.1.0",

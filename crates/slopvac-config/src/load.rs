@@ -176,6 +176,11 @@ fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
     builder.build().unwrap_or_else(|_| Gitignore::empty())
 }
 
+/// `name` joined to `dir` and lexically normalised.
+pub(crate) fn normalise_join(dir: &Path, name: &str) -> PathBuf {
+    normalise(&dir.join(name))
+}
+
 /// Lexically normalise `path`: drop `.` and fold `..` against the preceding component.
 fn normalise(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();

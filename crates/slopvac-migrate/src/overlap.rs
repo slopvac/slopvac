@@ -7,7 +7,6 @@
 //!
 //! Ported from `parse_glob`, `relate` and `build_regions` in
 //! `tests/contract/preserve_expansion.py`.
-// STUB(slopvac-8l4.16.11): ported from PR #296 b138f5888a; re-verify when it lands.
 
 use std::collections::BTreeSet;
 
