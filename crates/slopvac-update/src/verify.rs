@@ -47,12 +47,12 @@ impl MinisignVerifier {
 impl ArtifactVerifier for MinisignVerifier {
     fn verify(&self, artifact: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
         let text = std::str::from_utf8(signature)
-            .map_err(|_| VerifyError::Invalid("signature is not UTF-8".into()))?;
+            .map_err(|_err| VerifyError::Invalid("signature is not UTF-8".into()))?;
         let sig = minisign_verify::Signature::decode(text)
             .map_err(|e| VerifyError::Invalid(e.to_string()))?;
         self.key
             .verify(artifact, &sig, false)
-            .map_err(|_| VerifyError::Rejected)
+            .map_err(|_err| VerifyError::Rejected)
     }
 }
 

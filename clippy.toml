@@ -1,4 +1,6 @@
 # Test code may unwrap, panic, index and print; production code may not.
+# Clippy applies these only inside `#[test]` fns and `#[cfg(test)]` items, so an
+# integration-test file starts with `#![cfg(test)]` to cover its helper fns too.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true

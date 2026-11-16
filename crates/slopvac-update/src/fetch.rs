@@ -84,6 +84,10 @@ impl Fetcher for UreqFetcher {
             .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
             .build()
             .into();
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "ureq::Error is non_exhaustive; every other failure is a network error"
+        )]
         let mut resp = agent.get(url).call().map_err(|e| match e {
             ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
             other => FetchError::Network(other.to_string()),
@@ -107,7 +111,7 @@ impl Fetcher for UreqFetcher {
                 FetchError::Network(e.to_string())
             }
         })?;
-        if n as u64 > limit {
+        if u64::try_from(n).unwrap_or(u64::MAX) > limit {
             return Err(FetchError::TooLarge(limit));
         }
         Ok(buf)
@@ -144,11 +148,11 @@ mod tests {
             while !head.ends_with(b"\r\n\r\n") && sock.read(&mut byte).unwrap_or(0) == 1 {
                 head.push(byte[0]);
             }
-            let _ = sock.write_all(&reply);
-            let _ = sock.flush();
+            sock.write_all(&reply).ok();
+            sock.flush().ok();
             if hold {
                 // Keep the connection open until the test ends.
-                let _ = rx.recv_timeout(Duration::from_secs(10));
+                rx.recv_timeout(Duration::from_secs(10)).ok();
             }
         });
         Server {

@@ -123,7 +123,7 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
                 .take(MAX_BINARY_BYTES + 1)
                 .read_to_end(&mut buf)
                 .map_err(err)?;
-            if buf.len() as u64 > MAX_BINARY_BYTES {
+            if u64::try_from(buf.len()).unwrap_or(u64::MAX) > MAX_BINARY_BYTES {
                 return Err(UpdateError::Archive("binary is too large".into()));
             }
             return Ok(buf);
@@ -177,7 +177,7 @@ mod tests {
     fn tar_gz(name: &str, body: &[u8]) -> Vec<u8> {
         let mut builder = tar::Builder::new(Vec::new());
         let mut header = tar::Header::new_gnu();
-        header.set_size(body.len() as u64);
+        header.set_size(u64::try_from(body.len()).unwrap());
         header.set_mode(0o755);
         header.set_cksum();
         builder.append_data(&mut header, name, body).unwrap();
@@ -324,7 +324,7 @@ mod tests {
         let (_d, exe) = installed();
         let good = Files(HashMap::from([
             (format!("{url}.minisig"), sig.clone().into_bytes()),
-            (url.clone(), archive.clone()),
+            (url.clone(), archive),
         ]));
         update(&good, &verifier, BASE, "3.1.0", TARGET, &exe).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");

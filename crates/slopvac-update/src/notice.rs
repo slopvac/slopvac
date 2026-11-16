@@ -249,7 +249,7 @@ pub fn latest_version(fetcher: &dyn Fetcher, pypi: bool) -> Result<String, Regis
     let url = if pypi { PYPI_JSON } else { GITHUB_LATEST };
     let body = fetcher.get(url, MAX_REGISTRY_BYTES)?;
     let json: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_| RegistryError::Shape)?;
+        serde_json::from_slice(&body).map_err(|_err| RegistryError::Shape)?;
     let raw = if pypi {
         json.pointer("/info/version")
     } else {
@@ -258,7 +258,7 @@ pub fn latest_version(fetcher: &dyn Fetcher, pypi: bool) -> Result<String, Regis
     .and_then(serde_json::Value::as_str)
     .ok_or(RegistryError::Shape)?;
     let version = raw.strip_prefix('v').unwrap_or(raw);
-    Version::parse(version).map_err(|_| RegistryError::Shape)?;
+    Version::parse(version).map_err(|_err| RegistryError::Shape)?;
     Ok(version.to_owned())
 }
 
@@ -303,7 +303,7 @@ pub fn notice(
         && let Some(fetcher) = fetcher
         && let Some(fresh) = refresh(fetcher, ctx.method.uses_pypi(), ctx.now, deadline)
     {
-        let _ = cache.write(&fresh);
+        cache.write(&fresh).ok();
         entry = Some(fresh);
     }
     notice_for(ctx.current, &entry?.latest, ctx.method)
@@ -317,7 +317,7 @@ fn refresh(
 ) -> Option<Entry> {
     let (tx, rx) = crossbeam_channel::bounded(1);
     std::thread::spawn(move || {
-        let _ = tx.send(latest_version(fetcher.as_ref(), pypi));
+        tx.send(latest_version(fetcher.as_ref(), pypi)).ok();
     });
     let latest = rx.recv_timeout(deadline).ok()?.ok()?;
     Some(Entry {
@@ -353,7 +353,10 @@ mod tests {
     impl Fetcher for Canned {
         fn get(&self, url: &str, _limit: u64) -> Result<Vec<u8>, FetchError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            self.urls.lock().unwrap().push(url.to_owned());
+            self.urls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(url.to_owned());
             Ok(self.body.as_bytes().to_vec())
         }
     }
@@ -388,7 +391,8 @@ mod tests {
     }
 
     fn run(ctx: &Context<'_>, cache: &Cache, f: &Arc<Canned>) -> Option<Notice> {
-        notice(ctx, cache, Some(f.clone()), Duration::from_secs(5))
+        let fetcher: Arc<Canned> = Arc::clone(f);
+        notice(ctx, cache, Some(fetcher), Duration::from_secs(5))
     }
 
     #[test]
@@ -671,7 +675,7 @@ mod tests {
         let cache = Arc::new(cache);
         let handles: Vec<_> = (0..8)
             .map(|i| {
-                let cache = cache.clone();
+                let cache = Arc::clone(&cache);
                 std::thread::spawn(move || {
                     for round in 0..10 {
                         cache

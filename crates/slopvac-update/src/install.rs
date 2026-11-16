@@ -128,7 +128,10 @@ fn names(path: &Path) -> Vec<String> {
     path.components()
         .filter_map(|c| match c {
             Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
-            _ => None,
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect()
 }
@@ -146,7 +149,9 @@ fn lexical_normalize(path: &Path) -> PathBuf {
                 out.pop();
             }
             Component::CurDir => {}
-            other => out.push(other),
+            other @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                out.push(other);
+            }
         }
     }
     out

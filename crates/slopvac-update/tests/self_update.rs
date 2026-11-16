@@ -1,4 +1,5 @@
 //! `slopvac self update` through the public `Runtime` interface, with an injected fetcher.
+#![cfg(test)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -45,7 +46,7 @@ impl ArtifactVerifier for Fixed {
 fn archive(binary: &[u8]) -> Vec<u8> {
     let mut b = tar::Builder::new(Vec::new());
     let mut h = tar::Header::new_gnu();
-    h.set_size(binary.len() as u64);
+    h.set_size(u64::try_from(binary.len()).unwrap());
     h.set_mode(0o755);
     h.set_cksum();
     b.append_data(&mut h, "slopvac-aarch64-apple-darwin/slopvac", binary)
@@ -161,7 +162,7 @@ fn real_downloads_fail_closed_until_a_release_key_is_embedded() {
 fn already_current_downloads_nothing() {
     let fx = installed();
     let srv = server("3.0.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     assert_eq!(update(&rt).unwrap(), "slopvac 3.0.0 is up to date.\n");
     assert_eq!(
         srv.hits.load(Ordering::SeqCst),
@@ -175,7 +176,7 @@ fn already_current_downloads_nothing() {
 fn offline_makes_no_request() {
     let fx = installed();
     let srv = server("3.1.0");
-    let mut rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let mut rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     rt.offline = true;
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "offline-network-needed");
@@ -193,7 +194,7 @@ fn other_installs_print_their_upgrade_command_and_change_nothing() {
     std::fs::write(&exe, b"old binary").unwrap();
     let fx = Fixture { dir, exe };
     let srv = server("3.1.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "self-update-unmanaged");
     assert!(err.message.contains("homebrew"), "{}", err.message);
@@ -237,7 +238,7 @@ fn version_json_reports_method_and_a_cached_notice() {
 fn version_json_never_starts_a_refresh() {
     let fx = installed();
     let srv = server("3.1.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
     assert_eq!(doc["notices"], serde_json::json!([]));
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);

@@ -140,7 +140,7 @@ impl Runtime {
         notice::notice(
             &ctx,
             self.cache.as_ref()?,
-            Some(self.fetcher.clone()),
+            Some(Arc::clone(&self.fetcher)),
             notice::REFRESH_DEADLINE,
         )
     }
@@ -214,15 +214,21 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     .map_err(|e| {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
-            _ => "self-update-failed",
+            UpdateError::UnsupportedPlatform
+            | UpdateError::Download { .. }
+            | UpdateError::NoBinary
+            | UpdateError::Archive(_)
+            | UpdateError::Replace(_) => "self-update-failed",
         };
         Failure::new(code, e.to_string())
     })?;
     if let Some(cache) = &rt.cache {
-        let _ = cache.write(&notice::Entry {
-            checked_at: rt.now,
-            latest: latest.clone(),
-        });
+        cache
+            .write(&notice::Entry {
+                checked_at: rt.now,
+                latest: latest.clone(),
+            })
+            .ok();
     }
     Ok(format!("Updated slopvac {} to {latest}.\n", rt.current))
 }
