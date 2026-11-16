@@ -60,8 +60,8 @@ fn names(list: &[String]) -> String {
 
 fn page(name: &str, style: &Style, text: &str) -> String {
     let mut out = format!("# Style: {name}\n\n");
-    if !style.description.is_empty() {
-        let _ = writeln!(out, "{}\n", style.description);
+    if let Some(description) = &style.description {
+        let _ = writeln!(out, "{description}\n");
     }
     let _ = writeln!(out, "- Extends: {}", names(&style.extends));
     let _ = writeln!(out, "- Conflicts with: {}", names(&style.conflicts));
@@ -73,22 +73,15 @@ fn page(name: &str, style: &Style, text: &str) -> String {
     if !notes.is_empty() {
         let _ = writeln!(out, "## Notes\n\n{notes}\n");
     }
-    let cats = &style.settings.categories;
+    let cats = &style.categories;
     if !cats.is_empty() {
         out.push_str("## Categories\n\n| Category | Settings |\n| --- | --- |\n");
         for (k, c) in cats {
-            let d = match c {
-                crate::CategoryPatch::Level(l) => CategoryDials {
-                    severity: Some(*l),
-                    ..CategoryDials::default()
-                },
-                crate::CategoryPatch::Dials(d) => d.clone(),
-            };
-            let _ = writeln!(out, "| `{k}` | {} |", dials(&d));
+            let _ = writeln!(out, "| `{k}` | {} |", dials(&c.dials()));
         }
         out.push('\n');
     }
-    let rules = &style.settings.rules;
+    let rules = &style.rules;
     if !rules.is_empty() {
         out.push_str("## Rules\n\n| Rule | Level |\n| --- | --- |\n");
         for (k, l) in rules {
@@ -114,7 +107,8 @@ pub fn reference_pages() -> Vec<(String, String)> {
     );
     for (name, text) in BUILTIN {
         let style = Style::parse(name, text).expect("bundled preset is valid");
-        let _ = writeln!(index, "| [`{name}`]({name}.md) | {} |", style.description);
+        let description = style.description.as_deref().unwrap_or_default();
+        let _ = writeln!(index, "| [`{name}`]({name}.md) | {description} |");
         pages.push((format!("styles/{name}.md"), page(name, &style, text)));
     }
     pages.insert(0, ("styles/index.md".to_owned(), index));
