@@ -37,6 +37,7 @@ slopvac-model.workspace = true
 slopvac-plugins.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
+slopvac-styles.workspace = true
 slopvac-update.workspace = true
 tempfile.workspace = true
 toml.workspace = true

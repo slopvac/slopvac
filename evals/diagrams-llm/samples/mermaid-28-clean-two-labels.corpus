@@ -1,0 +1,10 @@
+# Heartbeat
+
+The agent sends a heartbeat to the collector every ten seconds. The collector marks an agent as lost after three missed heartbeats and raises an alert that the agent is offline, so that an engineer can restart it.
+
+```mermaid
+flowchart LR
+  A[Agent] --> B[Collector]
+```
+
+Heartbeats carry no payload.

@@ -1,0 +1,11 @@
+# Upload path
+
+The flowchart above shows the upload path. The upload service hands each file to the virus scanner, and the scanner passes clean files to object storage.
+
+```mermaid
+flowchart LR
+  A[Upload service] --> B[Virus scanner] --> C[Object storage]
+  B -->|rejects the file and notifies the uploader by email| D[Notification service]
+```
+
+Infected files go to the notification service, which emails the uploader about the rejected file.

@@ -1,0 +1,10 @@
+# Ingestion
+
+Events enter the platform through one service.
+
+```mermaid
+flowchart LR
+  A[Ingest Service: Validates Incoming Events] --> B[Event bus]
+```
+
+The bus keeps events for seven days.

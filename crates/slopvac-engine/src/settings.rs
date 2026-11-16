@@ -8,7 +8,10 @@
 
 use std::collections::BTreeMap;
 
-use slopvac_model::{CategoryId, ConfigSource, GenreResult, NonEmptyString, RuleId, Severity};
+use slopvac_context::{GenreRegistry, RuleLevel};
+use slopvac_model::{
+    CategoryId, ConfigSource, GenreResult, IdError, NonEmptyString, RuleId, Severity,
+};
 use slopvac_rules::ApplyMode;
 
 /// The level a rule or category reports at.
@@ -76,6 +79,9 @@ pub struct Settings {
     pub mode: Mode,
     /// Levels set for single rules. These win over a category level.
     pub rule_levels: BTreeMap<RuleId, Level>,
+    /// Levels the genre chain gives single rules. They sit below `rule_levels` and the
+    /// `categories` levels: explicit configuration beats a genre default.
+    pub genre_levels: BTreeMap<RuleId, Level>,
     /// Dials per category.
     pub categories: BTreeMap<CategoryId, CategoryDials>,
     /// The gate limits.
@@ -96,10 +102,36 @@ impl Settings {
             genre,
             mode: Mode::Prose,
             rule_levels: BTreeMap::new(),
+            genre_levels: BTreeMap::new(),
             categories: BTreeMap::new(),
             thresholds: Thresholds::default(),
             config_sources: Vec::new(),
             allowed_words: Vec::new(),
         }
+    }
+
+    /// Fill [`Settings::genre_levels`] from the levels that the settings' genre carries in
+    /// `registry`. A level already there stays. Keys without a pack belong to the `core`
+    /// pack. A genre the registry does not know adds nothing. A key that is no rule id is
+    /// an error.
+    pub fn apply_genre_levels(&mut self, registry: &GenreRegistry) -> Result<(), IdError> {
+        let Ok(levels) = registry.rules(self.genre.id.as_str()) else {
+            return Ok(());
+        };
+        for (key, level) in levels {
+            let qualified = if key.contains(':') {
+                key
+            } else {
+                format!("core:{key}")
+            };
+            let id = RuleId::new(qualified)?;
+            self.genre_levels.entry(id).or_insert(match level {
+                RuleLevel::Off => Level::Off,
+                RuleLevel::Suggestion => Level::On(Severity::Suggestion),
+                RuleLevel::Warning => Level::On(Severity::Warning),
+                RuleLevel::Error => Level::On(Severity::Error),
+            });
+        }
+        Ok(())
     }
 }

@@ -1,0 +1,10 @@
+# Sender
+
+One component sends requests.
+
+```mermaid
+flowchart LR
+  A[Send the request to remote service] --> B[Remote service]
+```
+
+It times out after two seconds.

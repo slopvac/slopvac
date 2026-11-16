@@ -121,7 +121,7 @@ impl TermsDoc {
             .suffix(".tmp")
             .tempfile_in(dir)
             .map_err(|e| io(&e))?;
-        write(&mut tmp, self.doc.to_string().as_bytes()).map_err(|e| io(&e))?;
+        write(&mut tmp, self.render().as_bytes()).map_err(|e| io(&e))?;
         tmp.as_file().sync_all().map_err(|e| io(&e))?;
         if let Ok(meta) = std::fs::metadata(&target) {
             std::fs::set_permissions(tmp.path(), meta.permissions()).map_err(|e| io(&e))?;
@@ -133,7 +133,18 @@ impl TermsDoc {
     /// Render the document.
     #[must_use]
     pub fn render(&self) -> String {
-        self.doc.to_string()
+        // The schema requires a `terms` array. TOML omits an empty array of
+        // tables, and a new document has none, so write `terms = []`.
+        let mut doc = self.doc.clone();
+        let empty = match doc.get("terms") {
+            None => true,
+            Some(Item::ArrayOfTables(t)) => t.is_empty(),
+            Some(_) => false,
+        };
+        if empty {
+            doc["terms"] = value(Array::new());
+        }
+        doc.to_string()
     }
 
     /// Canonical spellings in file order.
@@ -161,11 +172,10 @@ impl TermsDoc {
     /// Add a term in whichever form the file already uses.
     ///
     /// # Errors
-    /// If the term is empty or already present.
+    /// If the entry breaks the terms schema (see [`TermEntry`]) or the term is
+    /// already present. The document is unchanged on error.
     pub fn add(&mut self, entry: &TermEntry) -> Result<(), TermsError> {
-        if entry.term.trim().is_empty() {
-            return Err(err("terms", "term is empty"));
-        }
+        entry.validate("terms")?;
         if self.contains(&entry.term) {
             return Err(err(
                 "terms",

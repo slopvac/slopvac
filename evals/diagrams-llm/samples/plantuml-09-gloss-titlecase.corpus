@@ -1,0 +1,13 @@
+# Billing
+
+Billing runs once a month.
+
+```plantuml
+@startuml
+rectangle "Billing Service: Calculates Monthly Invoices" as B
+rectangle "Ledger" as L
+B --> L
+@enduml
+```
+
+Invoices are immutable once issued.
