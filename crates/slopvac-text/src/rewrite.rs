@@ -357,7 +357,6 @@ pub(crate) fn render(tokens: &[Token<'_>]) -> String {
 /// union. `[\W x]` is the word complement or `[ x]`; `[^\W x]` is a word character that
 /// is not in `[ x]`.
 fn render_class(out: &mut String, negated: bool, items: &[ClassItem<'_>]) {
-    use std::fmt::Write as _;
     let mut rest = String::new();
     let mut non_word = false;
     for item in items {
@@ -366,33 +365,31 @@ fn render_class(out: &mut String, negated: bool, items: &[ClassItem<'_>]) {
             ClassItem::Word => rest.push_str(WORD),
             ClassItem::NonWord => non_word = true,
             ClassItem::Hyphen => rest.push_str(r"\-"),
-            ClassItem::Codepoint(c) => {
-                write!(rest, "\\x{{{c:X}}}").unwrap_or_default();
-            }
+            ClassItem::Codepoint(c) => rest.push_str(&hex_escape(*c)),
         }
     }
     if rest.starts_with('^') {
         rest.insert(0, '\\');
     }
-    match (non_word, negated, rest.is_empty()) {
+    let rendered = match (non_word, negated, rest.is_empty()) {
         (false, _, _) => {
-            out.push('[');
-            if negated {
-                out.push('^');
-            }
             if rest.starts_with(']') {
                 rest.insert(0, '\\');
             }
-            out.push_str(&rest);
-            out.push(']');
-            Ok(())
+            let caret = if negated { "^" } else { "" };
+            format!("[{caret}{rest}]")
         }
-        (true, false, true) => write!(out, "[^{WORD}]"),
-        (true, false, false) => write!(out, "(?:[^{WORD}]|[{rest}])"),
-        (true, true, true) => write!(out, "[{WORD}]"),
-        (true, true, false) => write!(out, "(?:(?![{rest}])[{WORD}])"),
-    }
-    .unwrap_or_default();
+        (true, false, true) => format!("[^{WORD}]"),
+        (true, false, false) => format!("(?:[^{WORD}]|[{rest}])"),
+        (true, true, true) => format!("[{WORD}]"),
+        (true, true, false) => format!("(?:(?![{rest}])[{WORD}])"),
+    };
+    out.push_str(&rendered);
+}
+
+/// A code point as a `\x{..}` escape.
+fn hex_escape(c: u32) -> String {
+    format!("\\x{{{c:X}}}")
 }
 
 /// Rewrite `\w`, `\W`, `\b` and `\B` in `pattern` to the Python meaning.

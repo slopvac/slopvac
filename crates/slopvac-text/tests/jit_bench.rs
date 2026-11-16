@@ -114,7 +114,7 @@ fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() -> Result<(), Fa
         "{compiled} of {} core patterns, {} files, {:.1} MiB",
         patterns.len(),
         texts.len(),
-        f64::from(u32::try_from(bytes).unwrap_or(u32::MAX)) / (1024.0 * 1024.0)
+        f64::from(u32::try_from(bytes)?) / (1024.0 * 1024.0)
     );
     println!(
         "interpreter {:?} ({} matches, {} limit hits)",

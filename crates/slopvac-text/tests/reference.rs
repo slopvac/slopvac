@@ -12,18 +12,20 @@ fn kind(name: &str) -> Result<TextType, serde_json::Error> {
 }
 
 /// A JSON number as a count or offset.
-fn index(value: &Value) -> usize {
-    value
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
-        .unwrap_or(usize::MAX)
+fn index(value: &Value) -> Result<usize, Box<dyn std::error::Error>> {
+    let n = value.as_u64().ok_or("not an unsigned number")?;
+    Ok(usize::try_from(n)?)
 }
 
 #[test]
 fn word_counts_match_the_python_reference() {
     for c in cases().unwrap() {
         let text = c["text"].as_str().unwrap();
-        assert_eq!(count_words(text).unwrap(), index(&c["words"]), "{text:?}");
+        assert_eq!(
+            count_words(text).unwrap(),
+            index(&c["words"]).unwrap(),
+            "{text:?}"
+        );
     }
 }
 
@@ -52,9 +54,9 @@ fn sentences_match_the_python_reference() {
         );
         for (g, w) in got.iter().zip(want) {
             assert_eq!(g.text, w["text"].as_str().unwrap(), "{text:?}");
-            assert_eq!(g.start, index(&w["start"]), "{text:?}");
-            assert_eq!(g.end, index(&w["end"]), "{text:?}");
-            assert_eq!(g.word_count, index(&w["word_count"]), "{text:?}");
+            assert_eq!(g.start, index(&w["start"]).unwrap(), "{text:?}");
+            assert_eq!(g.end, index(&w["end"]).unwrap(), "{text:?}");
+            assert_eq!(g.word_count, index(&w["word_count"]).unwrap(), "{text:?}");
             assert_eq!(
                 g.text_type,
                 kind(w["text_type"].as_str().unwrap()).unwrap(),
