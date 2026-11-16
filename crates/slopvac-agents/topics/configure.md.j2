@@ -8,6 +8,14 @@
 - `slopvac lint --explain-config <file>` shows the source file and line of each setting.
 - `--config <file>` names one config file.
 {% if level != "minimal" %}
+## House style
+
+- Init reads `.vale.ini`, `STYLE.md`, `_STYLE.md` and the style section of `CONTRIBUTING.md`. It prints each style it finds with the file and line, and the bundled preset that matches.
+- Map a house style to `styles = ["google"]` in `slopvac.toml`. Bundled presets: `google`, `ste`. They conflict, so pick one.
+- Read the guide, then set a rule `off` or a level under `[rules]` where the project differs. Presets listed later win.
+- Validate: run `slopvac lint --explain-config <file>` to see each setting's source, then lint a few known files and confirm that every finding fits the guide.
+{% endif %}
+{% if level != "minimal" %}
 ## Offline mode
 
 - `--offline`, `SLOPVAC_OFFLINE=1` or `offline = true` under `[network]` turns it on.

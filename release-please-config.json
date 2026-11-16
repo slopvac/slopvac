@@ -115,6 +115,11 @@
         {
           "type": "toml",
           "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='slopvac-pcre2')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
           "jsonpath": "$.package[?(@.name.value=='slopvac-plugins')].version"
         },
         {

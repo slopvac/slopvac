@@ -4,6 +4,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The cargo-fuzz harness needs nightly and is built only by `just fuzz`.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.0"
@@ -40,7 +42,6 @@ markup5ever_rcdom = "0.40"
 minijinja = "3"
 minisign = { version = "0.10", default-features = false }
 minisign-verify = "0.3"
-pcre2 = "0.2"
 # Pinned: 0.2.10 vendors PCRE2 10.46; the rules need >= 10.43 (slopvac-8l4.3.20).
 pcre2-sys = "=0.2.10"
 proptest = "1.12.0"
@@ -71,6 +72,7 @@ slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-model = { path = "crates/slopvac-model" }
 slopvac-parse = { path = "crates/slopvac-parse" }
+slopvac-pcre2 = { path = "crates/slopvac-pcre2" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-pos = { path = "crates/slopvac-pos" }
 slopvac-report = { path = "crates/slopvac-report" }
@@ -112,12 +114,6 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
-
-# The skeleton declares every crate before any of them depends on another.
-# Remove a name here when its first dependant lands; cargo-shear then guards it.
-# pcre2-sys is a deliberate version pin of a transitive dependency of pcre2.
-[workspace.metadata.cargo-shear]
-ignored = ["pcre2-sys", "slopvac-styles"]
 
 [profile.release]
 lto = "thin"

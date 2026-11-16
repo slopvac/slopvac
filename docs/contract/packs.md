@@ -16,7 +16,7 @@ A pack is a folder or an OCI artifact with a `slopvac-pack.toml` manifest. A dat
 | genre files | [`genre`](../../schemas/v3/genre.schema.json) | Genres with detection signals. |
 | tagger files | [`tagger`](../../schemas/v3/tagger.schema.json) | Declarative context taggers. |
 | terms files | [`terms`](../../schemas/v3/terms.schema.json) | Also the format of `.slopvac/terms.toml`. |
-| blocklist files | [`blocklist`](../../schemas/v3/blocklist.schema.json) | TOML or JSON. The opt-in vocabulary check reads them. |
+| blocklist files | [`blocklist`](../../schemas/v3/blocklist.schema.json) | YAML, TOML or JSON (`.yml`, `.yaml`, `.toml` or `.json`; the suffix picks the format). The opt-in vocabulary check reads them. |
 | `.slopvac/packs.lock` | [`packs-lock`](../../schemas/v3/packs-lock.schema.json) | Written by `slopvac plugins sync`. |
 
 Every file carries `schema_version = 3`. Unknown keys are errors, and keys with the prefix `x-` are ignored. The manifest lists its files under `provides`. A path that leaves the pack, by an absolute path, a drive letter, a backslash or a `..` segment, is invalid.
@@ -61,7 +61,7 @@ Casing has three modes:
 
 The two flags cannot combine. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
 
-A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
+A blocklist file holds an `entries` list (`[[entries]]` in TOML) with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
 
 ## 7. Lockfile
 

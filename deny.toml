@@ -38,7 +38,17 @@ allow = [
 # fail on an exception for a crate that is absent, so this sits here ahead of
 # the crate. Never add CC-BY-SA-4.0 to `allow`: it would admit it for every
 # dependency. The crate name is the working name; rename it with the crate.
-exceptions = [{ crate = "slopvac-pos-model", allow = ["CC-BY-SA-4.0"] }]
+#
+# libfuzzer-sys (fuzz/ only, never shipped) bundles LLVM's libFuzzer under the permissive
+# NCSA licence; rust-fuzz.yml checks fuzz/Cargo.lock against this file.
+exceptions = [
+  { crate = "slopvac-pos-model", allow = [
+    "CC-BY-SA-4.0",
+  ] },
+  { crate = "libfuzzer-sys", allow = [
+    "NCSA",
+  ] },
+]
 
 [advisories]
 version = 2
