@@ -2528,6 +2528,8 @@ dependencies = [
 name = "slopvac-fs"
 version = "0.0.0"
 dependencies = [
+ "cap-fs-ext",
+ "cap-std",
  "etcetera",
  "proptest",
  "tempfile",

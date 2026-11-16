@@ -8,7 +8,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// What can go wrong in this crate.
-#[derive(Debug, thiserror::Error)]
+///
+/// The `Debug` output is path-free too: it names the variant, the operation, the error kind and
+/// the OS code, and nothing else.
+#[derive(thiserror::Error)]
 pub enum Error {
     /// A reader held more than the allowed number of bytes.
     #[error("input exceeds the cap of {cap} bytes")]
@@ -30,6 +33,15 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    /// A write target was refused before anything was written: the path is not a plain relative
+    /// path below the root, or the destination is a symlink or not a regular file.
+    #[error("unsafe write target: {reason}")]
+    UnsafeTarget {
+        /// Why the target was refused.
+        reason: &'static str,
+        /// The path as the caller passed it. Not part of the Display text.
+        path: PathBuf,
+    },
     /// Reading from a reader failed.
     #[error("read failed")]
     Read(#[source] io::Error),
@@ -43,7 +55,7 @@ impl Error {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Io { path, .. } => Some(path),
+            Self::Io { path, .. } | Self::UnsafeTarget { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -58,6 +70,30 @@ impl Error {
 
     pub(crate) fn read(source: &io::Error) -> Self {
         Self::Read(scrub(source))
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CapExceeded { cap } => f.debug_struct("CapExceeded").field("cap", cap).finish(),
+            Self::NoHomeDir => f.write_str("NoHomeDir"),
+            Self::Io { op, source, .. } => f
+                .debug_struct("Io")
+                .field("op", op)
+                .field("kind", &source.kind())
+                .field("os_code", &source.raw_os_error())
+                .finish_non_exhaustive(),
+            Self::UnsafeTarget { reason, .. } => f
+                .debug_struct("UnsafeTarget")
+                .field("reason", reason)
+                .finish_non_exhaustive(),
+            Self::Read(source) => f
+                .debug_struct("Read")
+                .field("kind", &source.kind())
+                .field("os_code", &source.raw_os_error())
+                .finish(),
+        }
     }
 }
 

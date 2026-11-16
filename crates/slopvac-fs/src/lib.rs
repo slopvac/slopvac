@@ -2,7 +2,7 @@
 //! read within a cap and write atomically.
 //!
 //! The crate is a leaf. It knows no slopvac domain types and depends only on the standard
-//! library, `etcetera`, `tempfile` and `thiserror`. It targets Unix; 3.0 has no Windows support.
+//! library, `cap-std`, `cap-fs-ext`, `etcetera` and `thiserror`. It targets Unix; 3.0 has no Windows support.
 
 mod dirs;
 mod error;

@@ -17,14 +17,18 @@ const APP: &str = "slopvac";
 /// Look up an environment variable. `None` means unset.
 pub type Lookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 
+fn process_env(name: &str) -> Option<String> {
+    var_to_option(std::env::var(name))
+}
+
 /// A variable that is not valid UTF-8 counts as unset: no path is built from it, and the
 /// lookup has no error channel. The fallback location is used instead.
 #[expect(
     clippy::manual_ok_err,
     reason = "both error variants are named on purpose, to document that NotUnicode is unset"
 )]
-fn process_env(name: &str) -> Option<String> {
-    match std::env::var(name) {
+fn var_to_option(value: std::result::Result<String, VarError>) -> Option<String> {
+    match value {
         Ok(value) => Some(value),
         Err(VarError::NotPresent | VarError::NotUnicode(_)) => None,
     }
@@ -141,6 +145,17 @@ mod tests {
             s.cache_dir().join(APP)
         );
         assert_eq!(config_dir().unwrap(), s.config_dir().join(APP));
+    }
+
+    #[test]
+    fn non_utf8_variable_counts_as_unset() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let bad = Err(VarError::NotUnicode(OsString::from_vec(vec![0xff])));
+        assert_eq!(var_to_option(bad), None);
+        assert_eq!(var_to_option(Err(VarError::NotPresent)), None);
+        assert_eq!(var_to_option(Ok("v".to_owned())), Some("v".to_owned()));
     }
 
     #[test]
