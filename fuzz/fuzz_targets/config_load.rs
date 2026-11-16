@@ -3,7 +3,8 @@
 
 #![no_main]
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -11,26 +12,54 @@ use libfuzzer_sys::fuzz_target;
 use slopvac_config::frontmatter::{Policy, read};
 use slopvac_config::{NoPresets, load};
 
-/// The config file path inside a private directory that this process created.
+/// The config file path inside a directory that this process created.
 ///
-/// `tempfile` creates the directory atomically with an unpredictable name and mode 0700, so
-/// no other user can pre-create it or plant a symlink in it. libFuzzer ends the process with
-/// `exit`, which skips destructors, so the file is removed after every input and only the
-/// empty directory is left for the OS to clean from the temp directory.
+/// `tempfile` creates the directory atomically under an unpredictable name. On unix the
+/// builder asks for mode 0700 in the same `mkdir` call, so a permissive umask cannot widen
+/// it and no other user can plant a symlink in it. The assert below fails the run if that
+/// ever stops being true (`rust-fuzz.yml` runs this target under `umask 000`). libFuzzer
+/// ends the process with `exit`, which skips destructors, so the file is removed after
+/// every input and only the empty directory is left for the OS to clean from the temp
+/// directory.
 fn scratch_file() -> &'static PathBuf {
     static FILE: OnceLock<PathBuf> = OnceLock::new();
     FILE.get_or_init(|| {
-        let dir = tempfile::Builder::new()
-            .prefix("slopvac-fuzz-config-")
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("slopvac-fuzz-config-");
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let dir = builder
             .tempdir()
-            .expect("create the private scratch directory");
-        dir.keep().join("slopvac.toml")
+            .expect("create the private scratch directory")
+            .keep();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&dir)
+                .expect("stat the scratch directory")
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o777,
+                0o700,
+                "the scratch directory is not owner-only"
+            );
+        }
+        dir.join("slopvac.toml")
     })
 }
 
 fuzz_target!(|text: &str| {
     let path = scratch_file();
-    fs::write(path, text).expect("write the scratch config");
+    // `create_new` fails on any existing entry, a symlink included, and never follows one.
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .expect("create the scratch config");
+    file.write_all(text.as_bytes())
+        .expect("write the scratch config");
+    drop(file);
     let _ = load(path, &NoPresets);
     fs::remove_file(path).expect("remove the scratch config");
     let _ = read(text, "doc.md", &Policy::core());

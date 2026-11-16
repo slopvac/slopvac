@@ -59,6 +59,13 @@ jobs:
       - name: Check the fuzz dependencies
         run: cargo deny --manifest-path fuzz/Cargo.toml --locked check licenses bans sources
 
+      # The config_load harness asserts that its scratch directory is owner-only;
+      # a permissive umask must not widen it.
+      - name: Check the scratch directory under umask 000
+        if: matrix.target == 'config_load'
+        run: >-
+          bash -c 'umask 000; cargo "+$NIGHTLY" fuzz run config_load -- -runs=10'
+
       - name: Fuzz
         env:
           TARGET: ${{ matrix.target }}
