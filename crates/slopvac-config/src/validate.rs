@@ -153,7 +153,7 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
         } else {
             cwd.join(p)
         };
-        let shown = p.strip_prefix(cwd).unwrap_or(&p).display().to_string();
+        let shown = slash_path(p.strip_prefix(cwd).unwrap_or(&p));
         if p.is_dir() {
             let mut found = Vec::new();
             for entry in WalkBuilder::new(&p)
@@ -212,7 +212,7 @@ fn has_document_extension(path: &Path) -> bool {
 }
 
 fn check_document(file: &Path, cwd: &Path, config: Option<&LoadedConfig>, report: &mut Report) {
-    let shown = file.strip_prefix(cwd).unwrap_or(file).display().to_string();
+    let shown = slash_path(file.strip_prefix(cwd).unwrap_or(file));
     if let Some(c) = config
         && let Ok(canon) = fs::canonicalize(file)
         && let Ok(rel) = canon.strip_prefix(&c.root)
@@ -352,4 +352,16 @@ pub fn run(
         )?;
     }
     Ok(report.exit_code())
+}
+
+/// A relative `path` with `/` between components on every platform, so output reads the
+/// same on Windows. An absolute path keeps its native form.
+fn slash_path(path: &Path) -> String {
+    if path.has_root() {
+        return path.display().to_string();
+    }
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
