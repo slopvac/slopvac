@@ -34,6 +34,7 @@
 //! the environment digest, and every spawn runs the quick environment check
 //! (threat model Y5).
 
+use crate::num::widen;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -325,7 +326,7 @@ fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
         path: path.to_owned(),
         why,
     };
-    if raw.len() as u64 > MAX_STORE_BYTES {
+    if widen(raw.len()) > MAX_STORE_BYTES {
         return Err(corrupt("larger than 8 MiB".into()));
     }
     let mut value: serde_json::Value =
@@ -399,7 +400,7 @@ impl TrustStore {
         file.take(MAX_STORE_BYTES + 1)
             .read_to_end(&mut raw)
             .map_err(io_err(format!("reading {}", path.display())))?;
-        if raw.len() as u64 > MAX_STORE_BYTES {
+        if widen(raw.len()) > MAX_STORE_BYTES {
             return Err(TrustError::Corrupt {
                 path,
                 why: "larger than 8 MiB".into(),
@@ -427,7 +428,7 @@ impl TrustStore {
             path: self.path(),
             why: e.to_string(),
         })?;
-        if bytes.len() as u64 > MAX_STORE_BYTES {
+        if widen(bytes.len()) > MAX_STORE_BYTES {
             return Err(TrustError::TooLarge { bytes: bytes.len() });
         }
         let mut tmp = tempfile::Builder::new()
@@ -624,7 +625,11 @@ pub fn parse_trust_env(value: &str) -> Result<Vec<Digest>, TrustError> {
     value
         .split(|c: char| c == ',' || c.is_whitespace())
         .filter(|t| !t.is_empty())
-        .map(|t| Digest::parse(t).map_err(|_| TrustError::NotAHash(t.to_owned())))
+        .map(|t| {
+            Digest::parse(t)
+                .ok()
+                .ok_or_else(|| TrustError::NotAHash(t.to_owned()))
+        })
         .collect()
 }
 

@@ -57,6 +57,7 @@
 mod listing;
 mod lock;
 
+use crate::num::widen;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -495,8 +496,12 @@ impl ManagedEnv {
                 path: f.path.clone(),
                 why: why.to_owned(),
             };
-            let meta = fs::metadata(&f.path).map_err(|_| changed("is missing"))?;
-            let mtime = mtime_of(&meta).map_err(|_| changed("has no modification time"))?;
+            let meta = fs::metadata(&f.path)
+                .ok()
+                .ok_or_else(|| changed("is missing"))?;
+            let mtime = mtime_of(&meta)
+                .ok()
+                .ok_or_else(|| changed("has no modification time"))?;
             if meta.len() != f.size || mtime != f.mtime {
                 return Err(changed("changed size or modification time"));
             }
@@ -1032,7 +1037,7 @@ fn read_record(path: &Path) -> Result<Option<EnvRecord>, PyEnvError> {
     f.take(MAX_RECORD_BYTES + 1)
         .read_to_end(&mut raw)
         .map_err(|e| damaged(e.to_string()))?;
-    if raw.len() as u64 > MAX_RECORD_BYTES {
+    if widen(raw.len()) > MAX_RECORD_BYTES {
         return Err(damaged("larger than 64 MiB".into()));
     }
     let r: EnvRecord = serde_json::from_slice(&raw).map_err(|e| damaged(e.to_string()))?;

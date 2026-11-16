@@ -15,6 +15,7 @@
 //! the reader never sees end of stream. Dropping a plugin waits for the reap,
 //! up to five seconds after the kill.
 
+use crate::num::widen;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -239,7 +240,8 @@ impl IdAllocator {
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |c| {
                 (c <= self.max).then_some(c + 1)
             })
-            .map_err(|_| PluginError::RequestIdExhausted)
+            .ok()
+            .ok_or(PluginError::RequestIdExhausted)
     }
 }
 
@@ -419,10 +421,10 @@ struct Counted<R> {
 impl<R: Read> Read for Counted<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.read = self.read.saturating_add(n as u64);
+        self.read = self.read.saturating_add(widen(n));
         // Charged as bytes leave the pipe: partial frames, read-ahead and
         // failed streams count too.
-        if let Err(m) = self.budget.charge_stdout(n as u64) {
+        if let Err(m) = self.budget.charge_stdout(widen(n)) {
             self.breach = Some(m);
             return Err(io::Error::other("whole-run budget exceeded"));
         }
@@ -457,7 +459,7 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
                 // Bytes buffered for the next frame are not consumed yet.
-                let total = r.get_ref().read - r.buffer().len() as u64;
+                let total = r.get_ref().read - widen(r.buffer().len());
                 if total > shared.caps.stdout_bytes {
                     return shared.violation("standard output volume cap reached");
                 }
@@ -487,7 +489,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
         match stderr.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                total = total.saturating_add(n as u64);
+                total = total.saturating_add(widen(n));
                 {
                     let mut ring = lock(&shared.stderr);
                     ring.extend(&buf[..n]);
@@ -497,7 +499,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                 if let Some(hook) = &shared.stderr_read_hook {
                     (hook.0)(total);
                 }
-                if let Err(m) = shared.budget.charge_stderr(n as u64) {
+                if let Err(m) = shared.budget.charge_stderr(widen(n)) {
                     shared.violation(m);
                     break;
                 }
@@ -825,7 +827,7 @@ fn check_reply(
     let l = reply.limits;
     let max_msg = usize::try_from(l.max_message_bytes)
         .ok()
-        .filter(|&m| m as u64 >= MIN_MESSAGE_BYTES && m <= cfg.max_message_bytes)
+        .filter(|&m| widen(m) >= MIN_MESSAGE_BYTES && m <= cfg.max_message_bytes)
         .ok_or_else(|| {
             out(format!(
                 "maxMessageBytes {} is outside the allowed range",

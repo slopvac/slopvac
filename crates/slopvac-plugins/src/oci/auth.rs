@@ -9,6 +9,7 @@
 //! timeout, no output cap and no name check, which the threat model (N6)
 //! requires, so this module reads the config and runs the helper itself.
 
+use crate::num::widen;
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -317,7 +318,7 @@ fn run_helper(
     std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = (&mut stdout)
-            .take(HELPER_MAX_OUTPUT as u64 + 1)
+            .take(widen(HELPER_MAX_OUTPUT) + 1)
             .read_to_end(&mut buf);
         let _ = tx.send(buf);
     });
@@ -369,7 +370,8 @@ fn run_helper(
         return Ok(None);
     }
     let reply: HelperReply = serde_json::from_slice(&out)
-        .map_err(|_| cred(format!("`{program}` printed invalid JSON")))?;
+        .ok()
+        .ok_or_else(|| cred(format!("`{program}` printed invalid JSON")))?;
     if reply.username == "<token>" {
         return Err(cred(
             "identity tokens from credential helpers are not supported".into(),
@@ -394,13 +396,14 @@ impl DefaultCredentials {
         f.take(MAX_CONFIG_BYTES + 1)
             .read_to_end(&mut raw)
             .map_err(|e| OciError::Credential(format!("reading the Docker config: {e}")))?;
-        if raw.len() as u64 > MAX_CONFIG_BYTES {
+        if widen(raw.len()) > MAX_CONFIG_BYTES {
             return Err(OciError::Credential(
                 "the Docker config is larger than 1 MiB".into(),
             ));
         }
         let cfg: DockerConfig = serde_json::from_slice(&raw)
-            .map_err(|_| OciError::Credential("the Docker config is not valid JSON".into()))?;
+            .ok()
+            .ok_or_else(|| OciError::Credential("the Docker config is not valid JSON".into()))?;
         let helper = unique_match(
             cfg.cred_helpers
                 .iter()

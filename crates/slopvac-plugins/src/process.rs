@@ -548,6 +548,7 @@ fn windows_teardown(graceful: bool, taskkill: impl FnOnce() -> Option<i32>) -> T
 mod unix {
     //! The descendant walk and its process-table helper.
 
+    use crate::num::widen;
     use std::collections::{HashMap, HashSet};
     use std::ffi::OsStr;
     use std::io::Read;
@@ -911,7 +912,7 @@ mod unix {
         let (tx, rx) = crossbeam_channel::bounded(1);
         std::thread::spawn(move || {
             let mut buf = Vec::new();
-            let limit = TABLE_MAX_BYTES as u64 + 1;
+            let limit = widen(TABLE_MAX_BYTES) + 1;
             let read = (&mut pipe).take(limit).read_to_end(&mut buf);
             let _ = tx.send(read.ok().map(|_| buf));
         });
@@ -1129,9 +1130,10 @@ mod tests {
 
         #[test]
         fn the_helper_sees_only_the_fixed_environment() {
+            let no_args: [&str; 0] = [];
             let out = run_bounded(
                 Path::new("/usr/bin/env"),
-                &[] as &[&str],
+                &no_args,
                 Instant::now() + Duration::from_secs(10),
             )
             .unwrap();

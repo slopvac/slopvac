@@ -1,5 +1,6 @@
 //! The client: auth, manifests, blobs, referrers, tags and push.
 
+use crate::num::widen;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
@@ -263,7 +264,8 @@ impl Client {
         }
         let body = read_limited(resp.body_mut(), MAX_TOKEN_BYTES, "token response")?;
         let t: Tok = serde_json::from_slice(&body)
-            .map_err(|_| OciError::Invalid("token response is not JSON".into()))?;
+            .ok()
+            .ok_or_else(|| OciError::Invalid("token response is not JSON".into()))?;
         let value = t
             .token
             .or(t.access_token)
@@ -362,7 +364,7 @@ impl Client {
             return Err(Self::deny_or_status(&url, status));
         }
         let header_type = content_type(&resp);
-        check_declared_length(&resp, MAX_MANIFEST_BYTES as u64, "manifest")?;
+        check_declared_length(&resp, widen(MAX_MANIFEST_BYTES), "manifest")?;
         let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "manifest")?;
         let digest = Digest::of(&body);
         if let Target::Digest(want) = &r.target
@@ -472,7 +474,7 @@ impl Client {
             if n == 0 {
                 break;
             }
-            total += n as u64;
+            total += widen(n);
             if total > desc.size {
                 return Err(OciError::SizeMismatch {
                     expected: desc.size,
@@ -585,7 +587,7 @@ impl Client {
         if count > MAX_TAGS {
             return Err(OciError::TooLarge {
                 what: "referrers list".into(),
-                limit: MAX_TAGS as u64,
+                limit: widen(MAX_TAGS),
             });
         }
         Ok(())
@@ -616,7 +618,7 @@ impl Client {
             if all.len() > MAX_TAGS {
                 return Err(OciError::TooLarge {
                     what: "tag list".into(),
-                    limit: MAX_TAGS as u64,
+                    limit: widen(MAX_TAGS),
                 });
             }
             let Some(next) = next else { break };
@@ -635,7 +637,7 @@ impl Client {
         media_type: &str,
         bytes: &[u8],
     ) -> Result<Descriptor, OciError> {
-        if bytes.len() as u64 > MAX_BLOB_BYTES {
+        if widen(bytes.len()) > MAX_BLOB_BYTES {
             return Err(OciError::TooLarge {
                 what: "blob".into(),
                 limit: MAX_BLOB_BYTES,
@@ -706,7 +708,7 @@ impl Client {
         if body.len() > MAX_MANIFEST_BYTES {
             return Err(OciError::TooLarge {
                 what: "manifest".into(),
-                limit: MAX_MANIFEST_BYTES as u64,
+                limit: widen(MAX_MANIFEST_BYTES),
             });
         }
         let url = format!(
@@ -827,7 +829,7 @@ fn check_declared_length(resp: &Response<Body>, limit: u64, what: &str) -> Resul
 fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, OciError> {
     let mut buf = Vec::new();
     body.with_config()
-        .limit(limit as u64 + 1)
+        .limit(widen(limit) + 1)
         .reader()
         .read_to_end(&mut buf)
         .map_err(|e| OciError::Network {
@@ -837,7 +839,7 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
     if buf.len() > limit {
         return Err(OciError::TooLarge {
             what: what.into(),
-            limit: limit as u64,
+            limit: widen(limit),
         });
     }
     Ok(buf)

@@ -18,6 +18,7 @@
 //! - An artifact has exactly one layer of each. They are never listed in the statement.
 //! - The minisign trusted comment is signed but never used to decide anything.
 
+use crate::num::widen;
 use std::collections::BTreeMap;
 
 use std::fmt::Write as _;
@@ -118,7 +119,8 @@ impl PublicKey {
             .map_err(|e| SignError::InvalidKey(e.to_string()))?;
         let id: [u8; 8] = raw[2..10]
             .try_into()
-            .map_err(|_| SignError::InvalidKey("short key".into()))?;
+            .ok()
+            .ok_or_else(|| SignError::InvalidKey("short key".into()))?;
         Ok(Self { inner, id, raw })
     }
 
@@ -423,10 +425,13 @@ pub(crate) fn parse_canonical<T: serde::de::DeserializeOwned>(
 
 /// Verify a prehashed minisign signature by `key` over exactly `bytes`.
 pub(crate) fn verify_bytes(key: &PublicKey, bytes: &[u8], minisig: &str) -> Result<(), SignError> {
-    let sig = minisign_verify::Signature::decode(minisig).map_err(|_| SignError::BadSignature)?;
+    let sig = minisign_verify::Signature::decode(minisig)
+        .ok()
+        .ok_or(SignError::BadSignature)?;
     key.inner
         .verify(bytes, &sig, false)
-        .map_err(|_| SignError::BadSignature)
+        .ok()
+        .ok_or(SignError::BadSignature)
 }
 
 /// Whether `text` is 16 uppercase hex digits, the form of a key id.
@@ -616,13 +621,15 @@ pub fn fetch_and_verify(
     expect: &Expectation<'_>,
 ) -> Result<Verified, SignError> {
     let (statement, minisig) = signature_layers(manifest)?;
-    if statement.size > MAX_STATEMENT_BYTES as u64 {
+    if statement.size > widen(MAX_STATEMENT_BYTES) {
         return Err(SignError::StatementTooLarge);
     }
     let statement_bytes =
-        client.fetch_blob_bytes(repository, statement, MAX_STATEMENT_BYTES as u64)?;
-    let sig_bytes = client.fetch_blob_bytes(repository, minisig, MAX_MINISIG_BYTES as u64)?;
-    let sig_text = String::from_utf8(sig_bytes).map_err(|_| SignError::BadSignature)?;
+        client.fetch_blob_bytes(repository, statement, widen(MAX_STATEMENT_BYTES))?;
+    let sig_bytes = client.fetch_blob_bytes(repository, minisig, widen(MAX_MINISIG_BYTES))?;
+    let sig_text = String::from_utf8(sig_bytes)
+        .ok()
+        .ok_or(SignError::BadSignature)?;
     verify(manifest, &statement_bytes, &sig_text, policy, expect)
 }
 
@@ -718,7 +725,8 @@ pub fn verify_rotation(
         ));
     }
     let bound = PublicKey::from_base64(&st.new_key)
-        .map_err(|_| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
+        .ok()
+        .ok_or_else(|| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
     if bound.raw != proof.new_key.raw || bound.key_id() != st.new_key_id {
         return Err(mismatch(
             "the new key differs from the key the rotation binds",

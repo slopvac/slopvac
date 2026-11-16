@@ -84,7 +84,8 @@ pub(crate) fn locate(root: &Path, rel: &str, windows: bool) -> Result<Located, A
     };
     let parent_rel = parent_abs
         .strip_prefix(&canon)
-        .map_err(|_| ApplyError::PathRefused(format!("`{rel}` leaves the project root")))?
+        .ok()
+        .ok_or_else(|| ApplyError::PathRefused(format!("`{rel}` leaves the project root")))?
         .to_owned();
     let comps: Vec<OsString> = parent_rel
         .components()
@@ -157,7 +158,7 @@ pub(crate) enum Current {
 }
 
 #[cfg(unix)]
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 fn link_count(_: &cap_std::fs::File, m: &cap_std::fs::Metadata) -> std::io::Result<u64> {
     use cap_std::fs::MetadataExt;
     Ok(m.nlink())
@@ -181,7 +182,8 @@ pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Cu
 fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
     use cap_std::fs::OpenOptionsExt;
     let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
-        .map_err(|_| ApplyError::Io("O_NONBLOCK does not fit".into()))?;
+        .ok()
+        .ok_or_else(|| ApplyError::Io("O_NONBLOCK does not fit".into()))?;
     opts.custom_flags(flag);
     Ok(())
 }

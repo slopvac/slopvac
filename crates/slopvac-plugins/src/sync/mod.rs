@@ -47,6 +47,7 @@
 mod cache;
 mod error;
 
+use crate::num::widen;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -422,13 +423,14 @@ impl<'a> Syncer<'a> {
             pack,
             reference,
             statement,
-            MAX_STATEMENT_BYTES as u64,
+            widen(MAX_STATEMENT_BYTES),
             "signed statement",
         )?;
         let minisig_bytes =
             self.small_blob(pack, reference, minisig, MAX_MINISIG_BYTES, "signature")?;
-        let minisig_text =
-            String::from_utf8(minisig_bytes).map_err(|_| layout("the signature is not text"))?;
+        let minisig_text = String::from_utf8(minisig_bytes)
+            .ok()
+            .ok_or_else(|| layout("the signature is not text"))?;
         let version = pack.version.to_string();
         let expect = Expectation {
             id: id.as_str(),
@@ -477,7 +479,7 @@ impl<'a> Syncer<'a> {
         reference: &Reference,
         locked: &Digest,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(locked, MAX_MANIFEST_BYTES as u64)
+        if let Some(path) = self.store.blob(locked, widen(MAX_MANIFEST_BYTES))
             && let Ok(bytes) = fs::read(path)
         {
             return Ok(bytes);

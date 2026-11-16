@@ -51,6 +51,7 @@
 //! too (residual risk R3). A local process of the same user can still put back
 //! an older signed list (R6).
 
+use crate::num::widen;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -586,7 +587,8 @@ impl Revocations {
             });
         }
         let statement = String::from_utf8(statement)
-            .map_err(|_| RevocationError::Invalid("the list is not UTF-8".into()))?;
+            .ok()
+            .ok_or_else(|| RevocationError::Invalid("the list is not UTF-8".into()))?;
 
         // Re-read, compare and replace as one step under the lock.
         let _lock = self.lock()?;
@@ -634,12 +636,14 @@ impl Revocations {
             (MEDIA_MINISIG, MEDIA_REVOCATIONS) => (b, a),
             _ => return Err(layout("the layers are not a list and its signature")),
         };
-        if list.size > MAX_LIST_BYTES as u64 {
+        if list.size > widen(MAX_LIST_BYTES) {
             return Err(RevocationError::TooLarge);
         }
-        let statement = client.fetch_blob_bytes(&self.source, list, MAX_LIST_BYTES as u64)?;
+        let statement = client.fetch_blob_bytes(&self.source, list, widen(MAX_LIST_BYTES))?;
         let sig = client.fetch_blob_bytes(&self.source, sig, MAX_MINISIG_BYTES)?;
-        let sig = String::from_utf8(sig).map_err(|_| RevocationError::BadSignature)?;
+        let sig = String::from_utf8(sig)
+            .ok()
+            .ok_or(RevocationError::BadSignature)?;
         Ok((statement, sig))
     }
 
@@ -658,7 +662,7 @@ impl Revocations {
         file.take(MAX_CACHE_BYTES + 1)
             .read_to_end(&mut raw)
             .map_err(|e| invalid(e.to_string()))?;
-        if raw.len() as u64 > MAX_CACHE_BYTES {
+        if widen(raw.len()) > MAX_CACHE_BYTES {
             return Err(invalid("too large".into()));
         }
         let doc: CacheDoc = serde_json::from_slice(&raw).map_err(|e| invalid(e.to_string()))?;

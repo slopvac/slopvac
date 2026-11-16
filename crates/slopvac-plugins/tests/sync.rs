@@ -543,7 +543,7 @@ fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
 fn tamper_edit(tree: &Path) {
     let file = tree.join("rules/a.yml");
     let mut perms = fs::metadata(&file).unwrap().permissions();
-    #[allow(clippy::permissions_set_readonly_false)]
+    #[expect(clippy::permissions_set_readonly_false)]
     perms.set_readonly(false);
     fs::set_permissions(&file, perms).unwrap();
     fs::write(&file, b"rule: evil\n").unwrap();
@@ -754,7 +754,7 @@ fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
     let id: PackId = "style".parse().unwrap();
     let ranges = BTreeMap::from([(id.clone(), parse_version_req("^1").unwrap())]);
     let v = |s: &str| s.parse::<Version>().unwrap();
-    let available = BTreeMap::from([(id.clone(), vec![v("1.2.0"), v("1.3.0"), v("2.0.0")])]);
+    let available = BTreeMap::from([(id, vec![v("1.2.0"), v("1.3.0"), v("2.0.0")])]);
     assert_eq!(
         update_notices(&lock, &ranges, &available),
         vec![
@@ -908,7 +908,7 @@ fn an_https_archive_is_downloaded_checked_installed_and_replayed_from_cache() {
     let env = Env::new();
     let pol = KeyPolicy::default();
     let (lock, requests) = {
-        let body = archive.clone();
+        let body = archive;
         let server = Server::start(move |_| Response::new(200).body(body.clone()));
         let lock = https_archive_lock(&server, &digest);
         let c = client();

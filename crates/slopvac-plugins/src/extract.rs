@@ -7,6 +7,7 @@
 //! while streaming, writes into a private staging directory with exclusive
 //! creation, hashes the tree, and renames it atomically into the store.
 
+use crate::num::widen;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
@@ -291,7 +292,7 @@ struct Counting<R> {
 impl<R: Read> Read for Counting<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        let total = self.seen.fetch_add(n as u64, Ordering::SeqCst) + n as u64;
+        let total = self.seen.fetch_add(widen(n), Ordering::SeqCst) + widen(n);
         if total > self.limit {
             return Err(io::Error::other(format!(
                 "compressed size exceeds {} bytes",
@@ -313,7 +314,7 @@ struct Guarded<R> {
 impl<R: Read> Read for Guarded<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.expanded += n as u64;
+        self.expanded += widen(n);
         if self.expanded > self.limits.expanded_bytes {
             return Err(io::Error::other(format!(
                 "expanded size exceeds {} bytes",
@@ -332,7 +333,9 @@ impl<R: Read> Read for Guarded<R> {
 }
 
 fn normalise_entry_path(raw: &[u8]) -> Result<String, ExtractError> {
-    let s = std::str::from_utf8(raw).map_err(|_| refused("entry path is not UTF-8"))?;
+    let s = std::str::from_utf8(raw)
+        .ok()
+        .ok_or_else(|| refused("entry path is not UTF-8"))?;
     let s = s.strip_prefix("./").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
     check_name(s).map_err(|e| refused(format!("entry path `{s}`: {e}")))?;
@@ -721,7 +724,7 @@ fn write_sidecar(
         path: EXEC_SIDECAR.to_owned(),
         executable: false,
         sha: Sha256::digest(&sidecar).into(),
-        len: sidecar.len() as u64,
+        len: widen(sidecar.len()),
     }))
 }
 
@@ -731,7 +734,10 @@ fn pax_paths(block: &[u8]) -> Result<Vec<Vec<u8>>, ExtractError> {
     let mut paths = Vec::new();
     for ext in tar::PaxExtensions::new(block) {
         let ext = ext.map_err(|e| ExtractError::Malformed(e.to_string()))?;
-        let key = ext.key().map_err(|_| refused("PAX key is not UTF-8"))?;
+        let key = ext
+            .key()
+            .ok()
+            .ok_or_else(|| refused("PAX key is not UTF-8"))?;
         if key == "path" {
             paths.push(ext.value_bytes().to_vec());
         } else if key == "size" || key.starts_with("GNU.sparse") {
@@ -794,7 +800,7 @@ fn read_meta(entry: &mut impl Read) -> Result<Vec<u8>, ExtractError> {
         .take(MAX_META_BYTES + 1)
         .read_to_end(&mut buf)
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
-    if buf.len() as u64 > MAX_META_BYTES {
+    if widen(buf.len()) > MAX_META_BYTES {
         return Err(refused(format!(
             "extension header larger than {MAX_META_BYTES} bytes"
         )));
@@ -858,7 +864,7 @@ fn hash_stream(
             out.write_all(&buf[..n])
                 .map_err(io_err(format!("writing `{what}`")))?;
         }
-        len += n as u64;
+        len += widen(n);
         if cap.is_some_and(|c| len > c) {
             return Err(refused(format!("`{what}` is larger than allowed")));
         }
@@ -999,7 +1005,8 @@ fn tree_hash_observed(
             let name = entry
                 .file_name()
                 .into_string()
-                .map_err(|_| refused("a file name is not UTF-8"))?;
+                .ok()
+                .ok_or_else(|| refused("a file name is not UTF-8"))?;
             let rel = if prefix.is_empty() {
                 name
             } else {
@@ -1096,7 +1103,8 @@ fn mark_executables(bytes: &[u8], files: &mut [FileRecord]) -> Result<(), Extrac
         }
         let idx = files
             .binary_search_by(|r| r.path.as_bytes().cmp(line.as_slice()))
-            .map_err(|_| refused("the executable list names a missing file"))?;
+            .ok()
+            .ok_or_else(|| refused("the executable list names a missing file"))?;
         if files[idx].path == EXEC_SIDECAR {
             return Err(refused("the executable list names itself"));
         }

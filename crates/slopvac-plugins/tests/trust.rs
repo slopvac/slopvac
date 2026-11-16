@@ -619,7 +619,7 @@ fn tm6_changing_a_variable_value_or_the_path_needs_new_trust() {
     added.env.push(("C".into(), "3".into()));
     let mut removed = spec.clone();
     removed.env.pop();
-    let mut path = spec.clone();
+    let mut path = spec;
     path.path_env = s.dir("other-bin").display().to_string();
     for (what, changed) in [
         ("value", value),
@@ -1022,12 +1022,8 @@ mod unix_only {
         let vp = install(&s, "1.0.0", "");
         let spec = spawn_spec(&vp);
         let hash = hash_of(&spawn_gate(&s, &vp), &vp, &spec);
-        let g = TrustGate::new(
-            TrustStore::open(s.dir("state")),
-            vec![hash],
-            vec![vp.clone()],
-        )
-        .with_external_programs([python()]);
+        let g = TrustGate::new(TrustStore::open(s.dir("state")), vec![hash], vec![vp])
+            .with_external_programs([python()]);
         assert!(Plugin::start(&spec, &cfg(), &g).unwrap().shutdown().clean());
         assert!(!s.dir("state").exists());
     }

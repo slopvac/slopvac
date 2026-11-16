@@ -103,7 +103,7 @@ fn pack(table: &Table, pointer: String) -> Result<LockedPack, LockError> {
         obj.required(key)?;
     }
     let version_text = obj.string("version")?;
-    let version = Version::parse(version_text).map_err(|_| {
+    let version = Version::parse(version_text).ok().ok_or_else(|| {
         err(
             &obj.at("version"),
             format!("`{version_text}` is not a semantic version"),
