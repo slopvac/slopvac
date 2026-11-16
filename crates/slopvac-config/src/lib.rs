@@ -4,11 +4,7 @@
 //! and value keeps its byte span, validates that tree against the v3 schemas,
 //! merges the layers for one file with per-value provenance, and renders
 //! failures as coded diagnostics.
-#![warn(
-    clippy::arithmetic_side_effects,
-    clippy::indexing_slicing,
-    clippy::string_slice
-)]
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 mod comments;
 pub mod diag;

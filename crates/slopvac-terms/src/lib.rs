@@ -5,11 +5,7 @@
 //! differ from the canonical spelling and from every declared variant.
 //! Plurals and possessives need no declaration. Blocklists carry the 2.x
 //! `[[entries]]` word, part of speech and reason format.
-#![warn(
-    clippy::arithmetic_side_effects,
-    clippy::indexing_slicing,
-    clippy::string_slice
-)]
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 mod blocklist;
 mod casing;

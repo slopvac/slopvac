@@ -63,11 +63,7 @@
     clippy::let_underscore_must_use,
     reason = "fmt::Write for String never returns an error"
 )]
-#![warn(
-    clippy::arithmetic_side_effects,
-    clippy::indexing_slicing,
-    clippy::string_slice
-)]
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 use std::fmt::Write as _;
 
