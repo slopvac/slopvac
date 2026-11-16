@@ -411,3 +411,28 @@ fn prime_with_a_bad_guidance_level_never_prints_url_credentials() {
     assert!(!err.contains("secret"), "credentials leaked: {err}");
     assert!(err.contains("https://example.com"), "the host stays: {err}");
 }
+
+#[test]
+fn a_quote_inside_an_unquoted_path_does_not_end_it() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    let missing = outside
+        .path()
+        .join("a\"b")
+        .join("private dir")
+        .join("nope.toml");
+    let out = slopvac(work.path())
+        .args(["prime", "--config"])
+        .arg(&missing)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[config-io]: cannot read <external>/nope.toml: no such file"),
+        "{err}"
+    );
+    for leaked in ["private", "a\"b", "SENTINEL"] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}

@@ -90,8 +90,9 @@ fn normalise_after(text: &str, marker: &str) -> String {
 /// Redact text that an owner crate has already rendered: URL credentials first, then every
 /// absolute path.
 ///
-/// A path starts at a `/` that opens a word (after whitespace, a backtick or a quote) and
-/// runs to the next `: `, backtick, quote or line end, so a path with spaces stays whole.
+/// A path starts at a `/` that opens a word (after whitespace, a backtick or a quote). A quoted
+/// path ends at its closing quote; an unquoted one runs to the next `: ` or line end, so a path
+/// with spaces or quotes stays whole.
 /// A `/` inside a word, such as the slashes of `https://host/a`, is not a path.
 #[must_use]
 pub fn redact_absolute(text: &str, cwd: &Path) -> String {
@@ -110,9 +111,13 @@ pub fn redact_absolute(text: &str, cwd: &Path) -> String {
             rest = &tail[1..];
             continue;
         }
-        let end = [": ", "`", "\"", "\n"]
-            .iter()
-            .filter_map(|stop| tail.find(stop))
+        // A path that opened with a quote ends at the same quote. An unquoted path ends at
+        // `: ` or the line end only, so a quote inside it stays part of the path.
+        let closing = before.filter(|c| matches!(c, '`' | '"' | '\''));
+        let closing_at = closing.and_then(|c| tail.find(c));
+        let end = [tail.find(": "), tail.find('\n'), closing_at]
+            .into_iter()
+            .flatten()
             .min()
             .unwrap_or(tail.len());
         out.push_str(&shown_path(Path::new(&tail[..end]), cwd));
@@ -225,6 +230,19 @@ mod tests {
         assert_eq!(
             redact_absolute("read/write a/b", Path::new("/work")),
             "read/write a/b"
+        );
+    }
+
+    #[test]
+    fn a_quoted_path_ends_at_its_closing_quote_and_an_unquoted_one_keeps_quotes() {
+        let cwd = Path::new("/work");
+        assert_eq!(
+            redact_absolute(r#"path = "/srv/a b/c.toml" rest"#, cwd),
+            r#"path = "<external>/c.toml" rest"#
+        );
+        assert_eq!(
+            redact_absolute(r#"cannot read /srv/a"b/c d/e.toml: gone"#, cwd),
+            "cannot read <external>/e.toml: gone"
         );
     }
 }
