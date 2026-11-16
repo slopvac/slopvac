@@ -16,7 +16,7 @@
 //! Online, it gets the revocation list ([`Revocations::refresh`]), then for each
 //! OCI entry in scope:
 //!
-//! 1. lists the repository's semver tags ([`available_versions`]) and picks the
+//! 1. lists the repository's semver tags (tags that fail the OCI tag grammar are skipped; one listing per repository) and picks the
 //!    highest version the config range allows ([`outdated`]);
 //! 2. fetches that version's manifest and takes its digest from the bytes;
 //! 3. verifies the signed statement under the [`KeyPolicy`], with the lock's
@@ -49,6 +49,7 @@ use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -64,10 +65,10 @@ use crate::lock::{
     LockError, LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, Signature, Source, SourceKind,
     Version, VersionReq, outdated,
 };
-use crate::oci::{Client, MEDIA_MANIFEST, Reference, Target};
+use crate::oci::{Client, MEDIA_MANIFEST, Reference, Target, valid_tag};
 use crate::revoke::{RevocationError, RevocationList, RevocationNotice, Revocations};
 use crate::sign::{Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, fetch_and_verify};
-use crate::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError, available_versions};
+use crate::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError};
 
 /// The lock file, relative to the project root.
 pub const LOCK_PATH: &str = ".slopvac/packs.lock";
@@ -203,12 +204,16 @@ impl UpdateReport {
     }
 }
 
+type GuardWaitHook = Arc<dyn Fn() + Send + Sync>;
+
 /// Resolves newer pack versions and rewrites the lock.
 pub struct Updater<'a> {
     network: Network<'a>,
     policy: &'a KeyPolicy,
     revocations: &'a Revocations,
     guard_timeout: Duration,
+    listing_budget: u64,
+    guard_wait_hook: Option<GuardWaitHook>,
 }
 
 impl<'a> Updater<'a> {
@@ -221,7 +226,26 @@ impl<'a> Updater<'a> {
             policy,
             revocations,
             guard_timeout: GUARD_TIMEOUT,
+            listing_budget: LISTING_BUDGET_BYTES,
+            guard_wait_hook: None,
         }
+    }
+
+    /// Test seam: `hook` runs each time update finds the guard held and is
+    /// about to wait. Not part of the supported API.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_guard_wait_hook(mut self, hook: impl Fn() + Send + Sync + 'static) -> Self {
+        self.guard_wait_hook = Some(Arc::new(hook));
+        self
+    }
+
+    /// Reads at most `bytes` of tag lists per run (default
+    /// [`LISTING_BUDGET_BYTES`]).
+    #[must_use]
+    pub fn with_listing_budget(mut self, bytes: u64) -> Self {
+        self.listing_budget = bytes;
+        self
     }
 
     /// Waits at most `timeout` for the guard lock (default [`GUARD_TIMEOUT`]).
@@ -285,7 +309,7 @@ impl<'a> Updater<'a> {
             message,
         };
         let dir = open_lock_dir(project_root).map_err(|e| lock_error(e.to_string()))?;
-        let _guard = match take_guard(&dir, self.guard_timeout) {
+        let _guard = match take_guard(&dir, self.guard_timeout, self.guard_wait_hook.as_deref()) {
             Ok(guard) => guard,
             Err(GuardError::Busy) => {
                 return Err(UpdateError::Busy {
@@ -307,7 +331,7 @@ impl<'a> Updater<'a> {
             mut results,
             repos,
             available,
-        } = list_candidates(client, &lock, ranges, in_scope);
+        } = list_candidates(client, &lock, ranges, in_scope, self.listing_budget);
         let newer = outdated(&lock, ranges, &available);
 
         let mut report = UpdateReport {
@@ -378,18 +402,30 @@ struct Listed {
     available: BTreeMap<PackId, Vec<Version>>,
 }
 
-/// Lists the versions of every in-scope OCI pack that has a range.
+/// Most tag bytes update reads from registries in one run.
+pub const LISTING_BUDGET_BYTES: u64 = 64 << 20;
+
+/// Lists each distinct repository once and keeps at most two versions per pack:
+/// the highest in range and the highest stable one. The full tag list is
+/// dropped as soon as the packs of its repository are reduced.
+///
+/// Tags that fail the OCI tag grammar (including its 128-byte limit) are
+/// skipped before they reach semver parsing. The tag bytes read across all
+/// repositories count against `budget`; past it, the remaining packs are
+/// refused.
 fn list_candidates(
     client: &Client,
     lock: &Lockfile,
     ranges: &BTreeMap<PackId, VersionReq>,
     in_scope: impl Fn(&&LockedPack) -> bool,
+    budget: u64,
 ) -> Listed {
     let mut listed = Listed {
         results: BTreeMap::new(),
         repos: BTreeMap::new(),
         available: BTreeMap::new(),
     };
+    let mut groups: BTreeMap<(String, String), Vec<(&LockedPack, Reference)>> = BTreeMap::new();
     for pack in lock.packs().iter().filter(in_scope) {
         let SourceKind::Oci(text) = pack.source.kind() else {
             continue;
@@ -397,25 +433,82 @@ fn list_candidates(
         if !ranges.contains_key(&pack.id) {
             continue;
         }
-        let found = reference_of(pack, text).and_then(|r| {
-            available_versions(client, &r)
-                .map(|v| (r, v))
-                .map_err(|source| SyncError::Fetch {
-                    id: pack.id.clone(),
-                    source,
-                })
-        });
-        match found {
-            Ok((reference, versions)) => {
-                listed.repos.insert(pack.id.clone(), reference);
-                listed.available.insert(pack.id.clone(), versions);
-            }
+        match reference_of(pack, text) {
+            Ok(r) => groups
+                .entry((r.registry.clone(), r.repository.clone()))
+                .or_default()
+                .push((pack, r)),
             Err(e) => {
                 listed.results.insert(pack.id.clone(), e);
             }
         }
     }
+    let mut spent: u64 = 0;
+    for packs in groups.into_values() {
+        let fail = |pack: &LockedPack, why: SyncErrorKind| match why {
+            SyncErrorKind::Fetch(source) => SyncError::Fetch {
+                id: pack.id.clone(),
+                source,
+            },
+            SyncErrorKind::Budget => SyncError::Source {
+                id: pack.id.clone(),
+                why: format!("registry tag lists exceed the {budget}-byte budget for one update"),
+            },
+        };
+        let tags = if spent >= budget {
+            Err(SyncErrorKind::Budget)
+        } else {
+            client
+                .list_tags(&packs[0].1)
+                .map_err(SyncErrorKind::Fetch)
+                .and_then(|tags| {
+                    spent += tags.iter().map(|t| t.len() as u64 + 1).sum::<u64>();
+                    if spent > budget {
+                        Err(SyncErrorKind::Budget)
+                    } else {
+                        Ok(tags)
+                    }
+                })
+        };
+        let tags = match tags {
+            Ok(tags) => tags,
+            Err(why) => {
+                for (pack, _) in &packs {
+                    listed
+                        .results
+                        .insert(pack.id.clone(), fail(pack, why.clone()));
+                }
+                continue;
+            }
+        };
+        let versions: Vec<Version> = tags
+            .iter()
+            .filter(|t| valid_tag(t))
+            .filter_map(|t| Version::parse(t).ok())
+            .filter(|v| v.build.is_empty())
+            .collect();
+        drop(tags);
+        for (pack, reference) in packs {
+            let Some(req) = ranges.get(&pack.id) else {
+                continue;
+            };
+            let newer = || versions.iter().filter(|v| **v > pack.version);
+            let best = newer().filter(|v| req.matches(v)).max().cloned();
+            let newest = newer().filter(|v| v.pre.is_empty()).max().cloned();
+            let mut kept: Vec<Version> = best.into_iter().chain(newest).collect();
+            kept.sort();
+            kept.dedup();
+            listed.repos.insert(pack.id.clone(), reference);
+            listed.available.insert(pack.id.clone(), kept);
+        }
+    }
     listed
+}
+
+#[derive(Clone)]
+enum SyncErrorKind {
+    Fetch(crate::oci::OciError),
+    Budget,
 }
 
 /// Opens `.slopvac` under the project root without following links.
@@ -445,7 +538,11 @@ impl From<ApplyError> for GuardError {
 /// that the current user owns and that grants nothing to group or others,
 /// checked on the open handle: another user who could open it could also lock
 /// it and stall every update.
-fn take_guard(dir: &Dir, timeout: Duration) -> Result<std::fs::File, GuardError> {
+fn take_guard(
+    dir: &Dir,
+    timeout: Duration,
+    on_wait: Option<&(dyn Fn() + Send + Sync)>,
+) -> Result<std::fs::File, GuardError> {
     let name = OsStr::new(GUARD_NAME);
     match dir.symlink_metadata(name) {
         Ok(m) if !m.is_file() => return Err(ApplyError::NotRegularFile(GUARD_PATH.into()).into()),
@@ -487,6 +584,9 @@ fn take_guard(dir: &Dir, timeout: Duration) -> Result<std::fs::File, GuardError>
         match file.try_lock() {
             Ok(()) => return Ok(file),
             Err(std::fs::TryLockError::WouldBlock) => {
+                if let Some(hook) = on_wait {
+                    hook();
+                }
                 if Instant::now() >= deadline {
                     return Err(GuardError::Busy);
                 }

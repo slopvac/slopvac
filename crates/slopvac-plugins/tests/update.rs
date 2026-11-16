@@ -1015,6 +1015,166 @@ fn a_second_update_cannot_run_while_the_first_is_resolving() {
 }
 
 #[test]
+fn a_second_update_waits_for_the_first_and_both_changes_survive() {
+    let key = Key::new();
+    let (style, other) = two_packs(&key);
+    let (reached_tx, reached_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let gate = Mutex::new(Some((reached_tx, release_rx)));
+    let server = registry_with(
+        &[
+            ("style", &[&style[0], &style[1]]),
+            ("other", &[&other[0], &other[1]]),
+        ],
+        move || {
+            if let Some((reached, release)) = gate.lock().unwrap().take() {
+                reached.send(()).unwrap();
+                release.recv().unwrap();
+            }
+        },
+    );
+    let reg = server.registry();
+    let env = Env::new();
+    env.write_lock(&[
+        entry("style", &reg, &style[0], true),
+        entry("other", &reg, &other[0], true),
+    ]);
+    let c = client();
+    let pol = policy(&[&key]);
+    let (waiting_tx, waiting_rx) = mpsc::channel::<()>();
+    let waiting_tx = Mutex::new(waiting_tx);
+
+    std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            env.update(
+                Network::Online(&c),
+                &pol,
+                &ranges(&[("style", "^1.2")]),
+                &[pack_id("style")],
+            )
+        });
+        // The first update is inside resolution and holds the guard.
+        reached_rx.recv().unwrap();
+        let second = scope.spawn(|| {
+            let revocations = env.revocations();
+            Updater::new(Network::Online(&c), &pol, &revocations)
+                .with_guard_timeout(Duration::from_secs(60))
+                .with_guard_wait_hook(move || {
+                    let _ = waiting_tx.lock().unwrap().send(());
+                })
+                .update(
+                    env.dir.path(),
+                    &ranges(&[("other", "^1.0")]),
+                    &[pack_id("other")],
+                )
+        });
+        // The second update has found the guard held and is waiting on it.
+        waiting_rx.recv().unwrap();
+        release_tx.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        let report = second.join().unwrap().unwrap();
+        assert!(report.wrote_lock);
+    });
+
+    let lock = env.lock();
+    assert_eq!(
+        lock.get(&pack_id("style")).unwrap().version,
+        version("1.3.0")
+    );
+    assert_eq!(
+        lock.get(&pack_id("other")).unwrap().version,
+        version("1.1.0")
+    );
+}
+
+#[test]
+fn repeated_sources_list_the_repository_once() {
+    let key = Key::new();
+    let (style, _) = two_packs(&key);
+    let server = registry(&[("style", &[&style[0], &style[1]])]);
+    let reg = server.registry();
+    let env = Env::new();
+    // Four packs, one repository.
+    let many: Vec<String> = ["a", "b", "c", "d"]
+        .iter()
+        .map(|id| entry(id, &reg, &style[0], true).replace(&format!("acme/{id}:"), "acme/style:"))
+        .collect();
+    env.write_lock(&many);
+    let c = client();
+    let wanted = ranges(&[("a", "^1.2"), ("b", "^1.2"), ("c", "^1.2"), ("d", "^1.2")]);
+
+    let _ = env.update(Network::Online(&c), &policy(&[&key]), &wanted, &[]);
+
+    assert_eq!(server.count("/v2/acme/style/tags/list"), 1);
+}
+
+#[test]
+fn oversized_tags_are_ignored_before_they_reach_semver() {
+    let key = Key::new();
+    let v120 = release(&key, "style", "1.2.0", FLOOR);
+    let long = format!("1.9.0-{}", "a".repeat(200));
+    let mut huge = release(&key, "style", "1.9.0", LATER);
+    huge.tag = long.clone();
+    let server = registry(&[("style", &[&v120, &huge])]);
+    let env = Env::new();
+    let before = env.write_lock(&[entry("style", &server.registry(), &v120, true)]);
+    let c = client();
+    // The range names the oversized prerelease, so semver alone would take it.
+    let req = format!(">=1.2.0, <={long}");
+
+    let report = env
+        .update(
+            Network::Online(&c),
+            &policy(&[&key]),
+            &ranges(&[("style", req.as_str())]),
+            &[],
+        )
+        .unwrap();
+
+    assert!(matches!(report.packs[0].outcome, Outcome::Unchanged));
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+#[test]
+fn tag_lists_past_the_budget_refuse_the_packs_and_exit_2() {
+    let key = Key::new();
+    let (style, other) = two_packs(&key);
+    let server = registry(&[
+        ("style", &[&style[0], &style[1]]),
+        ("other", &[&other[0], &other[1]]),
+    ]);
+    let reg = server.registry();
+    let env = Env::new();
+    let before = env.write_lock(&[
+        entry("style", &reg, &style[0], true),
+        entry("other", &reg, &other[0], true),
+    ]);
+    let c = client();
+    let revocations = env.revocations();
+    let pol = policy(&[&key]);
+
+    // One list is "1.2.0","1.3.0" = 12 bytes; a 5-byte budget trips on the first.
+    let report = Updater::new(Network::Online(&c), &pol, &revocations)
+        .with_listing_budget(5)
+        .update(
+            env.dir.path(),
+            &ranges(&[("style", "^1.2"), ("other", "^1.0")]),
+            &[],
+        )
+        .unwrap();
+
+    assert_eq!(report.exit_code(), 2);
+    assert!(
+        report
+            .packs
+            .iter()
+            .all(|p| matches!(p.outcome, Outcome::Refused(_))),
+        "{report:?}"
+    );
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+#[test]
 fn a_lock_that_grows_during_resolution_is_refused_without_reading_it_whole() {
     let key = Key::new();
     let (style, _) = two_packs(&key);
