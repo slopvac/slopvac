@@ -594,6 +594,91 @@ fn a_manifest_that_cannot_select_an_environment_is_refused() {
     }
 }
 
+/// The shared pack-manifest conformance cases, the ones the schema test also reads.
+fn manifest_cases(dir: &str) -> Vec<(String, String)> {
+    let root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/pack-manifest");
+    let mut out: Vec<_> = fs::read_dir(root.join(dir))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.extension().is_some_and(|e| e == "toml") && p.file_name().unwrap() != "cases.toml"
+        })
+        .map(|p| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read_to_string(&p).unwrap(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn the_reader_accepts_every_valid_manifest_case_of_the_schema() {
+    let valid = manifest_cases("valid");
+    assert!(valid.iter().any(|(n, _)| n == "plugin-python-caret.toml"));
+    assert!(
+        valid
+            .iter()
+            .any(|(n, _)| n == "plugin-python-dot-slash.toml")
+    );
+    for (name, text) in valid {
+        let rt = read_runtime(&name, Some(&text));
+        assert!(rt.is_ok(), "{name}: {rt:?}");
+    }
+}
+
+#[test]
+fn the_reader_refuses_every_invalid_runtime_case_of_the_schema() {
+    let cases: Vec<_> = manifest_cases("invalid")
+        .into_iter()
+        .filter(|(n, _)| n.starts_with("plugin-python-") || n.starts_with("plugin-runtime-"))
+        .collect();
+    assert!(cases.len() >= 5, "{} cases", cases.len());
+    for (name, text) in cases {
+        let err = read_runtime(&name, Some(&text)).unwrap_err();
+        assert!(
+            matches!(err, PyEnvError::Manifest { .. }),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+const PY_PLUGIN: &str = "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n";
+
+#[test]
+fn a_manifest_over_one_mebibyte_is_refused_even_when_it_is_valid_toml() {
+    let m = manifest("plugin", PY_PLUGIN);
+    let at_limit = format!("{m}#{}\n", "x".repeat((1 << 20) - m.len() - 2));
+    assert_eq!(at_limit.len(), 1 << 20);
+    assert!(read_runtime("limit", Some(&at_limit)).unwrap().is_some());
+    let over = format!("{at_limit}#\n");
+    let err = read_runtime("over", Some(&over)).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_manifest_that_is_a_symlink_is_refused() {
+    let s = Scratch::new("rt-symlink");
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    let real = s.dir("real.toml");
+    fs::write(&real, manifest("plugin", PY_PLUGIN)).unwrap();
+    std::os::unix::fs::symlink(&real, s.dir("tree").join(MANIFEST_FILE)).unwrap();
+    let err = PythonRuntime::read(&s.dir("tree")).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+#[test]
+fn manifest_values_are_escaped_once_in_the_error_text() {
+    // The runtime is the text: x, backslash, y, BEL.
+    let m = manifest("plugin", "runtime = \"x\\\\y\\u0007\"\ncommand = \"a\"\n");
+    let err = read_runtime("escape", Some(&m)).unwrap_err();
+    let expected = r"`x\\y\u{7}` is not a runtime; use `native` or `python`";
+    assert!(err.to_string().ends_with(expected), "{err}");
+}
 #[test]
 fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
     let wheel = format!(

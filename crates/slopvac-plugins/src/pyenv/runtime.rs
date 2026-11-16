@@ -89,18 +89,14 @@ impl PythonRuntime {
                     .python
                     .ok_or_else(|| bad("`runtime = \"python\"` needs `python`".into()))?;
                 if !super::is_python_request(&python) {
-                    return Err(bad(format!(
-                        "`{}` is not a Python version request",
-                        python.escape_debug()
-                    )));
+                    return Err(bad(format!("`{python}` is not a Python version request")));
                 }
                 let command = plugin
                     .command
                     .ok_or_else(|| bad("`runtime = \"python\"` needs `command`".into()))?;
                 if !is_script_path(&command) {
                     return Err(bad(format!(
-                        "`{}` is not a relative script path inside the pack",
-                        command.escape_debug()
+                        "`{command}` is not a relative script path inside the pack"
                     )));
                 }
                 Ok(Some(Self {
@@ -110,8 +106,7 @@ impl PythonRuntime {
                 }))
             }
             Some(other) => Err(bad(format!(
-                "`{}` is not a runtime; use `native` or `python`",
-                other.escape_debug()
+                "`{other}` is not a runtime; use `native` or `python`"
             ))),
         }
     }
@@ -128,12 +123,16 @@ impl PythonRuntime {
     }
 }
 
-/// A relative path inside the pack. A leading dash would be read as an
-/// interpreter option.
+/// What the `PackPath` def of the pack-manifest schema accepts, minus a
+/// leading dash (the interpreter would read it as an option): relative,
+/// forward slashes, no drive letter, no `..` segment. A NUL cannot reach an
+/// argument list, so it is refused as well.
 fn is_script_path(command: &str) -> bool {
+    let drive =
+        command.as_bytes().get(1) == Some(&b':') && command.as_bytes()[0].is_ascii_alphabetic();
     !command.is_empty()
-        && !command.starts_with(['-', '/'])
+        && !command.starts_with(['-', '/', '\\'])
+        && !drive
         && !command.contains(['\\', '\0'])
-        && !command.split('/').any(|s| matches!(s, "" | "." | ".."))
-        && !command.contains(':')
+        && !command.split('/').any(|s| s == "..")
 }

@@ -300,8 +300,10 @@ pub enum InstallNetwork {
     Online,
 }
 
-/// Whether `p` is a plain interpreter request such as `3.12` or `>=3.11,<3.13`:
-/// short, and never an option for uv.
+/// Whether `p` is a plain interpreter request such as `3.12`, `^3.12` or
+/// `>=3.11,<3.13`: short, and never an option for uv. Everything the
+/// `VersionReq` def of the pack-manifest schema accepts without whitespace
+/// passes.
 pub(crate) fn is_python_request(p: &str) -> bool {
     !p.is_empty()
         && p.len() <= 64
@@ -310,7 +312,7 @@ pub(crate) fn is_python_request(p: &str) -> bool {
             b.is_ascii_alphanumeric()
                 || matches!(
                     b,
-                    b'.' | b'@' | b'-' | b'+' | b'=' | b'<' | b'>' | b',' | b'~' | b'!'
+                    b'.' | b'@' | b'-' | b'+' | b'=' | b'<' | b'>' | b',' | b'~' | b'!' | b'^'
                 )
         })
 }
