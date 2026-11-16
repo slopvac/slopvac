@@ -17,8 +17,10 @@
 //! - `git` is found on `PATH` among trusted directories only (CWE-427). A
 //!   relative entry such as `.` is skipped. So is an absolute entry that, after
 //!   links resolve, lies inside the project (a hostile checkout could plant its
-//!   own `git` there) or that other users can write to. The program itself must
-//!   not be writable by others either.
+//!   own `git` there). The program is the link-resolved file, and that file,
+//!   its directory and every ancestor must belong to root or the current user
+//!   and be closed to group and others (a sticky, root-owned ancestor such as
+//!   `/tmp` is allowed). The resolved path is what runs.
 //! - The environment is cleared. Only proxy and certificate variables and the
 //!   Windows system variables pass through. `HOME` and the config files point
 //!   at an empty scratch directory (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`
@@ -143,28 +145,58 @@ pub(super) fn find_git(project_root: &Path) -> Option<PathBuf> {
 }
 
 fn find_git_in(path: &OsStr, project: &Path) -> Option<PathBuf> {
+    find_git_as(path, project, current_uid())
+}
+
+/// [`find_git_in`] for a given user id, so tests can stand in for another user.
+fn find_git_as(path: &OsStr, project: &Path, me: u32) -> Option<PathBuf> {
     let trusted: Vec<PathBuf> = std::env::split_paths(path)
         .filter(|dir| dir.is_absolute())
         .filter_map(|dir| std::fs::canonicalize(dir).ok())
-        .filter(|dir| !dir.starts_with(project) && !other_can_write(dir))
+        .filter(|dir| !dir.starts_with(project) && trusted_path(dir, me))
         .collect();
     let found = find_in_path("git", Some(&std::env::join_paths(trusted).ok()?))?;
+    // Run the program the checks saw, not a link that could be repointed.
     let real = std::fs::canonicalize(&found).ok()?;
-    (!real.starts_with(project) && !other_can_write(&real)).then_some(found)
+    let regular = std::fs::metadata(&real).is_ok_and(|m| m.is_file());
+    (regular && !real.starts_with(project) && trusted_path(&real, me)).then_some(real)
 }
 
-/// Whether group or others can write to `path`. Windows has no such mode bits
-/// and is not a supported platform for 3.0.
-fn other_can_write(path: &Path) -> bool {
+#[cfg(unix)]
+fn current_uid() -> u32 {
+    rustix::process::getuid().as_raw()
+}
+
+#[cfg(not(unix))]
+fn current_uid() -> u32 {
+    0
+}
+
+/// Whether nobody but root or `me` can change what `path` names: `path` and
+/// every ancestor belong to root or `me`. `path` itself is not writable by
+/// group or others. An ancestor may be, only when it is sticky and owned by
+/// root (`/tmp`), since then others cannot replace what they do not own.
+/// `path` is canonical, so no link is left to repoint.
+///
+/// Windows has no such mode bits and is not a supported platform for 3.0.
+fn trusted_path(path: &Path, me: u32) -> bool {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o022 != 0)
+        use std::os::unix::fs::MetadataExt;
+        path.ancestors().all(|step| {
+            let Ok(meta) = std::fs::metadata(step) else {
+                return false;
+            };
+            let owner_ok = meta.uid() == 0 || meta.uid() == me;
+            let open = meta.mode() & 0o022 != 0;
+            let sticky_root = meta.mode() & 0o1000 != 0 && meta.uid() == 0;
+            owner_ok && (!open || (step != path && sticky_root))
+        })
     }
     #[cfg(not(unix))]
     {
-        let _ = path;
-        false
+        let _ = (path, me);
+        true
     }
 }
 
@@ -778,6 +810,60 @@ mod tests {
         let alias = l.trusted.parent().unwrap().join("alias");
         std::os::unix::fs::symlink(&l.local, &alias).unwrap();
         assert_eq!(find_git_in(&path_of(&[&alias]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_file_in_a_writable_directory_is_refused() {
+        let l = layout();
+        // The link sits in a protected directory; the file it names does not.
+        let linked = l.trusted.parent().unwrap().join("linked-open");
+        std::fs::create_dir(&linked).unwrap();
+        std::os::unix::fs::symlink(l.open.join("git"), linked.join("git")).unwrap();
+        assert_eq!(find_git_in(&path_of(&[&linked]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_protected_directory_under_a_writable_ancestor_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let l = layout();
+        let inner = l.open.join("inner");
+        std::fs::create_dir(&inner).unwrap();
+        std::fs::write(inner.join("git"), b"").unwrap();
+        std::fs::set_permissions(&inner, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(find_git_in(&path_of(&[&inner]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_owned_by_another_user_is_refused() {
+        // The tests run as the owner of every file here. Standing in for a
+        // different user makes the same files belong to someone else.
+        let l = layout();
+        let path = path_of(&[&l.trusted]);
+        let me = current_uid();
+        assert_eq!(
+            find_git_as(&path, &l.project, me),
+            Some(l.trusted.join("git"))
+        );
+        assert_eq!(find_git_as(&path, &l.project, me + 1), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_resolved_path_is_what_the_lookup_returns() {
+        let l = layout();
+        let real_dir = l.trusted.parent().unwrap().join("real");
+        std::fs::create_dir(&real_dir).unwrap();
+        std::fs::write(real_dir.join("git-2.99"), b"").unwrap();
+        let bin = l.trusted.parent().unwrap().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        std::os::unix::fs::symlink(real_dir.join("git-2.99"), bin.join("git")).unwrap();
+        assert_eq!(
+            find_git_in(&path_of(&[&bin]), &l.project),
+            Some(real_dir.join("git-2.99"))
+        );
     }
 
     #[cfg(unix)]
