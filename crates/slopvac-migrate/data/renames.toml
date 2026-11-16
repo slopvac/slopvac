@@ -95,6 +95,7 @@
 "ai-tells-structure.tricolon-abuse-remainder" = "core:ai-tells-structure.tricolon-abuse-remainder"
 "ai-tells-structure.vague-attribution-core" = "core:ai-tells-structure.vague-attribution-core"
 "ai-tells-structure.vague-attribution-remainder" = "core:ai-tells-structure.vague-attribution-remainder"
+"docs-discipline.history-internal-reference" = "core:docs-discipline.history-internal-reference"
 "docs-discipline.history-narration" = "core:docs-discipline.history-narration"
 "docs-discipline.internal-refs" = "core:docs-discipline.internal-refs"
 "docs-discipline.no-longer-change" = "core:docs-discipline.no-longer-change"

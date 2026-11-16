@@ -83,6 +83,19 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
 }
 
 #[test]
+fn a_quoted_fence_is_positioned_past_the_quote_markers() {
+    let source = "> ```mermaid\n> sequenceDiagram\n> participant A as This label has far too many words in it\n> ```\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", source))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    let f = &doc.findings[0];
+    assert_eq!(f.matched_text, "This label has far too many words in it");
+    // Line 3 is `> participant A as This ...`: the label starts after 19 bytes, so at column 20.
+    assert_eq!((f.start.line(), f.start.column()), (3, 20));
+}
+
+#[test]
 fn a_diagram_file_is_checked_without_prose() {
     let source = "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
     let doc = diagram_engine(settings())
@@ -194,6 +207,51 @@ fn a_title_plus_gloss_label_ships_as_a_suggestion() {
     assert_eq!(doc.findings[0].severity, Severity::Suggestion);
 }
 
+/// A draw.io file whose one page is compressed. Its label is
+/// `This label has far too many words in it`.
+const COMPRESSED_PAGE: &str = "jVBLDgIxCD0N+057hPpZufMCmGKmSVsmWLXeXmpNNCaTuODx4AEBwPnc9oLLfOBACdwWnBfmOlhunlICa2IAtwFrjRrY3Yo6vVSzoFCp/zTgaLhhutLIHOd40UzCE/XCGXt0RlGszIoZy0PdnSV0KZYO9T2HpFJb3WX63kXJ504Nft7wBA==";
+
+#[test]
+fn a_compressed_drawio_label_reports_its_text_at_the_payload_span() {
+    let source = format!("<mxfile><diagram name=\"P\">{COMPRESSED_PAGE}</diagram></mxfile>");
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("a.drawio", &source, Format::Drawio))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    let f = &doc.findings[0];
+    assert_eq!(f.rule_id, id("diagrams:diagram.label-run-on"));
+    assert_eq!(f.matched_text, "This label has far too many words in it");
+    let start = source.find(COMPRESSED_PAGE).unwrap();
+    let span = f.extent.unwrap().span;
+    assert_eq!(
+        (span.start(), span.end()),
+        (start, start + COMPRESSED_PAGE.len())
+    );
+}
+
+#[test]
+fn a_compressed_drawio_message_fills_match_with_the_decoded_label() {
+    let rule = common::rule(
+        "label-run-on",
+        &serde_json::json!({"kind": "structure", "check": "diagram-label-run-on"}),
+        &serde_json::json!({"message": "Cut {match}.", "scope": "prose"}),
+    );
+    let engine = Engine::new(
+        vec![ruleset(vec![category("diagram", &[rule])])],
+        settings(),
+    )
+    .unwrap();
+    let source = format!("<mxfile><diagram name=\"P\">{COMPRESSED_PAGE}</diagram></mxfile>");
+    let doc = engine
+        .lint(&Input::diagram("a.drawio", &source, Format::Drawio))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(
+        doc.findings[0].message.as_str(),
+        "Cut This label has far too many words in it."
+    );
+}
+
 /// A checker that flags every fragment, to show the dispatch hands over each one.
 struct EveryFragment;
 
@@ -214,6 +272,7 @@ impl DiagramChecker for EveryFragment {
                 rule: id("acme:diagram.every"),
                 span: f.span.clone(),
                 message: "label".into(),
+                matched: None,
             })
             .collect()
     }
@@ -312,6 +371,7 @@ impl DiagramChecker for Ranged {
             rule: id("acme:diagram.ranged"),
             span: (self.0)(input.source.len()),
             message: "bad".into(),
+            matched: None,
         }]
     }
 }

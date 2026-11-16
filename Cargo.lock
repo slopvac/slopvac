@@ -2408,18 +2408,23 @@ dependencies = [
  "clap_mangen",
  "insta",
  "jsonschema",
+ "minisign",
  "predicates",
  "proptest",
  "roxmltree",
  "rstest",
+ "rustix",
+ "semver",
  "serde",
  "serde_json",
  "slopvac-agents",
  "slopvac-lsp",
  "slopvac-migrate",
  "slopvac-model",
+ "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-styles",
  "slopvac-update",
  "snapbox",
  "tempfile",
@@ -2438,6 +2443,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "slopvac-config",
  "slopvac-migrate",
  "slopvac-text",
  "tempfile",
@@ -2450,6 +2456,7 @@ version = "0.0.0"
 dependencies = [
  "annotate-snippets",
  "clap",
+ "frontmatter-spans",
  "ignore",
  "insta",
  "saphyr",
@@ -2652,9 +2659,12 @@ version = "0.0.0"
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
+ "rustix",
  "serde",
+ "serde_json",
+ "slopvac-config",
+ "tempfile",
  "thiserror",
- "toml",
 ]
 
 [[package]]
@@ -2663,6 +2673,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "tempfile",
  "thiserror",

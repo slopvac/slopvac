@@ -1,6 +1,6 @@
 # 0001. Slopvac 3.0 architecture
 
-- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open.
+- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences.
 - Deciders: slopvac maintainers
 - Tracking: bead `slopvac-8l4.2.1`, epic `slopvac-8l4`
 - Detail: [Slopvac 3.0 plan](slopvac-3.md)
@@ -119,7 +119,7 @@ Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship mini
 
 ### 12. Distribution: cargo-dist, Homebrew tap, and maturin wheels
 
-cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary.
+cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
 
 ### 13. Dependabot only
 
@@ -263,6 +263,28 @@ Port the averaged-perceptron tagger from the `prose` library v3.3.1, which Vale 
 - Licence (`slopvac-8l4.3.23`, decided 2026-11-14): the model derives from UD_English-EWT, which is CC BY-SA 4.0. The binary embeds the model with CC BY-SA 4.0 attribution and a share-alike notice that covers the model file only. The code keeps the project licence. 2.x never redistributed the model, because users installed Vale, so embedding is new. Rejected: download on opt-in, and retraining on permissive data. If the model cannot ship, the vocabulary check must stop with exit 2 and an error.
 - Limits: the evidence is one spike, with one annotator for the gold set.
 
+### 26. No native Windows in 3.0
+
+Decided 2026-11-16. 3.0 ships with no native Windows support. Windows users run the Linux build under WSL. Inside WSL they install with one of these:
+
+- the shell installer.
+- Homebrew on Linux.
+- `uvx slopvac`.
+
+Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
+
+- Supersedes these earlier Windows notes for 3.0:
+  - the `x86_64-pc-windows-msvc` release target.
+  - the PowerShell installer.
+  - the Windows wheel.
+  - the Windows archive and installer smoke jobs.
+  - the Windows item in the signed-artifacts gate. The release gate of decision 24 now needs five targets.
+  - the Windows build and test requirement for PCRE2.
+- For 3.0, this decision also supersedes the Windows containment notes (job objects) in the threat model and the plugin protocol. The contract owners decide how to word them.
+- Kept: the 2.x Python package keeps the code it has for Windows. The Rust workspace keeps its CI jobs on Windows until the code-quality epic decides, because native Windows work continues in 3.x.
+- Tracking: bead `slopvac-8l4.13.26`.
+- Rejected: shipping a best-effort Windows build without a gate. It would carry an unverified signing and containment story.
+
 ## Consequences
 
 Good:
@@ -274,7 +296,7 @@ Bad or risky:
 
 - The hand-rolled OCI client adds 42 dependencies and 1.67 MB stripped. No bead measures the size of the full binary.
 - The rewrite is large, and the full scope raises the release risk. The golden suite, a compatibility matrix, and the readiness gate exist to manage it.
-- PCRE2 is a C dependency. Its build must work on Windows, macOS, glibc, and musl.
+- PCRE2 is a C dependency. Its build must work on macOS, glibc, and musl. (Windows dropped from 3.0 on 2026-11-16, see decision 26.)
 - The binary redistributes a CC BY-SA 4.0 model. Releases must carry the attribution and a share-alike notice for the model file, and the code must stay separable from it. Plan the `NOTICE` file for this.
 - The plugin host and OCI client carry security risk. The threat model and independent review gate them.
 - No spike numbers back decisions 7, 10 to 13, 15, 16, 19, and 22 to 24. Decisions 8 and 9 have spikes for the transport and the registry, but none for the protocol or the trust model. These decisions rest on convention and the plan.

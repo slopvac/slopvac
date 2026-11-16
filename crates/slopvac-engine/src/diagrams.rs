@@ -43,6 +43,9 @@ pub struct DiagramHit {
     pub span: Range<usize>,
     /// What is wrong and what to do.
     pub message: String,
+    /// The text the hit is about, when the span's source bytes do not show it, such as a
+    /// label decoded from a compressed draw.io page. `None` means the span's text.
+    pub matched: Option<String>,
 }
 
 /// A group of diagram rules that run together.
@@ -126,6 +129,7 @@ impl DiagramChecker for SignalChecker {
                         rule: rule.id.clone(),
                         span: hit.span.clone(),
                         message: hit.message.clone(),
+                        matched: hit.matched.clone(),
                     })
                     .collect::<Vec<_>>()
             })

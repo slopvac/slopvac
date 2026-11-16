@@ -32,6 +32,10 @@
 //! found, atomically and never over code, links or front matter. [`unified_diff`] renders a
 //! dry run.
 //!
+//! Term-casing rules ([`terms_rule_set`]) flag a term spelled in the wrong case, such as
+//! `Github`, on the terms of [`Engine::with_terms`]. Inline code and the rule's excluded
+//! blocks are never checked.
+//!
 //! [`locale`] builds the generated spelling rule for en-US, en-GB or `und`.
 //!
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
@@ -59,6 +63,7 @@ mod score;
 mod settings;
 mod skip;
 mod tagging;
+mod terms;
 
 pub use commit::{MAX_FILE_BYTES, Refusal, Step};
 pub use diagrams::{
@@ -72,3 +77,4 @@ pub use lint::{Engine, EngineError, Input, Kind};
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};
 pub use skip::{SkipRanges, skip_ranges};
+pub use terms::{TERMS_PACK, terms_rule_set};

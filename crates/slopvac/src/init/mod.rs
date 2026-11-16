@@ -193,6 +193,13 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
         Published::Wrote => say(out, format!("wrote {}", shown(&path)))?,
         Published::Kept => say(out, format!("{} exists; keeping it.", shown(&path)))?,
     }
+    let project = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    for found in slopvac_styles::detect_house_styles(&project) {
+        say(out, format!("house style: {}", found.describe()))?;
+    }
     if !skip_agents {
         let mut chosen: Vec<String> = Vec::new();
         for h in harnesses {

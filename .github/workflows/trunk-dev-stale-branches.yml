@@ -1,0 +1,53 @@
+# Replaceable sink: non-zero exit notifies the workflow's schedule owner through GitHub Actions.
+name: Stale Bead Branches
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  stale-bead-branches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TRUNK_DEV_STALE_HOURS: "48"
+      BD_VERSION: "1.3.1"
+      # From the release's checksums.txt for beads_1.3.1_linux_amd64.tar.gz.
+      BD_SHA256: "3219443a9734b89b93fb16ee8d65844759fa1b3cd3cf139c606b7353cfb0715c"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install bd
+        run: |
+          base="https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}"
+          curl -fsSL "${base}/beads_${BD_VERSION}_linux_amd64.tar.gz" -o /tmp/bd.tar.gz
+          echo "${BD_SHA256}  /tmp/bd.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/bd.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/bd /usr/local/bin/bd
+          bd version
+      - name: Bootstrap ledger for read-only query
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # bd init records an SSH sync remote, and the runner has no SSH key:
+          # read it over HTTPS with the job token. The token is read-only
+          # (contents: read) and lives only in this runner's global git config.
+          url="https://x-access-token:${GH_TOKEN}@github.com/"
+          git config --global url."${url}".insteadOf "ssh://git@github.com/"
+          git config --global --add url."${url}".insteadOf "git@github.com:"
+          git ls-remote origin refs/dolt/data | grep -q .
+          bd bootstrap --yes
+      - name: Report stale in-progress bead branches
+        # Explicit bash enables pipefail, so the script's exit code survives tee.
+        shell: bash
+        run: python3 scripts/stale_bead_branches.py | tee -a "$GITHUB_STEP_SUMMARY"

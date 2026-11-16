@@ -46,6 +46,8 @@ jobs:
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test the generator
         run: uv run --extra dev pytest tests/docs
       # The pages go outside the checkout. The linter skips ignored paths, and

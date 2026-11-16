@@ -1,0 +1,14 @@
+# Login
+
+A login takes two calls.
+
+```plantuml
+@startuml
+participant Browser
+participant Server
+Browser -> Server : Send the username and password for verification now
+Server --> Browser : Return a session cookie and the redirect target
+@enduml
+```
+
+Sessions last eight hours.

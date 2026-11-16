@@ -1,0 +1,37 @@
+{
+  "schema_version": 3,
+  "id": "terms",
+  "title": "Project terms",
+  "description": "Product names, languages, protocols and acronyms spelled the way their owners spell them.",
+  "weight": 1.0,
+  "recommended_for": ["consumer"],
+  "rules": [
+    {
+      "id": "casing",
+      "name": "Spell a term the way its owner does",
+      "message": "\"{match}\" is not the canonical spelling: write \"{replacement}\".",
+      "severity": "warning",
+      "scope": "prose",
+      "exclude_blocks": ["code", "front-matter"],
+      "match": {"kind": "vocabulary", "check": "term-casing"},
+      "examples": [
+        {
+          "bad": "Open the repository on Github.",
+          "good": "Open the repository on GitHub.",
+          "note": "the finding replaces Github with GitHub"
+        },
+        {
+          "bad": "The Javascript runtime starts first.",
+          "good": "The JavaScript runtime starts first."
+        }
+      ],
+      "fix": "Use the canonical spelling from the terms list. Declare a variant for a spelling the project accepts.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "slopvac-8l4.8.2",
+        "note": "A term matches case-insensitively at word boundaries. Plurals and possessives need no declaration. Inline code, paths, domains and handles are never flagged."
+      }
+    }
+  ]
+}

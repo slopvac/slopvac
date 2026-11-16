@@ -3,7 +3,12 @@
   "ignore": [
    "position"
   ],
-  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`)."
+  "unmapped": {
+   "core:ste-procedural.condition-after-command": [
+    "Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot."
+   ]
+  },
+  "reason": "The 2.x position mapping is wrong for matches in table cells, wrapped list items and text after inline code: it reports the start of a later line, or counts the code span at the wrong width. The Rust positions point at the matched text (checked by `findings_point_at_their_matched_text`). For the sentence with inline code followed by a parenthesis (the cargo-insta install line), 2.x cannot map the match back to the source and reports an empty matched text (`unmapped`)."
  },
  "README.md": {
   "ignore": [
