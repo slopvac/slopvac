@@ -390,3 +390,24 @@ fn setup_with_a_nonexistent_absolute_root_hides_its_directories() {
     assert!(err.contains("no dir/deeper"), "{err}");
     assert_clean(&err, &work);
 }
+
+#[test]
+fn prime_with_a_bad_guidance_level_never_prints_url_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("slopvac.toml");
+    fs::write(
+        &config,
+        "schema_version = 3\n\n[guidance]\nlevel = \"https://user:secret@example.com\"\n",
+    )
+    .unwrap();
+    let out = slopvac(dir.path())
+        .args(["prime", "--config"])
+        .arg(&config)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.starts_with("error[config-invalid-value]: "), "{err}");
+    assert!(!err.contains("secret"), "credentials leaked: {err}");
+    assert!(err.contains("https://example.com"), "the host stays: {err}");
+}

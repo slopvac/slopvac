@@ -87,6 +87,42 @@ fn normalise_after(text: &str, marker: &str) -> String {
     out
 }
 
+/// Redact text that an owner crate has already rendered: URL credentials first, then every
+/// absolute path.
+///
+/// A path starts at a `/` that opens a word (after whitespace, a backtick or a quote) and
+/// runs to the next `: `, backtick, quote or line end, so a path with spaces stays whole.
+/// A `/` inside a word, such as the slashes of `https://host/a`, is not a path.
+#[must_use]
+pub fn redact_absolute(text: &str, cwd: &Path) -> String {
+    let text = strip_url_userinfo(text);
+    let mut out = String::with_capacity(text.len());
+    let mut previous: Option<char> = None;
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find('/') {
+        let (head, tail) = rest.split_at(at);
+        out.push_str(head);
+        let before = head.chars().next_back().or(previous);
+        let opens = before.is_none_or(|c| c.is_whitespace() || matches!(c, '`' | '"' | '\''));
+        if !opens {
+            out.push('/');
+            previous = Some('/');
+            rest = &tail[1..];
+            continue;
+        }
+        let end = [": ", "`", "\"", "\n"]
+            .iter()
+            .filter_map(|stop| tail.find(stop))
+            .min()
+            .unwrap_or(tail.len());
+        out.push_str(&shown_path(Path::new(&tail[..end]), cwd));
+        previous = tail[..end].chars().next_back();
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +193,38 @@ mod tests {
                 "<external>"
             ),
             r"updated <external>/.claude/skills/SKILL.md (kept\raw)"
+        );
+    }
+
+    #[test]
+    fn url_slashes_are_not_paths_and_credentials_go_first() {
+        let cwd = Path::new("/work");
+        assert_eq!(
+            redact_absolute("bad `https://user:secret@example.com/a` here", cwd),
+            "bad `https://example.com/a` here"
+        );
+        assert_eq!(
+            redact_absolute(r#"level = "https://u:p@h""#, cwd),
+            r#"level = "https://h""#
+        );
+    }
+
+    #[test]
+    fn an_absolute_path_with_spaces_is_one_path() {
+        assert_eq!(
+            redact_absolute(
+                "cannot read /srv/my dir/x.toml: no such file",
+                Path::new("/work")
+            ),
+            "cannot read <external>/x.toml: no such file"
+        );
+    }
+
+    #[test]
+    fn a_slash_inside_a_word_is_kept() {
+        assert_eq!(
+            redact_absolute("read/write a/b", Path::new("/work")),
+            "read/write a/b"
         );
     }
 }
