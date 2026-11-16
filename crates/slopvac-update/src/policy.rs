@@ -22,48 +22,25 @@ pub struct NetworkPolicy {
     pub update_check: Option<bool>,
 }
 
-impl NetworkPolicy {
-    /// The policy for a run that could not read its config: no network at all.
-    ///
-    /// A config that cannot be read might have said `offline = true`, so the fallback errs
-    /// towards staying offline, as an unparsable `SLOPVAC_OFFLINE` does.
-    #[must_use]
-    pub fn cautious() -> Self {
-        Self {
-            offline: true,
-            update_check: Some(false),
-        }
-    }
-}
-
-/// Why the project config could not be loaded. The CLI exits 2.
+/// Why the project config could not be read. The CLI exits 2.
+///
+/// Only a failure to read a file is an error here. A file that was read and refused (a 2.x file,
+/// an unknown key) is not: the policy falls back to its defaults, and the command that loads the
+/// config, or `doctor`, reports the problem. `migrate` must still run on a 2.x config.
 #[derive(Debug)]
 pub struct PolicyError(ConfigError);
 
 impl PolicyError {
-    /// The stable error code: `config-unreadable` for a file that cannot be read, otherwise the
-    /// code of the config diagnostic.
+    /// The stable error code.
     #[must_use]
     pub fn code(&self) -> &'static str {
-        match &self.0 {
-            ConfigError::Io { .. } => "config-unreadable",
-            other => other.code().as_str(),
-        }
+        "config-unreadable"
     }
 
-    /// The message: a read failure in one line, or the rendered diagnostics.
+    /// One line, naming the file by name or by path relative to the project root.
     #[must_use]
     pub fn message(&self) -> String {
-        match &self.0 {
-            ConfigError::Io { .. } => self.0.to_string(),
-            ConfigError::Rejected(r) => r.render(),
-        }
-    }
-
-    /// Whether the file was read and its content refused (as opposed to not read at all).
-    #[must_use]
-    pub fn is_content(&self) -> bool {
-        matches!(self.0, ConfigError::Rejected(_))
+        self.0.to_string()
     }
 }
 
@@ -80,8 +57,10 @@ impl std::error::Error for PolicyError {}
 /// With no `slopvac.toml` on the path the defaults apply.
 pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
     let discovery = Discovery::new(&NoPresets);
-    let Some(config) = discovery.nearest(start).map_err(PolicyError)? else {
-        return Ok(NetworkPolicy::default());
+    let config = match discovery.nearest(start) {
+        Ok(Some(config)) => config,
+        Ok(None) | Err(ConfigError::Rejected(_)) => return Ok(NetworkPolicy::default()),
+        Err(err) => return Err(PolicyError(err)),
     };
     let resolved = config.resolve(
         Path::new(""),
@@ -202,18 +181,14 @@ mod tests {
     }
 
     #[test]
-    fn content_errors_are_reported_with_a_code_and_no_absolute_path() {
+    fn a_refused_file_falls_back_to_the_defaults() {
         for body in [
             "{{{",
             "mode = \"prose\"\n",
             "schema_version = 3\n[network]\noffline = \"yes\"\n",
         ] {
             let d = tree(&[("slopvac.toml", body)]);
-            let err = network_policy(d.path()).unwrap_err();
-            assert!(err.is_content(), "{body}");
-            assert!(err.code().starts_with("config-"), "{}", err.code());
-            let text = err.message();
-            assert!(!text.contains(d.path().to_str().unwrap()), "{text}");
+            assert_eq!(policy(d.path()), NetworkPolicy::default(), "{body}");
         }
     }
 
@@ -222,19 +197,11 @@ mod tests {
         let d = tree(&[]);
         std::fs::create_dir(d.path().join("slopvac.toml")).unwrap();
         let err = network_policy(d.path()).unwrap_err();
-        assert!(!err.is_content());
         assert_eq!(err.code(), "config-unreadable");
         assert_eq!(
             err.message(),
             "cannot read slopvac.toml: not a regular file"
         );
-    }
-
-    #[test]
-    fn the_cautious_policy_is_offline() {
-        let p = NetworkPolicy::cautious();
-        assert!(p.offline);
-        assert_eq!(p.update_check, Some(false));
     }
 
     #[test]

@@ -522,7 +522,7 @@ fn config_read_errors_do_not_print_absolute_paths() {
     let outside = String::from_utf8(outside).unwrap();
     assert!(!outside.contains(&sentinel), "{outside}");
     assert!(
-        outside.contains("error[config-unreadable]: <external>/slopvac.toml: not a regular file"),
+        outside.contains("error[config-unreadable]: cannot read slopvac.toml: not a regular file"),
         "{outside}"
     );
 
@@ -538,7 +538,7 @@ fn config_read_errors_do_not_print_absolute_paths() {
     let inside = String::from_utf8(inside).unwrap();
     assert!(!inside.contains(&sentinel), "{inside}");
     assert!(
-        inside.contains("error[config-unreadable]: slopvac.toml: not a regular file"),
+        inside.contains("error[config-unreadable]: cannot read slopvac.toml: not a regular file"),
         "{inside}"
     );
 }

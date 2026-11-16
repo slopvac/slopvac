@@ -16,7 +16,7 @@ fn project() -> tempfile::TempDir {
 fn io_message(err: &ConfigError) -> String {
     match err {
         ConfigError::Io { .. } => err.to_string(),
-        other => panic!("expected an I/O error, got {other}"),
+        other @ ConfigError::Rejected(_) => panic!("expected an I/O error, got {other}"),
     }
 }
 

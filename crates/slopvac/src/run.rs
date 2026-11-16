@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, output, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,13 +106,13 @@ where
         // config scan shows the unreadable file (and exits 2 itself).
         Err(_) if invokes_doctor(&args, &tree) => slopvac_update::policy::NetworkPolicy::default(),
         Err(err) => {
-            // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
-            let message = format!(
-                "{}: {}",
-                redact::path_for_log(err.path(), &cwd),
-                err.problem()
+            // policies.md 1.7: the loader names files by name or by path relative to the root.
+            let _ = writeln!(
+                err_out,
+                "error[{}]: {}",
+                err.code(),
+                err.message().trim_end()
             );
-            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
             return exit::code(exit::INCOMPLETE);
         }
     };
