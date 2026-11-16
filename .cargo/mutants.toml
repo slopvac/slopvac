@@ -1,0 +1,23 @@
+# cargo-mutants configuration. Run it with `just mutants` (docs/testing-rust.md).
+# Mutation testing is slow and scheduled weekly; it never gates a pull request.
+
+# A mutant that makes code loop forever is caught by the timeout, which is this
+# multiple of the unmutated test time.
+timeout_multiplier = 3.0
+minimum_test_timeout = 60
+
+# nextest is the repository's runner (doctests are not mutated).
+test_tool = "nextest"
+
+# Re-running every mutant of a generated or data-only file finds nothing useful.
+exclude_globs = [
+  "fuzz/**",
+  "**/tests/**",
+  "**/benches/**",
+  "crates/slopvac-pos/src/unicode_tables.rs",
+  "crates/slopvac-text/src/unicode_data.rs",
+  "crates/slopvac-sanitize/src/tables.rs",
+]
+
+# Mutating logging or Debug/Display output only reports tests that skip formatting.
+exclude_re = ["impl (Debug|Display) for", "fmt::Debug", "fmt::Display"]

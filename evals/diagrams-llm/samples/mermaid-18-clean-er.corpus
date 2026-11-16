@@ -1,0 +1,11 @@
+# Schema
+
+Customers place orders and orders contain items.
+
+```mermaid
+erDiagram
+  CUSTOMER ||--o{ ORDER : places
+  ORDER ||--|{ ITEM : contains
+```
+
+Foreign keys cascade on delete.

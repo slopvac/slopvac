@@ -1,0 +1,10 @@
+# Authentication
+
+Requests reach the load balancer first. The balancer forwards each request to the API gateway, which asks the auth service to check the token.
+
+```mermaid
+flowchart LR
+  A[Browser] --> B[Load balancer] --> C[API gateway] --> D[Auth service]
+```
+
+The browser receives the response once the auth service and the API gateway agree on the token, and then it sends the response back to the user.
