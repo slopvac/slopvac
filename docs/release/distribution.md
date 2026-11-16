@@ -56,12 +56,12 @@ When `slopvac self update` refuses or fails, it exits 2, leaves the installed bi
 
 | Code | When |
 | --- | --- |
-| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for its install method. |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method, or the releases page otherwise. |
 | `offline-network-needed` | Offline mode is on. Self update needs the network. |
 | `update-check-failed` | The latest-release lookup failed. |
 | `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
-| `update-verification-failed` | The signature is missing, does not verify against the embedded key, or names another file or version. |
-| `self-update-failed` | The download, extraction or replacement failed, or the platform has no self-update support. |
+| `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
+| `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
 
 If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
 
