@@ -238,7 +238,7 @@ mod tests {
     fn verifier_rejection_leaves_the_binary_untouched() {
         for reject in [
             VerifyError::Rejected,
-            VerifyError::NoKey,
+            VerifyError::Invalid("bad key".into()),
             VerifyError::MissingSignature,
         ] {
             let (dir, exe) = installed();

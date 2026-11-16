@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use slopvac_update::command::{self, Runtime};
 use slopvac_update::fetch::{FetchError, Fetcher};
 use slopvac_update::notice::Cache;
-use slopvac_update::verify::{ArtifactVerifier, ReleaseVerifier, VerifyError};
+use slopvac_update::verify::{ArtifactVerifier, MinisignVerifier, ReleaseVerifier, VerifyError};
 
 const LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
 const BASE: &str = "https://example.test/dl";
@@ -146,12 +146,59 @@ fn verifier_rejection_leaves_the_binary_untouched() {
     assert_eq!(content(&fx.exe), b"old binary");
 }
 
+/// A server whose archive carries `payload`, with `signature` as its `.minisig`.
+fn signed_server(payload: &[u8], signature: &str) -> Arc<Server> {
+    let url = format!("{BASE}/v3.1.0/slopvac-{TARGET}.tar.gz");
+    Arc::new(Server {
+        files: HashMap::from([
+            (LATEST.to_owned(), br#"{"tag_name":"v3.1.0"}"#.to_vec()),
+            (format!("{url}.minisig"), signature.as_bytes().to_vec()),
+            (url, archive(payload)),
+        ]),
+        hits: AtomicUsize::new(0),
+    })
+}
+
+fn sign(keys: &minisign::KeyPair, bytes: &[u8]) -> String {
+    minisign::sign(None, &keys.sk, std::io::Cursor::new(bytes), None, None)
+        .unwrap()
+        .to_string()
+}
+
 #[test]
-fn real_downloads_fail_closed_until_a_release_key_is_embedded() {
-    // STUB(slopvac-8l4.13.25): when the key lands, `ReleaseVerifier` verifies for real and this
-    // test becomes a tampered-artifact test against the embedded key.
+fn archive_signed_by_the_verifier_key_is_installed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
     let fx = installed();
-    let rt = runtime(&fx, server("3.1.0"), Box::new(ReleaseVerifier));
+    let sig = sign(&keys, &archive(b"new binary"));
+    let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+    let rt = runtime(&fx, signed_server(b"new binary", &sig), Box::new(verifier));
+    update(&rt).unwrap();
+    assert_eq!(content(&fx.exe), b"new binary");
+}
+
+#[test]
+fn tampered_archive_fails_closed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    // The signature covers the honest archive; the server delivers different bytes.
+    let sig = sign(&keys, &archive(b"new binary"));
+    let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+    let rt = runtime(&fx, signed_server(b"evil binary", &sig), Box::new(verifier));
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn release_key_rejects_an_archive_signed_by_another_key() {
+    let other = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    let sig = sign(&other, &archive(b"new binary"));
+    let rt = runtime(
+        &fx,
+        signed_server(b"new binary", &sig),
+        Box::new(ReleaseVerifier),
+    );
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "update-verification-failed");
     assert_eq!(content(&fx.exe), b"old binary");
