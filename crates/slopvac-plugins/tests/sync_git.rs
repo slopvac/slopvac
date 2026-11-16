@@ -113,10 +113,10 @@ impl Remote {
     }
 
     fn lock(&self, digest: &str) -> Lockfile {
-        self.lock_at(&self.commit, digest)
+        Self::lock_at(&self.commit, digest)
     }
 
-    fn lock_at(&self, commit: &str, digest: &str) -> Lockfile {
+    fn lock_at(commit: &str, digest: &str) -> Lockfile {
         let text = format!(
             "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
              slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
@@ -664,7 +664,7 @@ fn the_pinned_commit_is_installed_even_when_the_branch_moved_on() {
     let (remote, earlier) = Remote::history(first, second);
     let env = Env::new();
     let c = client();
-    let lock = remote.lock_at(&earlier, &expected_digest(first));
+    let lock = Remote::lock_at(&earlier, &expected_digest(first));
 
     let report = env.sync(Network::Online(&c), &remote, &lock).unwrap();
 
