@@ -702,6 +702,9 @@ mod unix {
         /// Without pidfds no process outside the group is bound to its id:
         /// a stopped parent that ignores `SIGCHLD` still has its exited
         /// children reaped, and their ids reused.
+        ///
+        /// Best-effort macOS descendant tracking follows in slopvac-8l4.9.39;
+        /// until then escaped descendants are reported and never signalled.
         #[cfg(not(target_os = "linux"))]
         fn open(_e: &Entry) -> Reach {
             Reach::Escaped

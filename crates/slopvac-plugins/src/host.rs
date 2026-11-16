@@ -100,6 +100,8 @@ impl Default for Timeouts {
 ///
 /// The resource limits apply on Unix, through the [`launch`](crate::launch)
 /// launcher. Each process of the plugin gets them, not the plugin as a whole.
+/// Their defaults are the approved values of threat-model.md section 5.5.
+/// They are fixed in 3.0: no configuration key changes them.
 #[derive(Debug, Clone, Copy)]
 pub struct RunCaps {
     /// Unsolicited messages and unmatched responses before a kill.
