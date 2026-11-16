@@ -79,8 +79,7 @@ fn parse_length(value: &[u8]) -> Result<usize, FrameError> {
             .ok_or_else(|| framing("Content-Length overflows 64 bits"))?;
     }
     usize::try_from(n)
-        .ok()
-        .ok_or_else(|| framing("Content-Length overflows the platform size"))
+        .map_err(|e| framing(format!("Content-Length overflows the platform size: {e}")))
 }
 
 /// Read one frame body, or `None` at a clean end of stream.

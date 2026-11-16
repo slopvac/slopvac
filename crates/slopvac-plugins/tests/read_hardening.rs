@@ -30,7 +30,11 @@ fn inspect_with_ref(make_ref: impl FnOnce(&std::path::Path)) -> TreeState {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let digest: Digest = format!("sha256:{DIGEST_HEX}").parse().unwrap();
-        tx.send(Store::new(root).inspect(&digest).unwrap()).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the test has timed out and dropped the receiver, which its assertion reports"
+        )]
+        let _ = tx.send(Store::new(root).inspect(&digest).unwrap());
     });
     let state = rx
         .recv_timeout(Duration::from_secs(10))

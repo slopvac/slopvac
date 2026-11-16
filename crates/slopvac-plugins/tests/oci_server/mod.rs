@@ -232,13 +232,26 @@ fn serve(
         let resp = handler(&req);
         let mut head = format!("HTTP/1.1 {} X\r\nConnection: close\r\n", resp.status);
         for (k, v) in &resp.headers {
-            write!(head, "{k}: {v}\r\n").ok();
+            write!(head, "{k}: {v}\r\n").unwrap();
         }
-        write!(head, "Content-Length: {}\r\n\r\n", resp.body.len()).ok();
-        out.write_all(head.as_bytes()).ok();
-        if req.method != "HEAD" {
-            out.write_all(&resp.body).ok();
-        }
-        out.flush().ok();
+        write!(head, "Content-Length: {}\r\n\r\n", resp.body.len()).unwrap();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a client that has hung up (a timeout test) is not an error of the scripted server"
+        )]
+        let _ = respond(
+            &mut out,
+            &head,
+            (req.method != "HEAD").then_some(resp.body.as_slice()),
+        );
     }
+}
+
+/// Write the response head, the body when there is one, and flush.
+fn respond(out: &mut impl Write, head: &str, body: Option<&[u8]>) -> std::io::Result<()> {
+    out.write_all(head.as_bytes())?;
+    if let Some(body) = body {
+        out.write_all(body)?;
+    }
+    out.flush()
 }

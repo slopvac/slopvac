@@ -429,8 +429,7 @@ impl<'a> Syncer<'a> {
         let minisig_bytes =
             self.small_blob(pack, reference, minisig, MAX_MINISIG_BYTES, "signature")?;
         let minisig_text = String::from_utf8(minisig_bytes)
-            .ok()
-            .ok_or_else(|| layout("the signature is not text"))?;
+            .map_err(|e| layout(&format!("the signature is not text: {e}")))?;
         let version = pack.version.to_string();
         let expect = Expectation {
             id: id.as_str(),

@@ -109,10 +109,10 @@ fn pack(table: &Table, pointer: String) -> Result<LockedPack, LockError> {
         obj.required(key)?;
     }
     let version_text = obj.string("version")?;
-    let version = Version::parse(version_text).ok().ok_or_else(|| {
+    let version = Version::parse(version_text).map_err(|e| {
         err(
             &obj.at("version"),
-            format!("`{version_text}` is not a semantic version"),
+            format!("`{version_text}` is not a semantic version: {e}"),
         )
     })?;
     let slopvac_api = obj

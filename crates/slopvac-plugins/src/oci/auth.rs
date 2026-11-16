@@ -11,6 +11,7 @@
 
 use crate::num::widen;
 use std::fmt;
+use std::io;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -270,6 +271,51 @@ fn find_with_suffixes(
     })
 }
 
+/// Write the registry name to the helper's stdin on a thread.
+fn feed_registry(mut stdin: std::process::ChildStdin, registry: &str) {
+    // A helper that never reads is caught by the lookup's deadline.
+    let reg = registry.to_owned();
+    std::thread::spawn(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a helper that exits without reading ends the lookup through its exit status or the deadline"
+        )]
+        let _ = stdin.write_all(reg.as_bytes());
+    });
+}
+
+/// Read the helper's stdout on a thread: to end-of-file or one byte past the cap.
+///
+/// Killing the helper's whole tree closes every write end, so the reader never
+/// outlives a lookup.
+fn read_output(
+    stdout: std::process::ChildStdout,
+) -> std::sync::mpsc::Receiver<io::Result<Vec<u8>>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read = stdout
+            .take(widen(HELPER_MAX_OUTPUT) + 1)
+            .read_to_end(&mut buf)
+            .map(|_| buf);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the lookup drops the receiver only after it has given up on this reader"
+        )]
+        let _ = tx.send(read);
+    });
+    rx
+}
+
+/// Kill the helper's tree, and build the credential error for `why`. A kill
+/// that failed is named in the error: the helper may still be running.
+fn abort_helper(helper: Contained, why: String) -> OciError {
+    match helper.kill_tree() {
+        Ok(()) => OciError::Credential(why),
+        Err(e) => OciError::Credential(format!("{why}; the helper could not be stopped: {e}")),
+    }
+}
+
 fn run_helper(
     name: &str,
     registry: &str,
@@ -301,28 +347,13 @@ fn run_helper(
         .stderr(Stdio::null());
     let mut helper = Contained::spawn(&mut command)
         .map_err(|e| cred(format!("cannot start `{program}`: {e}")))?;
-    if let Some(mut stdin) = helper.child_mut().stdin.take() {
-        // A helper that never reads is caught by the deadline below.
-        let reg = registry.to_owned();
-        std::thread::spawn(move || {
-            stdin.write_all(reg.as_bytes()).ok();
-        });
+    if let Some(stdin) = helper.child_mut().stdin.take() {
+        feed_registry(stdin, registry);
     }
     let Some(stdout) = helper.child_mut().stdout.take() else {
-        helper.kill_tree();
-        return Err(cred("no helper stdout".into()));
+        return Err(abort_helper(helper, "no helper stdout".into()));
     };
-    let (tx, rx) = std::sync::mpsc::channel();
-    // The reader ends at end-of-file or after one byte past the cap. Killing the
-    // helper's whole tree closes every write end, so it never outlives a lookup.
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        stdout
-            .take(widen(HELPER_MAX_OUTPUT) + 1)
-            .read_to_end(&mut buf)
-            .ok();
-        tx.send(buf).ok();
-    });
+    let rx = read_output(stdout);
     let mut exited = false;
     let mut output = None;
     while !exited || output.is_none() {
@@ -330,24 +361,31 @@ fn run_helper(
             exited = match helper.has_exited() {
                 Ok(done) => done,
                 Err(e) => {
-                    helper.kill_tree();
-                    return Err(cred(format!("waiting for `{program}`: {e}")));
+                    return Err(abort_helper(
+                        helper,
+                        format!("waiting for `{program}`: {e}"),
+                    ));
                 }
             };
         }
         if output.is_none() {
             match rx.try_recv() {
-                Ok(buf) if buf.len() > HELPER_MAX_OUTPUT => {
-                    helper.kill_tree();
-                    return Err(cred(format!(
-                        "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
-                    )));
+                Ok(Ok(buf)) if buf.len() > HELPER_MAX_OUTPUT => {
+                    return Err(abort_helper(
+                        helper,
+                        format!("`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"),
+                    ));
                 }
-                Ok(buf) => output = Some(buf),
+                Ok(Ok(buf)) => output = Some(buf),
+                Ok(Err(e)) => {
+                    return Err(abort_helper(
+                        helper,
+                        format!("reading the output of `{program}`: {e}"),
+                    ));
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    helper.kill_tree();
-                    return Err(cred("helper reader failed".into()));
+                    return Err(abort_helper(helper, "helper reader failed".into()));
                 }
             }
         }
@@ -355,8 +393,7 @@ fn run_helper(
             break;
         }
         if Instant::now() >= deadline {
-            helper.kill_tree();
-            return Err(cred(format!("`{program}` timed out")));
+            return Err(abort_helper(helper, format!("`{program}` timed out")));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -368,9 +405,13 @@ fn run_helper(
         // "credentials not found in native keychain" is a normal miss.
         return Ok(None);
     }
-    let reply: HelperReply = serde_json::from_slice(&out)
-        .ok()
-        .ok_or_else(|| cred(format!("`{program}` printed invalid JSON")))?;
+    let reply: HelperReply = serde_json::from_slice(&out).map_err(|e| {
+        cred(format!(
+            "`{program}` printed invalid JSON (line {}, column {})",
+            e.line(),
+            e.column()
+        ))
+    })?;
     if reply.username == "<token>" {
         return Err(cred(
             "identity tokens from credential helpers are not supported".into(),
@@ -400,9 +441,13 @@ impl DefaultCredentials {
                 "the Docker config is larger than 1 MiB".into(),
             ));
         }
-        let cfg: DockerConfig = serde_json::from_slice(&raw)
-            .ok()
-            .ok_or_else(|| OciError::Credential("the Docker config is not valid JSON".into()))?;
+        let cfg: DockerConfig = serde_json::from_slice(&raw).map_err(|e| {
+            OciError::Credential(format!(
+                "the Docker config is not valid JSON (line {}, column {})",
+                e.line(),
+                e.column()
+            ))
+        })?;
         let helper = unique_match(
             cfg.cred_helpers
                 .iter()

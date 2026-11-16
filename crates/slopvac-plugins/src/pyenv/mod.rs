@@ -516,12 +516,15 @@ impl ManagedEnv {
                 path: f.path.clone(),
                 why: why.to_owned(),
             };
-            let meta = fs::metadata(&f.path)
-                .ok()
-                .ok_or_else(|| changed("is missing"))?;
-            let mtime = mtime_of(&meta)
-                .ok()
-                .ok_or_else(|| changed("has no modification time"))?;
+            let meta = fs::metadata(&f.path).map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    changed("is missing")
+                } else {
+                    changed(&format!("cannot be read: {e}"))
+                }
+            })?;
+            let mtime =
+                mtime_of(&meta).map_err(|e| changed(&format!("has no modification time: {e}")))?;
             if meta.len() != f.size || mtime != f.mtime {
                 return Err(changed("changed size or modification time"));
             }
@@ -925,7 +928,11 @@ struct Staging(PathBuf, bool);
 impl Drop for Staging {
     fn drop(&mut self) {
         if self.1 {
-            evict(&self.0).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Drop cannot report; an environment without a record cannot be loaded and the next install evicts this path first"
+            )]
+            let _ = evict(&self.0);
         }
     }
 }
@@ -964,12 +971,22 @@ fn run(
         }
     };
     let Some(status) = status else {
-        child.kill().ok();
-        child.wait().ok();
+        // A child that cannot be killed is not waited for: the wait would block on it.
+        let output = match crate::process::kill_child(&mut child) {
+            Ok(()) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the child is killed; the wait only reaps it and its status is not used"
+                )]
+                let _ = child.wait();
+                String::new()
+            }
+            Err(e) => format!("the step could not be killed: {e}"),
+        };
         return Err(PyEnvError::Step {
             step: step.to_owned(),
             status: "timed out".into(),
-            output: String::new(),
+            output,
         });
     };
     if status.success() {

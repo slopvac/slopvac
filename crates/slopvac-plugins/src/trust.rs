@@ -634,9 +634,8 @@ pub fn parse_trust_env(value: &str) -> Result<Vec<Digest>, TrustError> {
         .split(|c: char| c == ',' || c.is_whitespace())
         .filter(|t| !t.is_empty())
         .map(|t| {
-            Digest::parse(t)
-                .ok()
-                .ok_or_else(|| TrustError::NotAHash(t.to_owned()))
+            // `NotAHash` carries the token, which fully determines the parse failure.
+            Digest::parse(t).map_err(|_reason| TrustError::NotAHash(t.to_owned()))
         })
         .collect()
 }

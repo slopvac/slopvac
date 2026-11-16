@@ -240,8 +240,8 @@ impl IdAllocator {
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |c| {
                 (c <= self.max).then_some(c + 1)
             })
-            .ok()
-            .ok_or(PluginError::RequestIdExhausted)
+            // `Err` is the unchanged counter, not a failure with a cause.
+            .map_err(|_unchanged| PluginError::RequestIdExhausted)
     }
 }
 
@@ -287,7 +287,11 @@ impl Shared {
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            p.reply.try_send((Instant::now(), Err(first.clone()))).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full or closed reply channel means the caller already has an answer or has left"
+            )]
+            let _ = p.reply.try_send((Instant::now(), Err(first.clone())));
         }
         first
     }
@@ -309,20 +313,24 @@ impl Shared {
     fn release_pending(&self) {
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
-            p.reply
-                .try_send((
-                    Instant::now(),
-                    Err(PluginError::Usage("the plugin has shut down".into())),
-                ))
-                .ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full or closed reply channel means the caller already has an answer or has left"
+            )]
+            let _ = p.reply.try_send((
+                Instant::now(),
+                Err(PluginError::Usage("the plugin has shut down".into())),
+            ));
         }
     }
 
     /// Collect the exit status and stderr tail, fail every pending request.
     fn tear_down_after_exit(&self) {
-        self.stderr_done
-            .recv_timeout(Duration::from_millis(500))
-            .ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a timeout is the expected outcome when stderr stays open; the tail is read as it stands"
+        )]
+        let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
         let status = self
             .group
             .status()
@@ -404,7 +412,11 @@ impl Shared {
         };
         match lock(&self.pending).remove(&id) {
             Some(p) => {
-                p.reply.try_send((Instant::now(), reply)).ok();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a full or closed reply channel means the caller already has an answer or has left"
+                )]
+                let _ = p.reply.try_send((Instant::now(), reply));
                 Ok(true)
             }
             None => unmatched(unsolicited),
@@ -682,12 +694,15 @@ impl Conn {
         deadline_passed: bool,
         method: &str,
     ) -> Reply {
-        self.notify(
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed write means the plugin is wedged; the wait below then times out and `fail` kills it"
+        )]
+        let _ = self.notify(
             "$/cancelRequest",
             Some(json!({"id": id})),
             self.cancel_grace,
-        )
-        .ok();
+        );
         let Ok((_, answer)) = rx.recv_timeout(self.cancel_grace) else {
             lock(&self.shared.pending).remove(&id);
             let err = self.timeout(&format!("`{method}` ignored its cancel"));
@@ -707,7 +722,11 @@ impl Conn {
 
     fn cancel_all(&self) {
         for p in lock(&self.shared.pending).values() {
-            p.cancel.try_send(()).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full channel means a cancel is already queued; a closed one means the request ended"
+            )]
+            let _ = p.cancel.try_send(());
         }
     }
 }
@@ -947,7 +966,11 @@ impl Plugin {
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
         // The reader stopped after the reply; it resumes under the new limit.
         if let Some(ready) = conn.limits_ready.take() {
-            ready.send(()).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the reader drops its receiver only after it ended the connection, which every later call reports through `dead`"
+            )]
+            let _ = ready.send(());
         }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
         let (inflight_tx, inflight_rx) = bounded(negotiated.max_in_flight);
@@ -1053,7 +1076,11 @@ impl Plugin {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
             }
-            self.conn.notify("exit", None, self.timeouts.exit).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "if `exit` is not delivered, closing the pipe and the group kill below still end the plugin"
+            )]
+            let _ = self.conn.notify("exit", None, self.timeouts.exit);
         }
         // Closing the pipe ends the writer after it flushes `exit`.
         lock(&shared.frames).take();
@@ -1134,7 +1161,11 @@ struct Slot<'a>(&'a Receiver<()>);
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
-        self.0.try_recv().ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "an empty channel means the slot was already free"
+        )]
+        let _ = self.0.try_recv();
     }
 }
 

@@ -192,7 +192,7 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
     std::process::Command::new("kill")
         .args(["-9", &pids[1].to_string()])
         .status()
-        .ok();
+        .unwrap();
     drop(p);
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(took < NO_HANG, "the kill waited {took:?} for the helper");

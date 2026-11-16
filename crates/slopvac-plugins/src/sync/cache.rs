@@ -131,7 +131,11 @@ impl Store {
         if ok {
             Some(path)
         } else {
-            fs::remove_file(&path).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the entry is reported as a miss and the re-download replaces it by rename"
+            )]
+            let _ = fs::remove_file(&path);
             None
         }
     }

@@ -30,7 +30,7 @@ struct Scratch(PathBuf, bool);
 impl Scratch {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-pyenv-{name}-{}", std::process::id()));
-        evict(&p).ok();
+        evict(&p).unwrap();
         fs::create_dir_all(&p).unwrap();
         Self(p, true)
     }
@@ -48,7 +48,11 @@ impl Scratch {
 impl Drop for Scratch {
     fn drop(&mut self) {
         if self.1 {
-            evict(&self.0).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Drop cannot report, and the scratch directory sits under the temp directory"
+            )]
+            let _ = evict(&self.0);
         }
     }
 }
@@ -57,7 +61,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .fold(String::new(), |mut s, b| {
-            write!(s, "{b:02x}").ok();
+            write!(s, "{b:02x}").unwrap();
             s
         })
 }
@@ -163,9 +167,9 @@ fn wheel<'a>(name: &'a str, version: &'a str, value: &str, extra: &[(&str, &str)
     let mut record = String::new();
     for (n, t) in &files {
         let digest = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(t));
-        writeln!(record, "{n},sha256={digest},{}", t.len()).ok();
+        writeln!(record, "{n},sha256={digest},{}", t.len()).unwrap();
     }
-    writeln!(record, "{info}/RECORD,,").ok();
+    writeln!(record, "{info}/RECORD,,").unwrap();
     files.push((format!("{info}/RECORD"), record));
     let refs: Vec<(&str, &[u8])> = files
         .iter()
@@ -184,7 +188,7 @@ fn lock_text(wheels: &[Wheel<'_>]) -> String {
             w.version,
             w.path,
             sha256_hex(&w.bytes)
-        ).ok();
+        ).unwrap();
     }
     out
 }
@@ -1173,7 +1177,11 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
             );
         }
         for (k, v) in controls {
-            fs::remove_file(&marker).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the marker is absent unless the previous control wrote it"
+            )]
+            let _ = fs::remove_file(&marker);
             Command::new(python())
                 .env_clear()
                 .env(k, v)
@@ -1182,7 +1190,11 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
                 .unwrap();
             assert!(marker.exists(), "the {k} hook did not load in the control");
         }
-        fs::remove_file(&marker).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the marker is absent unless the last control wrote it"
+        )]
+        let _ = fs::remove_file(&marker);
         hostile_child(
             "unix_only::tm51_pythonpath_and_usercustomize_have_no_effect_on_the_run",
             &s.dir("child"),

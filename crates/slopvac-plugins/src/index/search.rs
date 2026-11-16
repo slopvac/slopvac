@@ -16,10 +16,9 @@
 //! 50. Hits sort by score, highest first, then by namespace and id. A query
 //! with no tokens matches nothing.
 
-use std::fmt::Write as _;
-
 use super::Index;
 use super::model::IndexEntry;
+use crate::num::push_fmt;
 
 /// An entry that matched, with its score.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,38 +100,43 @@ impl SearchHit<'_> {
         let e = self.entry;
         let s = slopvac_sanitize::line;
         let mut out = String::new();
-        writeln!(
-            out,
-            "{}/{} {} ({}, needs slopvac API {})",
-            s(&e.namespace),
-            s(&e.id),
-            e.version,
-            e.kind.as_str(),
-            e.slopvac_api
-        )
-        .ok();
-        writeln!(out, "  {}", s(&e.name)).ok();
-        writeln!(out, "  {}", s(&e.description)).ok();
-        writeln!(out, "  source: {}", s(&e.source)).ok();
-        writeln!(
-            out,
-            "  publisher key: {} (fingerprint {})",
-            s(&e.publisher_key.key_id),
-            s(&e.publisher_key.fingerprint)
-        )
-        .ok();
+        push_fmt(
+            &mut out,
+            format_args!(
+                "{}/{} {} ({}, needs slopvac API {})\n",
+                s(&e.namespace),
+                s(&e.id),
+                e.version,
+                e.kind.as_str(),
+                e.slopvac_api
+            ),
+        );
+        push_fmt(&mut out, format_args!("  {}\n", s(&e.name)));
+        push_fmt(&mut out, format_args!("  {}\n", s(&e.description)));
+        push_fmt(&mut out, format_args!("  source: {}\n", s(&e.source)));
+        push_fmt(
+            &mut out,
+            format_args!(
+                "  publisher key: {} (fingerprint {})\n",
+                s(&e.publisher_key.key_id),
+                s(&e.publisher_key.fingerprint)
+            ),
+        );
         if RESERVED_NAMESPACES.contains(&e.namespace.as_str()) {
-            writeln!(
-                out,
-                "  warning: claims first-party namespace `{}`; not verified",
-                s(&e.namespace)
-            )
-            .ok();
+            push_fmt(
+                &mut out,
+                format_args!(
+                    "  warning: claims first-party namespace `{}`; not verified\n",
+                    s(&e.namespace)
+                ),
+            );
         }
-        writeln!(
-            out,
-            "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
-        ).ok();
+        push_fmt(
+            &mut out,
+            format_args!(
+                "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`\n"
+            ),
+        );
         out
     }
 }

@@ -163,8 +163,8 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
             let name = e
                 .file_name()
                 .into_string()
-                .ok()
-                .ok_or_else(|| PyEnvError::Refused("a file name is not UTF-8".into()))?;
+                // `Err` hands back the unconverted name; the message states the cause.
+                .map_err(|_name| PyEnvError::Refused("a file name is not UTF-8".into()))?;
             let rel = if prefix.is_empty() {
                 name
             } else {
@@ -215,7 +215,8 @@ pub(super) fn scan(root: &Path, hash: bool, bounds: WalkBounds) -> Result<Vec<En
 fn link_entry(path: &Path, rel: String) -> Result<Entry, PyEnvError> {
     let t =
         fs::read_link(path).map_err(PyEnvError::io(format!("reading link {}", path.display())))?;
-    let t = t.into_os_string().into_string().ok().ok_or_else(|| {
+    // `Err` hands back the unconverted target; the message states the cause.
+    let t = t.into_os_string().into_string().map_err(|_target| {
         PyEnvError::Refused(format!("`{rel}` has a link target that is not UTF-8"))
     })?;
     Ok(Entry {

@@ -129,7 +129,7 @@ struct Store(std::path::PathBuf);
 impl Store {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-extract-{name}-{}", std::process::id()));
-        evict(&p).ok();
+        evict(&p).unwrap();
         Self(p)
     }
     fn path(&self) -> &Path {
@@ -151,7 +151,11 @@ impl Store {
 
 impl Drop for Store {
     fn drop(&mut self) {
-        evict(&self.0).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Drop cannot report, and the scratch directory sits under the temp directory"
+        )]
+        let _ = evict(&self.0);
     }
 }
 

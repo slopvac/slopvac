@@ -920,7 +920,11 @@ fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
                         return;
                     }
                 };
-                out.write_all(reply.as_bytes()).ok();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a client that has hung up is not an error of the scripted server"
+                )]
+                let _ = out.write_all(reply.as_bytes());
             });
         }
     });
@@ -930,8 +934,11 @@ fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
             Client::with_send_timeout_for_tests(Box::new(Anonymous), Duration::from_secs(1));
         let r = Reference::parse(&format!("127.0.0.1:{port}/a/b:1")).unwrap();
         // Larger than any socket buffer pair, so the sender must block.
-        tx.send(client.push_blob(&r, "x", &vec![0u8; 64 << 20]))
-            .ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the test has timed out and dropped the receiver, which its assertion reports"
+        )]
+        let _ = tx.send(client.push_blob(&r, "x", &vec![0u8; 64 << 20]));
     });
     let outcome = rx
         .recv_timeout(Duration::from_secs(60))

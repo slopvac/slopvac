@@ -8,6 +8,10 @@
 //! need `unsafe`; that is deferred (see `kill_tree`).
 
 use std::io;
+
+use crate::process::kill_child;
+#[cfg(unix)]
+use crate::process::signal_failed;
 use std::process::{Child, Command, ExitStatus};
 
 /// A spawned helper that has not been reaped yet.
@@ -72,26 +76,48 @@ impl Contained {
     }
 
     /// Kill the helper and its descendants, then reap the helper.
-    pub(super) fn kill_tree(mut self) {
+    ///
+    /// # Errors
+    /// The first failure to signal the group, kill the helper or reap it. A
+    /// helper that could not be killed is not waited for, since the wait would
+    /// block on it.
+    pub(super) fn kill_tree(mut self) -> io::Result<()> {
         #[cfg(unix)]
-        {
+        let mut failure = {
             use rustix::process::{Pid, Signal, kill_process_group};
             // The helper is unreaped, so its pid still names the group. An
-            // error means the group is already empty.
-            kill_process_group(Pid::from_child(&self.child), Signal::KILL).ok();
-        }
+            // empty group is not a failure.
+            let sent = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
+            sent.err()
+                .filter(|e| signal_failed(Err(*e)))
+                .map(io::Error::from)
+        };
+        #[cfg(not(unix))]
+        let mut failure: Option<io::Error> = None;
         // Residual (slopvac-8l4.9.13): once the helper has exited, Windows no
         // longer has its pid to name a tree, so a descendant that outlived it and
         // still holds stdout is not killed here. The lookup still ends at its
         // deadline and never joins the blocked reader. Job objects close this gap.
         #[cfg(not(unix))]
         if self.status.is_none() {
-            let _ = Command::new(taskkill_path())
+            if let Err(e) = Command::new(taskkill_path())
                 .args(["/T", "/F", "/PID", &self.child.id().to_string()])
-                .output();
+                .output()
+            {
+                failure = Some(e);
+            }
         }
-        self.child.kill().ok();
-        self.child.wait().ok();
+        match kill_child(&mut self.child) {
+            Ok(()) => {
+                if let Err(e) = self.child.wait() {
+                    failure.get_or_insert(e);
+                }
+            }
+            Err(e) => {
+                failure.get_or_insert(e);
+            }
+        }
+        failure.map_or(Ok(()), Err)
     }
 }
 

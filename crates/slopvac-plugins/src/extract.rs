@@ -333,9 +333,8 @@ impl<R: Read> Read for Guarded<R> {
 }
 
 fn normalise_entry_path(raw: &[u8]) -> Result<String, ExtractError> {
-    let s = std::str::from_utf8(raw)
-        .ok()
-        .ok_or_else(|| refused("entry path is not UTF-8"))?;
+    let s =
+        std::str::from_utf8(raw).map_err(|e| refused(format!("entry path is not UTF-8: {e}")))?;
     let s = s.strip_prefix("./").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
     check_name(s).map_err(|e| refused(format!("entry path `{s}`: {e}")))?;
@@ -736,8 +735,7 @@ fn pax_paths(block: &[u8]) -> Result<Vec<Vec<u8>>, ExtractError> {
         let ext = ext.map_err(|e| ExtractError::Malformed(e.to_string()))?;
         let key = ext
             .key()
-            .ok()
-            .ok_or_else(|| refused("PAX key is not UTF-8"))?;
+            .map_err(|e| refused(format!("PAX key is not UTF-8: {e}")))?;
         if key == "path" {
             paths.push(ext.value_bytes().to_vec());
         } else if key == "size" || key.starts_with("GNU.sparse") {
@@ -1005,8 +1003,8 @@ fn tree_hash_observed(
             let name = entry
                 .file_name()
                 .into_string()
-                .ok()
-                .ok_or_else(|| refused("a file name is not UTF-8"))?;
+                // `Err` hands back the unconverted name; the message states the cause.
+                .map_err(|_name| refused("a file name is not UTF-8"))?;
             let rel = if prefix.is_empty() {
                 name
             } else {
@@ -1103,8 +1101,8 @@ fn mark_executables(bytes: &[u8], files: &mut [FileRecord]) -> Result<(), Extrac
         }
         let idx = files
             .binary_search_by(|r| r.path.as_bytes().cmp(line.as_slice()))
-            .ok()
-            .ok_or_else(|| refused("the executable list names a missing file"))?;
+            // `Err` is the insertion point of a missing key, not a failure with a cause.
+            .map_err(|_insertion_point| refused("the executable list names a missing file"))?;
         if files[idx].path == EXEC_SIDECAR {
             return Err(refused("the executable list names itself"));
         }
@@ -1152,7 +1150,11 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
     let mut stack = vec![(dir.to_owned(), 0usize)];
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     while let Some((path, depth)) = stack.pop() {
-        set_mode(&path, 0o700).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed chmod shows up as a failed read_dir or removal below, which return `ExtractError::Io`"
+        )]
+        let _ = set_mode(&path, 0o700);
         let Ok(rd) = fs::read_dir(&path) else {
             continue;
         };
@@ -1167,7 +1169,11 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
                 stack.push((e.path(), depth + 1));
             } else if cfg!(windows) && ty.is_file() {
                 // Windows refuses to delete read-only files.
-                set_mode(&e.path(), 0o600).ok();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a failed chmod shows up as a failed removal, which returns `ExtractError::Io`"
+                )]
+                let _ = set_mode(&e.path(), 0o600);
             }
         }
         if oversized {
@@ -1264,7 +1270,11 @@ mod open_regular_tests {
     fn within_ten_seconds<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            tx.send(f()).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test has timed out and dropped the receiver, which its assertion reports"
+            )]
+            let _ = tx.send(f());
         });
         rx.recv_timeout(Duration::from_secs(10))
             .expect("the open blocked")

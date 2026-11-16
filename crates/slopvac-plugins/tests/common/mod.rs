@@ -227,7 +227,7 @@ pub fn end(pids: &[i32]) {
         Command::new("kill")
             .args(["-9", &p.to_string()])
             .status()
-            .ok();
+            .unwrap();
     }
 }
 

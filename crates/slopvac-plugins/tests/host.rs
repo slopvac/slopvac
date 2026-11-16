@@ -1165,7 +1165,11 @@ fn tm2b_a_start_blocked_in_its_gate_does_not_spawn_after_a_breach() {
         release,
     };
     let pidfile = std::env::temp_dir().join(format!("slopvac-gate-{}", std::process::id()));
-    std::fs::remove_file(&pidfile).ok();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the pid file is absent unless an earlier run left one"
+    )]
+    let _ = std::fs::remove_file(&pidfile);
     let blocked_spec = spec_with("hang", &json!({}), Some(&pidfile), decl());
     std::thread::scope(|s| {
         let blocked = s.spawn(|| Plugin::start(&blocked_spec, &c, &gate));
@@ -1204,7 +1208,11 @@ fn tm2b_output_after_the_shutdown_acknowledgement_makes_it_unclean() {
 fn hold_final_stderr_read(release: crossbeam_channel::Receiver<()>) -> ReadHook {
     ReadHook::new(move |total| {
         if total >= 2 << 20 {
-            release.recv_timeout(NO_HANG).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the hold ends at the release or at `NO_HANG`; the hook has no use for which"
+            )]
+            let _ = release.recv_timeout(NO_HANG);
         }
     })
 }

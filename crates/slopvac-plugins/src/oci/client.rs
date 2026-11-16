@@ -1,8 +1,7 @@
 //! The client: auth, manifests, blobs, referrers, tags and push.
 
-use crate::num::widen;
+use crate::num::{push_fmt, widen};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -240,9 +239,9 @@ impl Client {
         let mut url = realm.to_owned();
         url.push(if realm.contains('?') { '&' } else { '?' });
         if let Some(service) = ch.param("service") {
-            write!(url, "service={}&", encode(service)).ok();
+            push_fmt(&mut url, format_args!("service={}&", encode(service)));
         }
-        write!(url, "scope={}", encode(scope)).ok();
+        push_fmt(&mut url, format_args!("scope={}", encode(scope)));
         let cred = self.creds.credential(&r.registry)?;
         let mut resp = self.transport.send(&Req {
             method: "GET",
@@ -263,9 +262,13 @@ impl Client {
             });
         }
         let body = read_limited(resp.body_mut(), MAX_TOKEN_BYTES, "token response")?;
-        let t: Tok = serde_json::from_slice(&body)
-            .ok()
-            .ok_or_else(|| OciError::Invalid("token response is not JSON".into()))?;
+        let t: Tok = serde_json::from_slice(&body).map_err(|e| {
+            OciError::Invalid(format!(
+                "token response is not JSON (line {}, column {})",
+                e.line(),
+                e.column()
+            ))
+        })?;
         let value = t
             .token
             .or(t.access_token)
@@ -851,7 +854,7 @@ fn encode(s: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
             out.push(char::from(b));
         } else {
-            write!(out, "%{b:02X}").ok();
+            push_fmt(&mut out, format_args!("%{b:02X}"));
         }
     }
     out

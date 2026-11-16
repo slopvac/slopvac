@@ -603,8 +603,7 @@ impl Revocations {
             });
         }
         let statement = String::from_utf8(statement)
-            .ok()
-            .ok_or_else(|| RevocationError::Invalid("the list is not UTF-8".into()))?;
+            .map_err(|e| RevocationError::Invalid(format!("the list is not UTF-8: {e}")))?;
 
         // Re-read, compare and replace as one step under the lock.
         let _lock = self.lock()?;
@@ -657,9 +656,10 @@ impl Revocations {
         }
         let statement = client.fetch_blob_bytes(&self.source, list, widen(MAX_LIST_BYTES))?;
         let sig = client.fetch_blob_bytes(&self.source, sig, MAX_MINISIG_BYTES)?;
-        let sig = String::from_utf8(sig)
-            .ok()
-            .ok_or(RevocationError::BadSignature)?;
+        // `BadSignature` is a unit variant: it deliberately carries no detail.
+        let Ok(sig) = String::from_utf8(sig) else {
+            return Err(RevocationError::BadSignature);
+        };
         Ok((statement, sig))
     }
 

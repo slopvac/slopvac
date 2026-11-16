@@ -18,10 +18,8 @@
 //! - An artifact has exactly one layer of each. They are never listed in the statement.
 //! - The minisign trusted comment is signed but never used to decide anything.
 
-use crate::num::widen;
+use crate::num::{push_fmt, widen};
 use std::collections::BTreeMap;
-
-use std::fmt::Write as _;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -119,8 +117,7 @@ impl PublicKey {
             .map_err(|e| SignError::InvalidKey(e.to_string()))?;
         let id: [u8; 8] = raw[2..10]
             .try_into()
-            .ok()
-            .ok_or_else(|| SignError::InvalidKey("short key".into()))?;
+            .map_err(|e| SignError::InvalidKey(format!("short key: {e}")))?;
         Ok(Self { inner, id, raw })
     }
 
@@ -142,7 +139,7 @@ impl PublicKey {
     pub fn key_id(&self) -> String {
         // minisign prints the id as a little-endian integer: reverse the stored bytes.
         self.id.iter().rev().fold(String::new(), |mut acc, b| {
-            write!(acc, "{b:02X}").ok();
+            push_fmt(&mut acc, format_args!("{b:02X}"));
             acc
         })
     }
@@ -432,13 +429,14 @@ pub(crate) fn parse_canonical<T: serde::de::DeserializeOwned>(
 
 /// Verify a prehashed minisign signature by `key` over exactly `bytes`.
 pub(crate) fn verify_bytes(key: &PublicKey, bytes: &[u8], minisig: &str) -> Result<(), SignError> {
-    let sig = minisign_verify::Signature::decode(minisig)
-        .ok()
-        .ok_or(SignError::BadSignature)?;
+    // `BadSignature` is a unit variant: it deliberately carries no detail, so a
+    // caller learns nothing about why a signature failed.
+    let Ok(sig) = minisign_verify::Signature::decode(minisig) else {
+        return Err(SignError::BadSignature);
+    };
     key.inner
         .verify(bytes, &sig, false)
-        .ok()
-        .ok_or(SignError::BadSignature)
+        .map_err(|_failed| SignError::BadSignature)
 }
 
 /// Whether `text` is 16 uppercase hex digits, the form of a key id.
@@ -634,9 +632,10 @@ pub fn fetch_and_verify(
     let statement_bytes =
         client.fetch_blob_bytes(repository, statement, widen(MAX_STATEMENT_BYTES))?;
     let sig_bytes = client.fetch_blob_bytes(repository, minisig, widen(MAX_MINISIG_BYTES))?;
-    let sig_text = String::from_utf8(sig_bytes)
-        .ok()
-        .ok_or(SignError::BadSignature)?;
+    // `BadSignature` is a unit variant: it deliberately carries no detail.
+    let Ok(sig_text) = String::from_utf8(sig_bytes) else {
+        return Err(SignError::BadSignature);
+    };
     verify(manifest, &statement_bytes, &sig_text, policy, expect)
 }
 
@@ -731,9 +730,9 @@ pub fn verify_rotation(
             "the new key is not the one the rotation names, or equals the old key",
         ));
     }
-    let bound = PublicKey::from_base64(&st.new_key)
-        .ok()
-        .ok_or_else(|| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
+    let bound = PublicKey::from_base64(&st.new_key).map_err(|e| {
+        SignError::InvalidStatement(format!("newKey is not a minisign public key: {e}"))
+    })?;
     if bound.raw != proof.new_key.raw || bound.key_id() != st.new_key_id {
         return Err(mismatch(
             "the new key differs from the key the rotation binds",

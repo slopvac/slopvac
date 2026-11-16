@@ -82,8 +82,7 @@ impl<'de> Deserialize<'de> for Whole {
             fn visit_i64<E: de::Error>(self, v: i64) -> Result<Whole, E> {
                 u64::try_from(v)
                     .map(Whole)
-                    .ok()
-                    .ok_or_else(|| E::custom("negative number"))
+                    .map_err(|e| E::custom(format!("negative number: {e}")))
             }
 
             #[expect(

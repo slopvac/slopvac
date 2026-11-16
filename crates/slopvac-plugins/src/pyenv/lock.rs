@@ -1,8 +1,7 @@
 //! The dependency lock a Python plugin ships: a PEP 751 `pylock.toml` whose
 //! every package is a hash-pinned wheel inside the signed artifact (Y1, Y2).
 
-use crate::num::widen;
-use std::fmt::Write as _;
+use crate::num::{push_fmt, widen};
 use std::fs::File;
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -66,9 +65,8 @@ impl PyLock {
         if widen(raw.len()) > MAX_LOCK_BYTES {
             return Err(PyEnvError::Lock("larger than 4 MiB".into()));
         }
-        let text = String::from_utf8(raw)
-            .ok()
-            .ok_or_else(|| PyEnvError::Lock("not UTF-8".into()))?;
+        let text =
+            String::from_utf8(raw).map_err(|e| PyEnvError::Lock(format!("not UTF-8: {e}")))?;
         Self::parse(&text)
     }
 
@@ -204,12 +202,12 @@ impl PyLock {
     pub fn requirements(&self) -> String {
         let mut out = String::new();
         for p in &self.packages {
-            write!(out, "{}=={}", p.name, p.version).ok();
+            push_fmt(&mut out, format_args!("{}=={}", p.name, p.version));
             if let Some(m) = &p.marker {
-                write!(out, " ; {m}").ok();
+                push_fmt(&mut out, format_args!(" ; {m}"));
             }
             for w in &p.wheels {
-                write!(out, " --hash=sha256:{}", w.sha256).ok();
+                push_fmt(&mut out, format_args!(" --hash=sha256:{}", w.sha256));
             }
             out.push('\n');
         }
@@ -499,8 +497,7 @@ fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
             .ok_or("a damaged central directory")?;
         names.push(
             String::from_utf8(name.to_vec())
-                .ok()
-                .ok_or("an entry name that is not UTF-8")?,
+                .map_err(|e| format!("an entry name that is not UTF-8: {e}"))?,
         );
         let skip = 46 + u16_at(&cd, i + 28) + u16_at(&cd, i + 30) + u16_at(&cd, i + 32);
         i += usize::try_from(skip).map_err(|e| e.to_string())?;
@@ -510,7 +507,7 @@ fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::with_capacity(64), |mut s, b| {
-        write!(s, "{b:02x}").ok();
+        push_fmt(&mut s, format_args!("{b:02x}"));
         s
     })
 }

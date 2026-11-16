@@ -33,7 +33,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-trust-{name}-{}", std::process::id()));
-        evict(&p).ok();
+        evict(&p).unwrap();
         fs::create_dir_all(&p).unwrap();
         Self(p)
     }
@@ -44,7 +44,11 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        evict(&self.0).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Drop cannot report, and the scratch directory sits under the temp directory"
+        )]
+        let _ = evict(&self.0);
     }
 }
 
