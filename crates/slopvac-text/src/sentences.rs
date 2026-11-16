@@ -45,12 +45,14 @@ fn dotted_runs(bytes: &[u8]) -> Vec<usize> {
 }
 
 /// Whether the prefix `bytes[..=index]` ends in a dotted initialism such as `e.g.`.
-fn ends_in_dotted_initialism(bytes: &[u8], runs: &[usize], index: usize) -> bool {
+fn ends_in_dotted_initialism(bytes: &[u8], runs: &[usize], index: usize, work: &mut Work) -> bool {
+    work.tick(1);
     let pairs = runs[index];
     if pairs < 2 {
         return false;
     }
     let start = index + 1 - 2 * pairs;
+    work.tick(1);
     start == 0 || !(bytes[start - 1].is_ascii_alphabetic() || bytes[start - 1] == b'.')
 }
 
@@ -75,9 +77,15 @@ impl Protected {
     }
 
     /// End of the first span (in start order) with `start <= index < end`.
-    fn end_containing(&self, index: usize) -> Option<usize> {
-        let starts = self.ranges.partition_point(|&(s, _)| s <= index);
-        let first = self.max_end.partition_point(|&e| e <= index);
+    fn end_containing(&self, index: usize, work: &mut Work) -> Option<usize> {
+        let starts = self.ranges.partition_point(|&(s, _)| {
+            work.tick(1);
+            s <= index
+        });
+        let first = self.max_end.partition_point(|&e| {
+            work.tick(1);
+            e <= index
+        });
         (first < starts).then(|| self.ranges[first].1)
     }
 }
@@ -123,15 +131,14 @@ fn terminal_cut(
     work: &mut Work,
 ) -> Result<Option<usize>, TextError> {
     let mut protected_end = None;
-    work.0 += 1;
-    if let Some(end) = scan.protected.end_containing(index) {
+    if let Some(end) = scan.protected.end_containing(index, work) {
         if !text[index + 1..end].trim_matches(is_closer).is_empty() {
             return Ok(None);
         }
         protected_end = Some(end);
     }
     if text.as_bytes()[index] == b'.'
-        && ends_in_dotted_initialism(text.as_bytes(), &scan.runs, index)
+        && ends_in_dotted_initialism(text.as_bytes(), &scan.runs, index, work)
     {
         // Python measures this gap with `re.match(r"\s*", ...)`: regex whitespace.
         let rest = &text[index + 1..];
@@ -210,9 +217,9 @@ fn list_item_suffixes(
     lines: &[(usize, &str)],
     work: &mut Work,
 ) -> Result<ListItemSuffixes, TextError> {
-    work.0 += lines.len();
     let mut from = vec![(false, true); lines.len() + 1];
     for (k, (_, line)) in lines.iter().enumerate().rev() {
+        work.tick(1);
         let part = py_strip(line);
         from[k] = if part.is_empty() {
             from[k + 1]
@@ -246,9 +253,9 @@ fn split_vertical_list<'a>(
         if !items.all_items_after(index) {
             continue;
         }
-        work.0 += lines.len() - index;
         let mut tail: Vec<(usize, &str)> = Vec::new();
         for (k, (_, l)) in lines[index + 1..].iter().enumerate() {
+            work.tick(1);
             let part = py_strip(l);
             if !part.is_empty() {
                 tail.push((index + 1 + k, part));
@@ -275,10 +282,18 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
     split_sentences_counted(text, &mut Work::default())
 }
 
-/// Units of per-terminator scanning, outside the single pass each pattern makes over a
-/// chunk. Tests bound it by the input length.
+/// Units of scanning the splitter does outside the single pass each pattern makes over a
+/// chunk. One unit is a byte handed to a matcher, a span or table entry visited by a
+/// lookup, or a line visited while building a list tail. Tests bound it by the input
+/// length, so a hot path that scans per terminator or per line shows up as a large count.
 #[derive(Debug, Default)]
 struct Work(usize);
+
+impl Work {
+    fn tick(&mut self, units: usize) {
+        self.0 += units;
+    }
+}
 
 fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>, TextError> {
     if py_strip(text).is_empty() {
@@ -286,7 +301,7 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
     }
     let mut out = Vec::new();
     for (chunk, chunk_offset) in split_vertical_list(text, work)? {
-        work.0 += chunk.len();
+        work.tick(chunk.len());
         let scan = Scan {
             protected: Protected::new(protected_ranges(chunk)?),
             runs: dotted_runs(chunk.as_bytes()),
@@ -387,7 +402,7 @@ mod tests {
             let runs = dotted_runs(bytes);
             for index in (0..bytes.len()).filter(|&i| bytes[i] == b'.') {
                 assert_eq!(
-                    ends_in_dotted_initialism(bytes, &runs, index),
+                    ends_in_dotted_initialism(bytes, &runs, index, &mut Work::default()),
                     pattern.is_match(&bytes[..=index]).unwrap(),
                     "{text:?} at {index}"
                 );
@@ -411,7 +426,7 @@ mod tests {
                     .find(|&&(s, e)| s <= index && index < e)
                     .map(|&(_, e)| e);
                 assert_eq!(
-                    protected.end_containing(index),
+                    protected.end_containing(index, &mut Work::default()),
                     expected,
                     "{ranges:?} {index}"
                 );
