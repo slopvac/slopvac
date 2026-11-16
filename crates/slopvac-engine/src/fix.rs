@@ -48,6 +48,7 @@ use slopvac_parse::{
 };
 
 use crate::lint::{Engine, EngineError, Input, Kind};
+use crate::prepare::with_html_prose;
 use crate::protect::destinations;
 use crate::rst::RstError;
 
@@ -278,6 +279,11 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         Kind::Mdx => parse_mdx(input.source, body)?,
         Kind::Diagram(_) | Kind::Rst => Parsed::default(),
     };
+    let parsed = with_html_prose(
+        input.source,
+        &SourceIndex::new(input.source, input.bom),
+        parsed,
+    )?;
     spans.extend(parsed.code_spans.iter().copied());
     spans.extend(destinations(input.source, body_start));
     if input.kind == Kind::Mdx {

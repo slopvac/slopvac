@@ -121,7 +121,6 @@ ignored = [
   "slopvac-engine",
   "slopvac-lsp",
   "slopvac-plugins",
-  "slopvac-report",
   "slopvac-styles",
 ]
 

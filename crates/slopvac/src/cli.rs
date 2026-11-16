@@ -42,6 +42,29 @@ pub const REMOVED_LINT_OPTIONS: [(&str, &str); 4] = [
     ),
 ];
 
+/// The names in [`REMOVED_LINT_OPTIONS`].
+pub const REMOVED_LINT_NAMES: [&str; 4] = ["profile", "rules-dir", "no-vale", "comments"];
+
+/// 2.x options that `rules` and `explain` no longer take.
+pub const REMOVED_INSPECT_OPTIONS: [&str; 2] = ["profile", "rules-dir"];
+
+/// The pointer printed for a removed option.
+#[must_use]
+pub fn removed_message(name: &str) -> Option<&'static str> {
+    REMOVED_LINT_OPTIONS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, message)| *message)
+}
+
+/// Declare removed options hidden, so using one gets the pointer.
+fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
+    for name in names {
+        cmd = cmd.arg(Arg::new(*name).long(*name).num_args(0..=1).hide(true));
+    }
+    cmd
+}
+
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
 pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
@@ -191,7 +214,7 @@ fn lint() -> Command {
 }
 
 fn lint_run_args(cmd: Command) -> Command {
-    let mut cmd = cmd
+    let cmd = cmd
         .arg(
             Arg::new("min-score")
                 .long("min-score")
@@ -240,14 +263,11 @@ fn lint_run_args(cmd: Command) -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Print each resolved setting with its source, then exit."),
         );
-    for (name, _) in REMOVED_LINT_OPTIONS {
-        cmd = cmd.arg(Arg::new(name).long(name).num_args(0..=1).hide(true));
-    }
-    cmd
+    with_removed(cmd, &REMOVED_LINT_NAMES)
 }
 
 fn explain() -> Command {
-    Command::new("explain")
+    let cmd = Command::new("explain")
         .about("Explain a rule.")
         .arg(
             Arg::new("rule")
@@ -256,11 +276,12 @@ fn explain() -> Command {
                 .help("Qualified rule ID."),
         )
         .arg(format_arg(&INSPECT_FORMATS, "Output format."))
-        .arg(config_arg())
+        .arg(config_arg());
+    with_removed(cmd, &REMOVED_INSPECT_OPTIONS)
 }
 
 fn rules() -> Command {
-    Command::new("rules")
+    let cmd = Command::new("rules")
         .about("List rules.")
         .arg(
             Arg::new("category")
@@ -268,20 +289,28 @@ fn rules() -> Command {
                 .action(ArgAction::Append)
                 .help("Only this category. Repeatable."),
         )
-        .arg(Arg::new("kind").long("kind").help("Only this match kind."))
+        .arg(
+            Arg::new("kind")
+                .long("kind")
+                .value_name("KIND")
+                .value_parser(crate::inspect::kind_names())
+                .help("Only this match kind."),
+        )
         .arg(
             Arg::new("genre")
                 .long("genre")
-                .help("Only rules that apply to this genre."),
+                .value_name("GENRE")
+                .help("Only rules in categories recommended for this genre."),
         )
         .arg(
             Arg::new("include-excluded")
                 .long("include-excluded")
                 .action(ArgAction::SetTrue)
-                .help("Include rules the genre excludes."),
+                .help("With --genre, keep rules whose applies_to excludes the genre."),
         )
         .arg(format_arg(&INSPECT_FORMATS, "Output format."))
-        .arg(config_arg())
+        .arg(config_arg());
+    with_removed(cmd, &REMOVED_INSPECT_OPTIONS)
 }
 
 fn doctor() -> Command {

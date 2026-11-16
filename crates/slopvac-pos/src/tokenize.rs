@@ -28,9 +28,9 @@ pub(crate) mod work {
 }
 
 #[cfg(not(test))]
-mod work {
+pub(crate) mod work {
     #[inline(always)]
-    pub(super) const fn tick(_units: usize) {}
+    pub(crate) const fn tick(_units: usize) {}
 }
 
 /// One token of the input.
@@ -216,7 +216,10 @@ fn push_plain(text: &str, orig: Range<usize>, work: &mut String, segments: &mut 
 }
 
 fn segment_at(segments: &[Segment], work_offset: usize) -> &Segment {
-    let idx = segments.partition_point(|s| s.work.end <= work_offset);
+    let idx = segments.partition_point(|s| {
+        work::tick(1);
+        s.work.end <= work_offset
+    });
     &segments[idx]
 }
 
@@ -325,10 +328,10 @@ fn split_span(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
 /// ignored), in order of start. Two endings never start at the same byte.
 fn contraction_occurrences(chunk: &str) -> Vec<Range<usize>> {
     let bytes = chunk.as_bytes();
-    work::tick(bytes.len() * CONTRACTIONS.len());
     let mut found = Vec::new();
     for start in 1..bytes.len() {
         for ending in CONTRACTIONS {
+            work::tick(1);
             let ending = ending.as_bytes();
             if bytes[start..].len() >= ending.len()
                 && bytes[start..start + ending.len()].eq_ignore_ascii_case(ending)
@@ -693,6 +696,79 @@ mod oracle {
     pub(super) fn tokenize(text: &str) -> Vec<Token> {
         assemble(text, &find_code_spans(text), split_span)
     }
+
+    /// The segment lookup before it was a binary search: a scan from the
+    /// first segment.
+    pub(super) fn segment_at_scan(segments: &[Segment], work_offset: usize) -> &Segment {
+        segments
+            .iter()
+            .find(|s| {
+                work::tick(1);
+                s.work.end > work_offset
+            })
+            .unwrap()
+    }
+
+    /// `split_span` with a defect put back: it finds the contraction endings
+    /// again at every step (`rescan`), or restarts its cursor over them at
+    /// every step (`!rescan`). Either makes a chunk with many contractions
+    /// quadratic.
+    fn split_span_reworking(chunk: &str, base: usize, out: &mut Vec<Range<usize>>, rescan: bool) {
+        let mut occurrences = contraction_occurrences(chunk);
+        let (mut lo, mut hi) = (0, chunk.len());
+        let mut suffixes: Vec<Range<usize>> = Vec::new();
+        while lo < hi {
+            work::tick(1 + PREFIXES.len() + SUFFIXES.len());
+            let span = &chunk[lo..hi];
+            if is_special(span) {
+                break;
+            }
+            if let Some(p) = PREFIXES
+                .iter()
+                .find(|p| span.starts_with(**p) && span.len() > p.len())
+            {
+                out.push(base + lo..base + lo + p.len());
+                lo += p.len();
+                continue;
+            }
+            if rescan {
+                occurrences = contraction_occurrences(chunk);
+            }
+            let mut next = 0;
+            while next < occurrences.len()
+                && (occurrences[next].start <= lo || occurrences[next].end > hi)
+            {
+                work::tick(1);
+                next += 1;
+            }
+            if let Some(occurrence) = occurrences.get(next) {
+                out.push(base + lo..base + occurrence.start);
+                lo = occurrence.start;
+                continue;
+            }
+            if let Some(s) = SUFFIXES
+                .iter()
+                .find(|s| span.ends_with(**s) && span.len() > s.len())
+            {
+                suffixes.push(base + hi - s.len()..base + hi);
+                hi -= s.len();
+                continue;
+            }
+            break;
+        }
+        if lo < hi {
+            out.push(base + lo..base + hi);
+        }
+        out.extend(suffixes.into_iter().rev());
+    }
+
+    pub(super) fn split_span_rescanning(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
+        split_span_reworking(chunk, base, out, true);
+    }
+
+    pub(super) fn split_span_restarting(chunk: &str, base: usize, out: &mut Vec<Range<usize>>) {
+        split_span_reworking(chunk, base, out, false);
+    }
 }
 
 #[cfg(test)]
@@ -807,7 +883,7 @@ mod differential_tests {
 
 #[cfg(test)]
 #[path = "../tests/common/adversarial.rs"]
-mod adversarial;
+pub(crate) mod adversarial;
 
 #[cfg(test)]
 mod work_tests {
@@ -892,5 +968,85 @@ mod work_tests {
                 budget(&text)
             );
         }
+    }
+
+    /// Defects put back into the contraction scan, one per loop: finding the
+    /// endings again at every step, and restarting the cursor at every step.
+    #[test]
+    fn the_budget_rejects_a_quadratic_contraction_scan() {
+        // The cursor restart only costs where there are many endings to skip.
+        for (loop_name, split, inputs) in [
+            (
+                "rescan",
+                oracle::split_span_rescanning as SplitFn,
+                &["contractions", "contraction tail"][..],
+            ),
+            (
+                "restart",
+                oracle::split_span_restarting as SplitFn,
+                &["contractions"][..],
+            ),
+        ] {
+            for &name in inputs {
+                let text = adversarial::adversarial(name, 4_000);
+                work::take();
+                let tokens = assemble(&text, &find_code_spans(&text), split);
+                let _ = sentences(&text, &tokens);
+                let work = work::take();
+                assert!(
+                    work > budget(&text),
+                    "{loop_name} on {name}: only {work} units for {} bytes (budget {})",
+                    text.len(),
+                    budget(&text)
+                );
+            }
+        }
+    }
+
+    fn lookup_segments(count: usize) -> Vec<Segment> {
+        (0..count)
+            .map(|i| Segment {
+                work: 2 * i..2 * i + 2,
+                orig: 2 * i..2 * i + 2,
+                code: i % 2 == 1,
+            })
+            .collect()
+    }
+
+    /// Looking up every segment once costs a logarithmic number of predicate
+    /// evaluations each; the budget allows 40 per lookup, enough for 2^30
+    /// segments.
+    const PER_LOOKUP: u64 = 40;
+
+    #[test]
+    fn segment_lookup_stays_within_a_per_lookup_budget() {
+        let segments = lookup_segments(100_000);
+        work::take();
+        for i in 0..segments.len() {
+            let found = segment_at(&segments, 2 * i + 1);
+            assert_eq!(found.work.start, 2 * i);
+        }
+        let used = work::take();
+        assert!(
+            used > segments.len() as u64 && used <= PER_LOOKUP * segments.len() as u64,
+            "{used} units for {} lookups",
+            segments.len()
+        );
+    }
+
+    #[test]
+    fn the_lookup_budget_rejects_a_scan_over_the_segments() {
+        let segments = lookup_segments(4_000);
+        work::take();
+        for i in 0..segments.len() {
+            let found = oracle::segment_at_scan(&segments, 2 * i + 1);
+            assert_eq!(found.work.start, 2 * i);
+        }
+        let used = work::take();
+        assert!(
+            used > PER_LOOKUP * segments.len() as u64,
+            "the scan used only {used} units for {} lookups",
+            segments.len()
+        );
     }
 }
