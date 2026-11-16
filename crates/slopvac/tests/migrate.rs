@@ -123,3 +123,36 @@ fn conflicting_config_sources_report_a_coded_error() {
         ))
         .stderr(predicate::str::contains(dir.path().to_str().expect("utf-8")).not());
 }
+
+#[test]
+fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
+    use slopvac_agents::content::BlockKind;
+    let text = "# Rules\n\nBe kind.\n\n<!-- slopvac:begin -->\n## Slopvac\n\nOld 2.x text.\n<!-- slopvac:end -->\n\nKeep this.\n";
+    let migrated = tempfile::tempdir().expect("tempdir");
+    let reference = tempfile::tempdir().expect("tempdir");
+    for dir in [&migrated, &reference] {
+        fs::write(dir.path().join("AGENTS.md"), text).expect("write");
+    }
+    slopvac()
+        .arg("migrate")
+        .arg(migrated.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    slopvac_agents::setup::execute(&slopvac_agents::setup::Options {
+        harness: Some("agents".into()),
+        list: false,
+        remove: false,
+        check: false,
+        root: reference.path().to_owned(),
+        block: BlockKind::Standard,
+        no_skill: true,
+        agent: false,
+        reviewer_model: None,
+    })
+    .expect("setup");
+    assert_eq!(
+        fs::read(migrated.path().join("AGENTS.md")).expect("read"),
+        fs::read(reference.path().join("AGENTS.md")).expect("read"),
+    );
+}
