@@ -95,6 +95,9 @@ pub struct RawSource {
 pub struct ConfigScan {
     /// Sources in layer order.
     pub sources: Vec<RawSource>,
+    /// The project root: the directory of the project (or `--config`) file. Packs and the
+    /// lockfile live under it, whatever the first source is.
+    pub root: Option<PathBuf>,
     /// `[network] offline = true` in a source.
     pub offline: bool,
     /// `[network] update_check` in a source.
@@ -556,11 +559,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
         None => ("unknown", None, None),
     };
 
-    let project_root = scan
-        .sources
-        .first()
-        .and_then(|s| s.path.parent())
-        .map_or_else(|| i.cwd.to_owned(), Path::to_owned);
+    let project_root = scan.root.clone().unwrap_or_else(|| i.cwd.to_owned());
 
     let packs = packs_report(&project_root, i.cwd, data.path.as_deref());
     let trust = trust_report(state.path.as_deref());

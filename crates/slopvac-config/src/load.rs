@@ -342,7 +342,7 @@ impl Loader<'_> {
         &mut self,
         tree: &Node,
         added: usize,
-        display: &str,
+        (display, layer): (&str, Layer),
         text: &str,
     ) -> Option<ConfigError> {
         self.entries += added;
@@ -352,6 +352,8 @@ impl Loader<'_> {
         let span = tree.get("extends").map_or(0..0, |n| n.span.clone());
         Some(ConfigError::Rejected(Box::new(Rejected {
             file: display.to_owned(),
+            layer: Some(layer),
+            root: Some(self.root.to_path_buf()),
             text: text.to_owned(),
             diagnostics: vec![Diagnostic {
                 code: Code::ExtendsLimit,
@@ -364,6 +366,41 @@ impl Loader<'_> {
                 path: vec!["extends".into()],
             }],
         })))
+    }
+
+    /// The text of an extended file (read from disk unless a pack supplied it), counted against
+    /// the byte budget. The error is the diagnostic code, message and help.
+    fn take_body(
+        &mut self,
+        target: &Key,
+        body: Option<String>,
+        name: &str,
+    ) -> Result<String, (Code, String, Option<String>)> {
+        let body = match body {
+            Some(b) => b,
+            None => match target {
+                Key::Path(p) => crate::read::read_text(p).map_err(|e| {
+                    (
+                        Code::ExtendsMissing,
+                        format!(
+                            "cannot read the extended config `{name}`: {}",
+                            crate::error::reason(&e)
+                        ),
+                        Some("paths are relative to the file that holds the entry".into()),
+                    )
+                })?,
+                Key::Pack(_) => String::new(),
+            },
+        };
+        self.bytes += body.len();
+        if self.bytes > MAX_EXTENDS_BYTES {
+            return Err((
+                Code::ExtendsLimit,
+                format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
+                Some("extend smaller files".into()),
+            ));
+        }
+        Ok(body)
     }
 
     /// Move `id` to the end of the application order.
@@ -381,6 +418,8 @@ impl Loader<'_> {
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
                 file: display.to_owned(),
+                layer: Some(layer),
+                root: Some(self.root.to_path_buf()),
                 text,
                 diagnostics,
             }))
@@ -437,7 +476,7 @@ impl Loader<'_> {
             return Err(reject(text, diagnostics));
         }
         self.stack.push((key.clone(), display.to_owned()));
-        let extended = self.extend(&tree, key, &text, display);
+        let extended = self.extend(&tree, key, &text, display, layer);
         self.stack.pop();
         let mut closure = extended?;
         let settings = flatten_with(
@@ -568,6 +607,7 @@ impl Loader<'_> {
         key: &Key,
         text: &str,
         display: &str,
+        layer: Layer,
     ) -> Result<Vec<usize>, ConfigError> {
         let Some(Node {
             value: Value::Array(entries),
@@ -576,15 +616,19 @@ impl Loader<'_> {
         else {
             return Ok(Vec::new());
         };
-        if let Some(rejection) = self.entries_exceeded(tree, entries.len(), display, text) {
+        if let Some(rejection) = self.entries_exceeded(tree, entries.len(), (display, layer), text)
+        {
             return Err(rejection);
         }
         let mut acc = Ordered::default();
+        let root = self.root;
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let fail = |code: Code, message: String, help: Option<String>| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: display.to_owned(),
+                    layer: Some(layer),
+                    root: Some(root.to_path_buf()),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code,
@@ -642,30 +686,9 @@ impl Loader<'_> {
             if let Some((message, help)) = self.budget_exceeded() {
                 return Err(fail(Code::ExtendsLimit, message, Some(help.into())));
             }
-            let body = match body {
-                Some(b) => b,
-                None => match &target {
-                    Key::Path(p) => crate::read::read_text(p).map_err(|e| {
-                        fail(
-                            Code::ExtendsMissing,
-                            format!(
-                                "cannot read the extended config `{name}`: {}",
-                                crate::error::reason(&e)
-                            ),
-                            Some("paths are relative to the file that holds the entry".into()),
-                        )
-                    })?,
-                    Key::Pack(_) => String::new(),
-                },
-            };
-            self.bytes += body.len();
-            if self.bytes > MAX_EXTENDS_BYTES {
-                return Err(fail(
-                    Code::ExtendsLimit,
-                    format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
-                    Some("extend smaller files".into()),
-                ));
-            }
+            let body = self
+                .take_body(&target, body, name)
+                .map_err(|(code, message, help)| fail(code, message, help))?;
             self.load_text(&target, &shown, body, Layer::Extends)?;
             let id = self.ids[&target];
             for i in self.closure[id].clone() {

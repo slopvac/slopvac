@@ -150,6 +150,8 @@ fn read(path: &Path) -> Result<String, ConfigError> {
 fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str) -> ConfigError {
     ConfigError::Rejected(Box::new(Rejected {
         file: file.to_owned(),
+        layer: None,
+        root: None,
         text,
         diagnostics: vec![Diagnostic {
             code: Code::LegacyVersion,
