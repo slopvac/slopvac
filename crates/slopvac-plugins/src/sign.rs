@@ -430,13 +430,16 @@ pub(crate) fn parse_canonical<T: serde::de::DeserializeOwned>(
 /// Verify a prehashed minisign signature by `key` over exactly `bytes`.
 pub(crate) fn verify_bytes(key: &PublicKey, bytes: &[u8], minisig: &str) -> Result<(), SignError> {
     // `BadSignature` is a unit variant: it deliberately carries no detail, so a
-    // caller learns nothing about why a signature failed.
-    let Ok(sig) = minisign_verify::Signature::decode(minisig) else {
-        return Err(SignError::BadSignature);
-    };
-    key.inner
-        .verify(bytes, &sig, false)
-        .map_err(|_failed| SignError::BadSignature)
+    // caller learns nothing about why a signature failed. The cause goes to the
+    // debug log; it names the error and the public key id, never key or signature bytes.
+    let sig = minisign_verify::Signature::decode(minisig).map_err(|e| {
+        tracing::debug!(key_id = %key.key_id(), error = %e, "the minisign signature does not decode");
+        SignError::BadSignature
+    })?;
+    key.inner.verify(bytes, &sig, false).map_err(|e| {
+        tracing::debug!(key_id = %key.key_id(), error = %e, "the minisign signature does not verify");
+        SignError::BadSignature
+    })
 }
 
 /// Whether `text` is 16 uppercase hex digits, the form of a key id.
@@ -632,10 +635,12 @@ pub fn fetch_and_verify(
     let statement_bytes =
         client.fetch_blob_bytes(repository, statement, widen(MAX_STATEMENT_BYTES))?;
     let sig_bytes = client.fetch_blob_bytes(repository, minisig, widen(MAX_MINISIG_BYTES))?;
-    // `BadSignature` is a unit variant: it deliberately carries no detail.
-    let Ok(sig_text) = String::from_utf8(sig_bytes) else {
-        return Err(SignError::BadSignature);
-    };
+    // `BadSignature` is a unit variant: it deliberately carries no detail. The
+    // cause goes to the debug log without the bytes.
+    let sig_text = String::from_utf8(sig_bytes).map_err(|e| {
+        tracing::debug!(error = %e, "the signature layer is not UTF-8");
+        SignError::BadSignature
+    })?;
     verify(manifest, &statement_bytes, &sig_text, policy, expect)
 }
 

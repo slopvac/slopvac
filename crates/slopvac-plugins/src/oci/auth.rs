@@ -289,7 +289,7 @@ fn feed_registry(mut stdin: std::process::ChildStdin, registry: &str) {
 /// Killing the helper's whole tree closes every write end, so the reader never
 /// outlives a lookup.
 fn read_output(
-    stdout: std::process::ChildStdout,
+    stdout: impl Read + Send + 'static,
 ) -> std::sync::mpsc::Receiver<io::Result<Vec<u8>>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -307,13 +307,42 @@ fn read_output(
     rx
 }
 
-/// Kill the helper's tree, and build the credential error for `why`. A kill
-/// that failed is named in the error: the helper may still be running.
-fn abort_helper(helper: Contained, why: String) -> OciError {
-    match helper.kill_tree() {
+/// What polling the output reader found.
+#[derive(Debug, PartialEq, Eq)]
+enum Polled {
+    Pending,
+    Done(Vec<u8>),
+    /// The lookup must end; the reason.
+    Failed(String),
+}
+
+/// Take what the output reader has sent, if anything.
+fn poll_output(rx: &std::sync::mpsc::Receiver<io::Result<Vec<u8>>>, program: &str) -> Polled {
+    match rx.try_recv() {
+        Ok(Ok(buf)) if buf.len() > HELPER_MAX_OUTPUT => Polled::Failed(format!(
+            "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
+        )),
+        Ok(Ok(buf)) => Polled::Done(buf),
+        Ok(Err(e)) => Polled::Failed(format!("reading the output of `{program}`: {e}")),
+        Err(std::sync::mpsc::TryRecvError::Empty) => Polled::Pending,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Polled::Failed("helper reader failed".into())
+        }
+    }
+}
+
+/// The credential error for `why`. A failed kill is named in it: the helper may
+/// still be running.
+fn stop_error(why: String, stopped: io::Result<()>) -> OciError {
+    match stopped {
         Ok(()) => OciError::Credential(why),
         Err(e) => OciError::Credential(format!("{why}; the helper could not be stopped: {e}")),
     }
+}
+
+/// Kill the helper's tree, and build the credential error for `why`.
+fn abort_helper(helper: Contained, why: String) -> OciError {
+    stop_error(why, helper.kill_tree())
 }
 
 fn run_helper(
@@ -369,24 +398,10 @@ fn run_helper(
             };
         }
         if output.is_none() {
-            match rx.try_recv() {
-                Ok(Ok(buf)) if buf.len() > HELPER_MAX_OUTPUT => {
-                    return Err(abort_helper(
-                        helper,
-                        format!("`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"),
-                    ));
-                }
-                Ok(Ok(buf)) => output = Some(buf),
-                Ok(Err(e)) => {
-                    return Err(abort_helper(
-                        helper,
-                        format!("reading the output of `{program}`: {e}"),
-                    ));
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    return Err(abort_helper(helper, "helper reader failed".into()));
-                }
+            match poll_output(&rx, &program) {
+                Polled::Pending => {}
+                Polled::Done(buf) => output = Some(buf),
+                Polled::Failed(why) => return Err(abort_helper(helper, why)),
             }
         }
         if exited && output.is_some() {
@@ -698,5 +713,59 @@ mod tests {
             ..DefaultCredentials::default()
         };
         assert_eq!(both.credential("ghcr.io").unwrap().unwrap().username, "me");
+    }
+
+    /// A reader whose every read fails, as a broken pipe would.
+    struct BrokenPipe;
+
+    impl Read for BrokenPipe {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("pipe broke"))
+        }
+    }
+
+    fn poll_until_settled(rx: &std::sync::mpsc::Receiver<io::Result<Vec<u8>>>) -> Polled {
+        let end = Instant::now() + Duration::from_secs(10);
+        loop {
+            match poll_output(rx, "docker-credential-x") {
+                Polled::Pending if Instant::now() < end => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                polled @ (Polled::Pending | Polled::Done(_) | Polled::Failed(_)) => return polled,
+            }
+        }
+    }
+
+    #[test]
+    fn a_read_error_on_the_helper_output_becomes_a_credential_error() {
+        let polled = poll_until_settled(&read_output(BrokenPipe));
+        let Polled::Failed(why) = polled else {
+            panic!("expected the lookup to fail, got {polled:?}");
+        };
+        assert_eq!(
+            why,
+            "reading the output of `docker-credential-x`: pipe broke"
+        );
+        assert_eq!(
+            stop_error(why.clone(), Ok(())).to_string(),
+            OciError::Credential(why).to_string()
+        );
+    }
+
+    #[test]
+    fn complete_helper_output_is_not_an_error() {
+        let polled = poll_until_settled(&read_output(&b"{}"[..]));
+        assert_eq!(polled, Polled::Done(b"{}".to_vec()));
+    }
+
+    #[test]
+    fn a_helper_that_could_not_be_stopped_is_named_in_the_error() {
+        let stopped = Err(io::Error::other("kill refused"));
+        let err = stop_error("`docker-credential-x` timed out".into(), stopped);
+        assert!(
+            matches!(&err, OciError::Credential(m)
+                if m == "`docker-credential-x` timed out; the helper could not be stopped: kill refused"),
+            "{err:?}"
+        );
     }
 }

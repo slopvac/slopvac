@@ -443,19 +443,64 @@ pub(crate) fn signal_failed(sent: rustix::io::Result<()>) -> bool {
     sent.is_err_and(|e| e != Errno::SRCH && e != Errno::PERM)
 }
 
-/// Kill a child of the host, treating one that already exited as killed.
+/// Whether any signal of a batch failed for a reason other than its target
+/// being gone.
+#[cfg(unix)]
+fn any_signal_failed(sent: &[rustix::io::Result<()>]) -> bool {
+    sent.iter().any(|&s| signal_failed(s))
+}
+
+/// A teardown result that is incomplete when a signal could not be sent, since
+/// that leaves the group possibly running.
+#[cfg(unix)]
+fn with_signal_outcome(mut left: Teardown, signal_failed: bool) -> Teardown {
+    left.incomplete |= signal_failed;
+    left
+}
+
+/// A child of the host that can be killed and reaped. A seam: tests substitute
+/// a child whose kill fails, which no real child does.
+pub(crate) trait Reap {
+    /// Kill the child. One that already exited counts as killed.
+    ///
+    /// # Errors
+    /// The child could not be signalled.
+    fn kill(&mut self) -> std::io::Result<()>;
+
+    /// Wait for the child; whether it exited with status 0.
+    ///
+    /// # Errors
+    /// The wait failed.
+    fn wait_success(&mut self) -> std::io::Result<bool>;
+}
+
+impl Reap for Child {
+    /// macOS refuses to signal an exited, unreaped child with `EPERM`, which
+    /// `std` reports as `PermissionDenied`. The children killed here are the
+    /// host's own, so that kind means the child is gone, not that the kill was
+    /// refused.
+    fn kill(&mut self) -> std::io::Result<()> {
+        match Child::kill(self) {
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(()),
+            other => other,
+        }
+    }
+
+    fn wait_success(&mut self) -> std::io::Result<bool> {
+        self.wait().map(|s| s.success())
+    }
+}
+
+/// Kill `child` and reap it, reporting whether it exited with status 0.
 ///
-/// macOS refuses to signal an exited, unreaped child with `EPERM`, which `std`
-/// reports as `PermissionDenied`. The children killed here are the host's own,
-/// so that kind means the child is gone, not that the kill was refused.
+/// A child that could not be killed is not waited for: the wait would block on
+/// a process that is still running.
 ///
 /// # Errors
-/// Any other failure to signal the child.
-pub(crate) fn kill_child(child: &mut Child) -> std::io::Result<()> {
-    match child.kill() {
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(()),
-        other => other,
-    }
+/// The kill or the wait failed.
+pub(crate) fn kill_then_reap(child: &mut impl Reap) -> std::io::Result<bool> {
+    child.kill()?;
+    child.wait_success()
 }
 
 /// Stop the group and the leader. Returns whether a signal failed for a reason
@@ -464,9 +509,10 @@ pub(crate) fn kill_child(child: &mut Child) -> std::io::Result<()> {
 fn stop_group(leader: u32) -> bool {
     use rustix::process::{Signal, kill_process, kill_process_group};
     unix::pid(leader).is_some_and(|pid| {
-        let group = signal_failed(kill_process_group(pid, Signal::STOP));
-        let leader = signal_failed(kill_process(pid, Signal::STOP));
-        group || leader
+        any_signal_failed(&[
+            kill_process_group(pid, Signal::STOP),
+            kill_process(pid, Signal::STOP),
+        ])
     })
 }
 
@@ -491,9 +537,11 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
     struct Last<'a>(rustix::process::Pid, Signal, &'a Cell<bool>);
     impl Drop for Last<'_> {
         fn drop(&mut self) {
-            let group = signal_failed(kill_process_group(self.0, self.1));
-            let leader = signal_failed(kill_process(self.0, self.1));
-            self.2.set(self.2.get() || group || leader);
+            let failed = any_signal_failed(&[
+                kill_process_group(self.0, self.1),
+                kill_process(self.0, self.1),
+            ]);
+            self.2.set(self.2.get() || failed);
         }
     }
 
@@ -514,11 +562,9 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
         &failed,
     );
     let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
-    let mut left = unix::walk(leader, table, Instant::now() + within).kill();
+    let left = unix::walk(leader, table, Instant::now() + within).kill();
     drop(last);
-    // A signal that could not be sent leaves the group possibly running.
-    left.incomplete |= failed.get();
-    left
+    with_signal_outcome(left, failed.get())
 }
 
 /// `taskkill /T /F` on the leader's tree. The leader's open handle keeps its
@@ -559,13 +605,11 @@ fn taskkill(pid: u32) -> Option<i32> {
         }
     }
     // The result is `None` whatever happens next; a helper that cannot be killed is not waited for.
-    if kill_child(&mut child).is_ok() {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the child is killed; the wait only reaps it and its status is not used"
-        )]
-        let _ = child.wait();
-    }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the result is `None` whatever the kill and the reap report"
+    )]
+    let _ = kill_then_reap(&mut child);
     None
 }
 
@@ -951,13 +995,26 @@ mod unix {
         let exited = out.is_some() && exited_by(&child, deadline);
         // Still unreaped, so the helper's ids are its own. The helper itself
         // is killed too, in case it moved to another group.
-        let killed = super::kill_child(&mut child).is_ok();
         let group_ok = pid(child.id()).is_none_or(|g| {
             !super::signal_failed(rustix::process::kill_process_group(g, Signal::KILL))
         });
-        // A helper that could not be killed is not waited for: the wait would block.
-        let ok = killed && child.wait().is_ok_and(|s| s.success());
-        out.filter(|_| exited && ok && group_ok)
+        finish_helper(&mut child, out, exited && group_ok)
+    }
+
+    /// Kill and reap the helper, and keep its output only when it ended cleanly.
+    ///
+    /// A helper that could not be killed or reaped yields `None`, which the
+    /// caller treats as an incomplete walk, and is not waited for.
+    pub(super) fn finish_helper(
+        child: &mut impl super::Reap,
+        out: Option<Vec<u8>>,
+        clean: bool,
+    ) -> Option<Vec<u8>> {
+        let exited_ok = super::kill_then_reap(child).unwrap_or_else(|e| {
+            tracing::debug!(error = %e, "the process-table helper could not be killed or reaped");
+            false
+        });
+        out.filter(|_| clean && exited_ok)
     }
 
     /// Read to end of stream on a thread, up to the limit and the deadline.
@@ -1059,9 +1116,85 @@ mod unix {
     }
 }
 
+/// A child whose kill and wait are scripted, for the code that must survive a
+/// kill that fails.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::Reap;
+    use std::io;
+
+    pub(crate) struct ScriptedChild {
+        /// The kind the kill fails with, or `None` for a kill that works.
+        pub(crate) kill_fails: Option<io::ErrorKind>,
+        /// Whether the child exits with status 0 once waited for.
+        pub(crate) exits_zero: bool,
+        /// Whether a wait was attempted.
+        pub(crate) waited: bool,
+    }
+
+    impl ScriptedChild {
+        pub(crate) fn new(kill_fails: Option<io::ErrorKind>, exits_zero: bool) -> Self {
+            Self {
+                kill_fails,
+                exits_zero,
+                waited: false,
+            }
+        }
+    }
+
+    impl Reap for ScriptedChild {
+        fn kill(&mut self) -> io::Result<()> {
+            self.kill_fails.map_or(Ok(()), |kind| {
+                Err(io::Error::new(kind, "scripted kill failure"))
+            })
+        }
+
+        fn wait_success(&mut self) -> io::Result<bool> {
+            self.waited = true;
+            Ok(self.exits_zero)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::ScriptedChild;
     use super::*;
+
+    #[test]
+    fn a_child_that_cannot_be_killed_is_not_waited_for() {
+        let mut child = ScriptedChild::new(Some(std::io::ErrorKind::Other), true);
+        let err = kill_then_reap(&mut child).unwrap_err();
+        assert_eq!(err.to_string(), "scripted kill failure");
+        assert!(!child.waited, "a wait on a live child would block");
+    }
+
+    #[test]
+    fn a_killed_child_is_reaped_and_its_status_reported() {
+        let mut child = ScriptedChild::new(None, true);
+        assert!(kill_then_reap(&mut child).unwrap());
+        assert!(child.waited);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_other_than_target_gone_marks_the_teardown_incomplete() {
+        use rustix::io::Errno;
+        let sent = [Ok(()), Err(Errno::ACCESS)];
+        let left = with_signal_outcome(Teardown::default(), any_signal_failed(&sent));
+        assert!(!left.is_complete());
+        assert!(left.incomplete);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_target_that_is_gone_leaves_the_teardown_complete() {
+        use rustix::io::Errno;
+        // ESRCH: no such process. EPERM: macOS for an exited, unreaped child.
+        let sent = [Err(Errno::SRCH), Err(Errno::PERM), Ok(())];
+        let left = with_signal_outcome(Teardown::default(), any_signal_failed(&sent));
+        assert!(left.is_complete());
+    }
 
     #[cfg(unix)]
     #[test]
@@ -1176,7 +1309,23 @@ mod tests {
         use std::path::Path;
         use std::time::{Duration, Instant};
 
-        use super::super::unix::{Entry, TABLE_MAX_BYTES, parse_table, run_bounded};
+        use super::super::testing::ScriptedChild;
+        use super::super::unix::{Entry, TABLE_MAX_BYTES, finish_helper, parse_table, run_bounded};
+
+        #[test]
+        fn a_helper_that_cannot_be_killed_yields_no_table_and_is_not_waited_for() {
+            let mut child = ScriptedChild::new(Some(std::io::ErrorKind::Other), true);
+            let table = finish_helper(&mut child, Some(b"table".to_vec()), true);
+            assert_eq!(table, None);
+            assert!(!child.waited, "a wait on a live helper would block");
+        }
+
+        #[test]
+        fn a_helper_that_ended_cleanly_keeps_its_table() {
+            let mut child = ScriptedChild::new(None, true);
+            let table = finish_helper(&mut child, Some(b"table".to_vec()), true);
+            assert_eq!(table.as_deref(), Some(&b"table"[..]));
+        }
 
         fn sh(script: &str, within: Duration) -> Option<Vec<u8>> {
             run_bounded(

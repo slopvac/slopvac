@@ -937,6 +937,22 @@ impl Drop for Staging {
     }
 }
 
+/// The error for a step that passed its deadline, after killing and reaping it.
+///
+/// A step that cannot be killed is not waited for, since the wait would block on
+/// it, and the error says so.
+fn timed_out(child: &mut impl crate::process::Reap, step: &str) -> PyEnvError {
+    let output = crate::process::kill_then_reap(child)
+        .err()
+        .map(|e| format!("the step could not be killed or reaped: {e}"))
+        .unwrap_or_default();
+    PyEnvError::Step {
+        step: step.to_owned(),
+        status: "timed out".into(),
+        output,
+    }
+}
+
 /// Run `cmd` to completion under the step deadline, its output in files.
 fn run(
     mut cmd: Command,
@@ -971,23 +987,7 @@ fn run(
         }
     };
     let Some(status) = status else {
-        // A child that cannot be killed is not waited for: the wait would block on it.
-        let output = match crate::process::kill_child(&mut child) {
-            Ok(()) => {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the child is killed; the wait only reaps it and its status is not used"
-                )]
-                let _ = child.wait();
-                String::new()
-            }
-            Err(e) => format!("the step could not be killed: {e}"),
-        };
-        return Err(PyEnvError::Step {
-            step: step.to_owned(),
-            status: "timed out".into(),
-            output,
-        });
+        return Err(timed_out(&mut child, step));
     };
     if status.success() {
         return Ok(out_path);
@@ -1153,5 +1153,35 @@ mod tests {
             (t.walk.nodes, t.walk.depth, t.walk.bytes, t.step),
             (5, 3, 7, Duration::from_millis(9))
         );
+    }
+
+    #[test]
+    fn a_step_whose_kill_fails_says_so_and_is_not_waited_for() {
+        use crate::process::testing::ScriptedChild;
+        let mut child = ScriptedChild::new(Some(std::io::ErrorKind::Other), true);
+        let err = timed_out(&mut child, "install");
+        let PyEnvError::Step {
+            step,
+            status,
+            output,
+        } = err
+        else {
+            panic!("expected a step error, got {err:?}");
+        };
+        assert_eq!((step.as_str(), status.as_str()), ("install", "timed out"));
+        assert!(output.contains("could not be killed"), "{output}");
+        assert!(!child.waited, "a wait on a live step would block");
+    }
+
+    #[test]
+    fn a_step_that_is_killed_reports_only_the_timeout() {
+        use crate::process::testing::ScriptedChild;
+        let mut child = ScriptedChild::new(None, false);
+        let err = timed_out(&mut child, "install");
+        assert!(
+            matches!(&err, PyEnvError::Step { output, .. } if output.is_empty()),
+            "{err:?}"
+        );
+        assert!(child.waited);
     }
 }

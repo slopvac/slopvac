@@ -9,7 +9,7 @@
 
 use std::io;
 
-use crate::process::kill_child;
+use crate::process::kill_then_reap;
 #[cfg(unix)]
 use crate::process::signal_failed;
 use std::process::{Child, Command, ExitStatus};
@@ -107,15 +107,8 @@ impl Contained {
                 failure = Some(e);
             }
         }
-        match kill_child(&mut self.child) {
-            Ok(()) => {
-                if let Err(e) = self.child.wait() {
-                    failure.get_or_insert(e);
-                }
-            }
-            Err(e) => {
-                failure.get_or_insert(e);
-            }
+        if let Err(e) = kill_then_reap(&mut self.child) {
+            failure.get_or_insert(e);
         }
         failure.map_or(Ok(()), Err)
     }

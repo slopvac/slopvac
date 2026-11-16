@@ -656,10 +656,12 @@ impl Revocations {
         }
         let statement = client.fetch_blob_bytes(&self.source, list, widen(MAX_LIST_BYTES))?;
         let sig = client.fetch_blob_bytes(&self.source, sig, MAX_MINISIG_BYTES)?;
-        // `BadSignature` is a unit variant: it deliberately carries no detail.
-        let Ok(sig) = String::from_utf8(sig) else {
-            return Err(RevocationError::BadSignature);
-        };
+        // `BadSignature` is a unit variant: it deliberately carries no detail. The
+        // cause goes to the debug log without the bytes.
+        let sig = String::from_utf8(sig).map_err(|e| {
+            tracing::debug!(error = %e, "the revocation list signature is not UTF-8");
+            RevocationError::BadSignature
+        })?;
         Ok((statement, sig))
     }
 

@@ -2595,6 +2595,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "tracing",
  "unicode-normalization",
  "ureq",
  "winapi-util",
