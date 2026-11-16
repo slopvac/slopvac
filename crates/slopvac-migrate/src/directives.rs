@@ -169,18 +169,24 @@ fn rewrite_paragraph(
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && is_directive(comment) {
             let line = start_line + text[..start].matches('\n').count();
-            if let Some(new) = rewrite_comment(comment, line, renames, found) {
-                out.push_str(&new);
-            } else {
+            let directives = rewrite_comment(comment, line, renames, found);
+            let line_start = out.rfind('\n').map_or(0, |n| n + 1);
+            let rest = &text[end..];
+            let line_end = rest.find('\n').unwrap_or(rest.len());
+            let alone = out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty();
+            if directives.is_empty() {
                 // A deleted directive alone on its line takes the whole line with it.
-                let line_start = out.rfind('\n').map_or(0, |n| n + 1);
-                let rest = &text[end..];
-                let line_end = rest.find('\n').unwrap_or(rest.len());
-                if out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty() {
+                if alone {
                     out.truncate(line_start);
                     consumed = (end + line_end + 1).min(text.len());
                     continue;
                 }
+            } else if alone {
+                // The engine takes one rule per directive: one line each, same indent.
+                let sep = format!("\n{}", &out[line_start..]);
+                out.push_str(&directives.join(&sep));
+            } else {
+                out.push_str(&directives.join(" "));
             }
         } else {
             out.push_str(comment);
@@ -205,15 +211,18 @@ fn is_directive(comment: &str) -> bool {
     directive_body(comment).is_some()
 }
 
-/// Rewrite the comma-separated ids of a directive one by one. Returns `None` when
-/// every id was removed and the directive should go.
+/// Rewrite the comma-separated ids of a directive one by one, into one single-rule
+/// directive per surviving id: the 3.0 engine accepts one id per directive. The list is
+/// empty when every id was removed and the directive should go.
 fn rewrite_comment(
     comment: &str,
     line: usize,
     renames: &RenameTable,
     found: &mut Found,
-) -> Option<String> {
-    let body = directive_body(comment)?;
+) -> Vec<String> {
+    let Some(body) = directive_body(comment) else {
+        return vec![comment.to_owned()];
+    };
     let body_at = body.as_ptr() as usize - comment.as_ptr() as usize;
     let rule_at = body_at + (body.len() - body.trim_start().len());
     let value_start = rule_at + "rule=".len();
@@ -241,15 +250,9 @@ fn rewrite_comment(
             kept.push(id.to_owned());
         }
     }
-    if kept.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{}{}{}",
-        &comment[..value_start],
-        kept.join(","),
-        &tail[value_len..]
-    ))
+    kept.iter()
+        .map(|id| format!("{}{id}{}", &comment[..value_start], &tail[value_len..]))
+        .collect()
 }
 
 #[cfg(test)]
@@ -327,17 +330,27 @@ mod tests {
     }
 
     #[test]
-    fn a_removed_id_next_to_a_qualified_survivor_is_dropped() {
+    fn survivors_each_get_a_single_rule_directive_on_their_own_line() {
         let (out, found) = rewrite(&format!(
-            "<!-- slopvac-allow: rule=core:prose-format.no-unicode-dash,{GONE},prose-craft.latinisms reason=x -->\n"
+            "A\n  <!-- slopvac-allow: rule=core:prose-format.no-unicode-dash,{GONE},prose-craft.latinisms reason=x -->\nB\n"
         ));
         assert_eq!(
             out,
-            "<!-- slopvac-allow: rule=core:prose-format.no-unicode-dash,core:prose-craft.latinisms reason=x -->\n"
+            "A\n  <!-- slopvac-allow: rule=core:prose-format.no-unicode-dash reason=x -->\n  <!-- slopvac-allow: rule=core:prose-craft.latinisms reason=x -->\nB\n"
         );
         assert_eq!(removed_ids(&found), vec![GONE]);
     }
 
+    #[test]
+    fn inline_survivors_sit_next_to_each_other() {
+        let (out, _) = rewrite(
+            "Body <!-- slopvac-allow: rule=prose-format.no-unicode-dash,prose-craft.latinisms --> end.\n",
+        );
+        assert_eq!(
+            out,
+            "Body <!-- slopvac-allow: rule=core:prose-format.no-unicode-dash --> <!-- slopvac-allow: rule=core:prose-craft.latinisms --> end.\n"
+        );
+    }
     #[test]
     fn a_directive_whose_ids_are_all_removed_is_deleted() {
         let (out, found) = rewrite(&format!("<!-- slopvac-allow: rule={GONE},{GONE2} -->\nT\n"));
