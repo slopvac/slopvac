@@ -25,6 +25,10 @@ impl RenameTable {
     /// # Panics
     /// Never: a unit test checks the bundled file.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "bundled data is checked by the unit tests"
+    )]
     pub fn bundled() -> Self {
         Self::parse(BUNDLED).expect("bundled rename table parses")
     }
@@ -76,7 +80,7 @@ mod tests {
 
     #[test]
     fn bundled_table_parses() {
-        let _ = RenameTable::bundled();
+        let _table = RenameTable::bundled();
     }
 
     #[test]

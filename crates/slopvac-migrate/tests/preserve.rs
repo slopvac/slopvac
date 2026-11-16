@@ -3,6 +3,7 @@
 //!
 //! `tests/fixtures/generate.py` writes the vectors from the contract reference,
 //! `tests/contract/preserve_expansion.py`.
+#![cfg(test)]
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -45,7 +46,11 @@ fn layer(from: &Map<String, Value>, to: &mut Map<String, Value>) {
             .iter()
             .map(|(k, v)| match v {
                 Value::String(_) => (k.clone(), json!({ "severity": v })),
-                other => (k.clone(), other.clone()),
+                other @ (Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_)) => (k.clone(), other.clone()),
             })
             .collect();
         if !cats.is_empty() {

@@ -200,6 +200,10 @@ impl Cx<'_> {
 
 /// Expand a 2.x config. Every rule and category name must be in `legacy`, and every
 /// profile one of [`crate::legacy::PROFILES`]; the caller checks that first.
+#[expect(
+    clippy::expect_used,
+    reason = "every guard scope was built from a region scope in this function"
+)]
 pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, UnsupportedGlob> {
     let top = config.profile.as_str();
     let files: Vec<Vec<String>> = config.overrides.iter().map(|b| b.files.clone()).collect();

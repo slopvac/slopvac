@@ -1,4 +1,5 @@
 //! Config rewrite behavior.
+#![cfg(test)]
 
 use slopvac_migrate::{Error, Options, RenameTable, migrate_config};
 

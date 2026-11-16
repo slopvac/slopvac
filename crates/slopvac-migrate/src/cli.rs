@@ -58,7 +58,7 @@ pub fn run(
     match execute(matches, linter, steering, out) {
         Ok(()) => 0,
         Err(e) => {
-            let _ = writeln!(err, "error[{}]: {e}", e.code());
+            writeln!(err, "error[{}]: {e}", e.code()).ok();
             2
         }
     }

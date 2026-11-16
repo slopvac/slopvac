@@ -1,6 +1,7 @@
 //! Hardening cases from the config epic's review: unmappable members are reported,
 //! inline-array overrides migrate, rule-table comments survive, and this
 //! repository's own 2.x config round-trips.
+#![cfg(test)]
 
 use slopvac_migrate::{Error, Options, RenameTable, migrate_config};
 use toml_edit::{DocumentMut, Item};

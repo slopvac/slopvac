@@ -86,13 +86,13 @@ pub(crate) fn apply(
 
 fn override_tables(doc: &DocumentMut) -> Vec<&dyn TableLike> {
     match doc.get("overrides") {
-        Some(Item::ArrayOfTables(aot)) => aot.iter().map(|t| t as &dyn TableLike).collect(),
+        Some(Item::ArrayOfTables(aot)) => aot.iter().map(|t| -> &dyn TableLike { t }).collect(),
         Some(item) => item
             .as_array()
             .map(|arr| {
                 arr.iter()
                     .filter_map(Value::as_inline_table)
-                    .map(|t| t as &dyn TableLike)
+                    .map(|t| -> &dyn TableLike { t })
                     .collect()
             })
             .unwrap_or_default(),
@@ -186,10 +186,10 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
 
 fn note_dropped(expanded: &Expanded, ctx: &mut Ctx<'_>) {
     for d in &expanded.dropped {
-        let path = match d.block {
-            Some(i) => format!("overrides[{i}].rules.{}", d.rule),
-            None => format!("rules.{}", d.rule),
-        };
+        let path = d.block.map_or_else(
+            || format!("rules.{}", d.rule),
+            |i| format!("overrides[{i}].rules.{}", d.rule),
+        );
         ctx.notes.push(match d.reason {
             DropReason::Judgement => format!(
                 "dropped {path}: a judgement rule takes its review level from the legacy style"

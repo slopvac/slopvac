@@ -1,4 +1,5 @@
 //! Migrating a 2.x steering block writes what `slopvac setup` writes.
+#![cfg(test)]
 
 use std::fs;
 use std::path::Path;

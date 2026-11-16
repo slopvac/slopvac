@@ -1,4 +1,5 @@
 //! Project-level planning, apply, restore and the command.
+#![cfg(test)]
 
 use std::fs;
 use std::path::Path;

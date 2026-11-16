@@ -30,19 +30,16 @@ pub(crate) enum Scalar {
 impl Scalar {
     pub(crate) fn from_item(item: &Item) -> Option<Self> {
         let v = item.as_value()?;
-        if let Some(s) = v.as_str() {
-            Some(Self::Str(s.to_owned()))
-        } else if let Some(i) = v.as_integer() {
-            Some(Self::Int(i))
-        } else {
-            v.as_float().map(Self::Float)
-        }
+        v.as_str()
+            .map(|s| Self::Str(s.to_owned()))
+            .or_else(|| v.as_integer().map(Self::Int))
+            .or_else(|| v.as_float().map(Self::Float))
     }
 
     pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(s) => Some(s),
-            _ => None,
+            Self::Int(_) | Self::Float(_) => None,
         }
     }
 
@@ -96,6 +93,10 @@ pub(crate) struct Legacy {
     pub(crate) budgeted: BTreeSet<String>,
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "the profile was validated against PROFILES by the caller"
+)]
 fn profile_index(profile: &str) -> usize {
     PROFILES
         .iter()
@@ -108,6 +109,10 @@ pub(crate) fn category_of(qid: &str) -> &str {
     qid.split_once('.').map_or(qid, |(cat, _)| cat)
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "bundled data is checked by the unit tests"
+)]
 fn parse(text: &str) -> DocumentMut {
     text.parse().expect("bundled legacy data parses")
 }
@@ -134,6 +139,10 @@ pub(crate) fn read_dials(item: &Item) -> Option<Dials> {
         .collect()
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "bundled data is checked by the unit tests"
+)]
 fn style(text: &str) -> Layer {
     let doc = parse(text);
     let categories = doc
@@ -166,6 +175,10 @@ fn tier(t: &dyn TableLike, profile: &str) -> Tier {
 
 impl Legacy {
     /// The bundled data.
+    #[expect(
+        clippy::expect_used,
+        reason = "bundled data is checked by the unit tests"
+    )]
     pub(crate) fn bundled() -> Self {
         let styles = STYLES.map(style);
         let cat = parse(CATALOGUE);

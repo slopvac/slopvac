@@ -137,6 +137,10 @@ impl Error {
     /// Show a path outside `root` as `<external>/<file name>` and one inside as
     /// relative to it, so messages never carry absolute paths (policies, 1.7).
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "only Io carries a path; every other error passes through unchanged"
+    )]
     pub(crate) fn redacted(self, root: &std::path::Path) -> Self {
         match self {
             Self::Io { path, source } => {

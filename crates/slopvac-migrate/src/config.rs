@@ -606,7 +606,7 @@ fn walk(t: &dyn TableLike, prefix: &str, text: &str, out: &mut HashMap<String, u
                     }
                 }
             }
-            other => {
+            other @ (Item::None | Item::Value(_) | Item::Table(_)) => {
                 if let Some(tl) = other.as_table_like() {
                     walk(tl, &path, text, out);
                 }

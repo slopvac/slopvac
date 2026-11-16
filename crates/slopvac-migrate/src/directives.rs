@@ -178,20 +178,23 @@ fn rewrite_comment(
     if id.contains(':') {
         return comment.to_owned();
     }
-    if let Some(new) = renames.rule(id) {
-        format!(
-            "{}{}{}",
-            &comment[..id_start],
-            new,
-            &comment[id_start + id.len()..]
-        )
-    } else {
-        unknown.push(UnknownId {
-            id: id.to_owned(),
-            line,
-        });
-        comment.to_owned()
-    }
+    renames.rule(id).map_or_else(
+        || {
+            unknown.push(UnknownId {
+                id: id.to_owned(),
+                line,
+            });
+            comment.to_owned()
+        },
+        |new| {
+            format!(
+                "{}{}{}",
+                &comment[..id_start],
+                new,
+                &comment[id_start + id.len()..]
+            )
+        },
+    )
 }
 
 #[cfg(test)]

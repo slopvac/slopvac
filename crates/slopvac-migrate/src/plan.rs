@@ -131,6 +131,10 @@ fn rel(root: &Path, path: &Path) -> PathBuf {
     path.strip_prefix(root).unwrap_or(path).to_owned()
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "every other error passes through unchanged"
+)]
 fn plan_dir(
     root: &Path,
     dir: &Path,
@@ -236,6 +240,10 @@ enum Origin {
 
 /// Point the lines of a config error at `pyproject.toml` when the config came from
 /// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "every other error passes through unchanged"
+)]
 fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
     let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
         return e;
@@ -278,7 +286,7 @@ fn extract_tool_table(text: &str) -> Option<(String, String)> {
             t
         }
         Item::Value(Value::InlineTable(t)) => t.clone().into_table(),
-        _ => return None,
+        Item::None | Item::Value(_) | Item::ArrayOfTables(_) => return None,
     };
     let tool = doc.get_mut("tool")?.as_table_like_mut()?;
     tool.remove("slopvac");
@@ -346,7 +354,7 @@ pub fn render_diff(plan: &Plan) -> String {
             "/dev/null".to_owned()
         };
         let diff = TextDiff::from_lines(old, new);
-        let _ = write!(out, "{}", diff.unified_diff().header(&a, &b));
+        write!(out, "{}", diff.unified_diff().header(&a, &b)).ok();
     }
     out
 }
@@ -409,9 +417,9 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<(), Error> {
                 fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
             }
             fs::copy(&full, &dest).map_err(|e| Error::io(&full, e))?;
-            let _ = writeln!(manifest, "M {}", c.path.display());
+            writeln!(manifest, "M {}", c.path.display()).ok();
         } else {
-            let _ = writeln!(manifest, "C {}", c.path.display());
+            writeln!(manifest, "C {}", c.path.display()).ok();
         }
     }
     let mpath = backup.join("manifest.txt");

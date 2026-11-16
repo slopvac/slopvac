@@ -62,10 +62,9 @@ pub fn parse_glob(files: &[String]) -> Result<Glob, String> {
         ));
     };
     let unsupported = || format!("unsupported pattern {glob:?}");
-    let (body, tree) = match glob.strip_suffix("/**") {
-        Some(body) => (body, true),
-        None => (glob.as_str(), false),
-    };
+    let (body, tree) = glob
+        .strip_suffix("/**")
+        .map_or((glob.as_str(), false), |body| (body, true));
     if !glob.contains('/') {
         return Err(unsupported());
     }
