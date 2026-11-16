@@ -219,15 +219,81 @@ fn a_2x_config_lints_nothing_and_points_to_migrate() {
         .stderr(predicate::str::contains("slopvac migrate"));
 }
 
+/// One dead-opener warning (`It is important to note`) in a document long enough for the
+/// density gate to apply (60 words or more). By default it passes: score 90 or more, density
+/// under the budget.
+fn one_warning_in_a_long_document() -> String {
+    let paragraph = "The cat sat on the mat. The dog lay by the door.\n\n".repeat(7);
+    format!(
+        "# Title\n\nIt is important to note that the parser takes a week to write.\n\n{paragraph}"
+    )
+}
+
+/// The gate of the only document, from `--format json`, and the exit code.
+fn gate_with(path: &Path, flags: &[&str]) -> (Option<i32>, Vec<String>) {
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .args(flags)
+        .arg(path)
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    let gate = &report["documents"][0]["gate"];
+    let reasons = gate["reasons"]
+        .as_array()
+        .expect("reasons")
+        .iter()
+        .map(|r| r.as_str().expect("reason").to_owned())
+        .collect();
+    (out.status.code(), reasons)
+}
+
 #[test]
-fn command_line_options_override_the_files() {
+fn the_baseline_gate_of_the_warning_document_passes() {
+    let (_dir, path) = project("warn.md", &one_warning_in_a_long_document(), None);
+    let report = json_report(&path, &[]);
+    assert_eq!(rule_ids(&report), ["core:prose-craft.dead-opener"]);
+    assert_eq!(gate_with(&path, &[]), (Some(0), Vec::new()));
+}
+
+#[test]
+fn min_score_alone_fails_the_gate_with_its_own_reason() {
+    let (_dir, path) = project("warn.md", &one_warning_in_a_long_document(), None);
+    let (code, reasons) = gate_with(&path, &["--min-score", "100"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(reasons.len(), 1, "{reasons:?}");
+    assert!(
+        reasons[0].starts_with("score ") && reasons[0].ends_with("minimum 100.0"),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn max_per_100_words_alone_fails_the_gate_with_its_own_reason() {
+    let (_dir, path) = project("warn.md", &one_warning_in_a_long_document(), None);
+    let (code, reasons) = gate_with(&path, &["--max-per-100-words", "0.1"]);
+    assert_eq!(code, Some(1));
+    // The baseline has no reason at all, so this one comes from the option. A lower density
+    // budget also lowers the score, so the score reason may follow it.
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r.contains("severity-weighted findings per 100 words, budget 0.1")),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn relaxed_numeric_options_replace_the_profile_thresholds() {
     let (_dir, path) = project("bad.md", SLOPPY, None);
-    slopvac()
-        .args(["lint", "--min-score", "0", "--max-per-100-words", "1000"])
-        .arg(&path)
-        .assert()
-        .code(1);
-    // The error-count threshold still fails the run: only the options given were relaxed.
+    let (_, reasons) = gate_with(&path, &["--min-score", "0", "--max-per-100-words", "1000"]);
+    // Only the error-count limit of the profile is left.
+    assert_eq!(reasons, ["7 error(s), limit 0"]);
+}
+
+#[test]
+fn disable_and_category_select_rules() {
+    let (_dir, path) = project("bad.md", SLOPPY, None);
     let ids = rule_ids(&json_report(&path, &["--disable", "prose-inflation"]));
     assert!(
         !ids.iter().any(|id| id.contains("prose-inflation")),
@@ -238,6 +304,199 @@ fn command_line_options_override_the_files() {
         !only.is_empty() && only.iter().all(|id| id.starts_with("core:orwell.")),
         "{only:?}"
     );
+}
+
+#[test]
+fn an_unknown_category_or_rule_name_is_a_usage_error() {
+    let (_dir, path) = project("bad.md", SLOPPY, None);
+    slopvac()
+        .args(["lint", "--disable", "no-such-category"])
+        .arg(&path)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[usage]"));
+}
+
+#[test]
+fn a_config_that_names_an_unknown_rule_or_category_is_rejected() {
+    for (config, code) in [
+        (
+            "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
+            "error[config-unknown-rule]",
+        ),
+        (
+            "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+            "error[config-unknown-category]",
+        ),
+    ] {
+        let (_dir, path) = project("bad.md", SLOPPY, Some(config));
+        slopvac()
+            .arg("lint")
+            .arg(&path)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(code))
+            .stderr(predicate::str::contains("slopvac.toml"));
+    }
+}
+
+#[test]
+fn bare_rule_keys_and_qualified_category_keys_in_config_apply() {
+    let config = "schema_version = 3\n\n[rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n\n[categories]\n\"core:orwell\" = \"off\"\n";
+    let (_dir, path) = project("bad.md", SLOPPY, Some(config));
+    let ids = rule_ids(&json_report(&path, &[]));
+    assert!(!ids.iter().any(|id| id.contains("slop-lexicon")), "{ids:?}");
+    assert!(
+        !ids.iter().any(|id| id.starts_with("core:orwell.")),
+        "{ids:?}"
+    );
+    assert!(ids.iter().any(|id| id.contains("ste-words")), "{ids:?}");
+}
+
+#[test]
+fn a_missing_config_file_is_an_unsuccessful_sarif_run() {
+    let (dir, path) = project("ok.md", CLEAN, None);
+    let out = slopvac()
+        .args(["lint", "--format", "sarif", "--config"])
+        .arg(dir.path().join("missing.toml"))
+        .arg(&path)
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let log: Value = serde_json::from_slice(&out).expect("sarif json");
+    let invocation = &log["runs"][0]["invocations"][0];
+    assert_eq!(invocation["executionSuccessful"], false);
+    let notifications = invocation["toolExecutionNotifications"]
+        .as_array()
+        .expect("notifications");
+    assert_eq!(notifications.len(), 1, "{notifications:?}");
+}
+
+#[test]
+fn a_run_that_could_not_start_reports_a_notice_in_json() {
+    let (dir, path) = project("ok.md", CLEAN, None);
+    let out = slopvac()
+        .args(["lint", "--format", "json", "--config"])
+        .arg(dir.path().join("missing.toml"))
+        .arg(&path)
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(report["notices"][0]["level"], "warning");
+}
+
+/// A sentinel directory outside the working directory.
+fn outside() -> (tempfile::TempDir, String) {
+    let dir = tempfile::Builder::new()
+        .prefix("sentinel-")
+        .tempdir()
+        .expect("tempdir");
+    let name = dir
+        .path()
+        .file_name()
+        .expect("name")
+        .to_string_lossy()
+        .into_owned();
+    (dir, name)
+}
+
+#[test]
+fn error_messages_and_notices_never_show_an_absolute_path() {
+    let (dir, sentinel) = outside();
+    let doc = dir.path().join("notes.md");
+    fs::write(&doc, CLEAN).expect("write");
+    // A prose file in comment mode is an unsupported source: a typed discovery error.
+    let out = slopvac()
+        .args(["lint", "--mode", "code-comments", "--format", "json"])
+        .arg(&doc)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let everything = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!everything.contains(&sentinel), "{everything}");
+    assert!(everything.contains("<external>/notes.md"), "{everything}");
+}
+
+#[test]
+fn files_outside_the_project_with_the_same_name_keep_separate_identities() {
+    let (a, _) = outside();
+    let (b, _) = outside();
+    fs::write(a.path().join("doc.md"), CLEAN).expect("write");
+    fs::write(b.path().join("doc.md"), SLOPPY).expect("write");
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(a.path().join("doc.md"))
+        .arg(b.path().join("doc.md"))
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json");
+    let paths: Vec<&str> = report["documents"]
+        .as_array()
+        .expect("documents")
+        .iter()
+        .map(|d| d["path"].as_str().expect("path"))
+        .collect();
+    assert_eq!(paths, ["<external>/doc.md", "<external>/2/doc.md"]);
+    // The text format reads the document's own text for each finding position.
+    let text = slopvac()
+        .arg("lint")
+        .arg(a.path().join("doc.md"))
+        .arg(b.path().join("doc.md"))
+        .output()
+        .expect("run");
+    assert!(String::from_utf8_lossy(&text.stdout).contains("<external>/2/doc.md:3:4"));
+}
+
+#[test]
+fn exclusions_apply_when_the_config_is_named_with_config() {
+    let config = "schema_version = 3\nexclude = [\"bad.md\"]\n";
+    let (dir, path) = project("bad.md", SLOPPY, Some(config));
+    let out = slopvac()
+        .args(["lint", "--format", "json", "--config"])
+        .arg(dir.path().join("slopvac.toml"))
+        .arg(&path)
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(report["summary"]["documents"], 0);
+}
+
+/// A repository outside the working directory that ships its own `python3` must not get to
+/// run it while an RST file is linted.
+#[cfg(unix)]
+#[test]
+fn a_python_in_the_linted_repository_is_never_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let repo = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(repo.path().join(".git")).expect("git dir");
+    let bin = repo.path().join("bin");
+    fs::create_dir(&bin).expect("bin");
+    let marker = repo.path().join("executed");
+    let script = format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display());
+    for name in ["python3", "python"] {
+        let tool = bin.join(name);
+        fs::write(&tool, &script).expect("write tool");
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let docs = repo.path().join("docs");
+    fs::create_dir(&docs).expect("docs");
+    fs::write(docs.join("a.rst"), "Title\n=====\n\nText.\n").expect("write");
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    // The run is incomplete without an interpreter: what matters is what did not run.
+    slopvac()
+        .env("PATH", path)
+        .env_remove("SLOPVAC_RST_CONVERTER")
+        .arg("lint")
+        .arg(docs.join("a.rst"))
+        .assert()
+        .code(2);
+    assert!(!marker.exists(), "the repository's python3 was executed");
 }
 
 #[test]

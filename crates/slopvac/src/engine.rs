@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slopvac_config::{ConfigError, Discovery, Inputs, LoadedConfig, NoPresets};
+use slopvac_config::{ConfigError, Discovery, LoadedConfig, NoPresets};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{Engine, Input, Kind};
 use slopvac_model::{
@@ -99,6 +99,8 @@ struct Item {
     kind: Kind,
     /// Config of the file and the file's path relative to the config root.
     config: Option<(Arc<LoadedConfig>, PathBuf)>,
+    /// The directory that holds the file, canonical. Not set for standard input.
+    dir: Option<PathBuf>,
 }
 
 /// The run so far.
@@ -198,6 +200,15 @@ impl Linter for EngineLinter {
 
 /// An outcome for a run that could not start.
 fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+    // The report must not read as a clean run: a notice marks it unsuccessful.
+    run.notices.push(Notice {
+        code: KebabName::new(error.code)
+            .unwrap_or_else(|_| KebabName::new("lint-failed").expect("lint-failed is kebab-case")),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new(error.message.clone())
+            .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
+        path: None,
+    });
     run.incomplete.push(error.clone());
     RunOutcome {
         incomplete: run.incomplete,
@@ -216,7 +227,50 @@ fn collect(
         collect_stdin(request, bytes, configs, run, &mut items)?;
     }
     collect_targets(request, configs, run, &mut items)?;
+    unique_identities(&mut items);
     Ok(items)
+}
+
+/// Two files outside the project can share a redacted name such as `<external>/a.md`. Each
+/// keeps a distinct identity in the report, so one does not replace the other in the source
+/// map that column-aware formats read.
+fn unique_identities(items: &mut [Item]) {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for item in items {
+        let count = seen.entry(item.shown.clone()).or_insert(0);
+        *count += 1;
+        if *count > 1 {
+            item.shown = match item.shown.strip_prefix("<external>/") {
+                Some(rest) => format!("<external>/{count}/{rest}"),
+                None => format!("{}#{count}", item.shown),
+            };
+        }
+    }
+}
+
+/// A discovery failure as one line, with paths in the form every other message uses.
+fn discover_message(err: &DiscoverError, root: &Path) -> String {
+    let shown = |path: &Path| redact::shown_path(path, root);
+    match err {
+        DiscoverError::NoSuchTarget(target) => {
+            format!("{}: not found", shown(Path::new(target)))
+        }
+        DiscoverError::UnsupportedSource { path, message } => {
+            format!("{}: {message}", shown(path))
+        }
+        DiscoverError::TooManyAlternatives { pattern, limit } => {
+            format!(
+                "glob {} expands to more than {limit} alternatives",
+                shown(Path::new(pattern))
+            )
+        }
+        DiscoverError::InvalidGlob { pattern, .. } => {
+            format!("invalid glob {}", shown(Path::new(pattern)))
+        }
+        DiscoverError::Walk { path, .. } => {
+            format!("{}: cannot walk the directory", shown(path))
+        }
+    }
 }
 
 fn collect_stdin(
@@ -237,6 +291,7 @@ fn collect_stdin(
             text,
             kind,
             config: config_for(configs, &request.root, Path::new(shown))?,
+            dir: None,
         }),
         (Err(why), _) => run.skip("input-unsupported", shown, format!("{shown}: {why}")),
         (_, Err(_)) => run.skip("input-not-utf8", shown, format!("{shown}: not valid UTF-8")),
@@ -266,19 +321,11 @@ fn collect_targets(
             },
         ) {
             Ok(found) => found,
-            Err(DiscoverError::NoSuchTarget(_)) => {
-                run.skip(
-                    "input-unreadable",
-                    &shown_target,
-                    format!("{shown_target}: not found"),
-                );
-                continue;
-            }
             Err(err) => {
                 run.skip(
                     "input-unreadable",
                     &shown_target,
-                    format!("{shown_target}: {err}"),
+                    discover_message(&err, &request.root),
                 );
                 continue;
             }
@@ -324,9 +371,9 @@ fn collect_targets(
                 continue;
             };
             let config = config_for(configs, &request.root, &canonical)?;
+            // Exclusions apply whether the config was found or named with `--config`.
             if let Some((loaded, rel)) = &config
                 && loaded.is_excluded(rel)
-                && request.config.is_none()
             {
                 continue;
             }
@@ -335,6 +382,7 @@ fn collect_targets(
                 text,
                 kind,
                 config,
+                dir: canonical.parent().map(Path::to_path_buf),
             });
         }
     }
@@ -377,27 +425,25 @@ fn group_by_settings(
     rules: &slopvac_rules::RuleSet,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
+    // Each config is canonicalised against the catalogue once.
+    let mut canonical: HashMap<PathBuf, LoadedConfig> = HashMap::new();
+    let none = LoadedConfig::without_files(request.root.clone());
     for (index, item) in items.iter().enumerate() {
-        let resolved = item.config.as_ref().map(|(config, rel)| {
-            config.resolve(
-                rel,
-                &Inputs {
-                    presets: &NoPresets,
-                    front_matter: &[],
-                    directives: &[],
-                    cli: &[],
-                    env: &[],
-                },
-            )
-        });
-        let files = item
-            .config
-            .as_ref()
-            .map(|(config, _)| config_files(config))
-            .unwrap_or_default();
+        let (config, rel) = match &item.config {
+            Some((config, rel)) => (config.as_ref(), rel.clone()),
+            None => (&none, PathBuf::from(&item.shown)),
+        };
+        if !canonical.contains_key(&config.root) {
+            canonical.insert(
+                config.root.clone(),
+                lint_settings::canonical_config(config, rules)?,
+            );
+        }
+        let resolved = lint_settings::resolve(&canonical[&config.root], &rel, rules);
+        let files = config_files(config);
         let settings = lint_settings::build(
             rules,
-            resolved.as_ref(),
+            &resolved,
             lint_settings::config_sources(&files),
             &request.overrides,
         )?;
@@ -408,6 +454,32 @@ fn group_by_settings(
             .push(index);
     }
     Ok(groups)
+}
+
+/// The directories an RST interpreter is never taken from: the working directory, the
+/// directory of every input and of every named directory, and the repository root of each.
+/// A repository outside the working directory is untrusted code, and a `python` it ships on
+/// `PATH` must not run.
+fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = vec![request.root.clone()];
+    let mut starts: Vec<PathBuf> = items.iter().filter_map(|i| i.dir.clone()).collect();
+    for target in &request.targets {
+        let absolute = request.root.join(target);
+        if let Ok(dir) = std::fs::canonicalize(&absolute)
+            && dir.is_dir()
+        {
+            starts.push(dir);
+        }
+    }
+    for start in starts {
+        if let Some(repo) = start.ancestors().find(|d| d.join(".git").exists()) {
+            roots.push(repo.to_path_buf());
+        }
+        roots.push(start);
+    }
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 /// A config that lists `styles` asks for presets that no pack supplies yet
@@ -453,7 +525,7 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutco
             Err(err) => return failed(request, run, &err),
         };
         let engine = match Engine::new(vec![set], settings) {
-            Ok(engine) => engine.with_project_roots(vec![request.root.clone()]),
+            Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => {
                 return failed(
                     request,
@@ -524,25 +596,15 @@ pub fn project_settings(
     let presets = NoPresets;
     let discovery = Discovery::new(&presets);
     let found = discovery.nearest(root).map_err(|e| config_error(&e))?;
-    let (resolved, files) = match &found {
-        Some(config) => (
-            Some(config.resolve(
-                Path::new(""),
-                &Inputs {
-                    presets: &presets,
-                    front_matter: &[],
-                    directives: &[],
-                    cli: &[],
-                    env: &[],
-                },
-            )),
-            config_files(config),
-        ),
-        None => (None, Vec::new()),
+    let (config, files) = match &found {
+        Some(config) => (config.as_ref().clone(), config_files(config)),
+        None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
     };
+    let config = lint_settings::canonical_config(&config, &rules)?;
+    let resolved = lint_settings::resolve(&config, Path::new(""), &rules);
     let settings = lint_settings::build(
         &rules,
-        resolved.as_ref(),
+        &resolved,
         lint_settings::config_sources(&files),
         &Overrides::default(),
     )?;

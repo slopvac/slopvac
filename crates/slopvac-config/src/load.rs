@@ -103,6 +103,35 @@ impl LoadedConfig {
             })
     }
 
+    /// A config with no files, for a project that has none: only the core defaults apply and
+    /// nothing is excluded. `root` is the directory that stands in for the project root.
+    #[must_use]
+    pub fn without_files(root: PathBuf) -> Self {
+        Self {
+            root,
+            files: Vec::new(),
+            exclude: Gitignore::empty(),
+        }
+    }
+
+    /// A copy with `settings` as a style layer under every config file, so the project
+    /// config, its overrides and the flags outrank them. `display` names the layer in
+    /// provenance.
+    #[must_use]
+    pub fn with_base_style(&self, display: &str, settings: Vec<Setting>) -> Self {
+        let mut out = self.clone();
+        out.files.insert(
+            0,
+            ConfigFile {
+                display: display.to_owned(),
+                layer: Layer::Style,
+                settings,
+                blocks: Vec::new(),
+            },
+        );
+        out
+    }
+
     /// Whether `rel`, a path relative to the project root, is outside the lint run.
     #[must_use]
     pub fn is_excluded(&self, rel: &Path) -> bool {

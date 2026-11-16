@@ -7,11 +7,11 @@ use slopvac_model::{
     Score,
 };
 
-/// Round half away from zero to `places` decimals, as Python's `round` does for these
-/// values closely enough for a report.
-fn round(value: f64, places: i32) -> f64 {
-    let scale = 10f64.powi(places);
-    (value * scale).round() / scale
+/// Round to `places` decimals the way Python's `round` does: half to even, judged on the exact
+/// value of the float. The exact decimal expansion that Rust's formatter rounds is that value,
+/// so a tie such as 96.25 goes to 96.2 and 2.675, which sits just below its tie, to 2.67.
+fn round(value: f64, places: usize) -> f64 {
+    format!("{value:.places$}").parse().unwrap_or(value)
 }
 
 fn density(value: f64) -> Density {
@@ -118,6 +118,25 @@ mod tests {
         assert_eq!((s.documents, s.words, s.findings), (0, 0, 0));
         assert!((s.score.get() - 100.0).abs() < f64::EPSILON);
         assert!(s.passed);
+    }
+
+    #[test]
+    fn rounding_matches_python_round_half_even_on_the_float() {
+        // Expected values from Python 3: round(96.25, 1) == 96.2, round(0.125, 2) == 0.12,
+        // round(2.675, 2) == 2.67, round(1.115, 2) == 1.11, round(92.5, 0) == 92.0.
+        for (value, places, expected) in [
+            (96.25, 1, 96.2),
+            (0.125, 2, 0.12),
+            (2.675, 2, 2.67),
+            (1.115, 2, 1.11),
+            (92.5, 0, 92.0),
+            (93.5, 0, 94.0),
+        ] {
+            assert!(
+                (round(value, places) - expected).abs() < 1e-12,
+                "{value} to {places} places"
+            );
+        }
     }
 
     #[test]
