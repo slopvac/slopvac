@@ -29,5 +29,5 @@ pub use presets::{NoPresets, PackFile, Presets};
 pub use resolve::{
     Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,
 };
-pub use schema::{validate_config, validate_frontmatter};
+pub use schema::{validate_config, validate_frontmatter, validate_style};
 pub use source::{Layer, Setting, Source};

@@ -19,8 +19,8 @@ concurrency:
 jobs:
   measure:
     name: Measure (${{ matrix.os }})
-    # linux-arm64 and macOS arm64 cover the targets users install on; Windows
-    # lacks the wait4 call the harness uses for peak RSS.
+    # linux-arm64 and macOS arm64 cover the targets users install on.
+    # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:

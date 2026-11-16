@@ -12,8 +12,8 @@ so that is command injection. This script rewrites the generated text:
 * the root token is read-only, and only the host job may write contents;
 * the host job re-resolves the tag on the remote right before it publishes and
   fails unless it still points at the commit the workflow runs on (CWE-367);
-* the Windows build step runs under bash, where `$TAG_FLAG` is an environment
-  variable (under PowerShell it expands to nothing);
+* the build step runs under bash with `$TAG_FLAG` and `$DIST_ARGS` as environment
+  variables, not as `${{ }}` text;
 * the CycloneDX step output is read as `outputs`, which dist spells `output`;
 * artifacts are signed with minisign before they reach the draft release;
 * the Homebrew job pushes with a token minted from the release App, not a stored secret.

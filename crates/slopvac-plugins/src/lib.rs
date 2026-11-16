@@ -10,7 +10,8 @@
 //! model ([`lock`]: strict reader, canonical writer, drift diff and the
 //! `outdated` query), [`sync`] (install the lock, status, CI check), the pack
 //! [`index`] reader, builder and search, the [`trust`] store and spawn
-//! gate, and the signed revocation list with its cache ([`revoke`]).
+//! gate, the signed revocation list with its cache ([`revoke`]), and
+//! managed Python environments for plugins ([`pyenv`]).
 
 pub mod api;
 pub mod apply;
@@ -24,6 +25,7 @@ pub mod lock;
 pub mod oci;
 pub mod process;
 pub mod protocol;
+pub mod pyenv;
 pub mod revoke;
 pub mod sign;
 pub mod strict;

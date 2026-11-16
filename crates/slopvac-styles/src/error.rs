@@ -17,21 +17,16 @@ pub enum StyleError {
         /// Parser message with position.
         message: String,
     },
-    /// The file has a key the shape does not define.
-    #[error("style `{style}`: unknown key `{key}`")]
-    UnknownKey {
+    /// The file breaks the style schema: an unknown key, a wrong value, or a
+    /// `schema_version` other than 3.
+    #[error("style `{style}` is invalid:\n{rendered}")]
+    Invalid {
         /// Style name.
         style: String,
-        /// Offending key.
-        key: String,
-    },
-    /// The file declares an unsupported `schema_version`.
-    #[error("style `{style}`: schema_version {found} is not supported, expected 3")]
-    SchemaVersion {
-        /// Style name.
-        style: String,
-        /// Version found.
-        found: u32,
+        /// `(code, JSON pointer)` of each problem, such as `("config-unknown-key", "/foo")`.
+        problems: Vec<(String, String)>,
+        /// The problems rendered with source snippets.
+        rendered: String,
     },
     /// `extends` forms a cycle.
     #[error("style extends cycle: {}", .0.join(" -> "))]

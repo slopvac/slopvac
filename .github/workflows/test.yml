@@ -7,15 +7,25 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The merge queue builds each entry on gh-readonly-queue/main/pr-N-<sha>. The
+  # event carries no pull_request payload; the diff base is
+  # github.event.merge_group.base_sha, which dorny/paths-filter reads natively.
   merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
   pull-requests: read
 
+# Pull requests key on their number, and a newer push cancels the older run.
+# Pushes to main key on the commit and queue entries on their ref, which embeds
+# the PR number and head SHA. Those runs therefore never share a group, and they
+# are never cancelled: a shared group would still drop a pending run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ci-${{ github.event.pull_request.number ||
+    (github.event_name == 'push' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -151,6 +161,8 @@ jobs:
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -172,6 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
         include:
           - name: linux-x64
             os: ubuntu-latest
@@ -189,8 +202,6 @@ jobs:
             os: macos-latest
           - name: macos-x64
             os: macos-15-intel
-          - name: windows-x64
-            os: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -215,6 +226,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
@@ -236,7 +248,7 @@ jobs:
 
       # The managed-Python plugin tests build real uv environments. With SLOPVAC_PYENV_LIVE
       # set, they fail instead of skipping when uv is missing. Managed environments are
-      # refused on Windows, so only linux-x64 runs them. The cache holds uv's downloaded
+      # needs the Linux toolchain, so only linux-x64 runs them. The cache holds uv's downloaded
       # CPython builds, scoped to the ref by GitHub's standard cache rules.
       - name: Install uv for the managed-Python tests
         if: matrix.name == 'linux-x64'
@@ -297,6 +309,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: msrv
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
         run: cargo "+$MSRV" check --workspace --all-targets --locked
@@ -430,7 +443,7 @@ jobs:
           import json
           payload = json.load(open("/tmp/rules.json"))
           kinds = [rule["kind"] for rule in payload["rules"]]
-          assert len(kinds) == 237
+          assert len(kinds) == 238
           assert kinds.count("judgement") == 68
           assert all(
               rule["judgement_question"]

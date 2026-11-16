@@ -13,6 +13,7 @@ use minijinja::syntax::SyntaxConfig;
 use minijinja::{Environment, UndefinedBehavior, Value, context};
 
 use crate::error::AgentsError;
+use crate::guidance::Guidance;
 use crate::harness;
 use crate::models::{self, Evals};
 use crate::review::{Approval, ReviewType};
@@ -326,7 +327,7 @@ pub fn command() -> Command {
                 .long("config")
                 .value_name("FILE")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Config file that sets guidance"),
+                .help("Config file whose [guidance] table sets the level; --level overrides it"),
         )
 }
 
@@ -336,9 +337,12 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
     let level = match matches.get_one::<String>("level").map(String::as_str) {
         Some("minimal") => Level::Minimal,
         Some("full") => Level::Full,
-        _ => Level::Default,
+        Some(_) => Level::Default,
+        None => {
+            let config = matches.get_one::<PathBuf>("config").map(PathBuf::as_path);
+            Guidance::load(root, config)?.level
+        }
     };
-    // STUB(slopvac-8l4.11.6): read `[guidance] level` from the config file once slopvac-config exists.
     let settings = Settings {
         level,
         review_type: matches

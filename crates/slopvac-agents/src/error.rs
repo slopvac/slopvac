@@ -31,6 +31,14 @@ pub enum AgentsError {
         /// The message.
         message: String,
     },
+    /// The config could not be loaded; the code is the config crate's.
+    #[error("{message}")]
+    Config {
+        /// The `config-*` code.
+        code: &'static str,
+        /// The rendered diagnostics.
+        message: String,
+    },
     /// An I/O failure.
     #[error("{path}: {source}")]
     Io {
@@ -61,7 +69,7 @@ impl AgentsError {
             Self::Conflict(_) => "steering-conflict",
             Self::NotManaged(_) => "steering-not-managed",
             Self::Usage(_) => "setup-usage",
-            Self::Coded { code, .. } => code,
+            Self::Coded { code, .. } | Self::Config { code, .. } => code,
             Self::Io { .. } => "setup-io",
         }
     }

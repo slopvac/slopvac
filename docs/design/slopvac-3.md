@@ -152,6 +152,7 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
 
 - cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).
 - maturin wheels keep `uvx slopvac` as the documented default.
+- Platforms: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Decided 2026-11-16: 3.0 has no native Windows build. Windows users run the Linux build under WSL, and native Windows is a 3.x feature (decision 26 of the architecture record). This supersedes the earlier Windows target and PowerShell installer.
 - Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable. In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.
 - Releases carry minisign signatures. GitHub attestations, an SBOM, and an auditable binary come with each release.
 - `slopvac self update` runs for installs made by our installer. Other installs print the matching upgrade command.
@@ -203,7 +204,7 @@ An adversarial review of this plan and its beads found these gaps. Each one now 
 - **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.
 - **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests. The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.
 - **Plugin security:** a threat model and an independent review before the plugin host and OCI client close. The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.
-- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.
+- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across macOS, glibc, and musl, and prove a match-limit mechanism.
 - **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged. A Rust port of the `prose` tagger passed, with 99.1% exact tag match. Only the opt-in vocabulary blocklist check depends on POS. The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).
 - **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.
 - **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16. Agree these before fixes and suggestions ship.
