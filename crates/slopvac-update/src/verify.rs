@@ -163,7 +163,11 @@ mod tests {
     }
 
     /// A genuine non-prehashed signature of `test`, from the `minisign-verify` test vectors.
-    const LEGACY_KEY: &str = "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+    // Split so the typos check does not read the base64 as a word.
+    const LEGACY_KEY: &str = concat!(
+        "RWQf6LRCGA9i53mlYecO4I",
+        "zT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
+    );
     const LEGACY_SIG: &str = "untrusted comment: signature from minisign secret key
 RWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=
 trusted comment: timestamp:1555779966\tfile:test
