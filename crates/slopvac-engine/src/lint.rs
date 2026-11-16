@@ -20,7 +20,7 @@ use slopvac_model::{
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
-use slopvac_terms::Blocklist;
+use slopvac_terms::{Blocklist, TermSet};
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
@@ -37,7 +37,9 @@ use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
 use crate::tagging;
+use crate::terms;
 
+mod casing;
 mod vocabulary;
 use vocabulary::Vocabulary;
 
@@ -188,6 +190,10 @@ pub struct Engine {
     vocabulary_rules: Vec<Active>,
     /// The blocklist sweep and the notices about it.
     vocabulary: Vocabulary,
+    /// Term-casing rules that run.
+    casing_rules: Vec<Active>,
+    /// The terms the casing rules enforce.
+    pub(crate) terms: TermSet,
     /// Metric rules that run.
     metrics: Vec<Active>,
     /// Diagram rules that run, by id.
@@ -285,6 +291,8 @@ impl Engine {
             active: Vec::new(),
             vocabulary_rules: Vec::new(),
             vocabulary: Vocabulary::default(),
+            casing_rules: Vec::new(),
+            terms: TermSet::default(),
             metrics: Vec::new(),
             diagram_rules: HashMap::new(),
             signal_rules: Vec::new(),
@@ -296,6 +304,9 @@ impl Engine {
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
+        if !engine.casing_rules.is_empty() {
+            engine.terms = TermSet::builtin();
+        }
         engine.add_signal_checker();
         engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
@@ -307,6 +318,15 @@ impl Engine {
         self.plan_vocabulary(blocklist)?;
         self.blocklist = blocklist.clone();
         Ok(self)
+    }
+
+    /// Set the terms that the term-casing rules enforce, replacing the built-in list. Build
+    /// the set from the project's terms files, the built-in list or both. Words in
+    /// `Settings::allowed_words` are never flagged.
+    #[must_use]
+    pub fn with_terms(mut self, terms: TermSet) -> Self {
+        self.terms = terms;
+        self
     }
 
     /// Replace the exception detectors.
@@ -467,7 +487,14 @@ impl Engine {
                             }
                         }
                         MatchKind::Vocabulary => {
-                            self.vocabulary_rules.push(Active::new(s, c, r, severity));
+                            let casing =
+                                matches!(&rule.match_, Match::Vocabulary(v) if terms::is_casing(v));
+                            let list = if casing {
+                                &mut self.casing_rules
+                            } else {
+                                &mut self.vocabulary_rules
+                            };
+                            list.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Capitalization => {
                             *unrun.entry(CAPITALIZATION).or_default() += 1;
@@ -505,6 +532,7 @@ impl Engine {
         let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
         let executes = self.active.iter().any(|a| at(&a))
             || self.metrics.iter().any(|a| at(&a))
+            || self.casing_rules.iter().any(|a| at(&a))
             || owner.is_some_and(|a| at(&a));
         if executes {
             None
@@ -602,6 +630,7 @@ impl Engine {
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
+        findings.extend(run.term_casing()?);
         findings.extend(run.metrics()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
