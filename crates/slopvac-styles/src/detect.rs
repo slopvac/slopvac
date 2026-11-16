@@ -142,16 +142,27 @@ fn read(root: &Path, name: &str) -> Option<String> {
     if !path.starts_with(&root) {
         return None;
     }
-    let file = open_nonblocking(&path).ok()?;
-    if !file.metadata().ok()?.is_file() {
-        return None;
-    }
+    let file = open_regular(&path).ok()?;
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1).read_to_end(&mut bytes).ok()?;
     if bytes.len() as u64 > MAX_BYTES {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+
+/// Open `path` for reading and require the opened handle to be a regular file.
+///
+/// This does no metadata check on the path first. The open must not block on a
+/// FIFO, and the type is read from the handle, so a file swapped between a check and
+/// the open cannot change what is read.
+pub(crate) fn open_regular(path: &Path) -> std::io::Result<std::fs::File> {
+    let file = open_nonblocking(path)?;
+    if file.metadata()?.is_file() {
+        Ok(file)
+    } else {
+        Err(std::io::Error::other("not a regular file"))
+    }
 }
 
 /// Open for reading. On unix the open does not block on a FIFO.
@@ -251,6 +262,8 @@ const NEGATIONS: &[&str] = &[
     "unlike",
     "instead of",
     "rather than",
+    " without ",
+    " except ",
 ];
 
 /// Words that make a mention an example when they come anywhere before it on the line.
@@ -272,11 +285,34 @@ fn adopted(lower: &str, phrase: &str) -> bool {
         }
         let start = CLAUSE_BREAKS
             .iter()
-            .filter_map(|b| before.rfind(b).map(|i| i + b.len()))
+            .flat_map(|b| lower[..at].match_indices(b).map(move |(i, _)| (i, *b)))
+            .filter(|(i, b)| *b != "," || !starts_with_guide(&lower[i + 1..]))
+            .map(|(i, b)| i + b.len())
             .max()
             .unwrap_or(0);
         let clause = format!(" {}", &before[start..]);
         !NEGATIONS.iter().any(|n| clause.contains(n))
+    })
+}
+
+/// Whether `after` (the text after a comma) starts another guide name, optionally
+/// behind "and", "or", "and/or" or "the". Such a comma separates a list of guides and
+/// does not end the clause, so a rejection before the list covers every item.
+fn starts_with_guide(after: &str) -> bool {
+    let mut rest = after.trim_start();
+    for lead in ["and/or ", "and ", "or "] {
+        if let Some(r) = rest.strip_prefix(lead) {
+            rest = r.trim_start();
+            break;
+        }
+    }
+    rest = rest.strip_prefix("the ").unwrap_or(rest);
+    GUIDES.iter().any(|g| {
+        g.phrases.iter().any(|p| rest.starts_with(p))
+            || g.vale_names.iter().any(|n| {
+                rest.strip_prefix(n)
+                    .is_some_and(|tail| !tail.starts_with(|c: char| c.is_alphanumeric()))
+            })
     })
 }
 
@@ -357,4 +393,42 @@ fn style_section_lines(text: &str) -> Vec<usize> {
         }
     }
     lines
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::open_regular;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Regression for the open race: a FIFO at the path is what a swap would leave.
+    /// A plain `File::open` on it blocks until a writer appears.
+    #[test]
+    fn opening_a_fifo_returns_promptly_with_not_a_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(open_regular(&fifo).map(|_| ()));
+        });
+        let result = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("open_regular blocked on a FIFO");
+        assert_eq!(result.unwrap_err().to_string(), "not a regular file");
+    }
+
+    #[test]
+    fn opening_a_regular_file_works() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f");
+        std::fs::write(&file, "x").unwrap();
+        assert!(open_regular(&file).is_ok());
+    }
 }

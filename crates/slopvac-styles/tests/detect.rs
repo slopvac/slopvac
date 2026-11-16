@@ -343,3 +343,70 @@ fn a_cue_before_the_guide_in_its_clause_rejects_it() {
         );
     }
 }
+
+fn presets(line: &str) -> Vec<Option<String>> {
+    let dir = repo(&[("STYLE.md", &format!("{line}\n"))]);
+    detect_house_styles(dir.path())
+        .into_iter()
+        .map(|s| s.preset)
+        .collect()
+}
+
+#[test]
+fn a_fence_is_not_closed_by_the_other_marker() {
+    let text = format!("```\n~~~\n{GOOGLE_LINE}```\n");
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+    let text = format!("~~~\n```\n{GOOGLE_LINE}~~~\n");
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn without_and_except_before_the_name_reject_it() {
+    for line in [
+        "We write without the Google developer documentation style guide.",
+        "We follow everything except the Google developer documentation style guide.",
+    ] {
+        assert_eq!(presets(line), vec![], "{line}");
+    }
+}
+
+#[test]
+fn except_after_the_name_does_not_reject_it() {
+    assert_eq!(
+        presets("We follow the Google developer documentation style guide, except for headings."),
+        vec![Some("google".to_owned())]
+    );
+}
+
+#[test]
+fn a_rejection_carries_across_a_list_of_guides() {
+    for line in [
+        "We do not follow the Google developer documentation style guide, or Simplified Technical English.",
+        "We follow neither, not Google developer documentation, Simplified Technical English or the Microsoft Writing Style Guide.",
+        "Not the Google developer documentation style guide, and Simplified Technical English.",
+    ] {
+        assert_eq!(presets(line), vec![], "{line}");
+    }
+}
+
+#[test]
+fn a_list_after_an_adopted_guide_is_adopted_with_it() {
+    assert_eq!(
+        presets(
+            "We follow the Google developer documentation style guide, Simplified Technical English."
+        ),
+        vec![Some("google".to_owned()), Some("ste".to_owned())]
+    );
+}
+
+#[test]
+fn a_rejection_after_a_comma_ends_the_earlier_adoption() {
+    assert_eq!(
+        presets(
+            "We follow the Google developer documentation style guide, not Simplified Technical English."
+        ),
+        vec![Some("google".to_owned())]
+    );
+}
