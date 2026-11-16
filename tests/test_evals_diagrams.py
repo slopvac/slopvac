@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -152,9 +153,12 @@ ECHO_LABELS_ENGINE = textwrap.dedent(
 
 
 def _write_engine(tmp_path: Path, body: str) -> str:
-    script = tmp_path / "engine.py"
+    # The directory name has a space, so the command only works if it is quoted.
+    folder = tmp_path / "fake engine"
+    folder.mkdir()
+    script = folder / "engine.py"
     script.write_text(body)
-    return f"{sys.executable} {script} {diagrams.LABELS}"
+    return shlex.join([sys.executable, str(script), str(diagrams.LABELS)])
 
 
 def test_main_runs_an_engine_on_the_staged_files_and_scores_it(tmp_path, capsys):
