@@ -3,24 +3,33 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use slopvac_migrate::{
-    BACKUP_DIR, EngineLinter, Finding, Linter, Options, Phase, RenameTable, plan,
+    BACKUP_DIR, EngineLinter, Error, Finding, Linter, Options, Phase, RenameTable, plan,
 };
 use slopvac_model::PackId;
 use slopvac_rules::{CompileOptions, RuleSet};
 
-/// One core category `orwell` with a tokens rule `stale-figure` on "leverage" that lists
-/// the exception `dead-metaphor`. The 2.x id `orwell.stale-figure` is in the rename table.
+/// A tokens rule `stale-figure` on "leverage" that lists the exception `dead-metaphor`.
+/// The 2.x id `orwell.stale-figure` is in the rename table.
+fn stale_figure() -> Value {
+    json!({
+        "id": "stale-figure", "name": "n", "message": "Found {match}.", "severity": "warning",
+        "match": {"kind": "tokens", "tokens": ["leverage"]},
+        "exceptions": [{"name": "dead-metaphor"}],
+        "citation": {"source": "s"}
+    })
+}
+
+/// An engine over one core category `orwell` holding [`stale_figure`].
 fn linter() -> EngineLinter {
+    linter_with(&[stale_figure()])
+}
+
+fn linter_with(rules: &[Value]) -> EngineLinter {
     let category = json!({
         "schema_version": 3, "id": "orwell", "title": "t", "description": "d",
-        "rules": [{
-            "id": "stale-figure", "name": "n", "message": "Found {match}.", "severity": "warning",
-            "match": {"kind": "tokens", "tokens": ["leverage"]},
-            "exceptions": [{"name": "dead-metaphor"}],
-            "citation": {"source": "s"}
-        }]
+        "rules": rules
     });
     let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
@@ -74,7 +83,32 @@ fn before_and_after_counts_come_from_the_engine() {
 }
 
 #[test]
-fn the_backup_directory_is_not_linted() {
+fn backup_directories_at_any_depth_are_not_linted() {
+    for backup in [BACKUP_DIR.to_owned(), format!("nested/{BACKUP_DIR}")] {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "doc.md", "Please leverage it.\n");
+        write(dir.path(), "nested/doc.md", "Please leverage it.\n");
+        write(
+            dir.path(),
+            &format!("{backup}/doc.md"),
+            "Please leverage it.\n",
+        );
+
+        let before = linter().lint(dir.path(), Phase::Before, &[]).unwrap();
+
+        assert_eq!(
+            counts(&before),
+            [("core:orwell.stale-figure", 2)],
+            "{backup}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_backup_directory_is_never_read() {
+    use std::os::unix::fs::PermissionsExt;
+
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "doc.md", "Please leverage it.\n");
     write(
@@ -82,8 +116,48 @@ fn the_backup_directory_is_not_linted() {
         &format!("{BACKUP_DIR}/doc.md"),
         "Please leverage it.\n",
     );
+    let backup = dir.path().join(BACKUP_DIR);
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let before = linter().lint(dir.path(), Phase::Before, &[]);
+
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(counts(&before.unwrap()), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn mdx_prose_is_linted_and_jsx_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "doc.mdx",
+        "import { Note } from './note'\n\nPlease leverage it.\n\n<Note title=\"leverage\" />\n\n{props.leverage}\n",
+    );
 
     let before = linter().lint(dir.path(), Phase::Before, &[]).unwrap();
 
+    // The paragraph counts. The import, the JSX attribute and the expression, which is
+    // not a string literal, are code.
     assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn a_warning_that_part_of_the_check_did_not_run_fails_the_lint() {
+    // The engine runs only the sentence style of capitalization, so a title-style rule
+    // leaves every document with a warning-level unchecked notice.
+    let title_case = json!({
+        "id": "title-heading", "name": "n", "message": "m", "severity": "warning",
+        "match": {"kind": "capitalization", "style": "title"},
+        "citation": {"source": "s"}
+    });
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "doc.md", "Please leverage it.\n");
+
+    let result = linter_with(&[stale_figure(), title_case]).lint(dir.path(), Phase::Before, &[]);
+
+    let Err(Error::Lint(message)) = result else {
+        panic!("expected a lint failure, got {result:?}");
+    };
+    assert!(message.contains("rule-style-not-implemented"), "{message}");
+    assert_eq!(Error::Lint(message).code(), "migrate-lint-failed");
 }

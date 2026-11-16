@@ -86,6 +86,23 @@ fn preview_reports_the_findings_the_engine_counts_on_each_side() {
 }
 
 #[test]
+fn a_document_the_engine_cannot_lint_exits_2_and_writes_nothing() {
+    let dir = project("profile = \"strict\"\n");
+    fs::write(dir.path().join("doc.mdx"), "Unclosed {expression\n").expect("write");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[migrate-lint-failed]: "))
+        .stderr(predicate::str::contains("doc.mdx"));
+    assert!(dir.path().join(".slopvac.toml").exists());
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+#[test]
 fn unrepresentable_setting_exits_2_and_writes_nothing() {
     let dir = project("[vale]\nenabled = true\n");
     slopvac()

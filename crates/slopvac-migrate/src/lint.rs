@@ -4,9 +4,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use slopvac_engine::discover::{self, FileKind, Selection};
+use slopvac_engine::discover::{self, FileKind};
 use slopvac_engine::{Engine, Input, Settings};
-use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString};
+use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, Notice, NoticeLevel};
 use slopvac_rules::RuleSet;
 
 use crate::{BACKUP_DIR, Error, Finding, Linter, Phase};
@@ -14,7 +14,8 @@ use crate::{BACKUP_DIR, Error, Finding, Linter, Phase};
 /// Lints the Markdown and MDX documents of a project with the engine.
 ///
 /// `Before` reads every document from disk. `After` reads a document from the overlay
-/// when the plan rewrites it. Files under [`BACKUP_DIR`] are never linted.
+/// when the plan rewrites it. Files under [`BACKUP_DIR`] are never linted. A document
+/// the engine cannot read, or one it could not check in full, fails the lint.
 pub struct EngineLinter {
     engine: Engine,
 }
@@ -50,6 +51,50 @@ fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_owned())
 }
 
+/// Collect the Markdown and MDX files under `dir`, files before sub-directories, each
+/// sorted by name. Like the planner, the walk never enters [`BACKUP_DIR`], at any depth,
+/// or a directory the engine's discovery skips. Symbolic links are not followed.
+fn walk(dir: &Path, out: &mut Vec<(PathBuf, FileKind)>) -> Result<(), Error> {
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .map_err(|e| Error::io(dir, e))?
+        .collect::<Result<_, _>>()
+        .map_err(|e| Error::io(dir, e))?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    let mut dirs = Vec::new();
+    for entry in entries {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
+        if kind.is_dir() {
+            if name != BACKUP_DIR && !discover::SKIP_DIRS.contains(&name.as_ref()) {
+                dirs.push(path);
+            }
+        } else if kind.is_file()
+            && let Some(kind @ (FileKind::Markdown | FileKind::Mdx)) =
+                FileKind::from_file_name(&name)
+        {
+            out.push((path, kind));
+        }
+    }
+    for dir in dirs {
+        walk(&dir, out)?;
+    }
+    Ok(())
+}
+
+/// The first warning-level notice, as a failure: part of the document was not checked.
+fn unchecked(label: &str, notices: &[Notice]) -> Result<(), Error> {
+    match notices.iter().find(|n| n.level == NoticeLevel::Warning) {
+        Some(n) => Err(Error::Lint(format!(
+            "{label}: not fully checked: {}: {}",
+            n.code.as_str(),
+            n.message.as_str()
+        ))),
+        None => Ok(()),
+    }
+}
+
 impl Linter for EngineLinter {
     fn lint(
         &self,
@@ -58,15 +103,8 @@ impl Linter for EngineLinter {
         overlay: &[(PathBuf, String)],
     ) -> Result<Vec<Finding>, Error> {
         let base = canonical(root);
-        let shown = root.display().to_string();
-        let found = discover::discover(
-            &[shown.as_str()],
-            discover::Options {
-                selection: Selection::Prose,
-                ..discover::Options::default()
-            },
-        )
-        .map_err(|e| Error::Lint(e.to_string().replace(&shown, ".")))?;
+        let mut found = Vec::new();
+        walk(root, &mut found)?;
         let rewritten: HashMap<PathBuf, &str> = match phase {
             Phase::Before => HashMap::new(),
             Phase::After => overlay
@@ -74,22 +112,15 @@ impl Linter for EngineLinter {
                 .map(|(path, text)| (canonical(path), text.as_str()))
                 .collect(),
         };
-        let backup = base.join(BACKUP_DIR);
         let mut docs = Vec::new();
-        for file in found.files {
-            if !matches!(file.kind, FileKind::Markdown | FileKind::Mdx) {
-                continue;
-            }
-            let path = canonical(&file.path);
-            if path.starts_with(&backup) {
-                continue;
-            }
+        for (file, kind) in found {
+            let path = canonical(&file);
             let label = path.strip_prefix(&base).unwrap_or(&path).to_owned();
             let text = match rewritten.get(&path) {
                 Some(text) => (*text).to_owned(),
                 None => fs::read_to_string(&path).map_err(|e| Error::io(&root.join(&label), e))?,
             };
-            docs.push((label.display().to_string(), file.kind, text));
+            docs.push((label.display().to_string(), kind, text));
         }
         let inputs: Vec<Input<'_>> = docs
             .iter()
@@ -101,6 +132,7 @@ impl Linter for EngineLinter {
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for (result, (label, _, _)) in self.engine.lint_all(&inputs).into_iter().zip(&docs) {
             let doc = result.map_err(|e| Error::Lint(format!("{label}: {e}")))?;
+            unchecked(label, &doc.unchecked)?;
             for finding in doc.findings {
                 *counts.entry(finding.rule_id.to_string()).or_default() += 1;
             }
