@@ -187,6 +187,33 @@ impl Resolved {
     /// the earlier spelling in the slice wins.
     #[must_use]
     pub fn level_by_any(&self, rules: &[&str], categories: &[&str]) -> Option<ResolvedLevel> {
+        self.pick_level(rules, categories, true)
+    }
+
+    /// [`Resolved::level_by_any`] without the `minimum_severity` floor. A caller that moves
+    /// the level itself, such as by a profile's `severity_shift`, applies the floor once after.
+    #[must_use]
+    pub fn level_by_any_unfloored(
+        &self,
+        rules: &[&str],
+        categories: &[&str],
+    ) -> Option<ResolvedLevel> {
+        self.pick_level(rules, categories, false)
+    }
+
+    fn pick_level(
+        &self,
+        rules: &[&str],
+        categories: &[&str],
+        floor: bool,
+    ) -> Option<ResolvedLevel> {
+        let floor = |level: ResolvedLevel| {
+            if floor {
+                self.floored(level, categories)
+            } else {
+                level
+            }
+        };
         let by_rule = self.newest(rules.iter().map(|r| vec!["rules", *r]));
         let by_category = self.newest(
             categories
@@ -202,10 +229,10 @@ impl Resolved {
         };
         match (by_rule, by_category) {
             (Some(r), Some(c)) if r.value != json!("off") && c.scope > r.scope => {
-                Some(self.floored(as_level(c, LevelFrom::Category)?, categories))
+                Some(floor(as_level(c, LevelFrom::Category)?))
             }
             (Some(r), _) => as_level(r, LevelFrom::Rule),
-            (None, Some(c)) => Some(self.floored(as_level(c, LevelFrom::Category)?, categories)),
+            (None, Some(c)) => Some(floor(as_level(c, LevelFrom::Category)?)),
             (None, None) => None,
         }
     }

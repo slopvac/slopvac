@@ -257,8 +257,15 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         .get(id)
         .copied()
         .or_else(|| settings.categories.get(category).and_then(|d| d.level))
-        .or_else(|| settings.genre_levels.get(id).copied())
-        .unwrap_or(Level::On(shipped))
+        // The genre chain and the rule definition are the levels the profile shifts.
+        .unwrap_or_else(|| {
+            settings
+                .genre_levels
+                .get(id)
+                .copied()
+                .unwrap_or(Level::On(shipped))
+                .shifted(settings.severity_shift)
+        })
 }
 
 fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, EngineError> {

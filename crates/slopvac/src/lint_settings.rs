@@ -370,6 +370,10 @@ pub fn build(
     );
     settings.config_sources = sources;
     apply_thresholds(&mut settings, profile, resolved, cli);
+    settings.severity_shift = resolved
+        .get(&["profile", "severity_shift"])
+        .and_then(Json::as_i64)
+        .unwrap_or(0);
 
     let shift = resolved
         .get(&["profile", "severity_shift"])
@@ -413,21 +417,24 @@ pub fn build(
             } else {
                 vec![qualified.as_str(), name]
             };
-            let named = resolved.level_by_any(&[id.as_str(), id.local()], &categories);
+            let named = resolved.level_by_any_unfloored(&[id.as_str(), id.local()], &categories);
             // `severity_shift` moves levels that come from rule definitions, styles and the
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
             let level = match named {
                 Some(named) => level_of(&named.level).map(|l| {
-                    if !is_inherited(named.source.layer) {
-                        l
-                    } else if named.from == LevelFrom::Category {
-                        floored(shifted(l, shift), floor)
-                    } else {
+                    let l = if is_inherited(named.source.layer) {
                         shifted(l, shift)
+                    } else {
+                        l
+                    };
+                    if named.from == LevelFrom::Category {
+                        floored(l, floor)
+                    } else {
+                        l
                     }
                 }),
-                None if shift != 0 => Some(shifted(Level::On(rule.rule().severity), shift)),
+                // No layer names the rule: the engine shifts its genre or definition level.
                 None => None,
             };
             if let Some(level) = level {
@@ -677,6 +684,35 @@ mod tests {
         assert_eq!(
             level(&s, "core:orwell.unsupported-evaluative"),
             Some(WARNING)
+        );
+    }
+
+    #[test]
+    fn the_floor_applies_once_after_a_positive_shift() {
+        // legacy-normal makes `ste-punctuation` a suggestion category. A shift of +1 raises
+        // it to warning, and a floor of warning keeps it there. Flooring first would have
+        // lifted it to warning and the shift on to error.
+        let config = format!(
+            "{LEGACY}\n[profile]\nname = \"normal\"\nseverity_shift = 1\n\n\
+             [categories.ste-punctuation]\nminimum_severity = \"warning\"\n"
+        );
+        let s = settings(&config).unwrap();
+        assert_eq!(
+            level(&s, "core:ste-punctuation.semicolon-used"),
+            Some(WARNING)
+        );
+    }
+
+    #[test]
+    fn a_nonzero_shift_leaves_unnamed_rules_to_the_engine() {
+        // No layer names this rule, so the engine shifts its genre or definition level. An
+        // entry here would outrank the genre levels.
+        let config = format!("{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = 1\n");
+        let s = settings(&config).unwrap();
+        assert_eq!(s.severity_shift, 1);
+        assert_eq!(
+            level(&s, "core:docs-discipline.history-internal-reference"),
+            None
         );
     }
 }

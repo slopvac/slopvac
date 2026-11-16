@@ -139,3 +139,9 @@ pub fn parity_engine() -> Engine {
     }
     Engine::new(vec![set], settings).unwrap()
 }
+
+/// An engine over the one category file `category` with `settings`.
+pub fn engine_with(category: &Value, settings: Settings) -> Engine {
+    let files = vec![(PathBuf::from("cat.json"), category.to_string())];
+    Engine::new(vec![ruleset(files)], settings).unwrap()
+}

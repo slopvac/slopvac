@@ -695,3 +695,83 @@ fn the_legacy_profile_style_applies_only_when_the_config_lists_it() {
     );
     slopvac().arg("lint").arg(&listed).assert().code(0);
 }
+
+const HISTORY: &str = "# Title\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n";
+
+fn history_severity(genre: &str, shift: i64) -> Option<String> {
+    let config = format!(
+        "schema_version = 3\n\n[profile]\nname = \"normal\"\nseverity_shift = {shift}\n\n[[genres]]\nfiles = [\"*.md\"]\ngenre = \"{genre}\"\n"
+    );
+    let (_dir, path) = project("h.md", HISTORY, Some(&config));
+    let report = json_report(&path, &[]);
+    report["documents"][0]["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .find(|f| f["rule_id"] == "core:docs-discipline.history-internal-reference")
+        .map(|f| f["severity"].as_str().expect("severity").to_owned())
+}
+
+#[test]
+fn a_genre_tolerance_survives_a_severity_shift() {
+    // The rule ships as a warning. `change-comms` turns it off, `internal` makes it a
+    // suggestion, and `reference` leaves it a warning.
+    assert_eq!(history_severity("reference", 0).as_deref(), Some("warning"));
+    assert_eq!(
+        history_severity("internal", 0).as_deref(),
+        Some("suggestion")
+    );
+    assert_eq!(history_severity("change-comms", 0), None);
+    // A shift of +1 moves the genre level one step and leaves `off` off. It does not
+    // replace the genre level with the definition's level moved up (an error).
+    assert_eq!(history_severity("reference", 1).as_deref(), Some("error"));
+    assert_eq!(history_severity("internal", 1).as_deref(), Some("warning"));
+    assert_eq!(history_severity("change-comms", 1), None);
+}
+
+#[test]
+fn a_config_below_a_directory_target_is_checked_even_when_it_excludes_everything() {
+    let (dir, _) = project("top.md", CLEAN, None);
+    let sub = dir.path().join("sub/deeper");
+    fs::create_dir_all(&sub).expect("dirs");
+    fs::write(sub.join("a.md"), CLEAN).expect("write");
+    fs::write(
+        sub.join("slopvac.toml"),
+        "schema_version = 3\nexclude = [\"**\"]\n\n[rules]\n\"core:orwell.nope\" = \"off\"\n",
+    )
+    .expect("config");
+    slopvac()
+        .arg("lint")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+}
+
+#[test]
+fn an_unreadable_absolute_config_is_reported_without_its_directories() {
+    let (dir, path) = project("ok.md", CLEAN, None);
+    let config = dir.path().join("bad.toml");
+    fs::write(&config, [0xff, 0xfe, 0x00]).expect("write");
+    let sentinel = dir
+        .path()
+        .file_name()
+        .expect("name")
+        .to_string_lossy()
+        .into_owned();
+    for format in ["text", "json", "sarif"] {
+        let out = slopvac()
+            .args(["lint", "--format", format, "--config"])
+            .arg(&config)
+            .arg(&path)
+            .output()
+            .expect("run");
+        assert_eq!(out.status.code(), Some(2), "{format}");
+        let everything = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!everything.contains(&sentinel), "{format}: {everything}");
+    }
+}

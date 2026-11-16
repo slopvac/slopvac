@@ -85,6 +85,10 @@ pub struct Settings {
     /// Levels the genre chain gives single rules. They sit below `rule_levels` and the
     /// `categories` levels: explicit configuration beats a genre default.
     pub genre_levels: BTreeMap<RuleId, Level>,
+    /// The profile's `severity_shift`. It moves the levels that come from the genre chain and
+    /// from rule definitions along suggestion, warning, error. A level in `rule_levels` or in
+    /// a category is final, and `off` stays off.
+    pub severity_shift: i64,
     /// Dials per category.
     pub categories: BTreeMap<CategoryId, CategoryDials>,
     /// The gate limits.
@@ -94,6 +98,21 @@ pub struct Settings {
     /// Words that capitalization rules exempt, such as the `[locale] allow` words and project
     /// terms. Case is ignored.
     pub allowed_words: Vec<String>,
+}
+
+impl Level {
+    /// The level moved `shift` steps along suggestion, warning, error, clamped. `off` stays off.
+    #[must_use]
+    pub fn shifted(self, shift: i64) -> Self {
+        const RANKS: [Severity; 3] = [Severity::Suggestion, Severity::Warning, Severity::Error];
+        let Self::On(severity) = self else {
+            return self;
+        };
+        let at = RANKS.iter().position(|r| *r == severity).unwrap_or(0);
+        let top = i64::try_from(RANKS.len() - 1).unwrap_or(0);
+        let to = (i64::try_from(at).unwrap_or(0) + shift).clamp(0, top);
+        Self::On(RANKS[usize::try_from(to).unwrap_or(0)])
+    }
 }
 
 impl Settings {
@@ -106,6 +125,7 @@ impl Settings {
             mode: Mode::Prose,
             rule_levels: BTreeMap::new(),
             genre_levels: BTreeMap::new(),
+            severity_shift: 0,
             categories: BTreeMap::new(),
             thresholds: Thresholds::default(),
             config_sources: Vec::new(),

@@ -213,7 +213,11 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
 fn config_error(err: &ConfigError, root: &Path) -> CliError {
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
-        other @ ConfigError::Io { .. } => other.to_string(),
+        ConfigError::Io { path, .. } => {
+            // The path is the label the caller gave, which may be absolute.
+            err.to_string()
+                .replace(path.as_str(), &redact::shown_path(Path::new(path), root))
+        }
     };
     if err.is_legacy() {
         message.push_str("\nhelp: run `slopvac migrate` to convert it");
@@ -290,11 +294,33 @@ fn validate_configs(
     for target in &request.targets {
         let path = request.root.join(target);
         if path.is_dir() {
+            // Every directory below that holds a file the run reaches has its own nearest
+            // config. All of them are checked, before any exclusion drops a file.
+            if let Ok(found) = discover(
+                &[path.to_string_lossy().into_owned()],
+                Options {
+                    selection: if request.code_comments {
+                        Selection::CodeComments
+                    } else {
+                        Selection::Prose
+                    },
+                    ..Options::default()
+                },
+            ) {
+                dirs.extend(
+                    found
+                        .files
+                        .iter()
+                        .filter_map(|f| f.path.parent().map(Path::to_path_buf)),
+                );
+            }
             dirs.push(path);
         } else if let Some(parent) = path.parent().filter(|p| p.is_dir()) {
             dirs.push(parent.to_path_buf());
         }
     }
+    dirs.sort();
+    dirs.dedup();
     if dirs.is_empty() {
         dirs.push(request.root.clone());
     }
