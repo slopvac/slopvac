@@ -1,73 +1,17 @@
 //! Front matter: find the block, read the `slopvac:` mapping, and apply the allow policy.
 //!
-//! The extraction half is a local stand-in for the `slopvac-frontmatter` crate.
-// STUB(slopvac-8l4.4.8): `extract` and `parse_block` fake the publishable front-matter crate
-// (slopvac-8l4.3.4): YAML (`---`), TOML (`+++`) and JSON detection with document-absolute
-// spans. Swap them for the crate; `read` and `Policy` stay.
+//! Detection and parsing come from the `frontmatter-spans` crate; this module adds the allow
+//! policy and the `slopvac:` mapping.
 
-use std::ops::Range;
+pub use frontmatter_spans::{Block, Format};
+use frontmatter_spans::{FrontMatter, Limits};
 
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::load::LoadedConfig;
 use crate::schema::validate_frontmatter;
 use crate::source::{Layer, Setting};
-use crate::tree::{Node, Value, parse_toml, parse_yaml};
-
-/// The syntax of a front-matter block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Format {
-    /// Between `---` lines.
-    Yaml,
-    /// Between `+++` lines.
-    Toml,
-    /// A JSON object at the start of the document.
-    Json,
-}
-
-/// A front-matter block located in a document.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Block {
-    /// The syntax.
-    pub format: Format,
-    /// Byte range of the block content, without the delimiter lines.
-    pub content: Range<usize>,
-}
-
-/// Find the front-matter block at the start of `doc`.
-#[must_use]
-pub fn extract(doc: &str) -> Option<Block> {
-    let doc_start = doc
-        .strip_prefix('\u{feff}')
-        .map_or(0, |_| '\u{feff}'.len_utf8());
-    let rest = &doc[doc_start..];
-    if rest.starts_with('{') {
-        return json_block(rest, doc_start);
-    }
-    let (format, fence) = if rest.starts_with("---") {
-        (Format::Yaml, "---")
-    } else if rest.starts_with("+++") {
-        (Format::Toml, "+++")
-    } else {
-        return None;
-    };
-    let mut lines = lines_with_offsets(rest);
-    let (_, first) = lines.next()?;
-    if first.trim_end() != fence {
-        return None;
-    }
-    let content_start = doc_start + first.len();
-    for (offset, line) in lines {
-        let t = line.trim_end();
-        if t == fence || (format == Format::Yaml && t == "...") {
-            return Some(Block {
-                format,
-                content: content_start..doc_start + offset,
-            });
-        }
-    }
-    None
-}
+use crate::tree::{Entry, Node, Value};
 
 /// Lines with their start offsets. A line ends at LF, CRLF or a CR that does not precede LF, as
 /// `docs/contract/positions.md` defines, and keeps its terminator.
@@ -100,47 +44,48 @@ fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
     lines.into_iter()
 }
 
-fn json_block(rest: &str, doc_start: usize) -> Option<Block> {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (i, c) in rest.char_indices() {
-        if in_string {
-            match (escaped, c) {
-                (true, _) => escaped = false,
-                (false, '\\') => escaped = true,
-                (false, '"') => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(Block {
-                        format: Format::Json,
-                        content: doc_start..doc_start + i + 1,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+/// Find the front-matter block at the start of `doc`.
+#[must_use]
+pub fn extract(doc: &str) -> Option<Block> {
+    frontmatter_spans::detect(doc)
 }
 
-/// Parse a block. Every span in the tree indexes `doc`, not the block.
+/// Parse a block found in `doc`. Every span in the tree indexes `doc`, not the block.
 pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseError> {
-    let text = &doc[block.content.clone()];
-    let mut node = match block.format {
-        Format::Toml => parse_toml(text)?,
-        Format::Yaml | Format::Json => parse_yaml(text)?,
+    FrontMatter::parse_block_with(doc, block.clone(), &Limits::default())
+        .map(|fm| convert(&fm.root))
+        .map_err(|e| crate::tree::ParseError {
+            message: e.message,
+            span: e.span.map(|s| s.range),
+        })
+}
+
+/// The crate's tree as this crate's tree, so validation and flattening do not depend on it.
+fn convert(node: &frontmatter_spans::Node) -> Node {
+    use frontmatter_spans::Value as V;
+    let value = match &node.value {
+        V::Null => Value::Null,
+        V::Bool(b) => Value::Bool(*b),
+        V::Integer(i) => Value::Int(*i),
+        V::Float(f) => Value::Float(*f),
+        V::String(s) => Value::Str(s.clone()),
+        V::Datetime(s) => Value::Datetime(s.clone()),
+        V::Array(items) => Value::Array(items.iter().map(convert).collect()),
+        V::Table(entries) => Value::Table(
+            entries
+                .iter()
+                .map(|e| Entry {
+                    key: e.key.clone(),
+                    key_span: e.key_span.range.clone(),
+                    node: convert(&e.value),
+                })
+                .collect(),
+        ),
     };
-    node.shift(block.content.start);
-    Ok(node)
+    Node {
+        span: node.span.range.clone(),
+        value,
+    }
 }
 
 /// The project's `[frontmatter]` table.
@@ -216,6 +161,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         return Read::default();
     };
     let raw = &doc[block.content.clone()];
+    let (format, content_start) = (block.format, block.content.start);
     // Cheap candidate check: the key `slopvac` can be spelled another way only through an escape,
     // so text with neither the word nor a backslash cannot hold the block and is never parsed.
     if !raw.contains("slopvac") && !raw.contains('\\') {
@@ -225,11 +171,9 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         Ok(n) => n,
         // Ownership: a block that does not parse is ours only if a top-level key decodes to
         // `slopvac`. The word inside a value or a nested key says nothing.
-        Err(_) if !has_slopvac_key(raw, block.format) => return Read::default(),
+        Err(_) if !has_slopvac_key(raw, format) => return Read::default(),
         Err(e) => {
-            let at = e
-                .span
-                .map_or(block.content.start, |s| s.start + block.content.start);
+            let at = e.span.map_or(content_start, |s| s.start);
             return Read {
                 settings: Vec::new(),
                 diagnostics: vec![Diagnostic {

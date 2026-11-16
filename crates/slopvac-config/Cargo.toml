@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 annotate-snippets.workspace = true
 clap.workspace = true
+frontmatter-spans.workspace = true
 ignore.workspace = true
 saphyr.workspace = true
 serde.workspace = true
