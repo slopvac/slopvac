@@ -499,9 +499,12 @@ class BudgetExceeded(ModelEvalError):
 class CallFailed(ModelEvalError):
     """A model command failed on every attempt."""
 
-    def __init__(self, message: str, attempts: int) -> None:
+    def __init__(
+        self, message: str, attempts: int, usage: dict[str, int] | None = None
+    ) -> None:
         super().__init__(message)
         self.attempts = attempts
+        self.usage = usage
 
 
 class Cancelled(BaseException):
@@ -511,6 +514,7 @@ class Cancelled(BaseException):
 class Reply(NamedTuple):
     text: str
     attempts: int
+    usage: dict[str, int] | None = None
 
 
 class Budget:
@@ -567,7 +571,7 @@ class Budget:
             self._handle.flush()
             os.fsync(self._handle.fileno())
 
-    def reserve(self) -> int:
+    def reserve(self, model: str | None = None) -> int:
         """Persist one reservation, then return its number. Raises at the ceiling."""
         with self._lock:
             if self.spent >= self.ceiling:
@@ -575,12 +579,14 @@ class Budget:
                     f"invocation ceiling of {self.ceiling} reached; nothing more was started"
                 )
             self.spent += 1
-            self._append({"event": "reserve", "n": self.spent})
+            self._append({"event": "reserve", "n": self.spent, "model": model})
             return self.spent
 
-    def finish(self, number: int, status: str) -> None:
+    def finish(self, number: int, status: str, model: str | None = None) -> None:
         with self._lock:
-            self._append({"event": "finish", "n": number, "status": status})
+            self._append(
+                {"event": "finish", "n": number, "status": status, "model": model}
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -612,8 +618,9 @@ def job_id(kind: str, model: str, prompt: str, repeat: int, *scope: str) -> str:
 class Journal:
     """Append-only record of finished jobs, so a stopped run resumes without repeats.
 
-    Each line holds a job id, the answer, any error and the attempts it used. The
-    last line for a job wins. A job that failed is asked again on resume, and its
+    Each line holds a job id, the model, the answer, any error, the attempts it
+    used and the token `usage` (null when the model command did not report it).
+    Lines from older runs lack `model` and `usage`. The last line for a job wins. A job that failed is asked again on resume, and its
     earlier attempts still count against the budget.
     """
 
@@ -637,8 +644,24 @@ class Journal:
         entry = self._entries.get(job)
         return entry if entry and not entry.get("error") else None
 
-    def record(self, job: str, answer: str, error: str | None, attempts: int) -> None:
-        entry = {"job": job, "answer": answer, "error": error, "attempts": attempts}
+    def record(
+        self,
+        job: str,
+        answer: str,
+        error: str | None,
+        attempts: int,
+        *,
+        model: str | None = None,
+        usage: Mapping[str, int] | None = None,
+    ) -> None:
+        entry = {
+            "job": job,
+            "model": model,
+            "answer": answer,
+            "error": error,
+            "attempts": attempts,
+            "usage": dict(usage) if usage else None,
+        }
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as fh:
@@ -655,47 +678,60 @@ def command_ask(
     budget: Budget | None = None,
     timeout: int = procs.OUTER_TIMEOUT,
     live: procs.LiveGroups | None = None,
+    model: str | None = None,
 ) -> Callable[[str], Reply]:
+    """Run `command` per prompt. `model` names it in the ledger.
+
+    Token usage comes from the command's final stderr line (`procs.USAGE_PREFIX`).
+    A reply carries the usage summed over its attempts, or None when any attempt
+    that ran to the end reported none.
+    """
     argv = shlex.split(command)
 
     def ask(prompt: str) -> Reply:
         last = ""
         used = 0
+        reports: list[dict[str, int] | None] = []
         for _ in range(attempts):
             if live and live.cancelled.is_set():
                 raise Cancelled
-            number = budget.reserve() if budget else 0
+            number = budget.reserve(model) if budget else 0
             used += 1
             try:
                 proc = procs.run_group(argv, input=prompt, timeout=timeout, live=live)
             except subprocess.TimeoutExpired:
                 if budget:
-                    budget.finish(number, "timeout")
+                    budget.finish(number, "timeout", model)
+                reports.append(None)
                 last = f"model command timed out after {timeout}s"
                 continue
             except BaseException:
                 if budget:
-                    budget.finish(number, "interrupted")
+                    budget.finish(number, "interrupted", model)
                 raise
             if live and live.cancelled.is_set():
                 if budget:
-                    budget.finish(number, "interrupted")
+                    budget.finish(number, "interrupted", model)
                 raise Cancelled
             ok = proc.returncode == 0 and bool(proc.stdout.strip())
             if budget:
-                budget.finish(number, "ok" if ok else "fail")
+                budget.finish(number, "ok" if ok else "fail", model)
+            reports.append(procs.parse_usage_line(proc.stderr))
             if ok:
-                return Reply(proc.stdout, used)
-            last = procs.redact(
-                f"model command exited {proc.returncode}: {proc.stderr[:300]}"
-            )
-        raise CallFailed(last, used)
+                return Reply(proc.stdout, used, procs.sum_usage(reports))
+            detail = procs.strip_usage_lines(proc.stderr)[:300]
+            last = procs.redact(f"model command exited {proc.returncode}: {detail}")
+        raise CallFailed(last, used, procs.sum_usage(reports))
 
     return ask
 
 
 def _row(
-    task: Mapping[str, Any], model: Mapping[str, Any], repeat: int, answer: str
+    task: Mapping[str, Any],
+    model: Mapping[str, Any],
+    repeat: int,
+    answer: str,
+    usage: Mapping[str, int] | None,
 ) -> dict[str, Any]:
     return {
         "task": task["id"],
@@ -707,31 +743,39 @@ def _row(
         "tier": model["tier"],
         "repeat": repeat,
         "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
+        "usage": dict(usage) if usage else None,
     }
 
 
 def _safe(
-    ask: Callable[[str], Any], job: str, prompt: str, journal: Journal | None
-) -> tuple[str, str | None]:
-    """Ask once, journal the outcome, and turn a failed call into an empty answer."""
+    ask: Callable[[str], Any],
+    job: str,
+    prompt: str,
+    journal: Journal | None,
+    model: str,
+) -> tuple[str, str | None, dict[str, int] | None]:
+    """Ask once, journal the outcome, and turn a failed call into an empty answer.
+
+    Returns the answer, the error and the token usage (None when not reported).
+    """
     if journal and (entry := journal.done(job)):
-        return entry["answer"], None
-    answer, error, attempts = "", None, 1
+        return entry["answer"], None, entry.get("usage")
+    answer, error, attempts, usage = "", None, 1, None
     try:
         reply = ask(prompt)
         if isinstance(reply, Reply):
-            answer, attempts = reply.text, reply.attempts
+            answer, attempts, usage = reply.text, reply.attempts, reply.usage
         else:
             answer = reply
     except BudgetExceeded:
         raise
     except CallFailed as exc:
-        error, attempts = str(exc)[:300], exc.attempts
+        error, attempts, usage = str(exc)[:300], exc.attempts, exc.usage
     except ModelEvalError as exc:
         error = str(exc)[:300]
     if journal:
-        journal.record(job, answer, error, attempts)
-    return answer, error
+        journal.record(job, answer, error, attempts, model=model, usage=usage)
+    return answer, error, usage
 
 
 def _map_jobs(
@@ -783,7 +827,7 @@ def execute(
     expected = plan(tasks, models, repeats)
     live = procs.LiveGroups()
     make_ask = ask_for or (
-        lambda m: command_ask(m["command"], budget=budget, live=live)
+        lambda m: command_ask(m["command"], budget=budget, live=live, model=m["name"])
     )
     asks = {m["name"]: make_ask(m) for m in models}
     first = [
@@ -793,20 +837,23 @@ def execute(
         for repeat in range(repeats)
     ]
 
-    def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None]:
+    def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
         model, task, repeat = job
         return _safe(
             asks[model["name"]],
             job_id("task", model["name"], task["prompt"], repeat),
             task["prompt"],
             journal,
+            model["name"],
         )
 
     answers = _map_jobs(run_first, first, workers, live)
     runs: list[dict[str, Any]] = []
     rewrite_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any], int, str]] = []
-    for (model, task, repeat), (answer, error) in zip(first, answers, strict=True):
-        row = _row(task, model, repeat, answer)
+    for (model, task, repeat), (answer, error, usage) in zip(
+        first, answers, strict=True
+    ):
+        row = _row(task, model, repeat, answer, usage)
         if error:
             row["error"] = error
         if task["role"] == "author":
@@ -828,7 +875,7 @@ def execute(
             if reviewer["name"] != author["name"]:
                 second.append((review_task, author, reviewer, repeat))
 
-    def run_second(job: tuple[Any, Any, Any, int]) -> tuple[str, str | None]:
+    def run_second(job: tuple[Any, Any, Any, int]) -> tuple[str, str | None, Any]:
         review_task, author, reviewer, repeat = job
         return _safe(
             asks[reviewer["name"]],
@@ -842,13 +889,14 @@ def execute(
             ),
             review_task["prompt"],
             journal,
+            reviewer["name"],
         )
 
     replies = _map_jobs(run_second, second, workers, live)
-    for (review_task, author, reviewer, repeat), (reply, error) in zip(
+    for (review_task, author, reviewer, repeat), (reply, error, usage) in zip(
         second, replies, strict=True
     ):
-        row = _row(review_task, reviewer, repeat, reply)
+        row = _row(review_task, reviewer, repeat, reply, usage)
         row["task"] = f"{review_task['id']}:{author['name']}"
         row["author_model"] = author["name"]
         row["author_family"] = author["family"]
@@ -937,6 +985,90 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
         "repeats": results["repeats"],
         "rows": rows,
         "ranking": ranking,
+    }
+
+
+# --- token usage and cost ----------------------------------------------------------
+
+PRICES_PATH = lib.EVALS_DIR / "prices.json"
+UNKNOWN_MODEL = "(unknown)"
+
+
+def load_usage_records(path: Path) -> list[tuple[str, dict[str, int] | None]]:
+    """(model, usage) per finished job from a results file or a `.journal.jsonl`.
+
+    A journal keeps the last line per job. Lines from before usage was recorded
+    have no usage, and lines from before the model was recorded have no model.
+    """
+    if path.suffix == ".jsonl":
+        last: dict[str, dict[str, Any]] = {}
+        for line in path.read_text("utf-8").splitlines():
+            if line:
+                entry = json.loads(line)
+                last[entry["job"]] = entry
+        return [
+            (e.get("model") or UNKNOWN_MODEL, e.get("usage")) for e in last.values()
+        ]
+    return [(r["model"], r.get("usage")) for r in load(path)["runs"]]
+
+
+def load_prices(path: Path) -> dict[str, Any]:
+    try:
+        prices = json.loads(path.read_text("utf-8"))
+        table = prices["models"]
+        for price in table.values():
+            float(price["input"]), float(price["output"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise ModelEvalError(f"{path}: not a usable price list ({exc})") from None
+    return prices
+
+
+def estimate_cost(
+    records: Iterable[tuple[str, Mapping[str, int] | None]], prices: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Tokens and an estimated list-price cost per model.
+
+    Cost is input tokens at the input price plus output and reasoning tokens at
+    the output price, per million. Cache tokens are counted but not priced. A
+    model is `complete` only when every one of its invocations reported usage
+    and the price list names it; any gap makes the total incomplete too.
+    """
+    table = prices["models"]
+    per: dict[str, dict[str, Any]] = {}
+    for model, usage in records:
+        row = per.setdefault(
+            model, {"invocations": 0, "missing_usage": 0, "tokens": {}}
+        )
+        row["invocations"] += 1
+        if usage is None:
+            row["missing_usage"] += 1
+            continue
+        for key, value in usage.items():
+            row["tokens"][key] = row["tokens"].get(key, 0) + value
+    total_cost, complete = 0.0, True
+    for model, row in sorted(per.items()):
+        price = table.get(model)
+        tokens = row["tokens"]
+        if price is None:
+            row["cost_usd"] = None
+        else:
+            billed_out = tokens.get("output", 0) + tokens.get("reasoning", 0)
+            row["cost_usd"] = round(
+                (
+                    tokens.get("input", 0) * float(price["input"])
+                    + billed_out * float(price["output"])
+                )
+                / 1_000_000,
+                6,
+            )
+            total_cost += row["cost_usd"]
+        row["complete"] = price is not None and row["missing_usage"] == 0
+        complete = complete and row["complete"]
+    return {
+        "source": prices.get("source"),
+        "models": dict(sorted(per.items())),
+        "total_cost_usd": round(total_cost, 6),
+        "complete": complete,
     }
 
 

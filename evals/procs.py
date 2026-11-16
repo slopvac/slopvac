@@ -16,6 +16,7 @@ running. Two modes cover this:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
@@ -198,3 +199,57 @@ def redact(text: str) -> str:
         text,
     )
     return re.sub(r"\b[A-Za-z0-9+/_-]{32,}={0,2}", "<redacted>", text)
+
+
+# --- token usage side channel --------------------------------------------------------
+#
+# The adapter keeps stdout for the answer alone. It reports token usage as one
+# final stderr line: USAGE_PREFIX, then a JSON object of non-negative integers.
+# The harness takes the last such line and leaves every other stderr line alone.
+
+USAGE_PREFIX = "slopvac-usage "
+USAGE_KEYS = ("input", "output", "reasoning", "cache_read", "cache_write")
+
+
+def format_usage_line(usage: Mapping[str, int]) -> str:
+    return USAGE_PREFIX + json.dumps(dict(usage), sort_keys=True)
+
+
+def parse_usage_line(stderr: str) -> dict[str, int] | None:
+    """The usage from the last well-formed usage line in `stderr`, else None."""
+    for line in reversed(stderr.splitlines()):
+        if not line.startswith(USAGE_PREFIX):
+            continue
+        try:
+            data = json.loads(line.removeprefix(USAGE_PREFIX))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        usage = {
+            key: value
+            for key, value in data.items()
+            if key in USAGE_KEYS
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+        }
+        return usage or None
+    return None
+
+
+def strip_usage_lines(stderr: str) -> str:
+    return "\n".join(
+        line for line in stderr.splitlines() if not line.startswith(USAGE_PREFIX)
+    )
+
+
+def sum_usage(parts: Sequence[Mapping[str, int] | None]) -> dict[str, int] | None:
+    """Add usage over several invocations. One missing report makes the total unknown."""
+    if not parts or any(part is None for part in parts):
+        return None
+    total: dict[str, int] = {}
+    for part in parts:
+        for key, value in part.items():
+            total[key] = total.get(key, 0) + value
+    return total
