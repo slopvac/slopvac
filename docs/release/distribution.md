@@ -11,7 +11,7 @@ The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives 
 
 ## Windows
 
-3.0 ships no native Windows build. Windows users run the Linux build under WSL: the shell installer, Homebrew on Linux, or `uvx slopvac` all work inside a WSL distribution. Native Windows is planned for a 3.x release (epic `slopvac-8l4.18.8`). The Windows target, the PowerShell installer and the Windows wheel are not built, and the release gate does not require a Windows item.
+3.0 ships no native Windows build. Windows users run the Linux build under WSL: the shell installer, Homebrew on Linux, or `uvx slopvac` all work inside a WSL distribution. Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`). The Windows target, the PowerShell installer and the Windows wheel are not built, and the release gate does not require a Windows item.
 
 ## How a release flows
 
