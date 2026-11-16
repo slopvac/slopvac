@@ -35,7 +35,7 @@ use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
 use crate::launch::Launcher;
-use crate::process::{Group, Leader, TableSource, Teardown, sanitize_display};
+use crate::process::{Group, Leader, TableSource, Teardown};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
     PROTOCOL_VERSION, PluginDeclaration,
@@ -321,7 +321,7 @@ impl Shared {
         let ring = lock(&self.stderr);
         let bytes: Vec<u8> = ring.iter().copied().collect();
         let start = bytes.len().saturating_sub(STDERR_SHOWN);
-        let text = sanitize_display(&String::from_utf8_lossy(&bytes[start..]));
+        let text = String::from_utf8_lossy(&bytes[start..]);
         let text = text.trim_end();
         if text.is_empty() {
             String::new()
@@ -547,7 +547,7 @@ impl LogLines {
 
     fn emit(&mut self, plugin: &str) {
         let line = self.line.strip_suffix(b"\r").unwrap_or(&self.line);
-        let text = sanitize_display(&String::from_utf8_lossy(line));
+        let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
         let cut = if self.cut { " [cut]" } else { "" };
         tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
         self.line.clear();

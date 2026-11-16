@@ -56,6 +56,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 use crate::oci::{Client, Digest, OciError, Reference};
@@ -99,7 +100,7 @@ pub enum RevocationError {
     #[error("the revocation list is larger than {MAX_LIST_BYTES} bytes")]
     TooLarge,
     /// The list is not a valid version 1 list.
-    #[error("the revocation list is invalid: {0}")]
+    #[error("the revocation list is invalid: {}", esc(.0))]
     Invalid(String),
     /// No root key signed these bytes.
     #[error("the revocation list is not signed by the first-party root key")]
@@ -110,18 +111,21 @@ pub enum RevocationError {
     /// The fetched list is past its signed `expires`: the source serves an
     /// old list. Treated like a withheld list.
     #[error(
-        "the revocation list served online expired at {expires}; the source is replaying an old list"
+        "the revocation list served online expired at {}; the source is replaying an old list",
+        esc(.expires)
     )]
     Expired {
         /// The list's `expires`.
         expires: String,
     },
     /// The artifact does not have the shape of a list artifact.
-    #[error("the revocation list artifact is malformed: {0}")]
+    #[error("the revocation list artifact is malformed: {}", esc(.0))]
     Layout(String),
     /// The fetched list is older than the cached one.
     #[error(
-        "the fetched revocation list (issued {fetched}) is older than the cached one (issued {cached})"
+        "the fetched revocation list (issued {}) is older than the cached one (issued {})",
+        esc(.fetched),
+        esc(.cached)
     )]
     Rollback {
         /// `issued` of the cached list.
@@ -132,14 +136,15 @@ pub enum RevocationError {
     /// The fetched list has the cached list's `issued` time but other
     /// content: two signed lists claim one moment, and the cache is kept.
     #[error(
-        "the fetched revocation list differs from the cached one with the same issued time ({issued})"
+        "the fetched revocation list differs from the cached one with the same issued time ({})",
+        esc(.issued)
     )]
     Equivocation {
         /// The shared `issued` time.
         issued: String,
     },
     /// The cache file does not hold a list the root signed.
-    #[error("the revocation cache {path} is damaged: {why}; run an online sync to replace it", path = path.display())]
+    #[error("the revocation cache {} is damaged: {}; run an online sync to replace it", esc(&.path.to_string_lossy()), esc(.why))]
     CacheInvalid {
         /// The cache file.
         path: PathBuf,
@@ -147,7 +152,7 @@ pub enum RevocationError {
         why: String,
     },
     /// A file operation on the cache failed.
-    #[error("revocation cache: {what}: {source}")]
+    #[error("revocation cache: {}: {}", esc(.what), esc(&.source.to_string()))]
     Io {
         /// The operation.
         what: String,
@@ -156,7 +161,7 @@ pub enum RevocationError {
         source: io::Error,
     },
     /// The caller's clock is not a `YYYY-MM-DDTHH:MM:SSZ` time.
-    #[error("the current time `{0}` is not YYYY-MM-DDTHH:MM:SSZ")]
+    #[error("the current time `{}` is not YYYY-MM-DDTHH:MM:SSZ", esc(.0))]
     Clock(String),
 }
 
@@ -186,8 +191,24 @@ impl From<SignError> for RevocationError {
         match e {
             SignError::BadSignature => Self::BadSignature,
             SignError::StatementTooLarge => Self::TooLarge,
+            // The raw reason: `Invalid` escapes it once, on display.
+            SignError::NotCanonical(m) => {
+                Self::Invalid(format!("the signed statement is not canonical JSON: {m}"))
+            }
+            SignError::InvalidStatement(m) => {
+                Self::Invalid(format!("the signed statement is invalid: {m}"))
+            }
             other => Self::Invalid(other.to_string()),
         }
+    }
+}
+
+/// The reason in `e` before escaping, for a variant that escapes it once.
+fn raw_reason(e: RevocationError) -> String {
+    match e {
+        RevocationError::Invalid(m) => format!("the revocation list is invalid: {m}"),
+        RevocationError::Layout(m) => format!("the revocation list artifact is malformed: {m}"),
+        other => other.to_string(),
     }
 }
 
@@ -210,8 +231,8 @@ pub enum Revoked {
 impl std::fmt::Display for Revoked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Key(id) => write!(f, "revoked: publisher key {id}"),
-            Self::Digest(d) => write!(f, "revoked: artifact {d}"),
+            Self::Key(id) => write!(f, "revoked: publisher key {}", esc(id)),
+            Self::Digest(d) => write!(f, "revoked: artifact {}", esc(d)),
         }
     }
 }
@@ -395,7 +416,9 @@ impl std::fmt::Display for RevocationNotice {
             ),
             Self::Stale { issued, expires } => write!(
                 f,
-                "the cached revocation list (issued {issued}) expired at {expires}; run `slopvac plugins sync` online"
+                "the cached revocation list (issued {}) expired at {}; run `slopvac plugins sync` online",
+                esc(issued),
+                esc(expires)
             ),
         }
     }
@@ -643,7 +666,7 @@ impl Revocations {
             return Err(invalid("unsupported schema_version or fetch time".into()));
         }
         let list = RevocationList::verify(doc.statement.as_bytes(), &doc.minisig, &self.roots)
-            .map_err(|e| invalid(e.to_string()))?;
+            .map_err(|e| invalid(raw_reason(e)))?;
         Ok(Some((list, doc.fetched_at)))
     }
 

@@ -234,6 +234,23 @@ jobs:
           echo "$RUNNER_TEMP/rst-venv/bin" >> "$GITHUB_PATH"
           echo "SLOPVAC_RST_LIVE=1" >> "$GITHUB_ENV"
 
+      # The managed-Python plugin tests build real uv environments. With SLOPVAC_PYENV_LIVE
+      # set, they fail instead of skipping when uv is missing. Managed environments are
+      # refused on Windows, so only linux-x64 runs them. The cache holds uv's downloaded
+      # CPython builds, scoped to the ref by GitHub's standard cache rules.
+      - name: Install uv for the managed-Python tests
+        if: matrix.name == 'linux-x64'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-python: true
+          cache-suffix: rust-pyenv
+          ignore-nothing-to-cache: true
+
+      - name: Require the managed-Python tests
+        if: matrix.name == 'linux-x64'
+        run: echo "SLOPVAC_PYENV_LIVE=1" >> "$GITHUB_ENV"
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
 
@@ -322,6 +339,10 @@ jobs:
         run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install minisign
+        # The release signing tests run the real binary; the script checks its sha256.
+        run: bash scripts/install_minisign.sh
 
       - name: Install ast-grep
         run: |

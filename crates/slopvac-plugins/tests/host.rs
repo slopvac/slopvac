@@ -631,6 +631,14 @@ fn h13_the_hung_process_is_dead_after_the_kill() {
 }
 
 #[test]
+fn tm11_hostile_stderr_reaches_the_error_as_visible_escapes() {
+    let p = start("exit-hostile");
+    let text = p.tag("main", &docs(1)).unwrap_err().to_string();
+    let want = "\nstderr:\nx\\u{1b}]8;;https://evil.example\\u{7}link\\u{1b}]8;;\\u{7}\\u{9b}31m\\u{202e}RTL\\u{200b}\n\\u{3a}:error::injected\nkept\ttab";
+    assert!(text.ends_with(want), "{text:?}");
+}
+
+#[test]
 fn h16_only_the_tail_of_a_long_stderr_reaches_the_error() {
     let p = start("stderr-tail");
     let text = p.tag("main", &docs(1)).unwrap_err().to_string();

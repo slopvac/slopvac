@@ -1,6 +1,8 @@
 //! `--preserve-behavior`: expansion steps E1 to E6 of docs/contract/profiles.md,
 //! section 4, and the override glob grammar.
-// STUB(slopvac-8l4.16.11): vectors copied from PR #296 b138f5888a; re-verify when it lands.
+//!
+//! `tests/fixtures/generate.py` writes the vectors from the contract reference,
+//! `tests/contract/preserve_expansion.py`.
 
 use std::collections::BTreeSet;
 use std::fs;

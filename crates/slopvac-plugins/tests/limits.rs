@@ -253,7 +253,8 @@ fn each_stderr_line_is_logged_at_debug_level_sanitized_and_cut_at_4_kib() {
         lines,
         [
             (tracing::Level::DEBUG, "first line".to_owned()),
-            (tracing::Level::DEBUG, "second \u{FFFD}[31mline".to_owned()),
+            // The escape introducer becomes a visible escape (`slopvac_sanitize::line`).
+            (tracing::Level::DEBUG, r"second \u{1b}[31mline".to_owned()),
             (tracing::Level::DEBUG, "third".to_owned()),
             // Cut at 4 KiB.
             (tracing::Level::DEBUG, format!("{} [cut]", "x".repeat(4096))),

@@ -420,6 +420,13 @@ while True:
             sys.stderr.write("boom \x1b[31mred\x1b[0m\n")
             sys.stderr.flush()
             sys.exit(3)
+        elif mode == "exit-hostile":
+            sys.stderr.write(
+                "x\x1b]8;;https://evil.example\x07link\x1b]8;;\x07\x9b31m\u202eRTL\u200b\n"
+                "::error::injected\nkept\ttab\n"
+            )
+            sys.stderr.flush()
+            sys.exit(3)
         elif mode == "partial-frame":
             out.write(b"Content-Length: 100\r\n\r\n{")
             out.flush()
