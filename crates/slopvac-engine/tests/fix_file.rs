@@ -1,8 +1,10 @@
 //! Fixing files on disk: what is refused, how the write is committed, and what survives a
 //! failure.
 
-#![allow(missing_docs, clippy::assert_is_empty)]
-
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 #[cfg(unix)]
@@ -27,12 +29,20 @@ fn swaps() -> Engine {
 }
 
 /// A project root holding `doc.md`.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn project() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("doc.md"), DOC).unwrap();
     root
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn run(root: &Path, rel: &str, dry_run: bool) -> FileFix {
     fix_file(
         &swaps(),
@@ -45,6 +55,10 @@ fn run(root: &Path, rel: &str, dry_run: bool) -> FileFix {
     .unwrap()
 }
 
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn done(out: FileFix) -> Box<FileResult> {
     match out {
         FileFix::Done(result) => result,
@@ -52,6 +66,10 @@ fn done(out: FileFix) -> Box<FileResult> {
     }
 }
 
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn refused(out: &FileFix) -> Refusal {
     match out {
         FileFix::Refused(why) => *why,
@@ -59,6 +77,10 @@ fn refused(out: &FileFix) -> Refusal {
     }
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
@@ -68,6 +90,10 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn read(path: impl AsRef<Path>) -> String {
     std::fs::read_to_string(path).unwrap()
 }
@@ -94,7 +120,7 @@ fn a_write_fixes_the_file_and_lints_the_fixed_text_again() {
     let out = done(run(root.path(), "doc.md", false));
     assert!(out.written);
     assert_eq!(read(root.path().join("doc.md")), "Use d here, d there.\n");
-    assert!(out.document.findings.is_empty());
+    assert_eq!(out.document.findings, []);
 }
 
 #[cfg(unix)]
@@ -139,7 +165,10 @@ fn a_file_that_is_not_utf8_is_an_error_and_stays_as_it_was() {
         None,
     )
     .unwrap_err();
-    assert!(matches!(err, slopvac_engine::FixError::NotUtf8(_)), "{err}");
+    assert!(
+        matches!(err, slopvac_engine::FixError::NotUtf8(..)),
+        "{err}"
+    );
     assert_eq!(
         std::fs::read(root.path().join("doc.md")).unwrap(),
         b"delta \xff\n"
@@ -264,6 +293,10 @@ mod unix {
 
     use super::*;
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn fifo(path: &Path) {
         let status = std::process::Command::new("mkfifo")
             .arg(path)

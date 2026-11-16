@@ -1,11 +1,9 @@
 //! Settings, rule selection, notices and parallel runs.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{category, engine, id, places, rule, ruleset, settings, tokens};
@@ -17,10 +15,18 @@ fn leverage() -> serde_json::Value {
     tokens("dull", "leverage", &json!({}))
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn with(settings: slopvac_engine::Settings, rules: &[serde_json::Value]) -> Engine {
     Engine::new(vec![ruleset(vec![category("cat", rules)])], settings).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(e: &Engine, text: &str) -> slopvac_model::Document {
     e.lint(&Input::markdown("a.md", text)).unwrap()
 }
@@ -39,10 +45,9 @@ fn a_rule_level_overrides_the_shipped_severity() {
 fn a_rule_that_is_off_does_not_run() {
     let mut s = settings();
     s.rule_levels.insert(id("core:cat.dull"), Level::Off);
-    assert!(
-        lint(&with(s, &[leverage()]), "Use leverage.\n")
-            .findings
-            .is_empty()
+    assert_eq!(
+        lint(&with(s, &[leverage()]), "Use leverage.\n").findings,
+        []
     );
 }
 
@@ -78,6 +83,10 @@ trait ParseCategory {
     fn parse_category(&self) -> slopvac_model::CategoryId;
 }
 impl ParseCategory for str {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn parse_category(&self) -> slopvac_model::CategoryId {
         slopvac_model::CategoryId::new(self).unwrap()
     }
@@ -91,15 +100,10 @@ fn applies_to_limits_a_rule_to_modes_and_genres() {
     let other_genre = limited(json!({"applies_to": {"genres": ["tutorial"]}}));
     let code_only = limited(json!({"applies_to": {"modes": ["code-comments"]}}));
     assert_eq!(lint(&with(settings(), &[in_genre]), text).findings.len(), 1);
-    assert!(
-        lint(&with(settings(), &[other_genre]), text)
-            .findings
-            .is_empty()
-    );
-    assert!(
-        lint(&with(settings(), &[code_only.clone()]), text)
-            .findings
-            .is_empty()
+    assert_eq!(lint(&with(settings(), &[other_genre]), text).findings, []);
+    assert_eq!(
+        lint(&with(settings(), std::slice::from_ref(&code_only)), text).findings,
+        []
     );
     let mut s = settings();
     s.mode = Mode::CodeComments;

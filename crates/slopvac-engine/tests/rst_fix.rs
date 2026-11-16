@@ -3,12 +3,10 @@
 //! The same document runs twice: through a fake interpreter that prints the driver output
 //! real docutils wrote for it (always, on Unix), and through the docutils on `PATH` (when
 //! there is one; CI sets `SLOPVAC_RST_LIVE`). Both must give the same fixed text.
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use std::path::PathBuf;
@@ -20,6 +18,10 @@ use slopvac_engine::{Engine, Input, SkipReason, fix_document};
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rst");
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn source() -> String {
     std::fs::read_to_string(format!("{FIXTURES}/fix.rst.in")).unwrap()
 }
@@ -56,6 +58,10 @@ fn swap(options: RstOptions) -> Engine {
     .with_rst(options)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fixed(engine: &Engine, text: &str) -> slopvac_engine::FixReport {
     let input = Input::rst("doc.rst", text);
     let doc = engine.lint(&input).unwrap();
@@ -73,7 +79,7 @@ fn check(engine: &Engine) {
             .iter()
             .all(|s| s.reason == SkipReason::Protected)
     );
-    assert!(!report.skipped.is_empty());
+    assert_ne!(report.skipped, []);
     // A second run has nothing left to change in the prose.
     let again = fixed(engine, &report.text);
     assert_eq!(again.text, report.text);
@@ -120,6 +126,10 @@ fn rst_prose_is_fixed_and_everything_else_stays_with_docutils() {
 
 /// A fake interpreter that prints the driver output saved in `fixture`.
 #[cfg(unix)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fake(dir: &std::path::Path, name: &str, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join(name);
@@ -192,7 +202,7 @@ fn a_converter_that_disappears_after_the_lint_fails_the_fix_and_writes_nothing()
             m = marker.display()
         ),
     );
-    let e = engine_for(python.clone(), &json!({"delta": "d"}));
+    let e = engine_for(python, &json!({"delta": "d"}));
     let source = source();
     let input = Input::rst("doc.rst", &source);
     let doc = e.lint(&input).unwrap();

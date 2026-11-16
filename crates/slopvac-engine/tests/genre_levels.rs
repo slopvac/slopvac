@@ -2,6 +2,10 @@
 //! change-comms, a suggestion in internal and a warning in consumer and reference. Explicit
 //! configuration sits above a genre default (`docs/contract/config.md`, section 1.1).
 
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use common::{category, id, ruleset, tokens};
@@ -11,6 +15,10 @@ use slopvac_model::{
     CategoryId, Document, GenreId, GenreResult, GenreSource, NonEmptyString, Severity,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn settings_for(genre: &str) -> Settings {
     Settings::new(
         NonEmptyString::new("normal").unwrap(),
@@ -25,6 +33,10 @@ fn settings_for(genre: &str) -> Settings {
 }
 
 /// The rule ships as an error so that any genre level shows up as a change.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(settings: Settings) -> Document {
     let rules = [tokens(
         "history-internal-reference",

@@ -66,6 +66,28 @@ mod skip;
 mod tagging;
 mod terms;
 
+/// The span from `start` to `end`, with `end` raised to `start` when it falls short. Callers
+/// pass offsets that already ascend, so the raise does not change anything.
+pub(crate) fn span_between(start: usize, end: usize) -> slopvac_model::Span {
+    slopvac_model::Span::new(start, end.max(start))
+        .unwrap_or_else(|_| slopvac_model::Span::empty(start))
+}
+
+/// The part of `text` in `range`. Offsets in this crate come from the parsers' spans, from
+/// the matcher, from searches for ASCII delimiters and from `char_indices`, so they lie on
+/// character boundaries and the empty fallback does not occur.
+pub(crate) fn sub<I: std::slice::SliceIndex<str, Output = str>>(text: &str, range: I) -> &str {
+    text.get(range).unwrap_or_default()
+}
+
+/// A count as an `f64`. Exact up to 2^53, far above any count of words or findings.
+pub(crate) fn count_f64(n: usize) -> f64 {
+    n.to_le_bytes()
+        .iter()
+        .rev()
+        .fold(0.0, |acc, &b| acc * 256.0 + f64::from(b))
+}
+
 pub use commit::{MAX_FILE_BYTES, Refusal, Step};
 pub use diagrams::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,

@@ -248,12 +248,14 @@ fn findings_of(engine: &Engine, rule: &RuleId, text: &str) -> Result<Seen, Engin
 fn check_case(case: &Case, seen: &Seen) -> Vec<String> {
     let mut why = Vec::new();
     match &case.want {
-        Some(Want::Count(n)) if seen.count != *n as usize => {
+        Some(Want::Count(n)) if !usize::try_from(*n).is_ok_and(|n| seen.count == n) => {
             why.push(format!("want {n} finding(s), got {}", seen.count));
         }
         Some(Want::Range(r))
-            if r.min.is_some_and(|min| seen.count < min as usize)
-                || r.max.is_some_and(|max| seen.count > max as usize) =>
+            if r.min
+                .is_some_and(|min| usize::try_from(min).map_or(true, |m| seen.count < m))
+                || r.max
+                    .is_some_and(|max| usize::try_from(max).is_ok_and(|m| seen.count > m)) =>
         {
             let bound = |b: Option<u32>| b.map_or_else(|| "-".into(), |v| v.to_string());
             why.push(format!(

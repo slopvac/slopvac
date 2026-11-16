@@ -1,8 +1,11 @@
-#![allow(missing_docs)]
 //! The vocabulary sweep indexes the source once per document, not once per raw HTML block.
 //! The work counter is the number of `SourceIndex` values built. It is deterministic, and
 //! it lives in its own test binary so no other test builds indexes at the same time.
 
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use common::{category, rule, ruleset, settings};
@@ -10,6 +13,10 @@ use serde_json::json;
 use slopvac_engine::{Engine, Input};
 use slopvac_terms::Blocklist;
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn builds_for(blocks: usize) -> (usize, usize) {
     let rules = [rule(
         "word-outside-controlled-vocabulary",

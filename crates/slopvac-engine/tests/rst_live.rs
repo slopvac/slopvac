@@ -2,12 +2,6 @@
 //!
 //! These tests need a `python3` or `python` on `PATH` that imports docutils 0.21 or later,
 //! and return early without one. The always-on tests are in `rst_fake.rs`.
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
-)]
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,6 +12,10 @@ use slopvac_model::Span;
 ///
 /// Without one the test returns early after a note, unless `SLOPVAC_RST_LIVE` is set. CI
 /// sets it, so a missing docutils fails the run instead of skipping every live test.
+#[expect(
+    clippy::print_stderr,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn installed() -> Option<RstAdapter> {
     let mut options = RstOptions::default();
     // The repository is the project: an interpreter inside it is never used.

@@ -107,8 +107,8 @@ fn translate(pattern: &str) -> Option<String> {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::with_capacity(pattern.len());
     let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
+    while let Some(&current) = chars.get(i) {
+        match current {
             '\\' => {
                 match chars.get(i + 1) {
                     Some(&n @ ('{' | '}')) => {
@@ -126,7 +126,7 @@ fn translate(pattern: &str) -> Option<String> {
             }
             '[' => {
                 let end = class_end(&chars, i)?;
-                out.extend(&chars[i..end]);
+                out.extend(chars.get(i..end).unwrap_or_default());
                 i = end;
             }
             c @ ('{' | '}') => {

@@ -1,12 +1,9 @@
 //! Skip ranges and diagram rules.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs,
-    clippy::single_range_in_vec_init
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{category, id, ruleset, settings};
@@ -21,6 +18,10 @@ use slopvac_rules::BlockKind;
 
 const DOC: &str = "# Head\n\nSome `code` here.\n\n```\nfence\n```\n";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn parsed() -> slopvac_parse::Document {
     parse_markdown(DOC, Span::new(0, DOC.len()).unwrap()).unwrap()
 }
@@ -61,6 +62,10 @@ fn skip_ranges_hold_list_items_and_quotes() {
 
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn diagram_engine(settings: slopvac_engine::Settings) -> Engine {
     let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
     Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings).unwrap()
@@ -113,12 +118,12 @@ fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
     let mut off = settings();
     off.rule_levels
         .insert(id("diagrams:diagram.label-run-on"), Level::Off);
-    assert!(
+    assert_eq!(
         diagram_engine(off)
             .lint(&Input::markdown("a.md", MERMAID))
             .unwrap()
-            .findings
-            .is_empty()
+            .findings,
+        []
     );
     let mut error = settings();
     error.rule_levels.insert(
@@ -130,24 +135,24 @@ fn a_diagram_rule_obeys_its_level_and_a_disabled_region() {
         .unwrap();
     assert_eq!(doc.findings[0].severity, Severity::Error);
     let hidden = format!("<!-- slopvac-disable -->\n\n{MERMAID}");
-    assert!(
+    assert_eq!(
         diagram_engine(settings())
             .lint(&Input::markdown("a.md", &hidden))
             .unwrap()
-            .findings
-            .is_empty()
+            .findings,
+        []
     );
 }
 
 #[test]
 fn a_fence_without_a_diagram_language_is_not_a_diagram() {
     let plain = MERMAID.replace("mermaid", "text");
-    assert!(
+    assert_eq!(
         diagram_engine(settings())
             .lint(&Input::markdown("a.md", &plain))
             .unwrap()
-            .findings
-            .is_empty()
+            .findings,
+        []
     );
 }
 
@@ -295,6 +300,10 @@ fn a_custom_checker_reports_under_its_own_pack() {
 
 const DIAGRAM: &str = "```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
     let doc = diagram_engine(settings())
         .lint(&Input::markdown("a.md", source))
@@ -350,7 +359,7 @@ fn a_raw_rule_does_not_read_a_diagram_file() {
     let doc = e
         .lint(&Input::diagram("flow.mmd", source, Format::Mermaid))
         .unwrap();
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
 }
 
 /// A checker that answers with a range built from the source length and the prose base.
@@ -378,10 +387,7 @@ impl DiagramChecker for Ranged {
 
 /// A range with `start > end`, which a range literal would not let clippy accept.
 fn reversed(start: usize, end: usize) -> std::ops::Range<usize> {
-    #[allow(clippy::reversed_empty_ranges)]
-    {
-        start..end
-    }
+    start..end
 }
 
 #[test]
@@ -415,6 +421,10 @@ fn signal_rule(id: &str, check: &str, extra: &serde_json::Value) -> serde_json::
     )
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn found(engine: &Engine, input: &Input<'_>) -> Vec<String> {
     engine
         .lint(input)
@@ -503,10 +513,14 @@ fn an_inactive_rule_does_not_hide_a_later_rule_with_the_same_check() {
         ["core:extra.long-label"]
     );
 }
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn one_rule_engine(rules: Vec<(&str, &serde_json::Value)>) -> Engine {
     let sets = rules
         .into_iter()
-        .map(|(category_id, rule)| ruleset(vec![category(category_id, &[rule.clone()])]))
+        .map(|(category_id, rule)| ruleset(vec![category(category_id, std::slice::from_ref(rule))]))
         .collect();
     Engine::new(sets, settings()).unwrap()
 }

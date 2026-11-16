@@ -6,8 +6,6 @@
 //! with the reason; every other fact is still compared, and a listed difference must still
 //! exist.
 
-#![allow(missing_docs, clippy::assert_is_empty)]
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -22,16 +20,29 @@ fn manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn read(name: &str) -> Value {
     let path = manifest().join("tests/fixtures").join(name);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pack() -> PackId {
     PackId::new("core").unwrap()
 }
 
 /// The core `ste-words` category: the base the generated rule joins.
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn base() -> RuleSet {
     let path = manifest().join("../slopvac-rules/tests/fixtures/core-v3/ste-words.json");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -39,6 +50,10 @@ fn base() -> RuleSet {
         .unwrap_or_else(|e| panic!("{e}"))
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn strings(value: &Value) -> Vec<String> {
     value
         .as_array()
@@ -48,6 +63,10 @@ fn strings(value: &Value) -> Vec<String> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pairs(value: &Value) -> Vec<(String, String)> {
     value
         .as_array()
@@ -62,12 +81,20 @@ fn pairs(value: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn locale_of(tag: &str) -> Locale {
     Locale::parse(tag).unwrap()
 }
 
 /// A `ste-words` category with a non-default weight and budget and one rule `id` that
 /// replaces `flavor` by `flavour`.
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn custom_base(id: &str) -> RuleSet {
     let doc = serde_json::json!({
         "schema_version": 3,
@@ -99,6 +126,10 @@ fn engine(tag: &str, allow: &[String]) -> Engine {
     engine_over(base(), tag, allow, true)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn engine_over(base: RuleSet, tag: &str, allow: &[String], base_off: bool) -> Engine {
     let generated = locale::spelling_rules(&pack(), &base, tag, allow, &CompileOptions::default())
         .unwrap()
@@ -187,6 +218,10 @@ fn und_builds_no_rule_and_an_unknown_tag_says_so_as_2x_does() {
 
 type Row = (String, usize, usize, usize, String, String, String);
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rows_expected(findings: &Value) -> Vec<Row> {
     findings
         .as_array()
@@ -206,6 +241,10 @@ fn rows_expected(findings: &Value) -> Vec<Row> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rows_actual(engine: &Engine, name: &str, text: &str) -> Vec<Row> {
     let doc = engine.lint(&Input::markdown(name, text)).unwrap();
     doc.findings
@@ -301,7 +340,7 @@ fn the_builtin_terms_hide_no_variant() {
     // The shipped terms are product and language names; none is a spelling variant, so
     // exempting them changes no substitution.
     let allow = locale::term_words(&TermSet::builtin());
-    assert!(!allow.is_empty());
+    assert_ne!(allow, Vec::<String>::new());
     for tag in [Locale::EnUs, Locale::EnGb] {
         let plain = locale::spelling(tag, &[]).unwrap();
         let with_terms = locale::spelling(tag, &allow).unwrap();

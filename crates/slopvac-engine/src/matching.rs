@@ -1,6 +1,7 @@
 //! Helpers for lexical matches: allowlist and all-caps tests, message interpolation and the
 //! replacement a substitution rule names. Ports of `slopvac.engine`.
 
+use crate::sub;
 use std::sync::{LazyLock, OnceLock};
 
 use slopvac_rules::LoadedRule;
@@ -32,12 +33,12 @@ pub(crate) fn is_all_caps(matched: &str) -> bool {
     let mut words: Vec<&str> = Vec::new();
     let mut rest = matched;
     while let Some(at) = rest.find(|c: char| c.is_ascii_alphabetic()) {
-        let tail = &rest[at..];
+        let tail = sub(rest, at..);
         let len = tail
             .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-')))
             .unwrap_or(tail.len());
-        words.push(&tail[..len]);
-        rest = &tail[len..];
+        words.push(sub(tail, ..len));
+        rest = sub(tail, len..);
     }
     if words.is_empty() || words.len() > 4 || !words.iter().any(|w| shouts(w)) {
         return false;
@@ -54,7 +55,7 @@ pub(crate) fn allowlisted(rule: &LoadedRule, text: &str, range: &std::ops::Range
     if allowlist.is_empty() {
         return false;
     }
-    let matched = text[range.clone()].to_lowercase();
+    let matched = sub(text, range.clone()).to_lowercase();
     if allowlist
         .iter()
         .any(|a| a.as_str().to_lowercase() == matched)
@@ -87,7 +88,10 @@ pub(crate) fn allowlisted(rule: &LoadedRule, text: &str, range: &std::ops::Range
         .filter(|a| a.contains(' '))
         .any(|phrase| {
             lowered.match_indices(&phrase).any(|(at, found)| {
-                origin[at] <= range.start && origin[at + found.len()] >= range.end
+                origin
+                    .get(at)
+                    .zip(origin.get(at + found.len()))
+                    .is_some_and(|(first, last)| *first <= range.start && *last >= range.end)
             })
         })
 }
@@ -122,10 +126,10 @@ pub(crate) fn format_message(template: &str, matched: &str, replacement: &str) -
                 out.push('}');
             }
             '{' => {
-                let Some(close) = template[i + 1..].find('}') else {
+                let Some(close) = sub(template, i + 1..).find('}') else {
                     return template.to_owned();
                 };
-                let name = &template[i + 1..i + 1 + close];
+                let name = sub(template, i + 1..i + 1 + close);
                 if name.contains('{') {
                     return template.to_owned();
                 }
@@ -155,9 +159,17 @@ pub(crate) fn is_single_replacement(replacement: &str) -> bool {
 // the space it looks ahead for is outside the span. Stripping the assertions makes the
 // reverse lookup work. One level of grouping inside an assertion is allowed.
 const ASSERTION_BODY: &str = r"(?:\?=|\?!|\?<=|\?<!)(?:[^()]|\([^()]*\))*";
+#[expect(
+    clippy::expect_used,
+    reason = "the pattern is built from a literal, and the tests compile it"
+)]
 static TRAILING_ASSERTION: LazyLock<Pattern> = LazyLock::new(|| {
     Pattern::new(&format!(r"\({ASSERTION_BODY}\)\z"), false).expect("assertion pattern compiles")
 });
+#[expect(
+    clippy::expect_used,
+    reason = "the pattern is built from a literal, and the tests compile it"
+)]
 static LEADING_ASSERTION: LazyLock<Pattern> = LazyLock::new(|| {
     Pattern::new(&format!(r"\A\({ASSERTION_BODY}\)"), false).expect("assertion pattern compiles")
 });

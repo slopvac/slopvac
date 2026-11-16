@@ -5,6 +5,7 @@
 //! finding in a skipped block, in text the project allows or under a directive. A finding
 //! carries a fix that writes the canonical spelling.
 
+use crate::sub;
 use slopvac_model::{Edit, Finding, Fix};
 use slopvac_rules::Scope;
 use slopvac_text::TextType;
@@ -27,8 +28,9 @@ impl Run<'_> {
         }
         let allowed = &engine.settings.allowed_words;
         for active in &engine.casing_rules {
-            let set = &engine.sets[active.set];
-            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let Some((set, loaded)) = engine.rule_with_set(active) else {
+                continue;
+            };
             let rule = loaded.rule();
             // As for lexical rules: raw text has no inline code to skip, and a rule that names
             // no excluded blocks still skips inline code in prose.
@@ -77,7 +79,7 @@ impl Run<'_> {
                     {
                         continue;
                     }
-                    let source = &self.input.source[span.start()..span.end()];
+                    let source = sub(self.input.source, span.start()..span.end());
                     // Only text that reads the same in the source can be rewritten.
                     let fix = if source == hit.found {
                         Some(

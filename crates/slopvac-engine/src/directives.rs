@@ -13,6 +13,8 @@
 //! Directives written inside code blocks, front matter or inline code are examples and do
 //! nothing.
 
+use crate::span_between;
+use crate::sub;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use slopvac_model::Span;
@@ -30,8 +32,8 @@ impl<'a> Lines<'a> {
         let bytes = source.as_bytes();
         let mut spans = Vec::new();
         let (mut start, mut i) = (0, 0);
-        while i < bytes.len() {
-            match bytes[i] {
+        while let Some(&current) = bytes.get(i) {
+            match current {
                 b'\n' => {
                     spans.push((start, i));
                     start = i + 1;
@@ -57,13 +59,20 @@ impl<'a> Lines<'a> {
         self.spans.len()
     }
 
+    /// The text of one-based `line`, or nothing for a line the document does not have.
     pub(crate) fn text(&self, line: usize) -> &'a str {
-        let (s, e) = self.spans[line - 1];
-        &self.source[s..e]
+        self.span_of(line)
+            .map_or("", |&(s, e)| sub(self.source, s..e))
     }
 
-    pub(crate) fn start(&self, line: usize) -> usize {
-        self.spans[line - 1].0
+    /// The offset where one-based `line` starts, or `None` for a line the document does not
+    /// have, line 0 included.
+    pub(crate) fn start(&self, line: usize) -> Option<usize> {
+        self.span_of(line).map(|&(s, _)| s)
+    }
+
+    fn span_of(&self, line: usize) -> Option<&(usize, usize)> {
+        line.checked_sub(1).and_then(|index| self.spans.get(index))
     }
 
     /// The one-based line holding `offset`.
@@ -207,12 +216,12 @@ fn expand_block_targets(
 /// The backtick run lengths still open after `text[..end]`.
 fn runs_toggled(open: &BTreeSet<usize>, text: &str, end: usize) -> BTreeSet<usize> {
     let mut state = open.clone();
-    let bytes = &text.as_bytes()[..end];
+    let bytes = text.as_bytes().get(..end).unwrap_or_default();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
+    while let Some(&current) = bytes.get(i) {
+        if current == b'`' {
             let start = i;
-            while i < bytes.len() && bytes[i] == b'`' {
+            while bytes.get(i) == Some(&b'`') {
                 i += 1;
             }
             let len = i - start;
@@ -234,7 +243,7 @@ fn written(open: &BTreeSet<usize>, line: &str, at: usize) -> bool {
 /// The first `<!-- name -->` in `line`, as the byte offset of its `<!--`.
 fn find_plain(line: &str, name: &str) -> Option<usize> {
     line.match_indices("<!--").map(|(i, _)| i).find(|&i| {
-        line[i + 4..]
+        sub(line, i + 4..)
             .trim_start()
             .strip_prefix(name)
             .is_some_and(|rest| rest.trim_start().starts_with("-->"))
@@ -246,7 +255,7 @@ fn find_attempts(line: &str) -> Vec<usize> {
     line.match_indices("<!--")
         .map(|(i, _)| i)
         .filter(|&i| {
-            line[i + 4..]
+            sub(line, i + 4..)
                 .trim_start()
                 .strip_prefix("slopvac-allow")
                 .is_some_and(|rest| !rest.chars().next().is_some_and(is_word))
@@ -277,8 +286,8 @@ fn parse_allow(text: &str) -> Option<(String, Option<String>)> {
     // backtracking match would.
     if rest.starts_with('>') && rule.ends_with("--") && rule.len() > 2 {
         let keep = rule.len() - 2;
-        rest = &text[text.len() - rest.len() - 2..];
-        rule = &rule[..keep];
+        rest = sub(text, text.len() - rest.len() - 2..);
+        rule = sub(rule, ..keep);
     }
     let trimmed = rest.trim_start();
     if rest.len() != trimmed.len()
@@ -340,13 +349,14 @@ pub(crate) fn scan<'a>(
             .collect();
         open = runs_toggled(&open, line, line.len());
         for at in attempts {
-            let end = line[at..].find("-->").map_or(line.len(), |c| at + c + 3);
-            let raw = line[at..end].trim();
-            let span = Span::new(
-                lines.start(number) + at,
-                lines.start(number) + at + raw.len(),
-            )
-            .expect("a directive ends after it starts");
+            let end = sub(line, at..)
+                .find("-->")
+                .map_or(line.len(), |c| at + c + 3);
+            let raw = sub(line, at..end).trim();
+            let Some(line_start) = lines.start(number) else {
+                continue;
+            };
+            let span = span_between(line_start + at, line_start + at + raw.len());
             let mut invalid = |message: String| out.invalid.push(Invalid { span, message });
             let Some((rule, reason)) = parse_allow(raw) else {
                 invalid(

@@ -1,11 +1,9 @@
 //! Safe fixes: parity with the 2.x `--fix`, and the refusals 3.0 adds.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use std::collections::BTreeMap;
@@ -26,7 +24,7 @@ fn manifest() -> &'static Path {
 /// `find` occurs once in the reference text.
 #[derive(serde::Deserialize)]
 struct Divergence {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "the fixture records why the divergence exists")]
     reason: String,
     expected: Vec<(String, String)>,
 }
@@ -77,6 +75,10 @@ fn swaps() -> Engine {
     )])
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fix(
     engine: &Engine,
     text: &str,
@@ -112,14 +114,13 @@ fn the_first_of_two_overlapping_fixes_wins_and_the_other_is_reported() {
 fn a_replacement_with_alternatives_is_not_fixed_or_reported_as_skipped() {
     let report = fix(&swaps(), "Send it via mail.\n", None);
     assert_eq!(report.text, "Send it via mail.\n");
-    assert!(report.skipped.is_empty());
+    assert_eq!(report.skipped, []);
 }
 
 #[test]
-#[allow(clippy::single_range_in_vec_init)]
 fn only_lines_in_the_changed_ranges_are_fixed() {
     let text = "delta one.\ndelta two.\ndelta three.\n";
-    let report = fix(&swaps(), text, Some(&[2..=2]));
+    let report = fix(&swaps(), text, Some(std::slice::from_ref(&(2..=2))));
     assert_eq!(report.text, "delta one.\nd two.\ndelta three.\n");
     let reasons: Vec<_> = report.skipped.iter().map(|s| s.reason).collect();
     assert_eq!(reasons, [SkipReason::OutsideChangedLines; 2]);
@@ -278,6 +279,10 @@ fn a_definition_inside_a_quote_keeps_its_references_resolving() {
     }
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fix_mdx(engine: &Engine, text: &str) -> String {
     let input = Input::mdx("doc.mdx", text);
     let doc = engine.lint(&input).unwrap();

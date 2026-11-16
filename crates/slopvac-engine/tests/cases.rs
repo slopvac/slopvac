@@ -1,7 +1,9 @@
 //! The case runner on synthetic rules and on the shipped core rules.
 
-#![allow(missing_docs)]
-
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use std::path::PathBuf;
@@ -18,6 +20,10 @@ fn foo_rule(extra: &Value) -> Value {
     tokens("r", "foo", extra)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn run(extra: &Value) -> CaseReport {
     run_cases(&engine(&[foo_rule(extra)]), None).unwrap()
 }
@@ -171,6 +177,14 @@ fn only_the_findings_of_the_rule_under_test_count() {
     assert_eq!(report.passed(), 1);
 }
 
+#[expect(
+    clippy::unreachable,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn reasons(report: &CaseReport) -> Vec<(Origin, String)> {
     report
         .incomplete()
@@ -472,6 +486,11 @@ fn coverage_flags_rules_that_match_nothing_in_the_corpus() {
 
 // ---- the shipped core rules ----
 
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn core_engine() -> Engine {
     let dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../slopvac-rules/tests/fixtures/core-v3");
@@ -583,6 +602,10 @@ fn the_core_rules_without_an_executable_check_are_listed() {
     );
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pack_dir(want: u32) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let (name, text) = common::category(
@@ -595,6 +618,10 @@ fn pack_dir(want: u32) -> tempfile::TempDir {
     dir
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn cli(args: &[&str]) -> (i32, String) {
     let m = slopvac_engine::cases::cli::command()
         .try_get_matches_from(std::iter::once("cases").chain(args.iter().copied()))
@@ -682,7 +709,15 @@ fn the_command_exits_1_on_a_failed_case_and_prints_the_coverage_of_a_corpus() {
 }
 
 /// The committed eval documents: every `*.corpus` file under `evals/corpus`.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn eval_corpus() -> Vec<(String, String)> {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
@@ -708,6 +743,11 @@ fn eval_corpus() -> Vec<(String, String)> {
 
 /// Lint `docs` with the core rules and write the coverage report to `file` in the target
 /// directory, so CI and a reader find it next to the test log.
+#[expect(
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     let inputs: Vec<Input<'_>> = docs
         .iter()

@@ -230,7 +230,17 @@ pub fn changed_lines_with(
                 DiffError::NotRepository("not inside a Git repository".to_owned())
             }
             DiffError::Git(detail) => DiffError::NotRepository(detail),
-            other => other,
+            other @ (DiffError::Spawn(_)
+            | DiffError::NotRepository(_)
+            | DiffError::InvalidBase(_)
+            | DiffError::Malformed(_)
+            | DiffError::MissingObject(_)
+            | DiffError::OutputTooLarge(_)
+            | DiffError::TimedOut(_)
+            | DiffError::FileTooLarge { .. }
+            | DiffError::NotRegularFile(_)
+            | DiffError::Symlink(_)
+            | DiffError::Escape(_)) => other,
         })?;
     let toplevel = patch::to_path(trim_newline(&toplevel))?;
     let root = std::fs::canonicalize(&toplevel)
@@ -310,7 +320,17 @@ fn resolve_base(root: &Path, base: &str, options: &Options) -> Result<String, Di
     let out = git::run(root, &["rev-parse", "--verify", "--quiet", &spec], options).map_err(
         |e| match e {
             DiffError::Git(_) => DiffError::InvalidBase(base.to_owned()),
-            other => other,
+            other @ (DiffError::Spawn(_)
+            | DiffError::NotRepository(_)
+            | DiffError::InvalidBase(_)
+            | DiffError::Malformed(_)
+            | DiffError::MissingObject(_)
+            | DiffError::OutputTooLarge(_)
+            | DiffError::TimedOut(_)
+            | DiffError::FileTooLarge { .. }
+            | DiffError::NotRegularFile(_)
+            | DiffError::Symlink(_)
+            | DiffError::Escape(_)) => other,
         },
     )?;
     let id = String::from_utf8_lossy(trim_newline(&out)).into_owned();

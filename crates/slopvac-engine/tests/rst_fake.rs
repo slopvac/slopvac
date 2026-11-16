@@ -4,12 +4,10 @@
 //! `tests/fixtures/rst` come from the real driver on docutils 0.23 (`generate.py`), so the
 //! position mapping runs on real docutils output without Python on the test machine.
 #![cfg(unix)]
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use std::fs;
@@ -44,6 +42,10 @@ struct Fakes {
 }
 
 /// Write an executable script.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn script(path: &Path, body: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -52,6 +54,11 @@ fn script(path: &Path, body: &str) {
 
 /// Every script is written once, before any test starts a process. A script that is still
 /// open for writing when another thread forks cannot be executed (ETXTBSY).
+#[expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fakes() -> &'static Fakes {
     static FAKES: OnceLock<Fakes> = OnceLock::new();
     FAKES.get_or_init(|| {
@@ -141,11 +148,19 @@ fn using(interpreter: &Path) -> RstOptions {
     options
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn read_source(name: &str) -> String {
     fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap()
 }
 
 /// Parse the fixture `name` through its recorded driver output.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn parse_fixture(name: &str) -> (String, RstParse) {
     let source = read_source(name);
     let parsed = parse_rst(&source, &using(&fake(&format!("json-{name}")))).unwrap();
@@ -177,6 +192,10 @@ fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn path_list(dirs: &[&Path]) -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap()
 }
@@ -218,7 +237,7 @@ fn an_interpreter_without_docutils_is_passed_over() {
 fn an_interpreter_planted_in_the_project_is_never_used() {
     let project = fake("project");
     let search = path_list(&[&fake("project/bin")]);
-    let (interpreter, reasons) = found(&search, &[project.clone()]);
+    let (interpreter, reasons) = found(&search, &[project]);
     assert_eq!(interpreter, None);
     assert_eq!(reasons.len(), 1);
     assert!(matches!(&reasons[0], SkipReason::InsideProject(_)));
@@ -446,6 +465,10 @@ fn output_over_the_cap_is_refused() {
     );
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn a_failing_interpreter_reports_status_and_stderr() {
     match parse_rst("text\n", &using(&fake("failing"))).unwrap_err() {
@@ -490,6 +513,10 @@ fn the_result_names_the_interpreter_and_docutils() {
 
 // --- mapping on docutils output ----------------------------------------------------------
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn sections_map_to_the_source_text() {
     let (source, parsed) = parse_fixture("sections");
@@ -521,7 +548,7 @@ fn sections_map_to_the_source_text() {
         })
         .collect();
     assert_eq!(levels, [1, 2]);
-    assert!(parsed.notices.is_empty());
+    assert_eq!(parsed.notices, []);
 }
 
 #[test]
@@ -602,9 +629,13 @@ fn lists_map_each_item_and_know_their_containers() {
             depth: 1
         }]
     );
-    assert!(blocks[0].containers.is_empty());
+    assert_eq!(blocks[0].containers, []);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn literal_blocks_and_directives_map_to_their_lines() {
     let (source, parsed) = parse_fixture("blocks");
@@ -638,6 +669,10 @@ fn literal_blocks_and_directives_map_to_their_lines() {
     );
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn table_cells_map_to_their_text_with_row_and_column() {
     let (source, parsed) = parse_fixture("table");
@@ -712,6 +747,10 @@ fn a_comment_that_repeats_a_paragraph_does_not_take_its_position() {
     assert_ne!(starts[0].0, starts[1].0);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn an_admonition_title_does_not_take_the_body_position() {
     let (source, parsed) = parse_fixture("admonition");
@@ -821,6 +860,10 @@ fn prose_after_a_comment_longer_than_16_kib_is_still_found() {
 fn without_project_boundaries_nothing_on_the_path_is_run() {
     // A trusted-looking directory, but the adapter does not know where the project is.
     let marker = fake("marker-bin/ran");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "removing a marker file that may not exist; nothing below depends on the result"
+    )]
     let _ = fs::remove_file(&marker);
     let mut options = RstOptions::default();
     options.search_path = Some(path_list(&[&fake("marker-bin")]));
@@ -839,11 +882,23 @@ fn with_boundaries_the_same_search_path_runs_the_probe() {
     let mut options = RstOptions::default();
     options.search_path = Some(path_list(&[&fake("marker-bin-b")]));
     options.project_roots = vec![fake("empty")];
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "removing a marker file that may not exist; nothing below depends on the result"
+    )]
     let _ = parse_rst("text\n", &options);
     assert!(marker.exists(), "the probe did not run");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the call is made for its side effect, which the next assertion checks"
+    )]
     let _ = fs::remove_file(&marker);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn table_cells_with_the_same_text_keep_their_own_columns() {
     let (source, parsed) = parse_fixture("table-repeat");
@@ -915,6 +970,10 @@ fn a_contents_directive_leaves_no_notice() {
     assert_eq!(parsed.notices, []);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn table_cells_report_their_logical_columns_after_column_and_row_spans() {
     let (source, parsed) = parse_fixture("table-span");

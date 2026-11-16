@@ -177,14 +177,26 @@ pub(super) fn run(
     // A write error means the interpreter stopped reading, which its exit status reports.
     let input = input.to_vec();
     thread::spawn(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a write error means the interpreter stopped reading, and its exit status reports that"
+        )]
         let _ = stdin.write_all(&input);
     });
     let (out_tx, out_rx) = crossbeam_channel::bounded(1);
     thread::spawn(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "send fails only when the receiver is gone after a timeout"
+        )]
         let _ = out_tx.send(read_capped(stdout, max_output));
     });
     let (err_tx, err_rx) = crossbeam_channel::bounded(1);
     thread::spawn(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "send fails only when the receiver is gone after a timeout"
+        )]
         let _ = err_tx.send(read_stderr(stderr));
     });
 
@@ -271,7 +283,15 @@ fn finish(
 }
 
 fn kill(child: &mut std::process::Child) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "kill fails only when the child already ended"
+    )]
     let _ = child.kill();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "wait fails only when the child was already reaped"
+    )]
     let _ = child.wait();
 }
 
@@ -298,7 +318,7 @@ fn read_stderr(mut reader: impl Read) -> Vec<u8> {
             break;
         }
         let room = STDERR_KEPT.saturating_sub(kept.len());
-        kept.extend_from_slice(&chunk[..n.min(room)]);
+        kept.extend_from_slice(chunk.get(..n.min(room)).unwrap_or_default());
     }
     kept
 }

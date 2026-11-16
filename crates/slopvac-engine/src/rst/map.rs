@@ -28,6 +28,7 @@
 //! Past it, nodes fall back to line precision without any more matching, so the cost stays
 //! linear. The `scanned` total keeps counting after that, and the property tests bound it.
 
+use crate::sub;
 use std::collections::HashMap;
 
 use slopvac_model::Span;
@@ -120,7 +121,7 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
     blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     code_spans.sort_by_key(Span::start);
     let mut notices = Vec::new();
-    if !unplaced.is_empty() {
+    if let Some(first_unplaced) = unplaced.first() {
         notices.push(RstNotice {
             code: "rst-prose-unplaced",
             warning: true,
@@ -128,7 +129,7 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
                 "{} RST node(s) have no usable source lines, so their prose was not checked \
                  (first: {})",
                 unplaced.len(),
-                unplaced[0]
+                first_unplaced
             ),
         });
     }
@@ -241,7 +242,10 @@ fn parse_border(line: &str) -> Option<Border> {
 
 /// What became of a node. One value is alive at a time, so the size of the variants does not
 /// matter.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the enum is built a few times per file and moved once, so boxing would add an allocation for no gain"
+)]
 enum Outcome {
     /// Its lines are missing or outside the file.
     Unplaced,
@@ -423,13 +427,13 @@ impl<'a> Mapper<'a> {
         if !self.m.exhausted() {
             let text = self.line_text(line);
             let lead = text.len() - text.trim_start().len();
-            let rest = &text[lead..];
+            let rest = sub(text, lead..);
             let named = rest
                 .strip_prefix(':')
                 .and_then(|r| r.strip_prefix(node.text.as_str()))
                 .is_some_and(|r| r.starts_with(':'));
             if named {
-                let at = self.starts[line - 1] + lead;
+                let at = self.line_start(line)? + lead;
                 let end = at + 1 + node.text.len() + 1;
                 self.names.insert(line, end);
                 return Some(span(at, end));
@@ -445,20 +449,30 @@ impl<'a> Mapper<'a> {
             return None;
         }
         let last = last.min(lines);
-        Some((self.starts[first - 1], self.line_end(last)))
+        Some((self.line_start(first)?, self.line_end(last)))
     }
 
     /// End of line `line` (1-based) before its terminator.
     fn line_end(&self, line: usize) -> usize {
-        if line >= self.starts.len() {
-            return self.src.len();
-        }
-        self.src.line_end_before(self.starts[line])
+        self.starts
+            .get(line)
+            .and_then(|&next| self.src.line_end_before(next))
+            .unwrap_or_else(|| self.src.len())
+    }
+
+    /// Start of line `line` (1-based), or `None` for line 0 or a line past the end.
+    fn line_start(&self, line: usize) -> Option<usize> {
+        line.checked_sub(1)
+            .and_then(|index| self.starts.get(index))
+            .copied()
     }
 
     /// The text of line `line` (1-based), without its terminator. Its bytes are charged.
     fn line_text(&mut self, line: usize) -> &'a str {
-        let (a, b) = (self.starts[line - 1], self.line_end(line));
+        let Some(a) = self.line_start(line) else {
+            return "";
+        };
+        let b = self.line_end(line);
         self.src.slice(&mut self.m, a, b)
     }
 
@@ -544,7 +558,10 @@ impl<'a> Mapper<'a> {
         // (start in the view, start in the source, length) of each line's piece.
         let mut pieces: Vec<(usize, usize, usize)> = Vec::new();
         for line in first..=last {
-            let (a, b) = (self.starts[line - 1], self.line_end(line));
+            let Some(a) = self.line_start(line) else {
+                return self.fallback_lines(&node.pieces, first, last);
+            };
+            let b = self.line_end(line);
             let Some((from, to)) = self.src.window(&mut self.m, a, b, x0, x1) else {
                 return self.fallback_lines(&node.pieces, first, last);
             };
@@ -567,11 +584,13 @@ impl<'a> Mapper<'a> {
             let i = pieces
                 .partition_point(|&(at, _, _)| at <= v)
                 .saturating_sub(1);
-            let (at, src, len) = pieces[i];
+            let Some(&(at, src, len)) = pieces.get(i) else {
+                return v;
+            };
             src + (v - at).min(len)
         };
         let end_of = |e: usize| {
-            if e == 0 || view.as_bytes()[e - 1] == b'\n' {
+            if e == 0 || view.as_bytes().get(e - 1) == Some(&b'\n') {
                 start_of(e)
             } else {
                 start_of(e - 1) + 1
@@ -588,7 +607,11 @@ impl<'a> Mapper<'a> {
             let mut projection = Projection::new();
             for t in p.projection.tokens() {
                 // A token over a line break of the view covers the cells beside this one.
-                let bridges = view.as_bytes()[t.src.start()..t.src.end()].contains(&b'\n');
+                let bridges = view
+                    .as_bytes()
+                    .get(t.src.start()..t.src.end())
+                    .unwrap_or_default()
+                    .contains(&b'\n');
                 if bridges {
                     projection.push_bridge(t.kind, &t.text, shift(t.src));
                 } else {
@@ -698,7 +721,9 @@ impl<'a> Mapper<'a> {
             }
         }
         let (start, end) = start.zip(end).unwrap_or_else(|| {
-            let at = self.starts[first.min(self.starts.len()).max(1) - 1];
+            let at = self
+                .line_start(first.min(self.starts.len()).max(1))
+                .unwrap_or(0);
             (at, at)
         });
         Some(Self::fallback_at(&text, start, end))
@@ -710,7 +735,8 @@ impl<'a> Mapper<'a> {
         if let Some(known) = self.trims.get(&line) {
             return *known;
         }
-        let (a, b) = (self.starts[line - 1], self.line_end(line));
+        let a = self.line_start(line)?;
+        let b = self.line_end(line);
         self.src.slice_free(&mut self.m, a, b);
         let found = self.src.trimmed(&mut self.m, a, b);
         self.trims.insert(line, found);
@@ -810,11 +836,11 @@ impl<'a> Mapper<'a> {
         let raw = self.src.slice(&mut self.m, begin, end);
         let mut skip = 0;
         if raw.starts_with(':')
-            && let Some(i) = raw[1..].find(':')
+            && let Some(i) = sub(raw, 1..).find(':')
         {
             skip = i + 2;
         }
-        skip += raw[skip..].len() - raw[skip..].trim_start_matches(['*', '`', '_']).len();
+        skip += sub(raw, skip..).len() - sub(raw, skip..).trim_start_matches(['*', '`', '_']).len();
         let mut inner = Vec::new();
         if self.text(&piece.t, begin + skip, end, &mut inner).is_some() {
             let real = || inner.iter().filter(|t| t.0.is_real());
@@ -1042,8 +1068,6 @@ fn push(toks: &mut Vec<Tok>, tok: Tok) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::assert_is_empty)]
-
     /// The most uncharged bytes a run may look at, per byte of input. The charged part is
     /// capped by the budget itself.
     const UNCHARGED_PER_BYTE: usize = 16;
@@ -1087,8 +1111,8 @@ mod tests {
         );
         let (text, at) = first_prose(&mapped);
         assert_eq!(text, "A rubric");
-        assert_eq!(&source[at.start()..at.end()], "A rubric");
-        assert!(mapped.notices.is_empty());
+        assert_eq!(sub(source, at.start()..at.end()), "A rubric");
+        assert_eq!(mapped.notices, []);
     }
 
     #[test]
@@ -1105,7 +1129,7 @@ mod tests {
         let (text, at) = first_prose(&mapped);
         assert_eq!(text, "Words that docutils rewrote.");
         assert_eq!(
-            &source[at.start()..at.end()],
+            sub(source, at.start()..at.end()),
             "Words that docutils changed."
         );
         let codes: Vec<_> = mapped.notices.iter().map(|n| (n.code, n.warning)).collect();
@@ -1121,7 +1145,7 @@ mod tests {
                 r#"[{"tag":"classifier","start":null,"end":null,"pieces":[{"k":"t","t":"Text"}]}]"#,
             ),
         );
-        assert!(mapped.document.blocks.is_empty());
+        assert_eq!(mapped.document.blocks, []);
         assert_eq!(mapped.notices.len(), 1);
         assert_eq!(mapped.notices[0].code, "rst-prose-unplaced");
         assert!(mapped.notices[0].warning);
@@ -1135,7 +1159,7 @@ mod tests {
             0,
             &nodes(&format!("[{}]", paragraph(9, 9, "Text"))),
         );
-        assert!(mapped.document.blocks.is_empty());
+        assert_eq!(mapped.document.blocks, []);
         assert_eq!(mapped.notices[0].code, "rst-prose-unplaced");
     }
 
@@ -1149,8 +1173,8 @@ mod tests {
         );
         let (text, at) = first_prose(&mapped);
         assert_eq!(text, "foobar");
-        assert_eq!(&source[at.start()..at.end()], "foo\\ bar");
-        assert!(mapped.notices.is_empty());
+        assert_eq!(sub(source, at.start()..at.end()), "foo\\ bar");
+        assert_eq!(mapped.notices, []);
     }
 
     #[test]
@@ -1169,7 +1193,7 @@ mod tests {
             .document
             .blocks
             .iter()
-            .map(|b| &source[b.span.start()..b.span.end()])
+            .map(|b| sub(source, b.span.start()..b.span.end()))
             .collect();
         assert_eq!(got, ["two", "three"]);
     }
@@ -1192,7 +1216,7 @@ mod tests {
         let (text, at) = first_prose(&mapped);
         assert_eq!(text, word);
         assert_eq!(
-            &source[at.start()..at.end()],
+            sub(&source, at.start()..at.end()),
             format!("{}b", "a".repeat(run))
         );
     }
@@ -1209,7 +1233,7 @@ mod tests {
         }
         let mapped = project(&source, 0, &nodes(&format!("[{}]", json.join(","))));
         assert_eq!(mapped.document.blocks.len(), 2_000);
-        assert!(mapped.notices.is_empty());
+        assert_eq!(mapped.notices, []);
         // Each character is compared once: the work is about twice the text, never more
         // than four times.
         assert!(
@@ -1454,7 +1478,10 @@ mod tests {
                     prop::collection::vec(node(count, words), 1..60),
                 )
                     .prop_map(|(lines, eol, nodes)| {
-                        (lines.join(eol) + eol, format!("[{}]", nodes.join(",")))
+                        (
+                            format!("{}{eol}", lines.join(eol)),
+                            format!("[{}]", nodes.join(",")),
+                        )
                     })
             })
         }

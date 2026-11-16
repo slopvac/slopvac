@@ -1,12 +1,9 @@
 //! Matching: scopes, position mapping, filters and exceptions.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs,
-    clippy::single_range_in_vec_init
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{engine, id, matched, places, rule, tokens};
@@ -14,6 +11,10 @@ use serde_json::json;
 use slopvac_engine::Input;
 use slopvac_model::Severity;
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(engine: &slopvac_engine::Engine, source: &str) -> slopvac_model::Document {
     engine.lint(&Input::markdown("a.md", source)).unwrap()
 }
@@ -47,7 +48,7 @@ fn a_match_inside_markup_maps_to_the_source_bytes() {
 #[test]
 fn inline_code_is_not_prose() {
     let e = engine(&[tokens("dull", "leverage", &json!({}))]);
-    assert!(lint(&e, "Call `leverage` here.\n").findings.is_empty());
+    assert_eq!(lint(&e, "Call `leverage` here.\n").findings, []);
 }
 
 #[test]
@@ -126,7 +127,7 @@ fn an_allowlist_entry_matches_without_regard_to_case() {
         &json!({"kind": "tokens", "tokens": ["leverage"], "ignore_case": true}),
         &json!({"allowlist": ["Leverage"]}),
     )]);
-    assert!(lint(&e, "A leverage point.\n").findings.is_empty());
+    assert_eq!(lint(&e, "A leverage point.\n").findings, []);
 }
 
 #[test]
@@ -301,6 +302,10 @@ fn crlf_line_endings_keep_byte_exact_columns() {
 }
 
 /// The exclusive end of a finding as `(line, column)`, and its byte span.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn extent(doc: &slopvac_model::Document) -> ((usize, usize), (usize, usize)) {
     let e = doc.findings[0].extent.unwrap();
     (

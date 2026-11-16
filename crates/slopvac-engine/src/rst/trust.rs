@@ -77,6 +77,8 @@ pub enum OverrideError {
     NotExecutable,
     /// The interpreter resolves inside a project root.
     InsideProject(PathBuf),
+    /// The path exists as an executable but cannot be resolved to its real location.
+    Unresolvable(String),
 }
 
 impl std::fmt::Display for OverrideError {
@@ -85,6 +87,7 @@ impl std::fmt::Display for OverrideError {
             Self::NotAbsolute => f.write_str("it is not an absolute path"),
             Self::NotExecutable => f.write_str("it is not an executable file"),
             Self::InsideProject(root) => write!(f, "it is inside the project {}", root.display()),
+            Self::Unresolvable(reason) => write!(f, "it cannot be resolved: {reason}"),
         }
     }
 }
@@ -188,7 +191,8 @@ pub fn check_override(path: &Path, project_roots: &[PathBuf]) -> Result<PathBuf,
         return Err(OverrideError::NotExecutable);
     }
     let roots = canonical_roots(project_roots);
-    let real = std::fs::canonicalize(path).map_err(|_| OverrideError::NotExecutable)?;
+    let real =
+        std::fs::canonicalize(path).map_err(|e| OverrideError::Unresolvable(e.to_string()))?;
     if let Some(root) = inside(&real, &roots) {
         return Err(OverrideError::InsideProject(root));
     }

@@ -1,11 +1,5 @@
 //! Scores and gates, with expectations worked out by hand from the 2.x formulas.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
-)]
-
 use std::collections::BTreeMap;
 
 use slopvac_engine::{CategoryInfo, Thresholds, score_document};
@@ -14,6 +8,10 @@ use slopvac_model::{
     RuleId, Severity,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn finding(category: &str, severity: Severity) -> Finding {
     Finding {
         rule_id: RuleId::new(format!("core:{category}.r")).unwrap(),
@@ -31,6 +29,10 @@ fn finding(category: &str, severity: Severity) -> Finding {
     }
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn categories(budget: Option<f64>) -> BTreeMap<CategoryId, CategoryInfo> {
     BTreeMap::from([(
         CategoryId::new("a").unwrap(),

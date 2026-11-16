@@ -9,6 +9,7 @@
 //!   the taggers in `slopvac-context`, and a pack's own tag works the same way. The finding
 //!   is dropped when that tag covers its span.
 
+use crate::sub;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::LazyLock;
@@ -53,6 +54,10 @@ pub struct DuplicateDetector(String);
 struct Quotation;
 
 // Port of `engine._QUOTED_SPAN`. The `\w` classes are rewritten by `slopvac-text`.
+#[expect(
+    clippy::expect_used,
+    reason = "the pattern is a literal, and the tests compile it"
+)]
 static QUOTED_SPAN: LazyLock<Pattern> = LazyLock::new(|| {
     Pattern::new(
         r#"(?<![\w"”])"[^"\n]{1,200}(?<!\s)"(?!\w)|(?<![\w“])“[^”\n]{1,200}”|(?<![\w‘])‘[^’\n]{1,200}’"#,
@@ -72,11 +77,11 @@ impl Detector for Quotation {
             quotes.iter().any(|q| {
                 // One byte for each quote mark would be wrong for the curly marks, so the
                 // bound is the mark's own width, found from the text.
-                let open = site.text[q.start..]
+                let open = sub(site.text, q.start..)
                     .chars()
                     .next()
                     .map_or(1, char::len_utf8);
-                let close = site.text[..q.end]
+                let close = sub(site.text, ..q.end)
                     .chars()
                     .next_back()
                     .map_or(1, char::len_utf8);
@@ -116,11 +121,15 @@ impl Default for Detectors {
 impl Detectors {
     /// The built-in detectors: `quotation` and `code-span`.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "the two built-in detector names are distinct literals"
+    )]
     pub fn builtin() -> Self {
         let mut detectors = Self {
             by_name: BTreeMap::new(),
         };
-        for detector in [Box::new(Quotation) as Box<dyn Detector>, Box::new(CodeSpan)] {
+        for detector in builtin_detectors() {
             detectors
                 .register(detector)
                 .expect("built-in detector names are distinct");
@@ -151,4 +160,9 @@ impl Detectors {
             .get(detector)
             .map_or_else(|| site.tags.contains(&detector), |d| d.detects(site))
     }
+}
+
+/// The built-in detectors, boxed as trait objects.
+fn builtin_detectors() -> [Box<dyn Detector>; 2] {
+    [Box::new(Quotation), Box::new(CodeSpan)]
 }

@@ -1,7 +1,5 @@
 //! Builders shared by the engine tests.
 
-#![allow(dead_code, unreachable_pub, missing_docs)]
-
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -9,16 +7,24 @@ use slopvac_engine::{Engine, Settings};
 use slopvac_model::{Document, GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId};
 use slopvac_rules::{CompileOptions, RuleSet};
 
-pub fn id(text: &str) -> RuleId {
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn id(text: &str) -> RuleId {
     RuleId::new(text).unwrap()
 }
 
 /// A tokens rule `cat.<id>` with the given extra keys merged in.
-pub fn tokens(id: &str, token: &str, extra: &Value) -> Value {
+pub(crate) fn tokens(id: &str, token: &str, extra: &Value) -> Value {
     rule(id, &json!({"kind": "tokens", "tokens": [token]}), extra)
 }
 
-pub fn rule(id: &str, matcher: &Value, extra: &Value) -> Value {
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn rule(id: &str, matcher: &Value, extra: &Value) -> Value {
     let mut rule = json!({
         "id": id, "name": "n", "message": "Found {match}.", "severity": "warning",
         "match": matcher,
@@ -32,14 +38,19 @@ pub fn rule(id: &str, matcher: &Value, extra: &Value) -> Value {
     rule
 }
 
-pub fn category(id: &str, rules: &[Value]) -> (PathBuf, String) {
+pub(crate) fn category(id: &str, rules: &[Value]) -> (PathBuf, String) {
     let doc = json!({
         "schema_version": 3, "id": id, "title": "t", "description": "d", "rules": rules
     });
     (PathBuf::from(format!("{id}.json")), doc.to_string())
 }
 
-pub fn ruleset(files: Vec<(PathBuf, String)>) -> RuleSet {
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn ruleset(files: Vec<(PathBuf, String)>) -> RuleSet {
     RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         files,
@@ -48,7 +59,11 @@ pub fn ruleset(files: Vec<(PathBuf, String)>) -> RuleSet {
     .unwrap_or_else(|e| panic!("{e}"))
 }
 
-pub fn settings() -> Settings {
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn settings() -> Settings {
     Settings::new(
         NonEmptyString::new("normal").unwrap(),
         GenreResult {
@@ -60,12 +75,16 @@ pub fn settings() -> Settings {
 }
 
 /// An engine over one category `cat` holding `rules`.
-pub fn engine(rules: &[Value]) -> Engine {
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn engine(rules: &[Value]) -> Engine {
     Engine::new(vec![ruleset(vec![category("cat", rules)])], settings()).unwrap()
 }
 
 /// `(rule id, line, column)` of each finding, in report order.
-pub fn places(doc: &Document) -> Vec<(String, usize, usize)> {
+pub(crate) fn places(doc: &Document) -> Vec<(String, usize, usize)> {
     doc.findings
         .iter()
         .map(|f| (f.rule_id.to_string(), f.start.line(), f.start.column()))
@@ -73,7 +92,7 @@ pub fn places(doc: &Document) -> Vec<(String, usize, usize)> {
 }
 
 /// The matched text of each finding that is not a directive error.
-pub fn matched(doc: &Document) -> Vec<&str> {
+pub(crate) fn matched(doc: &Document) -> Vec<&str> {
     doc.findings
         .iter()
         .filter(|f| !f.rule_id.as_str().contains("meta."))
@@ -88,7 +107,11 @@ pub fn matched(doc: &Document) -> Vec<&str> {
 /// (`tempfile` picks it), and the directory stays until `cargo clean`: a test process has
 /// no hook that runs after its last test, and its helper cannot be dropped earlier because
 /// other tests of the same process still use the scripts in it.
-pub fn private_dir(prefix: &str) -> PathBuf {
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn private_dir(prefix: &str) -> PathBuf {
     tempfile::Builder::new()
         .prefix(&format!("{prefix}-"))
         .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
@@ -98,7 +121,12 @@ pub fn private_dir(prefix: &str) -> PathBuf {
 
 /// The engine the 2.x parity fixtures were generated for: the core rules with the levels
 /// and category dials that `engine-parity.json` records.
-pub fn parity_engine() -> Engine {
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+pub(crate) fn parity_engine() -> Engine {
     use slopvac_engine::{CategoryDials, Level};
     use slopvac_model::{CategoryId, Severity};
 

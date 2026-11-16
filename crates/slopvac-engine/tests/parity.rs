@@ -9,12 +9,6 @@
 //! findings fewer than 2.x; the rest of the findings are still compared. `unmapped` lists,
 //! per rule, the reviewed matched text of each 2.x finding that lost its text.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
-)]
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -31,10 +25,18 @@ fn manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn read(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn severity(name: &str) -> Level {
     match name {
         "error" => Level::On(Severity::Error),
@@ -51,6 +53,10 @@ fn severity(name: &str) -> Level {
 const TITLE_CASE: &str = "title-case-heading";
 
 /// The core rule files, with `title-case-heading` rewritten to the capitalization kind.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn core_sources() -> Vec<(PathBuf, String)> {
     let core = manifest().join("../slopvac-rules/tests/fixtures/core-v3");
     let mut files: Vec<PathBuf> = std::fs::read_dir(core)
@@ -78,6 +84,11 @@ fn core_sources() -> Vec<(PathBuf, String)> {
     sources
 }
 
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn engine(fixture: &Value) -> Engine {
     let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
@@ -130,7 +141,7 @@ type Row = (String, usize, usize, usize, String, String);
 
 #[derive(serde::Deserialize)]
 struct Divergence {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "the fixture records why the divergence exists")]
     reason: String,
     ignore: Vec<String>,
     /// Findings per rule that 2.x reports and Rust does not.
@@ -201,6 +212,10 @@ fn keyed(rows: Vec<Row>, level: u8) -> Vec<Row> {
     rows
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rows_expected(expected: &Value) -> Vec<Row> {
     expected["findings"]
         .as_array()
@@ -223,12 +238,11 @@ fn rows_expected(expected: &Value) -> Vec<Row> {
 fn multiset_minus<'a>(a: &'a [Row], b: &[Row]) -> Vec<&'a Row> {
     let mut left = b.to_vec();
     a.iter()
-        .filter(|row| match left.iter().position(|r| r == *row) {
-            Some(i) => {
+        .filter(|row| {
+            left.iter().position(|r| r == *row).is_none_or(|i| {
                 left.swap_remove(i);
                 false
-            }
-            None => true,
+            })
         })
         .collect()
 }
@@ -264,6 +278,10 @@ fn rows_actual(doc: &Document, text: &str) -> Vec<Row> {
 }
 
 /// The facts on which Rust and the reference differ for one document, by name.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn differences(
     doc: &Document,
     text: &str,

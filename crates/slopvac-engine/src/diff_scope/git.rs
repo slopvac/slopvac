@@ -199,7 +199,15 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
 fn stop(child: &mut Child) {
     kill_group(child.id());
     // `kill` fails only when the child already ended; `wait` then reaps it.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "kill fails only when the child already ended"
+    )]
     let _ = child.kill();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "wait fails only when the child was already reaped"
+    )]
     let _ = child.wait();
 }
 
@@ -213,6 +221,10 @@ fn kill_group(leader: u32) {
         .and_then(rustix::process::Pid::from_raw)
     {
         // The group may already be gone.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the process group may already be gone"
+        )]
         let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
     }
     #[cfg(not(unix))]
@@ -229,6 +241,10 @@ fn spawn_reader<R: Read + Send + 'static>(
     let (tx, rx) = bounded(1);
     thread::spawn(move || {
         let Some(mut pipe) = pipe else {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "send fails only when the receiver is gone, so nobody waits for the result"
+            )]
             let _ = tx.send(None);
             return;
         };
@@ -239,7 +255,7 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
                     let room = cap.saturating_sub(kept.len());
-                    kept.extend_from_slice(&chunk[..n.min(room)]);
+                    kept.extend_from_slice(chunk.get(..n.min(room)).unwrap_or_default());
                     if n > room
                         && let Some(flag) = &overflow
                     {
@@ -249,6 +265,10 @@ fn spawn_reader<R: Read + Send + 'static>(
                 }
             }
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "send fails only when the receiver is gone, so nobody waits for the result"
+        )]
         let _ = tx.send(Some(kept));
     });
     rx

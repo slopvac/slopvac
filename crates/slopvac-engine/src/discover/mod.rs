@@ -32,6 +32,7 @@ mod exclude;
 mod kind;
 mod syntax;
 
+use crate::sub;
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Component, Path, PathBuf};
 
@@ -151,7 +152,10 @@ pub enum DiscoverError {
 }
 
 /// Expand `targets` into the files to lint.
-#[allow(clippy::needless_pass_by_value)] // callers build `Options` inline
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "callers build `Options` inline"
+)]
 pub fn discover<S: AsRef<str>>(
     targets: &[S],
     options: Options,
@@ -233,7 +237,7 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
 fn unsupported_message(name: &str) -> String {
     let lower = name.to_lowercase();
     let shown = match lower.rfind('.').filter(|&i| i > 0) {
-        Some(i) => lower[i..].to_owned(),
+        Some(i) => sub(&lower, i..).to_owned(),
         None if lower.is_empty() => "<extensionless>".to_owned(),
         None => lower,
     };
@@ -387,7 +391,7 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
     // last component is never part of it: it names what to match.
     let mut base = PathBuf::new();
     let components: Vec<_> = Path::new(pattern).components().collect();
-    for component in &components[..components.len().saturating_sub(1)] {
+    for component in components.iter().take(components.len().saturating_sub(1)) {
         let text = component.as_os_str().to_string_lossy();
         if text.contains(['*', '?', '[', '{']) {
             break;
@@ -412,8 +416,9 @@ fn glob_files(pattern: &str, target: &str) -> Result<Vec<PathBuf>, DiscoverError
     // Components before the first `**` each fix one directory level; from `**`
     // on, any depth can match and nothing is pruned.
     let first_recursive = rest.iter().position(|c| c.contains("**"));
-    let prefix = rest[..first_recursive.unwrap_or(rest.len())]
+    let prefix = rest
         .iter()
+        .take(first_recursive.unwrap_or(rest.len()))
         .map(|c| compile(c))
         .collect::<Result<Vec<_>, _>>()?;
     let recursive = first_recursive.is_some();

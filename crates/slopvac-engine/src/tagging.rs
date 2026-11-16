@@ -4,6 +4,7 @@
 //! a `slopvac-parse` document to it. Block text is the projected prose and block spans are
 //! source bytes, so a tag span is a source range that a finding span can sit inside.
 
+use crate::sub;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
@@ -63,9 +64,11 @@ impl<'a> View<'a> {
                 continue;
             }
             let (mut kind, text, projection) = match (&block.kind, &block.projection) {
-                (BlockKind::CodeBlock { body, .. }, _) => {
-                    (ViewKind::CodeBlock, &source[body.start()..body.end()], None)
-                }
+                (BlockKind::CodeBlock { body, .. }, _) => (
+                    ViewKind::CodeBlock,
+                    sub(source, body.start()..body.end()),
+                    None,
+                ),
                 (BlockKind::Heading { .. }, Some(p)) => (ViewKind::Heading, p.text(), Some(p)),
                 (BlockKind::Paragraph, Some(p)) => (ViewKind::Paragraph, p.text(), Some(p)),
                 (BlockKind::TableCell { .. }, Some(p)) => (ViewKind::TableRow, p.text(), Some(p)),
@@ -90,7 +93,12 @@ impl<'a> View<'a> {
             }
             let span = match &block.kind {
                 BlockKind::CodeBlock { body, .. } => body.start()..body.end(),
-                _ => block.span.start()..block.span.end(),
+                BlockKind::Paragraph
+                | BlockKind::Heading { .. }
+                | BlockKind::Table
+                | BlockKind::TableCell { .. }
+                | BlockKind::Admonition(_)
+                | _ => block.span.start()..block.span.end(),
             };
             entries.push(Entry {
                 kind,
@@ -133,23 +141,28 @@ impl View<'_> {
     /// over the entries sorted by start finds those that overlap another, and the owner of a
     /// tag is the entry whose sentence or block produced its span.
     fn split_interleaved(&self, index: TagIndex) -> TagIndex {
-        let mut order: Vec<usize> = (0..self.entries.len())
-            .filter(|&i| self.entries[i].projection.is_some())
+        let mut order: Vec<(usize, &Range<usize>)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.projection.is_some())
+            .map(|(i, e)| (i, &e.span))
             .collect();
-        order.sort_by_key(|&i| self.entries[i].span.start);
+        order.sort_by_key(|(_, span)| span.start);
         // An entry overlaps another when an earlier one ends after it starts, or the next
         // one starts before it ends. Sorted by start, those two checks see every overlap.
         let mut marked = vec![false; self.entries.len()];
         let mut latest_end = 0;
-        for (k, &i) in order.iter().enumerate() {
+        for (k, &(i, span)) in order.iter().enumerate() {
             self.visits.set(self.visits.get() + 1);
-            let span = &self.entries[i].span;
             if span.start < span.end {
                 let earlier = latest_end > span.start;
                 let later = order
                     .get(k + 1)
-                    .is_some_and(|&n| self.entries[n].span.start < span.end);
-                marked[i] = earlier || later;
+                    .is_some_and(|(_, next)| next.start < span.end);
+                if let Some(slot) = marked.get_mut(i) {
+                    *slot = earlier || later;
+                }
             }
             latest_end = latest_end.max(span.end);
         }
@@ -164,11 +177,12 @@ impl View<'_> {
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
                 .copied()
-                .filter(|&i| marked[i]);
+                .filter(|&i| marked.get(i).copied().unwrap_or(false));
             let runs = owner.map(|i| {
                 extents.entry(i).or_insert_with(|| {
-                    self.entries[i]
-                        .projection
+                    self.entries
+                        .get(i)
+                        .and_then(|e| e.projection)
                         .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
                         .unwrap_or_default()
                 })
@@ -243,7 +257,12 @@ impl DocumentView for View<'_> {
         let Some((owner, projection)) = self
             .by_span
             .get(&(block.span.start, block.span.end))
-            .and_then(|&i| self.entries[i].projection.map(|p| (i, p)))
+            .and_then(|&i| {
+                self.entries
+                    .get(i)
+                    .and_then(|e| e.projection)
+                    .map(|p| (i, p))
+            })
         else {
             return split;
         };

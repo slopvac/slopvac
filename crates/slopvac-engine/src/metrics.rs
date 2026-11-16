@@ -5,6 +5,7 @@
 //! and a document metric at most one. Each hit gives the byte offset whose line the
 //! finding carries; a metric finding has a line and no source range, as in 2.x.
 
+use crate::sub;
 use std::cell::OnceCell;
 use std::ops::Range;
 
@@ -36,7 +37,7 @@ pub(crate) struct Unit<'t> {
 /// `range` in `text` without the opening quotation marks and the closing marks and
 /// sentence punctuation around it.
 fn interior(text: &str, range: Range<usize>) -> Range<usize> {
-    let inner = &text[range.clone()];
+    let inner = sub(text, range.clone());
     let head = inner.len() - inner.trim_start_matches(['"', '“', '‘', '\'']).len();
     let tail = inner
         .trim_end_matches(['"', '”', '’', '\'', '.', '!', '?', ',', ';', ':'])
@@ -104,9 +105,8 @@ fn whole(threshold: f64, offset: usize) -> String {
     format!("{:.0}", threshold.trunc() + float(offset) + 0.0)
 }
 
-#[allow(clippy::cast_precision_loss)]
-const fn float(count: usize) -> f64 {
-    count as f64
+fn float(count: usize) -> f64 {
+    crate::count_f64(count)
 }
 
 /// A parsed document as the metrics read it.

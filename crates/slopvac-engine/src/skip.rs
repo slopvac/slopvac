@@ -5,6 +5,7 @@
 //! ranges. The engine uses them to drop matches, and other crates, such as the term
 //! casing check, take them as their skip input.
 
+use crate::span_between;
 use std::ops::Range;
 
 use slopvac_model::Span;
@@ -134,17 +135,17 @@ fn in_container(doc: &Document, wanted: impl Fn(&Container) -> bool) -> Vec<Span
 /// wrapped table cell, has one range for each run of its own text, so that the cells beside
 /// it are not taken for part of it.
 fn block_ranges(block: &Block) -> Vec<Span> {
-    match &block.projection {
-        Some(p) => {
+    block.projection.as_ref().map_or_else(
+        || vec![block.span],
+        |p| {
             let extents = p.extents();
             if extents.is_empty() {
                 vec![block.span]
             } else {
                 extents
             }
-        }
-        None => vec![block.span],
-    }
+        },
+    )
 }
 
 fn blocks(doc: &Document, wanted: impl Fn(&BlockKind) -> bool) -> Vec<Span> {
@@ -162,8 +163,7 @@ fn merge(mut ranges: Vec<Span>) -> Vec<Span> {
     for range in ranges {
         match out.last_mut() {
             Some(last) if range.start() <= last.end() => {
-                *last = Span::new(last.start(), last.end().max(range.end()))
-                    .expect("start does not exceed end");
+                *last = span_between(last.start(), last.end().max(range.end()));
             }
             _ => out.push(range),
         }
