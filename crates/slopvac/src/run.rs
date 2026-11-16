@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, inspect, logging, offline, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, output, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,7 +146,7 @@ fn dispatch(
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
-        Some(("lint", m)) => lint(m, err_out),
+        Some(("lint", m)) => lint(m, out, err_out),
         Some(("lsp", m)) => slopvac_lsp::run(m)
             .map(|exit| match exit {
                 slopvac_lsp::Exit::AfterShutdown => exit::PASS,
@@ -154,12 +154,14 @@ fn dispatch(
                 slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
             })
             .map_err(|e| CliError::new("lsp-failed", e.to_string())),
+        Some(("migrate", m)) => migrate(m, out),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
                 .expect("required");
             write_stdout(out, &generate::completions(shell))
         }
+        Some(("init", m)) => init::run(m, out),
         Some(("rules", m)) => {
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::rules(m, out)
@@ -244,6 +246,19 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
     Ok(())
 }
 
+fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+    // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
+    // 2.x config and a migrated tree.
+    slopvac_migrate::execute(
+        m,
+        &slopvac_migrate::NullLinter,
+        &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
+        out,
+    )
+    .map(|()| exit::PASS)
+    .map_err(|e| CliError::new(e.code(), e.to_string()))
+}
+
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {
     out.write_all(bytes)
         .and_then(|()| out.flush())
@@ -271,15 +286,20 @@ fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     write_stdout(out, &page)
 }
 
-fn lint(m: &ArgMatches, err_out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+fn lint(
+    m: &ArgMatches,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
     // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
-    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, err_out)
+    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, out, err_out)
 }
 
 fn lint_with(
     m: &ArgMatches,
     stdin_source: &mut dyn std::io::Read,
     linter: &dyn Linter,
+    out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
@@ -316,6 +336,7 @@ fn lint_with(
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
+    output::deliver(m, &outcome, out)?;
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
         exit::INCOMPLETE
@@ -352,7 +373,7 @@ mod tests {
         let (_, m) = matches.subcommand().expect("lint");
         let recorder = Recorder::default();
         let mut err = Vec::new();
-        lint_with(m, &mut &*input, &recorder, &mut err).expect("lint runs");
+        lint_with(m, &mut &*input, &recorder, &mut Vec::new(), &mut err).expect("lint runs");
         recorder.0.into_inner()
     }
 

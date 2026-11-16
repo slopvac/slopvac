@@ -30,11 +30,14 @@ clap_mangen = "0.3.3"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+slopvac-agents.workspace = true
 slopvac-lsp.workspace = true
+slopvac-migrate.workspace = true
 slopvac-model.workspace = true
 slopvac-plugins.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
+tempfile.workspace = true
 toml.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
@@ -49,9 +52,9 @@ jsonschema.workspace = true
 minisign.workspace = true
 predicates = "3.1.4"
 proptest.workspace = true
+roxmltree.workspace = true
 rstest.workspace = true
 snapbox.workspace = true
-tempfile = "3.27.0"
 
 [lints]
 workspace = true

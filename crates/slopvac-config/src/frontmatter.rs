@@ -236,7 +236,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     }
     let mut diagnostics = validate_frontmatter(&root, doc);
     if let Some(slopvac) = root.get("slopvac") {
-        diagnostics.extend(denied(slopvac, policy));
+        diagnostics.extend(denied(slopvac, policy, "slopvac"));
     }
     diagnostics.sort_by_key(|d| d.span.start);
     if !diagnostics.is_empty() {
@@ -262,7 +262,14 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     }
 }
 
-fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
+/// The fields of `block` that `policy` does not allow. `root` is the first key-path segment
+/// (`slopvac` or `directive`), and it also names the source in the message.
+pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnostic> {
+    let what = if root == "directive" {
+        "an inline directive"
+    } else {
+        "front matter"
+    };
     let Value::Table(entries) = &block.value else {
         return Vec::new();
     };
@@ -272,14 +279,14 @@ fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
         .filter(|e| !policy.allow.contains(&e.key))
         .map(|e| Diagnostic {
             code: Code::FrontmatterFieldDenied,
-            message: format!("the project does not let front matter set `{}`", e.key),
+            message: format!("the project does not let {what} set `{}`", e.key),
             label: "not in `[frontmatter] allow`".into(),
             span: e.key_span.clone(),
             help: Some(format!(
                 "to allow `{}`, add it to `[frontmatter] allow` in slopvac.toml",
                 e.key
             )),
-            path: vec!["slopvac".into(), e.key.clone()],
+            path: vec![root.to_owned(), e.key.clone()],
         })
         .collect()
 }
