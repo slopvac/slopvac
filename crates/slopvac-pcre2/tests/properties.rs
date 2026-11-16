@@ -1,5 +1,6 @@
 //! Property tests: arbitrary patterns and subjects never panic, spans are always safe to
 //! slice with, and the JIT and the interpreter agree whenever both finish.
+#![cfg(test)]
 
 use proptest::prelude::*;
 use slopvac_pcre2::{Limits, Options, Regex};
@@ -72,10 +73,10 @@ proptest! {
         let Ok(re) = Regex::with_limits(&pattern, options, LIMITS) else {
             return Ok(());
         };
-        let _ = re.is_match(&subject);
-        let _ = re.find(&subject);
-        let _ = re.captures(&subject);
-        let _ = re.find_all(&subject);
+        re.is_match(&subject).ok();
+        re.find(&subject).ok();
+        re.captures(&subject).ok();
+        re.find_all(&subject).ok();
     }
 
     #[test]
@@ -120,7 +121,7 @@ proptest! {
         subject in subject(),
     ) {
         if let Ok(re) = Regex::with_limits(&pattern, Options::new().ucp(true), LIMITS) {
-            let _ = re.find_all(&subject);
+            re.find_all(&subject).ok();
         }
     }
 }

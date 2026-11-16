@@ -7,6 +7,7 @@
 //! These tests need real JIT code. On targets that have a JIT (x86-64 and `AArch64` on macOS
 //! and glibc Linux) a missing JIT fails the test; elsewhere the test prints why it did not
 //! run and returns.
+#![cfg(test)]
 
 use slopvac_pcre2::{Limits, MatchError, Options, Regex};
 
@@ -17,7 +18,10 @@ const JIT_EXPECTED: bool = cfg!(all(
     not(target_env = "musl")
 ));
 
-#[allow(clippy::assertions_on_constants)]
+#[expect(
+    clippy::assertions_on_constants,
+    reason = "JIT_EXPECTED is a per-target constant"
+)]
 /// A regex with confirmed JIT code, or `None` on a target without a JIT.
 fn jit_regex(pattern: &str, limits: Limits) -> Option<Regex> {
     let re = Regex::with_limits(pattern, Options::new().jit(true), limits).unwrap();

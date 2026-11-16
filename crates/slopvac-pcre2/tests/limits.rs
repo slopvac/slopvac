@@ -1,6 +1,7 @@
 //! The limits policy: a limit hit is a typed error, the JIT retries on the interpreter,
 //! and neither depends on wall-clock time. Each test asserts the error, not how long it
 //! took to arrive.
+#![cfg(test)]
 
 use slopvac_pcre2::{Limits, MatchError, Options, Regex};
 

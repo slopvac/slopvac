@@ -9,7 +9,7 @@
 //!   a character boundary no greater than the length. That justifies `PCRE2_NO_UTF_CHECK`.
 //! * A compiled `Code` is never modified after construction; `Contexts` and `MatchData`
 //!   are used by one thread at a time (see their docs).
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "this module is the crate's only FFI boundary")]
 
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
@@ -183,7 +183,8 @@ impl MatchData {
     /// Number of ovector pairs: capture groups including group 0.
     pub(crate) fn group_count(&self) -> usize {
         // SAFETY: `self.ptr` is live match data.
-        unsafe { pcre2_get_ovector_count_8(self.ptr.as_ptr()) as usize }
+        usize::try_from(unsafe { pcre2_get_ovector_count_8(self.ptr.as_ptr()) })
+            .unwrap_or(usize::MAX)
     }
 
     /// Byte offsets of group `index` after a successful match, or `None` if the group
@@ -354,10 +355,7 @@ pub(crate) fn with_contexts<R>(limits: Limits, f: impl FnOnce(&Contexts) -> R) -
         let contexts = slot.as_ref()?;
         f.take().map(|f| f(contexts))
     });
-    match cached {
-        Ok(result) => result,
-        Err(_) => f.take().zip(Contexts::new(limits)).map(|(f, c)| f(&c)),
-    }
+    cached.unwrap_or_else(|_err| f.take().zip(Contexts::new(limits)).map(|(f, c)| f(&c)))
 }
 
 /// Run one `pcre2_match` call and return its raw result code (`> 0` matched, negative

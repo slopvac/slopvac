@@ -1,6 +1,10 @@
 //! Matching semantics through the public API. Expected spans are worked out by hand from
 //! Python's `re.finditer` rules (the empty-match cases follow `CPython` 3.7+).
-#![allow(clippy::single_range_in_vec_init)]
+#![allow(
+    clippy::single_range_in_vec_init,
+    reason = "tests compare against one-element range vectors"
+)]
+#![cfg(test)]
 
 use rstest::rstest;
 use slopvac_pcre2::{CompileError, Options, Regex};

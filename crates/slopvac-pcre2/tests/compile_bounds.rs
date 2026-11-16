@@ -36,7 +36,7 @@ fn comment_padding_counts_toward_the_length_cap() {
 #[test]
 fn nesting_at_the_limit_compiles_and_one_deeper_does_not() {
     let nest = |depth: u32| {
-        let depth = depth as usize;
+        let depth = usize::try_from(depth).unwrap();
         format!("{}a{}", "(?:".repeat(depth), ")".repeat(depth))
     };
     assert!(Regex::new(&nest(PARENS_NEST_LIMIT), Options::new()).is_ok());
