@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/packs-lock.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/packs-lock.schema.json",
   "title": "slopvac v3 packs lockfile",
   "description": "The .slopvac/packs.lock file. `slopvac plugins sync` writes it and a run reads it. It pins each pack and plugin to a version, a source and a content digest, so a run on another machine loads the same bytes. A digest mismatch makes the run fail with exit 2. The lockfile records no trust: trust is a separate per-user record. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",

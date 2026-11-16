@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/category.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/category.schema.json",
   "title": "slopvac v3 category",
   "description": "A group of rules, and the unit users enable, disable and score by. One category per file. Rule ids are unique within the category. Semantics are specified in docs/contract/rules.md. Owner: slopvac-8l4.2.3.",
   "type": "object",
