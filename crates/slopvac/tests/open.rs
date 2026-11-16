@@ -91,7 +91,10 @@ fn open_with_out_opens_the_written_file() {
         .code(0)
         .stdout(format!("report: {}\n", target.display()));
     assert!(target.is_file());
-    assert_eq!(opener.calls(), [target.display().to_string()]);
+    assert_eq!(
+        opener.calls(),
+        [target.canonicalize().unwrap().display().to_string()]
+    );
 }
 
 #[test]
@@ -114,7 +117,10 @@ fn open_without_out_writes_an_html_page_to_a_temporary_file_and_opens_it() {
     );
     let page = fs::read_to_string(&path).unwrap();
     assert!(page.to_ascii_lowercase().starts_with("<!doctype html>"));
-    assert_eq!(opener.calls(), [path.display().to_string()]);
+    assert_eq!(
+        opener.calls(),
+        [path.canonicalize().unwrap().display().to_string()]
+    );
     fs::remove_file(&path).unwrap();
 }
 
@@ -206,5 +212,33 @@ fn a_report_path_with_spaces_reaches_the_opener_as_one_argument() {
         .arg(&target)
         .assert()
         .code(0);
-    assert_eq!(opener.calls(), [target.display().to_string()]);
+    assert_eq!(
+        opener.calls(),
+        [target.canonicalize().unwrap().display().to_string()]
+    );
+}
+
+#[test]
+fn a_report_path_that_starts_with_a_dash_reaches_the_opener_as_an_absolute_path() {
+    let opener = FakeOpener::new(0);
+    let work = tempfile::tempdir().unwrap();
+    let doc = work.path().join("doc.md");
+    fs::write(&doc, TEXT).unwrap();
+    let mut cmd = slopvac(&opener);
+    cmd.current_dir(work.path())
+        .arg("lint")
+        .arg(&doc)
+        .args(["--open", "--out=-f"])
+        .assert()
+        .code(0);
+    assert!(work.path().join("-f").is_file());
+    let calls = opener.calls();
+    assert_eq!(calls.len(), 1);
+    let arg = Path::new(&calls[0]);
+    assert!(arg.is_absolute(), "the opener got {arg:?}");
+    assert_eq!(arg.file_name().unwrap(), "-f");
+    assert_eq!(
+        arg.canonicalize().unwrap(),
+        work.path().canonicalize().unwrap().join("-f")
+    );
 }

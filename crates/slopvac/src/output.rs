@@ -146,9 +146,17 @@ pub fn deliver_with(
 fn show(path: &Path, opener: &dyn Opener, ci: bool, err_out: &mut dyn std::io::Write) {
     if ci {
         let _ = writeln!(err_out, "not opening the report: CI is set.");
-    } else if let Err(err) = opener.open(path) {
+    } else if let Err(err) = opener.open(&absolute(path)) {
         let _ = writeln!(err_out, "warning: could not open the report: {err}");
     }
+}
+
+/// The path to hand the opener. It is absolute, so a name that starts with `-` cannot be read
+/// as an option by `open` or `xdg-open`.
+fn absolute(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| {
+        std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+    })
 }
 
 /// An empty file the HTML page can be written over, kept after the process exits.
