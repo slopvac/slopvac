@@ -1097,17 +1097,41 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
         fs::create_dir_all(&pythonpath).unwrap();
         fs::write(pythonpath.join("sitecustomize.py"), &hook).unwrap();
         let home = s.dir("home");
-        let user_site = Command::new(python())
+        // Where this interpreter looks for `usercustomize` under the test HOME,
+        // and whether it looks at all: a virtual environment (as on CI, where
+        // `python3` on PATH comes from one) or a policy can turn the user site off.
+        let probe = Command::new(python())
             .env_clear()
             .env("HOME", &home)
-            .args(["-c", "import site; print(site.getusersitepackages())"])
+            .args([
+                "-c",
+                "import site; print(site.ENABLE_USER_SITE); print(site.getusersitepackages())",
+            ])
             .output()
             .unwrap();
-        let user_site = PathBuf::from(String::from_utf8(user_site.stdout).unwrap().trim());
+        assert!(
+            probe.status.success(),
+            "{}",
+            String::from_utf8_lossy(&probe.stderr)
+        );
+        let probe = String::from_utf8(probe.stdout).unwrap();
+        let mut lines = probe.lines();
+        let user_site_enabled = lines.next() == Some("True");
+        let user_site = PathBuf::from(lines.next().unwrap().trim());
         fs::create_dir_all(&user_site).unwrap();
         fs::write(user_site.join("usercustomize.py"), &hook).unwrap();
-        // Positive control: both hooks load into a plain interpreter.
-        for (k, v) in [("PYTHONPATH", &pythonpath), ("HOME", &home)] {
+        // Positive controls: each armed hook loads into a plain interpreter.
+        // PYTHONPATH always applies; HOME only where the user site is on.
+        let mut controls = vec![("PYTHONPATH", &pythonpath)];
+        if user_site_enabled {
+            controls.push(("HOME", &home));
+        } else {
+            eprintln!(
+                "{} has the user site off; the HOME hook stays armed, and the PYTHONPATH control proves the fixture",
+                python().display()
+            );
+        }
+        for (k, v) in controls {
             let _ = fs::remove_file(&marker);
             Command::new(python())
                 .env_clear()
