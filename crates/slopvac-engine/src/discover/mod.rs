@@ -15,6 +15,9 @@
 //! - A target that is not selected is never dropped silently: it is recorded in
 //!   [`Discovery::skipped`] (explicit files) or [`Discovery::notes`] (unsupported
 //!   source files met in a comment-mode walk).
+//! - A `.drawio.png` is out of scope for 3.0. It is never listed in
+//!   [`Discovery::files`]; [`Discovery::notices`] holds an `info` notice with the code
+//!   [`DIAGRAM_FORMAT_UNSUPPORTED`] and the path, so the skip is visible.
 //!
 //! `.gitignore` handling is off unless [`Options::use_gitignore`] is set, and it
 //! applies to directory walks only: a file named explicitly is always linted.
@@ -37,6 +40,8 @@ use std::path::{Component, Path, PathBuf};
 
 use globset::GlobBuilder;
 use ignore::WalkBuilder;
+use slopvac_diagrams::Format;
+use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
 
 pub use exclude::{ExcludeError, Excludes};
 pub use kind::FileKind;
@@ -108,6 +113,38 @@ pub struct Discovery {
     pub skipped: Vec<Skipped>,
     /// Informational notes; they do not change the exit status.
     pub notes: Vec<String>,
+    /// Files left out because their format is not supported, as report notices. Such a
+    /// file is never in [`Discovery::files`], so it cannot count as clean or scored.
+    pub notices: Vec<Notice>,
+}
+
+/// The notice code for a diagram file whose format 3.0 does not lint.
+pub const DIAGRAM_FORMAT_UNSUPPORTED: &str = "diagram-format-unsupported";
+
+/// The `info` notice for `path` when its diagram format is not linted in 3.0
+/// (`.drawio.png`), else `None`. `path` is shown as given.
+#[must_use]
+pub fn unsupported_diagram_notice(path: &str) -> Option<Notice> {
+    if Format::from_path(path) != Some(Format::DrawioPng) {
+        return None;
+    }
+    Some(Notice {
+        code: KebabName::new(DIAGRAM_FORMAT_UNSUPPORTED).expect("the code is kebab-case"),
+        level: NoticeLevel::Info,
+        message: NonEmptyString::new(".drawio.png isn't linted in 3.0; export as .drawio.svg")
+            .expect("the message is not empty"),
+        path: Some(path.to_owned()),
+    })
+}
+
+fn push_unsupported(path: &Path, out: &mut Discovery) -> bool {
+    match unsupported_diagram_notice(&path.to_string_lossy()) {
+        Some(notice) => {
+            out.notices.push(notice);
+            true
+        }
+        None => false,
+    }
 }
 
 /// Why discovery failed.
@@ -217,6 +254,9 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
         });
         return Ok(());
     }
+    if push_unsupported(path, out) {
+        return Ok(());
+    }
     match select(&name, selection) {
         Some(kind) => out.files.push(DiscoveredFile {
             path: path.to_path_buf(),
@@ -284,6 +324,9 @@ fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
             continue;
         }
         if is_excluded(options, &path) {
+            continue;
+        }
+        if push_unsupported(&path, out) {
             continue;
         }
         if let Some(kind) = select(&name, options.selection) {
