@@ -16,8 +16,19 @@ use slopvac_plugins::sync::{PackState, Store, status};
 use slopvac_plugins::trust::{MAX_STORE_FILE_BYTES, parse_store};
 
 use crate::env::Env;
-use crate::redact::path_for_log;
+use crate::redact::path_for_log as redacted_path;
 use read::{ReadProblem, read_bounded};
+
+/// A path safe to print (policies.md, section 1.7), with `/` as the separator on every
+/// platform, so the report reads the same everywhere.
+fn path_for_log(path: &Path, cwd: &Path) -> String {
+    let shown = redacted_path(path, cwd);
+    if cfg!(windows) {
+        shown.replace('\\', "/")
+    } else {
+        shown
+    }
+}
 
 /// Largest lockfile doctor reads, as the lock reader's own cap.
 const MAX_LOCK_BYTES: u64 = slopvac_plugins::lock::MAX_LOCK_BYTES as u64;

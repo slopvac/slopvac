@@ -768,11 +768,22 @@ fn stored_trust_text_is_validated_before_it_is_printed() {
     );
 }
 
+/// The directory with links resolved, as the OS reports the working directory. On Windows
+/// `canonicalize` adds the `\\?\` prefix, which the working directory does not have.
+fn resolved(path: &Path) -> PathBuf {
+    let real = fs::canonicalize(path).unwrap();
+    let text = real.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if cfg!(windows) => PathBuf::from(rest),
+        _ => real,
+    }
+}
+
 #[test]
 fn a_directory_that_is_the_working_directory_is_shown_as_a_dot() {
     let w = World::new();
     let (code, doc) = w.json(&[], |c| {
-        c.env("SLOPVAC_CACHE_DIR", fs::canonicalize(w.project()).unwrap());
+        c.env("SLOPVAC_CACHE_DIR", resolved(&w.project()));
     });
     assert_eq!(code, 0);
     assert_eq!(doc["directories"]["cache"]["path"], ".");

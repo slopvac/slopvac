@@ -83,7 +83,7 @@ The data directory is the pack store, and the state directory holds the trust st
 
 ## 3. Redaction
 
-A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac` on Unix and `<external>/cache`, `<external>/data` or `<external>/state` on Windows, and `source` says how the location was chosen.
+A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac` on Unix and `<external>/cache`, `<external>/data` or `<external>/state` on Windows, and `source` says how the location was chosen.
 
 ## 4. Build status
 
