@@ -3,8 +3,8 @@
     "ai_register": {
       "strong": {
         "errors": 0,
-        "findings": 2,
-        "per_100_words": 1.887,
+        "findings": 0,
+        "per_100_words": 0.0,
         "warnings": 0
       },
       "weak": {
@@ -91,12 +91,12 @@
         "budget": 1.5,
         "category": "ai-tells-structure",
         "errors": 0,
-        "findings": 2,
+        "findings": 0,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 1.887,
-        "score": 95.3,
-        "suggestions": 2,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
         "warnings": 0
       },
       {
@@ -329,49 +329,14 @@
       }
     ],
     "errors": 0,
-    "findings": [
-      {
-        "ai_signal": "strong",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 37,
-        "end_line": 17,
-        "line": 17,
-        "matched_text": "The scripts are its tools, not yours",
-        "message": "contrastive inversion: The scripts are its tools, not yours -- state what the thing is; cut the strawman",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "suggestion",
-        "span": {
-          "end": 466,
-          "start": 430
-        }
-      },
-      {
-        "ai_signal": "strong",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 32,
-        "end_line": 31,
-        "line": 31,
-        "matched_text": "The parser reads JSON, not YAML",
-        "message": "contrastive inversion: The parser reads JSON, not YAML -- state what the thing is; cut the strawman",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "suggestion",
-        "span": {
-          "end": 774,
-          "start": 743
-        }
-      }
-    ],
+    "findings": [],
     "gate": {
       "passed": true,
       "reasons": []
     },
     "paragraphs": 16,
     "path": "rule-examples-prose-scope.md",
-    "per_100_words": 1.887,
+    "per_100_words": 0.0,
     "profile": "relaxed",
     "prose": {
       "errors": 0,
@@ -379,10 +344,10 @@
       "per_100_words": 0.0,
       "warnings": 0
     },
-    "score": 95.3,
+    "score": 100.0,
     "sentences": 17,
-    "suggestions": 2,
-    "total_findings": 2,
+    "suggestions": 0,
+    "total_findings": 0,
     "unchecked": [],
     "warnings": 0,
     "words": 106

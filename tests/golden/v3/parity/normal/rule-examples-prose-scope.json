@@ -2,15 +2,15 @@
   "document": {
     "ai_register": {
       "strong": {
-        "errors": 2,
-        "findings": 2,
-        "per_100_words": 1.887,
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
         "warnings": 0
       },
       "weak": {
         "errors": 0,
-        "findings": 1,
-        "per_100_words": 0.943,
+        "findings": 3,
+        "per_100_words": 2.83,
         "warnings": 0
       }
     },
@@ -90,13 +90,13 @@
       {
         "budget": 0.6,
         "category": "ai-tells-structure",
-        "errors": 2,
+        "errors": 0,
         "findings": 2,
-        "gating_per_100_words": 1.887,
-        "over_budget": true,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
         "per_100_words": 1.887,
-        "score": 20.0,
-        "suggestions": 0,
+        "score": 95.3,
+        "suggestions": 2,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 2,
+    "errors": 0,
     "findings": [
       {
         "ai_signal": "weak",
@@ -467,17 +467,17 @@
         }
       },
       {
-        "ai_signal": "strong",
+        "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 37,
         "end_line": 17,
         "line": 17,
         "matched_text": "The scripts are its tools, not yours",
-        "message": "contrastive inversion: The scripts are its tools, not yours -- state what the thing is; cut the strawman",
+        "message": "appositive contrast: The scripts are its tools, not yours -- state what the thing does; keep the negation only if it limits what the reader can do",
         "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "error",
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
         "span": {
           "end": 466,
           "start": 430
@@ -569,17 +569,17 @@
         }
       },
       {
-        "ai_signal": "strong",
+        "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 32,
         "end_line": 31,
         "line": 31,
         "matched_text": "The parser reads JSON, not YAML",
-        "message": "contrastive inversion: The parser reads JSON, not YAML -- state what the thing is; cut the strawman",
+        "message": "appositive contrast: The parser reads JSON, not YAML -- state what the thing does; keep the negation only if it limits what the reader can do",
         "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "error",
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
         "span": {
           "end": 774,
           "start": 743
@@ -589,10 +589,8 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "2 error(s), limit 0",
-        "5.19 severity-weighted findings per 100 words, budget 3.0",
-        "score 38.8, minimum 70.0",
-        "ai-tells-structure at 1.89 severity-weighted findings per 100 words, budget 0.6",
+        "3.30 severity-weighted findings per 100 words, budget 3.0",
+        "score 52.7, minimum 70.0",
         "prose-scope at 3.30 severity-weighted findings per 100 words, budget 0.6"
       ]
     },
@@ -606,9 +604,9 @@
       "per_100_words": 11.321,
       "warnings": 7
     },
-    "score": 38.8,
+    "score": 52.7,
     "sentences": 17,
-    "suggestions": 6,
+    "suggestions": 8,
     "total_findings": 15,
     "unchecked": [],
     "warnings": 7,

@@ -6,3 +6,5 @@ crates/slopvac-engine/tests/fixtures/rst/** text eol=lf
 # so both files use LF on every platform.
 docs/migrate-2-to-3.md text eol=lf
 crates/slopvac-migrate/data/migrate-guide.md text eol=lf
+# The starter config is compared byte for byte with its generator output.
+crates/slopvac/templates/** text eol=lf
