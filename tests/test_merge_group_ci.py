@@ -249,9 +249,10 @@ def test_concurrency_group_is_unique_per_run():
     ]
 
 
+# A false expression yields the boolean false, which Actions renders as 'false'.
 @pytest.mark.parametrize(
     ("context", "cancels"),
-    [(PULL_REQUEST, "true"), (MERGE_GROUP, ""), (PUSH_MAIN, "")],
+    [(PULL_REQUEST, "true"), (MERGE_GROUP, "false"), (PUSH_MAIN, "false")],
 )
 def test_only_pull_request_runs_cancel_a_superseded_run(context, cancels):
     template = load("test.yml")["concurrency"]["cancel-in-progress"]
@@ -279,7 +280,7 @@ def test_every_rust_cache_step_is_checked():
 
 @pytest.mark.parametrize(
     ("context", "saves"),
-    [(PUSH_MAIN, "true"), (PULL_REQUEST, ""), (MERGE_GROUP, "")],
+    [(PUSH_MAIN, "true"), (PULL_REQUEST, "false"), (MERGE_GROUP, "false")],
 )
 @pytest.mark.parametrize("where", sorted(rust_cache_steps()))
 def test_rust_cache_is_saved_only_from_main(where, context, saves):
@@ -487,9 +488,8 @@ CONVERTED = {
         "pull_request": {"number": 7, "draft": True},
     },
 }
-MAIN_PUSH = {"event_name": "push", "ref": "refs/heads/main"}
 TAG_PUSH = {"event_name": "push", "ref": "refs/tags/v3.0.0"}
-NOT_DRAFT = [READY_PR, MERGE_GROUP, MAIN_PUSH, TAG_PUSH]
+NOT_DRAFT = [READY_PR, MERGE_GROUP, PUSH_MAIN, TAG_PUSH]
 NOT_DRAFT_IDS = ["ready", "queue", "main", "tag"]
 
 
