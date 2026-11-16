@@ -1014,22 +1014,25 @@ def test_an_earlier_attempt_without_usage_makes_a_resumed_job_incomplete(
     assert report["complete"] is False
 
 
-def test_results_keep_the_spend_of_earlier_executions_of_a_job(tmp_path, capsys):
-    path = write_results(
-        tmp_path,
-        [
+def test_results_cost_comes_from_the_executions_section_not_the_rows(tmp_path, capsys):
+    path = tmp_path / "r.json"
+    path.write_text(
+        json.dumps(
             {
-                "model": "big",
-                "usage": {"input": 1_000_000},
-                "prior": [
-                    {"error": "boom", "attempts": 3, "usage": {"input": 500_000}}
+                "schema": models.RESULTS_SCHEMA,
+                "runs": [{"model": "big", "usage": {"input": 1_000_000}}],
+                "executions": [
+                    {"job": "a", "model": "big", "usage": {"input": 500_000}},
+                    {"job": "a", "model": "big", "usage": {"input": 1_000_000}},
+                    {"job": "gone", "model": "big", "usage": {"input": 500_000}},
                 ],
             }
-        ],
+        )
     )
     _, report = cost_cli(tmp_path, capsys, path)
-    assert report["models"]["big"]["tokens"] == {"input": 1_500_000}
-    assert report["total_cost_usd"] == pytest.approx(3)
+    assert report["models"]["big"]["invocations"] == 3
+    assert report["models"]["big"]["tokens"] == {"input": 2_000_000}
+    assert report["total_cost_usd"] == pytest.approx(4)
 
 
 def test_cache_tokens_are_reported_but_do_not_change_the_cost(tmp_path, capsys):

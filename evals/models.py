@@ -493,7 +493,14 @@ def plan(
 
 
 class BudgetExceeded(ModelEvalError):
-    """The run would exceed its invocation ceiling. Nothing more is spawned."""
+    """The run would exceed its invocation ceiling. Nothing more is spawned.
+
+    When it stops a call between retries, `attempts` and `usage` carry what the
+    earlier attempts of that call already spent.
+    """
+
+    attempts: int = 0
+    usage: dict[str, int] | None = None
 
 
 class CallFailed(ModelEvalError):
@@ -621,7 +628,7 @@ class Journal:
     Each line holds a job id, the model, the answer, any error, the attempts it
     used and the token `usage` (null when the model command did not report it).
     Lines from older runs lack `model` and `usage`. The last line for a job wins
-    when answers are reused, but `prior` keeps every earlier line, because each one is
+    when answers are reused, but `executions` lists every line, because each one is
     spend. A job that failed is asked again on resume, and its earlier attempts
     still count against the budget.
     """
@@ -630,31 +637,32 @@ class Journal:
         self.path = path
         self._lock = threading.Lock()
         self._entries: dict[str, dict[str, Any]] = {}
-        self._history: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self._lines: list[dict[str, Any]] = []
         self._attempts = 0
         if path.is_file():
             for line in path.read_text("utf-8").splitlines():
                 if line:
                     entry = json.loads(line)
                     self._entries[entry["job"]] = entry
-                    self._history[entry["job"]].append(entry)
+                    self._lines.append(entry)
                     self._attempts += entry["attempts"]
 
     @property
     def attempts(self) -> int:
         return self._attempts
 
-    def prior(self, job: str) -> list[dict[str, Any]]:
-        """The accounting of every execution of `job` before its last one."""
-        return [self._account(e) for e in self._history.get(job, [])[:-1]]
-
-    @staticmethod
-    def _account(entry: Mapping[str, Any]) -> dict[str, Any]:
-        return {
-            "error": entry.get("error"),
-            "attempts": entry["attempts"],
-            "usage": entry.get("usage"),
-        }
+    def executions(self) -> list[dict[str, Any]]:
+        """Every journal line as accounting, in order: superseded and failed ones too."""
+        return [
+            {
+                "job": e["job"],
+                "model": e.get("model"),
+                "error": e.get("error"),
+                "attempts": e["attempts"],
+                "usage": e.get("usage"),
+            }
+            for e in self._lines
+        ]
 
     def done(self, job: str) -> dict[str, Any] | None:
         entry = self._entries.get(job)
@@ -685,7 +693,7 @@ class Journal:
                 fh.flush()
                 os.fsync(fh.fileno())
             self._entries[job] = entry
-            self._history[job].append(entry)
+            self._lines.append(entry)
 
 
 def command_ask(
@@ -712,7 +720,12 @@ def command_ask(
         for _ in range(attempts):
             if live and live.cancelled.is_set():
                 raise Cancelled
-            number = budget.reserve(model) if budget else 0
+            try:
+                number = budget.reserve(model) if budget else 0
+            except BudgetExceeded as exc:
+                # Earlier attempts of this call already spent tokens: hand them on.
+                exc.attempts, exc.usage = used, procs.sum_usage(reports)
+                raise
             used += 1
             try:
                 proc = procs.run_group(argv, input=prompt, timeout=timeout, live=live)
@@ -749,9 +762,8 @@ def _row(
     repeat: int,
     answer: str,
     usage: Mapping[str, int] | None,
-    prior: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    row = {
+    return {
         "task": task["id"],
         "type": task["type"],
         "role": task["role"],
@@ -763,9 +775,6 @@ def _row(
         "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
         "usage": dict(usage) if usage else None,
     }
-    if prior:
-        row["prior"] = [dict(p) for p in prior]
-    return row
 
 
 def _safe(
@@ -774,14 +783,15 @@ def _safe(
     prompt: str,
     journal: Journal | None,
     model: str,
-) -> tuple[str, str | None, dict[str, int] | None, list[dict[str, Any]]]:
+) -> tuple[str, str | None, dict[str, int] | None]:
     """Ask once, journal the outcome, and turn a failed call into an empty answer.
 
-    Returns the answer, the error, the token usage (None when not reported) and the
-    accounting of this job's earlier executions in the journal.
+    Returns the answer, the error and the token usage (None when not reported). When
+    the budget runs out between retries, the attempts already made are journaled
+    first, so their spend survives the stop.
     """
     if journal and (entry := journal.done(job)):
-        return entry["answer"], None, entry.get("usage"), journal.prior(job)
+        return entry["answer"], None, entry.get("usage")
     answer, error, attempts, usage = "", None, 1, None
     try:
         reply = ask(prompt)
@@ -789,7 +799,16 @@ def _safe(
             answer, attempts, usage = reply.text, reply.attempts, reply.usage
         else:
             answer = reply
-    except BudgetExceeded:
+    except BudgetExceeded as exc:
+        if journal and exc.attempts:
+            journal.record(
+                job,
+                "",
+                str(exc)[:300],
+                exc.attempts,
+                model=model,
+                usage=exc.usage,
+            )
         raise
     except CallFailed as exc:
         error, attempts, usage = str(exc)[:300], exc.attempts, exc.usage
@@ -797,7 +816,7 @@ def _safe(
         error = str(exc)[:300]
     if journal:
         journal.record(job, answer, error, attempts, model=model, usage=usage)
-    return answer, error, usage, journal.prior(job) if journal else []
+    return answer, error, usage
 
 
 def _map_jobs(
@@ -859,7 +878,7 @@ def execute(
         for repeat in range(repeats)
     ]
 
-    def run_first(job: tuple[Any, Any, int]) -> tuple[Any, ...]:
+    def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
         model, task, repeat = job
         return _safe(
             asks[model["name"]],
@@ -872,10 +891,10 @@ def execute(
     answers = _map_jobs(run_first, first, workers, live)
     runs: list[dict[str, Any]] = []
     rewrite_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any], int, str]] = []
-    for (model, task, repeat), (answer, error, usage, prior) in zip(
+    for (model, task, repeat), (answer, error, usage) in zip(
         first, answers, strict=True
     ):
-        row = _row(task, model, repeat, answer, usage, prior)
+        row = _row(task, model, repeat, answer, usage)
         if error:
             row["error"] = error
         if task["role"] == "author":
@@ -897,7 +916,7 @@ def execute(
             if reviewer["name"] != author["name"]:
                 second.append((review_task, author, reviewer, repeat))
 
-    def run_second(job: tuple[Any, Any, Any, int]) -> tuple[Any, ...]:
+    def run_second(job: tuple[Any, Any, Any, int]) -> tuple[str, str | None, Any]:
         review_task, author, reviewer, repeat = job
         return _safe(
             asks[reviewer["name"]],
@@ -915,10 +934,10 @@ def execute(
         )
 
     replies = _map_jobs(run_second, second, workers, live)
-    for (review_task, author, reviewer, repeat), (reply, error, usage, prior) in zip(
+    for (review_task, author, reviewer, repeat), (reply, error, usage) in zip(
         second, replies, strict=True
     ):
-        row = _row(review_task, reviewer, repeat, reply, usage, prior)
+        row = _row(review_task, reviewer, repeat, reply, usage)
         row["task"] = f"{review_task['id']}:{author['name']}"
         row["author_model"] = author["name"]
         row["author_family"] = author["family"]
@@ -938,6 +957,17 @@ def execute(
         "failed_calls": sum(1 for r in runs if r.get("error")),
         "unscored_runs": sum(1 for r in runs if r.get("unscored")),
         "invocations": budget.spent if budget else None,
+        "executions": journal.executions()
+        if journal
+        else [
+            {
+                "job": None,
+                "model": r["model"],
+                "error": r.get("error"),
+                "usage": r["usage"],
+            }
+            for r in runs
+        ],
         "models": [
             {"name": m["name"], "family": m["family"], "tier": m["tier"]}
             for m in models
@@ -1019,20 +1049,21 @@ UNKNOWN_MODEL = "(unknown)"
 def load_usage_records(path: Path) -> list[tuple[str, dict[str, int] | None]]:
     """(model, usage) per execution from a results file or a `.journal.jsonl`.
 
-    Every journal line is one execution of a job, and each one is spend, so a job
-    asked again after a failure counts all its executions. A results row holds the
-    last execution and lists the earlier ones under `prior`. Lines from before
-    usage was recorded have no usage, and lines from before the model was
-    recorded have no model.
+    The unit is the execution, not the score row. Every journal line is one
+    execution and each is spend: a job asked again after a failure has several,
+    and a job whose answer was superseded (a review of an empty candidate, then the
+    author resumed) has a line but no row. One execution can also back several
+    rows. So a results file carries an `executions` section, copied from the
+    journal, and the cost comes from that. A results file without it (written
+    before it existed) falls back to one execution per row, which can miss
+    superseded work. Lines without `usage` or `model` come from older runs.
     """
     if path.suffix == ".jsonl":
         entries = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
-        return [(e.get("model") or UNKNOWN_MODEL, e.get("usage")) for e in entries]
-    records: list[tuple[str, dict[str, int] | None]] = []
-    for run in load(path)["runs"]:
-        records.append((run["model"], run.get("usage")))
-        records.extend((run["model"], p.get("usage")) for p in run.get("prior", []))
-    return records
+    else:
+        data = load(path)
+        entries = data["executions"] if "executions" in data else data["runs"]
+    return [(e.get("model") or UNKNOWN_MODEL, e.get("usage")) for e in entries]
 
 
 def load_prices(path: Path) -> dict[str, Any]:
