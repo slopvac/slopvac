@@ -60,11 +60,7 @@ impl TagRegistry {
         for t in &self.taggers {
             tags.extend(t.tag(doc)?);
         }
-        tags.sort_by(|a, b| {
-            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
-        });
-        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
-        Ok(TagIndex { tags })
+        Ok(TagIndex::from_tags(tags))
     }
 }
 
@@ -72,9 +68,79 @@ impl TagRegistry {
 #[derive(Debug, Default, Clone)]
 pub struct TagIndex {
     tags: Vec<Tag>,
+    /// The group of each tag. Tags of one group are the pieces of one tag.
+    groups: Vec<usize>,
+    /// For a group of several pieces, the indexes of its tags.
+    members: std::collections::HashMap<usize, Vec<usize>>,
 }
 
 impl TagIndex {
+    /// Index `tags`: sorted by span, with duplicates removed. Equal tags are not told apart.
+    #[must_use]
+    pub fn from_tags(mut tags: Vec<Tag>) -> Self {
+        // Equal tags are one tag, whoever produced them.
+        tags.sort_by(|a, b| {
+            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
+        });
+        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
+        Self::from_pieces(tags.into_iter().enumerate().map(|(i, t)| (t, i)).collect())
+    }
+
+    /// Index tags that may be pieces of one tag: pieces with the same group number belong
+    /// together. A tag on text that reads in another order than the source, such as a wrapped
+    /// table cell, is split into the ranges of its own text, and a match that spans several
+    /// of them is covered by the tag as a whole ([`Self::kinds_covering`]).
+    #[must_use]
+    pub fn from_pieces(mut pieces: Vec<(Tag, usize)>) -> Self {
+        pieces.sort_by(|(a, ga), (b, gb)| {
+            (a.span.start, a.span.end, &a.kind, ga).cmp(&(b.span.start, b.span.end, &b.kind, gb))
+        });
+        // Equal pieces of one group are one piece. Pieces of different groups stay, so every
+        // group keeps all its members.
+        pieces.dedup_by(|(a, ga), (b, gb)| a.kind == b.kind && a.span == b.span && ga == gb);
+        let (tags, groups): (Vec<Tag>, Vec<usize>) = pieces.into_iter().unzip();
+        let mut members: std::collections::HashMap<usize, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, &g) in groups.iter().enumerate() {
+            members.entry(g).or_default().push(i);
+        }
+        members.retain(|_, m| m.len() > 1);
+        Self {
+            tags,
+            groups,
+            members,
+        }
+    }
+
+    /// Kinds of the tags that cover every one of `ranges`, sorted and unique. A tag covers a
+    /// range when one of its pieces contains it, so ranges on different lines of one tag
+    /// are covered by it. For one range this is [`Self::kinds_at`].
+    #[must_use]
+    pub fn kinds_covering(&self, ranges: &[Range<usize>]) -> Vec<&str> {
+        let Some(first) = ranges.first() else {
+            return Vec::new();
+        };
+        let covers = |t: &Tag, r: &Range<usize>| t.span.start <= r.start && r.end <= t.span.end;
+        let mut set = BTreeSet::new();
+        for (i, tag) in self.tags.iter().enumerate() {
+            if !covers(tag, first) {
+                continue;
+            }
+            let own = [i];
+            let pieces = self
+                .members
+                .get(&self.groups[i])
+                .map_or(&own[..], Vec::as_slice);
+            if ranges
+                .iter()
+                .all(|r| pieces.iter().any(|&m| covers(&self.tags[m], r)))
+            {
+                set.insert(tag.kind.as_str());
+            }
+        }
+        set.into_iter().collect()
+    }
+
     /// All tags in span order.
     #[must_use]
     pub fn tags(&self) -> &[Tag] {

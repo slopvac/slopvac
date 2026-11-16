@@ -30,3 +30,6 @@
 "exclude-empty-pattern.toml" = "/exclude/0"
 "extends-not-array.toml" = "/extends"
 "minimum-severity-bad.toml" = "/categories/ste-words/minimum_severity"
+"category-budget-none-uppercase.toml" = "/categories/orwell-voice/max_per_100_words"
+"category-budget-digit-string.toml" = "/categories/orwell-voice/max_per_100_words"
+"threshold-none.toml" = "/thresholds/max_errors"

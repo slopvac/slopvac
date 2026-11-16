@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "id": "core:prose-craft.r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "tokens",
+    "tokens": [
+      "x"
+    ]
+  },
+  "citation": {
+    "source": "s"
+  }
+}

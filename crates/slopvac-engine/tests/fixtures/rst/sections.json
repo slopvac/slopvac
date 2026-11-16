@@ -1,0 +1,82 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Release notes"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 5,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Welcome to the "
+    },
+    {
+     "k": "i",
+     "t": "new",
+     "raw": "*new*"
+    },
+    {
+     "k": "t",
+     "t": " release. It is "
+    },
+    {
+     "k": "i",
+     "t": "very",
+     "raw": "**very**"
+    },
+    {
+     "k": "t",
+     "t": " fast, and "
+    },
+    {
+     "k": "c",
+     "t": "fast_path",
+     "raw": "``fast_path``"
+    },
+    {
+     "k": "t",
+     "t": " is its\ndefault. Escaped *stars* stay literal."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "title",
+   "start": 7,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Install"
+    }
+   ],
+   "containers": [],
+   "level": 2
+  },
+  {
+   "tag": "paragraph",
+   "start": 10,
+   "end": 10,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Run the installer, then restart the service."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

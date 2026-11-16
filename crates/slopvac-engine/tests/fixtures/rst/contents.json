@@ -1,0 +1,68 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Guide"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "title",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Setup"
+    }
+   ],
+   "containers": [],
+   "level": 2
+  },
+  {
+   "tag": "paragraph",
+   "start": 9,
+   "end": 9,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Setup comes first."
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "title",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Usage"
+    }
+   ],
+   "containers": [],
+   "level": 2
+  },
+  {
+   "tag": "paragraph",
+   "start": 14,
+   "end": 14,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Usage comes second."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

@@ -13,37 +13,74 @@ edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/srobroek/slopvac"
+homepage = "https://github.com/srobroek/slopvac"
 publish = false
 
 [workspace.dependencies]
-slopvac-model = { path = "crates/slopvac-model" }
-slopvac-config = { path = "crates/slopvac-config" }
-slopvac-parse = { path = "crates/slopvac-parse" }
-slopvac-text = { path = "crates/slopvac-text" }
-slopvac-rules = { path = "crates/slopvac-rules" }
-slopvac-engine = { path = "crates/slopvac-engine" }
-slopvac-report = { path = "crates/slopvac-report" }
-slopvac-plugins = { path = "crates/slopvac-plugins" }
-slopvac-lsp = { path = "crates/slopvac-lsp" }
-slopvac-context = { path = "crates/slopvac-context" }
-pcre2 = "0.2"
-serde-saphyr = "2"
-slopvac-migrate = { path = "crates/slopvac-migrate" }
-slopvac-styles = { path = "crates/slopvac-styles" }
-slopvac-diagrams = { path = "crates/slopvac-diagrams" }
-serde = { version = "1", features = ["derive"] }
-toml = "1"
-thiserror = "2"
-slopvac-terms = { path = "crates/slopvac-terms" }
+annotate-snippets = "0.12.18"
 base64 = "0.23"
-flate2 = "1.1"
-roxmltree = "0.21"
-clap = { version = "4.6", features = ["derive"] }
-slopvac-agents = { path = "crates/slopvac-agents" }
+cap-fs-ext = "4"
 cap-std = "4"
+caseless = "0.2"
+clap = { version = "4.6", features = ["derive"] }
+crossbeam-channel = "0.5"
+flate2 = "1.1"
+frontmatter-spans = { path = "crates/frontmatter-spans" }
+globset = "0.4"
+html5ever = "0.40"
+html5gum = "0.9"
+ignore = "0.4"
+insta = "1.49"
+# No default features: they pull reqwest and tokio, which ADR 0001 bans (cargo-deny).
+jsonschema = { version = "0.61.2", default-features = false }
+lsp-server = "0.10"
+lsp-types = "0.97"
+markdown = "1"
+markup5ever_rcdom = "0.40"
+minijinja = "3"
+minisign = { version = "0.10", default-features = false }
+minisign-verify = "0.3"
+pcre2 = "0.2"
+# Pinned: 0.2.10 vendors PCRE2 10.46; the rules need >= 10.43 (slopvac-8l4.3.20).
+pcre2-sys = "=0.2.10"
+proptest = "1.12.0"
 pulldown-cmark = { version = "0.13", default-features = false }
+rayon = "1.11"
+roxmltree = "0.21"
+rstest = "0.28"
+rustix = { version = "1", default-features = false, features = [
+  "std",
+  "process",
+] }
+saphyr = "0.3"
+# The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
+saphyr-parser = "0.3.4"
+schemars = "1"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = "2"
+serde_json = "1"
+sha2 = "0.10"
 similar = "3"
-toml_edit = "0.25"
+slopvac-agents = { path = "crates/slopvac-agents" }
+slopvac-config = { path = "crates/slopvac-config" }
+slopvac-context = { path = "crates/slopvac-context" }
+slopvac-diagrams = { path = "crates/slopvac-diagrams" }
+slopvac-engine = { path = "crates/slopvac-engine" }
+slopvac-lsp = { path = "crates/slopvac-lsp" }
+slopvac-migrate = { path = "crates/slopvac-migrate" }
+slopvac-model = { path = "crates/slopvac-model" }
+slopvac-parse = { path = "crates/slopvac-parse" }
+slopvac-plugins = { path = "crates/slopvac-plugins" }
+slopvac-pos = { path = "crates/slopvac-pos" }
+slopvac-report = { path = "crates/slopvac-report" }
+slopvac-rules = { path = "crates/slopvac-rules" }
+slopvac-styles = { path = "crates/slopvac-styles" }
+slopvac-terms = { path = "crates/slopvac-terms" }
+slopvac-text = { path = "crates/slopvac-text" }
+snapbox = "1.2"
+strsim = "0.11.1"
+tar = { version = "0.4", default-features = false }
 tempfile = "3"
 slopvac-comments = { path = "crates/slopvac-comments" }
 tree-sitter = "0.26"
@@ -77,6 +114,14 @@ tree-sitter-scss = "1"
 tree-sitter-swift = "0.7"
 tree-sitter-toml-ng = "0.7"
 tree-sitter-typescript = "0.23"
+thiserror = "2"
+toml = "1"
+toml_edit = "0.25"
+unicode-normalization = "0.1"
+ureq = { version = "3.5", default-features = false, features = [
+  "rustls",
+  "platform-verifier",
+] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -98,8 +143,24 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
+# The skeleton declares every crate before any of them depends on another.
+# Remove a name here when its first dependant lands; cargo-shear then guards it.
+# pcre2-sys is a deliberate version pin of a transitive dependency of pcre2.
+[workspace.metadata.cargo-shear]
+ignored = [
+  "pcre2-sys",
+  "slopvac-agents",
+  "slopvac-config",
+  "slopvac-plugins",
+  "slopvac-styles",
+]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Profile for cargo-dist release builds.
+[profile.dist]
+inherits = "release"

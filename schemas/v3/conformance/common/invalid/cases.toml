@@ -12,3 +12,4 @@
 "ApiVersion--string.json" = ""
 "Severity--off.json" = ""
 "ConfigSource--unknown-layer.yaml" = "/layer"
+"RuleId--uppercase-pack.json" = ""

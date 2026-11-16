@@ -17,6 +17,7 @@ code:
   - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/tests/**'
   - 'packages/slopvac-lint/vale/styles-verified/**'
+  - 'packages/slopvac-plugin/**'
   - 'tests/**'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
@@ -26,6 +27,8 @@ code:
   - 'docs/contract/**'
   - 'scripts/contract/**'
   - 'tests/contract/**'
+  - 'crates/slopvac-text/**'
+  - 'evals/**'
 
 # Rust workspace under crates/. Build, format, lint and test run across three
 # operating systems.
@@ -36,6 +39,7 @@ rust:
   - 'crates/**'
   - 'rust-toolchain.toml'
   - 'rustfmt.toml'
+  - 'deny.toml'
   - '.config/nextest.toml'
 
 package:
@@ -142,6 +146,7 @@ dependencies:
   - '.github/workflows/**'
   - 'pyproject.toml'
   - 'packages/slopvac-lint/pyproject.toml'
+  - 'packages/slopvac-plugin/pyproject.toml'
   - 'uv.lock'
 
 # Full filesystem vulnerability/misconfiguration scans are reserved for changes
@@ -157,6 +162,7 @@ filesystem:
   - 'packages/slopvac-lint/pyproject.toml'
   - 'packages/slopvac-lint/src/**'
   - 'packages/slopvac-lint/tests/**'
+  - 'packages/slopvac-plugin/**'
   - 'tests/**'
   - 'scripts/**'
 

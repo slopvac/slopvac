@@ -1,0 +1,10 @@
+Fixed #33992 -- Fixed queryset crash when aggregating over a group containing Exists.
+
+A more in-depth solution is likely to make sure that we always GROUP BY
+selected annotations or revisit how we use Query.exists() in the Exists
+expression but that requires extra work that isn't suitable for a
+backport.
+
+Regression in e5a92d400acb4ca6a8e1375d1ab8121f2c7220be.
+
+Thanks Fernando Flores Villaça for the report.

@@ -1,0 +1,15 @@
+build(deps): disable shared library for libvterm. (#20566)
+
+build(deps): disable shared library for libvterm
+
+Problem:
+Cannot build both static and share libraries for libvterm under Windows.
+The static and shared library would have the same name "vterm.lib", thus there would be multiple rules to build the same target.
+
+Solution:
+Disable shared library for libvterm.
+
+This makes it possible to use Ninja on Windows to build dependencies (2x speedup!).
+But not for Release builds yet.
+
+Co-authored-by: Wei Tang <gauchyler@uestc.edu.cn>

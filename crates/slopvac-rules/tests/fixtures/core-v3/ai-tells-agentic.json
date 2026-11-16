@@ -1,0 +1,48 @@
+{
+  "schema_version": 3,
+  "id": "ai-tells-agentic",
+  "title": "AI tells -- agentic slogan formulae",
+  "description": "The formulae an agent reaches for when it has to name a section and has no fact to name it with: a universal claim about a whole class, standing in for a title. The shape is the tell, not the vocabulary, so these rules match syntax and a rewritten slogan does not escape by swapping words.",
+  "weight": 1.5,
+  "recommended_for": [
+    "consumer",
+    "internal",
+    "change-comms"
+  ],
+  "rules": [
+    {
+      "id": "formulaic-universal-heading",
+      "name": "Replace a universal slogan with a title",
+      "message": "universal slogan: {match} -- title it with a noun phrase, or state one scoped fact",
+      "severity": "warning",
+      "scope": "paragraph",
+      "match": {
+        "kind": "pattern",
+        "pattern": "^every\\s+[\\w-]+\\s+(?:is|are|was|were|has|have|does|do|can|cannot|will|would|should|must|[a-z][\\w-]*(?<!s)s)(?:\\s+[\\w-]+){2,8}$",
+        "ignore_case": true
+      },
+      "examples": [
+        {
+          "bad": "Every Number Traces To A Record",
+          "good": "Every number in the ledger traces to a source record.",
+          "note": "The rewrite scopes the subject with a prepositional phrase, so the predicate no longer sits against the bare noun. The loader proves the non-match, which is the body invariant this rule must never claim."
+        },
+        {
+          "bad": "Every Change Tells A Story",
+          "good": "Every change requires a changelog entry."
+        },
+        {
+          "bad": "Every Request Finds Its Way",
+          "good": "Request routing"
+        }
+      ],
+      "fix": "Name the section with a noun phrase, or scope the claim and state it as a sentence.",
+      "ai_signal": "weak",
+      "ai_signal_source": "catalog",
+      "citation": {
+        "source": "retired review guidance (\"Read the headings alone, in order\")",
+        "note": "Three shape conditions carry this rule, and each one alone is what keeps a real invariant out of it. The predicate must sit IMMEDIATELY against the bare subject noun, so a scoped invariant is not a match (\"Every request TO THIS ENDPOINT requires authentication\", \"Every file IN THIS DIRECTORY contains a header\"). The complement must be at least two words, so a terse invariant with a one-word object is not a match (\"Every request requires authentication\"). And the match runs to the end of the block through word characters only, so any terminal punctuation excludes it -- a heading carries none, a body sentence does. Together they select the title-shaped universal claim and leave the class invariant, which is the one construction \"every\" is genuinely for. `scope: paragraph`, not `heading`: the native engine's paragraph scope covers every rendered block INCLUDING headings, list items, and quotes, whereas heading scope compiles to a Vale `heading` payload and Vale then owns the rule, leaving it unchecked under `--no-vale`. See compile_vale.PARAGRAPH_SCOPE_REASON. The comma-joined pair form is prose-scope.formulaic-subject-verb-slogan; the judgement remainder for a slogan carrying no fixed frame is ai-tells-content-shape.epigram-closer-remainder."
+      }
+    }
+  ]
+}

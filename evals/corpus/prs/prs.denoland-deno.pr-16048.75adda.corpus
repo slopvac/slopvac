@@ -1,0 +1,16 @@
+chore: improve JSDoc for built-in APIs
+
+MOA and make any changes desired.
+
+This does a pass to attempt to improve the inline documentation for built-in APIs.
+
+This current version goes through about 2/3rds of the `Deno` stable namespace.  An incremental improvement for 1.26 is a good start and patch releases of 1.26 can continue to do the work, but it is time consuming and I need to take care of a few other things.
+
+Some things of note:
+
+- async functions are being placed ahead of sync ones.  This is because in the global symbol search, when all other things are equal, the search engine gives priority to the first declaration, so many of the search results are putting the sync methods in front of the async ones which is undesired.
+- I have tried to eliminate the "second person" _you_ in the tone of voice of the documentation.  It feels better to be consistent with inline documentation to keep to the third person.
+- I have started to include `{@linkcode Item}` links where appropriate.  The render well in intelligent IDEs and we will soon have them working on dotland.
+- I have started generating markdown links to other libraries (like `std`) where appropriate. Again, these should work well in intelligent IDEs taking people to documentation pages for specific symbols or modules and will work well when rendered on dotland.
+
+There is a lot more to do, but it is a start.

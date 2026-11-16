@@ -1,0 +1,39 @@
+fix: legacy no resolve asset urls
+
+<!-- Thank you for contributing! -->
+
+### Description
+
+fix: #9530
+fix: #9246
+
+<!-- Please insert your description here and provide especially info about the "what" this PR is solving -->
+
+css-post plugin ignore processed vite asset flag.
+
+>  __VITE_ASSET__ and __VITE_PUBLIC_ASSET__ urls are processed by the vite:asset plugin, don't call resolveAssetUrlsInCss here
+
+If the css load by [user normal plugins (vue plugin)](https://github.com/vitejs/vite/blob/b9130cc910b794b95a4b5ee545e80b2e219dc266/packages/vite/src/node/plugins/index.ts#L83-L87) will break the rule.
+
+so we should `resolveAssetUrlsInCss` in legacy mode. 
+
+### Additional context
+
+<!-- e.g. is there anything you'd like reviewers to focus on? -->
+
+---
+
+### What is the purpose of this pull request? <!-- (put an "X" next to an item) -->
+
+- [x] Bug fix
+- [ ] New Feature
+- [ ] Documentation update
+- [ ] Other
+
+### Before submitting the PR, please make sure you do the following
+
+- [x] Read the [Contributing Guidelines](https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md).
+- [x] Read the [Pull Request Guidelines](https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md#pull-request-guidelines) and follow the [Commit Convention](https://github.com/vitejs/vite/blob/main/.github/commit-convention.md).
+- [x] Check that there isn't already a PR that solves the problem the same way to avoid creating a duplicate.
+- [x] Provide a description in this PR that addresses **what** the PR is solving, or reference the issue that it solves (e.g. `fixes #123`).
+- [x] Ideally, include relevant tests that fail without this PR but pass with it.

@@ -53,7 +53,14 @@ def click_rows() -> list[dict]:
     rows: list[dict] = []
 
     def walk(command: click.Command, path: str) -> None:
-        rows.append({"id": f"cmd:{path}", "source": "click", "summary": f"slopvac {path}".replace("slopvac root", "slopvac"), "detail": {}})
+        rows.append(
+            {
+                "id": f"cmd:{path}",
+                "source": "click",
+                "summary": f"slopvac {path}".replace("slopvac root", "slopvac"),
+                "detail": {},
+            }
+        )
         for param in command.params:
             rows.append(_param_row(path, param))
         if isinstance(command, click.Group):
@@ -68,15 +75,41 @@ def action_rows() -> list[dict]:
     data = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
     rows = []
     for name, spec in data.get("inputs", {}).items():
-        rows.append({"id": f"action:input:{name}", "source": "action.yml", "summary": name, "detail": {"default": spec.get("default")}})
+        rows.append(
+            {
+                "id": f"action:input:{name}",
+                "source": "action.yml",
+                "summary": name,
+                "detail": {"default": spec.get("default")},
+            }
+        )
     for name in data.get("outputs", {}):
-        rows.append({"id": f"action:output:{name}", "source": "action.yml", "summary": name, "detail": {}})
+        rows.append(
+            {
+                "id": f"action:output:{name}",
+                "source": "action.yml",
+                "summary": name,
+                "detail": {},
+            }
+        )
     return rows
 
 
 def hook_rows() -> list[dict]:
-    hooks = yaml.safe_load((ROOT / "docs/contract/compat/sources/pre-commit-hooks-2x.yaml").read_text(encoding="utf-8"))
-    return [{"id": f"hook:{h['id']}", "source": ".pre-commit-hooks.yaml", "summary": h["entry"], "detail": {}} for h in hooks]
+    hooks = yaml.safe_load(
+        (ROOT / "docs/contract/compat/sources/pre-commit-hooks-2x.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    return [
+        {
+            "id": f"hook:{h['id']}",
+            "source": ".pre-commit-hooks.yaml",
+            "summary": h["entry"],
+            "detail": {},
+        }
+        for h in hooks
+    ]
 
 
 def load_dispositions() -> dict[str, dict]:
@@ -93,7 +126,14 @@ def build() -> list[dict]:
     rows = source_rows()
     for key, entry in table.items():
         if key.startswith(BEHAVIOR_PREFIX):
-            rows.append({"id": key, "source": "behavior", "summary": entry.get("summary", ""), "detail": {}})
+            rows.append(
+                {
+                    "id": key,
+                    "source": "behavior",
+                    "summary": entry.get("summary", ""),
+                    "detail": {},
+                }
+            )
     for row in rows:
         entry = table.get(row["id"], {})
         row["disposition"] = entry.get("disposition", "")
@@ -104,7 +144,14 @@ def build() -> list[dict]:
 
 
 def render_json(rows: list[dict]) -> str:
-    return json.dumps({"schema": "slopvac-compat-matrix/1", "rows": rows}, indent=2, ensure_ascii=False) + "\n"
+    return (
+        json.dumps(
+            {"schema": "slopvac-compat-matrix/1", "rows": rows},
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
 
 
 def _cell(text: str) -> str:
@@ -120,24 +167,34 @@ def render_md(rows: list[dict]) -> str:
         "",
         "# 2.x compatibility matrix",
         "",
-        "Totals: " + ", ".join(f"{k or 'unset'} {v}" for k, v in sorted(counts.items())) + f", {len(rows)} rows.",
+        "Totals: "
+        + ", ".join(f"{k or 'unset'} {v}" for k, v in sorted(counts.items()))
+        + f", {len(rows)} rows.",
         "",
         "| Row | Disposition | 3.0 note | Owner | Test |",
         "| --- | --- | --- | --- | --- |",
     ]
     for r in rows:
-        lines.append(f"| `{_cell(r['id'])}` | {r['disposition']} | {_cell(r['note'])} | {r['owner']} | {r['test']} |")
+        lines.append(
+            f"| `{_cell(r['id'])}` | {r['disposition']} | {_cell(r['note'])} | {r['owner']} | {r['test']} |"
+        )
     return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true", help="fail when the committed files are stale")
+    parser.add_argument(
+        "--check", action="store_true", help="fail when the committed files are stale"
+    )
     args = parser.parse_args(argv)
     rows = build()
     outputs = {MATRIX_JSON: render_json(rows), MATRIX_MD: render_md(rows)}
     if args.check:
-        stale = [p for p, text in outputs.items() if not p.exists() or p.read_text(encoding="utf-8") != text]
+        stale = [
+            p
+            for p, text in outputs.items()
+            if not p.exists() or p.read_text(encoding="utf-8") != text
+        ]
         for p in stale:
             print(f"stale: {p.relative_to(ROOT)}", file=sys.stderr)
         return 1 if stale else 0

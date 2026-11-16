@@ -1,0 +1,10 @@
+style: rustfmt everything
+
+This is why I was so intent on clearing the PR queue. This will
+effectively invalidate all existing patches, so I wanted to start from a
+clean slate.
+
+We do make one little tweak: we put the default type definitions in
+their own file and tell rustfmt to keep its grubby mits off of it. We
+also sort it lexicographically and hopefully will enforce that from here
+on.

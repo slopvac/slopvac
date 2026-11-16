@@ -1,0 +1,39 @@
+Print warning and error messages in stderr
+
+I found this issue when I was parsing the JSON output. Warning messages should be written in stderr, not stdout:
+
+Actual:
+
+```
+> ruff --format json code.py 2> /dev/null
+No pyproject.toml found. <-
+Falling back to default configuration... <-
+[
+  {
+    "kind": "IfTuple",
+    "fixed": false,
+    "location": {
+      "row": 1,
+      "column": 1
+    },
+    "filename": "/home/haru/Desktop/repositories/ruff-extension-test/code.py"
+  }
+]
+```
+
+Expected:
+
+```
+> ruff --format json code.py 2> /dev/null
+[
+  {
+    "kind": "IfTuple",
+    "fixed": false,
+    "location": {
+      "row": 1,
+      "column": 1
+    },
+    "filename": "/home/haru/Desktop/repositories/ruff-extension-test/code.py"
+  }
+]
+```

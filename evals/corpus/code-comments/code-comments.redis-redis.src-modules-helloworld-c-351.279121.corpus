@@ -1,0 +1,220 @@
+    RedisModule_AutoMemory(ctx); /* Use automatic memory management. */
+    if (argc != 3) return RedisModule_WrongArity(ctx);
+
+    mstime_t addms, expire;
+
+    if (RedisModule_StringToLongLong(argv[2],&addms) != REDISMODULE_OK)
+        return RedisModule_ReplyWithError(ctx,"ERR invalid expire time");
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx,argv[1],
+        REDISMODULE_READ|REDISMODULE_WRITE);
+    expire = RedisModule_GetExpire(key);
+    if (expire != REDISMODULE_NO_EXPIRE) {
+        expire += addms;
+        RedisModule_SetExpire(key,expire);
+    }
+    return RedisModule_ReplyWithSimpleString(ctx,"OK");
+}
+
+/* HELLO.ZSUMRANGE key startscore endscore
+ * Return the sum of all the scores elements between startscore and endscore.
+ *
+ * The computation is performed two times, one time from start to end and
+ * another time backward. The two scores, returned as a two element array,
+ * should match.*/
+int HelloZsumRange_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    double score_start, score_end;
+    if (argc != 4) return RedisModule_WrongArity(ctx);
+
+    if (RedisModule_StringToDouble(argv[2],&score_start) != REDISMODULE_OK ||
+        RedisModule_StringToDouble(argv[3],&score_end) != REDISMODULE_OK)
+    {
+        return RedisModule_ReplyWithError(ctx,"ERR invalid range");
+    }
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx,argv[1],
+        REDISMODULE_READ|REDISMODULE_WRITE);
+    if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_ZSET) {
+        return RedisModule_ReplyWithError(ctx,REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    double scoresum_a = 0;
+    double scoresum_b = 0;
+
+    RedisModule_ZsetFirstInScoreRange(key,score_start,score_end,0,0);
+    while(!RedisModule_ZsetRangeEndReached(key)) {
+        double score;
+        RedisModuleString *ele = RedisModule_ZsetRangeCurrentElement(key,&score);
+        RedisModule_FreeString(ctx,ele);
+        scoresum_a += score;
+        RedisModule_ZsetRangeNext(key);
+    }
+    RedisModule_ZsetRangeStop(key);
+
+    RedisModule_ZsetLastInScoreRange(key,score_start,score_end,0,0);
+    while(!RedisModule_ZsetRangeEndReached(key)) {
+        double score;
+        RedisModuleString *ele = RedisModule_ZsetRangeCurrentElement(key,&score);
+        RedisModule_FreeString(ctx,ele);
+        scoresum_b += score;
+        RedisModule_ZsetRangePrev(key);
+    }
+
+    RedisModule_ZsetRangeStop(key);
+
+    RedisModule_CloseKey(key);
+
+    RedisModule_ReplyWithArray(ctx,2);
+    RedisModule_ReplyWithDouble(ctx,scoresum_a);
+    RedisModule_ReplyWithDouble(ctx,scoresum_b);
+    return REDISMODULE_OK;
+}
+
+/* HELLO.LEXRANGE key min_lex max_lex min_age max_age
+ * This command expects a sorted set stored at key in the following form:
+ * - All the elements have score 0.
+ * - Elements are pairs of "<name>:<age>", for example "Anna:52".
+ * The command will return all the sorted set items that are lexicographically
+ * between the specified range (using the same format as ZRANGEBYLEX)
+ * and having an age between min_age and max_age. */
+int HelloLexRange_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx); /* Use automatic memory management. */
+
+    if (argc != 6) return RedisModule_WrongArity(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx,argv[1],
+        REDISMODULE_READ|REDISMODULE_WRITE);
+    if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_ZSET) {
+        return RedisModule_ReplyWithError(ctx,REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    if (RedisModule_ZsetFirstInLexRange(key,argv[2],argv[3]) != REDISMODULE_OK) {
+        return RedisModule_ReplyWithError(ctx,"invalid range");
+    }
+
+    int arraylen = 0;
+    RedisModule_ReplyWithArray(ctx,REDISMODULE_POSTPONED_LEN);
+    while(!RedisModule_ZsetRangeEndReached(key)) {
+        double score;
+        RedisModuleString *ele = RedisModule_ZsetRangeCurrentElement(key,&score);
+        RedisModule_ReplyWithString(ctx,ele);
+        RedisModule_FreeString(ctx,ele);
+        RedisModule_ZsetRangeNext(key);
+        arraylen++;
+    }
+    RedisModule_ZsetRangeStop(key);
+    RedisModule_ReplySetArrayLength(ctx,arraylen);
+    RedisModule_CloseKey(key);
+    return REDISMODULE_OK;
+}
+
+/* HELLO.HCOPY key srcfield dstfield
+ * This is just an example command that sets the hash field dstfield to the
+ * same value of srcfield. If srcfield does not exist no operation is
+ * performed.
+ *
+ * The command returns 1 if the copy is performed (srcfield exists) otherwise
+ * 0 is returned. */
+int HelloHCopy_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx); /* Use automatic memory management. */
+
+    if (argc != 4) return RedisModule_WrongArity(ctx);
+    RedisModuleKey *key = RedisModule_OpenKey(ctx,argv[1],
+        REDISMODULE_READ|REDISMODULE_WRITE);
+    int type = RedisModule_KeyType(key);
+    if (type != REDISMODULE_KEYTYPE_HASH &&
+        type != REDISMODULE_KEYTYPE_EMPTY)
+    {
+        return RedisModule_ReplyWithError(ctx,REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    /* Get the old field value. */
+    RedisModuleString *oldval;
+    RedisModule_HashGet(key,REDISMODULE_HASH_NONE,argv[2],&oldval,NULL);
+    if (oldval) {
+        RedisModule_HashSet(key,REDISMODULE_HASH_NONE,argv[3],oldval,NULL);
+    }
+    RedisModule_ReplyWithLongLong(ctx,oldval != NULL);
+    return REDISMODULE_OK;
+}
+
+/* HELLO.LEFTPAD str len ch
+ * This is an implementation of the infamous LEFTPAD function, that
+ * was at the center of an issue with the npm modules system in March 2016.
+ *
+ * LEFTPAD is a good example of using a Redis Modules API called
+ * "pool allocator", that was a famous way to allocate memory in yet another
+ * open source project, the Apache web server.
+ *
+ * The concept is very simple: there is memory that is useful to allocate
+ * only in the context of serving a request, and must be freed anyway when
+ * the callback implementing the command returns. So in that case the module
+ * does not need to retain a reference to these allocations, it is just
+ * required to free the memory before returning. When this is the case the
+ * module can call RedisModule_PoolAlloc() instead, that works like malloc()
+ * but will automatically free the memory when the module callback returns.
+ *
+ * Note that PoolAlloc() does not necessarily require AutoMemory to be
+ * active. */
+int HelloLeftPad_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx); /* Use automatic memory management. */
+    long long padlen;
+
+    if (argc != 4) return RedisModule_WrongArity(ctx);
+
+    if ((RedisModule_StringToLongLong(argv[2],&padlen) != REDISMODULE_OK) ||
+        (padlen< 0)) {
+        return RedisModule_ReplyWithError(ctx,"ERR invalid padding length");
+    }
+    size_t strlen, chlen;
+    const char *str = RedisModule_StringPtrLen(argv[1], &strlen);
+    const char *ch = RedisModule_StringPtrLen(argv[3], &chlen);
+
+    /* If the string is already larger than the target len, just return
+     * the string itself. */
+    if (strlen >= (size_t)padlen)
+        return RedisModule_ReplyWithString(ctx,argv[1]);
+
+    /* Padding must be a single character in this simple implementation. */
+    if (chlen != 1)
+        return RedisModule_ReplyWithError(ctx,
+            "ERR padding must be a single char");
+
+    /* Here we use our pool allocator, for our throw-away allocation. */
+    padlen -= strlen;
+    char *buf = RedisModule_PoolAlloc(ctx,padlen+strlen);
+    for (long long j = 0; j < padlen; j++) buf[j] = *ch;
+    memcpy(buf+padlen,str,strlen);
+
+    RedisModule_ReplyWithStringBuffer(ctx,buf,padlen+strlen);
+    return REDISMODULE_OK;
+}
+
+/* This function must be present on each Redis module. It is used in order to
+ * register the commands into the Redis server. */
+int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (RedisModule_Init(ctx,"helloworld",1,REDISMODULE_APIVER_1)
+        == REDISMODULE_ERR) return REDISMODULE_ERR;
+
+    /* Log the list of parameters passing loading the module. */
+    for (int j = 0; j < argc; j++) {
+        const char *s = RedisModule_StringPtrLen(argv[j],NULL);
+        printf("Module loaded with ARGV[%d] = %s\n", j, s);
+    }
+
+    if (RedisModule_CreateCommand(ctx,"hello.simple",
+        HelloSimple_RedisCommand,"readonly",0,0,0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if (RedisModule_CreateCommand(ctx,"hello.push.native",
+        HelloPushNative_RedisCommand,"write deny-oom",1,1,1) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if (RedisModule_CreateCommand(ctx,"hello.push.call",
+        HelloPushCall_RedisCommand,"write deny-oom",1,1,1) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if (RedisModule_CreateCommand(ctx,"hello.push.call2",
+        HelloPushCall2_RedisCommand,"write deny-oom",1,1,1) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+

@@ -1,0 +1,9 @@
+{
+  "tagger": {
+    "documents": [
+      {"id": "fenced", "text": "Intro.\n```py\nprint('héllo')\n```\nOutro 日本語.\n"},
+      {"id": "plain", "text": "No code here.\r\nJust prose.\n"}
+    ],
+    "invalid_document": {"id": "binary", "text": "bad\u0000bytes"}
+  }
+}

@@ -1,0 +1,220 @@
+        match self.last_match.take() {
+            None => {
+                self.last_match = Some(line);
+                Ok(true)
+            }
+            Some(last_match) => {
+                // If the lines in the previous match overlap with the lines
+                // in this match, then simply grow the match and move on. This
+                // happens when the next match begins on the same line that the
+                // last match ends on.
+                //
+                // Note that we do not technically require strict overlap here.
+                // Instead, we only require that the lines are adjacent. This
+                // provides larger blocks of lines to the printer, and results
+                // in overall better behavior with respect to how replacements
+                // are handled.
+                //
+                // See: https://github.com/BurntSushi/ripgrep/issues/1311
+                // And also the associated commit fixing #1311.
+                if last_match.end() >= line.start() {
+                    self.last_match = Some(last_match.with_end(line.end()));
+                    Ok(true)
+                } else {
+                    self.last_match = Some(line);
+                    if !self.sink_context(&last_match)? {
+                        return Ok(false);
+                    }
+                    self.sink_matched(&last_match)
+                }
+            }
+        }
+    }
+
+    fn sink_matched_inverted(&mut self) -> Result<bool, S::Error> {
+        assert!(self.config.invert_match);
+
+        let invert_match = match self.find()? {
+            None => {
+                let range = Range::new(self.core.pos(), self.slice.len());
+                self.core.set_pos(range.end());
+                range
+            }
+            Some(mat) => {
+                let line = lines::locate(
+                    self.slice,
+                    self.config.line_term.as_byte(),
+                    mat,
+                );
+                let range = Range::new(self.core.pos(), line.start());
+                self.advance(&line);
+                range
+            }
+        };
+        if invert_match.is_empty() {
+            return Ok(true);
+        }
+        if !self.sink_context(&invert_match)? {
+            return Ok(false);
+        }
+        let mut stepper = LineStep::new(
+            self.config.line_term.as_byte(),
+            invert_match.start(),
+            invert_match.end(),
+        );
+        while let Some(line) = stepper.next_match(self.slice) {
+            if !self.sink_matched(&line)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn sink_matched(&mut self, range: &Range) -> Result<bool, S::Error> {
+        if range.is_empty() {
+            // The only way we can produce an empty line for a match is if we
+            // match the position immediately following the last byte that we
+            // search, and where that last byte is also the line terminator. We
+            // never want to report that match, and we know we're done at that
+            // point anyway, so stop the search.
+            return Ok(false);
+        }
+        self.core.matched(self.slice, range)
+    }
+
+    fn sink_context(&mut self, range: &Range) -> Result<bool, S::Error> {
+        if self.config.passthru {
+            if !self.core.other_context_by_line(self.slice, range.start())? {
+                return Ok(false);
+            }
+        } else {
+            if !self.core.after_context_by_line(self.slice, range.start())? {
+                return Ok(false);
+            }
+            if !self.core.before_context_by_line(self.slice, range.start())? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn find(&mut self) -> Result<Option<Range>, S::Error> {
+        match self.core.matcher().find(&self.slice[self.core.pos()..]) {
+            Err(err) => Err(S::Error::error_message(err)),
+            Ok(None) => Ok(None),
+            Ok(Some(m)) => Ok(Some(m.offset(self.core.pos()))),
+        }
+    }
+
+    /// Advance the search position based on the previous match.
+    ///
+    /// If the previous match is zero width, then this advances the search
+    /// position one byte past the end of the match.
+    fn advance(&mut self, range: &Range) {
+        self.core.set_pos(range.end());
+        if range.is_empty() && self.core.pos() < self.slice.len() {
+            let newpos = self.core.pos() + 1;
+            self.core.set_pos(newpos);
+        }
+    }
+
+    fn byte_count(&mut self) -> u64 {
+        match self.core.binary_byte_offset() {
+            Some(offset) if offset < self.core.pos() as u64 => offset,
+            _ => self.core.pos() as u64,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::searcher::{BinaryDetection, SearcherBuilder};
+    use crate::testutil::{KitchenSink, RegexMatcher, SearcherTester};
+
+    use super::*;
+
+    const SHERLOCK: &'static str = "\
+For the Doctor Watsons of this world, as opposed to the Sherlock
+Holmeses, success in the province of detective work must always
+be, to a very large extent, the result of luck. Sherlock Holmes
+can extract a clew from a wisp of straw or a flake of cigar ash;
+but Doctor Watson has to have it taken out for him and dusted,
+and exhibited clearly, with a label attached.\
+";
+
+    const CODE: &'static str = "\
+extern crate snap;
+
+use std::io;
+
+fn main() {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+
+    // Wrap the stdin reader in a Snappy reader.
+    let mut rdr = snap::Reader::new(stdin.lock());
+    let mut wtr = stdout.lock();
+    io::copy(&mut rdr, &mut wtr).expect(\"I/O operation failed\");
+}
+";
+
+    #[test]
+    fn basic1() {
+        let exp = "\
+0:For the Doctor Watsons of this world, as opposed to the Sherlock
+129:be, to a very large extent, the result of luck. Sherlock Holmes
+
+byte count:366
+";
+        SearcherTester::new(SHERLOCK, "Sherlock")
+            .line_number(false)
+            .expected_no_line_number(exp)
+            .test();
+    }
+
+    #[test]
+    fn basic2() {
+        let exp = "\nbyte count:366\n";
+        SearcherTester::new(SHERLOCK, "NADA")
+            .line_number(false)
+            .expected_no_line_number(exp)
+            .test();
+    }
+
+    #[test]
+    fn basic3() {
+        let exp = "\
+0:For the Doctor Watsons of this world, as opposed to the Sherlock
+65:Holmeses, success in the province of detective work must always
+129:be, to a very large extent, the result of luck. Sherlock Holmes
+193:can extract a clew from a wisp of straw or a flake of cigar ash;
+258:but Doctor Watson has to have it taken out for him and dusted,
+321:and exhibited clearly, with a label attached.
+byte count:366
+";
+        SearcherTester::new(SHERLOCK, "a")
+            .line_number(false)
+            .expected_no_line_number(exp)
+            .test();
+    }
+
+    #[test]
+    fn basic4() {
+        let haystack = "\
+a
+b
+
+c
+
+
+d
+";
+        let byte_count = haystack.len();
+        let exp = format!("0:a\n\nbyte count:{}\n", byte_count);
+        SearcherTester::new(haystack, "a")
+            .line_number(false)
+            .expected_no_line_number(&exp)
+            .test();
+    }
+
+    #[test]

@@ -1,0 +1,75 @@
+**Skill Assessment Questionnaire for R (Programming Language)**
+
+**Section 1: Basic Concepts**
+
+1.  What is R?
+2.  What are the different data types in R?
+3.  How do you create a vector in R?
+4.  How do you access elements of a vector in R?
+5.  What is a list in R?
+6.  How do you create a list in R?
+7.  How do you access elements of a list in R?
+8.  What is a data frame in R?
+9.  How do you create a data frame in R?
+10. How do you access elements of a data frame in R?
+
+**Section 2: Data Manipulation**
+
+1.  How do you import data into R?
+2.  How do you export data from R?
+3.  How do you clean data in R?
+4.  How do you transform data in R?
+5.  How do you merge data sets in R?
+6.  How do you split data sets in R?
+7.  How do you group data in R?
+8.  How do you summarize data in R?
+9.  How do you sort data in R?
+10. How do you filter data in R?
+
+**Section 3: Statistical Analysis**
+
+1.  How do you perform summary statistics in R?
+2.  How do you perform hypothesis testing in R?
+3.  How do you perform linear regression in R?
+4.  How do you perform logistic regression in R?
+5.  How do you perform time series analysis in R?
+6.  How do you perform clustering in R?
+7.  How do you perform classification in R?
+8.  How do you evaluate the performance of a model in R?
+9.  How do you tune a model in R?
+10. How do you deploy a model in R?
+
+**Section 4: Visualization**
+
+1.  How do you create a basic plot in R?
+2.  How do you customize a plot in R?
+3.  How do you create a ggplot2 plot in R?
+4.  How do you customize a ggplot2 plot in R?
+5.  How do you create an interactive plot in R?
+6.  How do you export a plot in R?
+
+**Section 5: Programming**
+
+1.  How do you write a function in R?
+2.  How do you call a function in R?
+3.  How do you pass arguments to a function in R?
+4.  How do you return values from a function in R?
+5.  How do you create a loop in R?
+6.  How do you create a conditional statement in R?
+7.  How do you debug code in R?
+8.  How do you profile code in R?
+9.  How do you document code in R?
+10. How do you version control code in R?
+
+**Section 6: Advanced Topics**
+
+1.  How do you use R Markdown?
+2.  How do you use R Shiny?
+3.  How do you use RStudio?
+4.  How do you use R packages?
+5.  How do you contribute to R packages?
+6.  How do you stay up-to-date on R news and developments?
+7.  How do you get help with R?
+8.  What are the best resources for learning R?
+9.  What are the career opportunities for R programmers?
+10. What is the future of R?

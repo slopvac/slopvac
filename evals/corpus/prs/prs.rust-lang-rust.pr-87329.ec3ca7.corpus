@@ -1,0 +1,23 @@
+I/O safety.
+
+<!-- homu-ignore:start -->
+*[View all comments](https://triagebot.infra.rust-lang.org/gh-comments/rust-lang/rust/pull/87329)*
+<!-- homu-ignore:end -->
+
+Introduce `OwnedFd` and `BorrowedFd`, and the `AsFd` trait, and
+implementations of `AsFd`, `From<OwnedFd>` and `From<T> for OwnedFd`
+for relevant types, along with Windows counterparts for handles and
+sockets.
+
+Tracking issue: <https://github.com/rust-lang/rust/issues/87074>
+
+RFC: <https://github.com/rust-lang/rfcs/blob/master/text/3128-io-safety.md>
+
+Highlights:
+ - The doc comments at the top of library/std/src/os/unix/io/mod.rs and library/std/src/os/windows/io/mod.rs
+ - The new types and traits in library/std/src/os/unix/io/fd.rs and library/std/src/os/windows/io/handle.rs
+ - The removal of the `RawHandle` struct the Windows impl, which had the same name as the `RawHandle` type alias, and its functionality is now folded into `Handle`.
+
+Managing five levels of wrapping (File wraps sys::fs::File wraps sys::fs::FileDesc wraps OwnedFd wraps RawFd, etc.) made for a fair amount of churn and verbose as/into/from sequences in some places. I've managed to simplify some of them, but I'm open to ideas here.
+
+r? @joshtriplett

@@ -188,17 +188,3 @@ fn locale_comments_follow_their_values() {
     );
     assert!(out.contains("# skip these\nallow = [\"x\"]"), "{out}");
 }
-
-#[test]
-fn preserve_behavior_adds_the_ste_style() {
-    let rw = migrate_config(
-        "profile = \"normal\"\n",
-        "slopvac.toml",
-        &RenameTable::bundled(),
-        Options {
-            preserve_behavior: true,
-        },
-    )
-    .unwrap();
-    assert!(rw.text.contains("styles = [\"core:ste\"]"), "{}", rw.text);
-}

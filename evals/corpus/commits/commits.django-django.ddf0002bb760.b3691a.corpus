@@ -1,0 +1,18 @@
+Refs #32948 -- Renamed Node._new_instance() to Node.create().
+
+Node._new_instance() was added in
+6dd2b5468fa275d53aa60fdcaff8c28bdc5e9c25 to work around Q.__init__()
+having an incompatible signature with Node.__init__().
+
+It was intended as a hook that could be overridden if subclasses needed
+to change the behaviour of instantiation of their specialised form of
+Node. In practice this doesn't ever seem to have been used for this
+purpose and there are very few calls to Node._new_instance() with other
+code, e.g. Node.__deepcopy__() calling Node and overriding __class__ as
+required.
+
+Rename this to Node.create() to make it a more "official" piece of
+private API that we can use to simplify a lot of other areas internally.
+
+The docstring and nearby comment have been reworded to read more
+clearly.

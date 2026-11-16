@@ -1,0 +1,27 @@
+# Slopvac agent guidance
+
+Slopvac {{ version }}. After compaction, a cleared context or a new session, run `slopvac prime` again.
+
+## Rules
+
+- Lint each prose file you change: `slopvac lint <paths> --format json`.
+- Exit {{ exit_ok }} passes. Exit {{ exit_findings }} means a gate failed. Exit {{ exit_incomplete }} means the run is incomplete, never clean.
+- A lint pass proves no claim. Check facts against code or a source.
+
+## Commands
+{% for c in commands %}
+- `{{ c.usage }}`{{ (": " ~ c.about) if level != "minimal" }}
+{% endfor %}
+
+## Topics
+
+Run `slopvac prime <topic>` for one.
+{% for t in topics %}
+- `{{ t.name }}`{{ (": " ~ t.summary) if level != "minimal" }}
+{% endfor %}
+{% if level == "full" %}
+## Notes
+
+- Every command accepts `--help`. `slopvac --version` prints the version.
+- `.slopvac/PRIME.md` overrides a topic; `slopvac prime configure` explains how.
+{% endif %}

@@ -1,7 +1,7 @@
 //! Behavior of style resolution through the public API.
 
 use slopvac_styles::{
-    CategoryDials, CategoryPatch, Level, MapSource, SettingValue, StyleError, resolve,
+    Budget, CategoryDials, CategoryPatch, Level, MapSource, SettingValue, StyleError, resolve,
 };
 
 fn names(n: &[&str]) -> Vec<String> {
@@ -82,6 +82,7 @@ fn category_dials_merge_per_field() {
         r.patch.categories["ste-nouns"],
         CategoryPatch::Dials(CategoryDials {
             severity: Some(Level::Warning),
+            minimum_severity: None,
             max_per_100_words: None,
             weight: Some(0.5),
         })
@@ -90,6 +91,7 @@ fn category_dials_merge_per_field() {
         r.patch.categories["ste-words"],
         CategoryPatch::Dials(CategoryDials {
             severity: Some(Level::Error),
+            minimum_severity: None,
             max_per_100_words: None,
             weight: None,
         })
@@ -247,6 +249,88 @@ fn wrong_schema_version_is_rejected() {
             found: 2
         }
     );
+}
+
+fn dials_of(r: &slopvac_styles::Resolution, key: &str) -> CategoryDials {
+    match &r.patch.categories[key] {
+        CategoryPatch::Dials(d) => d.clone(),
+        CategoryPatch::Level(l) => CategoryDials {
+            severity: Some(*l),
+            ..CategoryDials::default()
+        },
+    }
+}
+
+const FLOORED: &str =
+    "schema_version = 3\n[categories.c]\nminimum_severity = \"warning\"\nmax_per_100_words = 2.5\n";
+
+#[test]
+fn minimum_severity_off_cancels_a_lower_floor() {
+    let off = "schema_version = 3\n[categories.c]\nminimum_severity = \"off\"\n";
+    let src = MapSource::new().with("floor", FLOORED).with("clear", off);
+    let r = resolve(&names(&["floor", "clear"]), &src, false).unwrap();
+    assert_eq!(dials_of(&r, "c").minimum_severity, Some(Level::Off));
+    assert_eq!(
+        r.history["categories.c.minimum_severity"]
+            .iter()
+            .map(|s| s.value.to_string())
+            .collect::<Vec<_>>(),
+        ["warning", "off"]
+    );
+    let r = resolve(&names(&["clear", "floor"]), &src, false).unwrap();
+    assert_eq!(dials_of(&r, "c").minimum_severity, Some(Level::Warning));
+}
+
+#[test]
+fn budget_none_clears_the_lower_limit_and_is_not_missing() {
+    let none = "schema_version = 3\n[categories.c]\nmax_per_100_words = \"none\"\n";
+    let untouched = "schema_version = 3\n[categories.c]\nweight = 1.0\n";
+    let src = MapSource::new()
+        .with("floor", FLOORED)
+        .with("none", none)
+        .with("other", untouched);
+    let r = resolve(&names(&["floor", "none"]), &src, false).unwrap();
+    assert_eq!(dials_of(&r, "c").max_per_100_words, Some(Budget::None));
+    // A layer that does not mention the budget leaves the limit alone.
+    let r = resolve(&names(&["floor", "other"]), &src, false).unwrap();
+    assert_eq!(
+        dials_of(&r, "c").max_per_100_words,
+        Some(Budget::Limit(2.5))
+    );
+    // A later limit replaces an earlier "none".
+    let r = resolve(&names(&["none", "floor"]), &src, false).unwrap();
+    assert_eq!(
+        dials_of(&r, "c").max_per_100_words,
+        Some(Budget::Limit(2.5))
+    );
+    let r = resolve(&names(&["floor", "none"]), &src, false).unwrap();
+    assert_eq!(
+        r.history["categories.c.max_per_100_words"]
+            .iter()
+            .map(|s| s.value.to_string())
+            .collect::<Vec<_>>(),
+        ["2.5", "none"]
+    );
+}
+
+#[test]
+fn budget_rejects_other_strings_and_negative_numbers() {
+    let cases = [
+        (
+            "max_per_100_words = \"unlimited\"",
+            "must be a number or \"none\"",
+        ),
+        ("max_per_100_words = -1", "must be at least 0"),
+        ("minimum_severity = \"fatal\"", "unknown variant"),
+    ];
+    for (line, needle) in cases {
+        let text = format!("schema_version = 3\n[categories.c]\n{line}\n");
+        let src = MapSource::new().with("bad", &text);
+        let e = resolve(&names(&["bad"]), &src, false)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(needle), "{line}: {e}");
+    }
 }
 
 #[test]

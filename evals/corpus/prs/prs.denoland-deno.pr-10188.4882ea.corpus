@@ -1,0 +1,10 @@
+feat(cli): add test permissions to Deno.test
+
+This adds adds permissions to the test definitions which allows tests to run with different permission sets than the process's permission.
+
+The change will only be in effect within the test function, once the test has completed the original process permission set is restored.
+
+Test permissions cannot exceed the process's permission.
+You can only narrow or drop permissions, failure to acquire a permission results in an error being thrown and the test case will fail.
+
+Closes https://github.com/denoland/deno/issues/9859

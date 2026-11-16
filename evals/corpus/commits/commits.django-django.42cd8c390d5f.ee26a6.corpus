@@ -1,0 +1,14 @@
+Fixed #33986 -- Hardened binary lookup in template commands.
+
+Made template commands look up formatters before writing files.
+This makes sure files included in the template are not identified
+as executable formatter commands, even in case the template is
+rendered into the system path (as might easily happen on Windows,
+where the current directory is on the system path by default).
+
+While at it, Warned about trusting custom templates for
+startapp/startproject.
+
+Thanks Trung Pham of Viettel Cyber Security for reporting the issue,
+Django Security Team for discussions, and Adam Johnson and
+Carlton Gibson for reviews.

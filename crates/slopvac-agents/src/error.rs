@@ -23,6 +23,14 @@ pub enum AgentsError {
     /// A usage mistake.
     #[error("{0}")]
     Usage(String),
+    /// A review policy refusal with its own stable code.
+    #[error("{message}")]
+    Coded {
+        /// The stable code.
+        code: &'static str,
+        /// The message.
+        message: String,
+    },
     /// An I/O failure.
     #[error("{path}: {source}")]
     Io {
@@ -31,6 +39,15 @@ pub enum AgentsError {
         /// The cause.
         source: std::io::Error,
     },
+}
+
+impl From<slopvac_text::TextError> for AgentsError {
+    fn from(e: slopvac_text::TextError) -> Self {
+        Self::Coded {
+            code: "claims-text-failed",
+            message: format!("text segmentation failed: {e}"),
+        }
+    }
 }
 
 impl AgentsError {
@@ -44,6 +61,7 @@ impl AgentsError {
             Self::Conflict(_) => "steering-conflict",
             Self::NotManaged(_) => "steering-not-managed",
             Self::Usage(_) => "setup-usage",
+            Self::Coded { code, .. } => code,
             Self::Io { .. } => "setup-io",
         }
     }

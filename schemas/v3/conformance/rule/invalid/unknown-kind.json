@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "id": "r",
+  "name": "n",
+  "message": "m",
+  "match": {
+    "kind": "fuzzy",
+    "tokens": [
+      "x"
+    ]
+  },
+  "citation": {
+    "source": "s"
+  }
+}

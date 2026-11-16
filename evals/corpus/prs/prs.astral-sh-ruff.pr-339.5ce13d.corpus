@@ -1,0 +1,16 @@
+Add check for W292
+
+This adds `W292 No newline at end of file`.
+
+It's real late where I am, so I'm opening as a draft to come back to this tomorrow with a fresh mind. First time I'm interacting with the codebase.
+
+A few notes:
+- ~~I wasn't sure where to start adding these *additional* style checks. So I just kind of referred to them as "More style".~~
+- ~~I also added this as a default. Not sure if that's what you're expecting.~~
+- ~~I didn't think it made sense to add as an AST check.~~
+- ~~This will add a bunch of noise to `cargo run resources/test/fixtures --no-cache` since a bunch of other fixtures may not contain a new line at the end.~~
+- ~~I may have incomplete `noqa` handling (part of why I need to go to sleep lol).~~
+- ~~I *think* there's a combo of anyhow and .expect for error handling here. I tried using .expect for the .last, but it was failing when running the fixtures in resources/. I just let it not eval if it fails to collect "last" from `lines`.~~
+- ~~Clippy was yelling at me for unrelated .or_insert usage.~~
+
+Notes have been resolved. Ty!

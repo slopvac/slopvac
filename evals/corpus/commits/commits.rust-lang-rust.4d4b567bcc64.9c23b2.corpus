@@ -1,0 +1,5 @@
+rustdoc: remove CSS workaround for Firefox 29
+
+CSS variables, which rustdoc now relies on, are only supported in Firefox 31 and later: https://www.mozilla.org/en-US/firefox/31.0/releasenotes/
+
+This means it’s fine to also rely on unprefixed box-sizing, which is supported in Firefox 29 and later: https://www.mozilla.org/en-US/firefox/29.0/releasenotes/

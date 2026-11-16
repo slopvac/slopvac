@@ -8,5 +8,43 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+# Polling a pidfd shows whether its process exited.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event"] }
+
+# O_NONBLOCK for opens in `apply`, so a swapped-in FIFO cannot block them.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
+# Windows has no stable safe call for a file's hard-link count.
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"
+
+[dependencies]
+base64.workspace = true
+cap-fs-ext.workspace = true
+cap-std.workspace = true
+caseless.workspace = true
+crossbeam-channel.workspace = true
+flate2.workspace = true
+minisign-verify.workspace = true
+rustix.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+unicode-normalization.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+minisign.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+
 [lints]
 workspace = true

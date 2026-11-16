@@ -1,0 +1,15 @@
+2229: Handle patterns within closures correctly when `capture_disjoint_fields` is enabled
+
+This PR fixes several issues related to handling patterns within closures when `capture_disjoint_fields` is enabled.
+1. Matching is always considered a use of the place, even with `_` patterns
+2. Compiler ICE when capturing fields in closures through `let` assignments
+
+To do so, we
+
+- Introduced new Fake Reads
+- Delayed use of `Place` in favor of `PlaceBuilder`
+- Ensured that `PlaceBuilder` can be resolved before attempting to extract `Place` in any of the pattern matching code
+
+Closes rust-lang/project-rfc-2229/issues/27
+Closes rust-lang/project-rfc-2229/issues/24
+r? @nikomatsakis

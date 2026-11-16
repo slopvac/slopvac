@@ -1,0 +1,8 @@
+crates/slopvac-agents/topics/*.j2 text eol=lf
+crates/slopvac-agents/data/*.json text eol=lf
+docs/model-recommendations.md text eol=lf
+crates/slopvac-engine/tests/fixtures/rst/** text eol=lf
+# The migration guide is generated from one source and compared byte for byte,
+# so both files use LF on every platform.
+docs/migrate-2-to-3.md text eol=lf
+crates/slopvac-migrate/data/migrate-guide.md text eol=lf

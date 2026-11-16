@@ -1,0 +1,123 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "title",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Checklist"
+    }
+   ],
+   "containers": [],
+   "level": 1
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 5,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "First item has "
+    },
+    {
+     "k": "i",
+     "t": "emphasis",
+     "raw": "*emphasis*"
+    },
+    {
+     "k": "t",
+     "t": "\nand continues here."
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": false,
+     "depth": 1
+    }
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Second item."
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": false,
+     "depth": 1
+    }
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 8,
+   "end": 8,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Numbered one."
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": true,
+     "depth": 1
+    }
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 9,
+   "end": 9,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Numbered two."
+    }
+   ],
+   "containers": [
+    {
+     "t": "li",
+     "ordered": true,
+     "depth": 1
+    }
+   ]
+  },
+  {
+   "tag": "term",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "term"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 12,
+   "end": 12,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "The definition of the term."
+    }
+   ],
+   "containers": []
+  }
+ ]
+}

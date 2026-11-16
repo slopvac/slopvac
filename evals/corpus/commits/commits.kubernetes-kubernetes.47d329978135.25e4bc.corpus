@@ -1,0 +1,13 @@
+node: metrics: cpumanager: add pinning metrics
+
+In order to improve the observability of the cpumanager,
+add and populate metrics to track if the combination of
+the kubelet configuration and podspec would trigger
+exclusive core allocation and pinning.
+
+We should avoid leaking any node/machine specific information
+(e.g. core ids, even though this is admittedly an extreme example);
+tracking these metrics seems to be a good first step, because
+it allows us to get feedback without exposing details.
+
+Signed-off-by: Francesco Romani <fromani@redhat.com>

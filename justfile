@@ -17,6 +17,10 @@ release VERSION:
     run_url="$(gh workflow run publish-lint.yml --ref "$tag" -f dry-run=false -f target=pypi)"
     printf '%s\nRun waits for the pypi environment approval.\n' "$run_url"
 
+# Rewrite the Cargo.lock extra-files in release-please-config.json for every workspace crate.
+sync-release-please:
+    python3 scripts/sync_release_please_crates.py
+
 # Wait for a normal system load before measuring.
 perf-wait-idle:
     uv run --group profile python scripts/perf/perf.py wait-idle
@@ -88,3 +92,44 @@ docs-check:
 # Build rustdoc for every workspace crate with warnings denied.
 doc-rust:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+
+# Lint the eval corpus with ENGINE ('python' or a slopvac command) and store OUT.
+eval-run ENGINE="python" OUT="evals/.cache/results/latest.json":
+    uv run python -m evals run --engine {{quote(ENGINE)}} --out {{quote(OUT)}}
+
+# Offline tier: score stored results without starting an engine.
+eval-score RESULTS SPLIT="all":
+    uv run python -m evals score {{quote(RESULTS)}} --split {{quote(SPLIT)}}
+
+# Paired A/B of two stored results; exits 1 when B regresses beyond noise.
+eval-ab A B SPLIT="all":
+    uv run python -m evals ab {{quote(A)}} {{quote(B)}} --split {{quote(SPLIT)}} --fail-on-regression
+
+# Run the Python reference on the committed and derived corpus, then compare with the baseline.
+eval-ratchet MODE="report":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="${SLOPVAC_EVALS_CACHE:-evals/.cache}"
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    uv run python -m evals.build_derived --materialise --cache "$cache"
+    uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
+    uv run python -m evals gate "$out/results.json" --baseline evals/baselines/python.json --mode {{quote(MODE)}}
+
+# Rebuild the committed baseline after an intended rule or corpus change.
+eval-baseline:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="${SLOPVAC_EVALS_CACHE:-evals/.cache}"
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    uv run python -m evals.build_derived --materialise --cache "$cache"
+    uv run python -m evals run --available --skip-format rst --cache "$cache" --out "$out/results.json"
+    uv run python -m evals baseline "$out/results.json" --out evals/baselines/python.json
+
+# Build the Starlight site into site/dist, then copy rustdoc to dist/api.
+docs-site:
+    uv run python scripts/docs/build_site.py --starlight site
+    cd site && npm ci && npm run build
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    rm -rf site/dist/api && cp -R target/doc site/dist/api

@@ -1,0 +1,929 @@
+# Curation spec for the eval corpus. `python -m evals.curate` reads this file.
+#
+# Every `files` source is pinned to the last commit before 2022-11-01 and keeps
+# only repositories whose licence at that commit is known. `license` overrides
+# the repository licence when a documentation tree carries its own (for example
+# Kubernetes documentation is CC-BY-4.0 inside an Apache-2.0 repository).
+# Committed copies are limited to permissive licences and 32 KiB; the rest stay
+# in the cache.
+
+# --- product -------------------------------------------------------------
+
+[[source]]
+name = "product: kubernetes concepts"
+genre = "product"
+repo = "kubernetes/website"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/en/docs/concepts/"
+must = "workloads|services-networking|storage|configuration|scheduling|cluster-administration"
+count = 10
+max_bytes = 30000
+
+[[source]]
+name = "product: github docs"
+genre = "product"
+repo = "github/docs"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/"
+must = "^content/(repositories|actions|packages|code-security|account-and-profile)/"
+skip = "index\\.md$"
+count = 12
+max_bytes = 30000
+per_dir = 2
+
+[[source]]
+name = "product: react docs"
+genre = "product"
+repo = "reactjs/reactjs.org"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/docs/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "product: docker docs"
+genre = "product"
+repo = "docker/docs"
+format = "markdown"
+prefix = ""
+must = "^(compose|desktop|engine|config|docker-hub|build)/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "product: fastapi docs"
+genre = "product"
+repo = "fastapi/fastapi"
+format = "markdown"
+prefix = "docs/en/docs/"
+skip = "tutorial/|release-notes"
+count = 6
+max_bytes = 30000
+
+[[source]]
+name = "product: django topics"
+genre = "product"
+repo = "django/django"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".txt"]
+prefix = "docs/topics/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "product: prometheus docs"
+genre = "product"
+repo = "prometheus/docs"
+format = "markdown"
+prefix = "content/docs/"
+count = 6
+max_bytes = 30000
+
+[[source]]
+name = "product: cert-manager docs"
+genre = "product"
+repo = "cert-manager/website"
+format = "markdown"
+prefix = "content/"
+count = 5
+max_bytes = 30000
+
+[[source]]
+name = "product: pydantic docs"
+genre = "product"
+repo = "pydantic/pydantic"
+format = "markdown"
+prefix = "docs/usage/"
+count = 5
+max_bytes = 30000
+
+[[source]]
+name = "reference: kubernetes reference"
+genre = "reference"
+repo = "kubernetes/website"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/en/docs/reference/"
+skip = "generated|_index"
+count = 6
+max_bytes = 30000
+
+[[source]]
+name = "reference: django ref"
+genre = "reference"
+repo = "django/django"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".txt"]
+prefix = "docs/ref/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "reference: rust reference"
+genre = "reference"
+repo = "rust-lang/reference"
+license = "MIT OR Apache-2.0"
+format = "markdown"
+prefix = "src/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "reference: numpy reference"
+genre = "reference"
+repo = "numpy/numpy"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".rst", ".rst.txt"]
+prefix = "doc/source/reference/"
+count = 5
+max_bytes = 30000
+
+[[source]]
+name = "reference: node api"
+genre = "reference"
+repo = "nodejs/node"
+license = "MIT"
+format = "markdown"
+prefix = "doc/api/"
+count = 5
+min_bytes = 6000
+max_bytes = 120000
+trunc_bytes = 30000
+
+[[source]]
+name = "reference: requests api docs"
+genre = "reference"
+repo = "psf/requests"
+format = "rst"
+suffix = [".rst"]
+prefix = "docs/"
+count = 4
+min_bytes = 3000
+max_bytes = 30000
+
+# --- tutorials -----------------------------------------------------------
+
+[[source]]
+name = "tutorials: kubernetes tutorials"
+genre = "tutorials"
+repo = "kubernetes/website"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/en/docs/tutorials/"
+skip = "_index"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "tutorials: django intro"
+genre = "tutorials"
+repo = "django/django"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".txt"]
+prefix = "docs/intro/"
+count = 5
+max_bytes = 30000
+
+[[source]]
+name = "tutorials: fastapi tutorial"
+genre = "tutorials"
+repo = "fastapi/fastapi"
+format = "markdown"
+prefix = "docs/en/docs/tutorial/"
+count = 8
+max_bytes = 30000
+
+[[source]]
+name = "tutorials: rust by example"
+genre = "tutorials"
+repo = "rust-lang/rust-by-example"
+license = "MIT OR Apache-2.0"
+format = "markdown"
+prefix = "src/"
+count = 8
+min_bytes = 1500
+
+[[source]]
+name = "tutorials: pytorch tutorials"
+genre = "tutorials"
+repo = "pytorch/tutorials"
+format = "rst"
+suffix = [".rst"]
+prefix = ""
+must = "_source/"
+count = 5
+max_bytes = 30000
+
+[[source]]
+name = "tutorials: web dev for beginners"
+genre = "tutorials"
+repo = "microsoft/Web-Dev-For-Beginners"
+format = "markdown"
+suffix = ["README.md"]
+prefix = ""
+count = 6
+min_bytes = 4000
+max_bytes = 30000
+
+[[source]]
+name = "tutorials: flask tutorial"
+genre = "tutorials"
+repo = "pallets/flask"
+format = "rst"
+suffix = [".rst"]
+prefix = "docs/tutorial/"
+count = 5
+
+[[source]]
+name = "tutorials: react tutorial"
+genre = "tutorials"
+repo = "reactjs/reactjs.org"
+license = "CC-BY-4.0"
+format = "markdown"
+prefix = "content/tutorial/"
+suffix = [".md"]
+count = 1
+min_bytes = 4000
+max_bytes = 80000
+trunc_bytes = 30000
+
+# --- changelogs ----------------------------------------------------------
+
+[[source]]
+name = "changelogs"
+genre = "changelogs"
+repo = "psf/requests"
+format = "markdown"
+paths = ["HISTORY.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: flask"
+genre = "changelogs"
+repo = "pallets/flask"
+format = "rst"
+paths = ["CHANGES.rst"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: click"
+genre = "changelogs"
+repo = "pallets/click"
+format = "rst"
+paths = ["CHANGES.rst"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: tokio"
+genre = "changelogs"
+repo = "tokio-rs/tokio"
+format = "markdown"
+paths = ["tokio/CHANGELOG.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: express"
+genre = "changelogs"
+repo = "expressjs/express"
+format = "markdown"
+paths = ["History.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: pydantic"
+genre = "changelogs"
+repo = "pydantic/pydantic"
+format = "markdown"
+paths = ["HISTORY.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: httpx"
+genre = "changelogs"
+repo = "encode/httpx"
+format = "markdown"
+paths = ["CHANGELOG.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: vite"
+genre = "changelogs"
+repo = "vitejs/vite"
+format = "markdown"
+paths = ["packages/vite/CHANGELOG.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: django release notes"
+genre = "changelogs"
+repo = "django/django"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".txt"]
+prefix = "docs/releases/"
+must = "docs/releases/[34]\\."
+count = 6
+min_bytes = 6000
+max_bytes = 80000
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: kubernetes"
+genre = "changelogs"
+repo = "kubernetes/kubernetes"
+format = "markdown"
+paths = ["CHANGELOG/CHANGELOG-1.24.md", "CHANGELOG/CHANGELOG-1.22.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: rust"
+genre = "changelogs"
+repo = "rust-lang/rust"
+license = "MIT OR Apache-2.0"
+format = "markdown"
+paths = ["RELEASES.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "changelogs: numpy"
+genre = "changelogs"
+repo = "numpy/numpy"
+license = "BSD-3-Clause"
+format = "rst"
+suffix = [".rst"]
+prefix = "doc/source/release/"
+must = "1\\.2[0-3]"
+count = 4
+min_bytes = 5000
+trunc_bytes = 30000
+
+# --- readmes -------------------------------------------------------------
+
+[[source]]
+name = "readmes: ripgrep"
+genre = "readmes"
+repo = "BurntSushi/ripgrep"
+format = "markdown"
+paths = ["README.md"]
+license = "MIT OR Unlicense"
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: fzf"
+genre = "readmes"
+repo = "junegunn/fzf"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: bat"
+genre = "readmes"
+repo = "sharkdp/bat"
+format = "markdown"
+paths = ["README.md"]
+license = "MIT OR Apache-2.0"
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: jq"
+genre = "readmes"
+repo = "jqlang/jq"
+license = "MIT"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: ruff"
+genre = "readmes"
+repo = "astral-sh/ruff"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: httpie"
+genre = "readmes"
+repo = "httpie/httpie"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: fastapi"
+genre = "readmes"
+repo = "fastapi/fastapi"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: express"
+genre = "readmes"
+repo = "expressjs/express"
+format = "markdown"
+paths = ["Readme.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: tokio"
+genre = "readmes"
+repo = "tokio-rs/tokio"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: prettier"
+genre = "readmes"
+repo = "prettier/prettier"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: lazygit"
+genre = "readmes"
+repo = "jesseduffield/lazygit"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: starship"
+genre = "readmes"
+repo = "starship/starship"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: caddy"
+genre = "readmes"
+repo = "caddyserver/caddy"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: rich"
+genre = "readmes"
+repo = "Textualize/rich"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: pandas"
+genre = "readmes"
+repo = "pandas-dev/pandas"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: redis"
+genre = "readmes"
+repo = "redis/redis"
+license = "BSD-3-Clause"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: eslint"
+genre = "readmes"
+repo = "eslint/eslint"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: gin"
+genre = "readmes"
+repo = "gin-gonic/gin"
+format = "markdown"
+paths = ["README.md"]
+trunc_bytes = 30000
+
+[[source]]
+name = "readmes: neovim"
+genre = "readmes"
+repo = "neovim/neovim"
+format = "markdown"
+paths = ["README.md"]
+license = "Apache-2.0"
+trunc_bytes = 30000
+
+# --- architecture decision records ---------------------------------------
+
+[[source]]
+name = "adrs: backstage"
+genre = "adrs"
+repo = "backstage/backstage"
+format = "markdown"
+prefix = "docs/architecture-decisions/"
+skip = "template|README|index"
+count = 8
+min_bytes = 1500
+max_bytes = 30000
+
+[[source]]
+name = "adrs: madr"
+genre = "adrs"
+repo = "adr/madr"
+license = "MIT"
+format = "markdown"
+prefix = "docs/decisions/"
+skip = "template|README"
+count = 5
+min_bytes = 1200
+max_bytes = 30000
+
+[[source]]
+name = "adrs: log4brains"
+genre = "adrs"
+repo = "thomvaill/log4brains"
+format = "markdown"
+prefix = "docs/adr/"
+skip = "template|README|index"
+count = 6
+min_bytes = 1200
+max_bytes = 30000
+
+[[source]]
+name = "adrs: content-publisher"
+genre = "adrs"
+repo = "alphagov/content-publisher"
+format = "markdown"
+prefix = "docs/adr/"
+skip = "template|README"
+count = 6
+min_bytes = 1200
+max_bytes = 30000
+
+[[source]]
+name = "adrs: cloud-platform"
+genre = "adrs"
+repo = "ministryofjustice/cloud-platform"
+format = "markdown"
+prefix = "architecture-decision-record/"
+skip = "template|README"
+count = 8
+min_bytes = 1200
+max_bytes = 30000
+
+[[source]]
+name = "adrs: govuk-infrastructure"
+genre = "adrs"
+repo = "alphagov/govuk-infrastructure"
+format = "markdown"
+prefix = "docs/architecture/decisions/"
+skip = "template|README"
+count = 5
+min_bytes = 1200
+max_bytes = 30000
+
+[[source]]
+name = "prs: ruff"
+type = "prs"
+repo = "astral-sh/ruff"
+count = 8
+
+[[source]]
+name = "prs: pydantic"
+type = "prs"
+repo = "pydantic/pydantic"
+count = 6
+
+[[source]]
+name = "prs: fastapi"
+type = "prs"
+repo = "fastapi/fastapi"
+count = 4
+
+[[source]]
+name = "prs: tokio"
+type = "prs"
+repo = "tokio-rs/tokio"
+count = 6
+
+[[source]]
+name = "prs: next.js"
+type = "prs"
+repo = "vercel/next.js"
+count = 6
+
+[[source]]
+name = "prs: react"
+type = "prs"
+repo = "react/react"
+count = 6
+
+[[source]]
+name = "prs: home assistant"
+type = "prs"
+repo = "home-assistant/core"
+count = 6
+
+[[source]]
+name = "prs: deno"
+type = "prs"
+repo = "denoland/deno"
+count = 6
+
+[[source]]
+name = "prs: kubernetes"
+type = "prs"
+repo = "kubernetes/kubernetes"
+count = 6
+
+[[source]]
+name = "prs: rust"
+type = "prs"
+repo = "rust-lang/rust"
+license = "MIT OR Apache-2.0"
+count = 6
+
+[[source]]
+name = "prs: vite"
+type = "prs"
+repo = "vitejs/vite"
+count = 5
+
+[[source]]
+name = "prs: grafana loki"
+type = "prs"
+repo = "grafana/loki"
+count = 4
+license = "AGPL-3.0"
+
+# --- commit messages -----------------------------------------------------
+
+[[source]]
+name = "commits: linux-style rust"
+type = "commits"
+repo = "rust-lang/rust"
+license = "MIT OR Apache-2.0"
+count = 8
+
+[[source]]
+name = "commits: kubernetes"
+type = "commits"
+repo = "kubernetes/kubernetes"
+count = 8
+
+[[source]]
+name = "commits: cpython-like django"
+type = "commits"
+repo = "django/django"
+license = "BSD-3-Clause"
+count = 10
+
+[[source]]
+name = "commits: tokio"
+type = "commits"
+repo = "tokio-rs/tokio"
+count = 6
+
+[[source]]
+name = "commits: ripgrep"
+type = "commits"
+repo = "BurntSushi/ripgrep"
+license = "MIT OR Unlicense"
+count = 6
+
+[[source]]
+name = "commits: requests"
+type = "commits"
+repo = "psf/requests"
+count = 5
+
+[[source]]
+name = "commits: flask"
+type = "commits"
+repo = "pallets/flask"
+count = 5
+
+[[source]]
+name = "commits: git"
+type = "commits"
+repo = "git/git"
+license = "GPL-2.0-only"
+count = 6
+
+[[source]]
+name = "commits: go"
+type = "commits"
+repo = "golang/go"
+license = "BSD-3-Clause"
+count = 8
+
+[[source]]
+name = "commits: redis"
+type = "commits"
+repo = "redis/redis"
+license = "BSD-3-Clause"
+count = 6
+
+[[source]]
+name = "commits: neovim"
+type = "commits"
+repo = "neovim/neovim"
+license = "Apache-2.0"
+count = 6
+
+# --- UI strings ----------------------------------------------------------
+
+[[source]]
+name = "ui-strings: gitea"
+genre = "ui-strings"
+repo = "go-gitea/gitea"
+format = "ini"
+suffix = ["locale_en-US.ini"]
+paths = ["options/locale/locale_en-US.ini"]
+trunc_bytes = 30000
+min_words = 50
+
+[[source]]
+name = "ui-strings: home assistant"
+genre = "ui-strings"
+repo = "home-assistant/core"
+format = "json"
+suffix = ["strings.json"]
+prefix = "homeassistant/components/"
+min_bytes = 1500
+max_bytes = 20000
+count = 14
+per_dir = 1
+min_words = 80
+
+[[source]]
+name = "ui-strings: vscode extensions"
+genre = "ui-strings"
+repo = "microsoft/vscode"
+format = "json"
+suffix = ["package.nls.json"]
+prefix = "extensions/"
+min_bytes = 1500
+max_bytes = 20000
+count = 10
+per_dir = 1
+min_words = 80
+
+[[source]]
+name = "ui-strings: element web"
+genre = "ui-strings"
+repo = "element-hq/element-web"
+format = "json"
+paths = ["src/i18n/strings/en_EN.json"]
+trunc_bytes = 30000
+min_words = 80
+
+[[source]]
+name = "code-comments: requests"
+genre = "code-comments"
+repo = "psf/requests"
+format = "python"
+suffix = [".py"]
+prefix = "requests/"
+count = 5
+min_bytes = 5000
+max_lines = 220
+
+[[source]]
+name = "code-comments: click"
+genre = "code-comments"
+repo = "pallets/click"
+format = "python"
+suffix = [".py"]
+prefix = "src/click/"
+count = 4
+min_bytes = 5000
+max_lines = 220
+
+[[source]]
+name = "code-comments: flask"
+genre = "code-comments"
+repo = "pallets/flask"
+format = "python"
+suffix = [".py"]
+prefix = "src/flask/"
+count = 4
+min_bytes = 5000
+max_lines = 220
+
+[[source]]
+name = "code-comments: tokio"
+genre = "code-comments"
+repo = "tokio-rs/tokio"
+format = "rust"
+suffix = [".rs"]
+prefix = "tokio/src/"
+count = 8
+min_bytes = 5000
+max_lines = 220
+per_dir = 2
+
+[[source]]
+name = "code-comments: ripgrep"
+genre = "code-comments"
+repo = "BurntSushi/ripgrep"
+format = "rust"
+suffix = [".rs"]
+prefix = "crates/"
+license = "MIT OR Unlicense"
+count = 5
+min_bytes = 5000
+max_lines = 220
+
+[[source]]
+name = "code-comments: go stdlib"
+genre = "code-comments"
+repo = "golang/go"
+license = "BSD-3-Clause"
+format = "go"
+suffix = [".go"]
+prefix = "src/net/"
+skip = "_test\\.go$"
+count = 8
+min_bytes = 6000
+max_lines = 220
+per_dir = 2
+
+[[source]]
+name = "code-comments: typescript"
+genre = "code-comments"
+repo = "microsoft/TypeScript"
+format = "typescript"
+suffix = [".ts"]
+prefix = "src/services/"
+count = 4
+min_bytes = 8000
+max_lines = 220
+
+[[source]]
+name = "code-comments: express"
+genre = "code-comments"
+repo = "expressjs/express"
+format = "javascript"
+suffix = [".js"]
+prefix = "lib/"
+count = 4
+min_bytes = 4000
+max_lines = 220
+
+[[source]]
+name = "code-comments: redis"
+genre = "code-comments"
+repo = "redis/redis"
+format = "c"
+suffix = [".c"]
+prefix = "src/"
+license = "BSD-3-Clause"
+count = 6
+min_bytes = 8000
+max_lines = 220
+
+# --- diagrams ------------------------------------------------------------
+
+[[source]]
+name = "diagrams: mermaid in markdown"
+type = "diagrams"
+kind = "md"
+count = 40
+probe = 400
+per_repo = 2
+
+[[source]]
+name = "diagrams: draw.io"
+type = "diagrams"
+kind = "dio"
+count = 40
+probe = 400
+per_repo = 2
+
+# --- stated LLM output ---------------------------------------------------
+
+[[source]]
+name = "stated-llm: alpaca_eval outputs"
+type = "stated-llm"
+repo = "tatsu-lab/alpaca_eval"
+path = "results/{model}/model_outputs.json"
+models = [
+  "claude-3-5-sonnet-20240620",
+  "claude-3-opus-20240229",
+  "gpt-4o-2024-05-13",
+  "gpt-4-turbo-2024-04-09",
+  "gemini-pro",
+  "Meta-Llama-3.1-405B-Instruct-Turbo",
+]
+count = 12

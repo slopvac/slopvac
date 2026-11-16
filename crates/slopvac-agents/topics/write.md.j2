@@ -1,0 +1,44 @@
+<!-- summary: Draft or edit docs, PR text or specifications -->
+# Prime: write
+
+Use before you draft or edit prose that readers act on.
+
+1. Read the document and the code it describes.
+2. Write from the documentation contract below.
+3. Check each present-tense claim against code or a source.
+4. Lint: `slopvac lint <file>... --format json`. Fix errors first.
+5. Triage the rest with `slopvac explain <rule_id>`.
+6. Read the judgement rules that lint cannot check:
+   `slopvac rules --kind judgement --format md`.
+7. Exit {{ exit_findings }} means a gate failed. Exit {{ exit_incomplete }} means the run is incomplete.
+
+## Documentation contract
+
+- Describe the artifact's behavior, configuration and limits.
+- Name the actions readers take. Write for capable readers.
+- Match each claim's strength to its source. Do not make a limited claim universal.
+- Name the actor and the action. Use one term for each concept.
+- State exact commands, paths and versions.
+- Keep every correct fact and supporting test result.
+- Remove wording that changes no reader action or contract fact.
+- Put history in change communications and plans in specifications.
+{% if level != "minimal" %}
+## Sentences
+
+- One idea per sentence. Condition first, command second.
+- Give comparisons a baseline. Replace relative time words with a date or version.
+- Remove unmeasured adjectives and unsupported hedges.
+
+## Change communications
+
+- A PR or MR description states the change, the reason and the verification.
+- Do not edit a changelog that release tooling generates. Change the commit subject or PR title the tool reads.
+{% endif %}
+{% if level == "full" %}
+## Scope of a run
+
+- `--diff-base <rev>` keeps findings on lines that `<rev>...HEAD` adds.
+- `--mode code-comments` lints comments in source files.
+- `--fix` applies safe substitutions only.
+{% endif %}
+Before hand-off, run `slopvac prime review`.

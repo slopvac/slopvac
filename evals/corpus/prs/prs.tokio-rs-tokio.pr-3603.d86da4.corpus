@@ -1,0 +1,27 @@
+Introduce `biased` argument for `select!`
+
+Similar to `futures::select_biased!`, it is sometimes beneficial to
+provide developers with strict control over the polling order of
+futures. Most of the time, the fairness guarantees that `select!`
+provides through RNG can be thought out by a careful developer to ensure
+that no one future will monopolize all of the CPU time. In exchange for
+this, the developer gets a performance boost as they do not need to
+spend time generating endless random numbers.
+
+Fixes: #2181
+
+## Motivation
+
+I want to control future polling order - both for more determinism and to decrease CPU burden from generating random numbers.
+
+## Solution
+
+By adding a `biased;` argument to `select!`, we can disable the RNG that select performs by default. If this is omitted, we continue to do RNG and behavior is unchanged.
+
+## Alternatives
+
+There are a myriad of syntax choices that can be taken to activate this code path. There's a bit of discussion in the linked issue, but I can summarize here.
+
+- A separate `select_biased!` macro could be introduced, but Carl is against this
+- Instead of `biased`, we could allow developers to include the index to start polling at directly. I'm against this because it would make the polling order very hard to understand. As-is, you can read from top to bottom and not worry about skipping around, very straightforward.
+- There are literally an infinite number of tokens that could be used to control this behavior in the macro. I really have no strong opinions, I just picked `biased;` because it matches with `select_biased!` from futures. If others have alternatives that are more clear, I'm very open to changing this.

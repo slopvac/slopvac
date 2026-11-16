@@ -1,0 +1,167 @@
+{
+ "docutils": "0.21.2",
+ "nodes": [
+  {
+   "tag": "paragraph",
+   "start": 1,
+   "end": 1,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Repeats"
+    }
+   ],
+   "containers": []
+  },
+  {
+   "tag": "table",
+   "table": true,
+   "start": 4,
+   "end": 7,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Same words"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 4,
+   "end": 4,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Same words"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 6,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Other"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 6,
+   "end": 7,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Same words\ncontinued"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "table",
+   "table": true,
+   "start": 11,
+   "end": 13,
+   "containers": []
+  },
+  {
+   "tag": "paragraph",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Left"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 11,
+   "end": 11,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Left"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    0,
+    1,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 13,
+   "end": 13,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Alpha"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    0,
+    1
+   ]
+  },
+  {
+   "tag": "paragraph",
+   "start": 13,
+   "end": 13,
+   "pieces": [
+    {
+     "k": "t",
+     "t": "Beta"
+    }
+   ],
+   "containers": [],
+   "cell": [
+    1,
+    1,
+    1
+   ]
+  }
+ ]
+}

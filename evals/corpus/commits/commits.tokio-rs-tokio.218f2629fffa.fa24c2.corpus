@@ -1,0 +1,12 @@
+rt: move I/O driver into `runtime` module (#4942)
+
+This patch moves the I/O driver into the runtime module. The I/O driver
+is a runtime concern and is only used by the runtime. Moving the driver
+is the first step to cleaning up some Tokio internals. There will be
+follow-up patches that integrate the I/O driver and other runtime concerns
+more closely.
+
+Because `Interest` and `Ready` are public APIs, they were moved to the
+top-level `io` module instead of moving the types to `runtime`.
+
+This is an internal refactor and should not impact any public APIs.

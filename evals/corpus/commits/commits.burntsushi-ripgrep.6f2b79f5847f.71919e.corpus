@@ -1,0 +1,14 @@
+ignore: use git commondir for sourcing .git/info/exclude
+
+Git looks for this file in GIT_COMMON_DIR, which is usually the same
+as GIT_DIR (.git). However, when searching inside a linked worktree,
+.git is usually a file that contains the path of the actual git dir,
+which in turn contains a file "commondir" which references the directory
+where info/exclude may reside, alongside other configuration shared across
+all worktrees. This directory is usually the git dir of the main worktree.
+
+Unlike git this does *not* read environment variables GIT_DIR and
+GIT_COMMON_DIR, because it is not clear how to interpret them when
+searching multiple repositories.
+
+Fixes #1445, Closes #1446

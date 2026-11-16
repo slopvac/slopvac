@@ -1,0 +1,8 @@
+Refs #32948, Refs #32946 -- Used Q.create() internally for dynamic Q() objects.
+
+Node.create() which has a compatible signature with Node.__init__()
+takes in a single `children` argument rather than relying in unpacking
+*args in Q.__init__() which calls Node.__init__().
+
+In addition, we were often needing to unpack iterables into *args and
+can instead pass a list direct to Node.create().

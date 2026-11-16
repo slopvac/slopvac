@@ -1,0 +1,600 @@
+home = Home
+dashboard = Dashboard
+explore = Explore
+help = Help
+logo = Logo
+sign_in = Sign In
+sign_in_with = Sign In With
+sign_out = Sign Out
+sign_up = Register
+link_account = Link Account
+register = Register
+version = Version
+powered_by = Powered by %s
+page = Page
+template = Template
+language = Language
+notifications = Notifications
+active_stopwatch = Active Time Tracker
+create_new = Create…
+user_profile_and_more = Profile and Settings…
+signed_in_as = Signed in as
+enable_javascript = This website works better with JavaScript.
+toc = Table of Contents
+licenses = Licenses
+return_to_gitea = Return to Gitea
+
+username = Username
+email = Email Address
+password = Password
+access_token = Access Token
+re_type = Re-Type Password
+captcha = CAPTCHA
+twofa = Two-Factor Authentication
+twofa_scratch = Two-Factor Scratch Code
+passcode = Passcode
+
+webauthn_insert_key = Insert your security key
+webauthn_sign_in = Press the button on your security key. If your security key has no button, re-insert it.
+webauthn_press_button = Please press the button on your security key…
+webauthn_use_twofa = Use a two-factor code from your phone
+webauthn_error = Could not read your security key.
+webauthn_unsupported_browser = Your browser does not currently support WebAuthn.
+webauthn_error_unknown = An unknown error occurred. Please retry.
+webauthn_error_insecure = WebAuthn only supports secure connections. For testing over HTTP, you can use the origin "localhost" or "127.0.0.1"
+webauthn_error_unable_to_process = The server could not process your request.
+webauthn_error_duplicated = The security key is not permitted for this request. Please make sure that the key is not already registered.
+webauthn_error_empty = You must set a name for this key.
+webauthn_error_timeout = Timeout reached before your key could be read. Please reload this page and retry.
+webauthn_reload = Reload
+
+repository = Repository
+organization = Organization
+mirror = Mirror
+new_repo = New Repository
+new_migrate = New Migration
+new_mirror = New Mirror
+new_fork = New Repository Fork
+new_org = New Organization
+new_project = New Project
+new_project_board = New Project board
+manage_org = Manage Organizations
+admin_panel = Site Administration
+account_settings = Account Settings
+settings = Settings
+your_profile = Profile
+your_starred = Starred
+your_settings = Settings
+
+all = All
+sources = Sources
+mirrors = Mirrors
+collaborative = Collaborative
+forks = Forks
+
+activities = Activities
+pull_requests = Pull Requests
+issues = Issues
+milestones = Milestones
+
+ok = OK
+cancel = Cancel
+save = Save
+add = Add
+add_all = Add All
+remove = Remove
+remove_all = Remove All
+edit = Edit
+
+copy = Copy
+copy_url = Copy URL
+copy_branch = Copy branch name
+copy_success = Copied!
+copy_error = Copy failed
+
+write = Write
+preview = Preview
+loading = Loading…
+
+step1 = Step 1:
+step2 = Step 2:
+
+error = Error
+error404 = The page you are trying to reach either <strong>does not exist</strong> or <strong>you are not authorized</strong> to view it.
+
+never = Never
+
+rss_feed = RSS Feed
+
+[filter]
+string.asc = A - Z
+string.desc = Z - A
+
+[error]
+occurred = An error occurred
+report_message = If you are sure this is a Gitea bug, please search for issues on <a href="https://github.com/go-gitea/gitea/issues" target="_blank">GitHub</a> or open a new issue if necessary.
+missing_csrf = Bad Request: no CSRF token present
+invalid_csrf = Bad Request: invalid CSRF token
+not_found = The target couldn't be found.
+network_error = Network error
+
+[startpage]
+app_desc = A painless, self-hosted Git service
+install = Easy to install
+install_desc = Simply <a target="_blank" rel="noopener noreferrer" href="https://docs.gitea.io/en-us/install-from-binary/">run the binary</a> for your platform, ship it with <a target="_blank" rel="noopener noreferrer" href="https://github.com/go-gitea/gitea/tree/master/docker">Docker</a>, or get it <a target="_blank" rel="noopener noreferrer" href="https://docs.gitea.io/en-us/install-from-package/">packaged</a>.
+platform = Cross-platform
+platform_desc = Gitea runs anywhere <a target="_blank" rel="noopener noreferrer" href="http://golang.org/">Go</a> can compile for: Windows, macOS, Linux, ARM, etc. Choose the one you love!
+lightweight = Lightweight
+lightweight_desc = Gitea has low minimal requirements and can run on an inexpensive Raspberry Pi. Save your machine energy!
+license = Open Source
+license_desc = Go get <a target="_blank" rel="noopener noreferrer" href="https://code.gitea.io/gitea">code.gitea.io/gitea</a>! Join us by <a target="_blank" rel="noopener noreferrer" href="https://github.com/go-gitea/gitea">contributing</a> to make this project even better. Don't be shy to be a contributor!
+
+[install]
+install = Installation
+title = Initial Configuration
+docker_helper = If you run Gitea inside Docker, please read the <a target="_blank" rel="noopener noreferrer" href="%s">documentation</a> before changing any settings.
+require_db_desc = Gitea requires MySQL, PostgreSQL, MSSQL, SQLite3 or TiDB (MySQL protocol).
+db_title = Database Settings
+db_type = Database Type
+host = Host
+user = Username
+password = Password
+db_name = Database Name
+db_helper = Note to MySQL users: please use the InnoDB storage engine and if you use "utf8mb4", your InnoDB version must be greater than 5.6 .
+db_schema = Schema
+db_schema_helper = Leave blank for database default ("public").
+ssl_mode = SSL
+charset = Charset
+path = Path
+sqlite_helper = File path for the SQLite3 database.<br>Enter an absolute path if you run Gitea as a service.
+reinstall_error = You are trying to install into an existing Gitea database
+reinstall_confirm_message = Re-installing with an existing Gitea database can cause multiple problems. In most cases, you should use your existing "app.ini" to run Gitea. If you know what you are doing, confirm the following:
+reinstall_confirm_check_1 = The data encrypted by the SECRET_KEY in app.ini may be lost: users may not be able to log in with 2FA/OTP & mirrors may not function correctly. By checking this box you confirm that the current app.ini file contains the correct the SECRET_KEY.
+reinstall_confirm_check_2 = The repositories and settings may need to be re-synchronized. By checking this box you confirm that you will resynchronize the hooks for the repositories and authorized_keys file manually. You confirm that you will ensure that repository and mirror settings are correct.
+reinstall_confirm_check_3 = You confirm that you are absolutely sure that this Gitea is running with the correct app.ini location and that you are sure that you have to re-install. You confirm that you acknowledge the above risks.
+err_empty_db_path = The SQLite3 database path cannot be empty.
+no_admin_and_disable_registration = You cannot disable user self-registration without creating an administrator account.
+err_empty_admin_password = The administrator password cannot be empty.
+err_empty_admin_email = The administrator email cannot be empty.
+err_admin_name_is_reserved = Administrator Username is invalid, username is reserved
+err_admin_name_pattern_not_allowed = Administrator username is invalid, the username matches a reserved pattern
+err_admin_name_is_invalid = Administrator Username is invalid
+
+general_title = General Settings
+app_name = Site Title
+app_name_helper = You can enter your company name here.
+repo_path = Repository Root Path
+repo_path_helper = Remote Git repositories will be saved to this directory.
+lfs_path = Git LFS Root Path
+lfs_path_helper = Files tracked by Git LFS will be stored in this directory. Leave empty to disable.
+run_user = Run As Username
+run_user_helper = Enter the operating system username that Gitea runs as. Note that this user must have access to the repository root path.
+domain = Server Domain
+domain_helper = Domain or host address for the server.
+ssh_port = SSH Server Port
+ssh_port_helper = Port number your SSH server listens on. Leave empty to disable.
+http_port = Gitea HTTP Listen Port
+http_port_helper = Port number the Giteas web server will listen on.
+app_url = Gitea Base URL
+app_url_helper = Base address for HTTP(S) clone URLs and email notifications.
+log_root_path = Log Path
+log_root_path_helper = Log files will be written to this directory.
+
+optional_title = Optional Settings
+email_title = Email Settings
+smtp_addr = SMTP Host
+smtp_port = SMTP Port
+smtp_from = Send Email As
+smtp_from_helper = Email address Gitea will use. Enter a plain email address or use the "Name" <email@example.com> format.
+mailer_user = SMTP Username
+mailer_password = SMTP Password
+register_confirm = Require Email Confirmation to Register
+mail_notify = Enable Email Notifications
+server_service_title = Server and Third-Party Service Settings
+offline_mode = Enable Local Mode
+offline_mode_popup = Disable third-party content delivery networks and serve all resources locally.
+disable_gravatar = Disable Gravatar
+disable_gravatar_popup = Disable Gravatar and third-party avatar sources. A default avatar will be used unless a user locally uploads an avatar.
+federated_avatar_lookup = Enable Federated Avatars
+federated_avatar_lookup_popup = Enable federated avatar lookup using Libravatar.
+disable_registration = Disable Self-Registration
+disable_registration_popup = Disable user self-registration. Only administrators will be able to create new user accounts.
+allow_only_external_registration_popup = Allow Registration Only Through External Services
+openid_signin = Enable OpenID Sign-In
+openid_signin_popup = Enable user sign-in via OpenID.
+openid_signup = Enable OpenID Self-Registration
+openid_signup_popup = Enable OpenID-based user self-registration.
+enable_captcha = Enable registration CAPTCHA
+enable_captcha_popup = Require a CAPTCHA for user self-registration.
+require_sign_in_view = Require Sign-In to View Pages
+require_sign_in_view_popup = Limit page access to signed-in users. Visitors will only see the 'sign in' and registration pages.
+admin_setting_desc = Creating an administrator account is optional. The first registered user will automatically become an administrator.
+admin_title = Administrator Account Settings
+admin_name = Administrator Username
+admin_password = Password
+confirm_password = Confirm Password
+admin_email = Email Address
+install_btn_confirm = Install Gitea
+test_git_failed = Could not test 'git' command: %v
+sqlite3_not_available = This Gitea version does not support SQLite3. Please download the official binary version from %s (not the 'gobuild' version).
+invalid_db_setting = The database settings are invalid: %v
+invalid_db_table = The database table '%s' is invalid: %v
+invalid_repo_path = The repository root path is invalid: %v
+invalid_app_data_path = The app data path is invalid: %v
+run_user_not_match = The 'run as' username is not the current username: %s -> %s
+internal_token_failed = Failed to generate internal token: %v
+secret_key_failed = Failed to generate secret key: %v
+save_config_failed = Failed to save configuration: %v
+invalid_admin_setting = Administrator account setting is invalid: %v
+install_success = Welcome! Thank you for choosing Gitea. Have fun and take care!
+invalid_log_root_path = The log path is invalid: %v
+default_keep_email_private = Hide Email Addresses by Default
+default_keep_email_private_popup = Hide email addresses of new user accounts by default.
+default_allow_create_organization = Allow Creation of Organizations by Default
+default_allow_create_organization_popup = Allow new user accounts to create organizations by default.
+default_enable_timetracking = Enable Time Tracking by Default
+default_enable_timetracking_popup = Enable time tracking for new repositories by default.
+no_reply_address = Hidden Email Domain
+no_reply_address_helper = Domain name for users with a hidden email address. For example, the username 'joe' will be logged in Git as 'joe@noreply.example.org' if the hidden email domain is set to 'noreply.example.org'.
+password_algorithm = Password Hash Algorithm
+password_algorithm_helper = Set the password hashing algorithm. Algorithms have differing requirements and strength. `argon2` whilst having good characteristics uses a lot of memory and may be inappropriate for small systems.
+
+[home]
+uname_holder = Username or Email Address
+password_holder = Password
+switch_dashboard_context = Switch Dashboard Context
+my_repos = Repositories
+show_more_repos = Show more repositories…
+collaborative_repos = Collaborative Repositories
+my_orgs = My Organizations
+my_mirrors = My Mirrors
+view_home = View %s
+search_repos = Find a repository…
+filter = Other Filters
+filter_by_team_repositories = Filter by team repositories
+feed_of = Feed of "%s"
+
+show_archived = Archived
+show_both_archived_unarchived = Showing both archived and unarchived
+show_only_archived = Showing only archived
+show_only_unarchived = Showing only unarchived
+
+show_private = Private
+show_both_private_public = Showing both public and private
+show_only_private = Showing only private
+show_only_public = Showing only public
+
+issues.in_your_repos = In your repositories
+
+[explore]
+repos = Repositories
+users = Users
+organizations = Organizations
+search = Search
+code = Code
+search.type.tooltip = Search type
+search.fuzzy = Fuzzy
+search.fuzzy.tooltip = Include results that also matches the search term closely
+search.match = Match
+search.match.tooltip = Include only results that matches the exact search term
+code_search_unavailable = Currently code search is not available. Please contact your site administrator.
+repo_no_results = No matching repositories found.
+user_no_results = No matching users found.
+org_no_results = No matching organizations found.
+code_no_results = No source code matching your search term found.
+code_search_results = Search results for '%s'
+code_last_indexed_at = Last indexed %s
+relevant_repositories_tooltip = Repositories that are forks or that have no topic, no icon, and no description are hidden.
+relevant_repositories = Only relevant repositories are being shown, <a href="%s">show unfiltered results</a>.
+
+
+[auth]
+create_new_account = Register Account
+register_helper_msg = Already have an account? Sign in now!
+social_register_helper_msg = Already have an account? Link it now!
+disable_register_prompt = Registration is disabled. Please contact your site administrator.
+disable_register_mail = Email confirmation for registration is disabled.
+manual_activation_only = Contact your site administrator to complete activation.
+remember_me = Remember this Device
+forgot_password_title= Forgot Password
+forgot_password = Forgot password?
+sign_up_now = Need an account? Register now.
+sign_up_successful = Account was successfully created.
+confirmation_mail_sent_prompt = A new confirmation email has been sent to <b>%s</b>. Please check your inbox within the next %s to complete the registration process.
+must_change_password = Update your password
+allow_password_change = Require user to change password (recommended)
+reset_password_mail_sent_prompt = A confirmation email has been sent to <b>%s</b>. Please check your inbox within the next %s to complete the account recovery process.
+active_your_account = Activate Your Account
+account_activated = Account has been activated
+prohibit_login = Sign In Prohibited
+prohibit_login_desc = Your account is prohibited to sign in, please contact your site administrator.
+resent_limit_prompt = You have already requested an activation email recently. Please wait 3 minutes and try again.
+has_unconfirmed_mail = Hi %s, you have an unconfirmed email address (<b>%s</b>). If you haven't received a confirmation email or need to resend a new one, please click on the button below.
+resend_mail = Click here to resend your activation email
+email_not_associate = The email address is not associated with any account.
+send_reset_mail = Send Account Recovery Email
+reset_password = Account Recovery
+invalid_code = Your confirmation code is invalid or has expired.
+reset_password_helper = Recover Account
+reset_password_wrong_user = You are signed in as %s, but the account recovery link is for %s
+password_too_short = Password length cannot be less than %d characters.
+non_local_account = Non-local users can not update their password through the Gitea web interface.
+verify = Verify
+scratch_code = Scratch code
+use_scratch_code = Use a scratch code
+twofa_scratch_used = You have used your scratch code. You have been redirected to the two-factor settings page so you may remove your device enrollment or generate a new scratch code.
+twofa_passcode_incorrect = Your passcode is incorrect. If you misplaced your device, use your scratch code to sign in.
+twofa_scratch_token_incorrect = Your scratch code is incorrect.
+login_userpass = Sign In
+login_openid = OpenID
+oauth_signup_tab = Register New Account
+oauth_signup_title = Complete New Account
+oauth_signup_submit = Complete Account
+oauth_signin_tab = Link to Existing Account
+oauth_signin_title = Sign In to Authorize Linked Account
+oauth_signin_submit = Link Account
+oauth.signin.error = There was an error processing the authorization request. If this error persists, please contact the site administrator.
+oauth.signin.error.access_denied = The authorization request was denied.
+oauth.signin.error.temporarily_unavailable = Authorization failed because the authentication server is temporarily unavailable. Please try again later.
+openid_connect_submit = Connect
+openid_connect_title = Connect to an existing account
+openid_connect_desc = The chosen OpenID URI is unknown. Associate it with a new account here.
+openid_register_title = Create new account
+openid_register_desc = The chosen OpenID URI is unknown. Associate it with a new account here.
+openid_signin_desc = Enter your OpenID URI. For example: https://anne.me, bob.openid.org.cn or gnusocial.net/carry.
+disable_forgot_password_mail = Account recovery is disabled because no email is set up. Please contact your site administrator.
+disable_forgot_password_mail_admin = Account recovery is only available when email is set up. Please set up email to enable account recovery.
+email_domain_blacklisted = You cannot register with your email address.
+authorize_application = Authorize Application
+authorize_redirect_notice = You will be redirected to %s if you authorize this application.
+authorize_application_created_by = This application was created by %s.
+authorize_application_description = If you grant the access, it will be able to access and write to all your account information, including private repos and organisations.
+authorize_title = Authorize "%s" to access your account?
+authorization_failed = Authorization failed
+authorization_failed_desc = The authorization failed because we detected an invalid request. Please contact the maintainer of the app you've tried to authorize.
+sspi_auth_failed = SSPI authentication failed
+password_pwned = The password you chose is on a <a target="_blank" rel="noopener noreferrer" href="https://haveibeenpwned.com/Passwords">list of stolen passwords</a> previously exposed in public data breaches. Please try again with a different password.
+password_pwned_err = Could not complete request to HaveIBeenPwned
+
+[mail]
+view_it_on = View it on %s
+link_not_working_do_paste = Not working? Try copying and pasting it to your browser.
+hi_user_x = Hi <b>%s</b>,
+
+activate_account = Please activate your account
+activate_account.title = %s, please activate your account
+activate_account.text_1 = Hi <b>%[1]s</b>, thanks for registering at %[2]s!
+activate_account.text_2 = Please click the following link to activate your account within <b>%s</b>:
+
+activate_email = Verify your email address
+activate_email.title = %s, please verify your e-mail address
+activate_email.text = Please click the following link to verify your email address within <b>%s</b>:
+
+register_notify = Welcome to Gitea
+register_notify.title = %[1]s, welcome to %[2]s
+register_notify.text_1 = this is your registration confirmation email for %s!
+register_notify.text_2 = You can now login via username: %s.
+register_notify.text_3 = If this account has been created for you, please <a href="%s">set your password</a> first.
+
+reset_password = Recover your account
+reset_password.title = %s, you have requested to recover your account
+reset_password.text = Please click the following link to recover your account within <b>%s</b>:
+
+register_success = Registration successful
+
+issue_assigned.pull = @%[1]s assigned you to pull request %[2]s in repository %[3]s.
+issue_assigned.issue = @%[1]s assigned you to issue %[2]s in repository %[3]s.
+
+issue.x_mentioned_you = <b>@%s</b> mentioned you:
+issue.action.force_push = <b>%[1]s</b> force-pushed the <b>%[2]s</b> from %[3]s to %[4]s.
+issue.action.push_1 = <b>@%[1]s</b> pushed %[3]d commit to %[2]s
+issue.action.push_n = <b>@%[1]s</b> pushed %[3]d commits to %[2]s
+issue.action.close = <b>@%[1]s</b> closed #%[2]d.
+issue.action.reopen = <b>@%[1]s</b> reopened #%[2]d.
+issue.action.merge = <b>@%[1]s</b> merged #%[2]d into %[3]s.
+issue.action.approve = <b>@%[1]s</b> approved this pull request.
+issue.action.reject = <b>@%[1]s</b> requested changes on this pull request.
+issue.action.review = <b>@%[1]s</b> commented on this pull request.
+issue.action.review_dismissed = <b>@%[1]s</b> dismissed last review from %[2]s for this pull request.
+issue.action.ready_for_review = <b>@%[1]s</b> marked this pull request ready for review.
+issue.action.new = <b>@%[1]s</b> created #%[2]d.
+issue.in_tree_path = In %s:
+
+release.new.subject = %s in %s released
+release.new.text = <b>@%[1]s</b> released %[2]s in %[3]s
+release.title = Title: %s
+release.note = Note:
+release.downloads = Downloads:
+release.download.zip = Source Code (ZIP)
+release.download.targz = Source Code (TAR.GZ)
+
+repo.transfer.subject_to = %s would like to transfer "%s" to %s
+repo.transfer.subject_to_you = %s would like to transfer "%s" to you
+repo.transfer.to_you = you
+repo.transfer.body = To accept or reject it visit %s or just ignore it.
+
+repo.collaborator.added.subject = %s added you to %s
+repo.collaborator.added.text = You have been added as a collaborator of repository:
+
+team_invite.subject = %[1]s has invited you to join the %[2]s organization
+team_invite.text_1 = %[1]s has invited you to join team %[2]s in organization %[3]s.
+team_invite.text_2 = Please click the following link to join the team:
+team_invite.text_3 = Note: This invitation was intended for %[1]s. If you were not expecting this invitation, you can ignore this email.
+
+[modal]
+yes = Yes
+no = No
+modify = Update
+
+[form]
+UserName = Username
+RepoName = Repository name
+Email = Email address
+Password = Password
+Retype = Re-Type Password
+SSHTitle = SSH key name
+HttpsUrl = HTTPS URL
+PayloadUrl = Payload URL
+TeamName = Team name
+AuthName = Authorization name
+AdminEmail = Admin email
+
+NewBranchName = New branch name
+CommitSummary = Commit summary
+CommitMessage = Commit message
+CommitChoice = Commit choice
+TreeName = File path
+Content = Content
+
+SSPISeparatorReplacement = Separator
+SSPIDefaultLanguage = Default Language
+
+require_error = ` cannot be empty.`
+alpha_dash_error = ` should contain only alphanumeric, dash ('-') and underscore ('_') characters.`
+alpha_dash_dot_error = ` should contain only alphanumeric, dash ('-'), underscore ('_') and dot ('.') characters.`
+git_ref_name_error = ` must be a well-formed Git reference name.`
+size_error = ` must be size %s.`
+min_size_error = ` must contain at least %s characters.`
+max_size_error = ` must contain at most %s characters.`
+email_error = ` is not a valid email address.`
+url_error = `'%s' is not a valid URL.`
+include_error = ` must contain substring '%s'.`
+glob_pattern_error = ` glob pattern is invalid: %s.`
+regex_pattern_error = ` regex pattern is invalid: %s.`
+unknown_error = Unknown error:
+captcha_incorrect = The CAPTCHA code is incorrect.
+password_not_match = The passwords do not match.
+lang_select_error = Select a language from the list.
+
+username_been_taken = The username is already taken.
+username_change_not_local_user = Non-local users are not allowed to change their username.
+repo_name_been_taken = The repository name is already used.
+repository_force_private = Force Private is enabled: private repositories cannot be made public.
+repository_files_already_exist = Files already exist for this repository. Contact the system administrator.
+repository_files_already_exist.adopt = Files already exist for this repository and can only be Adopted.
+repository_files_already_exist.delete = Files already exist for this repository. You must delete them.
+repository_files_already_exist.adopt_or_delete = Files already exist for this repository. Either adopt them or delete them.
+visit_rate_limit = Remote visit addressed rate limitation.
+2fa_auth_required = Remote visit required two factors authentication.
+org_name_been_taken = The organization name is already taken.
+team_name_been_taken = The team name is already taken.
+team_no_units_error = Allow access to at least one repository section.
+email_been_used = The email address is already used.
+email_invalid = The email address is invalid.
+openid_been_used = The OpenID address '%s' is already used.
+username_password_incorrect = Username or password is incorrect.
+password_complexity = Password does not pass complexity requirements:
+password_lowercase_one = At least one lowercase character
+password_uppercase_one = At least one uppercase character
+password_digit_one = At least one digit
+password_special_one = At least one special character (punctuation, brackets, quotes, etc.)
+enterred_invalid_repo_name = The repository name you entered is incorrect.
+enterred_invalid_org_name = The organization name you entered is incorrect.
+enterred_invalid_owner_name = The new owner name is not valid.
+enterred_invalid_password = The password you entered is incorrect.
+user_not_exist = The user does not exist.
+team_not_exist = The team does not exist.
+last_org_owner = You cannot remove the last user from the 'owners' team. There must be at least one owner for an organization.
+cannot_add_org_to_team = An organization cannot be added as a team member.
+duplicate_invite_to_team = The user was already invited as a team member.
+
+invalid_ssh_key = Can not verify your SSH key: %s
+invalid_gpg_key = Can not verify your GPG key: %s
+invalid_ssh_principal = Invalid principal: %s
+unable_verify_ssh_key = "Can not verify the SSH key; double-check it for mistakes."
+auth_failed = Authentication failed: %v
+
+still_own_repo = "Your account owns one or more repositories; delete or transfer them first."
+still_has_org = "Your account is a member of one or more organizations; leave them first."
+still_own_packages = "Your account owns one or more packages; delete them first."
+org_still_own_repo = "This organization still owns one or more repositories; delete or transfer them first."
+org_still_own_packages = "This organization still owns one or more packages; delete them first."
+
+target_branch_not_exist = Target branch does not exist.
+
+[user]
+change_avatar = Change your avatar…
+join_on = Joined on
+repositories = Repositories
+activity = Public Activity
+followers = Followers
+starred = Starred Repositories
+watched = Watched Repositories
+code = Code
+projects = Projects
+following = Following
+follow = Follow
+unfollow = Unfollow
+heatmap.loading = Loading Heatmap…
+user_bio = Biography
+disabled_public_activity = This user has disabled the public visibility of the activity.
+
+form.name_reserved = The username '%s' is reserved.
+form.name_pattern_not_allowed = The pattern '%s' is not allowed in a username.
+form.name_chars_not_allowed = User name '%s' contains invalid characters.
+
+[settings]
+profile = Profile
+account = Account
+appearance = Appearance
+password = Password
+security = Security
+avatar = Avatar
+ssh_gpg_keys = SSH / GPG Keys
+social = Social Accounts
+applications = Applications
+orgs = Manage Organizations
+repos = Repositories
+delete = Delete Account
+twofa = Two-Factor Authentication
+account_link = Linked Accounts
+organization = Organizations
+uid = Uid
+webauthn = Security Keys
+
+public_profile = Public Profile
+biography_placeholder = Tell us a little bit about yourself
+profile_desc = Your email address will be used for notifications and other operations.
+password_username_disabled = Non-local users are not allowed to change their username. Please contact your site administrator for more details.
+full_name = Full Name
+website = Website
+location = Location
+update_theme = Update Theme
+update_profile = Update Profile
+update_language = Update Language
+update_language_not_found = Language '%s' is not available.
+update_language_success = Language has been updated.
+update_profile_success = Your profile has been updated.
+change_username = Your username has been changed.
+change_username_prompt = Note: username changes also change your account URL.
+change_username_redirect_prompt = The old username will redirect until it is claimed.
+continue = Continue
+cancel = Cancel
+language = Language
+ui = Theme
+hidden_comment_types = Hidden comment types
+comment_type_group_reference = Reference
+comment_type_group_label = Label
+comment_type_group_milestone = Milestone
+comment_type_group_assignee = Assignee
+comment_type_group_title = Title
+comment_type_group_branch = Branch
+comment_type_group_time_tracking = Time Tracking
+comment_type_group_deadline = Deadline
+comment_type_group_dependency = Dependency
+comment_type_group_lock = Lock Status
+comment_type_group_review_request = Review request
+comment_type_group_pull_request_push = Added commits
+comment_type_group_project = Project
+comment_type_group_issue_ref = Issue reference
+saved_successfully = Your settings were saved successfully.
+privacy = Privacy
+keep_activity_private = Hide the activity from the profile page
+keep_activity_private_popup = Makes the activity visible only for you and the admins
+
+lookup_avatar_by_mail = Look Up Avatar by Email Address
+federated_avatar_lookup = Federated Avatar Lookup
+enable_custom_avatar = Use Custom Avatar
+choose_new_avatar = Choose new avatar
+update_avatar = Update Avatar
+delete_current_avatar = Delete Current Avatar

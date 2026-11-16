@@ -1,0 +1,7 @@
+schema_version = 3
+id = "t"
+tag = "safety"
+confidence = 1.5
+
+[[match]]
+pattern = "x"
