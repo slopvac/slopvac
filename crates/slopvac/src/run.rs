@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, output, owners, redact, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +230,11 @@ fn dispatch(
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::explain(m, out)
         }
+        Some(("terms", m)) => owners::terms(m, out),
+        Some(("genre", m)) => owners::genre(m, out),
+        Some(("validate", m)) => owners::validate(m, out),
+        Some(("setup", m)) => owners::setup(m, out),
+        Some(("prime", m)) => owners::prime(m, out),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(

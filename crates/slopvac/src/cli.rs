@@ -67,38 +67,13 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
-    (
-        "terms",
-        "Check and list the project terms.",
-        "slopvac-8l4.4",
-    ),
-    (
-        "genre",
-        "Show or detect the document genre.",
-        "slopvac-8l4.4",
-    ),
-    (
-        "validate",
-        "Validate configuration, packs and front matter.",
-        "slopvac-8l4.4",
-    ),
+pub const PLACEHOLDERS: [(&str, &str, &str); 5] = [
     (
         "plugins",
         "Manage plugins and packs: sync, trust, update.",
         "slopvac-8l4.9",
     ),
     ("packs", "List installed rule packs.", "slopvac-8l4.9"),
-    (
-        "setup",
-        "Install slopvac guidance into agent harnesses.",
-        "slopvac-8l4.11",
-    ),
-    (
-        "prime",
-        "Print guidance for agents, by topic.",
-        "slopvac-8l4.11",
-    ),
     (
         "onboard",
         "Print the agent onboarding text.",
@@ -417,6 +392,11 @@ pub fn command() -> Command {
         .subcommand(self_cmd())
         .subcommand(slopvac_lsp::command())
         .subcommand(slopvac_migrate::command())
+        .subcommand(slopvac_terms::cli::command())
+        .subcommand(slopvac_context::command())
+        .subcommand(slopvac_config::validate::command())
+        .subcommand(slopvac_agents::setup::command())
+        .subcommand(slopvac_agents::prime::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
