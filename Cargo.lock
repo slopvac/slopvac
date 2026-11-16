@@ -2426,6 +2426,7 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-styles",
  "slopvac-update",
  "snapbox",
  "tempfile",
@@ -2673,6 +2674,7 @@ version = "0.0.0"
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
+ "rustix",
  "serde",
  "serde_json",
  "slopvac-config",
@@ -2686,6 +2688,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "tempfile",
  "thiserror",

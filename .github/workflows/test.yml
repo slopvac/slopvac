@@ -17,12 +17,15 @@ permissions:
   contents: read
   pull-requests: read
 
-# Pull requests key on their number. Every other event keys on its ref; a queue
-# entry's ref embeds the PR number and head SHA, so entries never share a group
-# with each other or with the pull-request run.
+# Pull requests key on their number, and a newer push cancels the older run.
+# Pushes to main key on the commit and queue entries on their ref, which embeds
+# the PR number and head SHA. Those runs therefore never share a group, and they
+# are never cancelled: a shared group would still drop a pending run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ci-${{ github.event.pull_request.number ||
+    (github.event_name == 'push' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -158,6 +161,8 @@ jobs:
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -226,6 +231,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
@@ -308,6 +314,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: msrv
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
         run: cargo "+$MSRV" check --workspace --all-targets --locked
