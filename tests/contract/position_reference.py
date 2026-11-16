@@ -204,6 +204,55 @@ def apply_edits(doc: Doc, edits: list[dict]) -> bytes:
     return bytes(out)
 
 
+# Binary hosts -------------------------------------------------------------------
+
+
+def binary_host_location(
+    segment: str,
+    start: int,
+    end: int,
+    *,
+    path: str,
+    locator: str,
+    container_range: tuple[int, int],
+) -> dict[str, object]:
+    """Locate a finding in one extracted segment of a binary host.
+
+    ``start`` and ``end`` are byte offsets into the UTF-8 segment text. They are the
+    only coordinates that matching, contexts, exclusions and fingerprints see.
+    ``container_range`` is physical provenance. It is carried through and never
+    read to compute a position.
+    """
+    doc = Doc.from_text(segment)
+    check_span(doc, start, end)
+    s = {u: position(doc, start, u) for u in UNITS}
+    e = {u: position(doc, end, u) for u in UNITS}
+    line, column = s["utf32"]
+    text = f"{path}!{locator}:{line}:{column}"
+    return {
+        "local": {
+            "start": {"line": s["utf32"][0], "column": s["utf32"][1]},
+            "end": {"line": e["utf32"][0], "column": e["utf32"][1]},
+        },
+        "provenance": {
+            "path": path,
+            "range": {"start": container_range[0], "end": container_range[1]},
+        },
+        "text": text,
+        "sarif": {
+            "physicalLocation": {"artifactLocation": {"uri": path}},
+            "logicalLocations": [{"fullyQualifiedName": locator, "kind": "resource"}],
+            "message": {"text": text},
+        },
+    }
+
+
+def binary_host_edit(edits: list[dict]) -> None:
+    """A binary host never takes an Edit; any non-empty edit set is rejected."""
+    if edits:
+        raise PositionError("binary hosts never get an Edit or a fix")
+
+
 # Projection ---------------------------------------------------------------------
 
 REAL_KINDS = {"identity", "entity", "backslash", "opaque", "collapse", "masked"}
