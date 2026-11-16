@@ -122,6 +122,14 @@ def test_verify_pin_names_a_source_hash_mismatch(monkeypatch):
     assert any(p.startswith("python_src_sha256") for p in golden.verify_pin())
 
 
+def test_verify_pin_ignores_a_different_reference_commit(monkeypatch):
+    real = golden.current_pin
+    monkeypatch.setattr(
+        golden, "current_pin", lambda src: {**real(src), "python_commit": "f" * 40}
+    )
+    assert golden.verify_pin() == []
+
+
 def test_verify_pin_names_a_vale_mismatch(monkeypatch):
     monkeypatch.setattr(golden, "vale_version", lambda: "0.0.1")
     assert any(p.startswith("vale") for p in golden.verify_pin())

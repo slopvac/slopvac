@@ -35,7 +35,7 @@ Each run of a binary has a process exit status and a summary that the document g
 
 ## Pin
 
-`pin.toml` records the reference: the package version, the last commit that changed its sources, a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The commit is compared only in a full clone, because the source hash proves the same thing.
+`pin.toml` records the reference: the package version, the last commit that changed its sources (informational), a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The commit is informational and the pin check does not compare it: a squash merge makes it stale, and the source hash proves the content.
 
 ## Approved changes
 
