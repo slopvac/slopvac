@@ -1,0 +1,17 @@
+# Domain model
+
+The domain has three entities.
+
+```mermaid
+classDiagram
+  class Customer {
+    +UUID id
+    +place(order)
+  }
+  class Order
+  class Item
+  Customer --> Order
+  Order --> Item
+```
+
+An order holds at most 50 items.

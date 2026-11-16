@@ -480,3 +480,22 @@ fn force_keeps_the_mode_of_the_file_it_replaces() {
         assert_eq!(mode_of(&file), mode, "was {mode:o}");
     }
 }
+
+#[test]
+fn init_suggests_the_google_preset_for_a_vale_google_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join(".vale.ini"),
+        "[*.md]\nBasedOnStyles = Google\n",
+    )
+    .unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0)
+        .stdout(
+            "wrote slopvac.toml\n\
+             house style: Google developer documentation style guide: suggest the \"google\" preset (.vale.ini:2)\n\
+             next: slopvac prime\n",
+        );
+}

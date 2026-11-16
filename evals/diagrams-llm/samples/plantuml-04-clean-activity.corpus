@@ -1,0 +1,14 @@
+# Import
+
+The import runs as a single activity.
+
+```plantuml
+@startuml
+start
+:Validate input;
+:Store record;
+stop
+@enduml
+```
+
+A failed import is rolled back.

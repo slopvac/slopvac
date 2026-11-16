@@ -216,6 +216,32 @@ def test_evaluator_distinguishes_or_from_and(condition, outputs, expected):
     assert evaluate(condition, outputs) is expected
 
 
+def classes_of(paths: list[str]) -> set[str]:
+    return {klass for klass in CLASSES for path in paths if in_class(klass, path)}
+
+
+DOCS_ONLY = ["README.md", "docs/design/slopvac-3.md", "packages/slopvac-lint/README.md"]
+PYTHON_ONLY = [
+    "packages/slopvac-lint/src/slopvac/report.py",
+    "packages/slopvac-lint/tests/test_report.py",
+    "tests/test_release_please_config.py",
+]
+HEAVY = ["rust-static", "rust", "rust-msrv", "rust-supply-chain", "test"]
+
+
+@pytest.mark.parametrize(
+    ("paths", "expected"),
+    [
+        (DOCS_ONLY, dict.fromkeys(HEAVY, False)),
+        (PYTHON_ONLY, {**dict.fromkeys(HEAVY, False), "test": True}),
+    ],
+    ids=["docs-only", "python-only"],
+)
+def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
+    outputs = classes_of(paths)
+    assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
+
+
 @pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
 def test_folded_job_calls_its_workflow_with_read_only_token(job):
     call = JOBS[job]

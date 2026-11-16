@@ -1,0 +1,13 @@
+# Upload
+
+Uploads land in object storage before processing.
+
+```plantuml
+@startuml
+rectangle "Receives the raw upload and stores it in object storage" as R
+rectangle "Processor" as P
+R --> P
+@enduml
+```
+
+The processor reads from the same bucket.
