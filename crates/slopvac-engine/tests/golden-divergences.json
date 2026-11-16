@@ -1,0 +1,326 @@
+{
+  "*": {
+    "ignore": [
+      "unchecked",
+      "exit"
+    ],
+    "reason": "The engine does not run the 6 structure rules (notice rule-kind-not-implemented) and has no word blocklist (notice vocabulary-no-blocklist), so every document is incomplete and exits 2; the golden reports neither notice. Owners: slopvac-8l4.3.43 (structure), slopvac-8l4.3.44 (vocabulary)."
+  },
+  "*/format-mdx": {
+    "ignore": [
+      "counts"
+    ],
+    "reason": "2.x counts more paragraphs than Rust: the extra ones sit at marker lines (`:::info[...]` and `:::` directives, an MDX `import`, an RST `.. note::`/`::` marker) that Rust treats as non-prose. Inferred from the samples, not yet diagnosed. Tracked by slopvac-8l4.3.41."
+  },
+  "*/format-rst": {
+    "ignore": [
+      "counts"
+    ],
+    "reason": "2.x counts more paragraphs than Rust: the extra ones sit at marker lines (`:::info[...]` and `:::` directives, an MDX `import`, an RST `.. note::`/`::` marker) that Rust treats as non-prose. Inferred from the samples, not yet diagnosed. Tracked by slopvac-8l4.3.41."
+  },
+  "*/issue-256": {
+    "ignore": [
+      "counts"
+    ],
+    "reason": "2.x counts more paragraphs than Rust: the extra ones sit at marker lines (`:::info[...]` and `:::` directives, an MDX `import`, an RST `.. note::`/`::` marker) that Rust treats as non-prose. Inferred from the samples, not yet diagnosed. Tracked by slopvac-8l4.3.41."
+  },
+  "normal/rule-examples-ai-tells-figurative": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "strict/rule-examples-ai-tells-figurative": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "normal/rule-examples-ai-tells-structure": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin. ai-tells-structure.negative-guarantee-core also differs in position (undiagnosed, slopvac-8l4.3.41)."
+  },
+  "relaxed/rule-examples-ai-tells-structure": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin. ai-tells-structure.negative-guarantee-core also differs in position (undiagnosed, slopvac-8l4.3.41)."
+  },
+  "strict/rule-examples-ai-tells-structure": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin. ai-tells-structure.negative-guarantee-core also differs in position (undiagnosed, slopvac-8l4.3.41)."
+  },
+  "normal/rule-examples-prose-discipline": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Undiagnosed: the golden reports prose-discipline.run-on and ste-procedural.multiple-instructions-per-sentence findings that Rust does not report. Tracked by slopvac-8l4.3.41."
+  },
+  "relaxed/rule-examples-prose-discipline": {
+    "ignore": [
+      "ai_signal",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: the golden reports prose-discipline.run-on and ste-procedural.multiple-instructions-per-sentence findings that Rust does not report. Tracked by slopvac-8l4.3.41."
+  },
+  "strict/rule-examples-prose-discipline": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "tallies"
+    ],
+    "reason": "Undiagnosed: the golden reports prose-discipline.run-on and ste-procedural.multiple-instructions-per-sentence findings that Rust does not report. Tracked by slopvac-8l4.3.41."
+  },
+  "normal/rule-examples-prose-scope": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin."
+  },
+  "relaxed/rule-examples-prose-scope": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin."
+  },
+  "strict/rule-examples-prose-scope": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "tallies"
+    ],
+    "reason": "Stale golden pin (python_commit a4a3518bf1 vs packages/slopvac-lint c025f3a183): the Python rule 'contrastive-inversion-frames' was split into 'contrastive-appositive' after the pin, so the golden reports inversion findings where Rust reports the appositive ones. Resolves when the golden owner re-records the pin."
+  },
+  "normal/rule-examples-ste-descriptive": {
+    "ignore": [
+      "ai_signal",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: the golden reports ste-descriptive.paragraph-too-many-sentences and ste-procedural.multiple-instructions-per-sentence findings that Rust does not report. Tracked by slopvac-8l4.3.41."
+  },
+  "strict/rule-examples-ste-descriptive": {
+    "ignore": [
+      "ai_signal",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: the golden reports ste-descriptive.paragraph-too-many-sentences and ste-procedural.multiple-instructions-per-sentence findings that Rust does not report. Tracked by slopvac-8l4.3.41."
+  },
+  "normal/rule-examples-ste-safety": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "strict/rule-examples-ste-safety": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "normal/rule-examples-ste-words": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "score",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "strict/rule-examples-ste-words": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "density",
+      "end",
+      "findings",
+      "gate",
+      "message",
+      "position",
+      "replacement",
+      "tallies"
+    ],
+    "reason": "Undiagnosed sentence-scope difference: the golden reports ste-procedural.multiple-instructions-per-sentence findings that Rust does not (and the findings, counts and scores that follow from them). Tracked by slopvac-8l4.3.41."
+  },
+  "normal/stacklok-after": {
+    "ignore": [
+      "ai_signal",
+      "counts",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: sentence-scope findings (negative-guarantee-core, paragraph-too-many-sentences, multiple-instructions-per-sentence, passive-voice, status-language, versions, negative-requirement) differ in presence or position, and Rust counts 2 fewer paragraphs (the two `:::` directive lines). Tracked by slopvac-8l4.3.41."
+  },
+  "relaxed/stacklok-after": {
+    "ignore": [
+      "ai_signal",
+      "categories",
+      "counts",
+      "density",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: sentence-scope findings (negative-guarantee-core, paragraph-too-many-sentences, multiple-instructions-per-sentence, passive-voice, status-language, versions, negative-requirement) differ in presence or position, and Rust counts 2 fewer paragraphs (the two `:::` directive lines). Tracked by slopvac-8l4.3.41."
+  },
+  "strict/stacklok-after": {
+    "ignore": [
+      "ai_signal",
+      "counts",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: sentence-scope findings (negative-guarantee-core, paragraph-too-many-sentences, multiple-instructions-per-sentence, passive-voice, status-language, versions, negative-requirement) differ in presence or position, and Rust counts 2 fewer paragraphs (the two `:::` directive lines). Tracked by slopvac-8l4.3.41."
+  },
+  "*/stacklok-before": {
+    "ignore": [
+      "ai_signal",
+      "counts",
+      "end",
+      "findings",
+      "message",
+      "position",
+      "replacement"
+    ],
+    "reason": "Undiagnosed: prose-craft.sentence-length, negative-guarantee-core and other sentence-scope findings differ in presence or position, and Rust counts one more sentence (303 vs 302). Tracked by slopvac-8l4.3.41."
+  }
+}

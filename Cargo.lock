@@ -2513,6 +2513,7 @@ dependencies = [
  "slopvac-text",
  "tempfile",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
