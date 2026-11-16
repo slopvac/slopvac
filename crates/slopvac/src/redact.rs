@@ -49,6 +49,44 @@ pub fn strip_url_userinfo(text: &str) -> String {
     out
 }
 
+#[must_use]
+/// Replace the project root in `text` so no absolute path leaves the process.
+///
+/// A root under the working directory becomes a relative path. Any other absolute root
+/// becomes `<external>`, and the part below the root stays (policies.md, 1.7).
+pub fn redact_root(text: &str, root: &Path) -> String {
+    if !root.is_absolute() {
+        return text.to_owned();
+    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let shown = match root.strip_prefix(&cwd) {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
+        Ok(rel) => rel.display().to_string(),
+        Err(_) => "<external>".to_owned(),
+    };
+    let replaced = text.replace(&root.display().to_string(), &shown);
+    if shown == "<external>" {
+        normalise_after(&replaced, "<external>")
+    } else {
+        replaced
+    }
+}
+
+/// Use `/` in the path that follows each `marker`, so output reads the same on every platform.
+fn normalise_after(text: &str, marker: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(marker) {
+        let (head, tail) = rest.split_at(at + marker.len());
+        out.push_str(head);
+        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        out.push_str(&tail[..end].replace('\\', "/"));
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +122,41 @@ mod tests {
         for (input, want) in cases {
             assert_eq!(strip_url_userinfo(input), want);
         }
+    }
+
+    #[test]
+    fn an_external_root_is_redacted_but_keeps_the_part_below_it() {
+        // A real directory, so the root is absolute on every platform.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir
+            .path()
+            .join(".claude")
+            .join("skills")
+            .join("x")
+            .join("SKILL.md");
+        let text = format!("updated {}", file.display());
+        assert_eq!(
+            redact_root(&text, dir.path()),
+            "updated <external>/.claude/skills/x/SKILL.md"
+        );
+    }
+
+    #[test]
+    fn a_relative_root_is_left_alone() {
+        assert_eq!(
+            redact_root("updated conf/AGENTS.md", Path::new("conf")),
+            "updated conf/AGENTS.md"
+        );
+    }
+
+    #[test]
+    fn separators_after_the_marker_become_slashes_and_other_text_is_kept() {
+        assert_eq!(
+            normalise_after(
+                r"updated <external>\.claude\skills\SKILL.md (kept\raw)",
+                "<external>"
+            ),
+            r"updated <external>/.claude/skills/SKILL.md (kept\raw)"
+        );
     }
 }
