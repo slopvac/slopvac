@@ -148,15 +148,17 @@ fn trace_logging_never_copies_document_text() {
 }
 
 #[test]
-fn logging_emits_on_stderr_when_enabled() {
+fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
     let (_dir, path) = doc(b"x\n");
-    slopvac()
+    let quiet = slopvac().arg(&path).output().expect("run");
+    let logged = slopvac()
         .env("SLOPVAC_LOG", "debug")
         .arg(&path)
-        .assert()
-        .code(0)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("lint start"));
+        .output()
+        .expect("run");
+    assert_eq!(logged.status.code(), Some(0));
+    assert_eq!(logged.stdout, quiet.stdout);
+    assert!(String::from_utf8_lossy(&logged.stderr).contains("lint start"));
 }
 
 #[test]

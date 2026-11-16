@@ -75,6 +75,7 @@ slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-pos = { path = "crates/slopvac-pos" }
 slopvac-report = { path = "crates/slopvac-report" }
 slopvac-rules = { path = "crates/slopvac-rules" }
+slopvac-sanitize = { path = "crates/slopvac-sanitize" }
 slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-terms = { path = "crates/slopvac-terms" }
 slopvac-text = { path = "crates/slopvac-text" }
