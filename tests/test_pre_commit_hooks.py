@@ -119,7 +119,9 @@ def test_hook_fails_with_exit_1_on_findings(tmp_path, runner, slopvac_binary):
         check=False,
     )
     if direct.returncode == 0:
-        pytest.skip("the CLI engine reports no findings yet (slopvac-8l4.12.12)")
+        # STUB(slopvac-8l4.12.12): the CLI still runs a null linter that reports no
+        # findings. Remove this skip when 12.12 wires slopvac-engine into `lint`.
+        pytest.skip("STUB(slopvac-8l4.12.12): the CLI engine reports no findings yet")
     done = _run_hook(tmp_path, runner, "slopvac", slopvac_binary, BAD)
     assert done.returncode != 0
     assert "exit code: 1" in done.stdout
