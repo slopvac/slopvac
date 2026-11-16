@@ -143,3 +143,46 @@ rules:
         .vale.ini disables it for specs/, .specify/, ADR paths, CONTRIBUTING,
         constitution, and the two package READMEs that document the rule itself.
 
+
+  - id: history-internal-reference
+    exceptions: [quotation]
+    name: Keep commit, PR and ticket references out of a doc body
+    kind: pattern
+    severity: warning
+    message: 'internal history reference: {match} -- state the behaviour; the tracker and the log carry the origin'
+    scope: prose
+    tiers:
+      strict: enforced
+      normal: enforced
+      relaxed: excluded
+    pattern: '\b(?:commit|cherry-picked from|reverted in|fixed in|introduced in)\s+[0-9a-f]{7,40}\b|\b(?:PRs?|MRs?|pull requests?)\s+#?\d+\b|\bissues?\s+#\d+\b|\b(?i:see|per|closes|closed|fixes|fixed|resolves|resolved|in)\s+issues?\s+\d+\b|\(#\d+\)|\b(?!(?:UTF|SHA|ISO|AES|RSA|MD|RFC|CVE|CWE|GPU|GPT|TLS|SSL|HTTP|IPV|ECDSA|CRC|BLAKE|OWASP|NIST|ASVS)[0-9]*-)[A-Z][A-Z0-9]{2,9}-\d{2,6}\b|\b[Ww]e (?:refactored|reworked|rewrote|cleaned up|reorgani[sz]ed)\b'
+    ignore_case: false
+    match_all_caps: true
+    fix: State the behaviour. Move the commit, PR or ticket pointer to the change note or the tracker.
+    examples:
+      - bad: The retry loop landed in commit 3f9a2c1 after the outage.
+        good: The retry loop waits 200 ms between attempts.
+      - bad: Timeouts now apply to every call (PR 482).
+        good: Timeouts apply to every call.
+      - bad: The cache key changed because of PLAT-1042.
+        good: The cache key includes the tenant ID.
+      - bad: 'The importer skips bad rows, see issue #596.'
+        good: Clients issue 100 requests per second.
+      - bad: We refactored the loader to read from the config table.
+        good: The loader reads from the config table.
+    ai_signal: none
+    ai_signal_source: unmeasured
+    provenance:
+      source: 3.0 rule accuracy programme (slopvac-8l4.5.10)
+      note: >-
+        Commit SHAs, PR and issue numbers, ticket ids and "we refactored" narrate how
+        the code got here, which a reader of the released artifact cannot act on.
+        Change communications exist to carry these references, so the rule is off
+        there. The 3.0 genre tolerances turn it off in change-comms, make it a
+        suggestion in internal docs and keep it a warning in consumer and reference
+        docs. The Python reference expresses only the profile tiers.
+        # STUB(slopvac-8l4.5.13): per-genre tolerances live in the 3.0 genre registry.
+        The ticket-id alternative needs a prefix of three or more characters, so a
+        document's own short ids such as the threat ids TM-12 do not match. It skips
+        common standard prefixes (UTF, SHA, ISO, RFC,
+        CVE and similar) and inline code, which the engine masks before matching.

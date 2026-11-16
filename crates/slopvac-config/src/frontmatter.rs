@@ -1,73 +1,17 @@
 //! Front matter: find the block, read the `slopvac:` mapping, and apply the allow policy.
 //!
-//! The extraction half is a local stand-in for the `slopvac-frontmatter` crate.
-// STUB(slopvac-8l4.4.8): `extract` and `parse_block` fake the publishable front-matter crate
-// (slopvac-8l4.3.4): YAML (`---`), TOML (`+++`) and JSON detection with document-absolute
-// spans. Swap them for the crate; `read` and `Policy` stay.
+//! Detection and parsing come from the `frontmatter-spans` crate; this module adds the allow
+//! policy and the `slopvac:` mapping.
 
-use std::ops::Range;
+pub use frontmatter_spans::{Block, Format};
+use frontmatter_spans::{FrontMatter, Limits};
 
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::load::LoadedConfig;
 use crate::schema::validate_frontmatter;
 use crate::source::{Layer, Setting};
-use crate::tree::{Node, Value, parse_toml, parse_yaml};
-
-/// The syntax of a front-matter block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Format {
-    /// Between `---` lines.
-    Yaml,
-    /// Between `+++` lines.
-    Toml,
-    /// A JSON object at the start of the document.
-    Json,
-}
-
-/// A front-matter block located in a document.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Block {
-    /// The syntax.
-    pub format: Format,
-    /// Byte range of the block content, without the delimiter lines.
-    pub content: Range<usize>,
-}
-
-/// Find the front-matter block at the start of `doc`.
-#[must_use]
-pub fn extract(doc: &str) -> Option<Block> {
-    let doc_start = doc
-        .strip_prefix('\u{feff}')
-        .map_or(0, |_| '\u{feff}'.len_utf8());
-    let rest = &doc[doc_start..];
-    if rest.starts_with('{') {
-        return json_block(rest, doc_start);
-    }
-    let (format, fence) = if rest.starts_with("---") {
-        (Format::Yaml, "---")
-    } else if rest.starts_with("+++") {
-        (Format::Toml, "+++")
-    } else {
-        return None;
-    };
-    let mut lines = lines_with_offsets(rest);
-    let (_, first) = lines.next()?;
-    if first.trim_end() != fence {
-        return None;
-    }
-    let content_start = doc_start + first.len();
-    for (offset, line) in lines {
-        let t = line.trim_end();
-        if t == fence || (format == Format::Yaml && t == "...") {
-            return Some(Block {
-                format,
-                content: content_start..doc_start + offset,
-            });
-        }
-    }
-    None
-}
+use crate::tree::{Entry, Node, Value};
 
 /// Lines with their start offsets. A line ends at LF, CRLF or a CR that does not precede LF, as
 /// `docs/contract/positions.md` defines, and keeps its terminator.
@@ -100,47 +44,116 @@ fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
     lines.into_iter()
 }
 
-fn json_block(rest: &str, doc_start: usize) -> Option<Block> {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (i, c) in rest.char_indices() {
-        if in_string {
-            match (escaped, c) {
-                (true, _) => escaped = false,
-                (false, '\\') => escaped = true,
-                (false, '"') => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(Block {
-                        format: Format::Json,
-                        content: doc_start..doc_start + i + 1,
-                    });
-                }
-            }
-            _ => {}
+/// Find the front-matter block at the start of `doc`.
+///
+/// A fence line closes or opens a block when it equals the fence once all trailing Unicode
+/// whitespace is trimmed, as in 2.x. `frontmatter_spans::detect` trims only spaces and tabs and
+/// no contract text says which is right, so the old rule stays here. A JSON object goes to the
+/// crate unchanged.
+#[must_use]
+pub fn extract(doc: &str) -> Option<Block> {
+    let start = if doc.starts_with('\u{feff}') {
+        '\u{feff}'.len_utf8()
+    } else {
+        0
+    };
+    let rest = &doc[start..];
+    let (format, fence) = if rest.starts_with('{') {
+        return frontmatter_spans::detect(doc);
+    } else if rest.starts_with("---") {
+        (Format::Yaml, "---")
+    } else if rest.starts_with("+++") {
+        (Format::Toml, "+++")
+    } else {
+        return None;
+    };
+    let mut lines = lines_with_offsets(rest);
+    let (_, first) = lines.next()?;
+    if first.trim_end() != fence {
+        return None;
+    }
+    let content_start = start + first.len();
+    for (offset, line) in lines {
+        let t = line.trim_end();
+        if t == fence || (format == Format::Yaml && t == "...") {
+            let line_start = start + offset;
+            let terminator = line.len() - line.trim_end_matches(['\r', '\n']).len();
+            return Some(Block {
+                format,
+                outer: start..line_start + line.len() - terminator,
+                content: content_start..line_start,
+                body_start: line_start + line.len(),
+            });
         }
     }
     None
 }
 
-/// Parse a block. Every span in the tree indexes `doc`, not the block.
+/// Parse a block found in `doc`. Every span in the tree indexes `doc`, not the block.
+///
+/// A repeated key in a table is an error in every format. YAML and TOML refuse it in their
+/// parsers; JSON keeps every member, so the check runs here, with the message YAML gives.
 pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseError> {
-    let text = &doc[block.content.clone()];
-    let mut node = match block.format {
-        Format::Toml => parse_toml(text)?,
-        Format::Yaml | Format::Json => parse_yaml(text)?,
+    let node = FrontMatter::parse_block_with(doc, block.clone(), &Limits::default())
+        .map(|fm| convert(&fm.root))
+        .map_err(|e| crate::tree::ParseError {
+            message: e.message,
+            span: e.span.map(|s| s.range),
+        })?;
+    match first_duplicate(&node) {
+        Some(entry) => Err(crate::tree::ParseError {
+            message: format!("duplicate key `{}`", entry.key),
+            span: Some(entry.key_span.clone()),
+        }),
+        None => Ok(node),
+    }
+}
+
+/// The first entry, in document order, whose key an earlier entry of the same table has.
+fn first_duplicate(node: &Node) -> Option<&Entry> {
+    match &node.value {
+        Value::Table(entries) => {
+            // A set per table keeps the check linear in the number of keys.
+            let mut seen = std::collections::HashSet::with_capacity(entries.len());
+            entries.iter().find_map(|e| {
+                if seen.insert(e.key.as_str()) {
+                    first_duplicate(&e.node)
+                } else {
+                    Some(e)
+                }
+            })
+        }
+        Value::Array(items) => items.iter().find_map(first_duplicate),
+        _ => None,
+    }
+}
+
+/// The crate's tree as this crate's tree, so validation and flattening do not depend on it.
+fn convert(node: &frontmatter_spans::Node) -> Node {
+    use frontmatter_spans::Value as V;
+    let value = match &node.value {
+        V::Null => Value::Null,
+        V::Bool(b) => Value::Bool(*b),
+        V::Integer(i) => Value::Int(*i),
+        V::Float(f) => Value::Float(*f),
+        V::String(s) => Value::Str(s.clone()),
+        V::Datetime(s) => Value::Datetime(s.clone()),
+        V::Array(items) => Value::Array(items.iter().map(convert).collect()),
+        V::Table(entries) => Value::Table(
+            entries
+                .iter()
+                .map(|e| Entry {
+                    key: e.key.clone(),
+                    key_span: e.key_span.range.clone(),
+                    node: convert(&e.value),
+                })
+                .collect(),
+        ),
     };
-    node.shift(block.content.start);
-    Ok(node)
+    Node {
+        span: node.span.range.clone(),
+        value,
+    }
 }
 
 /// The project's `[frontmatter]` table.
@@ -153,6 +166,18 @@ pub struct Policy {
 }
 
 impl Policy {
+    /// The core defaults, for a document with no config.
+    #[must_use]
+    pub fn core() -> Self {
+        Self {
+            enabled: true,
+            allow: ["genre", "locale", "terms"]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+        }
+    }
+
     /// The policy a loaded config sets, with the core defaults under it.
     #[must_use]
     pub fn from_config(config: &LoadedConfig) -> Self {
@@ -204,6 +229,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         return Read::default();
     };
     let raw = &doc[block.content.clone()];
+    let (format, content_start) = (block.format, block.content.start);
     // Cheap candidate check: the key `slopvac` can be spelled another way only through an escape,
     // so text with neither the word nor a backslash cannot hold the block and is never parsed.
     if !raw.contains("slopvac") && !raw.contains('\\') {
@@ -213,11 +239,9 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         Ok(n) => n,
         // Ownership: a block that does not parse is ours only if a top-level key decodes to
         // `slopvac`. The word inside a value or a nested key says nothing.
-        Err(_) if !has_slopvac_key(raw, block.format) => return Read::default(),
+        Err(_) if !has_slopvac_key(raw, format) => return Read::default(),
         Err(e) => {
-            let at = e
-                .span
-                .map_or(block.content.start, |s| s.start + block.content.start);
+            let at = e.span.map_or(content_start, |s| s.start);
             return Read {
                 settings: Vec::new(),
                 diagnostics: vec![Diagnostic {
@@ -236,7 +260,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     }
     let mut diagnostics = validate_frontmatter(&root, doc);
     if let Some(slopvac) = root.get("slopvac") {
-        diagnostics.extend(denied(slopvac, policy));
+        diagnostics.extend(denied(slopvac, policy, "slopvac"));
     }
     diagnostics.sort_by_key(|d| d.span.start);
     if !diagnostics.is_empty() {
@@ -262,7 +286,14 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     }
 }
 
-fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
+/// The fields of `block` that `policy` does not allow. `root` is the first key-path segment
+/// (`slopvac` or `directive`), and it also names the source in the message.
+pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnostic> {
+    let what = if root == "directive" {
+        "an inline directive"
+    } else {
+        "front matter"
+    };
     let Value::Table(entries) = &block.value else {
         return Vec::new();
     };
@@ -272,14 +303,14 @@ fn denied(block: &Node, policy: &Policy) -> Vec<Diagnostic> {
         .filter(|e| !policy.allow.contains(&e.key))
         .map(|e| Diagnostic {
             code: Code::FrontmatterFieldDenied,
-            message: format!("the project does not let front matter set `{}`", e.key),
+            message: format!("the project does not let {what} set `{}`", e.key),
             label: "not in `[frontmatter] allow`".into(),
             span: e.key_span.clone(),
             help: Some(format!(
                 "to allow `{}`, add it to `[frontmatter] allow` in slopvac.toml",
                 e.key
             )),
-            path: vec!["slopvac".into(), e.key.clone()],
+            path: vec![root.to_owned(), e.key.clone()],
         })
         .collect()
 }

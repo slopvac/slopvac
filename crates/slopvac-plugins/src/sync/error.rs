@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 use crate::extract::ExtractError;
@@ -14,7 +15,7 @@ use crate::sign::SignError;
 #[derive(Debug, Error)]
 pub enum SyncError {
     /// Offline mode and the cache lacks content the lock needs.
-    #[error("offline: pack `{id}` ({digest}) is not in the cache: {what}")]
+    #[error("offline: pack `{id}` ({}) is not in the cache: {}", esc(.digest), esc(.what))]
     OfflinePackMissing {
         /// Pack id.
         id: PackId,
@@ -24,7 +25,7 @@ pub enum SyncError {
         what: String,
     },
     /// The source kind is not implemented yet.
-    #[error("pack `{id}`: {reason}")]
+    #[error("pack `{id}`: {}", esc(.reason))]
     Unsupported {
         /// Pack id.
         id: PackId,
@@ -32,7 +33,7 @@ pub enum SyncError {
         reason: String,
     },
     /// The lock entry cannot be resolved as written.
-    #[error("pack `{id}`: {why}")]
+    #[error("pack `{id}`: {}", esc(.why))]
     Source {
         /// Pack id.
         id: PackId,
@@ -64,7 +65,7 @@ pub enum SyncError {
         id: PackId,
     },
     /// The signed statement is valid but is not the one the lock records.
-    #[error("pack `{id}`: the signature differs from the lock: {why}")]
+    #[error("pack `{id}`: the signature differs from the lock: {}", esc(.why))]
     SignatureDiffersFromLock {
         /// Pack id.
         id: PackId,
@@ -72,7 +73,7 @@ pub enum SyncError {
         why: String,
     },
     /// Fetched or read content does not hash to the locked digest.
-    #[error("pack `{id}`: digest mismatch: the lock pins {expected}, the content is {actual}")]
+    #[error("pack `{id}`: digest mismatch: the lock pins {}, the content is {}", esc(.expected), esc(.actual))]
     DigestMismatch {
         /// Pack id.
         id: PackId,
@@ -82,7 +83,7 @@ pub enum SyncError {
         actual: String,
     },
     /// The manifest does not have the shape of a pack artifact.
-    #[error("pack `{id}`: unexpected artifact layout: {why}")]
+    #[error("pack `{id}`: unexpected artifact layout: {}", esc(.why))]
     Layout {
         /// Pack id.
         id: PackId,
@@ -91,7 +92,7 @@ pub enum SyncError {
     },
     /// An installed tree changed and sync is offline, so it cannot be fetched
     /// again. The tree was removed.
-    #[error("pack `{id}`: the cached tree {path} was modified and was removed; offline sync cannot restore it", path = path.display())]
+    #[error("pack `{id}`: the cached tree {path} was modified and was removed; offline sync cannot restore it", path = esc(&path.to_string_lossy()))]
     CacheTampered {
         /// Pack id.
         id: PackId,
@@ -108,7 +109,7 @@ pub enum SyncError {
         source: ExtractError,
     },
     /// The data directory could not be prepared or written.
-    #[error("data directory: {0}")]
+    #[error("data directory: {}", esc(.0))]
     Store(String),
     /// The revocation list names the pack's artifact or its signing key
     /// (threat model K5).

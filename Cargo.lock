@@ -2396,17 +2396,27 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "insta",
+ "jsonschema",
+ "minisign",
  "predicates",
  "proptest",
+ "roxmltree",
  "rstest",
+ "rustix",
+ "semver",
  "serde",
  "serde_json",
+ "slopvac-agents",
  "slopvac-lsp",
+ "slopvac-migrate",
  "slopvac-model",
+ "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-update",
  "snapbox",
  "tempfile",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2421,6 +2431,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "slopvac-config",
  "slopvac-migrate",
  "slopvac-text",
  "tempfile",
@@ -2432,6 +2443,8 @@ name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "clap",
+ "frontmatter-spans",
  "ignore",
  "insta",
  "saphyr",
@@ -2526,6 +2539,7 @@ dependencies = [
  "jsonschema",
  "serde_json",
  "similar 3.2.1",
+ "slopvac-agents",
  "tempfile",
  "thiserror",
  "toml",
@@ -2588,6 +2602,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slopvac-sanitize",
  "tar",
  "tempfile",
  "thiserror",
@@ -2635,12 +2650,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-sanitize"
+version = "0.0.0"
+
+[[package]]
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
  "serde",
+ "serde_json",
+ "slopvac-config",
+ "tempfile",
  "thiserror",
- "toml",
 ]
 
 [[package]]
@@ -2665,6 +2686,26 @@ dependencies = [
  "serde_json",
  "slopvac-pcre2",
  "thiserror",
+]
+
+[[package]]
+name = "slopvac-update"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "crossbeam-channel",
+ "flate2",
+ "minisign",
+ "minisign-verify",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "ureq",
 ]
 
 [[package]]

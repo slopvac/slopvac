@@ -54,7 +54,7 @@ language = "markdown"
 id = "rule-examples-ai-tells-structure"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/ai-tells-structure.md"
-sha256 = "8d7fee91596ffd0ed9d285ca1790ba6c122667d1ff7df17d2f39ca31d63600d7"
+sha256 = "601513f00167ac9af32c961ae9b4648943062e9b7c0c9e1f1187fd342fc051b4"
 surface = "prose"
 language = "markdown"
 
@@ -62,7 +62,7 @@ language = "markdown"
 id = "rule-examples-docs-discipline"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/docs-discipline.md"
-sha256 = "164702f5ac483a5099e18a2a398b925b29f375c55fe929490701908fafb5ddc8"
+sha256 = "395a9e891c54d30e0a04315070a3dd777c37ee6ebb34e4e931da86cdb25ed2cc"
 surface = "prose"
 language = "markdown"
 
@@ -313,3 +313,107 @@ path = "tests/golden/v3/inputs/formats/sample.js"
 sha256 = "06b1c2c9cd6b83734c42840ec930a40321e2f4152d1484af2488747608438971"
 surface = "code-comments"
 language = "javascript"
+
+[[input]]
+id = "corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de"
+tier = "corpus"
+path = "evals/corpus/adrs/adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de.corpus"
+sha256 = "afad67386e2c18db1143d544141d74897a05d320d17565022475c6cd4380e4d0"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7"
+tier = "corpus"
+path = "evals/corpus/adrs/adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7.corpus"
+sha256 = "81e9ad8ac115094b91294336e56d6968f84cddbbab53269bbf84a36b48c0adbb"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e"
+tier = "corpus"
+path = "evals/corpus/adrs/adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e.corpus"
+sha256 = "644df236663749018f5596493575fa4c968db23d1e5aa726cb29f115c8f5de4a"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736"
+tier = "corpus"
+path = "evals/corpus/adrs/adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736.corpus"
+sha256 = "72205263b2a16e033587276e586c07794ed6f3b1890d56fbf4cc853a633a9269"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f"
+tier = "corpus"
+path = "evals/corpus/adrs/adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f.corpus"
+sha256 = "bb8ff55d5df4b0a3c48770cf7f0058d0e1ac3ce631dbf3ec18330502cfc376b9"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d"
+tier = "corpus"
+path = "evals/corpus/product/product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d.corpus"
+sha256 = "1f4494398733a5bc9166ad360e11858ad007a784f102da39f03cca89eb0fb786"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967"
+tier = "corpus"
+path = "evals/corpus/product/product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967.corpus"
+sha256 = "90a4ef20dab86928906ed621e39fc073aa4836d5657371900e08c8912f63ed0c"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186"
+tier = "corpus"
+path = "evals/corpus/product/product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186.corpus"
+sha256 = "53444d96425585c8a0436e02726b147399cea79097ee9bc05e814aa00285005d"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf"
+tier = "corpus"
+path = "evals/corpus/reference/reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf.corpus"
+sha256 = "87b3ca5dc58f4eec1a75330612b778427fa312658354e0489b1b980465f51d2c"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-reference.rust-lang-reference.src-identifiers-md.521af8"
+tier = "corpus"
+path = "evals/corpus/reference/reference.rust-lang-reference.src-identifiers-md.521af8.corpus"
+sha256 = "e12752abf3b937e4dc2be72d7ab287566205da94f0d3b08f4c010ebc07310716"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4"
+tier = "corpus"
+path = "evals/corpus/tutorials/tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4.corpus"
+sha256 = "38054289fd15e27d84ba607f9f964b49601f1c754d751e044e49dd9c5ad17d94"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c"
+tier = "corpus"
+path = "evals/corpus/tutorials/tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c.corpus"
+sha256 = "e99f741fe04004f236367359f9bf3cb5528581aeaced04a6ae315d736e989c8e"
+surface = "prose"
+language = "markdown"
+
+[[input]]
+id = "corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13"
+tier = "corpus"
+path = "evals/corpus/tutorials/tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13.corpus"
+sha256 = "8a1275d7f5c01b6417fe858da8be51794b5f87406e830ab898f71077ff522915"
+surface = "prose"
+language = "markdown"

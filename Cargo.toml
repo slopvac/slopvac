@@ -75,9 +75,11 @@ slopvac-plugins = { path = "crates/slopvac-plugins" }
 slopvac-pos = { path = "crates/slopvac-pos" }
 slopvac-report = { path = "crates/slopvac-report" }
 slopvac-rules = { path = "crates/slopvac-rules" }
+slopvac-sanitize = { path = "crates/slopvac-sanitize" }
 slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-terms = { path = "crates/slopvac-terms" }
 slopvac-text = { path = "crates/slopvac-text" }
+slopvac-update = { path = "crates/slopvac-update" }
 snapbox = "1.2"
 strsim = "0.11.1"
 tar = { version = "0.4", default-features = false }
@@ -114,12 +116,7 @@ missing_panics_doc = "allow"
 # The skeleton declares every crate before any of them depends on another.
 # Remove a name here when its first dependant lands; cargo-shear then guards it.
 [workspace.metadata.cargo-shear]
-ignored = [
-  "slopvac-agents",
-  "slopvac-config",
-  "slopvac-plugins",
-  "slopvac-styles",
-]
+ignored = ["slopvac-styles"]
 
 [profile.release]
 lto = "thin"

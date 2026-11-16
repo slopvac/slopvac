@@ -1,4 +1,8 @@
 //! The 2.x to 3.0 rename table for rules and categories.
+//!
+//! `tests/fixtures/generate.py` writes `data/renames.toml` from the 2.x ruleset and
+//! the rule converter (docs/contract/config.md, section 5.2). A name with no entry
+//! is unknown, and `migrate` stops on it.
 
 use std::collections::BTreeMap;
 
@@ -11,7 +15,6 @@ const BUNDLED: &str = include_str!("../data/renames.toml");
 /// Maps 2.x rule and category names to their 3.0 qualified names.
 #[derive(Debug, Clone)]
 pub struct RenameTable {
-    default_pack: String,
     rules: BTreeMap<String, String>,
     categories: BTreeMap<String, String>,
 }
@@ -26,67 +29,50 @@ impl RenameTable {
         Self::parse(BUNDLED).expect("bundled rename table parses")
     }
 
-    /// Parse a rename table from TOML text.
+    /// Parse a rename table from TOML text: a `[rules]` and a `[categories]` table
+    /// of 2.x names to 3.0 qualified names.
     pub fn parse(text: &str) -> Result<Self, Error> {
         let doc: DocumentMut = text
             .parse()
             .map_err(|e: toml_edit::TomlError| Error::RenameTable(e.to_string()))?;
-        let default_pack = doc
-            .get("default_pack")
-            .and_then(Item::as_str)
-            .ok_or_else(|| Error::RenameTable("missing default_pack".into()))?
-            .to_owned();
         Ok(Self {
-            default_pack,
-            rules: read_map(&doc, "rules"),
-            categories: read_map(&doc, "categories"),
+            rules: read_map(&doc, "rules")?,
+            categories: read_map(&doc, "categories")?,
         })
     }
 
     /// The 3.0 id for a 2.x rule id, or `None` when the name is unknown.
     #[must_use]
     pub fn rule(&self, name: &str) -> Option<String> {
-        if let Some(mapped) = self.rules.get(name) {
-            return Some(mapped.clone());
-        }
-        is_rule_id(name).then(|| format!("{}:{name}", self.default_pack))
+        self.rules.get(name).cloned()
     }
 
     /// The 3.0 name for a 2.x category, or `None` when the name is unknown.
     #[must_use]
     pub fn category(&self, name: &str) -> Option<String> {
-        if let Some(mapped) = self.categories.get(name) {
-            return Some(mapped.clone());
-        }
-        is_slug(name).then(|| format!("{}:{name}", self.default_pack))
+        self.categories.get(name).cloned()
     }
 }
 
-fn read_map(doc: &DocumentMut, key: &str) -> BTreeMap<String, String> {
-    doc.get(key)
-        .and_then(Item::as_table)
-        .map(|t| {
-            t.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.to_owned(), s.to_owned())))
-                .collect()
+fn read_map(doc: &DocumentMut, key: &str) -> Result<BTreeMap<String, String>, Error> {
+    let table = doc
+        .get(key)
+        .and_then(Item::as_table_like)
+        .ok_or_else(|| Error::RenameTable(format!("missing [{key}] table")))?;
+    table
+        .iter()
+        .map(|(k, v)| {
+            v.as_str()
+                .map(|s| (k.to_owned(), s.to_owned()))
+                .ok_or_else(|| Error::RenameTable(format!("{key}.{k}: expected a string")))
         })
-        .unwrap_or_default()
-}
-
-fn is_slug(s: &str) -> bool {
-    let mut chars = s.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-fn is_rule_id(s: &str) -> bool {
-    s.split_once('.')
-        .is_some_and(|(cat, rule)| is_slug(cat) && is_slug(rule))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::{Legacy, PROFILES, category_of};
 
     #[test]
     fn bundled_table_parses() {
@@ -94,26 +80,63 @@ mod tests {
     }
 
     #[test]
-    fn rule_gets_default_pack() {
+    fn a_2x_rule_moves_into_the_core_pack() {
         let t = RenameTable::bundled();
         assert_eq!(
             t.rule("prose-format.no-unicode-dash").as_deref(),
             Some("core:prose-format.no-unicode-dash")
         );
+        assert_eq!(
+            t.category("prose-format").as_deref(),
+            Some("core:prose-format")
+        );
     }
 
     #[test]
-    fn explicit_entry_wins() {
-        let t = RenameTable::parse("default_pack = \"core\"\n[rules]\n\"a.b\" = \"other:a.c\"\n")
-            .unwrap();
-        assert_eq!(t.rule("a.b").as_deref(), Some("other:a.c"));
-    }
-
-    #[test]
-    fn malformed_names_are_unknown() {
+    fn names_2x_knew_without_a_rule_file_have_entries() {
+        // The generated locale rule and the directive finding keep their names in
+        // the 3.0 engine; `meta` is the category of that finding.
         let t = RenameTable::bundled();
-        assert_eq!(t.rule("Bad Name"), None);
-        assert_eq!(t.rule("nodot"), None);
-        assert_eq!(t.category("Bad.Name"), None);
+        for (old, new) in [
+            ("ste-words.spelling", "core:ste-words.spelling"),
+            ("meta.invalid-suppression", "core:meta.invalid-suppression"),
+        ] {
+            assert_eq!(t.rule(old).as_deref(), Some(new), "{old}");
+        }
+        assert_eq!(t.category("meta").as_deref(), Some("core:meta"));
+    }
+
+    #[test]
+    fn names_without_an_entry_are_unknown() {
+        let t = RenameTable::bundled();
+        assert_eq!(t.rule("prose-craft.no-such-rule"), None);
+        assert_eq!(t.rule("prose-craft"), None);
+        assert_eq!(t.category("no-such-category"), None);
+        assert_eq!(t.category("prose-craft.spacing"), None);
+    }
+
+    #[test]
+    fn a_value_that_is_not_a_string_is_rejected() {
+        let err = RenameTable::parse("[rules]\n\"a.b\" = 1\n[categories]\n").unwrap_err();
+        assert_eq!(err.code(), "migrate-rename-table");
+    }
+
+    #[test]
+    fn every_name_the_legacy_data_uses_has_an_entry() {
+        let t = RenameTable::bundled();
+        let legacy = Legacy::bundled();
+        for qid in legacy.rules.keys() {
+            assert!(t.rule(qid).is_some(), "rule {qid}");
+            assert!(t.category(category_of(qid)).is_some(), "category of {qid}");
+        }
+        for p in PROFILES {
+            let style = legacy.style(p);
+            for name in style.categories.keys() {
+                assert!(t.category(name).is_some(), "{p}: category {name}");
+            }
+            for qid in style.rules.keys() {
+                assert!(t.rule(qid).is_some(), "{p}: rule {qid}");
+            }
+        }
     }
 }

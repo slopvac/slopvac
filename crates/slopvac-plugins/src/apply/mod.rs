@@ -51,6 +51,7 @@ pub mod sensitive;
 
 use std::fmt;
 
+use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
 #[doc(hidden)]
@@ -65,28 +66,28 @@ pub use sensitive::HarnessWarning;
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum ApplyError {
     /// The edit set breaks the position rules or a size cap.
-    #[error("edits refused: {0}")]
+    #[error("edits refused: {}", esc(.0))]
     InvalidEdits(String),
     /// The plan entry is incomplete.
-    #[error("plan refused: {0}")]
+    #[error("plan refused: {}", esc(.0))]
     InvalidPlan(String),
     /// The path is not a safe relative path under the root.
-    #[error("path refused: {0}")]
+    #[error("path refused: {}", esc(.0))]
     PathRefused(String),
     /// The target is a symbolic link or reparse point.
-    #[error("`{0}` is a symbolic link")]
+    #[error("`{}` is a symbolic link", esc(.0))]
     Symlink(String),
     /// The target exists and is not a regular file.
-    #[error("`{0}` is not a regular file")]
+    #[error("`{}` is not a regular file", esc(.0))]
     NotRegularFile(String),
     /// The target has more than one hard link.
-    #[error("`{0}` has more than one hard link")]
+    #[error("`{}` has more than one hard link", esc(.0))]
     Hardlinked(String),
     /// The file no longer holds the bytes the edits were computed against.
-    #[error("`{0}` changed since it was read")]
+    #[error("`{}` changed since it was read", esc(.0))]
     SourceChanged(String),
     /// A denied path was not approved. `needs` lists the paths to approve.
-    #[error("`{path}` is a sensitive path; approve {needs:?} to write it")]
+    #[error("`{}` is a sensitive path; approve {} to write it", esc(.path), quoted(.needs))]
     Sensitive {
         /// Path as the plan names it.
         path: String,
@@ -94,7 +95,7 @@ pub enum ApplyError {
         needs: Vec<String>,
     },
     /// The directory holds an entry that differs from the path only in case.
-    #[error("`{path}` collides with existing `{existing}` when case is ignored")]
+    #[error("`{}` collides with existing `{}` when case is ignored", esc(.path), esc(.existing))]
     CaseCollision {
         /// Path as the plan names it.
         path: String,
@@ -102,21 +103,28 @@ pub enum ApplyError {
         existing: String,
     },
     /// Two plan entries name the same file.
-    #[error("`{0}` appears twice in the plan")]
+    #[error("`{}` appears twice in the plan", esc(.0))]
     DuplicatePath(String),
     /// A merge into an existing file needs a block-marker contract.
-    #[error("merge into existing `{0}` is not supported yet")]
+    #[error("merge into existing `{}` is not supported yet", esc(.0))]
     MergeUnsupported(String),
     /// Writing is not available on Windows yet.
     #[error(
-        "`{0}`: writes are not supported on Windows yet; the file-system layer \
+        "`{}`: writes are not supported on Windows yet; the file-system layer \
          resolves rename, delete and create-directory through absolute paths that a \
-         junction swap can redirect"
+         junction swap can redirect",
+        esc(.0)
     )]
     UnsupportedOnWindows(String),
     /// An operating-system error.
-    #[error("{0}")]
+    #[error("{}", esc(.0))]
     Io(String),
+}
+
+/// ``a`, `b`` with every item escaped: untrusted paths never go through `Debug`.
+fn quoted(items: &[String]) -> String {
+    let items: Vec<String> = items.iter().map(|s| format!("`{}`", esc(s))).collect();
+    items.join(", ")
 }
 
 impl ApplyError {

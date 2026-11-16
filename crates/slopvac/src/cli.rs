@@ -67,7 +67,7 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
+pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
     (
         "terms",
         "Check and list the project terms.",
@@ -90,11 +90,6 @@ pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
     ),
     ("packs", "List installed rule packs.", "slopvac-8l4.9"),
     (
-        "migrate",
-        "Rewrite a 2.x configuration for 3.0.",
-        "slopvac-8l4.2",
-    ),
-    (
         "setup",
         "Install slopvac guidance into agent harnesses.",
         "slopvac-8l4.11",
@@ -103,11 +98,6 @@ pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
         "prime",
         "Print guidance for agents, by topic.",
         "slopvac-8l4.11",
-    ),
-    (
-        "init",
-        "Write 3.0 configuration templates.",
-        "slopvac-8l4.12.8",
     ),
     (
         "onboard",
@@ -313,6 +303,47 @@ fn rules() -> Command {
     with_removed(cmd, &REMOVED_INSPECT_OPTIONS)
 }
 
+fn init() -> Command {
+    let cmd = Command::new("init")
+        .about("Write a commented slopvac.toml and set up agent steering.")
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(ArgAction::SetTrue)
+                .help("Overwrite an existing config file."),
+        )
+        .arg(
+            Arg::new("path")
+                .long("path")
+                .value_name("FILE")
+                .value_parser(value_parser!(std::path::PathBuf))
+                .default_value("slopvac.toml")
+                .help("Config file to write."),
+        )
+        .arg(
+            Arg::new("skip-agents")
+                .long("skip-agents")
+                .action(ArgAction::SetTrue)
+                .help("Write the config only: no steering block and no skill."),
+        )
+        .arg(
+            Arg::new("harness")
+                .long("harness")
+                .value_name("HARNESS")
+                .action(ArgAction::Append)
+                .value_parser(crate::init::harness_names())
+                .help("Set up steering for this harness. Repeatable. Default: agents."),
+        )
+        .arg(
+            Arg::new("no-skills")
+                .long("no-skills")
+                .action(ArgAction::SetTrue)
+                .help("Write the steering blocks but no slopvac-prose skill."),
+        );
+    // Removed in 3.0; `init::run` prints the pointer.
+    with_removed(cmd, &["profile"])
+}
+
 fn doctor() -> Command {
     Command::new("doctor")
         .about("Check the binary, configuration and pack health.")
@@ -321,10 +352,7 @@ fn doctor() -> Command {
 }
 
 fn self_cmd() -> Command {
-    Command::new("self")
-        .about("Manage this installation.")
-        .subcommand_required(true)
-        .subcommand(Command::new("update").about("Update slopvac to the latest release."))
+    slopvac_update::command::command()
 }
 
 fn completions() -> Command {
@@ -384,9 +412,11 @@ pub fn command() -> Command {
         .subcommand(lint())
         .subcommand(explain())
         .subcommand(rules())
+        .subcommand(init())
         .subcommand(doctor())
         .subcommand(self_cmd())
         .subcommand(slopvac_lsp::command())
+        .subcommand(slopvac_migrate::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));

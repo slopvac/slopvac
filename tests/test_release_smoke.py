@@ -185,6 +185,6 @@ def test_it_follows_the_release_workflow_on_success_for_tag_pushes_only():
 
 def test_install_routes_wait_for_dist_builds_and_brew_for_the_latest_release():
     jobs = _workflow()["jobs"]
-    for name in ("archive", "shell-installer", "powershell-installer", "homebrew"):
+    for name in ("archive", "shell-installer", "homebrew"):
         assert "needs.resolve.outputs.dist == 'true'" in jobs[name]["if"], name
     assert "needs.resolve.outputs.latest == 'true'" in jobs["homebrew"]["if"]

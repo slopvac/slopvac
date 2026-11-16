@@ -1,7 +1,7 @@
 //! Structural validation of `slopvac.toml` and the front-matter `slopvac:` block.
 //!
-//! The shapes mirror `schemas/v3/config.schema.json` and
-//! `schemas/v3/frontmatter.schema.json`. The conformance corpus under
+//! The shapes mirror `schemas/v3/config.schema.json`, `schemas/v3/frontmatter.schema.json`
+//! and `schemas/v3/style.schema.json`. The conformance corpus under
 //! `schemas/v3/conformance/` is the shared test of both.
 
 use std::ops::Range;
@@ -397,6 +397,62 @@ pub fn config_shape() -> Shape {
     )
 }
 
+fn is_rel_path(s: &str) -> bool {
+    let drive = s.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        && s.as_bytes().get(1) == Some(&b':');
+    !s.is_empty()
+        && !s.starts_with(['/', '\\'])
+        && !drive
+        && !s.contains('\\')
+        && !s.split('/').any(|seg| seg == "..")
+}
+
+/// The shape of a style preset file.
+#[must_use]
+pub fn style_shape() -> Shape {
+    table(
+        vec![
+            ("schema_version", Shape::Version),
+            ("description", Shape::NonEmptyStr),
+            (
+                "extends",
+                Shape::List {
+                    item: Box::new(reference()),
+                    min_items: 0,
+                    unique: true,
+                },
+            ),
+            (
+                "conflicts",
+                Shape::List {
+                    item: Box::new(reference()),
+                    min_items: 0,
+                    unique: true,
+                },
+            ),
+            ("categories", keyed(category_settings())),
+            ("rules", keyed(rule_level())),
+            (
+                "terms",
+                table(
+                    vec![
+                        ("allow", strings()),
+                        (
+                            "blocklists",
+                            list(Shape::Pattern {
+                                name: "path relative to the style file",
+                                check: is_rel_path,
+                            }),
+                        ),
+                    ],
+                    &[],
+                ),
+            ),
+        ],
+        &["schema_version"],
+    )
+}
+
 /// The shape of the `slopvac:` block of a document's front matter.
 #[must_use]
 pub fn block_shape() -> Shape {
@@ -414,6 +470,18 @@ pub fn block_shape() -> Shape {
         ],
         &["v"],
     )
+}
+
+/// The shape of an inline directive: the front-matter fields, with no version.
+#[must_use]
+pub fn directive_shape() -> Shape {
+    let Shape::Table(mut t) = block_shape() else {
+        unreachable!("the block shape is a table");
+    };
+    t.fields.retain(|(name, _)| *name != "v");
+    t.required.clear();
+    t.scope = Some("an inline directive");
+    Shape::Table(t)
 }
 
 struct Ctx<'a> {
@@ -785,6 +853,17 @@ pub fn validate_config(root: &Node, text: &str) -> Vec<Diagnostic> {
     ctx.out
 }
 
+/// Check a parsed style preset against the style schema.
+#[must_use]
+pub fn validate_style(root: &Node, text: &str) -> Vec<Diagnostic> {
+    let mut ctx = Ctx {
+        text,
+        out: Vec::new(),
+    };
+    check(&mut ctx, root, &style_shape(), &[]);
+    ctx.out
+}
+
 /// Check the `slopvac:` block of a parsed front-matter mapping.
 ///
 /// The front matter must be a mapping, so a sequence, a scalar or an empty document is an
@@ -808,5 +887,21 @@ pub fn validate_frontmatter(root: &Node, text: &str) -> Vec<Diagnostic> {
         return Vec::new();
     };
     check(&mut ctx, block, &block_shape(), &["slopvac".to_owned()]);
+    ctx.out
+}
+
+/// Check the fields of one inline directive, parsed into a table.
+#[must_use]
+pub fn validate_directive(node: &Node, text: &str) -> Vec<Diagnostic> {
+    let mut ctx = Ctx {
+        text,
+        out: Vec::new(),
+    };
+    check(
+        &mut ctx,
+        node,
+        &directive_shape(),
+        &["directive".to_owned()],
+    );
     ctx.out
 }
