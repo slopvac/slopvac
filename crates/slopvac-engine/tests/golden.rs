@@ -227,8 +227,8 @@ const CLASSES: [&str; 12] = [
     "exit",
 ];
 
-/// A finding whose golden span is null had its code spans masked by 2.x, so its matched
-/// text, message and end cannot be proved: both sides drop them.
+/// A finding whose golden span is null had its code spans masked by 2.x, so its end position
+/// cannot be proved: both sides drop the end and the span. Every other fact is compared.
 fn mask(want: &mut Value, got: &mut Value) {
     let findings = want["document"]["findings"].as_array_mut().unwrap();
     let masked: Vec<(String, String, String)> = findings
@@ -238,7 +238,7 @@ fn mask(want: &mut Value, got: &mut Value) {
         .collect();
     let blank = |f: &mut Value| {
         let o = f.as_object_mut().unwrap();
-        for k in ["matched_text", "message", "span", "end_line", "end_column"] {
+        for k in ["span", "end_line", "end_column"] {
             o.insert(k.into(), Value::Null);
         }
     };
@@ -289,7 +289,7 @@ fn sorted(doc: &Value) -> Vec<(String, Value)> {
 /// reports. An empty object means the two agree.
 ///
 /// - `missing`: golden findings that Rust does not report (identity only);
-/// - `extra`: Rust findings that the golden does not hold;
+/// - `extra`: Rust findings that the golden does not hold, with every fact;
 /// - `changed`: findings with the same identity whose `end`, `message`, `ai_signal` or
 ///   `replacement` differ, with Rust's values;
 /// - `document`: the scalar facts that differ, with Rust's values; `categories` holds the
@@ -328,7 +328,8 @@ fn differences(want: &Value, got: &Value) -> serde_json::Map<String, Value> {
             missing.push(identity(&f));
         }
     }
-    extra.extend(right.into_iter().map(|(_, g)| identity(&g)));
+    // An extra finding is recorded whole, so a change to any of its facts is a difference.
+    extra.extend(right.into_iter().map(|(_, g)| g));
     for (name, list) in [("missing", missing), ("extra", extra), ("changed", changed)] {
         if !list.is_empty() {
             out.insert(name.to_owned(), Value::Array(list));
@@ -643,4 +644,103 @@ fn an_empty_report_is_a_difference() {
     let diff = differences(&want, &got);
     assert_eq!(diff["missing"].as_array().unwrap().len(), 3);
     assert!(diff.contains_key("document"));
+}
+
+fn base_pair() -> (Value, Value) {
+    let want = read_json(&root().join("tests/golden/v3/parity/normal/issue-254.json"));
+    let got = want["document"].clone();
+    (want, got)
+}
+
+fn set_first(doc: &mut Value, key: &str, value: Value) {
+    doc["findings"][0][key] = value;
+}
+
+#[test]
+fn identical_documents_have_no_difference() {
+    let (want, got) = base_pair();
+    assert!(differences(&want, &got).is_empty());
+}
+
+/// A change to any fact of a finding the golden also holds is recorded under `changed`.
+#[test]
+fn a_changed_fact_of_a_matched_finding_is_a_difference() {
+    for (key, value) in [
+        ("message", json!("other")),
+        ("replacement", json!("other")),
+        ("ai_signal", json!("strong")),
+        ("end_column", json!(999)),
+    ] {
+        let (want, mut got) = base_pair();
+        set_first(&mut got, key, value);
+        assert!(differences(&want, &got).contains_key("changed"), "{key}");
+    }
+}
+
+/// An extra finding is recorded whole: a changed fact makes a different record.
+#[test]
+fn a_changed_fact_of_an_extra_finding_changes_the_record() {
+    let (mut want, got) = base_pair();
+    want["document"]["findings"]
+        .as_array_mut()
+        .unwrap()
+        .remove(0);
+    let recorded = differences(&want, &got);
+    assert_eq!(recorded["extra"].as_array().unwrap().len(), 1);
+    for (key, value) in [
+        ("message", json!("other")),
+        ("replacement", json!("other")),
+        ("matched_text", json!("other")),
+        ("end_column", json!(999)),
+        ("span", json!({"start": 1, "end": 2})),
+    ] {
+        let mut changed = got.clone();
+        set_first(&mut changed, key, value);
+        assert_ne!(differences(&want, &changed), recorded, "{key}");
+    }
+}
+
+/// 2.x masks the end of a finding with code spans; the rest of that finding is still compared.
+#[test]
+fn a_masked_finding_is_compared_except_for_its_end() {
+    let (mut want, got) = base_pair();
+    for key in ["span", "end_line", "end_column"] {
+        set_first(&mut want["document"], key, Value::Null);
+    }
+    let masked = |want: &Value, got: &Value| {
+        let (mut want, mut got) = (want.clone(), got.clone());
+        mask(&mut want, &mut got);
+        differences(&want, &got)
+    };
+    assert!(masked(&want, &got).is_empty());
+    let mut other_end = got.clone();
+    set_first(&mut other_end, "end_column", json!(999));
+    assert!(masked(&want, &other_end).is_empty());
+    for (key, value) in [("message", json!("other")), ("replacement", json!("other"))] {
+        let mut changed = got.clone();
+        set_first(&mut changed, key, value);
+        assert!(!masked(&want, &changed).is_empty(), "{key}");
+    }
+}
+
+/// 2.x loses the matched text of a sentence with inline code followed by a parenthesis and
+/// reports it empty. The native finding must carry the whole sentence, once.
+#[test]
+fn a_sentence_with_inline_code_and_a_parenthesis_matches_whole() {
+    let text = "Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot.\n";
+    let doc = legacy_engine("normal")
+        .lint(&Input::markdown("insta.md", text))
+        .unwrap();
+    let hits: Vec<&str> = doc
+        .findings
+        .iter()
+        .filter(|f| f.rule_id.as_str() == "core:ste-procedural.condition-after-command")
+        .map(|f| f.matched_text.as_str())
+        .collect();
+    assert_eq!(
+        hits,
+        [
+            "Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot."
+        ]
+    );
 }
