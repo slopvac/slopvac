@@ -1,45 +1,40 @@
-//! Cargo features pick which grammars a build carries.
+//! Cargo features pick which languages use a tree-sitter grammar.
 
-use slopvac_comments::{Language, extract};
+use slopvac_comments::{Backend, Language, extract};
 
 #[test]
-fn a_language_is_enabled_exactly_when_its_feature_is() {
-    assert_eq!(Language::Python.is_enabled(), cfg!(feature = "lang-python"));
-    assert_eq!(Language::Rust.is_enabled(), cfg!(feature = "lang-rust"));
-    assert_eq!(
-        Language::Tsx.is_enabled(),
-        cfg!(feature = "lang-typescript")
-    );
-}
-
-#[cfg(feature = "lang-python")]
-#[test]
-fn an_enabled_language_extracts() {
-    assert_eq!(
-        extract(Language::Python, "# hi\n").expect("extracts").len(),
-        1
-    );
-}
-
-#[cfg(not(feature = "lang-go"))]
-#[test]
-fn a_disabled_language_names_the_feature_to_enable() {
-    let error = extract(Language::Go, "// hi\n").expect_err("not built");
-    assert!(
-        matches!(
-            error,
-            slopvac_comments::ExtractError::Disabled {
-                feature: "lang-go",
-                ..
-            }
-        ),
-        "{error:?}"
-    );
+fn a_language_uses_tree_sitter_only_when_its_feature_is_on() {
+    for (language, enabled) in [
+        (Language::C, cfg!(feature = "lang-c")),
+        (Language::Go, cfg!(feature = "lang-go")),
+        (Language::Java, cfg!(feature = "lang-java")),
+        (Language::Proto, cfg!(feature = "lang-proto")),
+        (Language::Clojure, cfg!(feature = "lang-clojure")),
+    ] {
+        let want = if enabled {
+            Backend::TreeSitter
+        } else {
+            Backend::Lexer
+        };
+        assert_eq!(language.backend(), want, "{language:?}");
+    }
 }
 
 #[test]
-fn every_language_names_its_own_feature() {
+fn every_other_language_uses_the_lexer_in_every_build() {
     for language in Language::all() {
-        assert!(language.feature().starts_with("lang-"), "{language:?}");
+        if !matches!(
+            language,
+            Language::C | Language::Go | Language::Java | Language::Proto | Language::Clojure
+        ) {
+            assert_eq!(language.backend(), Backend::Lexer, "{language:?}");
+        }
+    }
+}
+
+#[test]
+fn every_language_extracts_in_every_build() {
+    for language in Language::all() {
+        assert!(extract(language, "x\n").is_ok(), "{language:?}");
     }
 }

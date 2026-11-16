@@ -1,9 +1,8 @@
-#![cfg(feature = "all-languages")]
 //! Every character of a fragment maps back to its own bytes in the source.
 
 mod common;
 
-use common::{FIXTURES, fragments};
+use common::{FIXTURES, fragments, fragments_lexical};
 use slopvac_comments::{Fragment, Language, TokenKind};
 
 /// Extra sources that stress offsets: line endings, multi-byte text, BOM, banners.
@@ -22,8 +21,13 @@ const EDGE_SOURCES: &[(Language, &str)] = &[
 ];
 
 fn check(language: Language, source: &str) {
+    check_all(language, source, fragments(language, source));
+    check_all(language, source, fragments_lexical(language, source));
+}
+
+fn check_all(language: Language, source: &str, fragments: Vec<Fragment>) {
     let mut last_end = 0;
-    for fragment in fragments(language, source) {
+    for fragment in fragments {
         check_fragment(source, &fragment, language);
         let span = fragment.comment_span();
         assert!(
@@ -123,14 +127,4 @@ fn byte_offsets_after_a_bom_count_the_bom() {
     let span = fragment.projection().span_for_range(0, 2);
     // BOM is bytes 0..3, "// " is 3..6, "hi" is 6..8.
     assert_eq!((span.start(), span.end()), (6, 8));
-}
-
-#[test]
-fn a_docstring_maps_past_its_quotes_and_indentation() {
-    let source = "def f():\n    \"\"\"One\n    two\n    \"\"\"\n";
-    let fragment = &fragments(Language::Python, source)[0];
-    assert_eq!(fragment.text(), "One two");
-    let span = fragment.projection().span_for_range(0, 3);
-    assert_eq!(&source[span.start()..span.end()], "One");
-    assert_eq!((span.start(), span.end()), (16, 19));
 }

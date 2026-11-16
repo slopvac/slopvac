@@ -1,5 +1,12 @@
-//! The languages 2.x read comments from, their grammars and their comment delimiters.
+//! The languages 2.x read comments from, and the comment and string syntax of each.
 
+#[cfg(any(
+    feature = "lang-c",
+    feature = "lang-go",
+    feature = "lang-java",
+    feature = "lang-proto",
+    feature = "lang-clojure"
+))]
 use tree_sitter::Language as Grammar;
 
 /// A source language whose comments can be extracted.
@@ -73,7 +80,6 @@ pub enum Language {
     Toml,
 }
 
-/// Every language, in declaration order.
 const ALL: [Language; 31] = [
     Language::Python,
     Language::JavaScript,
@@ -107,6 +113,15 @@ const ALL: [Language; 31] = [
     Language::Dart,
     Language::Toml,
 ];
+
+/// What reads a language's comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Backend {
+    /// The pure-Rust lexer. It links no C code and is the default.
+    Lexer,
+    /// A tree-sitter grammar. Only grammars without an external scanner are linked.
+    TreeSitter,
+}
 
 impl Language {
     /// Every language.
@@ -157,8 +172,8 @@ impl Language {
         }
     }
 
-    /// Pick the grammar variant a file needs. A `.tsx` file selects [`Language::Tsx`];
-    /// every other pair is unchanged.
+    /// Pick the dialect a file needs. A `.tsx` file selects [`Language::Tsx`]; every
+    /// other pair is unchanged.
     #[must_use]
     pub fn refine(self, file_name: &str) -> Self {
         let tsx = file_name
@@ -171,124 +186,56 @@ impl Language {
         }
     }
 
-    /// The cargo feature that builds this language's grammar, such as `lang-python`.
+    /// The backend [`crate::extract()`] uses for this language in this build.
+    ///
+    /// The lexer reads every language. A tree-sitter grammar replaces it for a language
+    /// whose grammar has no external scanner and whose `lang-*` feature is on. Every
+    /// other grammar ships C scanner code that reads and writes raw memory, so none is
+    /// linked.
     #[must_use]
-    pub const fn feature(self) -> &'static str {
+    pub fn backend(self) -> Backend {
         match self {
-            Self::Python => "lang-python",
-            Self::JavaScript => "lang-javascript",
-            Self::TypeScript | Self::Tsx => "lang-typescript",
-            Self::Rust => "lang-rust",
-            Self::Go => "lang-go",
-            Self::Java => "lang-java",
-            Self::C => "lang-c",
-            Self::Cpp => "lang-cpp",
-            Self::CSharp => "lang-csharp",
-            Self::Ruby => "lang-ruby",
-            Self::Php => "lang-php",
-            Self::Swift => "lang-swift",
-            Self::Kotlin => "lang-kotlin",
-            Self::Scala => "lang-scala",
-            Self::Shell => "lang-shell",
-            Self::Lua => "lang-lua",
-            Self::Perl => "lang-perl",
-            Self::R => "lang-r",
-            Self::Elixir => "lang-elixir",
-            Self::Haskell => "lang-haskell",
-            Self::FSharp => "lang-fsharp",
-            Self::Julia => "lang-julia",
-            Self::PowerShell => "lang-powershell",
-            Self::Proto => "lang-proto",
-            Self::Css => "lang-css",
-            Self::Scss => "lang-scss",
-            Self::Less => "lang-less",
-            Self::Clojure => "lang-clojure",
-            Self::Dart => "lang-dart",
-            Self::Toml => "lang-toml",
+            Self::C if cfg!(feature = "lang-c") => Backend::TreeSitter,
+            Self::Go if cfg!(feature = "lang-go") => Backend::TreeSitter,
+            Self::Java if cfg!(feature = "lang-java") => Backend::TreeSitter,
+            Self::Proto if cfg!(feature = "lang-proto") => Backend::TreeSitter,
+            Self::Clojure if cfg!(feature = "lang-clojure") => Backend::TreeSitter,
+            _ => Backend::Lexer,
         }
     }
 
-    /// Whether this build includes the grammar. Build with `--no-default-features` and
-    /// pick `lang-*` features to trim the binary.
-    #[must_use]
-    pub fn is_enabled(self) -> bool {
-        self.grammar().is_some()
-    }
-
-    #[allow(unreachable_patterns)] // Every arm is live only with `all-languages`.
+    /// The tree-sitter grammar, when the build links one.
+    #[cfg(any(
+        feature = "lang-c",
+        feature = "lang-go",
+        feature = "lang-java",
+        feature = "lang-proto",
+        feature = "lang-clojure"
+    ))]
     pub(crate) fn grammar(self) -> Option<Grammar> {
         match self {
-            #[cfg(feature = "lang-python")]
-            Self::Python => Some(tree_sitter_python::LANGUAGE.into()),
-            #[cfg(feature = "lang-javascript")]
-            Self::JavaScript => Some(tree_sitter_javascript::LANGUAGE.into()),
-            #[cfg(feature = "lang-typescript")]
-            Self::TypeScript => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-            #[cfg(feature = "lang-typescript")]
-            Self::Tsx => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
-            #[cfg(feature = "lang-rust")]
-            Self::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
+            #[cfg(feature = "lang-c")]
+            Self::C => Some(tree_sitter_c::LANGUAGE.into()),
             #[cfg(feature = "lang-go")]
             Self::Go => Some(tree_sitter_go::LANGUAGE.into()),
             #[cfg(feature = "lang-java")]
             Self::Java => Some(tree_sitter_java::LANGUAGE.into()),
-            #[cfg(feature = "lang-c")]
-            Self::C => Some(tree_sitter_c::LANGUAGE.into()),
-            #[cfg(feature = "lang-cpp")]
-            Self::Cpp => Some(tree_sitter_cpp::LANGUAGE.into()),
-            #[cfg(feature = "lang-csharp")]
-            Self::CSharp => Some(tree_sitter_c_sharp::LANGUAGE.into()),
-            #[cfg(feature = "lang-ruby")]
-            Self::Ruby => Some(tree_sitter_ruby::LANGUAGE.into()),
-            #[cfg(feature = "lang-php")]
-            Self::Php => Some(tree_sitter_php::LANGUAGE_PHP.into()),
-            #[cfg(feature = "lang-swift")]
-            Self::Swift => Some(tree_sitter_swift::LANGUAGE.into()),
-            #[cfg(feature = "lang-kotlin")]
-            Self::Kotlin => Some(tree_sitter_kotlin_ng::LANGUAGE.into()),
-            #[cfg(feature = "lang-scala")]
-            Self::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
-            #[cfg(feature = "lang-shell")]
-            Self::Shell => Some(tree_sitter_bash::LANGUAGE.into()),
-            #[cfg(feature = "lang-lua")]
-            Self::Lua => Some(tree_sitter_lua::LANGUAGE.into()),
-            #[cfg(feature = "lang-perl")]
-            Self::Perl => Some(tree_sitter_perl::LANGUAGE.into()),
-            #[cfg(feature = "lang-r")]
-            Self::R => Some(tree_sitter_r::LANGUAGE.into()),
-            #[cfg(feature = "lang-elixir")]
-            Self::Elixir => Some(tree_sitter_elixir::LANGUAGE.into()),
-            #[cfg(feature = "lang-haskell")]
-            Self::Haskell => Some(tree_sitter_haskell::LANGUAGE.into()),
-            #[cfg(feature = "lang-fsharp")]
-            Self::FSharp => Some(tree_sitter_fsharp::LANGUAGE_FSHARP.into()),
-            #[cfg(feature = "lang-julia")]
-            Self::Julia => Some(tree_sitter_julia::LANGUAGE.into()),
-            #[cfg(feature = "lang-powershell")]
-            Self::PowerShell => Some(tree_sitter_powershell::LANGUAGE.into()),
             #[cfg(feature = "lang-proto")]
             Self::Proto => Some(tree_sitter_proto::LANGUAGE.into()),
-            #[cfg(feature = "lang-css")]
-            Self::Css => Some(tree_sitter_css::LANGUAGE.into()),
-            #[cfg(feature = "lang-scss")]
-            Self::Scss => Some(tree_sitter_scss::language()),
-            #[cfg(feature = "lang-less")]
-            Self::Less => Some(tree_sitter_less::language()),
             #[cfg(feature = "lang-clojure")]
             Self::Clojure => Some(tree_sitter_clojure_orchard::LANGUAGE.into()),
-            #[cfg(feature = "lang-dart")]
-            Self::Dart => Some(tree_sitter_dart::LANGUAGE.into()),
-            #[cfg(feature = "lang-toml")]
-            Self::Toml => Some(tree_sitter_toml_ng::LANGUAGE.into()),
             _ => None,
         }
     }
 
     pub(crate) const fn syntax(self) -> &'static Syntax {
         match self {
-            Self::Python | Self::Ruby | Self::Shell | Self::Perl | Self::Elixir | Self::Toml => {
-                &HASH
-            }
+            Self::Python => &PYTHON,
+            Self::Ruby => &RUBY,
+            Self::Shell => &SHELL,
+            Self::Perl => &PERL,
+            Self::Elixir => &ELIXIR,
+            Self::Toml => &TOML,
             Self::R => &R,
             Self::Julia => &JULIA,
             Self::PowerShell => &POWERSHELL,
@@ -296,24 +243,19 @@ impl Language {
             Self::Haskell => &HASKELL,
             Self::FSharp => &FSHARP,
             Self::Php => &PHP,
-            Self::Clojure => &SEMICOLON,
+            Self::Clojure => &CLOJURE,
             Self::Css => &CSS,
-            Self::JavaScript
-            | Self::TypeScript
-            | Self::Tsx
-            | Self::Rust
-            | Self::Go
-            | Self::Java
-            | Self::C
-            | Self::Cpp
-            | Self::CSharp
-            | Self::Swift
-            | Self::Kotlin
-            | Self::Scala
-            | Self::Proto
-            | Self::Scss
-            | Self::Less
-            | Self::Dart => &C_LIKE,
+            Self::C | Self::Cpp => &C,
+            Self::CSharp => &CSHARP,
+            Self::Java => &JAVA,
+            Self::Go => &GO,
+            Self::Rust => &RUST,
+            Self::Swift => &SWIFT,
+            Self::Kotlin => &KOTLIN,
+            Self::Scala => &SCALA,
+            Self::JavaScript | Self::TypeScript | Self::Tsx => &JAVASCRIPT,
+            Self::Dart => &DART,
+            Self::Proto | Self::Scss | Self::Less => &PROTO,
         }
     }
 }
@@ -321,22 +263,42 @@ impl Language {
 /// How a block comment is delimited.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Block {
-    /// Fixed open and close strings. `stars` means a `*` run follows the opener and
-    /// precedes the closer, and a leading `*` column decorates the inner lines.
+    /// Fixed open and close strings.
     Fixed {
         open: &'static str,
         close: &'static str,
+        /// A `*` run follows the opener and precedes the closer, and a leading `*`
+        /// column decorates the inner lines.
         stars: bool,
+        /// The comment nests: each opener inside it needs its own closer.
+        nested: bool,
+        /// Opener and closer count only at the start of a line (`=begin`, `=end`).
+        line_start: bool,
     },
     /// Lua long brackets: `--[[ ]]`, `--[==[ ]==]`.
     Lua,
 }
 
-/// The comment delimiters of one language family.
+/// A string form. Code inside it is not a comment.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Quote {
+    pub(crate) delim: &'static str,
+    /// The string may run over line ends. Otherwise it ends at the end of its line
+    /// unless a backslash escapes the terminator.
+    pub(crate) multiline: bool,
+    /// `'` opens a string only when a one-character literal follows (`'x'`, `'\n'`).
+    /// This keeps Rust lifetimes, C++ digit separators and Haskell primes from
+    /// swallowing the rest of the line.
+    pub(crate) char_literal: bool,
+}
+
+/// The comment and string delimiters of one language.
 #[derive(Debug)]
 pub(crate) struct Syntax {
     /// Line comment markers, checked in order.
     pub(crate) line: &'static [&'static str],
+    /// Markers that start a line comment only at the very start of the file.
+    pub(crate) shebang: &'static [&'static str],
     /// Characters that may follow a line marker run and belong to it (`//!`).
     pub(crate) line_suffix: &'static [char],
     /// Line markers (marker run plus suffix) that start a doc comment.
@@ -344,121 +306,157 @@ pub(crate) struct Syntax {
     /// Characters that open a doc comment when they follow the marker and its blanks
     /// (Haskell's `-- |`). The leader is part of the decoration.
     pub(crate) leaders: &'static [char],
-    /// Block forms, checked in order. These win over line forms.
+    /// A backslash before the line end continues a line comment onto the next line.
+    pub(crate) continuation: bool,
+    /// Block forms, checked in order, before line forms.
     pub(crate) blocks: &'static [Block],
+    /// String forms, checked in order. List a longer delimiter before its prefix.
+    pub(crate) strings: &'static [Quote],
 }
 
-const STAR_BLOCK: Block = Block::Fixed {
-    open: "/*",
-    close: "*/",
-    stars: true,
+const fn quote(delim: &'static str, multiline: bool) -> Quote {
+    Quote {
+        delim,
+        multiline,
+        char_literal: false,
+    }
+}
+
+const DQ: Quote = quote("\"", false);
+const SQ: Quote = quote("'", false);
+const MDQ: Quote = quote("\"", true);
+const MSQ: Quote = quote("'", true);
+const BT: Quote = quote("`", true);
+const TDQ: Quote = quote("\"\"\"", true);
+const TSQ: Quote = quote("'''", true);
+const CHAR: Quote = Quote {
+    delim: "'",
+    multiline: false,
+    char_literal: true,
 };
 
-const C_LIKE: Syntax = Syntax {
-    // `#!` is the shebang that JavaScript, Rust and Kotlin grammars give a node of its own.
-    line: &["//", "#!"],
-    line_suffix: &['!'],
-    line_doc: &["///", "//!"],
-    leaders: &[],
-    blocks: &[STAR_BLOCK],
-};
+const fn star(nested: bool) -> Block {
+    Block::Fixed {
+        open: "/*",
+        close: "*/",
+        stars: true,
+        nested,
+        line_start: false,
+    }
+}
 
-const CSS: Syntax = Syntax {
-    line: &[],
-    line_suffix: &[],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[STAR_BLOCK],
-};
+const fn plain(open: &'static str, close: &'static str, nested: bool) -> Block {
+    Block::Fixed {
+        open,
+        close,
+        stars: false,
+        nested,
+        line_start: false,
+    }
+}
 
-const PHP: Syntax = Syntax {
-    line: &["//", "#"],
-    line_suffix: &[],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[STAR_BLOCK],
-};
+const SLASH_DOC: &[&str] = &["///", "//!"];
+const SHEBANG: &[&str] = &["#!"];
 
-const HASH: Syntax = Syntax {
-    line: &["#"],
-    line_suffix: &['!'],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[Block::Fixed {
+const fn syntax(
+    line: &'static [&'static str],
+    blocks: &'static [Block],
+    strings: &'static [Quote],
+) -> Syntax {
+    Syntax {
+        line,
+        shebang: &[],
+        line_suffix: &[],
+        line_doc: &[],
+        leaders: &[],
+        continuation: false,
+        blocks,
+        strings,
+    }
+}
+
+/// A C-family syntax with `//`, `///`, `//!` and a star block.
+const fn c_like(blocks: &'static [Block], strings: &'static [Quote]) -> Syntax {
+    Syntax {
+        line_suffix: &['!'],
+        line_doc: SLASH_DOC,
+        ..syntax(&["//"], blocks, strings)
+    }
+}
+
+const C: Syntax = Syntax {
+    continuation: true,
+    ..c_like(&[star(false)], &[DQ, CHAR])
+};
+const CSHARP: Syntax = c_like(&[star(false)], &[TDQ, DQ, CHAR]);
+const JAVA: Syntax = c_like(&[star(false)], &[TDQ, DQ, CHAR]);
+const GO: Syntax = c_like(&[star(false)], &[BT, DQ, CHAR]);
+const RUST: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(true)], &[DQ, CHAR])
+};
+const SWIFT: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(true)], &[TDQ, DQ])
+};
+const KOTLIN: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(true)], &[TDQ, DQ, CHAR])
+};
+const SCALA: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(true)], &[TDQ, DQ, CHAR])
+};
+const JAVASCRIPT: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(false)], &[BT, DQ, SQ])
+};
+const DART: Syntax = Syntax {
+    shebang: SHEBANG,
+    ..c_like(&[star(false)], &[TDQ, TSQ, DQ, SQ])
+};
+const PROTO: Syntax = c_like(&[star(false)], &[DQ, SQ]);
+const PHP: Syntax = syntax(&["//", "#"], &[star(false)], &[MDQ, MSQ]);
+const CSS: Syntax = syntax(&[], &[star(false)], &[DQ, SQ]);
+
+const HASH_SUFFIX: &[char] = &['!'];
+
+const fn hash(blocks: &'static [Block], strings: &'static [Quote]) -> Syntax {
+    Syntax {
+        line_suffix: HASH_SUFFIX,
+        ..syntax(&["#"], blocks, strings)
+    }
+}
+
+const PYTHON: Syntax = hash(&[], &[TDQ, TSQ, DQ, SQ]);
+const SHELL: Syntax = hash(&[], &[MDQ, MSQ, BT]);
+const PERL: Syntax = hash(&[], &[MDQ, MSQ]);
+const ELIXIR: Syntax = hash(&[], &[TDQ, TSQ, MDQ, MSQ]);
+const TOML: Syntax = hash(&[], &[TDQ, TSQ, DQ, SQ]);
+const RUBY: Syntax = hash(
+    &[Block::Fixed {
         open: "=begin",
         close: "=end",
         stars: false,
+        nested: false,
+        line_start: true,
     }],
-};
-
+    &[MDQ, MSQ, BT],
+);
 const R: Syntax = Syntax {
-    line: &["#"],
     line_suffix: &['\'', '!'],
     line_doc: &["#'"],
-    leaders: &[],
-    blocks: &[],
+    ..syntax(&["#"], &[], &[MDQ, MSQ])
 };
-
-const JULIA: Syntax = Syntax {
-    line: &["#"],
-    line_suffix: &['!'],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[Block::Fixed {
-        open: "#=",
-        close: "=#",
-        stars: false,
-    }],
-};
-
-const POWERSHELL: Syntax = Syntax {
-    line: &["#"],
-    line_suffix: &['!'],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[Block::Fixed {
-        open: "<#",
-        close: "#>",
-        stars: false,
-    }],
-};
-
-const LUA: Syntax = Syntax {
-    line: &["--"],
-    line_suffix: &[],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[Block::Lua],
-};
-
+const JULIA: Syntax = hash(&[plain("#=", "=#", true)], &[TDQ, DQ, CHAR]);
+const POWERSHELL: Syntax = hash(&[plain("<#", "#>", false)], &[MDQ, MSQ]);
+const LUA: Syntax = syntax(&["--"], &[Block::Lua], &[DQ, SQ]);
 const HASKELL: Syntax = Syntax {
-    line: &["--"],
-    line_suffix: &[],
-    line_doc: &[],
     leaders: &['|', '^'],
-    blocks: &[Block::Fixed {
-        open: "{-",
-        close: "-}",
-        stars: false,
-    }],
+    ..syntax(&["--"], &[plain("{-", "-}", true)], &[DQ, CHAR])
 };
-
 const FSHARP: Syntax = Syntax {
-    line: &["//"],
-    line_suffix: &[],
     line_doc: &["///"],
-    leaders: &[],
-    blocks: &[Block::Fixed {
-        open: "(*",
-        close: "*)",
-        stars: false,
-    }],
+    ..syntax(&["//"], &[plain("(*", "*)", true)], &[TDQ, DQ, CHAR])
 };
-
-const SEMICOLON: Syntax = Syntax {
-    line: &[";"],
-    line_suffix: &[],
-    line_doc: &[],
-    leaders: &[],
-    blocks: &[],
-};
+const CLOJURE: Syntax = syntax(&[";"], &[], &[MDQ]);

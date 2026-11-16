@@ -1,13 +1,11 @@
-//! The tree walk: find comment nodes, strip them, group line comments into fragments.
+//! Extraction entry points, and the stripping and grouping every backend shares.
 
-use std::borrow::Cow;
-use std::ops::{ControlFlow, Range};
+use std::ops::Range;
 
 use thiserror::Error;
-use tree_sitter::{LanguageError, Node, ParseOptions, Parser};
 
-use crate::docstring::Finder;
-use crate::language::Language;
+use crate::language::{Language, Syntax};
+use crate::lexer;
 use crate::span::{Projection, Span, TokenKind};
 use crate::strip::{self, Decorated};
 use crate::{CommentKind, Fragment};
@@ -16,20 +14,12 @@ use crate::{CommentKind, Fragment};
 #[derive(Debug, Error)]
 pub enum ExtractError {
     /// The grammar was built for another tree-sitter ABI than the one linked.
-    #[error("the {language} grammar cannot be loaded: {source}")]
+    #[error("the {language} grammar cannot be loaded: {reason}")]
     Grammar {
         /// The language whose grammar failed.
         language: &'static str,
         /// The tree-sitter error.
-        source: LanguageError,
-    },
-    /// The build does not include the grammar. Enable the language's cargo feature.
-    #[error("the {language} grammar is not in this build; enable the `{feature}` feature")]
-    Disabled {
-        /// The language that was requested.
-        language: &'static str,
-        /// The cargo feature that adds it.
-        feature: &'static str,
+        reason: String,
     },
     /// tree-sitter returned no tree.
     #[error("tree-sitter produced no syntax tree for the {language} source")]
@@ -53,12 +43,12 @@ pub enum ExtractError {
         /// The budget, in tree-sitter progress checks (one per 100 parser operations).
         budget: usize,
     },
-    /// The lexer read more bytes than the budget allows, so the file is incomplete.
+    /// The parser read more bytes than the budget allows, so the file is incomplete.
     #[error("parsing the {language} source passed its read budget of {budget} bytes")]
     ReadBudget {
         /// The language that was parsed.
         language: &'static str,
-        /// The budget, in bytes handed to the lexer across all reads.
+        /// The budget, in bytes handed to the parser across all reads.
         budget: usize,
     },
     /// Walking the syntax tree used more steps than the budget allows.
@@ -81,11 +71,12 @@ pub struct Limits {
     /// at most `len / 60`, so the default leaves a wide margin and still stops a
     /// quadratic parse, such as a long run of unterminated `/*` in C, early.
     pub max_parse_checks: Option<usize>,
-    /// The most bytes the lexer may be handed in total, counting every re-read. `None`
-    /// allows `64 * len + 64 KiB`. A lexer that scans to the end of the file after each
-    /// of many unmatched `/*` reads far more than that.
+    /// The most bytes the tree-sitter parser may be handed in total, counting every
+    /// re-read. `None` allows `64 * len + 64 KiB`. A scanner that reads to the end of
+    /// the file after each of many unterminated `/*` reads far more than that.
     pub max_read_bytes: Option<usize>,
-    /// The most node visits the walk may use. `None` allows `1024 + 8 * len`.
+    /// The most steps the walk may use: tree nodes for tree-sitter, scan iterations for
+    /// the lexer. `None` allows `1024 + 8 * len`.
     pub max_walk_steps: Option<usize>,
 }
 
@@ -103,11 +94,11 @@ impl Default for Limits {
 /// How much work an extraction used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stats {
-    /// Progress checks tree-sitter made while parsing.
+    /// Progress checks tree-sitter made while parsing. Zero for the lexer.
     pub parse_checks: usize,
-    /// Bytes handed to the lexer, counting re-reads.
+    /// Bytes handed to the tree-sitter parser, counting re-reads. Zero for the lexer.
     pub read_bytes: usize,
-    /// Node visits and child inspections in the walk.
+    /// Tree nodes visited, or lexer iterations.
     pub walk_steps: usize,
 }
 
@@ -120,191 +111,92 @@ pub struct Extraction {
     pub stats: Stats,
 }
 
-/// The most bytes one read hands to the lexer.
-const READ_CHUNK: usize = 4096;
-
-/// A step counter with a ceiling.
-pub(crate) struct Meter {
-    steps: usize,
-    max: usize,
-}
-
-impl Meter {
-    pub(crate) fn step(&mut self) -> Result<(), ExtractError> {
-        self.steps += 1;
-        if self.steps > self.max {
-            return Err(ExtractError::WalkBudget { budget: self.max });
-        }
-        Ok(())
-    }
-}
-
-/// Extract the comment and docstring prose of `source` within the default [`Limits`].
+/// Extract the comment prose of `source` within the default [`Limits`], with the
+/// backend [`Language::backend`] names.
 ///
 /// Fragments come in source order. Source that does not parse cleanly still yields
-/// the comments tree-sitter recognised.
+/// the comments the backend recognised.
 pub fn extract(language: Language, source: &str) -> Result<Vec<Fragment>, ExtractError> {
     extract_with(language, source, &Limits::default()).map(|extraction| extraction.fragments)
 }
 
 /// Extract with explicit [`Limits`] and report the work used.
 ///
-/// The call parses once and walks the tree once, so its cost is linear in the size of
-/// the source.
+/// The call scans or parses once, so its cost is linear in the size of the source.
 pub fn extract_with(
     language: Language,
     source: &str,
     limits: &Limits,
 ) -> Result<Extraction, ExtractError> {
+    check_size(source, limits)?;
+    #[cfg(any(
+        feature = "lang-c",
+        feature = "lang-go",
+        feature = "lang-java",
+        feature = "lang-proto",
+        feature = "lang-clojure"
+    ))]
+    if language.backend() == crate::Backend::TreeSitter {
+        return crate::treesitter::extract(language, source, limits);
+    }
+    extract_lexical(language, source, limits)
+}
+
+/// Extract with the pure-Rust lexer, whatever [`Language::backend`] says.
+pub fn extract_lexical(
+    language: Language,
+    source: &str,
+    limits: &Limits,
+) -> Result<Extraction, ExtractError> {
+    check_size(source, limits)?;
+    let syntax = language.syntax();
+    let scan = lexer::scan(source, syntax);
+    let budget = limits.max_walk_steps.unwrap_or(1024 + 8 * source.len());
+    if scan.steps > budget {
+        return Err(ExtractError::WalkBudget { budget });
+    }
+    let mut pieces = Vec::new();
+    for range in scan.comments {
+        let range = trimmed(source, range);
+        push_comment(source, range, syntax, &mut pieces);
+    }
+    Ok(finish(
+        source,
+        pieces,
+        syntax,
+        Stats {
+            parse_checks: 0,
+            read_bytes: 0,
+            walk_steps: scan.steps,
+        },
+    ))
+}
+
+fn check_size(source: &str, limits: &Limits) -> Result<(), ExtractError> {
     if source.len() > limits.max_bytes {
         return Err(ExtractError::TooLarge {
             len: source.len(),
             max: limits.max_bytes,
         });
     }
-    let (tree, parse_checks, read_bytes) = parse(language, source, limits)?;
-
-    let syntax = language.syntax();
-    let mut meter = Meter {
-        steps: 0,
-        max: limits.max_walk_steps.unwrap_or(1024 + 8 * source.len()),
-    };
-    let mut finder = Finder::default();
-    let mut pieces = Vec::new();
-    let mut cursor = tree.walk();
-    'walk: loop {
-        meter.step()?;
-        let node = cursor.node();
-        let mut descend = true;
-        if is_comment(&node) {
-            descend = false;
-            // Some grammars put the line terminator inside a line comment.
-            let range = trimmed(source, node.byte_range());
-            if source.get(range.clone()).is_some() {
-                push_comment(source, range, syntax, &mut pieces);
-            }
-        } else if let Some(range) = finder.check(language, &node, source, &mut meter)? {
-            descend = false;
-            if let Some(decorated) = strip::string_literal(source, range.start, range.end) {
-                pieces.push(Piece::new(source, &range, decorated));
-            }
-        }
-        if descend && cursor.goto_first_child() {
-            continue;
-        }
-        loop {
-            if cursor.goto_next_sibling() {
-                break;
-            }
-            if !cursor.goto_parent() {
-                break 'walk;
-            }
-        }
-    }
-    Ok(Extraction {
-        fragments: group(source, pieces, !syntax.leaders.is_empty()),
-        stats: Stats {
-            parse_checks,
-            read_bytes,
-            walk_steps: meter.steps,
-        },
-    })
+    Ok(())
 }
 
-/// Parse `source` under the parse and read budgets. Returns the tree and the work used.
-fn parse(
-    language: Language,
+/// Group the pieces into fragments.
+pub(crate) fn finish(
     source: &str,
-    limits: &Limits,
-) -> Result<(tree_sitter::Tree, usize, usize), ExtractError> {
-    let grammar = language.grammar().ok_or(ExtractError::Disabled {
-        language: language.name(),
-        feature: language.feature(),
-    })?;
-    let mut parser = Parser::new();
-    parser
-        .set_language(&grammar)
-        .map_err(|source| ExtractError::Grammar {
-            language: language.name(),
-            source,
-        })?;
-
-    // A lone CR ends a line, but several lexers look for LF only and would read the next
-    // line as part of the comment. Parse a view with the same byte offsets and LF there.
-    let view = line_feed_view(source);
-    let bytes: &[u8] = &view;
-    let budget = limits.max_parse_checks.unwrap_or(256 + source.len() / 4);
-    let mut parse_checks = 0;
-    let mut progress = |_: &tree_sitter::ParseState| {
-        parse_checks += 1;
-        if parse_checks > budget {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    };
-    // Hand the lexer small chunks and charge each one. tree-sitter lexes before it checks
-    // progress, so a lexer that rescans the rest of the file would otherwise go uncharged.
-    let read_budget = limits
-        .max_read_bytes
-        .unwrap_or(64 * source.len() + 64 * 1024);
-    let mut read_bytes = 0;
-    let mut read_exceeded = false;
-    let mut read = |offset: usize, _: tree_sitter::Point| -> &[u8] {
-        // End the chunk on a code point boundary: some scanners misread a split character.
-        let mut end = (offset + READ_CHUNK).min(bytes.len());
-        while end > offset && !source.is_char_boundary(end) {
-            end -= 1;
-        }
-        let chunk = bytes.get(offset..end).unwrap_or_default();
-        read_bytes += chunk.len();
-        if read_bytes > read_budget {
-            read_exceeded = true;
-            return &[];
-        }
-        chunk
-    };
-    let tree = parser.parse_with_options(
-        &mut read,
-        None,
-        Some(ParseOptions::new().progress_callback(&mut progress)),
-    );
-    if read_exceeded {
-        return Err(ExtractError::ReadBudget {
-            language: language.name(),
-            budget: read_budget,
-        });
+    pieces: Vec<Piece<'_>>,
+    syntax: &Syntax,
+    stats: Stats,
+) -> Extraction {
+    Extraction {
+        fragments: group(source, pieces, !syntax.leaders.is_empty()),
+        stats,
     }
-    let Some(tree) = tree else {
-        return Err(if parse_checks > budget {
-            ExtractError::ParseBudget {
-                language: language.name(),
-                budget,
-            }
-        } else {
-            ExtractError::Parse {
-                language: language.name(),
-            }
-        });
-    };
-    Ok((tree, parse_checks, read_bytes))
-}
-
-/// `source` with each lone CR replaced by LF. Both are one byte, so offsets hold.
-fn line_feed_view(source: &str) -> Cow<'_, [u8]> {
-    let bytes = source.as_bytes();
-    let lone = |at: usize| bytes[at] == b'\r' && bytes.get(at + 1) != Some(&b'\n');
-    if !(0..bytes.len()).any(lone) {
-        return Cow::Borrowed(bytes);
-    }
-    let view = (0..bytes.len())
-        .map(|at| if lone(at) { b'\n' } else { bytes[at] })
-        .collect();
-    Cow::Owned(view)
 }
 
 /// `range` without trailing blanks and line terminators.
-fn trimmed(source: &str, range: Range<usize>) -> Range<usize> {
+pub(crate) fn trimmed(source: &str, range: Range<usize>) -> Range<usize> {
     let bytes = source.as_bytes();
     let mut end = range.end.min(bytes.len());
     while end > range.start && matches!(bytes[end - 1], b' ' | b'\t' | b'\r' | b'\n') {
@@ -313,23 +205,13 @@ fn trimmed(source: &str, range: Range<usize>) -> Range<usize> {
     range.start..end
 }
 
-fn is_comment(node: &Node<'_>) -> bool {
-    let kind = node.kind();
-    // Grammars name the node `comment`, `line_comment`, `block_comment`, ... Perl uses
-    // `comments`, Haskell `haddock`, F# `xml_doc` for `///` lines, and JavaScript,
-    // Rust and Kotlin give a shebang line a node of its own.
-    kind.ends_with("comment")
-        || matches!(kind, "comments" | "haddock" | "xml_doc" | "hash_bang_line")
-        || kind.contains("shebang")
-}
-
 /// Strip one comment node into pieces. A line comment node that spans several lines,
 /// such as Haskell's or Dart's, becomes one piece per line, so the same grouping rules
 /// apply as for comments in separate nodes.
-fn push_comment<'a>(
+pub(crate) fn push_comment<'a>(
     source: &'a str,
     range: Range<usize>,
-    syntax: &crate::language::Syntax,
+    syntax: &Syntax,
     pieces: &mut Vec<Piece<'a>>,
 ) {
     let whole = strip::comment(source, range.start, range.end, syntax);
@@ -358,7 +240,7 @@ fn push_comment<'a>(
 }
 
 /// A stripped comment with its place in the source.
-struct Piece<'a> {
+pub(crate) struct Piece<'a> {
     decorated: Decorated<'a>,
     start: usize,
     /// End of the node.

@@ -1,29 +1,23 @@
-#![cfg(feature = "all-languages")]
 //! Hostile input: no panics, bounded work.
 
 mod common;
 
-use std::time::{Duration, Instant};
-
 use common::fragments;
-use slopvac_comments::{ExtractError, Language, extract};
+use slopvac_comments::{ExtractError, Language, Limits, extract, extract_lexical, extract_with};
 
-fn time(language: Language, source: &str) -> Duration {
-    let start = Instant::now();
-    extract(language, source).expect("extracts");
-    start.elapsed()
-}
-
-/// Linear work grows about 8x for an 8x input. A quadratic pass grows about 64x. The
-/// bound sits between them and leaves room for noise on a loaded machine.
+/// Work for `n` and `8 * n` units. Linear work grows about 8x. A quadratic pass grows
+/// about 64x. Steps are counted, not timed, so the result is the same on every machine.
 fn assert_near_linear(language: Language, make: impl Fn(usize) -> String) {
-    let small = make(20_000);
-    let large = make(160_000);
-    let base = time(language, &small).max(Duration::from_millis(5));
-    let big = time(language, &large);
+    let steps = |n: usize| {
+        extract_with(language, &make(n), &Limits::default())
+            .expect("extracts")
+            .stats
+            .walk_steps
+    };
+    let (small, large) = (steps(2_000), steps(16_000));
     assert!(
-        big < base * 30,
-        "{language:?}: {big:?} for 8x input against {base:?} is not linear"
+        large <= small * 10,
+        "{language:?}: {small} steps for n, {large} for 8n"
     );
 }
 
@@ -88,8 +82,9 @@ fn unterminated_comments_and_strings_do_not_panic() {
     ];
     for language in Language::all() {
         for source in sources {
+            let lexed = extract_lexical(language, source, &Limits::default()).expect("lexes");
             let result = extract(language, source).expect("extracts");
-            for fragment in &result {
+            for fragment in lexed.fragments.iter().chain(&result) {
                 let span = fragment.comment_span();
                 assert!(span.end() <= source.len());
                 assert!(source.is_char_boundary(span.start()));
@@ -138,6 +133,42 @@ fn multi_byte_characters_at_every_chunk_edge_do_not_crash() {
                 Ok(_) | Err(ExtractError::ReadBudget { .. } | ExtractError::ParseBudget { .. }) => {
                 }
                 Err(error) => panic!("{language:?} pad {pad}: {error}"),
+            }
+        }
+    }
+}
+/// Every language, through the lexer, on input built to confuse a comment scanner.
+#[test]
+fn the_lexer_survives_confusing_input_in_every_language() {
+    let sources = [
+        "\"\"\"unterminated\n# not a comment",
+        "'''unterminated",
+        "'\\",
+        "'",
+        "\"\\",
+        "`unterminated\n// x",
+        "/* /* /* nested",
+        "--[==[ a ]=] b",
+        "=begin\n=end",
+        "=begin\nnever ends",
+        "#=",
+        "{- {- -}",
+        "(* (* *)",
+        "// a \\",
+        "// a \\\r\n// b",
+        "\u{feff}#!shebang\n",
+        "#![attr]",
+        "\u{1F600}'\u{1F600}'",
+        "'\\u{1F600}'",
+    ];
+    for language in Language::all() {
+        for source in sources {
+            let extraction = extract_lexical(language, source, &Limits::default()).expect("lexes");
+            for fragment in &extraction.fragments {
+                let span = fragment.comment_span();
+                assert!(
+                    source.is_char_boundary(span.start()) && source.is_char_boundary(span.end())
+                );
             }
         }
     }

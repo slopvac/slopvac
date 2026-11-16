@@ -93,7 +93,9 @@ pub(crate) fn comment<'a>(
 ) -> Decorated<'a> {
     for block in syntax.blocks {
         let found = match *block {
-            Block::Fixed { open, close, stars } => fixed(source, start, end, open, close, stars),
+            Block::Fixed {
+                open, close, stars, ..
+            } => fixed(source, start, end, open, close, stars),
             Block::Lua => lua(source, start, end),
         };
         if let Some(found) = found {
@@ -192,7 +194,12 @@ fn line<'a>(source: &'a str, start: usize, end: usize, syntax: &Syntax) -> Decor
         .map(|(index, physical)| {
             let mut at = skip_blank(bytes, physical.start, physical.end);
             let rest = &source[at..physical.end];
-            if let Some(found) = syntax.line.iter().find(|m| rest.starts_with(**m)) {
+            if let Some(found) = syntax
+                .line
+                .iter()
+                .chain(syntax.shebang)
+                .find(|m| rest.starts_with(**m))
+            {
                 let repeated = found.as_bytes()[found.len() - 1];
                 let mut after = at + found.len();
                 while after < physical.end && bytes[after] == repeated {
@@ -227,32 +234,6 @@ fn line<'a>(source: &'a str, start: usize, end: usize, syntax: &Syntax) -> Decor
     }
 }
 
-/// Strip the prefix and quotes from a string literal used as a docstring. `None` means
-/// the text does not start like a quoted string.
-pub(crate) fn string_literal(source: &str, start: usize, end: usize) -> Option<Decorated<'_>> {
-    let bytes = source.as_bytes();
-    let mut at = start;
-    while at < end && bytes[at].is_ascii_alphabetic() {
-        at += 1;
-    }
-    let quote = *bytes.get(at).filter(|&&b| b == b'"' || b == b'\'')?;
-    let quote_len = if at + 3 <= end && bytes[at + 1] == quote && bytes[at + 2] == quote {
-        3
-    } else {
-        1
-    };
-    let content_start = at + quote_len;
-    let terminated =
-        end >= content_start + quote_len && bytes[end - quote_len..end].iter().all(|&b| b == quote);
-    let content_end = if terminated { end - quote_len } else { end };
-    Some(Decorated {
-        kind: CommentKind::Docstring,
-        marker: "",
-        groupable: false,
-        lines: interior(source, content_start.min(content_end), content_end, false),
-    })
-}
-
 /// Whether every physical line of `start..end` begins with a line marker. A grammar that
 /// merges a run of line comments into one node (Haskell, Dart) gives such a node. A C
 /// comment continued by a backslash does not: its second line has no marker.
@@ -265,8 +246,12 @@ pub(crate) fn every_line_has_marker(
     let bytes = source.as_bytes();
     split_lines(bytes, start, end).into_iter().all(|line| {
         let at = skip_blank(bytes, line.start, line.end);
-        source
-            .get(at..line.end)
-            .is_some_and(|rest| syntax.line.iter().any(|marker| rest.starts_with(marker)))
+        source.get(at..line.end).is_some_and(|rest| {
+            syntax
+                .line
+                .iter()
+                .chain(syntax.shebang)
+                .any(|marker| rest.starts_with(marker))
+        })
     })
 }

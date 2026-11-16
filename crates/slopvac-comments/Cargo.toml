@@ -10,103 +10,26 @@ publish.workspace = true
 
 [features]
 default = ["all-languages"]
-# Every grammar. `dist` can build with `--no-default-features` and pick languages.
-all-languages = [
-    "lang-python",
-    "lang-javascript",
-    "lang-typescript",
-    "lang-rust",
-    "lang-go",
-    "lang-java",
-    "lang-c",
-    "lang-cpp",
-    "lang-csharp",
-    "lang-ruby",
-    "lang-php",
-    "lang-swift",
-    "lang-kotlin",
-    "lang-scala",
-    "lang-shell",
-    "lang-lua",
-    "lang-perl",
-    "lang-r",
-    "lang-elixir",
-    "lang-haskell",
-    "lang-fsharp",
-    "lang-julia",
-    "lang-powershell",
-    "lang-proto",
-    "lang-css",
-    "lang-scss",
-    "lang-less",
-    "lang-clojure",
-    "lang-dart",
-    "lang-toml",
-]
-lang-python = ["dep:tree-sitter-python"]
-lang-javascript = ["dep:tree-sitter-javascript"]
-lang-typescript = ["dep:tree-sitter-typescript"]
-lang-rust = ["dep:tree-sitter-rust"]
-lang-go = ["dep:tree-sitter-go"]
-lang-java = ["dep:tree-sitter-java"]
-lang-c = ["dep:tree-sitter-c"]
-lang-cpp = ["dep:tree-sitter-cpp"]
-lang-csharp = ["dep:tree-sitter-c-sharp"]
-lang-ruby = ["dep:tree-sitter-ruby"]
-lang-php = ["dep:tree-sitter-php"]
-lang-swift = ["dep:tree-sitter-swift"]
-lang-kotlin = ["dep:tree-sitter-kotlin-ng"]
-lang-scala = ["dep:tree-sitter-scala"]
-lang-shell = ["dep:tree-sitter-bash"]
-lang-lua = ["dep:tree-sitter-lua"]
-lang-perl = ["dep:tree-sitter-perl"]
-lang-r = ["dep:tree-sitter-r"]
-lang-elixir = ["dep:tree-sitter-elixir"]
-lang-haskell = ["dep:tree-sitter-haskell"]
-lang-fsharp = ["dep:tree-sitter-fsharp"]
-lang-julia = ["dep:tree-sitter-julia"]
-lang-powershell = ["dep:tree-sitter-powershell"]
-lang-proto = ["dep:tree-sitter-proto"]
-lang-css = ["dep:tree-sitter-css"]
-lang-scss = ["dep:tree-sitter-scss"]
-lang-less = ["dep:tree-sitter-less"]
-lang-clojure = ["dep:tree-sitter-clojure-orchard"]
-lang-dart = ["dep:tree-sitter-dart"]
-lang-toml = ["dep:tree-sitter-toml-ng"]
+# Tree-sitter grammars. Each is a language whose grammar has no external scanner; every
+# other language is read by the lexer, which needs no feature.
+all-languages = ["lang-c", "lang-clojure", "lang-go", "lang-java", "lang-proto"]
+lang-c = ["dep:tree-sitter", "dep:tree-sitter-c"]
+lang-clojure = ["dep:tree-sitter", "dep:tree-sitter-clojure-orchard"]
+lang-go = ["dep:tree-sitter", "dep:tree-sitter-go"]
+lang-java = ["dep:tree-sitter", "dep:tree-sitter-java"]
+lang-proto = ["dep:tree-sitter", "dep:tree-sitter-proto"]
 
 [dependencies]
 thiserror.workspace = true
-tree-sitter.workspace = true
-tree-sitter-python = { workspace = true, optional = true }
-tree-sitter-javascript = { workspace = true, optional = true }
-tree-sitter-typescript = { workspace = true, optional = true }
-tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-c = { workspace = true, optional = true }
+tree-sitter-clojure-orchard = { workspace = true, optional = true }
 tree-sitter-go = { workspace = true, optional = true }
 tree-sitter-java = { workspace = true, optional = true }
-tree-sitter-c = { workspace = true, optional = true }
-tree-sitter-cpp = { workspace = true, optional = true }
-tree-sitter-c-sharp = { workspace = true, optional = true }
-tree-sitter-ruby = { workspace = true, optional = true }
-tree-sitter-php = { workspace = true, optional = true }
-tree-sitter-swift = { workspace = true, optional = true }
-tree-sitter-kotlin-ng = { workspace = true, optional = true }
-tree-sitter-scala = { workspace = true, optional = true }
-tree-sitter-bash = { workspace = true, optional = true }
-tree-sitter-lua = { workspace = true, optional = true }
-tree-sitter-perl = { workspace = true, optional = true }
-tree-sitter-r = { workspace = true, optional = true }
-tree-sitter-elixir = { workspace = true, optional = true }
-tree-sitter-haskell = { workspace = true, optional = true }
-tree-sitter-fsharp = { workspace = true, optional = true }
-tree-sitter-julia = { workspace = true, optional = true }
-tree-sitter-powershell = { workspace = true, optional = true }
 tree-sitter-proto = { workspace = true, optional = true }
-tree-sitter-css = { workspace = true, optional = true }
-tree-sitter-scss = { workspace = true, optional = true }
-tree-sitter-less = { workspace = true, optional = true }
-tree-sitter-clojure-orchard = { workspace = true, optional = true }
-tree-sitter-dart = { workspace = true, optional = true }
-tree-sitter-toml-ng = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

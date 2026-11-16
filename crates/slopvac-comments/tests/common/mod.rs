@@ -3,8 +3,8 @@
 
 #![allow(dead_code, unreachable_pub, missing_docs)]
 
-use slopvac_comments::CommentKind::{Block, Doc, Docstring, Line};
-use slopvac_comments::{CommentKind, Fragment, Language, extract};
+use slopvac_comments::CommentKind::{Block, Doc, Line};
+use slopvac_comments::{CommentKind, Fragment, Language, Limits, extract, extract_lexical};
 
 pub struct Fixture {
     pub name: &'static str,
@@ -23,6 +23,20 @@ pub fn pairs(language: Language, source: &str) -> Vec<(CommentKind, String)> {
 
 pub fn fragments(language: Language, source: &str) -> Vec<Fragment> {
     extract(language, source).expect("grammar loads and parses")
+}
+
+/// Like [`pairs`], but always through the lexer, whatever backend the language uses.
+pub fn pairs_lexical(language: Language, source: &str) -> Vec<(CommentKind, String)> {
+    fragments_lexical(language, source)
+        .iter()
+        .map(|f| (f.kind(), f.text().to_owned()))
+        .collect()
+}
+
+pub fn fragments_lexical(language: Language, source: &str) -> Vec<Fragment> {
+    extract_lexical(language, source, &Limits::default())
+        .expect("lexes")
+        .fragments
 }
 
 /// A source in LF, CRLF and lone-CR line endings, each with and without a leading BOM.
@@ -54,15 +68,10 @@ pub const FIXTURES: &[Fixture] = &[
         ],
     },
     Fixture {
-        name: "python docstrings of module, function and class",
+        name: "python docstrings are strings, not comments",
         language: Language::Python,
-        source: "\"\"\"Module doc.\n\nSecond para.\n\"\"\"\n\n\ndef f():\n    \"\"\"Doc f.\"\"\"\n    x = \"not a doc\"\n    return x\n\n\nclass A:\n    '''First line\n    continues here.\n    '''\n",
-        expected: &[
-            (Docstring, "Module doc."),
-            (Docstring, "Second para."),
-            (Docstring, "Doc f."),
-            (Docstring, "First line continues here."),
-        ],
+        source: "\"\"\"Module doc.\n\nSecond para.\n\"\"\"\n\n\ndef f():\n    \"\"\"Doc f.\"\"\"\n    # real comment\n    return 1\n",
+        expected: &[(Line, "real comment")],
     },
     Fixture {
         name: "python string that is not the first statement is code",
@@ -203,11 +212,7 @@ pub const FIXTURES: &[Fixture] = &[
         name: "elixir comments and doc attributes",
         language: Language::Elixir,
         source: "# a\ndefmodule A do\n  @moduledoc \"\"\"\n  Mod doc.\n  \"\"\"\n  @doc \"one line\"\n  def f, do: 1\nend\n",
-        expected: &[
-            (Line, "a"),
-            (Docstring, "Mod doc."),
-            (Docstring, "one line"),
-        ],
+        expected: &[(Line, "a")],
     },
     Fixture {
         name: "haskell haddock and block",
@@ -225,7 +230,7 @@ pub const FIXTURES: &[Fixture] = &[
         name: "julia comments and docstring",
         language: Language::Julia,
         source: "# a\n#= block\nmore =#\n\"\"\"\nDoc f\n\"\"\"\nfunction f() end\n",
-        expected: &[(Line, "a"), (Block, "block more"), (Docstring, "Doc f")],
+        expected: &[(Line, "a"), (Block, "block more")],
     },
     Fixture {
         name: "powershell",

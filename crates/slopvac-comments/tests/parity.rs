@@ -1,4 +1,3 @@
-#![cfg(feature = "all-languages")]
 //! Parity with the 2.x reference.
 //!
 //! 2.x read code comments two ways. Vale read them by line and block delimiters (no
@@ -16,7 +15,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use slopvac_comments::{Language, extract};
+use slopvac_comments::{Language, Limits, extract, extract_lexical};
 
 type Position = (String, usize, usize);
 
@@ -55,7 +54,7 @@ fn line_col(source: &str, offset: usize) -> (usize, usize) {
 }
 
 /// Every `ZZZ` in extracted text, as the line and column of its first source byte.
-fn extracted() -> BTreeSet<Position> {
+fn extracted(lexer_only: bool) -> BTreeSet<Position> {
     let mut found = BTreeSet::new();
     for entry in fs::read_dir(dir()).expect("fixtures exist") {
         let path = entry.expect("entry").path();
@@ -68,7 +67,15 @@ fn extracted() -> BTreeSet<Position> {
             continue;
         }
         let source = fs::read_to_string(&path).expect("utf-8 fixture");
-        for fragment in extract(language(&name), &source).expect("extracts") {
+        let language = language(&name);
+        let fragments = if lexer_only {
+            extract_lexical(language, &source, &Limits::default())
+                .expect("lexes")
+                .fragments
+        } else {
+            extract(language, &source).expect("extracts")
+        };
+        for fragment in fragments {
             for (at, _) in fragment.text().match_indices("ZZZ") {
                 let span = fragment.projection().span_for_bytes(at, at + 3);
                 assert_eq!(&source[span.start()..span.end()], "ZZZ", "{name}");
@@ -95,20 +102,38 @@ fn rows(name: &str) -> BTreeSet<Position> {
         .collect()
 }
 
+/// The default backend, then the lexer alone. C, Go and Java use tree-sitter by default,
+/// so this also checks that both backends find the same comments in the samples.
+const BACKENDS: [(&str, bool); 2] = [("default", false), ("lexer", true)];
+
 #[test]
 fn everything_2x_kept_is_still_extracted() {
-    let ours = extracted();
-    let lost: Vec<_> = rows("reference_2x.txt")
-        .difference(&ours)
-        .cloned()
-        .collect();
-    assert!(lost.is_empty(), "2.x kept these, 3.0 drops them: {lost:?}");
+    for (backend, lexer_only) in BACKENDS {
+        let ours = extracted(lexer_only);
+        let lost: Vec<_> = rows("reference_2x.txt")
+            .difference(&ours)
+            .cloned()
+            .collect();
+        assert!(
+            lost.is_empty(),
+            "[{backend}] 2.x kept these, 3.0 drops them: {lost:?}"
+        );
+    }
 }
 
 #[test]
 fn the_only_additions_over_2x_are_the_listed_ones() {
-    let ours = extracted();
     let reference = rows("reference_2x.txt");
-    let added: BTreeSet<_> = ours.difference(&reference).cloned().collect();
-    assert_eq!(added, rows("extra_over_2x.txt"));
+    for (backend, lexer_only) in BACKENDS {
+        let added: BTreeSet<_> = extracted(lexer_only)
+            .difference(&reference)
+            .cloned()
+            .collect();
+        assert_eq!(added, rows("extra_over_2x.txt"), "[{backend}]");
+    }
+}
+
+#[test]
+fn the_two_backends_agree_on_every_sample() {
+    assert_eq!(extracted(false), extracted(true));
 }

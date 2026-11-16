@@ -159,6 +159,11 @@ jobs:
       - name: Rustdoc
         run: cargo doc --workspace --no-deps --document-private-items --locked
 
+      # The fuzz crate is outside the workspace (cargo-fuzz needs nightly), so build it
+      # here to keep the target compiling.
+      - name: Check the fuzz targets
+        run: cargo check --manifest-path crates/slopvac-comments/fuzz/Cargo.toml --locked
+
   rust:
     name: Rust (${{ matrix.name }})
     needs: changes

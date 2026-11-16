@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![cfg(feature = "all-languages")]
 //! Work bounds: deterministic counters, not wall-clock time.
 
@@ -23,37 +24,18 @@ fn assert_walk_is_linear(language: Language, make: impl Fn(usize) -> String) {
 }
 
 #[test]
-fn python_docstring_detection_is_linear_with_many_comments_and_strings() {
-    assert_walk_is_linear(Language::Python, |n| {
-        format!("{}{}", "# c\n".repeat(n), "'s'\n# c\n".repeat(n))
-    });
-}
-
-#[test]
-fn python_docstring_detection_is_linear_with_many_functions() {
-    assert_walk_is_linear(Language::Python, |n| {
-        "def f():\n    # c\n    '''d'''\n".repeat(n)
-    });
-}
-
-#[test]
-fn julia_docstring_detection_is_linear_with_many_strings() {
-    assert_walk_is_linear(Language::Julia, |n| "# c\n\"doc\"\nx = 1\n".repeat(n));
-}
-
-#[test]
 fn the_walk_visits_each_node_a_bounded_number_of_times() {
     assert_walk_is_linear(Language::Rust, |n| "fn f() { g(1, 2); } // c\n".repeat(n));
 }
 
 #[test]
 fn a_parse_budget_that_is_too_small_returns_a_typed_error() {
-    let source = "// a\nfn main() { let x = 1; let y = 2; }\n".repeat(200);
+    let source = "// a\nint main() { int x = 1; int y = 2; }\n".repeat(200);
     let limits = Limits {
         max_parse_checks: Some(1),
         ..Limits::default()
     };
-    let error = extract_with(Language::Rust, &source, &limits).expect_err("over budget");
+    let error = extract_with(Language::C, &source, &limits).expect_err("over budget");
     assert!(
         matches!(error, ExtractError::ParseBudget { budget: 1, .. }),
         "{error:?}"
@@ -148,27 +130,20 @@ fn a_read_budget_that_is_too_small_returns_a_typed_error() {
         max_read_bytes: Some(10),
         ..Limits::default()
     };
-    let error =
-        extract_with(Language::Rust, "// a\nfn f() {}\n", &limits).expect_err("over budget");
+    let error = extract_with(Language::C, "// a\nfn f() {}\n", &limits).expect_err("over budget");
     assert!(
         matches!(error, ExtractError::ReadBudget { budget: 10, .. }),
         "{error:?}"
     );
 }
 
-/// Real code is read about once. This file is the crate's own largest sources in
-/// Rust and the Python generator in Python; the budget is 64 reads per byte.
+/// Real code is read about once. This is a C-style file of ordinary code, comments and
+/// strings; the budget is 64 reads per byte.
 #[test]
 fn realistic_files_read_each_byte_about_once() {
-    let rust = [
-        include_str!("../src/extract.rs"),
-        include_str!("../src/language.rs"),
-        include_str!("../src/strip.rs"),
-        include_str!("../src/span.rs"),
-    ]
-    .join("\n");
-    let python = include_str!("fixtures/parity/generate_reference_2x.py").repeat(40);
-    for (language, source) in [(Language::Rust, rust), (Language::Python, python)] {
+    let block = "/* Compute the total. */\nint total(int a, int b) { // add\n    char *s = \"x // y\";\n    return a + b;\n}\n";
+    let source = block.repeat(2_000);
+    for language in [Language::C, Language::Go, Language::Java] {
         let stats = extract_with(language, &source, &Limits::default())
             .expect("extracts")
             .stats;
@@ -182,6 +157,42 @@ fn realistic_files_read_each_byte_about_once() {
             "{language:?}: read {} bytes for {}",
             stats.read_bytes,
             source.len()
+        );
+    }
+}
+
+/// The lexer does one pass, so even the input that makes the C and Go parsers quadratic
+/// costs one step per byte or so.
+#[test]
+fn the_lexer_is_linear_on_input_that_is_quadratic_for_tree_sitter() {
+    let steps = |n: usize| {
+        let source = format!("{}{}\n", "/* ".repeat(n), "x".repeat(100 * n));
+        slopvac_comments::extract_lexical(Language::C, &source, &Limits::default())
+            .expect("lexes")
+            .stats
+            .walk_steps
+    };
+    let (small, large) = (steps(2_000), steps(8_000));
+    assert!(large <= small * 5, "{small} steps for n, {large} for 4n");
+}
+
+#[test]
+fn the_lexer_is_linear_on_many_strings_and_comments() {
+    for language in Language::all() {
+        let steps = |n: usize| {
+            slopvac_comments::extract_lexical(
+                language,
+                &"x = \"a\" # b // c /* d */ 'e' `f`\n".repeat(n),
+                &Limits::default(),
+            )
+            .expect("lexes")
+            .stats
+            .walk_steps
+        };
+        let (small, large) = (steps(1_000), steps(4_000));
+        assert!(
+            large <= small * 5,
+            "{language:?}: {small} steps for n, {large} for 4n"
         );
     }
 }

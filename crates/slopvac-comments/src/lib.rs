@@ -1,19 +1,28 @@
-//! Comment and docstring extraction from source code, on tree-sitter.
+//! Comment extraction from source code.
 //!
-//! [`extract()`] parses a source file with the grammar for its [`Language`] and returns the
-//! prose in its comments as [`Fragment`]s. Each fragment has the text a rule reads and a
-//! [`Projection`] that maps every character back to its exact UTF-8 byte in the source.
-//! The delimiters (`//`, `#`, `--`, `/* */`, a leading `*`, quotes) are gaps, as in
-//! `docs/contract/positions.md`.
+//! [`extract()`] finds the comments in a source file and returns their prose as
+//! [`Fragment`]s. Each fragment has the text a rule reads and a [`Projection`] that maps
+//! every character back to its exact UTF-8 byte in the source. The delimiters (`//`,
+//! `#`, `--`, `/* */`, a leading `*`) are gaps, as in `docs/contract/positions.md`.
+//!
+//! # Backends
+//!
+//! The default is a pure-Rust lexer ([`extract_lexical`]) that ports the 2.x projection:
+//! one pass that knows block comments and strings, so a `//` inside a string is not a
+//! comment. It links no C code. A tree-sitter grammar reads a language only when the
+//! grammar has no external scanner and its `lang-*` feature is on: C, Go, Java, Proto
+//! and Clojure. Scanner-bearing grammars ship C code that reads and writes raw memory,
+//! and the F#, Kotlin and Swift scanners hung or corrupted memory on hostile input, so
+//! none is linked. [`Language::backend`] reports which backend a language uses.
 //!
 //! # What is extracted
 //!
-//! - Every comment, as 2.x did. 2.x read comments through Vale's scopes and skipped
-//!   nothing: not shebangs, license headers, `SPDX-` lines, `# type:` or
-//!   `// eslint-disable` directives. Neither does this crate. A fragment records its
-//!   [`CommentKind`] so a caller can tell a doc comment from a plain one.
-//! - Docstrings: the string statement that documents a Python module, class or
-//!   function. Code and other string literals are never extracted.
+//! - Every comment, as 2.x did. 2.x skipped nothing: not shebangs, license headers,
+//!   `SPDX-` lines, `# type:` or `// eslint-disable` directives. Neither does this
+//!   crate. A fragment records its [`CommentKind`] so a caller can tell a doc comment
+//!   from a plain one.
+//! - Strings are code, as in 2.x. A Python docstring is a string, so it is not
+//!   extracted: Python has a scanner grammar and 2.x blanked docstrings too.
 //! - Consecutive own-line comments with the same marker form one fragment per
 //!   paragraph, joined by a synthetic [`TokenKind::Wrap`] space. A blank comment line
 //!   starts a new paragraph. A comment after code on its line stands alone.
@@ -26,14 +35,24 @@
 // STUB(slopvac-8l4.3.26): `slopvac-engine` does not exist yet. When it lands, hand each
 // `Fragment` to its rule dispatch with comment-mode rule selection. Until then the only
 // consumer is the tests in this crate.
-mod docstring;
 mod extract;
 mod language;
+mod lexer;
 mod span;
 mod strip;
+#[cfg(any(
+    feature = "lang-c",
+    feature = "lang-go",
+    feature = "lang-java",
+    feature = "lang-proto",
+    feature = "lang-clojure"
+))]
+mod treesitter;
 
-pub use extract::{ExtractError, Extraction, Limits, Stats, extract, extract_with};
-pub use language::Language;
+pub use extract::{
+    ExtractError, Extraction, Limits, Stats, extract, extract_lexical, extract_with,
+};
+pub use language::{Backend, Language};
 pub use span::{Projection, Span, SpanError, Token, TokenKind};
 
 /// What a fragment was written as.
@@ -45,8 +64,6 @@ pub enum CommentKind {
     Block,
     /// A documentation comment (`///`, `//!`, `/** */`, `/*! */`).
     Doc,
-    /// A docstring: a string literal that documents a definition.
-    Docstring,
 }
 
 /// One paragraph of comment text.
