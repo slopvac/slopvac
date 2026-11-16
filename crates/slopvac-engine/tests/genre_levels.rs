@@ -1,62 +1,99 @@
-//! Genre tolerances reach the engine settings: `docs-discipline.history-internal-reference`
-//! is off in change-comms, a suggestion in internal and a warning in consumer and reference.
+//! Genre tolerances reach the findings: `docs-discipline.history-internal-reference` is off in
+//! change-comms, a suggestion in internal and a warning in consumer and reference. Explicit
+//! configuration sits above a genre default (`docs/contract/config.md`, section 1.1).
 
-use slopvac_context::builtin_genres;
-use slopvac_engine::{Level, Settings};
-use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, RuleId, Severity};
+mod common;
+
+use common::{category, id, ruleset, tokens};
+use serde_json::json;
+use slopvac_engine::{CategoryDials, Engine, Input, Level, Settings};
+use slopvac_model::{
+    CategoryId, Document, GenreId, GenreResult, GenreSource, NonEmptyString, Severity,
+};
 
 fn settings_for(genre: &str) -> Settings {
     Settings::new(
         NonEmptyString::new("normal").unwrap(),
         GenreResult {
             id: GenreId::new(genre).unwrap(),
+            // STUB(PENDING): the run carries one genre. The config layer that resolves a genre
+            // per document and builds `Settings` from it does not exist yet.
             source: GenreSource::Explicit,
             reasons: Vec::new(),
         },
     )
 }
 
-fn history_rule() -> RuleId {
-    RuleId::new("core:docs-discipline.history-internal-reference").unwrap()
+/// The rule ships as an error so that any genre level shows up as a change.
+fn lint(settings: Settings) -> Document {
+    let rules = [tokens(
+        "history-internal-reference",
+        "refactored",
+        &json!({"severity": "error"}),
+    )];
+    let set = ruleset(vec![category("docs-discipline", &rules)]);
+    Engine::new(vec![set], settings)
+        .unwrap()
+        .lint(&Input::markdown("a.md", "We refactored the parser.\n"))
+        .unwrap()
+}
+
+fn severities(doc: &Document) -> Vec<Severity> {
+    doc.findings.iter().map(|f| f.severity).collect()
 }
 
 #[test]
-fn each_genre_sets_its_level_for_the_history_rule() {
-    let registry = builtin_genres().unwrap();
+fn the_history_rule_reports_at_the_level_of_the_genre() {
     for (genre, want) in [
-        ("change-comms", Level::Off),
-        ("internal", Level::On(Severity::Suggestion)),
-        ("consumer", Level::On(Severity::Warning)),
-        ("reference", Level::On(Severity::Warning)),
+        ("change-comms", vec![]),
+        ("internal", vec![Severity::Suggestion]),
+        ("consumer", vec![Severity::Warning]),
+        ("reference", vec![Severity::Warning]),
     ] {
-        let mut settings = settings_for(genre);
-        settings.apply_genre_levels(&registry).unwrap();
-        assert_eq!(
-            settings.rule_levels.get(&history_rule()),
-            Some(&want),
-            "{genre}"
-        );
+        assert_eq!(severities(&lint(settings_for(genre))), want, "{genre}");
     }
 }
 
 #[test]
-fn a_genre_without_a_tolerance_leaves_the_rule_alone() {
-    let registry = builtin_genres().unwrap();
-    let mut settings = settings_for("informal");
-    settings.apply_genre_levels(&registry).unwrap();
-    assert!(settings.rule_levels.is_empty());
+fn a_genre_without_a_tolerance_keeps_the_shipped_severity() {
+    assert_eq!(
+        severities(&lint(settings_for("informal"))),
+        [Severity::Error]
+    );
 }
 
 #[test]
-fn a_level_set_above_the_genre_wins() {
-    let registry = builtin_genres().unwrap();
+fn an_explicit_rule_level_beats_the_genre() {
     let mut settings = settings_for("change-comms");
-    settings
-        .rule_levels
-        .insert(history_rule(), Level::On(Severity::Error));
-    settings.apply_genre_levels(&registry).unwrap();
-    assert_eq!(
-        settings.rule_levels.get(&history_rule()),
-        Some(&Level::On(Severity::Error))
+    settings.rule_levels.insert(
+        id("core:docs-discipline.history-internal-reference"),
+        Level::On(Severity::Error),
     );
+    assert_eq!(severities(&lint(settings)), [Severity::Error]);
+}
+
+#[test]
+fn an_explicit_category_level_beats_the_genre() {
+    for genre in ["consumer", "change-comms"] {
+        let mut settings = settings_for(genre);
+        settings.categories.insert(
+            CategoryId::new("docs-discipline").unwrap(),
+            CategoryDials {
+                level: Some(Level::On(Severity::Error)),
+                ..CategoryDials::default()
+            },
+        );
+        assert_eq!(severities(&lint(settings)), [Severity::Error], "{genre}");
+    }
+}
+
+#[test]
+fn a_rule_that_is_not_the_history_rule_ignores_the_genre() {
+    let rules = [tokens("other", "refactored", &json!({"severity": "error"}))];
+    let set = ruleset(vec![category("docs-discipline", &rules)]);
+    let doc = Engine::new(vec![set], settings_for("change-comms"))
+        .unwrap()
+        .lint(&Input::markdown("a.md", "We refactored the parser.\n"))
+        .unwrap();
+    assert_eq!(severities(&doc), [Severity::Error]);
 }
