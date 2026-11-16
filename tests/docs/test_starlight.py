@@ -32,7 +32,7 @@ def site_dir(tmp_path: Path) -> Path:
     (schemas / "a.schema.json").write_text(
         json.dumps({"$id": f"{PREFIX}a.schema.json", "description": "d", "$defs": {}})
     )
-    for name in ("plugin-protocol", "pack-manifest", "common"):
+    for name in ("plugin-protocol", "pack-manifest", "config", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     packs = tmp_path / "packs" / "demo"
     packs.mkdir(parents=True)

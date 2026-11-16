@@ -108,6 +108,39 @@ rules:
 """
 
 
+FIXTURE_CONFIG = {
+    "description": "Demo config.",
+    "required": ["schema_version"],
+    "properties": {
+        "schema_version": {"const": 3, "description": "Version."},
+        "mode": {"enum": ["a", "b"], "default": "a", "description": "A | mode."},
+        "packs": {"type": "array", "items": {"$ref": "#/$defs/Source"}},
+        "tricky": {
+            "enum": ["a|b", "c`d"],
+            "default": "e`|f",
+            "description": "See [docs](nowhere.md) and ![i](x.png) *now* `code`.",
+        },
+        "levels": {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/Name"},
+            "additionalProperties": {"enum": ["on", "off"]},
+        },
+    },
+    "$defs": {
+        "Name": {
+            "type": "string",
+            "pattern": "^[a-z]+$",
+            "description": "A data name; the `x-` rule does not apply.",
+        },
+        "Source": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {"id": {"type": "string", "description": "Use <id>."}},
+        }
+    },
+}
+
+
 def _schema(name: str, **extra: object) -> str:
     body = {"$id": OLD_PREFIX + name, "title": f"{name} title", **extra}
     return json.dumps(body, indent=2) + "\n"
@@ -128,6 +161,9 @@ def sources(tmp_path: Path) -> dict[str, Path]:
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
     for name in ("plugin-protocol", "pack-manifest", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
+    (schemas / "config.schema.json").write_text(
+        _schema("config.schema.json", **FIXTURE_CONFIG)
+    )
     packs = tmp_path / "packs"
     for pack_id, body in (("style-pack", DATA_PACK), ("plug", PLUGIN_PACK)):
         (packs / pack_id).mkdir(parents=True)
@@ -838,3 +874,104 @@ def test_link_like_text_in_a_rule_example_survives_the_site_rewrite(
     assert _run(sources, "--starlight", str(_site(sources))) == 0
     page = _starlight_page(sources, "rules/more/no-link.md")
     assert "```text\nSee [the page](protocol.md) here.\n```" in page
+
+
+def _json_keys(node: object) -> set[str]:
+    """Every key of every ``properties`` object in a schema, by plain recursion."""
+    found: set[str] = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "properties" and isinstance(value, dict):
+                found |= set(value)
+            found |= _json_keys(value)
+    elif isinstance(node, list):
+        for item in node:
+            found |= _json_keys(item)
+    return found
+
+
+def test_config_reference_shows_type_default_requirement_and_description(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "config/index.md")
+    assert "| `schema_version` (required) | `3` | none | Version. |" in page
+    assert '| `mode` | one of `a`, `b` | `a` | A \\| mode. |' in page
+    assert "| `packs[].id` (required) | string | none | Use &lt;id&gt;. |" in page
+    assert "(config/index.md)" in _read(sources, "index.md")
+
+
+def test_config_cells_keep_pipes_backticks_and_link_shaped_text_inert(
+    sources: dict[str, Path],
+) -> None:
+    assert _run(sources) == 0
+    page = _read(sources, "config/index.md")
+    row = next(r for r in page.splitlines() if r.startswith("| `tricky`"))
+    assert row == (
+        "| `tricky` | one of `a\\|b`, ``c`d`` | ``e`\\|f`` "
+        "| See \\[docs\\]\\(nowhere.md\\) and \\!\\[i\\]\\(x.png\\) "
+        "\\*now\\* \\`code\\`. |"
+    )
+    assert build_site.broken_links(
+        {"config/index.md": page, "index.md": ""}
+    ) == []
+
+
+def test_map_keys_get_a_row_with_the_property_names_metadata(
+    sources: dict[str, Path],
+) -> None:
+    _run(sources)
+    page = _read(sources, "config/index.md")
+    assert (
+        "| `levels.<name>` | one of `on`, `off` | none "
+        "| A data name; the \\`x-\\` rule does not apply. "
+        "Names match the pattern ^\\[a-z\\]+$ |"
+    ) in page
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "rules",
+        "categories",
+        "genres[].rules",
+        "genres[].categories",
+        "overrides[].rules",
+        "overrides[].categories",
+    ],
+)
+def test_real_config_map_keys_state_that_the_x_convention_does_not_apply(
+    key: str,
+) -> None:
+    page = build_site.build(build_site.load_site())["config/index.md"]
+    row = next(r for r in page.splitlines() if r.startswith(f"| `{key}.<name>`"))
+    assert "does not apply to them" in row
+    assert "qualified" in row
+
+
+def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
+    schema = json.loads((build_site.SCHEMAS_DIR / "config.schema.json").read_text())
+    page = build_site.build(build_site.load_site())["config/index.md"]
+    rows = [r for r in page.splitlines() if r.startswith("| `")]
+    segments = {
+        part.removesuffix("[]")
+        for row in rows
+        for part in row.split("`")[1].split(".")
+    }
+    assert _json_keys(schema) <= segments
+    assert all(r.split(" | ")[1].strip() for r in rows)
+    assert "| `network.offline` | boolean | `false` |" in page
+    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |' in page
+
+
+def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
+    sources: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    _run(sources)
+    assert "(cli/index.md)" in _read(sources, "index.md")
+    index = _read(sources, "cli/index.md")
+    assert "(lint.md)" in index and "## Exit codes" in index
+    assert "`--format`" in _read(sources, "cli/lint.md")
+    (sources["out"] / "cli/lint.md").write_text("edited\n")
+    assert _run(sources, "--check") == 1
+    assert "cli/lint.md: out of date" in capsys.readouterr().err

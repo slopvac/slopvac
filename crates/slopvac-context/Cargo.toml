@@ -12,9 +12,9 @@ publish.workspace = true
 clap = { workspace = true }
 globset = { workspace = true }
 ignore = { workspace = true }
-pcre2 = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
+slopvac-pcre2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

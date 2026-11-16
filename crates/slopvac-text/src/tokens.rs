@@ -3,7 +3,7 @@
 
 use std::sync::LazyLock;
 
-use pcre2::bytes::Regex;
+use slopvac_pcre2::Regex;
 
 use crate::lexicon::IMPERATIVE_VERBS;
 use crate::pattern::{TextError, find_all, re, re_i, replace_all};
@@ -92,9 +92,7 @@ fn is_word(c: char) -> bool {
         return c.is_ascii_alphanumeric();
     }
     let mut buf = [0u8; 4];
-    WORD_CHAR
-        .is_match(c.encode_utf8(&mut buf).as_bytes())
-        .unwrap_or(false)
+    WORD_CHAR.is_match(c.encode_utf8(&mut buf)).unwrap_or(false)
 }
 
 fn is_mark(c: char) -> bool {
@@ -102,8 +100,7 @@ fn is_mark(c: char) -> bool {
         return false;
     }
     let mut buf = [0u8; 4];
-    MARK.is_match(c.encode_utf8(&mut buf).as_bytes())
-        .unwrap_or(false)
+    MARK.is_match(c.encode_utf8(&mut buf)).unwrap_or(false)
 }
 
 fn collapse(text: &str, patterns: &[&Regex]) -> Result<String, TextError> {
@@ -138,8 +135,8 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
 
 /// Remove the leading step number, once.
 pub(crate) fn strip_step_number(text: &str) -> Result<&str, TextError> {
-    Ok(match STEP_NUMBER.find(text.as_bytes())? {
-        Some(m) => &text[m.end()..],
+    Ok(match STEP_NUMBER.find(text)? {
+        Some(m) => &text[m.end..],
         None => text,
     })
 }

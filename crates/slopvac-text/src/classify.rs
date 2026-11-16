@@ -2,8 +2,8 @@
 
 use std::sync::LazyLock;
 
-use pcre2::bytes::Regex;
 use serde::{Deserialize, Serialize};
+use slopvac_pcre2::Regex;
 
 use crate::lexicon::{
     EXTRA_FINITE_STEMS, FINITE_VERB_FORMS, IMPERATIVE_VERBS, NON_NOUN_SECOND_TOKENS, is_imperative,
@@ -120,13 +120,12 @@ fn plain_imperative_start(p: &Patterns, text: &str) -> Result<bool, TextError> {
 pub fn classify_text_type(text: &str) -> Result<TextType, TextError> {
     let p = &*PATTERNS;
     let stripped = py_strip(text);
-    if let Some(caps) = p.safety_marker.captures(stripped.as_bytes())? {
+    if let Some(caps) = p.safety_marker.captures(stripped)? {
         let whole = caps.get(0).expect("group 0 exists");
-        let marker = caps.name("marker").map_or(String::new(), |m| {
-            upper(&String::from_utf8_lossy(m.as_bytes()))
-        });
+        // The `marker` group is the first and only capture group of the pattern.
+        let marker = caps.get(1).map_or(String::new(), |m| upper(&stripped[m]));
         let body =
-            stripped[whole.end()..].trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);
+            stripped[whole.end..].trim_start_matches([' ', ':', '.', '!', '?', '*', '-', '+']);
         if imperative_start(p, body)? {
             return Ok(TextType::Procedural);
         }

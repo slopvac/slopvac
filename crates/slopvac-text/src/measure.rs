@@ -5,7 +5,7 @@
 
 use std::sync::LazyLock;
 
-use pcre2::bytes::Regex;
+use slopvac_pcre2::Regex;
 
 use crate::pattern::{TextError, find_all, matches_start, re, re_i};
 use crate::pyrules::py_isspace;
