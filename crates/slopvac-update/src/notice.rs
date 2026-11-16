@@ -723,7 +723,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("c")).unwrap();
         let big = format!(
             "{{\"checked_at\":1,\"latest\":\"9.9.9\",\"pad\":\"{}\"}}",
-            "x".repeat(MAX_CACHE_BYTES as usize)
+            "x".repeat(usize::try_from(MAX_CACHE_BYTES).unwrap())
         );
         std::fs::write(cache.path(), big).unwrap();
         assert!(cache.read().is_none());
