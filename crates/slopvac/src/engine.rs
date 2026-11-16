@@ -128,7 +128,7 @@ fn kind_of_file(kind: &FileKind) -> Result<Kind, &'static str> {
         FileKind::Markdown => Ok(Kind::Markdown),
         FileKind::Mdx => Ok(Kind::Mdx),
         FileKind::Rst => Ok(Kind::Rst),
-        // STUB(slopvac-8l4.12.21): HTML and plain text have no engine parser yet, and
+        // STUB(slopvac-8l4.12.28): HTML and plain text have no engine parser yet, and
         // comment-mode rules run once slopvac-8l4.3.26 lands.
         FileKind::Html | FileKind::Text | FileKind::Toml | FileKind::Source(_) => {
             Err("this file type has no engine parser yet")
@@ -213,23 +213,43 @@ fn collect(
 ) -> Result<Vec<Item>, CliError> {
     let mut items = Vec::new();
     if let Some(bytes) = &request.stdin {
-        let shown = redact::STDIN_NAME;
-        let kind = match &request.stdin_plan {
-            Some(plan) => kind_of_language(plan),
-            None => Ok(Kind::Markdown),
-        };
-        match (kind, String::from_utf8(bytes.clone())) {
-            (Ok(kind), Ok(text)) => items.push(Item {
-                shown: shown.to_owned(),
-                text,
-                kind,
-                config: config_for(configs, &request.root, Path::new(shown))?,
-            }),
-            (Err(why), _) => run.skip("input-unsupported", shown, format!("{shown}: {why}")),
-            (_, Err(_)) => run.skip("input-not-utf8", shown, format!("{shown}: not valid UTF-8")),
-        }
+        collect_stdin(request, bytes, configs, run, &mut items)?;
     }
+    collect_targets(request, configs, run, &mut items)?;
+    Ok(items)
+}
 
+fn collect_stdin(
+    request: &LintRequest,
+    bytes: &[u8],
+    configs: &Configs<'_>,
+    run: &mut Run,
+    items: &mut Vec<Item>,
+) -> Result<(), CliError> {
+    let shown = redact::STDIN_NAME;
+    let kind = match &request.stdin_plan {
+        Some(plan) => kind_of_language(plan),
+        None => Ok(Kind::Markdown),
+    };
+    match (kind, String::from_utf8(bytes.to_vec())) {
+        (Ok(kind), Ok(text)) => items.push(Item {
+            shown: shown.to_owned(),
+            text,
+            kind,
+            config: config_for(configs, &request.root, Path::new(shown))?,
+        }),
+        (Err(why), _) => run.skip("input-unsupported", shown, format!("{shown}: {why}")),
+        (_, Err(_)) => run.skip("input-not-utf8", shown, format!("{shown}: not valid UTF-8")),
+    }
+    Ok(())
+}
+
+fn collect_targets(
+    request: &LintRequest,
+    configs: &Configs<'_>,
+    run: &mut Run,
+    items: &mut Vec<Item>,
+) -> Result<(), CliError> {
     let selection = if request.code_comments {
         Selection::CodeComments
     } else {
@@ -318,7 +338,7 @@ fn collect(
             });
         }
     }
-    Ok(items)
+    Ok(())
 }
 
 /// The config that applies to `file` and its path relative to the config root.
@@ -347,13 +367,16 @@ fn config_for(
     }))
 }
 
-fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutcome {
-    // Group the inputs by their settings: one engine per distinct settings.
-    let mut groups: BTreeMap<String, (slopvac_engine::Settings, Vec<usize>)> = BTreeMap::new();
-    let rules = match rule_catalog::core() {
-        Ok(rules) => rules,
-        Err(err) => return failed(request, run, &err),
-    };
+/// Settings and the indexes of the items that share them.
+type Groups = BTreeMap<String, (slopvac_engine::Settings, Vec<usize>)>;
+
+/// Group the items by their settings: one engine per distinct settings.
+fn group_by_settings(
+    request: &LintRequest,
+    items: &[Item],
+    rules: &slopvac_rules::RuleSet,
+) -> Result<Groups, CliError> {
+    let mut groups = Groups::new();
     for (index, item) in items.iter().enumerate() {
         let resolved = item.config.as_ref().map(|(config, rel)| {
             config.resolve(
@@ -367,32 +390,59 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutco
                 },
             )
         });
-        let files: Vec<(String, bool)> = item
+        let files = item
             .config
             .as_ref()
-            .map(|(config, _)| {
-                config
-                    .files
-                    .iter()
-                    .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
-                    .collect()
-            })
+            .map(|(config, _)| config_files(config))
             .unwrap_or_default();
-        let settings = match lint_settings::build(
-            &rules,
+        let settings = lint_settings::build(
+            rules,
             resolved.as_ref(),
             lint_settings::config_sources(&files),
             &request.overrides,
-        ) {
-            Ok(settings) => settings,
-            Err(err) => return failed(request, run, &err),
-        };
+        )?;
         groups
             .entry(format!("{settings:?}"))
             .or_insert_with(|| (settings, Vec::new()))
             .1
             .push(index);
     }
+    Ok(groups)
+}
+
+/// A config that lists `styles` asks for presets that no pack supplies yet
+/// (STUB(slopvac-8l4.12.29)). Ignoring them would report a pass the config did not ask for,
+/// so the run is incomplete.
+fn note_unapplied_styles(items: &[Item], run: &mut Run) {
+    let mut seen = HashSet::new();
+    for (config, _) in items.iter().filter_map(|i| i.config.as_ref()) {
+        let styles = config
+            .project_value(&["styles"])
+            .and_then(|v| v.as_array().map(Vec::len))
+            .unwrap_or(0);
+        if styles > 0 && seen.insert(config.root.clone()) {
+            run.skip(
+                "styles-not-applied",
+                "slopvac.toml",
+                format!(
+                    "slopvac.toml: `styles` lists {styles} preset(s), but no style pack is \
+                     available yet, so none apply"
+                ),
+            );
+        }
+    }
+}
+
+fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutcome {
+    let rules = match rule_catalog::core() {
+        Ok(rules) => rules,
+        Err(err) => return failed(request, run, &err),
+    };
+    note_unapplied_styles(&items, &mut run);
+    let groups = match group_by_settings(request, &items, &rules) {
+        Ok(groups) => groups,
+        Err(err) => return failed(request, run, &err),
+    };
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
@@ -460,4 +510,50 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, mut run: Run) -> RunOutco
         report: assemble(&documents, run.notices),
         sources,
     }
+}
+
+/// The rules and the settings of the project config found from `root`, for a long-running
+/// consumer such as the language server that lints one buffer at a time.
+///
+/// # Errors
+/// The config error, or `rules-unavailable`.
+pub fn project_settings(
+    root: &Path,
+) -> Result<(slopvac_rules::RuleSet, slopvac_engine::Settings), CliError> {
+    let rules = rule_catalog::core()?;
+    let presets = NoPresets;
+    let discovery = Discovery::new(&presets);
+    let found = discovery.nearest(root).map_err(|e| config_error(&e))?;
+    let (resolved, files) = match &found {
+        Some(config) => (
+            Some(config.resolve(
+                Path::new(""),
+                &Inputs {
+                    presets: &presets,
+                    front_matter: &[],
+                    directives: &[],
+                    cli: &[],
+                    env: &[],
+                },
+            )),
+            config_files(config),
+        ),
+        None => (None, Vec::new()),
+    };
+    let settings = lint_settings::build(
+        &rules,
+        resolved.as_ref(),
+        lint_settings::config_sources(&files),
+        &Overrides::default(),
+    )?;
+    Ok((rules, settings))
+}
+
+/// The display name of each config file and whether it was pulled in by `extends`.
+fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
+    config
+        .files
+        .iter()
+        .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
+        .collect()
 }

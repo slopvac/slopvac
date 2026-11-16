@@ -8,7 +8,7 @@ use clap::ArgMatches;
 
 use crate::cli;
 use crate::color::{self, ColorChoice};
-use crate::engine::{EngineLinter, LintRequest, Linter};
+use crate::engine::{self, EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
 use crate::{exit, generate, init, inspect, lint_settings, logging, offline, output, stdin};
@@ -146,13 +146,11 @@ fn dispatch(
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("lint", m)) => lint(m, out, err_out),
-        Some(("lsp", m)) => slopvac_lsp::run(m)
-            .map(|exit| match exit {
-                slopvac_lsp::Exit::AfterShutdown => exit::PASS,
-                // LSP says `exit` without `shutdown` ends the process with status 1.
-                slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
-            })
-            .map_err(|e| CliError::new("lsp-failed", e.to_string())),
+        Some(("lsp", m)) => lsp(m).map(|exit| match exit {
+            slopvac_lsp::Exit::AfterShutdown => exit::PASS,
+            // LSP says `exit` without `shutdown` ends the process with status 1.
+            slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
+        }),
         Some(("migrate", m)) => migrate(m, out),
         Some(("completions", m)) => {
             let shell = *m
@@ -235,6 +233,15 @@ fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliErr
             )
         })?;
     Ok(exit::PASS)
+}
+
+/// Start the language server with the rules and the settings of the project config.
+fn lsp(m: &ArgMatches) -> Result<slopvac_lsp::Exit, CliError> {
+    let root = std::env::current_dir().unwrap_or_default();
+    let (rules, settings) = engine::project_settings(&root)?;
+    let linter = slopvac_lsp::EngineLinter::new(vec![rules], settings)
+        .map_err(|e| CliError::new("engine-unavailable", e.to_string()))?;
+    slopvac_lsp::run(m, linter).map_err(|e| CliError::new("lsp-failed", e.to_string()))
 }
 
 fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {

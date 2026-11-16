@@ -1,7 +1,7 @@
 //! The engine settings of one file: the profile's legacy style, the project config, and the
 //! command line, merged by the precedence in `docs/contract/profiles.md`, section 3.
 //!
-//! STUB(slopvac-8l4.12.21): the genre is the default `reference`, no `styles` or genre chain
+//! STUB(slopvac-8l4.12.29): the genre is the default `reference`, no `styles` or genre chain
 //! is loaded (`NoPresets`), and `terms.blocklists` files are not read. The swap bead lists
 //! each gap.
 
@@ -96,6 +96,37 @@ fn number(resolved: Option<&Resolved>, path: &[&str]) -> Option<f64> {
     resolved?.get(path).and_then(Json::as_f64)
 }
 
+fn count(resolved: Option<&Resolved>, path: &[&str]) -> Option<usize> {
+    resolved?
+        .get(path)
+        .and_then(Json::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+}
+
+/// Thresholds: the profile's, then the config's, then the command line's.
+fn apply_thresholds(
+    settings: &mut Settings,
+    profile: &str,
+    resolved: Option<&Resolved>,
+    cli: &Overrides,
+) {
+    let (density, errors, score) = profile_thresholds(profile);
+    let t = &mut settings.thresholds;
+    t.max_total_per_100_words =
+        number(resolved, &["thresholds", "max_total_per_100_words"]).or(density);
+    t.max_errors = count(resolved, &["thresholds", "max_errors"]).or(errors);
+    t.max_warnings = count(resolved, &["thresholds", "max_warnings"]);
+    t.min_score = number(resolved, &["thresholds", "min_score"]).or(score);
+    t.max_unicode_dashes =
+        Some(count(resolved, &["thresholds", "max_unicode_dashes"]).unwrap_or(0));
+    if let Some(n) = cli.min_score {
+        t.min_score = Some(n);
+    }
+    if let Some(n) = cli.max_per_100_words {
+        t.max_total_per_100_words = Some(n);
+    }
+}
+
 fn internal(what: &str, err: impl std::fmt::Display) -> CliError {
     CliError::new("settings-invalid", format!("{what}: {err}"))
 }
@@ -133,23 +164,7 @@ pub fn build(
     );
     settings.config_sources = sources;
 
-    let (density, errors, score) = profile_thresholds(profile);
-    let t = &mut settings.thresholds;
-    t.max_total_per_100_words =
-        number(resolved, &["thresholds", "max_total_per_100_words"]).or(density);
-    t.max_errors = number(resolved, &["thresholds", "max_errors"])
-        .map(|n| n as usize)
-        .or(errors);
-    t.max_warnings = number(resolved, &["thresholds", "max_warnings"]).map(|n| n as usize);
-    t.min_score = number(resolved, &["thresholds", "min_score"]).or(score);
-    t.max_unicode_dashes =
-        Some(number(resolved, &["thresholds", "max_unicode_dashes"]).map_or(0, |n| n as usize));
-    if let Some(n) = cli.min_score {
-        t.min_score = Some(n);
-    }
-    if let Some(n) = cli.max_per_100_words {
-        t.max_total_per_100_words = Some(n);
-    }
+    apply_thresholds(&mut settings, profile, resolved, cli);
 
     for category in rules.categories() {
         let name = category.id().as_str();
