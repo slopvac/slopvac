@@ -264,6 +264,17 @@ fn a_missing_nested_path_is_shown_with_forward_slashes() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn a_drive_relative_path_keeps_its_native_spelling() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    // A drive other than the project's, so the path can't be made relative to it.
+    let (code, out) = p.validate(&["Z:nope.md"]);
+    assert_eq!(code, 2);
+    assert!(out.contains("cannot read Z:nope.md:"), "{out}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_directory_that_cannot_be_read_makes_the_check_incomplete() {
