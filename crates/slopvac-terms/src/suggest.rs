@@ -50,8 +50,11 @@ fn tokens(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
 }
 
 fn starts_sentence(text: &str, at: usize) -> bool {
-    let line_start = text[..at].rfind('\n').map_or(0, |i| i + 1);
-    let prefix = text[line_start..at].trim_start();
+    let Some(before) = text.get(..at) else {
+        return false;
+    };
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+    let prefix = before.get(line_start..).unwrap_or_default().trim_start();
     let prefix = prefix
         .trim_start_matches(['#', '>', '-', '*', '+'])
         .trim_start();
@@ -73,7 +76,7 @@ fn is_candidate(word: &str, text: &str, at: usize) -> bool {
         return false;
     }
     let upper = chars.iter().filter(|c| c.is_uppercase()).count();
-    let first_upper = chars[0].is_uppercase();
+    let first_upper = chars.first().is_some_and(|c| c.is_uppercase());
     if upper == letters {
         // Short all-caps tokens are acronyms; longer ones are shouting.
         return letters <= MAX_ACRONYM;
@@ -84,11 +87,16 @@ fn is_candidate(word: &str, text: &str, at: usize) -> bool {
     first_upper && letters >= 3 && !starts_sentence(text, at)
 }
 
-fn location(text: &str, at: usize) -> (usize, usize) {
-    let before = &text[..at];
-    let line = before.matches('\n').count() + 1;
-    let col = before.rfind('\n').map_or(before, |i| &before[i + 1..]);
-    (line, col.chars().count() + 1)
+/// `line:col` (1-based) of byte offset `at`, or `?:?` when it is not a char boundary.
+fn location(text: &str, at: usize) -> String {
+    text.get(..at).map_or_else(
+        || "?:?".to_owned(),
+        |before| {
+            let line = before.matches('\n').count() + 1;
+            let col = before.rsplit('\n').next().unwrap_or(before);
+            format!("{line}:{}", col.chars().count() + 1)
+        },
+    )
 }
 
 /// Infer candidate terms from `(name, text, skip ranges)` inputs.
@@ -105,17 +113,19 @@ pub fn suggest(
     let mut found: BTreeMap<String, (usize, BTreeSet<usize>, String)> = BTreeMap::new();
     for (n, (name, text, skip)) in inputs.iter().enumerate() {
         for r in tokens(text) {
-            let word = &text[r.clone()];
+            let Some(word) = text.get(r.clone()) else {
+                continue;
+            };
             if known.contains(&word.to_lowercase())
                 || skip.iter().any(|s| s.start < r.end && r.start < s.end)
                 || !is_candidate(word, text, r.start)
             {
                 continue;
             }
-            let (line, col) = location(text, r.start);
+            let at = location(text, r.start);
             let entry = found
                 .entry(word.to_owned())
-                .or_insert_with(|| (0, BTreeSet::new(), format!("{name}:{line}:{col}")));
+                .or_insert_with(|| (0, BTreeSet::new(), format!("{name}:{at}")));
             entry.0 += 1;
             entry.1.insert(n);
         }

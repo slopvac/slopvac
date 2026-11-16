@@ -108,23 +108,26 @@ impl TermSet {
         let bytes = text.as_bytes();
         let mut out = Vec::new();
         let mut i = 0;
-        while i < bytes.len() {
+        while let Some(&byte) = bytes.get(i) {
             if !text.is_char_boundary(i) {
                 i += 1;
                 continue;
             }
-            let Some(candidates) = self.by_first.get(&bytes[i].to_ascii_lowercase()) else {
+            let Some(candidates) = self.by_first.get(&byte.to_ascii_lowercase()) else {
                 i += 1;
                 continue;
             };
             let hit = candidates.iter().find(|s| {
                 let end = i + s.text.len();
-                end <= bytes.len()
-                    && text.is_char_boundary(end)
-                    && if self.terms[s.term].case_sensitive {
-                        &bytes[i..end] == s.text.as_bytes()
+                let Some(window) = bytes.get(i..end) else {
+                    return false;
+                };
+                let case_sensitive = self.terms.get(s.term).is_some_and(|t| t.case_sensitive);
+                text.is_char_boundary(end)
+                    && if case_sensitive {
+                        window == s.text.as_bytes()
                     } else {
-                        bytes[i..end].eq_ignore_ascii_case(s.text.as_bytes())
+                        window.eq_ignore_ascii_case(s.text.as_bytes())
                     }
                     && left_ok(text, i)
                     && right_ok(text, end)
@@ -135,8 +138,10 @@ impl TermSet {
                 continue;
             };
             let end = i + s.text.len();
-            let term = &self.terms[s.term];
-            let found = &text[i..end];
+            let (Some(term), Some(found)) = (self.terms.get(s.term), text.get(i..end)) else {
+                i += 1;
+                continue;
+            };
             let accepted =
                 term.ignore_case || found == term.term || term.variants.iter().any(|v| v == found);
             if !accepted && !skip.iter().any(|r| r.start < end && i < r.end) {
@@ -157,14 +162,18 @@ fn is_word(c: char) -> bool {
 }
 
 fn left_ok(text: &str, at: usize) -> bool {
-    text[..at]
-        .chars()
-        .next_back()
-        .is_none_or(|c| !is_word(c) && !"/@.\\#$~".contains(c))
+    text.get(..at).is_some_and(|before| {
+        before
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_word(c) && !"/@.\\#$~".contains(c))
+    })
 }
 
 fn right_ok(text: &str, at: usize) -> bool {
-    let rest = &text[at..];
+    let Some(rest) = text.get(at..) else {
+        return false;
+    };
     let rest = strip_suffix_forms(rest);
     let mut chars = rest.chars();
     match chars.next() {
@@ -178,14 +187,11 @@ fn right_ok(text: &str, at: usize) -> bool {
 /// count as part of the next word. The ending stays outside the reported span.
 fn strip_suffix_forms(rest: &str) -> &str {
     for suffix in ["'s", "\u{2019}s", "s'", "s\u{2019}", "es", "s"] {
-        if rest.len() >= suffix.len()
-            && rest.is_char_boundary(suffix.len())
-            && rest[..suffix.len()].eq_ignore_ascii_case(suffix)
+        if let (Some(head), Some(after)) = (rest.get(..suffix.len()), rest.get(suffix.len()..))
+            && head.eq_ignore_ascii_case(suffix)
+            && after.chars().next().is_none_or(|c| !is_word(c))
         {
-            let after = &rest[suffix.len()..];
-            if after.chars().next().is_none_or(|c| !is_word(c)) {
-                return after;
-            }
+            return after;
         }
     }
     rest
@@ -195,23 +201,39 @@ fn strip_suffix_forms(rest: &str) -> &str {
 /// whitespace-delimited token decides, so `docs/my-github-repo` and
 /// `@my-github` are skipped while `github-hosted` still matches.
 fn token_ok(text: &str, start: usize, end: usize) -> bool {
-    let ts = text[..start].rfind(char::is_whitespace).map_or(0, |p| {
-        p + text[p..].chars().next().map_or(1, char::len_utf8)
-    });
-    let te = text[end..]
+    token_check(text, start, end).unwrap_or(false)
+}
+
+/// `token_ok` over offsets that may not lie on char boundaries: `None` when they do not.
+fn token_check(text: &str, start: usize, end: usize) -> Option<bool> {
+    let ts = text
+        .get(..start)?
+        .rfind(char::is_whitespace)
+        .map_or(0, |p| {
+            p + text
+                .get(p..)
+                .and_then(|t| t.chars().next())
+                .map_or(1, char::len_utf8)
+        });
+    let te = text
+        .get(end..)?
         .find(char::is_whitespace)
         .map_or(text.len(), |p| end + p);
     let lead = "([{\"'<`\u{2018}\u{201c}\u{00ab}\u{2039}\u{ff08}\u{300c}\u{300e}\u{3010}";
     let trail = ")]}\"'>,;:!?.`\u{2019}\u{201d}\u{00bb}\u{203a}\u{2026}\u{ff09}\u{300d}\u{300f}\u{3011}\u{3002}\u{ff0c}\u{ff01}\u{ff1f}";
     let mut ts = ts;
-    while ts < start && text[ts..].starts_with(|c| lead.contains(c)) {
-        ts += text[ts..].chars().next().map_or(1, char::len_utf8);
+    while ts < start && text.get(ts..)?.starts_with(|c| lead.contains(c)) {
+        ts += text.get(ts..)?.chars().next().map_or(1, char::len_utf8);
     }
     let mut te = te;
-    while te > end && text[..te].ends_with(|c| trail.contains(c)) {
-        te -= text[..te].chars().next_back().map_or(1, char::len_utf8);
+    while te > end && text.get(..te)?.ends_with(|c| trail.contains(c)) {
+        te -= text
+            .get(..te)?
+            .chars()
+            .next_back()
+            .map_or(1, char::len_utf8);
     }
-    let token = &text[ts..te];
+    let token = text.get(ts..te)?;
     let (s, e) = (start - ts, end - ts);
     let outside = |i: usize| i < s || i >= e;
     let chars: Vec<(usize, char)> = token.char_indices().collect();
@@ -220,18 +242,19 @@ fn token_ok(text: &str, start: usize, end: usize) -> bool {
             continue;
         }
         if "/@\\".contains(c) {
-            return false;
+            return Some(false);
         }
         if c == '.' {
             let prev_alnum = k
                 .checked_sub(1)
-                .is_some_and(|p| chars[p].1.is_alphanumeric());
+                .and_then(|p| chars.get(p))
+                .is_some_and(|x| x.1.is_alphanumeric());
             let next_alnum = chars.get(k + 1).is_some_and(|x| x.1.is_alphanumeric());
             // `.github`, `github.com` and `docs.github` are paths or domains.
             if prev_alnum || next_alnum {
-                return false;
+                return Some(false);
             }
         }
     }
-    true
+    Some(true)
 }

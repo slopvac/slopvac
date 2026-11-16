@@ -28,7 +28,7 @@ fn err(path: &str, message: impl Into<String>) -> TermsError {
 impl Default for TermsDoc {
     fn default() -> Self {
         let mut doc = DocumentMut::new();
-        doc["schema_version"] = value(3);
+        doc.insert("schema_version", value(3));
         Self { doc }
     }
 }
@@ -142,7 +142,7 @@ impl TermsDoc {
             Some(_) => false,
         };
         if empty {
-            doc["terms"] = value(Array::new());
+            doc.insert("terms", value(Array::new()));
         }
         doc.to_string()
     }
@@ -194,7 +194,7 @@ impl TermsDoc {
             _ => {
                 let mut tables = ArrayOfTables::new();
                 tables.push(Self::table(entry));
-                self.doc["terms"] = Item::ArrayOfTables(tables);
+                self.doc.insert("terms", Item::ArrayOfTables(tables));
             }
         }
         Ok(())
@@ -203,7 +203,7 @@ impl TermsDoc {
     fn table(entry: &TermEntry) -> Table {
         let mut t = Table::new();
         for (k, v) in fields(entry) {
-            t[k] = Item::Value(v);
+            t.insert(k, Item::Value(v));
         }
         t
     }

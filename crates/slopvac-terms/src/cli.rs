@@ -153,11 +153,20 @@ fn io_err(e: &std::io::Error) -> TermsError {
     }
 }
 
-fn line_col(text: &str, at: usize) -> (usize, usize) {
-    let before = &text[..at];
+/// The 1-based line and column of byte offset `at`, or `None` when it is not a char boundary.
+fn line_col(text: &str, at: usize) -> Option<(usize, usize)> {
+    let before = text.get(..at)?;
     let line = before.matches('\n').count() + 1;
-    let col = before.rfind('\n').map_or(before, |i| &before[i + 1..]);
-    (line, col.chars().count() + 1)
+    let col = before.rsplit('\n').next().unwrap_or(before);
+    Some((line, col.chars().count() + 1))
+}
+
+/// The first terms file, where `add`, `remove` and `import` write.
+fn write_target(paths: &[PathBuf]) -> Result<&PathBuf, TermsError> {
+    paths.first().ok_or_else(|| TermsError::Io {
+        path: "terms file".to_owned(),
+        message: "no terms file is configured".to_owned(),
+    })
 }
 
 /// Byte ranges of fenced code blocks and inline code spans in Markdown.
@@ -212,9 +221,12 @@ fn inline_spans(line: &str, base: usize, out: &mut Vec<Range<usize>>) {
     };
     let mut k = 0;
     while k < runs.len() {
-        let (s, n) = runs[k];
-        if let Some(j) = (k + 1..runs.len()).find(|&j| runs[j].1 == n) {
-            out.push(base + s..base + runs[j].0 + n);
+        let Some(&(s, n)) = runs.get(k) else {
+            break;
+        };
+        if let Some((j, &(close, _))) = runs.iter().enumerate().skip(k + 1).find(|(_, r)| r.1 == n)
+        {
+            out.push(base + s..base + close + n);
             k = j + 1;
         } else {
             k += 1;
@@ -303,7 +315,7 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
         ignore_case,
         case_sensitive,
     };
-    let file = &paths[0];
+    let file = write_target(paths)?;
     let mut doc = TermsDoc::open(file)?;
     doc.add(&entry)?;
     doc.save(file)?;
@@ -324,7 +336,7 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
 )]
 fn cmd_remove(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required");
-    let file = &paths[0];
+    let file = write_target(paths)?;
     let mut doc = TermsDoc::open(file)?;
     if doc.remove(term) {
         doc.save(file)?;
@@ -358,9 +370,9 @@ fn cmd_check(
             message: e.to_string(),
         })?;
         for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
-            let (line, col) = line_col(&text, f.span.start);
-            writeln!(out, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
-                .map_err(|e| io_err(&e))?;
+            let at = line_col(&text, f.span.start)
+                .map_or_else(|| "?:?".to_owned(), |(line, col)| format!("{line}:{col}"));
+            writeln!(out, "{p}:{at}: {} -> {}", f.found, f.expected).map_err(|e| io_err(&e))?;
             found += 1;
         }
     }
@@ -419,7 +431,7 @@ fn cmd_suggest(
             message: format!("`{bad}` is not a suggestion; run without --accept to see them"),
         });
     }
-    let target = &paths[0];
+    let target = write_target(paths)?;
     let mut doc = TermsDoc::open(target)?;
     for term in &accept {
         doc.add(&TermEntry {
@@ -455,7 +467,7 @@ fn cmd_import(
         message: e.to_string(),
     })?;
     let imported = import::parse(file, source, &text)?;
-    let target = &paths[0];
+    let target = write_target(paths)?;
     let mut doc = TermsDoc::open(target)?;
     let (mut added, mut existing) = (0, 0);
     for w in &imported.words {
