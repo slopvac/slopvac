@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://srobroek.github.io/slopvac/schemas/v3/blocklist.schema.json",
   "title": "slopvac v3 word blocklist",
-  "description": "A list of words a project refuses, each with a part of speech and a reason. The opt-in vocabulary check reads it; it is off unless `terms.blocklists` or `[vocabulary] path` names a file. The file may be TOML or JSON. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "description": "A list of words a project refuses, each with a part of speech and a reason. The opt-in vocabulary check reads it; it is off unless `terms.blocklists` or `[vocabulary] path` names a file. The file may be TOML, JSON or YAML (`.toml`, `.json`, `.yml` or `.yaml`); the file suffix picks the format. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",
   "properties": {
     "schema_version": {

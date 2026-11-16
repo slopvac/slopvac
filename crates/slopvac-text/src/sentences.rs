@@ -3,7 +3,7 @@
 
 use std::sync::LazyLock;
 
-use pcre2::bytes::Regex;
+use slopvac_pcre2::Regex;
 
 use crate::classify::{TextType, classify_text_type};
 use crate::lexicon::INITIALISM_SENTENCE_OPENERS;
@@ -242,7 +242,7 @@ fn split_vertical_list<'a>(
     let mut items = None;
     for (index, (_, line)) in lines.iter().enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
-        if !COLON_END.is_match(body.as_bytes())? {
+        if !COLON_END.is_match(body)? {
             continue;
         }
         // One backward pass answers "are all non-empty lines from here on list items".
@@ -330,7 +330,7 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
             let leading = raw.len() - py_lstrip(raw).len();
             let absolute = chunk_offset + start + leading;
             start = end;
-            if part.is_empty() || !WORDLIKE.is_match(part.as_bytes())? {
+            if part.is_empty() || !WORDLIKE.is_match(part)? {
                 continue;
             }
             out.push(Sentence {
@@ -403,7 +403,7 @@ mod tests {
             for index in (0..bytes.len()).filter(|&i| bytes[i] == b'.') {
                 assert_eq!(
                     ends_in_dotted_initialism(bytes, &runs, index, &mut Work::default()),
-                    pattern.is_match(&bytes[..=index]).unwrap(),
+                    pattern.is_match(&text[..=index]).unwrap(),
                     "{text:?} at {index}"
                 );
             }

@@ -213,8 +213,10 @@ fn a_child_category_dial_replaces_only_that_dial() {
 }
 
 #[test]
-fn a_text_signal_that_matches_part_of_a_character_does_not_panic() {
-    // `\C` matches one byte, so the match can end inside the two bytes of `é`.
+fn a_text_signal_that_could_match_part_of_a_character_is_rejected_at_load() {
+    // `\C` matches one byte, so a match could end inside the two bytes of `é` and break
+    // any caller that slices the text. The context crate never needs byte matching, so the
+    // pattern layer refuses `\C` and the genre fails to load with a pattern error.
     let y = "
 - {schema_version: 3, id: base}
 - schema_version: 3
@@ -223,11 +225,29 @@ fn a_text_signal_that_matches_part_of_a_character_does_not_panic() {
     signals:
       - { kind: text, pattern: '\\C' }
 ";
+    let result = parse_genres(y).and_then(|specs| GenreRegistry::new(specs, "base"));
+    assert!(
+        matches!(result, Err(slopvac_context::Error::Pattern { .. })),
+        "{:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn a_text_signal_with_a_match_reset_resolves_on_character_boundaries() {
+    // `\K` moves the match start; the span must still be slice-safe on multi-byte text.
+    let y = "
+- {schema_version: 3, id: base}
+- schema_version: 3
+  id: a
+  detect:
+    signals:
+      - { kind: text, pattern: 't\\K\u{e9}' }
+";
     let reg = GenreRegistry::new(parse_genres(y).unwrap(), "base").unwrap();
     let doc = PlainDocument::from_markdown("a.md", "\u{e9}t\u{e9}\n");
     let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
     assert_eq!(r.id, "a");
-    assert_eq!(r.reasons[0].signal, "text");
 }
 
 #[test]
