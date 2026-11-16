@@ -1,5 +1,7 @@
 # Built-in genres, as `genre.schema.json` defines them. Heading and text patterns are PCRE2
 # and case-insensitive. Path globs ignore case. Each genre needs a score of 3 to be detected.
+# `docs-discipline.history-internal-reference` is the one rule that varies by genre rather than
+# by profile: off in change-comms, a suggestion in internal, a warning in consumer and reference.
 # Each entry is one genre file; the list is a bundle for the built-in pack.
 
 - schema_version: 3
@@ -12,6 +14,8 @@
       - { kind: path, glob: '**/readme*', weight: 2 }
       - { kind: path, glob: '**/{doc,docs,guide,guides,manual}/**', weight: 1.5 }
       - { kind: heading, pattern: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
+  rules:
+    docs-discipline.history-internal-reference: warning
 
 - schema_version: 3
   id: reference
@@ -23,6 +27,8 @@
       - { kind: path, glob: '**/{reference,api,runbook,runbooks,procedure,procedures,man}/**', weight: 3 }
       - { kind: heading, pattern: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
       - { kind: heading, pattern: '\b(?:runbook|procedure|safety)\b', weight: 2 }
+  rules:
+    docs-discipline.history-internal-reference: warning
 
 - schema_version: 3
   id: change-comms
@@ -34,6 +40,8 @@
       - { kind: path, glob: '**/{changelog,changes,history,news,release,releases,upgrading,migration}*', weight: 3 }
       - { kind: heading, pattern: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
       - { kind: heading, pattern: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
+  rules:
+    docs-discipline.history-internal-reference: 'off'
 
 - schema_version: 3
   id: internal
@@ -45,6 +53,8 @@
       - { kind: path, glob: '**/{adr,decision,decisions,rfc,rfcs,spec,specs,design}{/**,[-_]*,[-_]*/**}', weight: 3 }
       - { kind: path, glob: '**/{contributing,development}*', weight: 3 }
       - { kind: heading, pattern: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
+  rules:
+    docs-discipline.history-internal-reference: suggestion
 
 - schema_version: 3
   id: informal

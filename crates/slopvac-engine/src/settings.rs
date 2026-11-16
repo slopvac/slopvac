@@ -8,7 +8,10 @@
 
 use std::collections::BTreeMap;
 
-use slopvac_model::{CategoryId, ConfigSource, GenreResult, NonEmptyString, RuleId, Severity};
+use slopvac_context::{GenreRegistry, RuleLevel};
+use slopvac_model::{
+    CategoryId, ConfigSource, GenreResult, IdError, NonEmptyString, RuleId, Severity,
+};
 use slopvac_rules::ApplyMode;
 
 /// The level a rule or category reports at.
@@ -101,5 +104,30 @@ impl Settings {
             config_sources: Vec::new(),
             allowed_words: Vec::new(),
         }
+    }
+
+    /// Add the rule levels that the settings' genre carries in `registry`. A level already
+    /// in [`Settings::rule_levels`] wins, because a project or user layer sits above the
+    /// genre. Keys without a pack belong to the `core` pack. A genre the registry does not
+    /// know adds nothing. A key that is no rule id is an error.
+    pub fn apply_genre_levels(&mut self, registry: &GenreRegistry) -> Result<(), IdError> {
+        let Ok(levels) = registry.rules(self.genre.id.as_str()) else {
+            return Ok(());
+        };
+        for (key, level) in levels {
+            let qualified = if key.contains(':') {
+                key
+            } else {
+                format!("core:{key}")
+            };
+            let id = RuleId::new(qualified)?;
+            self.rule_levels.entry(id).or_insert(match level {
+                RuleLevel::Off => Level::Off,
+                RuleLevel::Suggestion => Level::On(Severity::Suggestion),
+                RuleLevel::Warning => Level::On(Severity::Warning),
+                RuleLevel::Error => Level::On(Severity::Error),
+            });
+        }
+        Ok(())
     }
 }
