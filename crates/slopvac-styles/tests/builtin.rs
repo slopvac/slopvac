@@ -1,65 +1,65 @@
 //! The bundled presets load and resolve.
 
-use slopvac_styles::{Budget, BuiltinSource, CategoryDials, CategoryPatch, Level, resolve};
+use serde_json::{Value, json};
+use slopvac_styles::{BuiltinSource, Resolution, resolve};
 
-fn dials(p: &CategoryPatch) -> CategoryDials {
-    match p {
-        CategoryPatch::Dials(d) => d.clone(),
-        CategoryPatch::Level(l) => CategoryDials {
-            severity: Some(*l),
-            ..CategoryDials::default()
-        },
-    }
+/// The merged value at `path`.
+fn get<'a>(r: &'a Resolution, path: &[&str]) -> &'a Value {
+    r.resolved
+        .get(path)
+        .unwrap_or_else(|| panic!("no value at {path:?}"))
+}
+
+/// How many keys the merged settings hold under `table`.
+fn count(r: &Resolution, table: &str) -> usize {
+    r.resolved.to_json()[table]
+        .as_object()
+        .map_or(0, serde_json::Map::len)
+}
+
+fn rule<'a>(r: &'a Resolution, key: &str) -> &'a Value {
+    get(r, &["rules", key])
 }
 
 #[test]
 fn ste_preset_sets_the_normal_profile_levels() {
     let r = resolve(&["ste".to_owned()], &BuiltinSource, true).unwrap();
-    let cats = &r.patch.categories;
-    assert_eq!(cats.len(), 10);
-    let safety = dials(&cats["ste-safety"]);
-    assert_eq!(safety.severity, Some(Level::Error));
-    assert_eq!(safety.max_per_100_words, Some(Budget::Limit(0.0)));
-    assert_eq!(safety.weight, Some(1.2));
-    let words = dials(&cats["ste-words"]);
-    assert_eq!(words.severity, Some(Level::Warning));
-    assert_eq!(words.max_per_100_words, Some(Budget::Limit(1.5)));
-    assert_eq!(dials(&cats["ste-vocabulary"]).severity, Some(Level::Off));
+    assert_eq!(count(&r, "categories"), 10);
+    let cat = |c: &str, f: &str| get(&r, &["categories", c, f]).clone();
+    assert_eq!(cat("ste-safety", "severity"), json!("error"));
+    assert_eq!(cat("ste-safety", "max_per_100_words"), json!(0.0));
+    assert_eq!(cat("ste-safety", "weight"), json!(1.2));
+    assert_eq!(cat("ste-words", "severity"), json!("warning"));
+    assert_eq!(cat("ste-words", "max_per_100_words"), json!(1.5));
+    assert_eq!(cat("ste-vocabulary", "severity"), json!("off"));
 }
 
 #[test]
 fn ste_preset_keeps_rules_that_two_x_ships_off_or_advisory() {
     let r = resolve(&["ste".to_owned()], &BuiltinSource, true).unwrap();
-    let rules = &r.patch.rules;
-    assert_eq!(rules.len(), 18);
-    assert_eq!(rules["ste-practices.latin-abbreviation"], Level::Off);
-    assert_eq!(rules["ste-verbs.passive-voice"], Level::Suggestion);
+    assert_eq!(count(&r, "rules"), 18);
+    assert_eq!(rule(&r, "ste-practices.latin-abbreviation"), &json!("off"));
+    assert_eq!(rule(&r, "ste-verbs.passive-voice"), &json!("suggestion"));
 }
 
 #[test]
 fn google_preset_resolves_every_entry_to_its_documented_level() {
     let r = resolve(&["google".to_owned()], &BuiltinSource, true).unwrap();
     let expected = [
-        ("ai-tells-formatting.title-case-heading", Level::Warning),
-        ("ste-punctuation.semicolon-used", Level::Off),
-        (
-            "ste-sentences.complex-text-not-in-vertical-list",
-            Level::Off,
-        ),
-        (
-            "ste-sentences.vertical-list-lead-in-missing-colon",
-            Level::Off,
-        ),
-        ("ste-sentences.vertical-list-item-punctuation", Level::Off),
-        ("ste-practices.latin-abbreviation", Level::Warning),
-        ("prose-inclusive.exclusive", Level::Warning),
-        ("prose-inclusive.ableist", Level::Warning),
+        ("ai-tells-formatting.title-case-heading", "warning"),
+        ("ste-punctuation.semicolon-used", "off"),
+        ("ste-sentences.complex-text-not-in-vertical-list", "off"),
+        ("ste-sentences.vertical-list-lead-in-missing-colon", "off"),
+        ("ste-sentences.vertical-list-item-punctuation", "off"),
+        ("ste-practices.latin-abbreviation", "warning"),
+        ("prose-inclusive.exclusive", "warning"),
+        ("prose-inclusive.ableist", "warning"),
     ];
-    assert_eq!(r.patch.rules.len(), expected.len());
+    assert_eq!(count(&r, "rules"), expected.len());
     for (key, level) in expected {
-        assert_eq!(r.patch.rules[key], level, "{key}");
+        assert_eq!(rule(&r, key), &json!(level), "{key}");
     }
-    assert!(r.patch.categories.is_empty());
+    assert_eq!(count(&r, "categories"), 0);
 }
 
 #[test]
@@ -68,10 +68,10 @@ fn google_after_ste_wins_with_a_warning_and_strict_rejects_it() {
     let r = resolve(&both, &BuiltinSource, false).unwrap();
     assert_eq!(r.conflicts.len(), 1);
     assert_eq!(r.conflicts[0].winner, "google");
-    assert_eq!(r.patch.rules["ste-punctuation.semicolon-used"], Level::Off);
+    assert_eq!(rule(&r, "ste-punctuation.semicolon-used"), &json!("off"));
     assert_eq!(
-        r.patch.rules["ste-practices.latin-abbreviation"],
-        Level::Warning
+        rule(&r, "ste-practices.latin-abbreviation"),
+        &json!("warning")
     );
     assert!(resolve(&both, &BuiltinSource, true).is_err());
 }
@@ -81,10 +81,7 @@ fn ste_after_google_wins_the_overlapping_rules() {
     let both = ["google".to_owned(), "ste".to_owned()];
     let r = resolve(&both, &BuiltinSource, false).unwrap();
     assert_eq!(r.conflicts[0].winner, "ste");
-    assert_eq!(
-        r.patch.rules["ste-practices.latin-abbreviation"],
-        Level::Off
-    );
+    assert_eq!(rule(&r, "ste-practices.latin-abbreviation"), &json!("off"));
 }
 
 #[test]

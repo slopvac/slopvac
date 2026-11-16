@@ -1,16 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::patch::SettingValue;
-use crate::{CategoryDials, CategoryPatch, SettingsPatch, Style, StyleError, StyleSource};
+use serde_json::Value as Json;
+use slopvac_config::Resolved;
 
-/// One value a style set for a key.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Setting {
-    /// Style that set it.
-    pub style: String,
-    /// The value.
-    pub value: SettingValue,
-}
+use crate::{Style, StyleError, StyleSource};
 
 /// A declared conflict between two active styles.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +12,7 @@ pub struct Conflict {
     pub loser: String,
     /// The later style, which wins.
     pub winner: String,
-    /// Keys where both set different values.
+    /// Keys where both set different values, as dotted paths such as `rules.core:list`.
     pub keys: Vec<String>,
 }
 
@@ -40,14 +33,13 @@ impl Conflict {
 }
 
 /// The outcome of resolving a `styles` list.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct Resolution {
     /// Styles in application order, `extends` first, each once.
     pub order: Vec<String>,
-    /// The merged settings.
-    pub patch: SettingsPatch,
-    /// Every value per key in application order; the last is effective.
-    pub history: BTreeMap<String, Vec<Setting>>,
+    /// The style layers merged by the config stack: the effective value of each key and the
+    /// history of values, each with the preset and line that set it.
+    pub resolved: Resolved,
     /// Declared conflicts between active styles.
     pub conflicts: Vec<Conflict>,
 }
@@ -62,6 +54,39 @@ pub fn resolve(
     source: &dyn StyleSource,
     strict: bool,
 ) -> Result<Resolution, StyleError> {
+    let loaded = apply_order(names, source)?;
+
+    let mut res = Resolution {
+        order: loaded.iter().map(|(n, _)| n.clone()).collect(),
+        resolved: Resolved::from_layers(loaded.iter().map(|(_, s)| s.layer().to_vec())),
+        conflicts: Vec::new(),
+    };
+    for (i, (later, style)) in loaded.iter().enumerate() {
+        for (earlier, other) in &loaded[..i] {
+            if style.conflicts.contains(earlier) || other.conflicts.contains(later) {
+                res.conflicts.push(Conflict {
+                    loser: earlier.clone(),
+                    winner: later.clone(),
+                    keys: differing_keys(other, style),
+                });
+            }
+        }
+    }
+    if strict && let Some(c) = res.conflicts.first() {
+        return Err(StyleError::Conflict {
+            loser: c.loser.clone(),
+            winner: c.winner.clone(),
+        });
+    }
+    Ok(res)
+}
+
+/// The styles that `names` activate, in application order: each style after its `extends`,
+/// each once.
+pub(crate) fn apply_order(
+    names: &[String],
+    source: &dyn StyleSource,
+) -> Result<Vec<(String, Style)>, StyleError> {
     let mut loaded: Vec<(String, Style)> = Vec::new();
     for name in names {
         expand(name, source, &mut Vec::new(), &mut loaded)?;
@@ -74,37 +99,7 @@ pub fn resolve(
             loaded.push(entry);
         }
     }
-
-    let mut res = Resolution::default();
-    for (name, style) in &loaded {
-        res.order.push(name.clone());
-        for (key, value) in style.settings.entries() {
-            res.history.entry(key).or_default().push(Setting {
-                style: name.clone(),
-                value,
-            });
-        }
-        merge(&mut res.patch, &style.settings);
-    }
-
-    for (i, (later, style)) in loaded.iter().enumerate() {
-        for (earlier, other) in &loaded[..i] {
-            if style.conflicts.contains(earlier) || other.conflicts.contains(later) {
-                res.conflicts.push(Conflict {
-                    loser: earlier.clone(),
-                    winner: later.clone(),
-                    keys: differing_keys(&res.history, earlier, later),
-                });
-            }
-        }
-    }
-    if strict && let Some(c) = res.conflicts.first() {
-        return Err(StyleError::Conflict {
-            loser: c.loser.clone(),
-            winner: c.winner.clone(),
-        });
-    }
-    Ok(res)
+    Ok(loaded)
 }
 
 fn expand(
@@ -131,38 +126,16 @@ fn expand(
     Ok(())
 }
 
-fn merge(into: &mut SettingsPatch, from: &SettingsPatch) {
-    into.rules
-        .extend(from.rules.iter().map(|(k, v)| (k.clone(), *v)));
-    for (k, c) in &from.categories {
-        let new = c.dials();
-        let cur = into
-            .categories
-            .entry(k.clone())
-            .or_insert_with(|| CategoryPatch::Dials(CategoryDials::default()));
-        let mut d = cur.dials();
-        d.severity = new.severity.or(d.severity);
-        d.minimum_severity = new.minimum_severity.or(d.minimum_severity);
-        d.max_per_100_words = new.max_per_100_words.or(d.max_per_100_words);
-        d.weight = new.weight.or(d.weight);
-        *cur = CategoryPatch::Dials(d);
-    }
-    if from.terms.allow.is_some() {
-        into.terms.allow.clone_from(&from.terms.allow);
-    }
-    if from.terms.blocklists.is_some() {
-        into.terms.blocklists.clone_from(&from.terms.blocklists);
-    }
-}
-
-fn differing_keys(history: &BTreeMap<String, Vec<Setting>>, a: &str, b: &str) -> Vec<String> {
-    history
-        .iter()
-        .filter(|(_, settings)| {
-            let va = settings.iter().rev().find(|s| s.style == a);
-            let vb = settings.iter().rev().find(|s| s.style == b);
-            matches!((va, vb), (Some(x), Some(y)) if x.value != y.value)
-        })
-        .map(|(k, _)| k.clone())
+fn differing_keys(a: &Style, b: &Style) -> Vec<String> {
+    let last = |s: &Style| -> BTreeMap<Vec<String>, Json> {
+        s.layer()
+            .iter()
+            .map(|x| (x.path.clone(), x.value.clone()))
+            .collect()
+    };
+    let (va, vb) = (last(a), last(b));
+    va.iter()
+        .filter(|(path, value)| vb.get(*path).is_some_and(|other| other != *value))
+        .map(|(path, _)| path.join("."))
         .collect()
 }
