@@ -216,7 +216,7 @@ def test_staged_files_keep_their_real_extension(captured):
 # --- replay and runner -----------------------------------------------------
 
 
-@pytest.mark.parametrize("mode", ["parity", "policy"])
+@pytest.mark.parametrize("mode", ["parity"])
 def test_the_python_reference_matches_its_golden(mode):
     assert golden.compare(mode, REFERENCE, flavor="2x") == []
 
@@ -506,10 +506,39 @@ def test_a_run_delta_patches_the_run_summary_and_exit_status():
     }
 
 
+def _mode_deltas(monkeypatch, *deltas):
+    monkeypatch.setattr(golden, "load_deltas", lambda: list(deltas))
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", False), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_without_modes_applies_to_policy_only(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta())
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", True), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_applies_to_the_modes_it_lists(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "policy"]))
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
+def test_the_2x_reference_never_gets_a_delta(monkeypatch, mode):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "preserve", "policy"]))
+    assert golden.deltas_for(mode, "2x") == []
+
+
 def test_every_recorded_delta_has_a_reason_and_an_approver():
     for delta in golden.load_deltas():
         assert delta["reason"].strip()
         assert delta["approved_by"].strip()
+        assert set(delta.get("modes", ["policy"])) <= {"parity", "preserve", "policy"}
 
 
 def test_vale_is_resolved_on_the_path_a_run_uses(tmp_path, monkeypatch):

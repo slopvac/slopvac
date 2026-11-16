@@ -11,9 +11,15 @@ substitution rule needs no Python; only a genuinely new detection strategy does.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from .enums import RuleKind, Scope, Severity, TextType, Tier
 
@@ -78,6 +84,33 @@ class Example(BaseModel):
     bad: str
     good: str | None = None
     note: str | None = None
+
+
+ContextSlug = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]*$")]
+
+
+class ContextGate(BaseModel):
+    """v3 context tags that gate a rule: `only` runs it on text that carries a
+    listed tag, `skip` silences it there.
+
+    The 2.x engine has no context taggers, so it validates the gate and then
+    ignores it. The converter copies it into the v3 rule, where the Rust engine
+    applies it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    only: list[ContextSlug] | None = None
+    skip: list[ContextSlug] | None = None
+
+    @model_validator(mode="after")
+    def _check_gate(self) -> ContextGate:
+        if self.only is None and self.skip is None:
+            raise ValueError("contexts must set `only` or `skip`")
+        for name in ("only", "skip"):
+            tags = getattr(self, name)
+            if tags is not None and len(set(tags)) != len(tags):
+                raise ValueError(f"contexts.{name} lists a tag twice")
+        return self
 
 
 class Rule(BaseModel):
@@ -147,6 +180,11 @@ class Rule(BaseModel):
         default_factory=list,
         description="Literal strings that never fire, even when the pattern "
         "matches. Dead metaphors and identifiers live here.",
+    )
+    contexts: ContextGate | None = Field(
+        default=None,
+        description="v3 context gate. Validated and carried into the v3 rules by "
+        "the converter; the 2.x engine ignores it.",
     )
     examples: list[Example] = Field(default_factory=list)
     provenance: Provenance

@@ -223,6 +223,48 @@ def test_a_judgement_rule_never_ships_a_real_severity():
     assert rule.severity is Severity.SUGGESTION
 
 
+def _pattern_record(**fields):
+    record = {
+        "id": "probe",
+        "name": "probe",
+        "kind": "pattern",
+        "message": "probe",
+        "pattern": "x",
+        "provenance": {"source": "test"},
+    }
+    record.update(fields)
+    return record
+
+
+@pytest.mark.parametrize(
+    "contexts",
+    [{"only": ["requirement"]}, {"skip": ["code-fence", "quotation"]}],
+)
+def test_a_rule_accepts_a_context_gate(contexts):
+    rule = Rule.model_validate(_pattern_record(contexts=contexts))
+    assert rule.contexts.model_dump(exclude_none=True) == contexts
+
+
+@pytest.mark.parametrize(
+    ("contexts", "error"),
+    [
+        ({}, "must set `only` or `skip`"),
+        ({"only": ["Bad Tag"]}, "String should match pattern"),
+        ({"skip": ["a", "a"]}, "lists a tag twice"),
+        ({"only": ["a"], "when": ["b"]}, "Extra inputs are not permitted"),
+    ],
+)
+def test_a_malformed_context_gate_is_rejected(contexts, error):
+    with pytest.raises(ValidationError, match=re.escape(error)):
+        Rule.model_validate(_pattern_record(contexts=contexts))
+
+
+def test_a_context_gate_does_not_change_what_the_rule_matches():
+    gated = Rule.model_validate(_pattern_record(contexts={"only": ["requirement"]}))
+    plain = Rule.model_validate(_pattern_record())
+    assert rule_pattern(gated).pattern == rule_pattern(plain).pattern
+
+
 def test_reads_better_is_never_an_exception(ruleset):
     """The whole point of the annotation contract: an unnamed override collapses
     the ruleset, which is what Orwell's sixth rule does in an automated pipeline."""

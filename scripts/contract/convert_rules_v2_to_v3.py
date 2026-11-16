@@ -184,6 +184,8 @@ def convert_rule(rule: dict) -> dict:
     if rule.get("text_type", "any") != "any":
         out["text_type"] = rule["text_type"]
     out["match"] = _convert_match(rule)
+    if rule.get("contexts"):
+        out["contexts"] = {k: list(v) for k, v in rule["contexts"].items() if v}
     if rule.get("exceptions"):
         out["exceptions"] = [_convert_exception(n) for n in rule["exceptions"]]
     if rule.get("allowlist"):
