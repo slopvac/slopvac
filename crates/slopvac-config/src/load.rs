@@ -126,7 +126,7 @@ pub fn load_labeled(
 ) -> Result<LoadedConfig, ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(label, source))?;
+    let text = crate::read::read_text(&abs).map_err(|source| ConfigError::io(label, source))?;
     let mut loader = Loader {
         root: &root,
         presets,
@@ -466,10 +466,13 @@ impl Loader<'_> {
             let body = match body {
                 Some(b) => b,
                 None => match &target {
-                    Key::Path(p) => fs::read_to_string(p).map_err(|e| {
+                    Key::Path(p) => crate::read::read_text(p).map_err(|e| {
                         fail(
                             Code::ExtendsMissing,
-                            format!("cannot read the extended config `{name}`: {e}"),
+                            format!(
+                                "cannot read the extended config `{name}`: {}",
+                                crate::error::reason(&e)
+                            ),
                             Some("paths are relative to the file that holds the entry".into()),
                         )
                     })?,

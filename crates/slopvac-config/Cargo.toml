@@ -19,6 +19,9 @@ strsim.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
 insta.workspace = true
 tempfile.workspace = true

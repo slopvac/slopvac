@@ -2453,6 +2453,7 @@ dependencies = [
  "clap",
  "ignore",
  "insta",
+ "rustix",
  "saphyr",
  "serde",
  "serde_json",

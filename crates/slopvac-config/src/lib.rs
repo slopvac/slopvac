@@ -14,6 +14,7 @@ pub mod flatten;
 pub mod frontmatter;
 pub mod load;
 pub mod presets;
+pub mod read;
 pub mod resolve;
 pub mod schema;
 pub mod source;
