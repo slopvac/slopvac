@@ -382,7 +382,12 @@ impl DefaultCredentials {
         }
         let cfg: DockerConfig = serde_json::from_slice(&raw)
             .map_err(|_| OciError::Credential("the Docker config is not valid JSON".into()))?;
-        let helper = cfg.cred_helpers.get(registry).or(cfg.creds_store.as_ref());
+        let helper = cfg
+            .cred_helpers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(registry))
+            .map(|(_, v)| v)
+            .or(cfg.creds_store.as_ref());
         if let Some(name) = helper
             && let Some(c) = run_helper(
                 name,
@@ -396,7 +401,7 @@ impl DefaultCredentials {
         let entry = cfg
             .auths
             .iter()
-            .find(|(k, _)| auth_key_host(k) == registry)
+            .find(|(k, _)| auth_key_host(k).eq_ignore_ascii_case(registry))
             .map(|(_, v)| v);
         let Some(entry) = entry else {
             return Ok(None);
@@ -434,7 +439,7 @@ impl CredentialSource for DefaultCredentials {
                 secret: t.clone(),
             }));
         }
-        if registry == "ghcr.io"
+        if registry.eq_ignore_ascii_case("ghcr.io")
             && let Some(t) = &e.github_token
         {
             return Ok(Some(Credential {

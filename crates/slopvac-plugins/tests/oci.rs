@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use oci_server::{Request, Response, Server, base64_std, with_auth};
 use serde_json::json;
 use slopvac_plugins::oci::{
-    Anonymous, Client, DefaultCredentials, Descriptor, Digest, EnvCredentials, MEDIA_INDEX,
-    MEDIA_MANIFEST, OciError, Reference,
+    Anonymous, Client, CredentialSource, DefaultCredentials, Descriptor, Digest, EnvCredentials,
+    MEDIA_INDEX, MEDIA_MANIFEST, OciError, Reference,
 };
 
 fn client_with_basic(user: &str, token: &str) -> Client {
@@ -1391,5 +1391,42 @@ mod helpers {
             Some("cat >/dev/null; echo 'credentials not found' >&2; exit 1"),
         );
         assert_eq!(got.unwrap(), None);
+    }
+}
+
+#[test]
+fn github_token_applies_to_ghcr_whatever_the_host_case() {
+    let creds = DefaultCredentials {
+        env: EnvCredentials {
+            github_token: Some("t".into()),
+            ..EnvCredentials::default()
+        },
+        ..DefaultCredentials::default()
+    };
+    for host in ["ghcr.io", "GHCR.IO", "Ghcr.Io"] {
+        let c = creds.credential(host).unwrap();
+        assert_eq!(c.map(|c| c.secret), Some("t".to_owned()), "{host}");
+    }
+    assert!(creds.credential("ghcr.io.evil.example").unwrap().is_none());
+}
+
+#[test]
+fn docker_config_auth_keys_match_the_host_case_insensitively_and_the_port_exactly() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = base64_std(b"alice:pw1");
+    let cfg = json!({"auths": {
+        "https://Registry.Example:5000/v1/": {"auth": auth},
+    }});
+    std::fs::write(dir.path().join("config.json"), cfg.to_string()).unwrap();
+    let creds = DefaultCredentials {
+        docker_config_dir: Some(dir.path().to_path_buf()),
+        ..DefaultCredentials::default()
+    };
+    for host in ["registry.example:5000", "REGISTRY.EXAMPLE:5000"] {
+        let c = creds.credential(host).unwrap();
+        assert_eq!(c.map(|c| c.username), Some("alice".to_owned()), "{host}");
+    }
+    for other in ["registry.example:5001", "registry.example"] {
+        assert!(creds.credential(other).unwrap().is_none(), "{other}");
     }
 }
