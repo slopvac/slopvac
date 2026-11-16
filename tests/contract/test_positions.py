@@ -19,6 +19,7 @@ from position_reference import (
     apply_edits,
     binary_host_edit,
     binary_host_location,
+    parse_binary_host,
     check_tokens,
     formats,
     lsp_range,
@@ -193,17 +194,30 @@ def test_binary_host_location_is_segment_local(case: dict) -> None:
         path=case["path"],
         locator=case["locator"],
         container_range=(rng["start"], rng["end"]),
+        kind=case.get("kind", "resource"),
     )
     assert got["local"] == case["local"]
-    assert got["text"] == case["text"]
     assert got["provenance"] == {"path": case["path"], "range": rng}
+    assert got["text"] == case["text"]
+    start = case["local"]["start"]
+    assert parse_binary_host(got["text"]) == (
+        case["path"],
+        case["locator"],
+        start["line"],
+        start["column"],
+    )
     assert got["sarif"] == {
-        "physicalLocation": {"artifactLocation": {"uri": case["path"]}},
+        "physicalLocation": {"artifactLocation": {"uri": case["sarif_uri"]}},
         "logicalLocations": [
-            {"fullyQualifiedName": case["locator"], "kind": "resource"}
+            {
+                "fullyQualifiedName": case["locator"],
+                "kind": case.get("kind", "resource"),
+            }
         ],
+        "properties": {"slopvac/local": case["local"]},
         "message": {"text": case["text"]},
     }
+    assert "region" not in got["sarif"]["physicalLocation"]
 
 
 def test_binary_host_local_position_ignores_the_container_range() -> None:

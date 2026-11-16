@@ -207,6 +207,34 @@ def apply_edits(doc: Doc, edits: list[dict]) -> bytes:
 # Binary hosts -------------------------------------------------------------------
 
 
+def artifact_uri(path: str) -> str:
+    """Percent-encode UTF-8 bytes, keeping ASCII alphanumerics and ``-._~/``."""
+    keep = set(b"-._~/") | set(range(0x30, 0x3A)) | set(range(0x41, 0x5B))
+    keep |= set(range(0x61, 0x7B))
+    return "".join(chr(b) if b in keep else f"%{b:02X}" for b in path.encode("utf-8"))
+
+
+def escape_part(part: str) -> str:
+    """Percent-encode ``%`` and ``!`` so the first ``!`` joins path and locator."""
+    return part.replace("%", "%25").replace("!", "%21")
+
+
+def unescape_part(part: str) -> str:
+    return part.replace("%21", "!").replace("%25", "%")
+
+
+def render_binary_host(path: str, locator: str, line: int, column: int) -> str:
+    """The text form: ``path!locator:line:col``, with ``!`` and ``%`` escaped in parts."""
+    return f"{escape_part(path)}!{escape_part(locator)}:{line}:{column}"
+
+
+def parse_binary_host(text: str) -> tuple[str, str, int, int]:
+    """Parse the text form: line and column from the right, then the first ``!``."""
+    rest, line, column = text.rsplit(":", 2)
+    path, locator = rest.split("!", 1)
+    return unescape_part(path), unescape_part(locator), int(line), int(column)
+
+
 def binary_host_location(
     segment: str,
     start: int,
@@ -215,6 +243,7 @@ def binary_host_location(
     path: str,
     locator: str,
     container_range: tuple[int, int],
+    kind: str = "resource",
 ) -> dict[str, object]:
     """Locate a finding in one extracted segment of a binary host.
 
@@ -223,25 +252,27 @@ def binary_host_location(
     ``container_range`` is physical provenance. It is carried through and never
     read to compute a position.
     """
-    doc = Doc.from_text(segment)
+    # A segment is buffer text: a leading U+FEFF is an ordinary one-column character.
+    doc = Doc.from_buffer(segment.encode("utf-8"))
     check_span(doc, start, end)
-    s = {u: position(doc, start, u) for u in UNITS}
-    e = {u: position(doc, end, u) for u in UNITS}
-    line, column = s["utf32"]
-    text = f"{path}!{locator}:{line}:{column}"
+    s = position(doc, start, "utf32")
+    e = position(doc, end, "utf32")
+    local = {
+        "start": {"line": s[0], "column": s[1]},
+        "end": {"line": e[0], "column": e[1]},
+    }
+    text = render_binary_host(path, locator, s[0], s[1])
     return {
-        "local": {
-            "start": {"line": s["utf32"][0], "column": s["utf32"][1]},
-            "end": {"line": e["utf32"][0], "column": e["utf32"][1]},
-        },
+        "local": local,
         "provenance": {
             "path": path,
             "range": {"start": container_range[0], "end": container_range[1]},
         },
         "text": text,
         "sarif": {
-            "physicalLocation": {"artifactLocation": {"uri": path}},
-            "logicalLocations": [{"fullyQualifiedName": locator, "kind": "resource"}],
+            "physicalLocation": {"artifactLocation": {"uri": artifact_uri(path)}},
+            "logicalLocations": [{"fullyQualifiedName": locator, "kind": kind}],
+            "properties": {"slopvac/local": local},
             "message": {"text": text},
         },
     }
