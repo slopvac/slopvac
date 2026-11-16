@@ -123,8 +123,31 @@ pub fn detect_house_styles(root: &Path) -> Vec<Suggestion> {
     found
 }
 
+/// The most bytes read from one file. A larger file is skipped.
+const MAX_BYTES: u64 = 1024 * 1024;
+
+/// Read a regular file under `root`, or `None`.
+///
+/// The path is resolved first. A target outside the root, or anything that is not a
+/// regular file (a FIFO, a device), is skipped without opening it. The read stops
+/// one byte past [`MAX_BYTES`], so memory use is bounded for any input.
 fn read(root: &Path, name: &str) -> Option<String> {
-    std::fs::read_to_string(root.join(name)).ok()
+    use std::io::Read;
+    let root = std::fs::canonicalize(root).ok()?;
+    let path = std::fs::canonicalize(root.join(name)).ok()?;
+    if !path.starts_with(&root) || !std::fs::metadata(&path).ok()?.is_file() {
+        return None;
+    }
+    let file = std::fs::File::open(&path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 fn suggestion(guide: &Guide, file: &str, line: usize, text: &str) -> Suggestion {
@@ -155,7 +178,11 @@ fn vale_styles(text: &str) -> Vec<Suggestion> {
         if !key.trim().eq_ignore_ascii_case("BasedOnStyles") {
             continue;
         }
-        for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+        for name in strip_inline_comment(value)
+            .split(',')
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
             let lower = name.to_ascii_lowercase();
             if NOT_HOUSE_STYLES.contains(&lower.as_str()) {
                 continue;
@@ -182,11 +209,15 @@ fn vale_styles(text: &str) -> Vec<Suggestion> {
 
 fn phrase_matches(file: &str, text: &str, wanted: impl Fn(usize) -> bool) -> Vec<Suggestion> {
     let mut out = Vec::new();
+    let fenced = fenced_lines(text);
     for (i, line) in text.lines().enumerate() {
-        if !wanted(i + 1) {
+        if !wanted(i + 1) || fenced[i] {
             continue;
         }
         let lower = line.to_ascii_lowercase();
+        if rejects(&lower) {
+            continue;
+        }
         for g in GUIDES {
             if g.phrases.iter().any(|p| lower.contains(p)) {
                 out.push(suggestion(g, file, i + 1, line));
@@ -196,19 +227,83 @@ fn phrase_matches(file: &str, text: &str, wanted: impl Fn(usize) -> bool) -> Vec
     out
 }
 
+/// Words that turn a mention into a rejection, a contrast or an example.
+const NEGATIONS: &[&str] = &[
+    " not ",
+    "n't",
+    "n\u{2019}t",
+    " never ",
+    " no longer ",
+    "unlike",
+    "instead of",
+    "rather than",
+    "for example",
+    "e.g.",
+    " except ",
+    " without ",
+];
+
+fn rejects(lower: &str) -> bool {
+    let padded = format!(" {lower} ");
+    NEGATIONS.iter().any(|n| padded.contains(n))
+}
+
+/// For each line, whether it is a fence delimiter or inside a fenced code block.
+fn fenced_lines(text: &str) -> Vec<bool> {
+    let mut inside = false;
+    text.lines()
+        .map(|line| {
+            let t = line.trim_start();
+            let delimiter = t.starts_with("```") || t.starts_with("~~~");
+            let flagged = inside || delimiter;
+            if delimiter {
+                inside = !inside;
+            }
+            flagged
+        })
+        .collect()
+}
+
+/// Cut a Vale INI value at an inline comment: a `;` or `#` at the start of the
+/// value or after whitespace.
+fn strip_inline_comment(value: &str) -> &str {
+    let mut prev_space = true;
+    for (i, c) in value.char_indices() {
+        if prev_space && (c == ';' || c == '#') {
+            return &value[..i];
+        }
+        prev_space = c.is_whitespace();
+    }
+    value
+}
+
+/// The level and text of an ATX heading: up to three spaces of indent, one to six
+/// `#`, then a space, a tab or the end of the line.
+fn atx_heading(line: &str) -> Option<(usize, &str)> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let rest = &line[indent..];
+    let hashes = rest.chars().take_while(|c| *c == '#').count();
+    let title = &rest[hashes..];
+    let separated = title.is_empty() || title.starts_with([' ', '\t']);
+    ((1..=6).contains(&hashes) && separated).then_some((hashes, title))
+}
+
 /// The 1-based lines inside a section whose heading contains "style". A section
 /// ends at the next heading of the same or a higher level.
 fn style_section_lines(text: &str) -> Vec<usize> {
+    let fenced = fenced_lines(text);
     let mut lines = Vec::new();
     let mut open: Option<usize> = None;
     for (i, line) in text.lines().enumerate() {
-        let hashes = line.chars().take_while(|c| *c == '#').count();
-        if (1..=6).contains(&hashes) && line[hashes..].starts_with(' ') {
-            if open.is_some_and(|level| hashes <= level) {
+        if let (false, Some((level, title))) = (fenced[i], atx_heading(line)) {
+            if open.is_some_and(|l| level <= l) {
                 open = None;
             }
-            if open.is_none() && line.to_ascii_lowercase().contains("style") {
-                open = Some(hashes);
+            if open.is_none() && title.to_ascii_lowercase().contains("style") {
+                open = Some(level);
             }
         }
         if open.is_some() {
@@ -216,15 +311,4 @@ fn style_section_lines(text: &str) -> Vec<usize> {
         }
     }
     lines
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn section_ends_at_a_heading_of_the_same_level() {
-        let text = "# Intro\nx\n## Style\ny\n### Detail\nz\n## Tests\nw\n";
-        assert_eq!(style_section_lines(text), [3, 4, 5, 6]);
-    }
 }

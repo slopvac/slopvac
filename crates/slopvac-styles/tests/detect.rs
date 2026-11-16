@@ -118,3 +118,157 @@ fn every_suggested_preset_is_bundled() {
         assert!(BuiltinSource::names().any(|n| n == preset));
     }
 }
+
+const GOOGLE_LINE: &str = "We follow the Google developer documentation style guide.\n";
+
+#[test]
+fn an_oversized_file_is_skipped() {
+    let padding = "x".repeat(1024 * 1024 + 1);
+    let dir = repo(&[("STYLE.md", &format!("{GOOGLE_LINE}{padding}"))]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn a_file_at_the_size_cap_is_still_read() {
+    let mut text = String::from(GOOGLE_LINE);
+    text.push_str(&"x".repeat(1024 * 1024 - text.len()));
+    let dir = repo(&[("STYLE.md", &text)]);
+    assert_eq!(detect_house_styles(dir.path()).len(), 1);
+}
+
+#[cfg(unix)]
+mod unix {
+    use super::*;
+    use std::os::unix::fs::symlink;
+    use std::process::Command;
+
+    fn mkfifo(path: &std::path::Path) {
+        let status = Command::new("mkfifo").arg(path).status().unwrap();
+        assert!(status.success());
+    }
+
+    #[test]
+    fn a_fifo_is_skipped_without_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        mkfifo(&dir.path().join("STYLE.md"));
+        assert_eq!(detect_house_styles(dir.path()), vec![]);
+    }
+
+    #[test]
+    fn a_symlink_to_a_fifo_inside_the_root_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        mkfifo(&dir.path().join("pipe"));
+        symlink("pipe", dir.path().join("STYLE.md")).unwrap();
+        assert_eq!(detect_house_styles(dir.path()), vec![]);
+    }
+
+    #[test]
+    fn a_symlink_to_dev_zero_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        symlink("/dev/zero", dir.path().join("STYLE.md")).unwrap();
+        assert_eq!(detect_house_styles(dir.path()), vec![]);
+    }
+
+    #[test]
+    fn a_symlink_that_escapes_the_root_is_skipped() {
+        let outside = repo(&[("secret.md", GOOGLE_LINE)]);
+        let dir = tempfile::tempdir().unwrap();
+        symlink(
+            outside.path().join("secret.md"),
+            dir.path().join("STYLE.md"),
+        )
+        .unwrap();
+        assert_eq!(detect_house_styles(dir.path()), vec![]);
+    }
+
+    #[test]
+    fn a_symlink_that_stays_inside_the_root_is_followed() {
+        let dir = repo(&[("docs.md", GOOGLE_LINE)]);
+        symlink("docs.md", dir.path().join("STYLE.md")).unwrap();
+        let found = detect_house_styles(dir.path());
+        assert_eq!(found[0].evidence.file, "STYLE.md");
+    }
+}
+
+#[test]
+fn inline_vale_comments_do_not_become_style_names() {
+    for line in [
+        "BasedOnStyles = Google ; house rules",
+        "BasedOnStyles = Google # house rules",
+        "BasedOnStyles = Vale, Google ;x",
+    ] {
+        let dir = repo(&[(".vale.ini", &format!("{line}\n"))]);
+        let found = detect_house_styles(dir.path());
+        assert_eq!(found.len(), 1, "{line}");
+        assert_eq!(found[0].preset.as_deref(), Some("google"), "{line}");
+        assert_eq!(found[0].evidence.text, line);
+    }
+}
+
+#[test]
+fn a_comment_only_value_names_no_style() {
+    let dir = repo(&[(".vale.ini", "BasedOnStyles = ; none yet\n")]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn rejection_and_example_lines_are_not_adoption() {
+    for line in [
+        "We do not follow the Google developer documentation style guide.",
+        "We don't use the Google developer documentation style guide.",
+        "Unlike the Google developer documentation style guide, we allow semicolons.",
+        "We never adopted the Google developer documentation style guide.",
+        "For example, the Google developer documentation style guide says X.",
+    ] {
+        for file in ["STYLE.md", "_STYLE.md"] {
+            let dir = repo(&[(file, &format!("{line}\n"))]);
+            assert_eq!(detect_house_styles(dir.path()), vec![], "{file}: {line}");
+        }
+        let dir = repo(&[("CONTRIBUTING.md", &format!("## Style\n\n{line}\n"))]);
+        assert_eq!(detect_house_styles(dir.path()), vec![], "{line}");
+    }
+}
+
+#[test]
+fn a_mention_inside_a_code_fence_is_not_adoption() {
+    let dir = repo(&[(
+        "STYLE.md",
+        "```text\nGoogle developer documentation style guide\n```\n",
+    )]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn indented_and_tab_separated_headings_open_a_style_section() {
+    for heading in ["   ## Style", "##\tStyle", "## Style ##"] {
+        let dir = repo(&[("CONTRIBUTING.md", &format!("{heading}\n\n{GOOGLE_LINE}"))]);
+        let found = detect_house_styles(dir.path());
+        assert_eq!(found.len(), 1, "{heading:?}");
+        assert_eq!(found[0].evidence.line, 3);
+    }
+}
+
+#[test]
+fn four_space_indent_is_code_not_a_heading() {
+    let dir = repo(&[("CONTRIBUTING.md", &format!("    ## Style\n\n{GOOGLE_LINE}"))]);
+    assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn a_style_section_covers_its_subsections_and_ends_at_a_sibling_heading() {
+    let text = "# Contributing\n\
+        Simplified Technical English is not used here.\n\
+        ## Writing style\n\
+        Follow the Google developer documentation style guide.\n\
+        ### Headings\n\
+        Microsoft Writing Style Guide covers tone.\n\
+        ## Testing\n\
+        Simplified Technical English applies to test names.\n";
+    let dir = repo(&[("CONTRIBUTING.md", text)]);
+    let found = detect_house_styles(dir.path());
+    let seen: Vec<(Option<&str>, usize)> = found
+        .iter()
+        .map(|s| (s.preset.as_deref(), s.evidence.line))
+        .collect();
+    assert_eq!(seen, [(Some("google"), 4), (None, 6)]);
+}
