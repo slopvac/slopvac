@@ -42,6 +42,7 @@ import plugin_pages
 import starlight
 import yaml
 from mdtext import cell as _cell
+from mdtext import code, untrusted, untrusted_cell
 from mdtext import one_line as _one_line
 from mdtext import text as _text
 
@@ -237,10 +238,10 @@ def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
 
 
 @cache
-def rust_reference(crate: str) -> Pages:
-    """Pages printed by a crate's ``reference`` example, keyed by site path."""
+def rust_reference(crate: str, example: str = "reference") -> Pages:
+    """Pages printed by a crate's reference example, keyed by site path."""
     with tempfile.TemporaryDirectory() as tmp:
-        command = [CARGO, "run", "--quiet", "-p", crate, "--example", "reference"]
+        command = [CARGO, "run", "--quiet", "-p", crate, "--example", example]
         result = subprocess.run(
             [*command, "--", tmp], cwd=ROOT, capture_output=True, text=True, check=False
         )
@@ -264,6 +265,133 @@ def generate_genres() -> Pages:
     return rust_reference("slopvac-context")
 
 
+def generate_cli() -> Pages:
+    return rust_reference("slopvac", "cli-reference")
+
+
+class _ConfigSchema:
+    """Walks ``config.schema.json`` into one row per key path."""
+
+    def __init__(self, config: dict, common: dict) -> None:
+        self.config = config
+        self.common = common
+
+    def resolve(self, node: dict) -> dict:
+        """The node with a local or ``common.schema.json`` ``$ref`` followed."""
+        ref = node.get("$ref")
+        if not ref:
+            return node
+        base, _, pointer = ref.partition("#")
+        target = self.common if base == "common.schema.json" else self.config
+        for part in pointer.strip("/").split("/"):
+            target = target[part]
+        own = {k: v for k, v in node.items() if k != "$ref"}
+        return {**self.resolve(target), **own}
+
+    def _parts(self, node: dict) -> list[dict]:
+        """The node and every schema merged into it by ``allOf`` or ``then``."""
+        node = self.resolve(node)
+        parts = [node]
+        for sub in [*node.get("allOf", []), *([node["then"]] if "then" in node else [])]:
+            parts += self._parts(sub)
+        return parts
+
+    def properties(self, node: dict) -> dict[str, dict]:
+        found: dict[str, dict] = {}
+        for part in self._parts(node):
+            found.update(part.get("properties", {}))
+        return found
+
+    def required(self, node: dict) -> set[str]:
+        return {key for part in self._parts(node) for key in part.get("required", [])}
+
+    @staticmethod
+    def literal(value: object) -> str:
+        return code(value if isinstance(value, str) else json.dumps(value), in_table=True)
+
+    def kind(self, node: dict) -> str:
+        node = self.resolve(node)
+        if "enum" in node:
+            return "one of " + ", ".join(self.literal(v) for v in node["enum"])
+        if "const" in node:
+            return self.literal(node["const"])
+        if "oneOf" in node:
+            return " or ".join(self.kind(n) for n in node["oneOf"])
+        if "then" in node:
+            return f"{self.kind(node['else'])} or table"
+        kind = node.get("type")
+        if kind == "array":
+            return f"array of {self.kind(node.get('items', {}))}"
+        if kind == "object" and isinstance(node.get("additionalProperties"), dict):
+            return f"table of {self.kind(node['additionalProperties'])}"
+        if kind in (None, "object"):
+            return "table"
+        return kind if isinstance(kind, str) else " or ".join(kind)
+
+    def rows(self, node: dict, prefix: str = "") -> list[tuple[str, str, str, str]]:
+        found = []
+        required = self.required(node)
+        for key, child in self.properties(node).items():
+            path = prefix + key
+            resolved = self.resolve(child)
+            default = resolved.get("default")
+            found.append(
+                (
+                    path + (" (required)" if key in required else ""),
+                    self.kind(child),
+                    "none" if default is None else self.literal(default),
+                    resolved.get("description", ""),
+                )
+            )
+            found += self.children(resolved, path)
+        return found
+
+    def map_rows(
+        self, node: dict, values: dict, path: str
+    ) -> list[tuple[str, str, str, str]]:
+        """A row for the user-chosen key, then rows for the keys of each value.
+
+        The key row carries the ``propertyNames`` metadata: which names are
+        allowed and that ``x-`` has no special meaning for them.
+        """
+        names = self.resolve(node.get("propertyNames", {}))
+        pattern = names.get("pattern")
+        description = names.get("description", "A name chosen by the user.")
+        if pattern:
+            description += f" Names match the pattern {pattern}"
+        key_row = (f"{path}.<name>", self.kind(values), "none", description)
+        return [key_row, *self.rows(values, path + ".<name>.")]
+
+    def children(self, node: dict, path: str) -> list[tuple[str, str, str, str]]:
+        if node.get("type") == "array" and "items" in node:
+            return self.rows(node["items"], path + "[].")
+        extra = node.get("additionalProperties")
+        if isinstance(extra, dict):
+            return self.map_rows(node, extra, path)
+        return self.rows(node, path + ".")
+
+
+def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
+    config = json.loads((schemas_dir / "config.schema.json").read_text())
+    common = json.loads((schemas_dir / "common.schema.json").read_text())
+    lines = [
+        "# Configuration reference",
+        "",
+        untrusted(config.get("description", "")),
+        "",
+        "This page writes a key inside an array of tables as `name[].key`.",
+        "It writes a key inside a table of user-chosen names as `table.<name>.key`.",
+        "",
+        "| Key | Type | Default | Description |",
+        "| --- | --- | --- | --- |",
+    ]
+    for path, kind, default, description in _ConfigSchema(config, common).rows(config):
+        key, _, note = path.partition(" ")
+        label = code(key, in_table=True) + (" " + note if note else "")
+        lines.append(f"| {label} | {kind} | {default} | {untrusted_cell(description)} |")
+    return {"config/index.md": "\n".join(lines) + "\n"}
+
+
 SECTIONS = (
     ("Rules", "rules/index.md"),
     ("Styles", "styles/index.md"),
@@ -272,6 +400,8 @@ SECTIONS = (
     ("Plugin protocol", "plugins/protocol.md"),
     ("Pack manifest", "plugins/manifest.md"),
     ("Packs", "plugins/packs/index.md"),
+    ("Command line", "cli/index.md"),
+    ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
 
@@ -300,6 +430,8 @@ def build(
         generate_terms(),
         generate_genres(),
         plugin_pages.generate_packs(schemas, packs_dir),
+        generate_cli(),
+        generate_config(schemas_dir),
         {"index.md": index_page()},
     )
     for group in generated:
