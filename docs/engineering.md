@@ -12,7 +12,7 @@ Each rule gives a source. A repository source is a link. A source written as ski
 
 - Libraries define one `thiserror` enum per module and a `Result` alias. Derive `Error`, do not write `Display` by hand, and size each enum to its operation. Exception: a `Display` that must sanitize text. Why: callers match on variants, and the derive keeps messages and sources in sync. Target: after `slopvac-8l4.3.50` (engine) and `slopvac-8l4.2.32` (contract and plugins), because `slopvac-engine`, `slopvac-plugins` and `slopvac-rules` still use error structs or hand-written `Display`. Sources: [architecture record, decision 10](design/0001-slopvac-3-architecture.md#10-error-and-diagnostic-rendering-thiserror-anyhow-annotate-snippets), skill `lang-rust-libraries`.
 - The binary reports failures through the typed `CliError`. Each error carries a stable kebab-case code. Text output renders `error[<code>]: <message>`. Why: codes are part of the interface and message text is not. Sources: [`errors.rs`](../crates/slopvac/src/errors.rs), [policies, error codes](contract/policies.md#35-error-codes).
-- Take every code from one registry. No free-string code at a call site. Target: after `slopvac-8l4.19.1`.
+- Take every code from one registry. No free-string code at a call site. Target: after `slopvac-8l4.21.6`.
 - Never reuse a code and never change its meaning. A retired code stays in the generated docs, marked retired. Source: [policies, error codes](contract/policies.md#35-error-codes).
 - Use only exit codes 0 (pass), 1 (a gate failed) and 2 (run incomplete). Treat exit 2 as incomplete. A panic under `panic = "abort"` exits with another code, so keep panics out of library code. Source: [policies, error codes](contract/policies.md#35-error-codes).
 
@@ -53,7 +53,7 @@ Each rule gives a source. A repository source is a link. A source written as ski
 
 - Dependencies point downward. A leaf crate depends on no crate above it. The `slopvac` binary wires the libraries together. Dev-dependency cycles are also not allowed. Target for the existing `slopvac-migrate` to `slopvac-agents` dev cycle: after `slopvac-8l4.14.26`. Source: skill `lang-rust-packaging`.
 - A library may expose a clap `command()` and `run()` for the CLI to wire. The CLI relies on that pattern. Sources: [`cli.rs`](../crates/slopvac/src/cli.rs), bead `slopvac-8l4.12.13`.
-- Build command trees with the clap builder API (`Command`, `Arg`) only. Why: one style, trees built by each library's `command()`, and no unused proc-macro build cost. Target: after `slopvac-8l4.12.33`, which drops the `derive` feature from `clap` in [`Cargo.toml`](../Cargo.toml).
+- Build command trees with the clap builder API (`Command`, `Arg`) only. Why: one style, trees built by each library's `command()`, and no unused proc-macro build cost. Target: after `slopvac-8l4.21.3`, which drops the `derive` feature from `clap` in [`Cargo.toml`](../Cargo.toml).
 - No async runtime. Use rayon for CPU work, and threads with crossbeam-channel for waiting work. `tokio` and `async-std` are banned in `deny.toml`. Sources: [architecture record, decision 3](design/0001-slopvac-3-architecture.md#3-no-async-runtime), [`deny.toml`](../deny.toml).
 - One cohesive theme per crate, named for the theme. Never name a crate or module `util`, `common`, `misc`, `helpers` or `shared`. Open the `lib.rs` docs with a one-sentence purpose. Source: skill `lang-rust-packaging`.
 - A helper with one user stays in that crate. Create a shared crate only when at least two dependants share its theme. Source: skill `quality-code-policy`.
