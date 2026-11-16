@@ -293,27 +293,25 @@ fn validate_configs(
     }
     for target in &request.targets {
         let path = request.root.join(target);
-        if path.is_dir() {
-            // Every directory below that holds a file the run reaches has its own nearest
-            // config. All of them are checked, before any exclusion drops a file.
-            if let Ok(found) = discover(
-                &[path.to_string_lossy().into_owned()],
-                Options {
-                    selection: if request.code_comments {
-                        Selection::CodeComments
-                    } else {
-                        Selection::Prose
-                    },
-                    ..Options::default()
+        // Every file a target reaches, whether it names a file, a directory or a glob, has
+        // its own nearest config. All of them are checked, before any exclusion drops a file.
+        if let Ok(found) = discover(
+            &[target.to_string_lossy().into_owned()],
+            Options {
+                selection: if request.code_comments {
+                    Selection::CodeComments
+                } else {
+                    Selection::Prose
                 },
-            ) {
-                dirs.extend(
-                    found
-                        .files
-                        .iter()
-                        .filter_map(|f| f.path.parent().map(Path::to_path_buf)),
-                );
-            }
+                ..Options::default()
+            },
+        ) {
+            dirs.extend(found.files.iter().filter_map(|f| {
+                let parent = f.path.parent()?;
+                Some(request.root.join(parent))
+            }));
+        }
+        if path.is_dir() {
             dirs.push(path);
         } else if let Some(parent) = path.parent().filter(|p| p.is_dir()) {
             dirs.push(parent.to_path_buf());

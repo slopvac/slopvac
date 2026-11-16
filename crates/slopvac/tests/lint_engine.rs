@@ -775,3 +775,32 @@ fn an_unreadable_absolute_config_is_reported_without_its_directories() {
         assert!(!everything.contains(&sentinel), "{format}: {everything}");
     }
 }
+
+#[test]
+fn a_config_below_a_glob_target_is_checked_even_when_it_excludes_every_match() {
+    let (dir, _) = project("top.md", CLEAN, None);
+    let sub = dir.path().join("docs/deeper");
+    fs::create_dir_all(&sub).expect("dirs");
+    fs::write(sub.join("a.md"), CLEAN).expect("write");
+    fs::write(
+        sub.join("slopvac.toml"),
+        "schema_version = 3\nexclude = [\"**\"]\n\n[rules]\n\"core:orwell.nope\" = \"off\"\n",
+    )
+    .expect("config");
+    slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "docs/**/*.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+}
+
+#[test]
+fn an_unwired_command_says_so_without_any_internal_id() {
+    let out = slopvac().arg("packs").output().expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "error[command-not-wired]: `slopvac packs` is not available in this build yet.\n"
+    );
+}
