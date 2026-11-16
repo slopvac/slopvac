@@ -2,12 +2,12 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, StructuralSpec, TagIndex,
-    TagRegistry, Tagger,
+    BlockKind, ContextGate, Error, OwnedBlock, PlainDocument, TagIndex, TagRegistry, Tagger,
+    TaggerSpec,
 };
 
 fn tagger(yaml: &str) -> Box<dyn Tagger> {
-    Box::new(StructuralSpec::from_yaml(yaml).unwrap().compile().unwrap())
+    Box::new(TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap())
 }
 
 fn run(yaml: &str, path: &str, src: &str) -> TagIndex {
@@ -22,7 +22,7 @@ const DOC: &str = "# Guide\n\nIntro text here.\n\n## Breaking changes\n\nThe fla
 #[test]
 fn section_scope_covers_the_heading_section_only() {
     let idx = run(
-        "id: t\nkind: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
+        "schema_version: 3\nid: t\ntag: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
         "a.md",
         DOC,
     );
@@ -37,7 +37,7 @@ fn section_scope_covers_the_heading_section_only() {
 fn section_scope_stops_at_the_next_peer_and_keeps_subsections() {
     let src = "# T\n\n## Notes\n\nA text.\n\n### Deep\n\nD text.\n\n## Other\n\nB text.\n\n## Notes\n\nC text.\n";
     let idx = run(
-        "id: t\nkind: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n",
+        "schema_version: 3\nid: t\ntag: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n",
         "a.md",
         src,
     );
@@ -54,7 +54,7 @@ fn section_scope_stops_at_the_next_peer_and_keeps_subsections() {
 fn identically_named_sibling_headings_are_tagged_independently() {
     let src = "# T\n\n## Notes\n\nThe flag is gone.\n\n## Notes\n\nNothing else here.\n";
     let idx = run(
-        "id: t\nkind: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n  sentence: flag\n",
+        "schema_version: 3\nid: t\ntag: k\nscope: section\nwhen:\n  heading_path: '^notes$'\n  sentence: flag\n",
         "a.md",
         src,
     );
@@ -70,7 +70,7 @@ fn identically_named_sibling_headings_are_tagged_independently() {
 #[test]
 fn sentence_scope_tags_the_matching_sentence() {
     let idx = run(
-        "id: t\nkind: requirement\nconfidence: 0.8\nwhen:\n  sentence: '^use '\n",
+        "schema_version: 3\nid: t\ntag: requirement\nconfidence: 0.8\nwhen:\n  sentence: '^use '\n",
         "a.md",
         DOC,
     );
@@ -82,7 +82,7 @@ fn sentence_scope_tags_the_matching_sentence() {
 
 #[test]
 fn document_scope_covers_the_whole_source_from_a_path_condition() {
-    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '(^|/)CHANGELOG\\.md$'\n";
+    let y = "schema_version: 3\nid: t\ntag: change-note\nscope: document\nwhen:\n  path: '(^|/)CHANGELOG\\.md$'\n";
     let hit = run(y, "docs/CHANGELOG.md", DOC);
     let miss = run(y, "docs/guide.md", DOC);
     assert_eq!(hit.tags()[0].span, 0..DOC.len());
@@ -91,7 +91,7 @@ fn document_scope_covers_the_whole_source_from_a_path_condition() {
 
 #[test]
 fn document_scope_with_only_document_conditions_needs_no_prose_block() {
-    let y = "id: t\nkind: generated\nscope: document\nwhen:\n  frontmatter:\n    key: generated\n";
+    let y = "schema_version: 3\nid: t\ntag: generated\nscope: document\nwhen:\n  front_matter:\n    key: generated\n";
     for src in [
         "---\ngenerated: yes\n---\n",
         "---\ngenerated: yes\n---\n```\ncode\n```\n",
@@ -104,7 +104,7 @@ fn document_scope_with_only_document_conditions_needs_no_prose_block() {
 
 #[test]
 fn frontmatter_condition_checks_the_value() {
-    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  frontmatter:\n    key: type\n    matches: release\n";
+    let y = "schema_version: 3\nid: t\ntag: change-note\nscope: document\nwhen:\n  front_matter:\n    key: type\n    matches: release\n";
     let src = "---\ntype: release-notes\n---\n# T\n\nBody.\n";
     assert_eq!(run(y, "a.md", src).tags().len(), 1);
     assert!(
@@ -116,8 +116,7 @@ fn frontmatter_condition_checks_the_value() {
 
 #[test]
 fn conditions_combine_with_and_across_document_block_and_sentence_levels() {
-    let y =
-        "id: t\nkind: k\nwhen:\n  path: 'docs/'\n  heading_path: breaking\n  sentence: 'flag'\n";
+    let y = "schema_version: 3\nid: t\ntag: k\nwhen:\n  path: 'docs/'\n  heading_path: breaking\n  sentence: 'flag'\n";
     let sentence = "The flag is gone.";
     let at = DOC.find(sentence).unwrap();
     let span = at..at + sentence.len();
@@ -152,7 +151,7 @@ fn admonition_title_condition() {
     });
     let mut reg = TagRegistry::new();
     reg.register(tagger(
-        "id: t\nkind: change-note\nscope: paragraph\nwhen:\n  admonition_title: changed in\n",
+        "schema_version: 3\nid: t\ntag: change-note\nscope: paragraph\nwhen:\n  admonition_title: changed in\n",
     ))
     .unwrap();
     let idx = reg.tag_document(&doc).unwrap();
@@ -163,7 +162,7 @@ fn admonition_title_condition() {
 #[test]
 fn kinds_at_needs_the_tag_to_contain_the_span() {
     let idx = run(
-        "id: t\nkind: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
+        "schema_version: 3\nid: t\ntag: change-note\nscope: section\nwhen:\n  heading_path: breaking\n",
         "a.md",
         DOC,
     );
@@ -186,7 +185,7 @@ fn headings_with_extra_spaces_and_non_ascii_text_keep_exact_spans() {
 
 #[test]
 fn duplicate_tagger_ids_are_rejected() {
-    let y = "id: t\nkind: a\nwhen:\n  sentence: x\n";
+    let y = "schema_version: 3\nid: t\ntag: a\nwhen:\n  sentence: x\n";
     let mut reg = TagRegistry::new();
     reg.register(tagger(y)).unwrap();
     assert!(matches!(reg.register(tagger(y)), Err(Error::DuplicateTagger(id)) if id == "t"));
@@ -194,28 +193,28 @@ fn duplicate_tagger_ids_are_rejected() {
 
 #[test]
 fn invalid_specs_are_errors() {
-    let compile = |y: &str| StructuralSpec::from_yaml(y).and_then(StructuralSpec::compile);
+    let compile = |y: &str| TaggerSpec::from_yaml(y).and_then(TaggerSpec::compile);
     let cases = [
-        "id: t\nkind: a\nwhen:\n  sentence: x\nbogus: 1\n",
-        "id: t\nkind: a\nwhen: {}\n",
-        "id: t\nkind: a\nconfidence: 2\nwhen:\n  sentence: x\n",
-        "id: t\nkind: Change Note\nwhen:\n  sentence: x\n",
-        "id: t\nkind: '1a'\nwhen:\n  sentence: x\n",
-        "id: t\nkind: a_b\nwhen:\n  sentence: x\n",
-        "id: t\nkind: ''\nwhen:\n  sentence: x\n",
+        "schema_version: 3\nid: t\ntag: a\nwhen:\n  sentence: x\nbogus: 1\n",
+        "schema_version: 3\nid: t\ntag: a\nwhen: {}\n",
+        "schema_version: 3\nid: t\ntag: a\nconfidence: 2\nwhen:\n  sentence: x\n",
+        "schema_version: 3\nid: t\ntag: Change Note\nwhen:\n  sentence: x\n",
+        "schema_version: 3\nid: t\ntag: '1a'\nwhen:\n  sentence: x\n",
+        "schema_version: 3\nid: t\ntag: a_b\nwhen:\n  sentence: x\n",
+        "schema_version: 3\nid: t\ntag: ''\nwhen:\n  sentence: x\n",
     ];
     for y in cases {
         assert!(compile(y).is_err(), "{y}");
     }
     assert!(matches!(
-        compile("id: t\nkind: a\nwhen:\n  sentence: '('\n"),
+        compile("schema_version: 3\nid: t\ntag: a\nwhen:\n  sentence: '('\n"),
         Err(Error::Pattern { .. })
     ));
 }
 
 #[test]
 fn pcre2_execution_errors_surface_instead_of_missing_tags() {
-    let y = "id: t\nkind: k\nwhen:\n  sentence: '^(a+)+$'\n";
+    let y = "schema_version: 3\nid: t\ntag: k\nwhen:\n  sentence: '^(a+)+$'\n";
     let src = format!("# T\n\n{}b.\n", "a".repeat(64));
     let mut reg = TagRegistry::new();
     reg.register(tagger(y)).unwrap();
@@ -310,7 +309,7 @@ fn a_section_runs_to_the_furthest_end_of_its_blocks() {
     };
     let mut reg = TagRegistry::new();
     reg.register(tagger(
-        "id: t\nkind: procedure\nscope: section\nwhen:\n  heading_path: procedure\n",
+        "schema_version: 3\nid: t\ntag: procedure\nscope: section\nwhen:\n  heading_path: procedure\n",
     ))
     .unwrap();
     let idx = reg.tag_document(&doc).unwrap();
@@ -340,7 +339,7 @@ fn overlapping_groups_keep_every_piece_they_share() {
 
 #[test]
 fn windows_style_paths_match_path_conditions_like_unix_paths() {
-    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let y = "schema_version: 3\nid: t\ntag: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
     let idx = run(y, "C:\\docs\\CHANGELOG.md", DOC);
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].kind, "change-note");
@@ -349,7 +348,7 @@ fn windows_style_paths_match_path_conditions_like_unix_paths() {
 
 #[test]
 fn dot_components_are_dropped_before_an_anchored_path_condition() {
-    let y = "id: t\nkind: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
+    let y = "schema_version: 3\nid: t\ntag: change-note\nscope: document\nwhen:\n  path: '^docs/CHANGELOG\\.md$'\n";
     let idx = run(y, "./docs/./CHANGELOG.md", DOC);
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].kind, "change-note");

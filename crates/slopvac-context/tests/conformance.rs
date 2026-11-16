@@ -155,3 +155,49 @@ fn every_built_in_tagger_satisfies_the_tagger_schema() {
         assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
     }
 }
+
+#[test]
+fn every_built_in_structural_tagger_satisfies_the_tagger_schema() {
+    let v = validator("tagger.schema.json");
+    let list = builtin("structural.yaml");
+    let taggers = list.as_array().unwrap();
+    assert!(taggers.len() >= 14, "{} taggers", taggers.len());
+    for t in taggers {
+        let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
+    }
+}
+
+/// Schema evolution within one `schema_version` is additive (`docs/contract/policies.md`,
+/// section 3.2): a file that was valid before `contexts` and `when` stays valid. These are
+/// the valid corpus files and the built-in files that predate the two additions.
+#[test]
+fn schema_evolution_is_additive() {
+    let genre = validator("genre.schema.json");
+    let tagger = validator("tagger.schema.json");
+    let corpus = |artifact: &str, file: &str| {
+        load(
+            &schemas()
+                .join("conformance")
+                .join(artifact)
+                .join("valid")
+                .join(file),
+        )
+    };
+    let before = [
+        (&genre, corpus("genre", "minimal.toml")),
+        (&genre, corpus("genre", "how-to.toml")),
+        (&tagger, corpus("tagger", "minimal.toml")),
+        (&tagger, corpus("tagger", "requirement.toml")),
+    ];
+    for (v, value) in before {
+        let errors: Vec<String> = v.iter_errors(&value).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{}: {errors:?}", value["id"]);
+    }
+    for (v, file) in [(&genre, "genres.yaml"), (&tagger, "taggers.yaml")] {
+        for entry in builtin(file).as_array().unwrap() {
+            let errors: Vec<String> = v.iter_errors(entry).map(|e| e.to_string()).collect();
+            assert!(errors.is_empty(), "{}: {errors:?}", entry["id"]);
+        }
+    }
+}

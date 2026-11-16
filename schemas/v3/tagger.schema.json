@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://srobroek.github.io/slopvac/schemas/v3/tagger.schema.json",
   "title": "slopvac v3 declarative tagger",
-  "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4. A tagger has either `match` entries, which read the text of one unit, or a `when` object, which reads document structure.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -46,6 +46,19 @@
         "$ref": "#/$defs/Matcher"
       }
     },
+    "when": {
+      "$ref": "#/$defs/When"
+    },
+    "scope": {
+      "description": "With `when`: how far the tag spreads. sentence tags each matching sentence, paragraph the matching block, section the enclosing heading section (up to the next heading of the same or a shallower level) and document the whole document. Allowed only with `when`.",
+      "enum": [
+        "sentence",
+        "paragraph",
+        "section",
+        "document"
+      ],
+      "default": "sentence"
+    },
     "confidence": {
       "type": "number",
       "minimum": 0,
@@ -61,9 +74,48 @@
   "required": [
     "schema_version",
     "id",
-    "tag",
-    "match"
+    "tag"
   ],
+  "anyOf": [
+    {
+      "required": [
+        "match"
+      ]
+    },
+    {
+      "required": [
+        "when"
+      ]
+    }
+  ],
+  "dependentRequired": {
+    "scope": [
+      "when"
+    ]
+  },
+  "dependentSchemas": {
+    "when": {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "match"
+            ]
+          },
+          {
+            "required": [
+              "unless"
+            ]
+          },
+          {
+            "required": [
+              "unit"
+            ]
+          }
+        ]
+      }
+    }
+  },
   "patternProperties": {
     "^x-": {}
   },
@@ -112,6 +164,72 @@
             ]
           }
         }
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "When": {
+      "description": "Structural conditions. All given conditions must hold. Path and front_matter are document conditions; heading_path, admonition_title and block_kind are block conditions; sentence is a sentence condition. Patterns are PCRE2 and case-insensitive. Blocks of kind code-block are skipped unless block_kind names them.",
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "heading_path": {
+          "description": "Matches when the text of any enclosing heading matches.",
+          "type": "string",
+          "minLength": 1
+        },
+        "admonition_title": {
+          "description": "Matches the title of the enclosing admonition.",
+          "type": "string",
+          "minLength": 1
+        },
+        "front_matter": {
+          "$ref": "#/$defs/FrontMatterCondition"
+        },
+        "path": {
+          "description": "Matches the file path, with forward slashes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sentence": {
+          "description": "Matches the text of a sentence.",
+          "type": "string",
+          "minLength": 1
+        },
+        "block_kind": {
+          "description": "The block has this kind.",
+          "enum": [
+            "heading",
+            "paragraph",
+            "list-item",
+            "table-row",
+            "code-block",
+            "quote"
+          ]
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "FrontMatterCondition": {
+      "description": "A front matter key, and optionally a pattern its value must match. Without `matches` the key only has to exist.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "matches": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "key"
       ],
       "patternProperties": {
         "^x-": {}

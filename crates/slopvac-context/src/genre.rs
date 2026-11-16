@@ -268,6 +268,9 @@ pub struct GenreSpec {
     /// Styles the genre activates, in order.
     #[serde(default)]
     pub styles: Vec<String>,
+    /// Context tags that every document of the genre carries.
+    #[serde(default)]
+    pub contexts: Vec<String>,
     /// Settings per category name.
     #[serde(default)]
     pub categories: BTreeMap<String, CategorySettings>,
@@ -312,6 +315,17 @@ impl GenreSpec {
         }
         if let Some(r) = self.styles.iter().find(|r| !is_ref(r)) {
             return Err(fail(format!("`styles` entry `{r}` is not a style name")));
+        }
+        let mut tags = BTreeSet::new();
+        for c in &self.contexts {
+            if !is_name(c) {
+                return Err(fail(format!(
+                    "`contexts` entry `{c}` is not a context tag (lowercase kebab-case)"
+                )));
+            }
+            if !tags.insert(c) {
+                return Err(fail(format!("`contexts` repeats `{c}`")));
+            }
         }
         let mut keys = self.categories.keys().chain(self.rules.keys());
         if let Some(k) = keys.find(|k| !is_rule_key(k)) {
@@ -476,8 +490,8 @@ pub struct ResolveOptions<'a> {
 pub struct GenreRegistry {
     genres: Vec<Genre>,
     default: String,
-    /// Context tags a genre declares for the whole document. Genre files have no field for
-    /// them, so the host sets them in code, see [`GenreRegistry::with_contexts`].
+    /// Context tags the host declares in code, on top of the `contexts` of the genre files,
+    /// see [`GenreRegistry::with_contexts`].
     contexts: BTreeMap<String, Vec<String>>,
 }
 
@@ -517,7 +531,7 @@ impl GenreRegistry {
         }
     }
 
-    /// Declare context tags for a genre. Documents of the genre, and of genres that extend
+    /// Declare more context tags for a genre than its file lists. Documents of the genre, and of genres that extend
     /// it, carry the tags for the whole document (see `DeclaredContextTagger`).
     pub fn with_contexts(mut self, genre: &str, tags: &[&str]) -> Result<Self, Error> {
         self.get(genre)
@@ -611,7 +625,11 @@ impl GenreRegistry {
     pub fn contexts(&self, id: &str) -> Result<Vec<String>, Error> {
         let mut out: Vec<String> = Vec::new();
         for s in self.chain(id)? {
-            for c in self.contexts.get(&s.id).into_iter().flatten() {
+            for c in s
+                .contexts
+                .iter()
+                .chain(self.contexts.get(&s.id).into_iter().flatten())
+            {
                 if !out.contains(c) {
                     out.push(c.clone());
                 }
