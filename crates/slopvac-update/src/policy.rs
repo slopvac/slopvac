@@ -1,143 +1,106 @@
-//! Project network policy from `slopvac.toml`.
+//! Project network policy, read through the config layer.
 //!
-//! STUB(slopvac-8l4.12.18): `crates/slopvac-config` is still a placeholder, so this reads only
-//! `[network] offline` and `[network] update_check` from the nearest `slopvac.toml`. It follows
-//! the discovery rule of `docs/contract/config.md` (walk up from the start directory, stop after
-//! the directory that holds `.git`). It ignores `extends` chains and an unparsable file. The real
-//! config layer replaces it, and this module goes away.
+//! `[network] offline` and `[network] update_check` come from the resolved `slopvac.toml` stack,
+//! so `extends` chains and layer precedence apply, and offline stays sticky: once any layer sets
+//! it, no layer can unset it.
 //!
-//! The read runs before argument parsing, on a path the user did not choose, so it is bounded: the
-//! file must be a regular file (checked on the open handle, which closes the swap-after-check gap),
-//! it opens without blocking, and it reads at most [`MAX_CONFIG_BYTES`].
+//! The read runs before argument parsing, on files the user did not name, so the loader reads
+//! only regular files, without blocking, and at most 1 MiB each (`slopvac_config::read`). Error
+//! messages name files by their name or by their path relative to the project root, never by an
+//! absolute path.
 
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use thiserror::Error;
-
-/// Largest `slopvac.toml` this stub reads.
-pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
+use slopvac_config::{ConfigError, Discovery, Inputs, NoPresets};
 
 /// The `[network]` settings that govern the update check.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NetworkPolicy {
-    /// `[network] offline = true`. Offline is sticky, so `false` and unset mean the same.
+    /// `[network] offline = true` in the resolved stack.
     pub offline: bool,
-    /// `[network] update_check`, when set.
+    /// `[network] update_check = false` in the resolved stack. `None` when nothing turned it off.
     pub update_check: Option<bool>,
 }
 
-/// Why the nearest `slopvac.toml` could not be read. The CLI exits 2.
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum PolicyError {
-    /// The path is a directory, FIFO, device or other non-regular file.
-    #[error("{}: not a regular file", .0.display())]
-    NotRegular(PathBuf),
-    /// The file is larger than [`MAX_CONFIG_BYTES`].
-    #[error("{}: larger than {MAX_CONFIG_BYTES} bytes", .0.display())]
-    TooLarge(PathBuf),
-    /// Any other read failure.
-    #[error("{}: cannot read: {reason}", path.display())]
-    Unreadable {
-        /// The file.
-        path: PathBuf,
-        /// The I/O error text.
-        reason: String,
-    },
+impl NetworkPolicy {
+    /// The policy for a run that could not read its config: no network at all.
+    ///
+    /// A config that cannot be read might have said `offline = true`, so the fallback errs
+    /// towards staying offline, as an unparsable `SLOPVAC_OFFLINE` does.
+    #[must_use]
+    pub fn cautious() -> Self {
+        Self {
+            offline: true,
+            update_check: Some(false),
+        }
+    }
 }
+
+/// Why the project config could not be loaded. The CLI exits 2.
+#[derive(Debug)]
+pub struct PolicyError(ConfigError);
 
 impl PolicyError {
-    /// The file the error is about.
+    /// The stable error code: `config-unreadable` for a file that cannot be read, otherwise the
+    /// code of the config diagnostic.
     #[must_use]
-    pub fn path(&self) -> &Path {
-        match self {
-            Self::NotRegular(p) | Self::TooLarge(p) => p,
-            Self::Unreadable { path, .. } => path,
+    pub fn code(&self) -> &'static str {
+        match &self.0 {
+            ConfigError::Io { .. } => "config-unreadable",
+            other => other.code().as_str(),
         }
     }
 
-    /// What went wrong, without the path.
+    /// The message: a read failure in one line, or the rendered diagnostics.
     #[must_use]
-    pub fn problem(&self) -> String {
-        match self {
-            Self::NotRegular(_) => "not a regular file".to_owned(),
-            Self::TooLarge(_) => format!("larger than {MAX_CONFIG_BYTES} bytes"),
-            Self::Unreadable { reason, .. } => format!("cannot read: {reason}"),
+    pub fn message(&self) -> String {
+        match &self.0 {
+            ConfigError::Io { .. } => self.0.to_string(),
+            ConfigError::Rejected(r) => r.render(),
         }
+    }
+
+    /// Whether the file was read and its content refused (as opposed to not read at all).
+    #[must_use]
+    pub fn is_content(&self) -> bool {
+        matches!(self.0, ConfigError::Rejected(_))
     }
 }
 
-/// Read the policy of the nearest `slopvac.toml` at or above `start`.
+impl std::fmt::Display for PolicyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message())
+    }
+}
+
+impl std::error::Error for PolicyError {}
+
+/// Load the config that applies to `start` and read its network settings.
+///
+/// With no `slopvac.toml` on the path the defaults apply.
 pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
-    for dir in start.ancestors() {
-        let file = dir.join("slopvac.toml");
-        if let Some(text) = read_bounded(&file)? {
-            return Ok(parse(&text));
-        }
-        if dir.join(".git").exists() {
-            break;
-        }
-    }
-    Ok(NetworkPolicy::default())
-}
-
-/// The file's text, or `None` when it does not exist.
-fn read_bounded(file: &Path) -> Result<Option<String>, PolicyError> {
-    let unreadable = |e: &std::io::Error| PolicyError::Unreadable {
-        path: file.to_owned(),
-        reason: e.to_string(),
+    let discovery = Discovery::new(&NoPresets);
+    let Some(config) = discovery.nearest(start).map_err(PolicyError)? else {
+        return Ok(NetworkPolicy::default());
     };
-    let mut opts = std::fs::OpenOptions::new();
-    opts.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A FIFO with no writer would block an ordinary open.
-        opts.custom_flags(i32::try_from(rustix::fs::OFlags::NONBLOCK.bits()).unwrap_or_default());
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_BACKUP_SEMANTICS lets a directory open, so the handle check names it.
-        opts.custom_flags(0x0200_0000);
-    }
-    let handle = match opts.open(file) {
-        Ok(h) => h,
-        Err(e)
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) =>
-        {
-            return Ok(None);
-        }
-        Err(e) => return Err(unreadable(&e)),
+    let resolved = config.resolve(
+        Path::new(""),
+        &Inputs {
+            presets: &NoPresets,
+            front_matter: &[],
+            directives: &[],
+            cli: &[],
+            env: &[],
+        },
+    );
+    let update_check = match resolved.get(&["network", "update_check"]) {
+        Some(serde_json::Value::Bool(false)) => Some(false),
+        _ => None,
     };
-    if !handle.metadata().map_err(|e| unreadable(&e))?.is_file() {
-        return Err(PolicyError::NotRegular(file.to_owned()));
-    }
-    let mut text = String::new();
-    handle
-        .take(MAX_CONFIG_BYTES + 1)
-        .read_to_string(&mut text)
-        .map_err(|e| unreadable(&e))?;
-    if text.len() as u64 > MAX_CONFIG_BYTES {
-        return Err(PolicyError::TooLarge(file.to_owned()));
-    }
-    Ok(Some(text))
-}
-
-fn parse(text: &str) -> NetworkPolicy {
-    let Ok(doc) = text.parse::<toml::Table>() else {
-        return NetworkPolicy::default();
-    };
-    let Some(network) = doc.get("network").and_then(toml::Value::as_table) else {
-        return NetworkPolicy::default();
-    };
-    NetworkPolicy {
-        offline: network.get("offline").and_then(toml::Value::as_bool) == Some(true),
-        update_check: network.get("update_check").and_then(toml::Value::as_bool),
-    }
+    Ok(NetworkPolicy {
+        offline: resolved.is_offline(),
+        update_check,
+    })
 }
 
 #[cfg(test)]
@@ -146,6 +109,8 @@ mod tests {
 
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
+        // A `.git` entry stops the upward walk inside the temp directory.
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
         for (path, body) in files {
             let p = dir.path().join(path);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -154,8 +119,15 @@ mod tests {
         dir
     }
 
+    const V3: &str = "schema_version = 3\n";
+
     fn policy(dir: &Path) -> NetworkPolicy {
-        network_policy(dir).expect("readable")
+        network_policy(dir).expect("loads")
+    }
+
+    #[test]
+    fn no_config_means_defaults() {
+        assert_eq!(policy(tree(&[]).path()), NetworkPolicy::default());
     }
 
     #[test]
@@ -174,106 +146,100 @@ mod tests {
     }
 
     #[test]
-    fn walks_up_to_the_nearest_file() {
+    fn an_extended_file_can_turn_offline_on_and_the_project_cannot_turn_it_off() {
         let d = tree(&[
-            ("slopvac.toml", "[network]\noffline = true\n"),
+            (
+                "base.toml",
+                "schema_version = 3\n[network]\noffline = true\n",
+            ),
+            (
+                "slopvac.toml",
+                "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n",
+            ),
+        ]);
+        assert!(policy(d.path()).offline);
+    }
+
+    #[test]
+    fn the_project_overrides_update_check_from_its_base() {
+        let d = tree(&[
+            (
+                "base.toml",
+                "schema_version = 3\n[network]\nupdate_check = false\n",
+            ),
+            (
+                "slopvac.toml",
+                "schema_version = 3\nextends = [\"base.toml\"]\n[network]\nupdate_check = true\n",
+            ),
+        ]);
+        assert_eq!(policy(d.path()).update_check, None);
+        let d = tree(&[
+            (
+                "base.toml",
+                "schema_version = 3\n[network]\nupdate_check = true\n",
+            ),
+            (
+                "slopvac.toml",
+                "schema_version = 3\nextends = [\"base.toml\"]\n[network]\nupdate_check = false\n",
+            ),
+        ]);
+        assert_eq!(policy(d.path()).update_check, Some(false));
+    }
+
+    #[test]
+    fn walks_up_to_the_nearest_file_and_stops_after_the_git_root() {
+        let d = tree(&[
+            (
+                "slopvac.toml",
+                "schema_version = 3\n[network]\noffline = true\n",
+            ),
             ("a/b/keep", ""),
         ]);
+        std::fs::remove_dir(d.path().join(".git")).unwrap();
         assert!(policy(&d.path().join("a/b")).offline);
+        std::fs::create_dir(d.path().join("a/.git")).unwrap();
+        assert_eq!(policy(&d.path().join("a/b")), NetworkPolicy::default());
     }
 
     #[test]
-    fn nearest_file_wins_over_a_farther_one() {
-        let d = tree(&[
-            ("slopvac.toml", "[network]\noffline = true\n"),
-            ("a/slopvac.toml", "schema_version = 3\n"),
-        ]);
-        assert!(!policy(&d.path().join("a")).offline);
-    }
-
-    #[test]
-    fn the_walk_stops_after_the_git_root() {
-        let d = tree(&[
-            ("slopvac.toml", "[network]\noffline = true\n"),
-            ("repo/.git/HEAD", ""),
-            ("repo/src/keep", ""),
-        ]);
-        assert_eq!(policy(&d.path().join("repo/src")), NetworkPolicy::default());
-    }
-
-    #[test]
-    fn a_config_beside_git_still_counts() {
-        let d = tree(&[
-            ("repo/.git/HEAD", ""),
-            ("repo/slopvac.toml", "[network]\nupdate_check = false\n"),
-        ]);
-        assert_eq!(policy(&d.path().join("repo")).update_check, Some(false));
-    }
-
-    #[test]
-    fn unparsable_or_silent_files_set_nothing() {
+    fn content_errors_are_reported_with_a_code_and_no_absolute_path() {
         for body in [
             "{{{",
-            "schema_version = 3\n",
-            "[network]\noffline = \"yes\"\n",
+            "mode = \"prose\"\n",
+            "schema_version = 3\n[network]\noffline = \"yes\"\n",
         ] {
             let d = tree(&[("slopvac.toml", body)]);
-            assert_eq!(policy(d.path()), NetworkPolicy::default(), "{body}");
+            let err = network_policy(d.path()).unwrap_err();
+            assert!(err.is_content(), "{body}");
+            assert!(err.code().starts_with("config-"), "{}", err.code());
+            let text = err.message();
+            assert!(!text.contains(d.path().to_str().unwrap()), "{text}");
         }
     }
 
     #[test]
-    fn a_file_at_the_size_cap_is_read_and_one_byte_more_is_refused() {
-        let prefix = "[network]\noffline = true\n#";
-        let at_cap = format!(
-            "{prefix}{}",
-            "a".repeat(usize::try_from(MAX_CONFIG_BYTES).unwrap() - prefix.len())
-        );
-        let d = tree(&[("slopvac.toml", &at_cap)]);
-        assert!(policy(d.path()).offline);
-
-        let over = format!("{at_cap}a");
-        let d = tree(&[("slopvac.toml", &over)]);
-        assert_eq!(
-            network_policy(d.path()),
-            Err(PolicyError::TooLarge(d.path().join("slopvac.toml")))
-        );
-    }
-
-    #[test]
-    fn a_directory_named_slopvac_toml_is_refused() {
-        let d = tree(&[("slopvac.toml/inner", "")]);
-        assert_eq!(
-            network_policy(d.path()),
-            Err(PolicyError::NotRegular(d.path().join("slopvac.toml")))
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_fifo_is_refused_without_blocking() {
+    fn read_failures_are_unreadable_and_name_only_the_file() {
         let d = tree(&[]);
-        let fifo = d.path().join("slopvac.toml");
-        let status = std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo");
-        assert!(status.success());
-        assert_eq!(network_policy(d.path()), Err(PolicyError::NotRegular(fifo)));
+        std::fs::create_dir(d.path().join("slopvac.toml")).unwrap();
+        let err = network_policy(d.path()).unwrap_err();
+        assert!(!err.is_content());
+        assert_eq!(err.code(), "config-unreadable");
+        assert_eq!(
+            err.message(),
+            "cannot read slopvac.toml: not a regular file"
+        );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn a_symlink_to_a_device_is_refused_and_one_to_a_regular_file_is_followed() {
-        let d = tree(&[("real.toml", "[network]\noffline = true\n")]);
-        let link = d.path().join("slopvac.toml");
-        std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
-        assert_eq!(
-            network_policy(d.path()),
-            Err(PolicyError::NotRegular(link.clone()))
-        );
-        std::fs::remove_file(&link).unwrap();
-        std::os::unix::fs::symlink(d.path().join("real.toml"), &link).unwrap();
-        assert!(policy(d.path()).offline);
+    fn the_cautious_policy_is_offline() {
+        let p = NetworkPolicy::cautious();
+        assert!(p.offline);
+        assert_eq!(p.update_check, Some(false));
+    }
+
+    #[test]
+    fn a_v3_stamp_alone_is_valid() {
+        let d = tree(&[("slopvac.toml", V3)]);
+        assert_eq!(policy(d.path()), NetworkPolicy::default());
     }
 }
