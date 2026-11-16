@@ -132,7 +132,8 @@ pub fn load_labeled(
         presets,
         stack: Vec::new(),
         table: Vec::new(),
-        order: Vec::new(),
+        order: Ordered::default(),
+        entries: 0,
         ids: std::collections::HashMap::new(),
         closure: Vec::new(),
         // The project file counts against the byte budget like every extended file.
@@ -148,8 +149,9 @@ pub fn load_labeled(
     // entry wins even when an earlier entry also reaches the same file.
     let files: Vec<ConfigFile> = loader
         .order
-        .iter()
-        .map(|i| loader.table[*i].clone())
+        .ids()
+        .into_iter()
+        .map(|i| loader.table[i].clone())
         .collect();
     let exclude = build_exclude(&files, &root);
     Ok(LoadedConfig {
@@ -261,6 +263,9 @@ const MAX_EXTENDS_DEPTH: usize = 16;
 const MAX_EXTENDS_FILES: usize = 64;
 /// Most bytes in one stack.
 const MAX_EXTENDS_BYTES: usize = 4 * 1024 * 1024;
+/// Most `extends` entries in one stack, repeated references included. A file reached again
+/// replays its closure, so the entries bound the work.
+const MAX_EXTENDS_ENTRIES: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Key {
@@ -275,12 +280,36 @@ struct Loader<'a> {
     /// Each distinct file, parsed once, in the order it was first loaded.
     table: Vec<ConfigFile>,
     /// Indexes into `table` in application order, each file at its last position.
-    order: Vec<usize>,
+    order: Ordered,
     /// The table index of every finished file, by canonical path.
     ids: std::collections::HashMap<Key, usize>,
     /// For each table entry: it and everything it extends, in application order.
     closure: Vec<Vec<usize>>,
+    /// `extends` entries read so far, in every file, repeats included.
+    entries: usize,
     bytes: usize,
+}
+
+/// File ids in application order where a file that appears again moves to the end. A move is
+/// one map lookup and one tombstone, so replaying a repeated reference costs the size of its
+/// closure and no scan.
+#[derive(Debug, Default)]
+struct Ordered {
+    slots: Vec<Option<usize>>,
+    at: std::collections::HashMap<usize, usize>,
+}
+
+impl Ordered {
+    fn push(&mut self, id: usize) {
+        if let Some(old) = self.at.insert(id, self.slots.len()) {
+            self.slots[old] = None;
+        }
+        self.slots.push(Some(id));
+    }
+
+    fn ids(&self) -> Vec<usize> {
+        self.slots.iter().flatten().copied().collect()
+    }
 }
 
 /// Largest number of `[[overrides]]` plus `[[genres]]` blocks in one file.
@@ -308,9 +337,37 @@ impl Loader<'_> {
         None
     }
 
+    /// Count `added` more `extends` entries; the rejection when the stack passes its budget.
+    fn entries_exceeded(
+        &mut self,
+        tree: &Node,
+        added: usize,
+        display: &str,
+        text: &str,
+    ) -> Option<ConfigError> {
+        self.entries += added;
+        if self.entries <= MAX_EXTENDS_ENTRIES {
+            return None;
+        }
+        let span = tree.get("extends").map_or(0..0, |n| n.span.clone());
+        Some(ConfigError::Rejected(Box::new(Rejected {
+            file: display.to_owned(),
+            text: text.to_owned(),
+            diagnostics: vec![Diagnostic {
+                code: Code::ExtendsLimit,
+                message: format!(
+                    "`extends` lists more than {MAX_EXTENDS_ENTRIES} entries in total"
+                ),
+                label: "too many entries".into(),
+                span,
+                help: Some("list each file once".into()),
+                path: vec!["extends".into()],
+            }],
+        })))
+    }
+
     /// Move `id` to the end of the application order.
     fn touch(&mut self, id: usize) {
-        self.order.retain(|x| *x != id);
         self.order.push(id);
     }
 
@@ -519,7 +576,10 @@ impl Loader<'_> {
         else {
             return Ok(Vec::new());
         };
-        let mut acc: Vec<usize> = Vec::new();
+        if let Some(rejection) = self.entries_exceeded(tree, entries.len(), display, text) {
+            return Err(rejection);
+        }
+        let mut acc = Ordered::default();
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let fail = |code: Code, message: String, help: Option<String>| {
@@ -573,11 +633,9 @@ impl Loader<'_> {
             if let Some(&id) = self.ids.get(&target) {
                 // Already loaded: no new read, but the file and what it extends apply again here,
                 // so this later entry wins over an earlier one that reached it first.
-                let again = self.closure[id].clone();
-                for i in &again {
-                    self.touch(*i);
-                    acc.retain(|x| x != i);
-                    acc.push(*i);
+                for i in self.closure[id].clone() {
+                    self.touch(i);
+                    acc.push(i);
                 }
                 continue;
             }
@@ -611,11 +669,10 @@ impl Loader<'_> {
             self.load_text(&target, &shown, body, Layer::Extends)?;
             let id = self.ids[&target];
             for i in self.closure[id].clone() {
-                acc.retain(|x| *x != i);
                 acc.push(i);
             }
         }
-        Ok(acc)
+        Ok(acc.ids())
     }
 }
 

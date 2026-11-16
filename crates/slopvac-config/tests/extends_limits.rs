@@ -419,3 +419,95 @@ fn a_thousand_blocks_load_and_a_block_with_too_many_patterns_is_refused() {
     let r = rejected(load(&d.path().join("slopvac.toml"), &NoPresets).unwrap_err());
     assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
 }
+/// A file `a` that extends 62 leaves, so the project, `a` and the leaves are 64 files.
+fn wide_target(d: &tempfile::TempDir) {
+    let leaves: Vec<String> = (0..62).map(|i| format!("\"leaf{i}\"")).collect();
+    for i in 0..62 {
+        write(d, &format!("leaf{i}"), "schema_version = 3\n");
+    }
+    write(
+        d,
+        "a",
+        &format!("schema_version = 3\nextends = [{}]\n", leaves.join(", ")),
+    );
+}
+
+/// The project extends `a` `count` times.
+fn repeat_target(d: &tempfile::TempDir, count: usize) {
+    wide_target(d);
+    let list = vec!["\"a\""; count].join(",");
+    write(
+        d,
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [{list}]\n"),
+    );
+}
+
+/// Run `load` on a worker so a regression to quadratic replay fails the test by deadline rather
+/// than hanging it. The deadline is generous: the outcome is what the test pins.
+fn load_with_watchdog(
+    path: std::path::PathBuf,
+) -> Result<slopvac_config::LoadedConfig, ConfigError> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(load(&path, &NoPresets));
+    });
+    rx.recv_timeout(Duration::from_secs(60))
+        .expect("the loader did not finish: repeated references are not bounded")
+}
+
+#[test]
+fn two_hundred_thousand_repeated_references_are_refused_by_the_entry_budget() {
+    let d = dir();
+    repeat_target(&d, 200_000);
+    let err = load_with_watchdog(d.path().join("slopvac.toml")).unwrap_err();
+    let r = rejected(err);
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
+    assert!(
+        r.diagnostics[0].message.contains("1024"),
+        "{}",
+        r.diagnostics[0].message
+    );
+}
+
+#[test]
+fn exactly_1024_extends_entries_load_and_one_more_is_refused() {
+    let d = dir();
+    write(&d, "leaf", "schema_version = 3\n");
+    let list = |n: usize| vec!["\"leaf\""; n].join(",");
+    write(
+        &d,
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [{}]\n", list(1024)),
+    );
+    assert_eq!(
+        load(&d.path().join("slopvac.toml"), &NoPresets)
+            .unwrap()
+            .files
+            .len(),
+        2
+    );
+    write(
+        &d,
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [{}]\n", list(1025)),
+    );
+    let r = rejected(load(&d.path().join("slopvac.toml"), &NoPresets).unwrap_err());
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
+}
+
+#[test]
+fn repeated_references_to_a_non_leaf_keep_the_last_position_and_the_count_of_files() {
+    let d = dir();
+    wide_target(&d);
+    write(
+        &d,
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"a\", \"leaf0\", \"a\", \"leaf0\"]\n",
+    );
+    let config = load(&d.path().join("slopvac.toml"), &NoPresets).unwrap();
+    assert_eq!(config.files.len(), 64);
+    let shown: Vec<&str> = config.files.iter().map(|f| f.display.as_str()).collect();
+    // `leaf0` is the last entry, so it applies after `a`, and the project applies last.
+    assert_eq!(shown[shown.len() - 3..], ["a", "leaf0", "slopvac.toml"]);
+}
