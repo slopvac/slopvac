@@ -214,7 +214,9 @@ impl Engine {
                 settings.rule_levels.insert(other.id().clone(), Level::Off);
             }
         }
-        Self::new_shared(self.sets.clone(), settings)?.with_blocklist(&self.blocklist)
+        Self::new_shared(self.sets.clone(), settings)?
+            .with_blocklist(&self.blocklist)
+            .map(|engine| engine.with_terms(self.terms.clone()))
     }
 }
 
