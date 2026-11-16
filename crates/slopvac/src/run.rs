@@ -174,7 +174,7 @@ where
         color = globals.color,
         "resolved globals"
     );
-    match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
+    match dispatch(&matches, globals, &policy, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
@@ -194,14 +194,18 @@ fn invokes_doctor(args: &[OsString], tree: &clap::Command) -> bool {
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
-    update_check: Option<bool>,
+    policy: &slopvac_update::policy::NetworkPolicy,
     env: &dyn Env,
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("self", m)) => {
-            let rt = update_runtime(env, globals.offline, update_check);
+            // `self update` needs the network, so a refused config stops it with the reason.
+            if let Some(refusal) = &policy.refused {
+                return Err(CliError::new(refusal.code, refusal.message.clone()));
+            }
+            let rt = update_runtime(env, globals.offline, policy.update_check);
             let text = slopvac_update::command::run(m, &rt)
                 .map_err(|f| CliError::new(f.code, f.message))?;
             write_stdout(out, text.as_bytes())

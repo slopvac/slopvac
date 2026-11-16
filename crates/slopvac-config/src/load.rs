@@ -132,6 +132,8 @@ pub fn load_labeled(
         presets,
         stack: Vec::new(),
         files: Vec::new(),
+        done: std::collections::HashSet::new(),
+        bytes: 0,
     };
     loader.load_text(
         &Key::Path(abs.clone()),
@@ -244,7 +246,14 @@ fn relative_display(file: &Path, root: &Path) -> String {
     parts.join("/")
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Longest `extends` chain.
+const MAX_EXTENDS_DEPTH: usize = 16;
+/// Most distinct files in one stack.
+const MAX_EXTENDS_FILES: usize = 64;
+/// Most bytes in one stack.
+const MAX_EXTENDS_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Key {
     Path(PathBuf),
     Pack(String),
@@ -255,6 +264,9 @@ struct Loader<'a> {
     presets: &'a dyn Presets,
     stack: Vec<(Key, String)>,
     files: Vec<ConfigFile>,
+    /// Files already loaded: a file reached again through another path is not loaded twice.
+    done: std::collections::HashSet<Key>,
+    bytes: usize,
 }
 
 impl Loader<'_> {
@@ -315,6 +327,7 @@ impl Loader<'_> {
             },
             &["schema_version", "extends", "overrides", "genres"],
         );
+        self.done.insert(key.clone());
         self.files.push(ConfigFile {
             display: display.to_owned(),
             layer,
@@ -463,6 +476,23 @@ impl Loader<'_> {
                     Some("remove one entry from the loop".into()),
                 ));
             }
+            if self.done.contains(&target) {
+                continue;
+            }
+            if self.stack.len() >= MAX_EXTENDS_DEPTH {
+                return Err(fail(
+                    Code::ExtendsLimit,
+                    format!("`extends` is nested more than {MAX_EXTENDS_DEPTH} files deep"),
+                    Some("flatten the chain".into()),
+                ));
+            }
+            if self.done.len() >= MAX_EXTENDS_FILES {
+                return Err(fail(
+                    Code::ExtendsLimit,
+                    format!("`extends` reaches more than {MAX_EXTENDS_FILES} files"),
+                    Some("extend fewer files".into()),
+                ));
+            }
             let body = match body {
                 Some(b) => b,
                 None => match &target {
@@ -479,6 +509,14 @@ impl Loader<'_> {
                     Key::Pack(_) => String::new(),
                 },
             };
+            self.bytes += body.len();
+            if self.bytes > MAX_EXTENDS_BYTES {
+                return Err(fail(
+                    Code::ExtendsLimit,
+                    format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
+                    Some("extend smaller files".into()),
+                ));
+            }
             self.load_text(&target, &shown, body, Layer::Extends)?;
         }
         Ok(())

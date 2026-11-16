@@ -11,11 +11,24 @@
 
 use std::path::Path;
 
-use slopvac_config::{ConfigError, Discovery, Inputs, NoPresets};
+use slopvac_config::{Code, ConfigError, Discovery, Inputs, NoPresets};
+
+/// Why a config was refused, kept for the commands that need the network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    /// A stable code: `config-unreadable` for an unreadable `extends` target, otherwise the
+    /// config diagnostic code.
+    pub code: &'static str,
+    /// One line that names the file by name or by path relative to the project root.
+    pub message: String,
+}
 
 /// The `[network]` settings that govern the update check.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NetworkPolicy {
+    /// Set when the stack was refused. The policy then fails closed: offline, no update check. A
+    /// command that needs the network stops with this error. Local commands still run.
+    pub refused: Option<Refusal>,
     /// `[network] offline = true` in the resolved stack.
     pub offline: bool,
     /// `[network] update_check = false` in the resolved stack. `None` when nothing turned it off.
@@ -24,9 +37,9 @@ pub struct NetworkPolicy {
 
 /// Why the project config could not be read. The CLI exits 2.
 ///
-/// Only a failure to read a file is an error here. A file that was read and refused (a 2.x file,
-/// an unknown key) is not: the policy falls back to its defaults, and the command that loads the
-/// config, or `doctor`, reports the problem. `migrate` must still run on a 2.x config.
+/// Only a failure to read the nearest config is an error here. A stack that was refused (a 2.x
+/// file, an unknown key, an `extends` target that is missing or unreadable) is an `Ok` policy that
+/// fails closed and carries the [`Refusal`]: `migrate`, `doctor` and the help still run.
 #[derive(Debug)]
 pub struct PolicyError(ConfigError);
 
@@ -59,7 +72,21 @@ pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
     let discovery = Discovery::new(&NoPresets);
     let config = match discovery.nearest(start) {
         Ok(Some(config)) => config,
-        Ok(None) | Err(ConfigError::Rejected(_)) => return Ok(NetworkPolicy::default()),
+        Ok(None) => return Ok(NetworkPolicy::default()),
+        Err(ConfigError::Rejected(rejected)) => {
+            let first = rejected.diagnostics.first().map(|d| d.code);
+            let code = match first {
+                Some(Code::ExtendsMissing) => "config-unreadable",
+                Some(other) => other.as_str(),
+                None => "config-invalid",
+            };
+            let message = ConfigError::Rejected(rejected).to_string();
+            return Ok(NetworkPolicy {
+                refused: Some(Refusal { code, message }),
+                offline: true,
+                update_check: Some(false),
+            });
+        }
         Err(err) => return Err(PolicyError(err)),
     };
     let resolved = config.resolve(
@@ -77,6 +104,7 @@ pub fn network_policy(start: &Path) -> Result<NetworkPolicy, PolicyError> {
         _ => None,
     };
     Ok(NetworkPolicy {
+        refused: None,
         offline: resolved.is_offline(),
         update_check,
     })
@@ -118,6 +146,7 @@ mod tests {
         assert_eq!(
             policy(d.path()),
             NetworkPolicy {
+                refused: None,
                 offline: true,
                 update_check: Some(false)
             }
@@ -181,14 +210,42 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_file_falls_back_to_the_defaults() {
-        for body in [
-            "{{{",
-            "mode = \"prose\"\n",
-            "schema_version = 3\n[network]\noffline = \"yes\"\n",
+    fn a_refused_stack_fails_closed_with_the_reason() {
+        for (files, code) in [
+            (vec![("slopvac.toml", "{{{")], "config-parse"),
+            (
+                vec![("slopvac.toml", "mode = \"prose\"\n")],
+                "config-legacy-version",
+            ),
+            (
+                vec![(
+                    "slopvac.toml",
+                    "schema_version = 3\nextends = [\"nope.toml\"]\n[network]\noffline = true\n",
+                )],
+                "config-unreadable",
+            ),
+            (
+                vec![
+                    ("bad.toml", "schema_version = 3\nbogus = 1\n"),
+                    (
+                        "slopvac.toml",
+                        "schema_version = 3\nextends = [\"bad.toml\"]\n",
+                    ),
+                ],
+                "config-unknown-key",
+            ),
         ] {
-            let d = tree(&[("slopvac.toml", body)]);
-            assert_eq!(policy(d.path()), NetworkPolicy::default(), "{body}");
+            let d = tree(&files);
+            let p = policy(d.path());
+            assert!(p.offline, "{code}");
+            assert_eq!(p.update_check, Some(false), "{code}");
+            let refusal = p.refused.expect("refused");
+            assert_eq!(refusal.code, code);
+            assert!(
+                !refusal.message.contains(d.path().to_str().unwrap()),
+                "{}",
+                refusal.message
+            );
         }
     }
 

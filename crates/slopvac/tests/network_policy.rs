@@ -158,3 +158,67 @@ fn doctor_still_runs_when_the_config_is_unreadable() {
         .code(2)
         .stdout(predicate::str::contains("\"unreadable\""));
 }
+
+/// Make the test binary look like an installer install, so only the config can stop `self update`.
+fn installer_receipts() -> tempfile::TempDir {
+    let exe = Command::cargo_bin("slopvac")
+        .unwrap()
+        .get_program()
+        .to_owned();
+    let prefix = std::path::Path::new(&exe).parent().unwrap().to_owned();
+    let receipts = tempfile::tempdir().unwrap();
+    fs::write(
+        receipts.path().join("slopvac-receipt.json"),
+        serde_json::json!({"install_prefix": prefix, "source": {"app_name": "slopvac"}})
+            .to_string(),
+    )
+    .unwrap();
+    receipts
+}
+
+#[test]
+fn a_missing_extended_file_cannot_erase_an_offline_restriction() {
+    let dir = project(&[(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"gone.toml\"]\n[network]\noffline = true\n",
+    )]);
+    let receipts = installer_receipts();
+    slopvac(&dir)
+        .env("AXOUPDATER_CONFIG_PATH", receipts.path())
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unreadable]"));
+    // Local commands still run, and nothing starts an update check.
+    slopvac(&dir).args(["completions", "bash"]).assert().code(0);
+}
+
+#[test]
+fn a_schema_invalid_extended_file_leaves_no_network_open() {
+    let dir = project(&[
+        ("base.toml", "schema_version = 3\nbogus = 1\n"),
+        (
+            "slopvac.toml",
+            "schema_version = 3\nextends = [\"base.toml\"]\n",
+        ),
+    ]);
+    let cache = cache_with_newer_release();
+    // No notice and no refresh: the refused stack disables the update check.
+    let out = slopvac(&dir)
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .args(["--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(doc["notices"], serde_json::json!([]));
+    let receipts = installer_receipts();
+    slopvac(&dir)
+        .env("AXOUPDATER_CONFIG_PATH", receipts.path())
+        .args(["self", "update"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-key]"));
+}
