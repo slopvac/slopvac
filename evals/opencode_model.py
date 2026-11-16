@@ -76,7 +76,9 @@ CREDENTIAL_KEYS = {
 
 
 class ModelCallError(Exception):
-    pass
+    def __init__(self, message: str, usage: dict[str, int] | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 def build_config(region: str | None) -> dict:
@@ -298,10 +300,16 @@ def run(
                 shutil.copytree(
                     tmp, keep, dirs_exist_ok=True, ignore_dangling_symlinks=True
                 )
-    answer = parse_events(proc.stdout)
+    # Tokens were spent whether or not the call worked, so read them first.
+    usage = parse_usage(proc.stdout)
+    try:
+        answer = parse_events(proc.stdout)
+    except ModelCallError as exc:
+        exc.usage = usage
+        raise
     if proc.returncode != 0 or not answer:
-        raise ModelCallError(f"opencode exited {proc.returncode} with no answer")
-    return Answer(answer, parse_usage(proc.stdout))
+        raise ModelCallError(f"opencode exited {proc.returncode} with no answer", usage)
+    return Answer(answer, usage)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -334,7 +342,10 @@ def main(argv: list[str] | None = None) -> int:
         if answer.usage:
             print(procs.format_usage_line(answer.usage), file=sys.stderr)
     except (ModelCallError, subprocess.TimeoutExpired) as exc:
-        print(f"opencode_model: {procs.redact(str(exc))}", file=sys.stderr)
+        message = procs.one_line(procs.redact(str(exc)))
+        print(f"opencode_model: {message}", file=sys.stderr)
+        if usage := getattr(exc, "usage", None):
+            print(procs.format_usage_line(usage), file=sys.stderr)
         return 1
     return 0
 

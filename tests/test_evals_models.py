@@ -952,30 +952,110 @@ def test_a_model_missing_from_the_price_list_has_no_cost_and_is_incomplete(
     assert report["complete"] is False
 
 
-def test_cost_reads_a_journal_with_the_last_line_per_job(tmp_path, capsys):
+def journal_lines(tmp_path, lines):
     path = tmp_path / "r.journal.jsonl"
-    lines = [
-        {"job": "a", "model": "big", "error": "boom", "attempts": 3, "usage": None},
-        {
-            "job": "a",
-            "model": "big",
-            "error": None,
-            "attempts": 1,
-            "usage": {"input": 1_000_000},
-        },
-        {
-            "job": "b",
-            "model": "small",
-            "error": None,
-            "attempts": 1,
-            "usage": {"output": 2_000_000},
-        },
-    ]
     path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    return path
+
+
+def test_cost_counts_every_execution_of_a_resumed_job(tmp_path, capsys):
+    path = journal_lines(
+        tmp_path,
+        [
+            {
+                "job": "a",
+                "model": "big",
+                "error": "boom",
+                "attempts": 3,
+                "usage": {"input": 500_000},
+            },
+            {
+                "job": "a",
+                "model": "big",
+                "error": None,
+                "attempts": 1,
+                "usage": {"input": 1_000_000},
+            },
+            {
+                "job": "b",
+                "model": "small",
+                "error": None,
+                "attempts": 1,
+                "usage": {"output": 2_000_000},
+            },
+        ],
+    )
     _, report = cost_cli(tmp_path, capsys, path)
-    assert report["models"]["big"]["invocations"] == 1
-    assert report["total_cost_usd"] == pytest.approx(3)  # $2 + 2M x $0.5
+    assert report["models"]["big"]["invocations"] == 2
+    assert report["models"]["big"]["tokens"] == {"input": 1_500_000}
+    # big: 1.5M x $2 = 3. small: 2M x $0.5 = 1.
+    assert report["total_cost_usd"] == pytest.approx(4)
     assert report["complete"] is True
+
+
+def test_an_earlier_attempt_without_usage_makes_a_resumed_job_incomplete(
+    tmp_path, capsys
+):
+    path = journal_lines(
+        tmp_path,
+        [
+            {"job": "a", "model": "big", "error": "boom", "attempts": 3, "usage": None},
+            {
+                "job": "a",
+                "model": "big",
+                "error": None,
+                "attempts": 1,
+                "usage": {"input": 1_000_000},
+            },
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["missing_usage"] == 1
+    assert report["complete"] is False
+
+
+def test_results_keep_the_spend_of_earlier_executions_of_a_job(tmp_path, capsys):
+    path = write_results(
+        tmp_path,
+        [
+            {
+                "model": "big",
+                "usage": {"input": 1_000_000},
+                "prior": [
+                    {"error": "boom", "attempts": 3, "usage": {"input": 500_000}}
+                ],
+            }
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["tokens"] == {"input": 1_500_000}
+    assert report["total_cost_usd"] == pytest.approx(3)
+
+
+def test_cache_tokens_are_reported_but_do_not_change_the_cost(tmp_path, capsys):
+    path = write_results(
+        tmp_path,
+        [
+            {
+                "model": "big",
+                "usage": {
+                    "input": 200_000,
+                    "output": 100_000,
+                    "cache_read": 4_000_000,
+                    "cache_write": 3_000_000,
+                },
+            }
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    # 0.2M x $2 + 0.1M x $10 = 0.4 + 1.0 = 1.4, whatever the cache holds.
+    assert report["models"]["big"]["cost_usd"] == pytest.approx(1.4)
+    assert report["models"]["big"]["tokens"] == {
+        "input": 200_000,
+        "output": 100_000,
+        "cache_read": 4_000_000,
+        "cache_write": 3_000_000,
+    }
 
 
 def test_cost_on_a_journal_from_before_usage_was_recorded_is_incomplete(

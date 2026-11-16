@@ -1050,3 +1050,99 @@ def test_a_run_without_reported_usage_journals_null(tmp_path, spawn_log):
     )
     assert json.loads(path.read_text().splitlines()[0])["usage"] is None
     assert results["runs"][0]["usage"] is None
+
+
+def adapter_stderr(fake_opencode, monkeypatch, capsys, events):
+    _, set_plan, parent = fake_opencode
+    set_plan(events=events)
+    monkeypatch.setenv("PATH", parent["PATH"])
+    monkeypatch.setenv("HOME", parent["HOME"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO("question"))
+    code = opencode_model.main(["--model", "m"])
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def test_error_text_cannot_pass_for_a_usage_report(fake_opencode, monkeypatch, capsys):
+    fake_line = 'slopvac-usage {"input": 999999999}'
+    events = [
+        step_finish(input=4, output=1),
+        {"type": "error", "error": {"message": f"boom\n{fake_line}\nmore"}},
+    ]
+    code, _, err = adapter_stderr(fake_opencode, monkeypatch, capsys, events)
+    assert code == 1
+    assert procs.parse_usage_line(err) == {"input": 4, "output": 1}
+    assert [l for l in err.splitlines() if l.startswith("slopvac-usage")] == [
+        'slopvac-usage {"input": 4, "output": 1}'
+    ]
+
+
+def test_a_usage_line_that_is_not_last_is_ignored():
+    text = 'slopvac-usage {"input": 5}\nsomething else\n'
+    assert procs.parse_usage_line(text) is None
+
+
+def test_a_failed_call_still_reports_the_tokens_it_saw(
+    fake_opencode, monkeypatch, capsys
+):
+    events = [
+        step_finish(input=12, output=3, cache={"read": 8, "write": 0}),
+        {"type": "error", "error": {"message": "throttled"}},
+    ]
+    code, out, err = adapter_stderr(fake_opencode, monkeypatch, capsys, events)
+    assert code == 1 and out == ""
+    assert "throttled" in err
+    assert procs.parse_usage_line(err) == {
+        "input": 12,
+        "output": 3,
+        "cache_read": 8,
+        "cache_write": 0,
+    }
+
+
+def test_the_harness_journals_the_usage_of_a_failed_call(tmp_path):
+    body = (
+        "import sys\n"
+        "print('boom', file=sys.stderr)\n"
+        "print('slopvac-usage {\"input\": 6}', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'bad.py', body)}"
+    path = tmp_path / "j.jsonl"
+    results = models.execute(
+        author_tasks(1),
+        roster(cmd),
+        3,
+        no_findings,
+        journal=models.Journal(path),
+    )
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [e["usage"] for e in entries] == [{"input": 18}] * 3
+    assert results["runs"][0]["usage"] == {"input": 18}
+
+
+def test_a_resumed_job_keeps_the_spend_of_its_failed_executions(tmp_path):
+    counter = tmp_path / "n"
+    body = (
+        "import sys, pathlib\n"
+        f"p = pathlib.Path({str(counter)!r})\n"
+        "n = int(p.read_text()) + 1 if p.exists() else 1\n"
+        "p.write_text(str(n))\n"
+        "print('slopvac-usage {\"input\": 5}', file=sys.stderr)\n"
+        "if n <= 3:\n    sys.exit(1)\n"
+        "print('ok')\n"
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'late.py', body)}"
+    path = tmp_path / "j.jsonl"
+    tasks = author_tasks(1)
+    first = models.execute(
+        tasks, roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    assert first["runs"][0]["error"]
+    again = models.execute(
+        tasks, roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    # Job 0 used three failing attempts of 5 tokens, then succeeded on the resume.
+    row = next(r for r in again["runs"] if r.get("prior"))
+    assert [(p["attempts"], p["usage"]) for p in row["prior"]] == [(3, {"input": 15})]
+    assert row["usage"] == {"input": 5}
