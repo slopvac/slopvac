@@ -190,7 +190,13 @@ impl<'a> SourceIndex<'a> {
             ColumnUnit::Utf16 => prefix.encode_utf16().count(),
             ColumnUnit::CodePoint => prefix.chars().count(),
         };
-        Ok(LineCol::new(line_idx + 1, width + 1).expect("line and column start at one"))
+        #[expect(
+            clippy::expect_used,
+            clippy::unwrap_in_result,
+            reason = "line_idx + 1 and width + 1 are at least one, which LineCol::new accepts"
+        )]
+        let at = LineCol::new(line_idx + 1, width + 1).expect("line and column start at one");
+        Ok(at)
     }
 
     /// One-based line and column in code points.

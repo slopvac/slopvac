@@ -1,7 +1,6 @@
 //! The identifier and version decoders must reject what the shared corpus marks invalid,
 //! without going through a generated schema.
-
-#![allow(missing_docs)]
+#![cfg(test)]
 
 use std::fs;
 use std::path::Path;

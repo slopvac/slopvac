@@ -1,4 +1,5 @@
-#![allow(missing_docs, clippy::cast_possible_truncation)]
+#![expect(missing_docs, reason = "integration test crate")]
+#![cfg(test)]
 
 use serde_json::Value;
 use slopvac_model::{
@@ -18,7 +19,7 @@ fn doc(v: &Value, name: &str) -> String {
 }
 
 fn n(v: &Value) -> usize {
-    v.as_u64().unwrap() as usize
+    usize::try_from(v.as_u64().unwrap()).unwrap()
 }
 
 fn span(v: &Value) -> Span {
@@ -58,7 +59,10 @@ fn invalid_offsets_are_rejected() {
         };
         let text = doc(&v, p["document"].as_str().unwrap());
         let idx = SourceIndex::disk(&text);
-        assert!(idx.check_offset(off as usize).is_err(), "{p}");
+        assert!(
+            idx.check_offset(usize::try_from(off).unwrap()).is_err(),
+            "{p}"
+        );
     }
 }
 
@@ -141,10 +145,8 @@ fn invalid_spans_are_rejected_by_construction_or_by_the_file() {
     for s in v["invalid_spans"].as_array().unwrap() {
         let text = doc(&v, s["document"].as_str().unwrap());
         let (start, end) = (n(&s["span"]["start"]), n(&s["span"]["end"]));
-        let rejected = match Span::new(start, end) {
-            Err(_) => true,
-            Ok(sp) => SourceIndex::disk(&text).check_span(sp).is_err(),
-        };
+        let rejected = Span::new(start, end)
+            .map_or(true, |sp| SourceIndex::disk(&text).check_span(sp).is_err());
         assert!(rejected, "{}", s["id"]);
     }
 }

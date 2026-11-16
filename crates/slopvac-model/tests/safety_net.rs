@@ -6,8 +6,7 @@
 //! 3. a report built through public constructors serializes schema-valid.
 //!
 //! Set `PROPTEST_CASES` to change the case count (default 256).
-
-#![allow(missing_docs)]
+#![cfg(test)]
 
 mod common;
 
@@ -149,7 +148,7 @@ fn paths(value: &Value, here: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
                 here.pop();
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
@@ -159,7 +158,7 @@ fn at<'a>(value: &'a mut Value, path: &[String]) -> Option<&'a mut Value> {
         cur = match cur {
             Value::Object(map) => map.get_mut(key)?,
             Value::Array(items) => items.get_mut(key.parse::<usize>().ok()?)?,
-            _ => return None,
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => return None,
         };
     }
     Some(cur)
@@ -216,7 +215,7 @@ fn apply(root: &mut Value, path: &[String], mutation: Mutation) {
                 }
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
@@ -236,7 +235,11 @@ fn replacement(mutation: Mutation, current: &Value) -> Value {
         Mutation::WrongTypeObject => json!({}),
         Mutation::EmptyArray => match current {
             Value::Array(_) => json!([]),
-            _ => Value::Null,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Object(_) => Value::Null,
         },
     }
 }

@@ -1,6 +1,5 @@
 //! Report-level serde behaviour that the generated schema cannot prove.
-
-#![allow(missing_docs)]
+#![cfg(test)]
 
 use std::fs;
 use std::path::Path;

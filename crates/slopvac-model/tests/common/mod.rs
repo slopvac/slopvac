@@ -1,6 +1,10 @@
 //! Shared helpers for the conformance tests.
 
-#![allow(dead_code, unreachable_pub)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    reason = "each test crate that includes this module uses a different subset"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,7 +54,7 @@ pub fn patch_layer(value: &mut Value) {
             map.values_mut().for_each(patch_layer);
         }
         Value::Array(items) => items.iter_mut().for_each(patch_layer),
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

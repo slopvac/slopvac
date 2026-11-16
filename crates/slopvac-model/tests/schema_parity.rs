@@ -1,8 +1,7 @@
 //! The schemas generated from the Rust types must accept and reject exactly what the
 //! shared conformance corpus (`schemas/v3/conformance`) says. The plugin-protocol corpus
 //! belongs to the plugin host's types, not to this crate.
-
-#![allow(missing_docs)]
+#![cfg(test)]
 
 mod common;
 

@@ -1,6 +1,5 @@
 //! Report types must not hold, accept or emit a state the lint-report contract forbids.
-
-#![allow(missing_docs)]
+#![cfg(test)]
 
 mod common;
 
