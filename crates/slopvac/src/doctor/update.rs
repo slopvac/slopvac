@@ -11,9 +11,6 @@ use slopvac_update::notice::Cache;
 use super::{UpdateFacts, UpdateProbe};
 use crate::env::Env;
 
-/// Largest cache file doctor reads.
-const MAX_CACHE_BYTES: u64 = 64 * 1024;
-
 /// Detects the install channel of the running binary and reads the cached update answer.
 #[derive(Debug, Clone, Default)]
 pub struct InstalledUpdateProbe {
@@ -67,13 +64,9 @@ fn disabled_by(
     }
 }
 
-/// The cached answer, when the file is small enough and parses.
+/// The cached answer. `slopvac-update` reads the file without blocking and with a size cap.
 fn cached(dir: &Path) -> Option<(String, u64)> {
-    let file = dir.join("update-check.json");
-    if std::fs::metadata(&file).ok()?.len() > MAX_CACHE_BYTES {
-        return None;
-    }
-    let entry = Cache::at(file).read()?;
+    let entry = Cache::at(dir.join("update-check.json")).read()?;
     Some((entry.latest, entry.checked_at))
 }
 

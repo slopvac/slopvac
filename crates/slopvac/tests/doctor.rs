@@ -909,3 +909,51 @@ fn doctor_never_writes_the_update_cache() {
     let (_, _) = w.json(&[], |_| {});
     assert!(!w.cache().join("update-check.json").exists());
 }
+
+/// Make a FIFO with no writer at `path`.
+#[cfg(unix)]
+fn fifo(path: &Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_as_the_update_cache_does_not_hang_doctor() {
+    let w = World::new();
+    fifo(&w.cache().join("update-check.json"));
+    let (code, doc) = w.json(&[], |c| {
+        c.timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["update"]["state"], "unknown");
+    assert_eq!(doc["update"]["latest"], Value::Null);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_to_an_endless_device_as_the_update_cache_is_not_read() {
+    let w = World::new();
+    std::os::unix::fs::symlink("/dev/zero", w.cache().join("update-check.json")).unwrap();
+    let (code, doc) = w.json(&[], |c| {
+        c.timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["update"]["state"], "unknown");
+}
+
+#[test]
+fn an_oversize_update_cache_is_reported_unknown() {
+    let w = World::new();
+    let padding = "x".repeat(70 * 1024);
+    fs::write(
+        w.cache().join("update-check.json"),
+        json!({"checked_at": 1u64, "latest": "99.0.0", "pad": padding}).to_string(),
+    )
+    .unwrap();
+    let (_, doc) = w.json(&[], |_| {});
+    assert_eq!(doc["update"]["state"], "unknown");
+}
