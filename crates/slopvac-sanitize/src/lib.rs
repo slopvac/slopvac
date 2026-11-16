@@ -59,10 +59,6 @@
 //!
 //! The functions are total and never panic. They do not truncate. The caller
 //! bounds the length.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 #![warn(clippy::indexing_slicing, clippy::string_slice)]
 
 use std::fmt::Write as _;
@@ -92,7 +88,7 @@ pub fn is_unsafe(c: char) -> bool {
 }
 
 fn push_escape(out: &mut String, c: char) {
-    let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+    infallible(write!(out, "\\u{{{:x}}}", u32::from(c)));
 }
 
 fn map(text: &str, mut each: impl FnMut(char, &mut String)) -> String {
@@ -283,6 +279,16 @@ pub fn workflow_data(text: &str) -> String {
 #[must_use]
 pub fn workflow_property(text: &str) -> String {
     workflow_data(text).replace(':', "%3A").replace(',', "%2C")
+}
+
+/// Drop the result of a write into a `String`. `fmt::Write for String` never returns an
+/// error, so there is nothing to handle; this is the one place that says so.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
+fn infallible(result: std::fmt::Result) {
+    let _ = result;
 }
 
 #[cfg(test)]

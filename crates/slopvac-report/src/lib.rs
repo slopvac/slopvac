@@ -203,3 +203,13 @@ pub fn render_with(
     }
     Ok(out)
 }
+
+/// Drop the result of a write into a `String`. `fmt::Write for String` never returns an
+/// error, so there is nothing to handle; this is the one place that says so.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
+pub(crate) fn infallible(result: std::fmt::Result) {
+    let _ = result;
+}

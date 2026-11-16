@@ -3,10 +3,6 @@
 //! The JSON shape is `schemas/v3/doctor-report.schema.json`; docs/contract/doctor.md specifies
 //! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
 //! the traits below; [`stubs`] holds the local stand-ins.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 pub mod read;
 pub mod stubs;
@@ -649,12 +645,12 @@ impl Report {
     pub fn to_text(&self) -> String {
         use std::fmt::Write as _;
         let mut out = String::new();
-        let _ = writeln!(
+        crate::infallible(writeln!(
             out,
             "slopvac {} ({}) on {}/{}",
             self.slopvac.version, self.slopvac.install_method, self.platform.os, self.platform.arch
-        );
-        let _ = match (&self.update.latest, self.update.state) {
+        ));
+        crate::infallible(match (&self.update.latest, self.update.state) {
             (Some(latest), "available") => {
                 let hint = self
                     .slopvac
@@ -665,15 +661,19 @@ impl Report {
             }
             (Some(latest), _) => writeln!(out, "update: up to date (latest known {latest})"),
             (None, _) => writeln!(out, "update: no cached check"),
-        };
+        });
         if let Some(why) = self.update.disabled_by {
-            let _ = writeln!(out, "update checks: off ({why})");
+            crate::infallible(writeln!(out, "update checks: off ({why})"));
         }
         if self.offline.effective {
-            let _ = writeln!(out, "offline: on ({})", self.offline.sources.join(", "));
+            crate::infallible(writeln!(
+                out,
+                "offline: on ({})",
+                self.offline.sources.join(", ")
+            ));
         }
         if self.config.sources.is_empty() {
-            let _ = writeln!(out, "config: none found, defaults apply");
+            crate::infallible(writeln!(out, "config: none found, defaults apply"));
         }
         for s in &self.config.sources {
             let detail = s
@@ -684,24 +684,36 @@ impl Report {
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_default();
-            let _ = writeln!(out, "config {}: {} {status}{detail}", s.layer, s.file);
+            crate::infallible(writeln!(
+                out,
+                "config {}: {} {status}{detail}",
+                s.layer, s.file
+            ));
         }
         let lock = &self.packs.lockfile;
         let detail = lock
             .error
             .as_deref()
             .map_or(String::new(), |e| format!(": {e}"));
-        let _ = writeln!(out, "packs: {} {}{detail}", lock.file, lock.status);
+        crate::infallible(writeln!(
+            out,
+            "packs: {} {}{detail}",
+            lock.file, lock.status
+        ));
         for p in &self.packs.items {
-            let _ = writeln!(out, "  {} {} ({}) {}", p.id, p.version, p.kind, p.state);
+            crate::infallible(writeln!(
+                out,
+                "  {} {} ({}) {}",
+                p.id, p.version, p.kind, p.state
+            ));
         }
-        let _ = writeln!(
+        crate::infallible(writeln!(
             out,
             "trust: {} ({} plugin approvals, {} pinned keys)",
             self.trust.status,
             self.trust.trusted_plugins,
             self.trust.pinned_keys.len()
-        );
+        ));
         for (name, d) in [
             ("cache", &self.directories.cache),
             ("data", &self.directories.data),
@@ -710,15 +722,19 @@ impl Report {
             let size = d.bytes.map_or(String::new(), |b| {
                 format!(", {b} bytes{}", if d.truncated { "+" } else { "" })
             });
-            let _ = writeln!(
+            crate::infallible(writeln!(
                 out,
                 "{name} dir: {} ({}{})",
                 d.path,
                 if d.exists { "exists" } else { "absent" },
                 size
-            );
+            ));
         }
-        let _ = writeln!(out, "{}", if self.ok { "ok" } else { "problems found" });
+        crate::infallible(writeln!(
+            out,
+            "{}",
+            if self.ok { "ok" } else { "problems found" }
+        ));
         out
     }
 }

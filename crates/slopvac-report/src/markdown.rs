@@ -1,8 +1,4 @@
 //! Markdown summary for pull request comments and job summaries.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 
@@ -28,7 +24,7 @@ fn cell(text: &str) -> String {
 pub(crate) fn render(report: &Report) -> String {
     let s = &report.summary;
     let mut out = String::from("# slopvac report\n\n");
-    let _ = writeln!(
+    crate::infallible(writeln!(
         out,
         "**{}**: {} documents, {} findings ({} errors, {} warnings, {} suggestions), score {:.1}.\n",
         if s.passed { "PASS" } else { "FAIL" },
@@ -38,11 +34,16 @@ pub(crate) fn render(report: &Report) -> String {
         s.warnings,
         s.suggestions,
         f64::from(s.score)
-    );
+    ));
     if !report.notices.is_empty() {
         out.push_str("## Notices\n\n");
         for n in &report.notices {
-            let _ = writeln!(out, "- `{}`: {}", n.code, cell(n.message.as_str()));
+            crate::infallible(writeln!(
+                out,
+                "- `{}`: {}",
+                n.code,
+                cell(n.message.as_str())
+            ));
         }
         out.push('\n');
     }
@@ -54,24 +55,24 @@ pub(crate) fn render(report: &Report) -> String {
 
 fn document(out: &mut String, doc: &Document) {
     let verdict = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
-    let _ = writeln!(out, "## {} {verdict}\n", cell(doc.path.as_str()));
-    let _ = writeln!(
+    crate::infallible(writeln!(out, "## {} {verdict}\n", cell(doc.path.as_str())));
+    crate::infallible(writeln!(
         out,
         "Score {:.1}, {} words, {} findings.\n",
         f64::from(doc.score),
         doc.words,
         doc.total_findings
-    );
+    ));
     for reason in doc.gate.reasons() {
-        let _ = writeln!(out, "- {}", cell(reason));
+        crate::infallible(writeln!(out, "- {}", cell(reason)));
     }
     for n in &doc.unchecked {
-        let _ = writeln!(
+        crate::infallible(writeln!(
             out,
             "- UNCHECKED `{}`: {}",
             n.code,
             cell(n.message.as_str())
-        );
+        ));
     }
     if !doc.gate.reasons().is_empty() || !doc.unchecked.is_empty() {
         out.push('\n');
@@ -81,7 +82,7 @@ fn document(out: &mut String, doc: &Document) {
     }
     out.push_str("| Location | Severity | Rule | Message |\n| --- | --- | --- | --- |\n");
     for f in &doc.findings {
-        let _ = writeln!(
+        crate::infallible(writeln!(
             out,
             "| {}:{} | {} | {} | {} |",
             f.start.line(),
@@ -89,7 +90,7 @@ fn document(out: &mut String, doc: &Document) {
             severity_word(f.severity),
             cell(f.rule_id.as_str()),
             cell(f.message.as_str())
-        );
+        ));
     }
     out.push('\n');
 }

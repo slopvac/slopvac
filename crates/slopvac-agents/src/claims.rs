@@ -4,10 +4,6 @@
 //! deterministic: segment both texts into blocks (Markdown here) and sentences (`slopvac-text`), align original to revised by
 //! TF-IDF cosine similarity, then diff the literals of each aligned pair (numbers,
 //! code spans, flags, identifiers, names) and their negation. Local files only.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -593,15 +589,15 @@ pub fn command() -> Command {
 pub fn render_text(report: &Report) -> String {
     let mut out = String::new();
     for c in &report.claims {
-        let _ = writeln!(out, "{} line {}: {}", c.change, c.line, c.text);
+        crate::infallible(writeln!(out, "{} line {}: {}", c.change, c.line, c.text));
         for l in &c.literals_removed {
-            let _ = writeln!(out, "  removed {} {}", l.kind, l.text);
+            crate::infallible(writeln!(out, "  removed {} {}", l.kind, l.text));
         }
         for l in &c.literals_added {
-            let _ = writeln!(out, "  added {} {}", l.kind, l.text);
+            crate::infallible(writeln!(out, "  added {} {}", l.kind, l.text));
         }
         if c.negation_changed {
-            let _ = writeln!(out, "  negation changed");
+            crate::infallible(writeln!(out, "  negation changed"));
         }
     }
     for d in &report.dropped {
@@ -610,7 +606,7 @@ pub fn render_text(report: &Report) -> String {
         } else {
             "dropped, covered"
         };
-        let _ = writeln!(out, "{tag} line {}: {}", d.line, d.text);
+        crate::infallible(writeln!(out, "{tag} line {}: {}", d.line, d.text));
     }
     out
 }

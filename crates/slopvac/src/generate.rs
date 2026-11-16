@@ -1,8 +1,4 @@
 //! Completions, man pages and the Markdown CLI reference, all from the tree.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use clap::Command;
 use std::fmt::Write as _;
@@ -51,9 +47,9 @@ pub fn markdown_reference(cmd: &Command) -> String {
 fn section(out: &mut String, cmd: &Command, path: &str, depth: usize) {
     let mut cmd = cmd.clone();
     cmd.build();
-    let _ = writeln!(out, "{} `{path}`\n", "#".repeat(depth));
+    crate::infallible(writeln!(out, "{} `{path}`\n", "#".repeat(depth)));
     if let Some(about) = cmd.get_about() {
-        let _ = writeln!(out, "{about}\n");
+        crate::infallible(writeln!(out, "{about}\n"));
     }
     let args: Vec<_> = cmd
         .get_arguments()
@@ -72,7 +68,7 @@ fn section(out: &mut String, cmd: &Command, path: &str, depth: usize) {
                 .map(ToString::to_string)
                 .unwrap_or_default()
                 .replace('|', "\\|");
-            let _ = writeln!(out, "| {name} | {help} |");
+            crate::infallible(writeln!(out, "| {name} | {help} |"));
         }
         out.push('\n');
     }

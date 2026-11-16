@@ -2,10 +2,6 @@
 //!
 //! [`reference_pages`] returns `(path, markdown)` pairs relative to the docs
 //! site root, like the style reference in `slopvac-styles`.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -57,10 +53,10 @@ pub fn reference_pages() -> Vec<(String, String)> {
         file.terms.len()
     );
     for (kind, terms) in &by_kind {
-        let _ = write!(
+        crate::infallible(write!(
             out,
             "\n## {kind}\n\n| Term | Variants | Case mode |\n| --- | --- | --- |\n"
-        );
+        ));
         let mut terms = terms.clone();
         terms.sort_by_key(|t| t.term.to_lowercase());
         for t in terms {
@@ -73,7 +69,12 @@ pub fn reference_pages() -> Vec<(String, String)> {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            let _ = writeln!(out, "| `{}` | {variants} | {} |", cell(&t.term), mode(t));
+            crate::infallible(writeln!(
+                out,
+                "| `{}` | {variants} | {} |",
+                cell(&t.term),
+                mode(t)
+            ));
         }
     }
     vec![("terms/index.md".to_owned(), out)]

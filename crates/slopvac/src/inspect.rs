@@ -3,10 +3,6 @@
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
 //! Output order is deterministic: category, then rule, as the pack lists them.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -217,7 +213,7 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
     }
     let mut out = String::new();
     for row in &rows {
-        let _ = writeln!(
+        crate::infallible(writeln!(
             out,
             "{:<w0$}  {:<w1$}  {:<w2$}  {:<w3$}  {}",
             row[0],
@@ -229,19 +225,19 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
             w1 = widths[1],
             w2 = widths[2],
             w3 = widths[3],
-        );
+        ));
     }
     let categories = picked
         .iter()
         .map(|(c, _)| c.id())
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    let _ = writeln!(
+    crate::infallible(writeln!(
         out,
         "{} rule(s) in {} category(ies)",
         rows.len(),
         categories
-    );
+    ));
     out
 }
 
@@ -316,7 +312,7 @@ fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
     }
     if !body.is_empty() {
         body.pop();
-        let _ = write!(out, "\n{DISABLE}\n{}\n{ENABLE}\n", body.join("\n"));
+        crate::infallible(write!(out, "\n{DISABLE}\n{}\n{ENABLE}\n", body.join("\n")));
     }
     out
 }
@@ -485,56 +481,59 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
 fn explain_text(rule: &LoadedRule) -> String {
     let r = rule.rule();
     let mut out = String::new();
-    let _ = writeln!(out, "{} -- {}", rule.id(), clean(r.name.as_str()));
-    let _ = writeln!(
+    crate::infallible(writeln!(out, "{} -- {}", rule.id(), clean(r.name.as_str())));
+    crate::infallible(writeln!(
         out,
         "kind: {}   severity: {}   scope: {}",
         kind_name(rule.kind()),
         word(&r.severity),
         word(&r.scope)
-    );
-    let _ = writeln!(out, "\n{}", message_text(r.message.as_str()));
+    ));
+    crate::infallible(writeln!(out, "\n{}", message_text(r.message.as_str())));
     if let Some(fix) = &r.fix
         && !message_text(r.message.as_str())
             .to_lowercase()
             .contains(&fix.trim_end_matches('.').to_lowercase())
     {
-        let _ = writeln!(out, "\nFix: {fix}");
+        crate::infallible(writeln!(out, "\nFix: {fix}"));
     }
     if let Some(q) = question_of(rule) {
-        let _ = writeln!(out, "\nDecide by asking: {q}");
-        let _ = writeln!(
+        crate::infallible(writeln!(out, "\nDecide by asking: {q}"));
+        crate::infallible(writeln!(
             out,
             "Lint never reports this rule; `slopvac prime review` applies it."
-        );
+        ));
     }
     if let Some(exceptions) = &r.exceptions {
-        let _ = writeln!(out, "\nNamed exceptions (a suppression must cite one):");
+        crate::infallible(writeln!(
+            out,
+            "\nNamed exceptions (a suppression must cite one):"
+        ));
         for e in exceptions {
-            let _ = writeln!(out, "  - {}", e.name);
+            crate::infallible(writeln!(out, "  - {}", e.name));
         }
         if let Some(s) = suppression(rule) {
-            let _ = writeln!(out, "\n  {s}");
+            crate::infallible(writeln!(out, "\n  {s}"));
         }
     }
     if !r.examples().is_empty() {
-        let _ = writeln!(out, "\nExamples");
+        crate::infallible(writeln!(out, "\nExamples"));
         for e in r.examples() {
-            let _ = writeln!(out, "  - {}", e.bad);
+            crate::infallible(writeln!(out, "  - {}", e.bad));
             if let Some(good) = e.good.as_deref().filter(|g| !g.is_empty()) {
-                let _ = writeln!(out, "  + {good}");
+                crate::infallible(writeln!(out, "  + {good}"));
             }
             if let Some(note) = &e.note {
-                let _ = writeln!(out, "    {note}");
+                crate::infallible(writeln!(out, "    {note}"));
             }
         }
     }
-    let _ = writeln!(out, "\nSource: {}", source_line(rule));
+    crate::infallible(writeln!(out, "\nSource: {}", source_line(rule)));
     if let Some(note) = &r.citation.note {
-        let _ = writeln!(out, "  {note}");
+        crate::infallible(writeln!(out, "  {note}"));
     }
     if let Some(url) = url_of(rule) {
-        let _ = writeln!(out, "Page: {url}");
+        crate::infallible(writeln!(out, "Page: {url}"));
     }
     out
 }

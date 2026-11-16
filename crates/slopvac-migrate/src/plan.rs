@@ -1,8 +1,4 @@
 //! Planning, previewing and applying a migration.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 use std::fs;
@@ -358,7 +354,7 @@ pub fn render_diff(plan: &Plan) -> String {
             "/dev/null".to_owned()
         };
         let diff = TextDiff::from_lines(old, new);
-        let _ = write!(out, "{}", diff.unified_diff().header(&a, &b));
+        crate::infallible(write!(out, "{}", diff.unified_diff().header(&a, &b)));
     }
     out
 }
@@ -421,9 +417,9 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<(), Error> {
                 fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
             }
             fs::copy(&full, &dest).map_err(|e| Error::io(&full, e))?;
-            let _ = writeln!(manifest, "M {}", c.path.display());
+            crate::infallible(writeln!(manifest, "M {}", c.path.display()));
         } else {
-            let _ = writeln!(manifest, "C {}", c.path.display());
+            crate::infallible(writeln!(manifest, "C {}", c.path.display()));
         }
     }
     let mpath = backup.join("manifest.txt");

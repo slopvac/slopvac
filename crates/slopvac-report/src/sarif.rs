@@ -1,8 +1,4 @@
 //! SARIF 2.1.0 for code scanning. Columns are UTF-16 code units, declared by `columnKind`.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 
@@ -30,7 +26,7 @@ fn uri(path: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
             out.push(char::from(b));
         } else {
-            let _ = write!(out, "%{b:02X}");
+            crate::infallible(write!(out, "%{b:02X}"));
         }
     }
     out

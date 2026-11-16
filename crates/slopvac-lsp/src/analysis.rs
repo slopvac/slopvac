@@ -1,8 +1,4 @@
 //! The result of linting one buffer, in the shape the LSP handlers use.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -46,7 +42,11 @@ impl Item {
             f.rule_id, f.severity, f.category, f.message
         );
         if !f.matched_text.is_empty() {
-            let _ = write!(hover, "\n\nMatched: `{}`", f.matched_text.replace('`', "'"));
+            crate::infallible(write!(
+                hover,
+                "\n\nMatched: `{}`",
+                f.matched_text.replace('`', "'")
+            ));
         }
         if let Some(fix) = &f.fix {
             let texts: Vec<String> = fix
@@ -54,7 +54,7 @@ impl Item {
                 .iter()
                 .map(|e| format!("`{}`", e.text.replace('`', "'")))
                 .collect();
-            let _ = write!(hover, "\n\nFix: replace with {}", texts.join(", "));
+            crate::infallible(write!(hover, "\n\nFix: replace with {}", texts.join(", ")));
         }
         Self {
             span: f.extent.map(|e| e.span),

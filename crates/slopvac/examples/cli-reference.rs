@@ -3,10 +3,6 @@
 //! `cargo run -p slopvac --example cli-reference -- <out-dir>` writes `cli/index.md` and one
 //! page per top-level command below `<out-dir>`. It reads the clap tree through its public
 //! API and changes nothing in it.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -80,14 +76,14 @@ fn tidy(mut text: String) -> String {
 fn index(root: &Command) -> String {
     let mut out = String::from("# Command-line reference\n\n");
     if let Some(about) = root.get_about() {
-        let _ = writeln!(out, "{}\n", prose(&about.to_string()));
+        infallible(writeln!(out, "{}\n", prose(&about.to_string())));
     }
     out.push_str("Run `slopvac PATH...` or `slopvac lint PATH...` to lint.\n\n");
     out.push_str("## Commands\n\n");
     for sub in visible_subcommands(root) {
         let name = sub.get_name();
         let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
-        let _ = writeln!(out, "- [`{name}`]({name}.md): {}", prose(&about));
+        infallible(writeln!(out, "- [`{name}`]({name}.md): {}", prose(&about)));
     }
     if has_help_subcommand(root) {
         out.push_str("- `help`: Print this message or the help of the given subcommand(s).\n");
@@ -100,30 +96,30 @@ fn index(root: &Command) -> String {
     options_table(&mut out, root, false);
     out.push_str("## Exit codes\n\n| Code | Meaning |\n| --- | --- |\n");
     for (status, meaning) in EXIT_CODES {
-        let _ = writeln!(out, "| `{status}` | {meaning} |");
+        infallible(writeln!(out, "| `{status}` | {meaning} |"));
     }
     tidy(out)
 }
 
 fn section(out: &mut String, cmd: &Command, path: &str, depth: usize) {
     if depth > 2 {
-        let _ = writeln!(out, "{} `{path}`\n", "#".repeat(depth));
+        infallible(writeln!(out, "{} `{path}`\n", "#".repeat(depth)));
     }
     if let Some(about) = cmd.get_long_about().or_else(|| cmd.get_about()) {
-        let _ = writeln!(out, "{}\n", prose(&about.to_string()));
+        infallible(writeln!(out, "{}\n", prose(&about.to_string())));
     }
     let mut usage = cmd.clone();
-    let _ = writeln!(out, "```text\n{}\n```\n", usage.render_usage());
+    infallible(writeln!(out, "```text\n{}\n```\n", usage.render_usage()));
     if cmd.get_all_aliases().next().is_some() {
         let aliases: Vec<_> = cmd.get_all_aliases().map(code).collect();
-        let _ = writeln!(out, "Aliases: {}.\n", aliases.join(", "));
+        infallible(writeln!(out, "Aliases: {}.\n", aliases.join(", ")));
     }
     options_table(out, cmd, false);
     if has_help_subcommand(cmd) {
-        let _ = writeln!(
+        infallible(writeln!(
             out,
             "Run `{path} help [COMMAND]` to print the help of a subcommand.\n"
-        );
+        ));
     }
     for sub in visible_subcommands(cmd) {
         section(out, sub, &format!("{path} {}", sub.get_name()), depth + 1);
@@ -143,14 +139,14 @@ fn options_table(out: &mut String, cmd: &Command, global: bool) {
     }
     out.push_str("| Argument | Value | Default | Description |\n| --- | --- | --- | --- |\n");
     for arg in args {
-        let _ = writeln!(
+        infallible(writeln!(
             out,
             "| {} | {} | {} | {} |",
             name(arg),
             value(arg),
             defaults(arg),
             description(arg)
-        );
+        ));
     }
     out.push('\n');
 }
@@ -256,4 +252,13 @@ fn prose(text: &str) -> String {
         }
     }
     out
+}
+
+/// Drop the result of a write into a `String`; `fmt::Write for String` never fails.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
+fn infallible(result: std::fmt::Result) {
+    let _ = result;
 }

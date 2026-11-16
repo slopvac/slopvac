@@ -6,10 +6,6 @@
 //!
 //! [`generate`] with `live = true` writes the same text with every example uncommented. A
 //! test validates that config against the schema, so each example meets its constraints.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 
@@ -122,7 +118,12 @@ impl Ctx<'_> {
         if let Some(text) = self.describe(schema) {
             comment(out, &text);
         }
-        let _ = writeln!(out, "{}{key} = {}", self.mark(), self.example(key, schema));
+        crate::infallible(writeln!(
+            out,
+            "{}{key} = {}",
+            self.mark(),
+            self.example(key, schema)
+        ));
     }
 
     /// Keys of a table or an array-of-tables item, required keys first.
@@ -144,12 +145,12 @@ impl Ctx<'_> {
                 || "\"<key>\"".into(),
                 |n| string_example("name", self.resolve(n)),
             );
-            let _ = writeln!(
+            crate::infallible(writeln!(
                 out,
                 "{}{name} = {}",
                 self.mark(),
                 self.example("value", values)
-            );
+            ));
         }
     }
 }
@@ -221,14 +222,14 @@ pub(super) fn generate(schema: &Value, common: &Value, live: bool) -> String {
         comment(&mut out, line);
     }
     out.push('\n');
-    let _ = writeln!(out, "{} = {}", ACTIVE[0].0, ACTIVE[0].1);
+    crate::infallible(writeln!(out, "{} = {}", ACTIVE[0].0, ACTIVE[0].1));
     for key in SCALARS {
         out.push('\n');
         if let Some((_, value)) = ACTIVE.iter().find(|(k, _)| *k == key) {
             if let Some(text) = ctx.describe(lookup(key)) {
                 comment(&mut out, &text);
             }
-            let _ = writeln!(out, "{key} = {value}");
+            crate::infallible(writeln!(out, "{key} = {value}"));
         } else {
             ctx.field(&mut out, key, lookup(key));
         }
@@ -238,7 +239,7 @@ pub(super) fn generate(schema: &Value, common: &Value, live: bool) -> String {
         if let Some(text) = ctx.describe(lookup(key)) {
             comment(&mut out, &text);
         }
-        let _ = writeln!(out, "{}[{key}]", ctx.mark());
+        crate::infallible(writeln!(out, "{}[{key}]", ctx.mark()));
         ctx.fields(&mut out, lookup(key));
     }
     for key in ARRAYS {
@@ -247,7 +248,7 @@ pub(super) fn generate(schema: &Value, common: &Value, live: bool) -> String {
         if let Some(text) = ctx.describe(items) {
             comment(&mut out, &text);
         }
-        let _ = writeln!(out, "{}[[{key}]]", ctx.mark());
+        crate::infallible(writeln!(out, "{}[[{key}]]", ctx.mark()));
         ctx.fields(&mut out, items);
     }
     out

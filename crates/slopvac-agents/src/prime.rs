@@ -4,10 +4,6 @@
 //! may open with `<!-- summary: ... -->`, which feeds the index in the base topic.
 //! The base topic's command list and topic index come from the clap tree and the
 //! registry, so they cannot drift from the code. `.slopvac/PRIME.md` overrides topics.
-#![expect(
-    clippy::let_underscore_must_use,
-    reason = "fmt::Write for String never returns an error"
-)]
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -360,7 +356,7 @@ pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, A
         root,
     )?;
     if !out.ends_with('\n') {
-        let _ = writeln!(out);
+        crate::infallible(writeln!(out));
     }
     Ok(out)
 }

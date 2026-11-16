@@ -399,7 +399,9 @@ fn code_ranges_cover_fences_and_inline_spans() {
 fn an_unclosed_backtick_run_at_the_end_of_text_opens_no_span() {
     // The run ends at the end of the text, with no character after it.
     assert_eq!(markdown_code_ranges("a ``"), []);
-    assert_eq!(markdown_code_ranges("`a` ```"), [0..3]);
+    let ranges = markdown_code_ranges("`a` ```");
+    assert_eq!(ranges.len(), 1);
+    assert_eq!(ranges[0], 0..3);
 }
 
 #[test]
