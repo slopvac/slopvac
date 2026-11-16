@@ -14,8 +14,22 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 use slopvac_model::Span;
-use slopvac_parse::Document;
+use slopvac_parse::{Document, Projection};
 use slopvac_text::{Pattern, split_sentences};
+
+/// Where a [`MatchSite`]'s text sits in the projection it was cut from.
+///
+/// The projection is the exact one the engine matched in, so `base` locates a match in it
+/// without going back through source bytes. A source span is lossy where one source token
+/// projects to many (an MDX string literal), and it cannot tell two identical sentences
+/// apart inside one token.
+#[derive(Debug, Clone, Copy)]
+pub struct TextOrigin<'a> {
+    /// The projection that holds the site's text.
+    pub projection: &'a Projection,
+    /// Byte offset of the site's text in `projection.text()`.
+    pub base: usize,
+}
 
 /// A candidate finding, as a detector sees it.
 #[derive(Debug, Clone, Copy)]
@@ -26,6 +40,9 @@ pub struct MatchSite<'a> {
     pub range: &'a Range<usize>,
     /// The match in the source.
     pub span: Span,
+    /// Where `text` sits in its projection, when the text is projected prose. A detector
+    /// that reads text before the match needs it; `None` means `text` is all there is.
+    pub origin: Option<TextOrigin<'a>>,
     /// The parsed document.
     pub document: &'a Document,
     /// Context tags that cover `span`.
@@ -123,9 +140,10 @@ const CLAUSE_OPENERS: &[&str] = &[
 ];
 
 /// Punctuation that ends the negated phrase: it opens a new clause, a list or an aside.
-const CLAUSE_PUNCTUATION: &[char] = &[
-    ';', ':', ',', '—', '–', '(', ')', '[', ']', '{', '}', '"', '“', '”',
-];
+///
+/// Quote marks are not here: they wrap a quoted object (`it does not read "YAML"`) and
+/// [`words`] drops them.
+const CLAUSE_PUNCTUATION: &[char] = &[';', ':', ',', '—', '–', '(', ')', '[', ']', '{', '}'];
 
 /// The words of `text`, lowercase: runs of letters and digits, with inner `-` and `_`.
 fn words(text: &str) -> impl Iterator<Item = String> + '_ {
@@ -142,24 +160,6 @@ fn stem(word: &str) -> &str {
         Some(rest) if rest.len() >= 3 && !rest.ends_with('s') => rest,
         _ => word,
     }
-}
-
-/// The byte offset in the projected text of the token that holds source byte `source`.
-/// Inside an identity token the offset is exact; inside any other token it is the token's
-/// start.
-fn projected_offset(projection: &slopvac_parse::Projection, source: usize) -> Option<usize> {
-    let mut offset = 0;
-    for token in projection.tokens() {
-        let (start, end) = (token.src.start(), token.src.end());
-        if token.kind.is_real() && start <= source && source < end {
-            return Some(match token.kind {
-                slopvac_parse::TokenKind::Identity => offset + (source - start),
-                _ => offset,
-            });
-        }
-        offset += token.text.len();
-    }
-    None
 }
 
 /// The negated term of a contrastive-appositive match, as a comparison key.
@@ -203,19 +203,19 @@ impl NegatedAntecedent {
     /// The last [`ANTECEDENT_SENTENCES`] sentences before the match, nearest last.
     fn preceding(site: &MatchSite<'_>) -> Option<Vec<String>> {
         let blocks = &site.document.blocks;
-        let owner = blocks.iter().rposition(|b| {
-            b.projection.is_some()
-                && b.span.start() <= site.span.start()
-                && site.span.end() <= b.span.end()
+        // The projection's own offset locates the match, so a repeated sentence, a
+        // sentence-scoped text and an opaque token all resolve to the right place.
+        let before = match site.origin {
+            Some(o) => o.projection.text().get(..o.base + site.range.start)?,
+            None => site.text.get(..site.range.start)?,
+        };
+        let owner = site.origin.and_then(|o| {
+            blocks.iter().position(|b| {
+                b.projection
+                    .as_ref()
+                    .is_some_and(|p| std::ptr::eq(p, o.projection))
+            })
         });
-        // `site.text` may be a part of the block, so the block text gives the full prefix.
-        // The match's source start locates it: the same sentence can occur twice.
-        let in_block = owner.and_then(|i| {
-            let projection = blocks[i].projection.as_ref()?;
-            let at = projected_offset(projection, site.span.start())?;
-            projection.text().get(..at)
-        });
-        let before = in_block.unwrap_or(&site.text[..site.range.start]);
         let mut sentences = split_sentences(before).ok()?;
         if sentences.len() < ANTECEDENT_SENTENCES
             && let Some(i) = owner
@@ -308,49 +308,53 @@ impl Detectors {
 
 #[cfg(test)]
 mod tests {
-    use slopvac_parse::parse_markdown;
+    use slopvac_parse::{parse_markdown, parse_mdx};
 
     use super::*;
 
     const NEEDLE: &str = "The parser reads JSON; it does not read YAML";
 
-    /// Whether `negated-antecedent` drops the `nth` match (from 0) of `needle` in `source`.
-    /// The match is taken in the prose of the block that holds it.
+    /// Whether `negated-antecedent` drops the `nth` match (from 0) of `needle` in the prose
+    /// of `document`, counting across blocks in order. As the engine does for a sentence
+    /// rule, the site's text is the sentence that holds the match, and its origin is the
+    /// block's projection.
+    fn detects_in(document: &Document, needle: &str, nth: usize) -> bool {
+        let mut seen = 0;
+        for block in &document.blocks {
+            let Some(projection) = &block.projection else {
+                continue;
+            };
+            let text = projection.text();
+            let found = text.match_indices(needle).nth(nth - seen);
+            let Some((at, _)) = found else {
+                seen += text.matches(needle).count();
+                continue;
+            };
+            let sentence = split_sentences(text)
+                .unwrap()
+                .into_iter()
+                .find(|s| s.start <= at && at < s.end)
+                .expect("a sentence holds the match");
+            let range = at - sentence.start..at - sentence.start + needle.len();
+            let site = MatchSite {
+                text: &text[sentence.start..sentence.end],
+                range: &range,
+                span: block.span,
+                origin: Some(TextOrigin {
+                    projection,
+                    base: sentence.start,
+                }),
+                document,
+                tags: &[],
+            };
+            return Detectors::builtin().detects("negated-antecedent", &site);
+        }
+        panic!("the document has no match number {nth} of {needle:?}");
+    }
+
     fn detects_nth(source: &str, needle: &str, nth: usize) -> bool {
         let document = parse_markdown(source, Span::new(0, source.len()).unwrap()).unwrap();
-        let at = source
-            .match_indices(needle)
-            .nth(nth)
-            .expect("needle is in the source")
-            .0;
-        let span = Span::new(at, at + needle.len()).unwrap();
-        let block = document
-            .blocks
-            .iter()
-            .rfind(|b| {
-                b.projection.is_some()
-                    && b.span.start() <= span.start()
-                    && span.end() <= b.span.end()
-            })
-            .expect("a block holds the needle");
-        let text = block.projection.as_ref().unwrap().text();
-        // The source is plain prose, so the needle's offset in its block is its offset in
-        // the block's text, counting the same occurrences.
-        let in_block = source[block.span.start()..at].matches(needle).count();
-        let start = text
-            .match_indices(needle)
-            .nth(in_block)
-            .expect("needle is in the prose")
-            .0;
-        let range = start..start + needle.len();
-        let site = MatchSite {
-            text,
-            range: &range,
-            span,
-            document: &document,
-            tags: &[],
-        };
-        Detectors::builtin().detects("negated-antecedent", &site)
+        detects_in(&document, needle, nth)
     }
 
     fn detects(source: &str, needle: &str) -> bool {
@@ -468,5 +472,27 @@ mod tests {
     fn a_plural_negated_term_matches_its_singular() {
         let needle = "The hosts list servers; it is not about servers";
         assert!(detects(&format!("One server runs. {needle}.\n"), needle));
+    }
+
+    #[test]
+    fn a_quoted_negated_object_is_the_term() {
+        for needle in [
+            "The parser reads JSON; it does not read \"YAML\"",
+            "The parser reads JSON; it does not read \u{201c}YAML\u{201d}",
+        ] {
+            assert!(detects(&format!("We ship YAML. {needle}.\n"), needle));
+            assert!(!detects(&format!("We read files. {needle}.\n"), needle));
+        }
+    }
+
+    #[test]
+    fn sentences_before_the_match_in_an_mdx_string_literal_are_read() {
+        // The literal projects to one opaque token, so a source span cannot place the match.
+        let source = format!("{{'We ship YAML. It is small. {NEEDLE}.'}}\n");
+        let document = parse_mdx(&source, Span::new(0, source.len()).unwrap()).unwrap();
+        assert!(detects_in(&document, NEEDLE, 0));
+        let far = format!("{{'We ship YAML. It is small. It is fast. {NEEDLE}.'}}\n");
+        let document = parse_mdx(&far, Span::new(0, far.len()).unwrap()).unwrap();
+        assert!(!detects_in(&document, NEEDLE, 0));
     }
 }
