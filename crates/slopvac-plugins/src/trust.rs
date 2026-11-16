@@ -1014,7 +1014,10 @@ impl SpawnGate for TrustGate {
         if let Some(env) = self.python.get(name)
             && let Err(e) = env.check_quick()
         {
-            return Err(PluginError::HashMismatch(format!("{name} ({e})")));
+            return Err(PluginError::HashMismatch(format!(
+                "{name} ({})",
+                e.unescaped()
+            )));
         }
         let (hash, state) = match self.state(vp, spec) {
             Ok(x) => x,

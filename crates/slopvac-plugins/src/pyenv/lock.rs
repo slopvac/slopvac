@@ -160,11 +160,7 @@ impl PyLock {
                 if let Some((name, why)) =
                     names.iter().find_map(|n| refused_entry(n).map(|w| (n, w)))
                 {
-                    return Err(wrong(format!(
-                        "`{}` holds `{}`, {why}",
-                        w.path,
-                        name.escape_debug()
-                    )));
+                    return Err(wrong(format!("`{}` holds `{}`, {why}", w.path, name)));
                 }
                 pkg_entries = pkg_entries.max(n);
                 pkg_bytes = pkg_bytes.max(size);
@@ -233,8 +229,7 @@ fn package(v: &toml::Value) -> Result<LockedPackage, PyEnvError> {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
     {
         return Err(PyEnvError::Lock(format!(
-            "package name `{}` is not a distribution name",
-            name.escape_debug()
+            "package name `{name}` is not a distribution name"
         )));
     }
     let wrong = |why: String| PyEnvError::Wheel {
@@ -257,10 +252,7 @@ fn package(v: &toml::Value) -> Result<LockedPackage, PyEnvError> {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'+' | b'!'))
     {
-        return Err(wrong(format!(
-            "version `{}` is not exact",
-            version.escape_debug()
-        )));
+        return Err(wrong(format!("version `{version}` is not exact")));
     }
     let marker = match t.get("marker") {
         None => None,
@@ -269,10 +261,7 @@ fn package(v: &toml::Value) -> Result<LockedPackage, PyEnvError> {
                 .as_str()
                 .ok_or_else(|| wrong("marker is not a string".into()))?;
             if let Err(why) = check_marker(m) {
-                return Err(wrong(format!(
-                    "marker `{}` is refused: {why}",
-                    m.escape_debug()
-                )));
+                return Err(wrong(format!("marker `{m}` is refused: {why}")));
             }
             Some(m.to_owned())
         }
@@ -307,7 +296,7 @@ fn wheel(package: &str, version: &str, v: &toml::Value) -> Result<LockedWheel, P
     let path = t.get("path").and_then(toml::Value::as_str).ok_or_else(|| {
         wrong("a wheel has no `path` inside the artifact; a `url` would need a download".into())
     })?;
-    check_relative_path(path).map_err(|e| wrong(format!("`{}`: {e}", path.escape_debug())))?;
+    check_relative_path(path).map_err(|e| wrong(format!("`{path}`: {e}")))?;
     let file = path.rsplit('/').next().unwrap_or(path);
     let Some(stem) = file.strip_suffix(".whl") else {
         return Err(wrong(format!("`{path}` is not a wheel")));

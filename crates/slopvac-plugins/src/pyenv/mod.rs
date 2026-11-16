@@ -65,7 +65,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use thiserror::Error;
+use slopvac_sanitize::{line as esc, terminal};
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
 
@@ -97,15 +97,18 @@ print(json.dumps({'version': sys.version, 'hexversion': sys.hexversion, \
 'platform': sys.platform, 'machine': platform.machine()}))";
 
 /// Errors from building or checking a managed environment.
-#[derive(Debug, Error)]
+///
+/// The variants hold raw text: package names, paths and installer output are
+/// untrusted. `Display` escapes them once with `slopvac-sanitize` (installer
+/// output with [`slopvac_sanitize::terminal`], everything else with
+/// [`slopvac_sanitize::line()`]). [`PyEnvError::unescaped`] gives the message
+/// before escaping, for a caller that builds a larger message and escapes it
+/// once.
+#[derive(Debug)]
 pub enum PyEnvError {
     /// The lock is malformed.
-    #[error("the Python lock is refused: {0}")]
     Lock(String),
     /// A package is not a wheel inside the artifact (Y1).
-    #[error(
-        "package `{package}` is not a vendored wheel ({source_kind}); slopvac builds environments from locked wheels only and runs no build backend"
-    )]
     SourceOnly {
         /// The package.
         package: String,
@@ -113,7 +116,6 @@ pub enum PyEnvError {
         source_kind: String,
     },
     /// A locked wheel is missing, misnamed or does not match its hash.
-    #[error("wheel of `{package}` refused: {why}")]
     Wheel {
         /// The package.
         package: String,
@@ -121,27 +123,19 @@ pub enum PyEnvError {
         why: String,
     },
     /// The installer setup is unusable.
-    #[error("the Python installer is refused: {0}")]
     Installer(String),
     /// Offline, and no managed interpreter matches the request.
-    #[error(
-        "offline: no uv-managed Python matches `{0}`; run once online, or install it with `uv python install`"
-    )]
     OfflinePythonMissing(String),
     /// A uv or interpreter run failed.
-    #[error("{step} failed ({status}): {output}")]
     Step {
         /// What ran.
         step: String,
         /// Exit status or reason.
         status: String,
-        /// The end of its error output.
+        /// The end of its error output, raw.
         output: String,
     },
     /// The environment changed after its build (Y5).
-    #[error(
-        "the Python environment changed: `{path}` {why}; rebuild it and run `slopvac plugins trust`"
-    )]
     Changed {
         /// The entry, relative to the environment, or the interpreter path.
         path: String,
@@ -149,15 +143,10 @@ pub enum PyEnvError {
         why: String,
     },
     /// The environment holds something it may not, or passes a bound.
-    #[error("the Python environment is refused: {0}")]
     Refused(String),
     /// Managed environments are not supported on this platform yet.
-    #[error(
-        "managed Python environments are not supported on Windows yet; slopvac refuses to build or run them"
-    )]
     UnsupportedPlatform,
     /// The environment record is damaged.
-    #[error("the environment record {path} is damaged: {why}")]
     Record {
         /// The record file.
         path: PathBuf,
@@ -165,17 +154,90 @@ pub enum PyEnvError {
         why: String,
     },
     /// The plugin tree no longer verifies.
-    #[error(transparent)]
-    Tree(#[from] ExtractError),
+    Tree(ExtractError),
     /// A file system operation failed.
-    #[error("{what}: {source}")]
     Io {
         /// The operation.
         what: String,
         /// The cause.
-        #[source]
         source: io::Error,
     },
+}
+
+impl PyEnvError {
+    /// The message as built, before escaping. Do not print it.
+    #[must_use]
+    pub fn unescaped(&self) -> String {
+        match self {
+            Self::Lock(m) => format!("the Python lock is refused: {m}"),
+            Self::SourceOnly {
+                package,
+                source_kind,
+            } => format!(
+                "package `{package}` is not a vendored wheel ({source_kind}); slopvac builds environments from locked wheels only and runs no build backend"
+            ),
+            Self::Wheel { package, why } => format!("wheel of `{package}` refused: {why}"),
+            Self::Installer(m) => format!("the Python installer is refused: {m}"),
+            Self::OfflinePythonMissing(r) => format!(
+                "offline: no uv-managed Python matches `{r}`; run once online, or install it with `uv python install`"
+            ),
+            Self::Step {
+                step,
+                status,
+                output,
+            } => format!("{} {output}", Self::step_head(step, status)),
+            Self::Changed { path, why } => format!(
+                "the Python environment changed: `{path}` {why}; rebuild it and run `slopvac plugins trust`"
+            ),
+            Self::Refused(m) => format!("the Python environment is refused: {m}"),
+            Self::UnsupportedPlatform => "managed Python environments are not supported on Windows yet; slopvac refuses to build or run them".into(),
+            Self::Record { path, why } => format!(
+                "the environment record {} is damaged: {why}",
+                path.to_string_lossy()
+            ),
+            Self::Tree(e) => e.unescaped(),
+            Self::Io { what, source } => format!("{what}: {source}"),
+        }
+    }
+
+    fn step_head(step: &str, status: &str) -> String {
+        format!("{step} failed ({status}):")
+    }
+}
+
+impl std::fmt::Display for PyEnvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Installer output keeps its lines; everything else stays on one.
+            Self::Step {
+                step,
+                status,
+                output,
+            } => write!(
+                f,
+                "{} {}",
+                esc(&Self::step_head(step, status)),
+                terminal(output)
+            ),
+            _ => f.write_str(&esc(&self.unescaped())),
+        }
+    }
+}
+
+impl std::error::Error for PyEnvError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Tree(e) => Some(e),
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<ExtractError> for PyEnvError {
+    fn from(e: ExtractError) -> Self {
+        Self::Tree(e)
+    }
 }
 
 impl PyEnvError {
@@ -240,10 +302,7 @@ impl Installer {
                     )
             })
         {
-            return refuse(format!(
-                "`{}` is not a Python version request",
-                p.escape_debug()
-            ));
+            return refuse(format!("`{p}` is not a Python version request"));
         }
         Ok(())
     }
@@ -711,10 +770,7 @@ impl EnvStore {
     /// Removal failures.
     pub fn remove(&self, key: &str) -> Result<Evicted, PyEnvError> {
         if key.len() != 64 || !key.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-            return Err(PyEnvError::Refused(format!(
-                "`{}` is not a store key",
-                key.escape_debug()
-            )));
+            return Err(PyEnvError::Refused(format!("`{key}` is not a store key")));
         }
         remove_file_if_exists(&self.record_path(key))?;
         Ok(evict(&self.root.join(key))?)
@@ -901,13 +957,13 @@ fn run(
     })
 }
 
-/// The last 4 KiB of a file, made printable.
+/// The last 4 KiB of a file, raw. [`PyEnvError`]'s `Display` escapes it.
 fn tail(path: &Path) -> String {
     let Ok(bytes) = fs::read(path) else {
         return String::new();
     };
     let start = bytes.len().saturating_sub(4096);
-    crate::process::sanitize_display(&String::from_utf8_lossy(&bytes[start..]))
+    String::from_utf8_lossy(&bytes[start..]).into_owned()
 }
 
 fn probe(python: &Path, scratch: &Path, limit: Duration) -> Result<Probe, PyEnvError> {

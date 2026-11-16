@@ -376,10 +376,35 @@ fn tm49_tm53_a_wheel_entry_that_lands_on_the_interpreter_or_a_startup_hook_is_re
         let (lock, vp) = lock_over_entries(&s, &["demo_pkg/__init__.py", name]);
         let err = lock.verify_wheels(&vp.root).unwrap_err();
         assert!(
-            matches!(&err, PyEnvError::Wheel { why, .. } if why.contains(&name.escape_debug().to_string())),
+            matches!(&err, PyEnvError::Wheel { why, .. } if why.contains(*name)),
             "{name}: {err:?}"
         );
     }
+}
+
+#[test]
+fn a_hostile_package_name_is_escaped_once_in_the_error() {
+    let text = "lock-version = \"1.0\"\n[[packages]]\nname = \"demo\\u001b[31m\\\\pkg\"\nversion = \"1.0\"\n";
+    let err = PyLock::parse(text).unwrap_err();
+    assert_eq!(
+        err.unescaped(),
+        "the Python lock is refused: package name `demo\u{1b}[31m\\pkg` is not a distribution name"
+    );
+    assert_eq!(
+        err.to_string(),
+        "the Python lock is refused: package name `demo\\u{1b}[31m\\\\pkg` is not a distribution name"
+    );
+}
+
+#[test]
+fn a_hostile_wheel_entry_name_is_escaped_once_in_the_error() {
+    let s = Scratch::new("entry-escape");
+    let (lock, vp) = lock_over_entries(&s, &["a\\b\u{1b}[2J\u{202e}.py"]);
+    let err = lock.verify_wheels(&vp.root).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "wheel of `demo-pkg` refused: `wheels/demo_pkg-1.0-py3-none-any.whl` holds `a\\\\b\\u{1b}[2J\\u{202e}.py`, a path outside the install scheme"
+    );
 }
 
 #[test]
@@ -636,6 +661,8 @@ mod unix_only {
         pip_extra: &'a str,
         /// `uv venv` hangs instead of creating the environment.
         hang: bool,
+        /// Shell run at the start of `uv venv`.
+        venv_extra: &'a str,
         /// Exit 99 when a run could download: any call without both
         /// `--offline` and `--no-python-downloads`, or with `--python-downloads`.
         offline_only: bool,
@@ -657,6 +684,7 @@ mod unix_only {
                 tamper: None,
                 pip_extra: "",
                 hang: false,
+                venv_extra: "",
                 offline_only: false,
             }
         }
@@ -686,6 +714,7 @@ case "$1" in
 python) exit {find} ;;
 venv)
   {hang}
+  {venv_extra}
   for a; do dir=$a; done
   mkdir -p "$dir/bin" "$dir/lib/python$ver/site-packages"
   ln -s '{py}' "$dir/bin/python"
@@ -715,6 +744,7 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
                     ""
                 },
                 hang = if fake.hang { "exec sleep 30" } else { "" },
+                venv_extra = fake.venv_extra,
                 pip_extra = fake.pip_extra,
                 find = fake.find_exit,
                 py = fake.interpreter.display(),
@@ -1513,6 +1543,59 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
         assert!(
             !marker.exists(),
             "the oversized environment reached bytecode compilation"
+        );
+    }
+
+    #[test]
+    fn installer_output_is_escaped_once_and_keeps_its_lines() {
+        let s = Scratch::new("u-step-escape");
+        let wheels = demo();
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let uv = fake_uv(
+            &s.dir("envs-bin"),
+            &Fake {
+                venv_extra: r"printf 'bad\033[2J\\path\n::error::x\n' >&2; exit 3",
+                ..Fake::real()
+            },
+        );
+        let err = EnvStore::open(s.dir("envs"))
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap_err();
+        assert!(
+            matches!(&err, PyEnvError::Step { output, .. } if output == "bad\u{1b}[2J\\path\n::error::x\n"),
+            "the error holds the raw output: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "uv venv failed (exit status: 3): bad\\u{1b}[2J\\\\path\n\\u{3a}:error::x\n"
+        );
+    }
+
+    #[test]
+    fn a_hostile_file_name_is_escaped_once_through_trust_and_the_spawn_gate() {
+        let s = Scratch::new("u-forward-escape");
+        let b = build(&s);
+        let (g, sp) = trusted(&s, &b);
+        let site = site(&b);
+        fs::write(site.join("evil\u{1b}[31m\\.txt"), "x").unwrap();
+        let rel = site
+            .strip_prefix(b.env.root())
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let changed = format!(
+            "the Python environment changed: `{rel}/evil\\u{{1b}}[31m\\\\.txt` added after the build; rebuild it and run `slopvac plugins trust`"
+        );
+        let err = g.record_trust(&b.vp, &sp, NOW).unwrap_err();
+        assert!(matches!(err, TrustError::PythonEnv(_)), "{err:?}");
+        assert_eq!(err.to_string(), changed);
+        let err = g.check(&sp).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "plugin fake ({changed}) changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content"
+            )
         );
     }
 
