@@ -8,11 +8,11 @@ use serde_json::Value as Json;
 
 use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
-use crate::flatten::{Origin, flatten};
+use crate::flatten::{Origin, flatten_with};
 use crate::presets::Presets;
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
-use crate::tree::{Node, Value, parse_toml};
+use crate::tree::{LineIndex, Node, Value, parse_toml};
 use crate::version::check_version;
 
 /// Which table a block came from.
@@ -131,9 +131,12 @@ pub fn load_labeled(
         root: &root,
         presets,
         stack: Vec::new(),
-        files: Vec::new(),
-        done: std::collections::HashSet::new(),
-        bytes: 0,
+        table: Vec::new(),
+        order: Vec::new(),
+        ids: std::collections::HashMap::new(),
+        closure: Vec::new(),
+        // The project file counts against the byte budget like every extended file.
+        bytes: text.len(),
     };
     loader.load_text(
         &Key::Path(abs.clone()),
@@ -141,8 +144,14 @@ pub fn load_labeled(
         text,
         Layer::Project,
     )?;
-    let exclude = build_exclude(&loader.files, &root);
-    let files = loader.files;
+    // The order is the expansion of `extends` with each file at its last position, so a later
+    // entry wins even when an earlier entry also reaches the same file.
+    let files: Vec<ConfigFile> = loader
+        .order
+        .iter()
+        .map(|i| loader.table[*i].clone())
+        .collect();
+    let exclude = build_exclude(&files, &root);
     Ok(LoadedConfig {
         root,
         files,
@@ -263,13 +272,48 @@ struct Loader<'a> {
     root: &'a Path,
     presets: &'a dyn Presets,
     stack: Vec<(Key, String)>,
-    files: Vec<ConfigFile>,
-    /// Files already loaded: a file reached again through another path is not loaded twice.
-    done: std::collections::HashSet<Key>,
+    /// Each distinct file, parsed once, in the order it was first loaded.
+    table: Vec<ConfigFile>,
+    /// Indexes into `table` in application order, each file at its last position.
+    order: Vec<usize>,
+    /// The table index of every finished file, by canonical path.
+    ids: std::collections::HashMap<Key, usize>,
+    /// For each table entry: it and everything it extends, in application order.
+    closure: Vec<Vec<usize>>,
     bytes: usize,
 }
 
+/// Largest number of `[[overrides]]` plus `[[genres]]` blocks in one file.
+const MAX_BLOCKS_PER_FILE: usize = 1000;
+/// Most patterns in one block's `files`.
+const MAX_GLOBS_PER_BLOCK: usize = 100;
+
 impl Loader<'_> {
+    /// Whether loading one more file would break the depth or file budget.
+    ///
+    /// Every distinct file counts: the finished ones, the ancestors still loading, and the new one.
+    fn budget_exceeded(&self) -> Option<(String, &'static str)> {
+        if self.stack.len() >= MAX_EXTENDS_DEPTH {
+            return Some((
+                format!("`extends` is nested more than {MAX_EXTENDS_DEPTH} files deep"),
+                "flatten the chain",
+            ));
+        }
+        if self.ids.len() + self.stack.len() + 1 > MAX_EXTENDS_FILES {
+            return Some((
+                format!("`extends` reaches more than {MAX_EXTENDS_FILES} files"),
+                "extend fewer files",
+            ));
+        }
+        None
+    }
+
+    /// Move `id` to the end of the application order.
+    fn touch(&mut self, id: usize) {
+        self.order.retain(|x| *x != id);
+        self.order.push(id);
+    }
+
     fn load_text(
         &mut self,
         key: &Key,
@@ -302,12 +346,33 @@ impl Loader<'_> {
         if let Err(d) = check_version(&tree, &text) {
             return Err(reject(text, vec![d]));
         }
+        let block_count = ["overrides", "genres"]
+            .iter()
+            .filter_map(|t| match tree.get(t).map(|n| &n.value) {
+                Some(Value::Array(items)) => Some(items.len()),
+                _ => None,
+            })
+            .sum::<usize>();
+        if block_count > MAX_BLOCKS_PER_FILE {
+            let d = Diagnostic {
+                code: Code::ExtendsLimit,
+                message: format!(
+                    "the file has {block_count} `overrides` and `genres` blocks; the limit is {MAX_BLOCKS_PER_FILE}"
+                ),
+                label: "too many blocks".into(),
+                span: 0..0,
+                help: Some("merge blocks that share files".into()),
+                path: Vec::new(),
+            };
+            return Err(reject(text, vec![d]));
+        }
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
         }
+        let lines = LineIndex::new(&text);
         let blocks = if diagnostics.is_empty() {
-            self.blocks(&tree, display, &text, &mut diagnostics)
+            self.blocks(&tree, display, &text, &lines, &mut diagnostics)
         } else {
             Vec::new()
         };
@@ -317,8 +382,8 @@ impl Loader<'_> {
         self.stack.push((key.clone(), display.to_owned()));
         let extended = self.extend(&tree, key, &text, display);
         self.stack.pop();
-        extended?;
-        let settings = flatten(
+        let mut closure = extended?;
+        let settings = flatten_with(
             &tree,
             Origin {
                 layer,
@@ -326,14 +391,19 @@ impl Loader<'_> {
                 text: &text,
             },
             &["schema_version", "extends", "overrides", "genres"],
+            &lines,
         );
-        self.done.insert(key.clone());
-        self.files.push(ConfigFile {
+        let id = self.table.len();
+        self.table.push(ConfigFile {
             display: display.to_owned(),
             layer,
             settings,
             blocks,
         });
+        self.ids.insert(key.clone(), id);
+        self.touch(id);
+        closure.push(id);
+        self.closure.push(closure);
         Ok(())
     }
 
@@ -342,6 +412,7 @@ impl Loader<'_> {
         tree: &Node,
         display: &str,
         text: &str,
+        lines: &LineIndex<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<Block> {
         let mut out = Vec::new();
@@ -356,7 +427,8 @@ impl Loader<'_> {
             else {
                 continue;
             };
-            let mut seen: Vec<(Vec<String>, usize)> = Vec::new();
+            let mut seen: std::collections::HashMap<Vec<String>, usize> =
+                std::collections::HashMap::new();
             for (index, item) in items.iter().enumerate() {
                 let files = strings(item.get("files"));
                 let mut scope = files
@@ -367,7 +439,21 @@ impl Loader<'_> {
                 scope.dedup();
                 let files_node = item.get("files");
                 let span = files_node.map_or_else(|| item.span.clone(), |n| n.span.clone());
-                if let Some((_, first)) = seen.iter().find(|(s, _)| *s == scope) {
+                if files.len() > MAX_GLOBS_PER_BLOCK {
+                    diagnostics.push(Diagnostic {
+                        code: Code::ExtendsLimit,
+                        message: format!(
+                            "`{table}[{index}]` lists {} patterns; the limit is {MAX_GLOBS_PER_BLOCK}",
+                            files.len()
+                        ),
+                        label: "too many patterns".into(),
+                        span,
+                        help: None,
+                        path: vec![table.into(), index.to_string(), "files".into()],
+                    });
+                    continue;
+                }
+                if let Some(first) = seen.get(&scope) {
                     diagnostics.push(Diagnostic {
                         code: Code::DuplicateScope,
                         message: format!(
@@ -380,7 +466,7 @@ impl Loader<'_> {
                     });
                     continue;
                 }
-                seen.push((scope, index));
+                seen.insert(scope, index);
                 let matcher = match compile(&files, self.root) {
                     Ok(m) => m,
                     Err(msg) => {
@@ -401,7 +487,7 @@ impl Loader<'_> {
                     kind,
                     order: item.span.start,
                     files,
-                    settings: flatten(
+                    settings: flatten_with(
                         item,
                         Origin {
                             layer: Layer::Override,
@@ -409,6 +495,7 @@ impl Loader<'_> {
                             text,
                         },
                         skip,
+                        lines,
                     ),
                     matcher,
                 });
@@ -424,14 +511,15 @@ impl Loader<'_> {
         key: &Key,
         text: &str,
         display: &str,
-    ) -> Result<(), ConfigError> {
+    ) -> Result<Vec<usize>, ConfigError> {
         let Some(Node {
             value: Value::Array(entries),
             ..
         }) = tree.get("extends")
         else {
-            return Ok(());
+            return Ok(Vec::new());
         };
+        let mut acc: Vec<usize> = Vec::new();
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let fail = |code: Code, message: String, help: Option<String>| {
@@ -466,6 +554,12 @@ impl Loader<'_> {
                 let shown = relative_display(&joined, self.root);
                 (Key::Path(joined), shown, None)
             };
+            // The canonical path is the identity, so a link or a different spelling of a file that
+            // is already counted is the same file and costs no extra slot.
+            let target = match target {
+                Key::Path(p) => Key::Path(fs::canonicalize(&p).unwrap_or(p)),
+                pack @ Key::Pack(_) => pack,
+            };
             if let Some(at) = self.stack.iter().position(|(k, _)| *k == target) {
                 let mut chain: Vec<String> =
                     self.stack[at..].iter().map(|(_, d)| d.clone()).collect();
@@ -476,22 +570,19 @@ impl Loader<'_> {
                     Some("remove one entry from the loop".into()),
                 ));
             }
-            if self.done.contains(&target) {
+            if let Some(&id) = self.ids.get(&target) {
+                // Already loaded: no new read, but the file and what it extends apply again here,
+                // so this later entry wins over an earlier one that reached it first.
+                let again = self.closure[id].clone();
+                for i in &again {
+                    self.touch(*i);
+                    acc.retain(|x| x != i);
+                    acc.push(*i);
+                }
                 continue;
             }
-            if self.stack.len() >= MAX_EXTENDS_DEPTH {
-                return Err(fail(
-                    Code::ExtendsLimit,
-                    format!("`extends` is nested more than {MAX_EXTENDS_DEPTH} files deep"),
-                    Some("flatten the chain".into()),
-                ));
-            }
-            if self.done.len() >= MAX_EXTENDS_FILES {
-                return Err(fail(
-                    Code::ExtendsLimit,
-                    format!("`extends` reaches more than {MAX_EXTENDS_FILES} files"),
-                    Some("extend fewer files".into()),
-                ));
+            if let Some((message, help)) = self.budget_exceeded() {
+                return Err(fail(Code::ExtendsLimit, message, Some(help.into())));
             }
             let body = match body {
                 Some(b) => b,
@@ -518,8 +609,13 @@ impl Loader<'_> {
                 ));
             }
             self.load_text(&target, &shown, body, Layer::Extends)?;
+            let id = self.ids[&target];
+            for i in self.closure[id].clone() {
+                acc.retain(|x| *x != i);
+                acc.push(i);
+            }
         }
-        Ok(())
+        Ok(acc)
     }
 }
 

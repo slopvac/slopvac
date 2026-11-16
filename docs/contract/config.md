@@ -79,7 +79,7 @@ Resolution is cached per directory, so a run over many files reads each config o
 
 ### 2.1 `extends`
 
-- Entries apply in list order, and a later entry wins. The extending file wins over all of them.
+- Entries apply in list order, and a later entry wins. The extending file wins over all of them. A file that two entries both reach applies at its last position, so the later entry still wins. A file loads once, keyed by its canonical path. A stack may hold at most 64 distinct files, 16 levels and 4 MiB in total, and a file at most 1000 `overrides` and `genres` blocks and 100 patterns per block: `config-extends-limit`.
 - An entry is a path relative to the extending file, or `<pack>:<name>` for a config that a pack ships.
 - An extended file is a v3 config. It must carry `schema_version = 3`. It may extend others.
 - A cycle is an error that names the chain: `config-extends-cycle`.

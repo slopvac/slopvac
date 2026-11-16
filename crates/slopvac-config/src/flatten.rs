@@ -21,9 +21,20 @@ pub struct Origin<'a> {
 /// field by field.
 #[must_use]
 pub fn flatten(node: &Node, origin: Origin<'_>, skip: &[&str]) -> Vec<Setting> {
-    let lines = LineIndex::new(origin.text);
+    flatten_with(node, origin, skip, &LineIndex::new(origin.text))
+}
+
+/// Like [`flatten`], with a line index built once for the file by the caller. A file with many
+/// blocks would otherwise index its text once per block.
+#[must_use]
+pub fn flatten_with(
+    node: &Node,
+    origin: Origin<'_>,
+    skip: &[&str],
+    lines: &LineIndex<'_>,
+) -> Vec<Setting> {
     let mut out = Vec::new();
-    walk(node, &mut Vec::new(), skip, origin, &lines, &mut out);
+    walk(node, &mut Vec::new(), skip, origin, lines, &mut out);
     out
 }
 
