@@ -1,4 +1,8 @@
 //! The result of linting one buffer, in the shape the LSP handlers use.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 use std::sync::Arc;

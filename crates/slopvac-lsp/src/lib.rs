@@ -63,6 +63,10 @@ pub fn run(_matches: &ArgMatches) -> Result<Exit, RunError> {
             // exits with the threads still blocked.
             let (joined_tx, joined) = crossbeam_channel::bounded(1);
             std::thread::spawn(move || {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver stops waiting after IO_WAIT, so a late result is dropped by design"
+                )]
                 let _ = joined_tx.send(io_threads.join());
             });
             match joined.recv_timeout(IO_WAIT) {

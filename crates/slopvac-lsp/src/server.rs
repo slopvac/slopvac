@@ -46,6 +46,9 @@ pub enum ServerError {
     /// The lint worker thread panicked.
     #[error("the lint worker panicked")]
     WorkerPanicked,
+    /// A server thread could not start.
+    #[error("cannot start a server thread: {0}")]
+    Spawn(#[source] std::io::Error),
 }
 
 /// How long a clean exit waits for queued diagnostics to reach the client.
@@ -136,9 +139,13 @@ impl Server {
                         break;
                     }
                 }
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver stops waiting after FLUSH_WAIT, so a late signal is dropped by design"
+                )]
                 let _ = flushed_tx.send(());
             })
-            .map_err(|_| ServerError::WorkerPanicked)?;
+            .map_err(ServerError::Spawn)?;
         let (jobs_tx, jobs_rx) = crossbeam_channel::unbounded::<String>();
         let worker = {
             let shared = Arc::clone(&shared);
@@ -146,17 +153,26 @@ impl Server {
             std::thread::Builder::new()
                 .name("slopvac-lsp-lint".to_owned())
                 .spawn(move || worker(&shared, &jobs_rx, &out))
-                .map_err(|_| ServerError::WorkerPanicked)?
+                .map_err(ServerError::Spawn)?
         };
         let result = main_loop(&shared, connection, &jobs_tx, &queue_tx);
         drop(jobs_tx);
-        worker.join().map_err(|_| ServerError::WorkerPanicked)?;
+        #[expect(
+            clippy::map_err_ignore,
+            reason = "a join error is a panic payload (Box<dyn Any>), not an Error; WorkerPanicked names it"
+        )]
+        let joined = worker.join().map_err(|_| ServerError::WorkerPanicked);
+        joined?;
         drop(queue_tx);
         if result.is_ok() {
             // Give the writer time to flush what is queued. A client that stopped reading
             // after `shutdown` must not keep the process alive, so the wait is bounded and
             // the writer is left to end with the process. After an error the transport may
             // be stuck, so nothing waits for it.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the wait is bounded by design; a timeout means the writer is stuck and the process exits anyway"
+            )]
             let _ = flushed.recv_timeout(FLUSH_WAIT);
         }
         result
@@ -241,6 +257,10 @@ impl Shared {
 
     /// The analysis of the current version of `uri`, linting if none is cached. The lock is
     /// not held while linting.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "the guard must outlive the early return that borrows from it"
+    )]
     fn analysis(&self, uri: &str) -> Option<(Arc<str>, Arc<Analysis>)> {
         let (generation, version, text) = {
             let docs = self.docs();
@@ -343,10 +363,15 @@ fn main_loop(
                     return Ok(Exit::AfterShutdown);
                 }
                 let response = handle_request(shared, req);
-                connection
+                #[expect(
+                    clippy::map_err_ignore,
+                    reason = "SendError only returns the unsent message; Closed names the cause"
+                )]
+                let sent = connection
                     .sender
                     .send(Message::Response(response))
-                    .map_err(|_| ServerError::Closed)?;
+                    .map_err(|_| ServerError::Closed);
+                sent?;
             }
             Message::Notification(note) if note.method == "exit" => {
                 return Ok(Exit::WithoutShutdown);
@@ -371,6 +396,10 @@ fn handle_notification(
             if let Ok(p) = serde_json::from_value::<DidOpenTextDocumentParams>(note.params) {
                 let uri = p.text_document.uri.as_str().to_owned();
                 shared.set(&uri, p.text_document.version, p.text_document.text);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the lint worker is gone only while the server shuts down, when queued jobs are moot"
+                )]
                 let _ = jobs.send(uri);
             }
         }
@@ -380,6 +409,10 @@ fn handle_notification(
                 if let Some(change) = p.content_changes.into_iter().next_back() {
                     let uri = p.text_document.uri.as_str().to_owned();
                     shared.set(&uri, p.text_document.version, change.text);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the lint worker is gone only while the server shuts down, when queued jobs are moot"
+                    )]
                     let _ = jobs.send(uri);
                 }
             }
@@ -390,14 +423,17 @@ fn handle_notification(
                 // Saving relints even when the text did not change, so a changed config or
                 // rule set shows up.
                 shared.invalidate(&uri);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the lint worker is gone only while the server shuts down, when queued jobs are moot"
+                )]
                 let _ = jobs.send(uri);
             }
         }
         "textDocument/didClose" => {
             if let Ok(p) = serde_json::from_value::<DidCloseTextDocumentParams>(note.params) {
                 let uri = p.text_document.uri.as_str().to_owned();
-                let mut docs = shared.docs();
-                docs.remove(&uri);
+                shared.docs().remove(&uri);
                 publish(out, &uri, None, Vec::new());
             }
         }
@@ -405,6 +441,10 @@ fn handle_notification(
     }
 }
 
+#[expect(
+    clippy::as_conversions,
+    reason = "ErrorCode is a fieldless #[repr(i32)] enum and lsp_server has no conversion"
+)]
 fn handle_request(shared: &Shared, req: Request) -> Response {
     let Request { id, method, params } = req;
     match method.as_str() {
@@ -428,6 +468,10 @@ fn ok<T: serde::Serialize>(id: RequestId, result: &T) -> Response {
     Response::new_ok(id, result)
 }
 
+#[expect(
+    clippy::as_conversions,
+    reason = "ErrorCode is a fieldless #[repr(i32)] enum and lsp_server has no conversion"
+)]
 fn invalid(id: RequestId, error: &serde_json::Error) -> Response {
     Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string())
 }

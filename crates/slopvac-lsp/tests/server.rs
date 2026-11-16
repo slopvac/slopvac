@@ -1,4 +1,5 @@
 //! Drives the server over an in-memory connection, as an editor would.
+#![cfg(test)]
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -113,7 +114,9 @@ impl Client {
                     return r.response_result.unwrap_or_else(|e| panic!("{e:?}"));
                 }
                 Message::Notification(n) => self.queued.push_back(n),
-                other => panic!("unexpected message {other:?}"),
+                other @ (Message::Request(_) | Message::Response(_)) => {
+                    panic!("unexpected message {other:?}")
+                }
             }
         }
     }
@@ -126,7 +129,9 @@ impl Client {
         }
         match self.conn.receiver.recv_timeout(WAIT).expect("diagnostics") {
             Message::Notification(n) if n.method == "textDocument/publishDiagnostics" => n.params,
-            other => panic!("unexpected message {other:?}"),
+            other @ (Message::Request(_) | Message::Response(_) | Message::Notification(_)) => {
+                panic!("unexpected message {other:?}")
+            }
         }
     }
 
@@ -159,12 +164,20 @@ impl Client {
         );
     }
 
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "test helper: a broken harness should fail loudly"
+    )]
     fn finish(mut self) -> Result<Exit, ServerError> {
         self.request("shutdown", &Value::Null);
         self.notify("exit", &Value::Null);
         self.server.take().unwrap().join().unwrap()
     }
 
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "test helper: a broken harness should fail loudly"
+    )]
     fn exit_without_shutdown(mut self) -> Result<Exit, ServerError> {
         self.notify("exit", &Value::Null);
         self.server.take().unwrap().join().unwrap()
@@ -479,6 +492,10 @@ struct Gated {
 }
 
 impl Linter for Gated {
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "test helper: a broken harness should fail loudly"
+    )]
     fn lint(&self, _path: &str, text: &str) -> Result<Linted, LintError> {
         if text.contains("gate") {
             self.started.send(()).unwrap();
@@ -550,6 +567,10 @@ fn a_lint_of_a_closed_document_does_not_leak_into_its_reopened_version() {
 struct Unchecked;
 
 impl Linter for Unchecked {
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "test helper: a broken harness should fail loudly"
+    )]
     fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
         Ok(Linted {
             findings: Vec::new(),
@@ -765,8 +786,16 @@ impl Stalled {
         let calls = AtomicUsize::new(0);
         let server = Server::new(Arc::new(Revised(Arc::new(AtomicUsize::new(0)))))
             .with_pre_publish_hook(Arc::new(move |_uri| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "test server: the wait only keeps the connection open, so its result carries nothing"
+                )]
                 let _ = reached_tx.send(());
                 if gate_second && calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "test server: the wait only keeps the connection open, so its result carries nothing"
+                    )]
                     let _ = release_rx.recv_timeout(WAIT);
                 }
             }));
@@ -775,6 +804,10 @@ impl Stalled {
             receiver: from_client,
         };
         std::thread::spawn(move || {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "test: a dropped receiver means the test already finished"
+            )]
             let _ = done_tx.send(server.serve(&connection));
         });
         Self {
@@ -894,7 +927,7 @@ fn a_client_that_stops_reading_does_not_stall_document_updates() {
             .expect("latest diagnostics")
         {
             Message::Notification(n) if n.params["version"] == 6 => break,
-            _ => {}
+            Message::Request(_) | Message::Response(_) | Message::Notification(_) => {}
         }
     }
     session.shutdown_and_read_the_response();
@@ -906,6 +939,10 @@ fn a_client_that_stops_reading_does_not_stall_document_updates() {
             break result;
         }
         assert!(std::time::Instant::now() < deadline, "serve did not finish");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "test: draining until a deadline; the value is not needed"
+        )]
         let _ = session.from_server.recv_timeout(Duration::from_millis(20));
     };
     assert_eq!(result.unwrap(), Exit::AfterShutdown);
