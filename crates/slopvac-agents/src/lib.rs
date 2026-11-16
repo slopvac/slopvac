@@ -7,6 +7,7 @@ pub mod claims;
 pub mod content;
 pub mod error;
 pub mod fsx;
+pub mod guidance;
 pub mod harness;
 pub mod managed;
 pub mod models;
