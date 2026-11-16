@@ -1,11 +1,11 @@
-//! The engine settings of one file: the profile's legacy style, the project config, and the
-//! command line, merged by the precedence in `docs/contract/profiles.md`, section 3.
+//! The engine settings of one file: the project config and the command line, merged by the
+//! precedence in `docs/contract/profiles.md`, section 3.
 //!
-//! The legacy profile style is the lowest style layer of the same stack as the config files
-//! and the listed built-in styles, so the resolver decides every level: a `rules` entry
-//! at `off` in the style holds against a category entry above it, and a `minimum_severity`
-//! raises an inherited category level. Rule and category keys in the config are first
-//! canonicalised against the catalogue, and an unknown name is a config error.
+//! The profile name sets the thresholds and the `severity_shift`. The 2.x category and rule
+//! levels of a profile are the styles `core:legacy-<profile>`, which apply only when a config
+//! lists them. Without one, rules report at the levels of their definitions. Config and
+//! styles share one layer stack, so the resolver decides every level, and an unknown rule or
+//! category name in the config is an error.
 //!
 //! STUB(slopvac-8l4.12.29): the genre is the default `reference` unless config sets it, no
 //! genre chain or pack style is loaded, and `terms.blocklists` files are not read. The swap
@@ -144,11 +144,12 @@ pub fn validate(config: &LoadedConfig, rules: &RuleSet) -> Result<(), CliError> 
         .flatten()
         .filter_map(Json::as_str)
     {
-        if !BuiltinSource::names().any(|known| known == name) {
+        if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
             return Err(CliError::new(
                 "unknown-style",
                 format!(
-                    "slopvac.toml: unknown style {name:?}; the styles that ship are: {}.",
+                    "slopvac.toml: unknown style {name:?}; the styles that ship are: {}, \
+                     core:legacy-strict, core:legacy-normal, core:legacy-relaxed.",
                     BuiltinSource::names().collect::<Vec<_>>().join(", ")
                 ),
             ));
@@ -163,22 +164,48 @@ pub fn validate(config: &LoadedConfig, rules: &RuleSet) -> Result<(), CliError> 
     Ok(())
 }
 
-/// The presets of one file: the legacy profile style first, then the built-in style
-/// presets that `styles` lists. So the profile is the lowest style layer and a listed style
-/// outranks it, and the project config outranks both.
-struct ProfilePresets {
-    legacy: Vec<Setting>,
+/// The name a config lists to ask for the 2.x levels of a profile: `core:legacy-normal`,
+/// `core:legacy-strict` or `core:legacy-relaxed`. `slopvac migrate --preserve-behavior`
+/// writes it. Nothing applies it by default (docs/contract/profiles.md, section 1).
+fn legacy_name(listed: &str) -> Option<&'static Style> {
+    let profile = listed.strip_prefix("core:legacy-")?;
+    LEGACY
+        .iter()
+        .any(|(name, _)| name.strip_prefix("legacy-") == Some(profile))
+        .then(|| legacy_style(profile))
+}
+
+/// The built-in style presets, plus the `core:legacy-<profile>` styles.
+struct ShippedStyles {
     styles: StylePresets<BuiltinSource>,
 }
 
-impl Presets for ProfilePresets {
+impl Presets for ShippedStyles {
     fn style(&self, name: &str) -> Option<Vec<Setting>> {
-        self.styles.style(name)
+        match legacy_name(name) {
+            Some(style) => Some(style.layer().to_vec()),
+            None => self.styles.style(name),
+        }
     }
 
     fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
-        let mut layers = vec![self.legacy.clone()];
-        layers.extend(self.styles.style_layers(listed));
+        // Runs of ordinary styles go to the style stack together, so a shared parent
+        // applies once. A legacy style is one layer at its place in the list.
+        let mut layers = Vec::new();
+        let mut run: Vec<String> = Vec::new();
+        for name in listed {
+            if let Some(style) = legacy_name(name) {
+                if !run.is_empty() {
+                    layers.extend(self.styles.style_layers(&std::mem::take(&mut run)));
+                }
+                layers.push(style.layer().to_vec());
+            } else {
+                run.push(name.clone());
+            }
+        }
+        if !run.is_empty() {
+            layers.extend(self.styles.style_layers(&run));
+        }
         layers
     }
 
@@ -191,32 +218,21 @@ impl Presets for ProfilePresets {
     }
 }
 
-/// The merged settings of the file at `rel`, with the legacy style of its profile underneath.
+/// The merged settings of the file at `rel`.
 #[must_use]
 pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
-    let styles = StylePresets(BuiltinSource);
-    let inputs = |presets: &'_ dyn Presets| {
-        config.resolve(
-            rel,
-            &Inputs {
-                presets,
-                front_matter: &[],
-                directives: &[],
-                cli: &[],
-                env: &[],
+    config.resolve(
+        rel,
+        &Inputs {
+            presets: &ShippedStyles {
+                styles: StylePresets(BuiltinSource),
             },
-        )
-    };
-    // The profile can come from an override block, so find it before choosing the style.
-    let profile = inputs(&styles)
-        .get(&["profile", "name"])
-        .and_then(Json::as_str)
-        .unwrap_or("normal")
-        .to_owned();
-    inputs(&ProfilePresets {
-        legacy: legacy_style(&profile).layer().to_vec(),
-        styles,
-    })
+            front_matter: &[],
+            directives: &[],
+            cli: &[],
+            env: &[],
+        },
+    )
 }
 
 fn level_of(name: &str) -> Option<Level> {
@@ -481,6 +497,8 @@ mod tests {
     }
 
     const HEAD: &str = "schema_version = 3\n";
+    /// The 2.x `normal` levels apply only when the config lists the legacy style.
+    const LEGACY: &str = "schema_version = 3\nstyles = [\"core:legacy-normal\"]\n";
     const COMMAND_PROMPT: &str = "core:prose-craft.command-prompt";
     const WARNING: Level = Level::On(Severity::Warning);
     const ERROR: Level = Level::On(Severity::Error);
@@ -489,10 +507,10 @@ mod tests {
     fn the_profile_turns_a_rule_off_and_a_category_entry_does_not_revive_it() {
         // The `normal` style sets `prose-craft.command-prompt` to off.
         assert_eq!(
-            level(&settings(HEAD).unwrap(), COMMAND_PROMPT),
+            level(&settings(LEGACY).unwrap(), COMMAND_PROMPT),
             Some(Level::Off)
         );
-        let config = format!("{HEAD}\n[categories]\nprose-craft = \"warning\"\n");
+        let config = format!("{LEGACY}\n[categories]\nprose-craft = \"warning\"\n");
         assert_eq!(
             level(&settings(&config).unwrap(), COMMAND_PROMPT),
             Some(Level::Off)
@@ -500,8 +518,16 @@ mod tests {
     }
 
     #[test]
+    fn without_the_legacy_style_a_rule_reports_at_its_definition_level() {
+        // `prose-craft.command-prompt` ships as a warning. Only the legacy style turns it off.
+        assert_eq!(level(&settings(HEAD).unwrap(), COMMAND_PROMPT), None);
+        let listed = settings(LEGACY).unwrap();
+        assert_eq!(level(&listed, COMMAND_PROMPT), Some(Level::Off));
+    }
+
+    #[test]
     fn a_rules_entry_revives_a_rule_the_profile_turns_off() {
-        let config = format!("{HEAD}\n[rules]\n\"{COMMAND_PROMPT}\" = \"warning\"\n");
+        let config = format!("{LEGACY}\n[rules]\n\"{COMMAND_PROMPT}\" = \"warning\"\n");
         assert_eq!(
             level(&settings(&config).unwrap(), COMMAND_PROMPT),
             Some(WARNING)
@@ -513,10 +539,10 @@ mod tests {
         // `ste-punctuation` is a suggestion category in the `normal` style, and the rule has
         // no entry of its own.
         let rule = "core:ste-punctuation.semicolon-used";
-        let base = settings(HEAD).unwrap();
+        let base = settings(LEGACY).unwrap();
         assert_eq!(level(&base, rule), Some(Level::On(Severity::Suggestion)));
         let config =
-            format!("{HEAD}\n[categories.ste-punctuation]\nminimum_severity = \"error\"\n");
+            format!("{LEGACY}\n[categories.ste-punctuation]\nminimum_severity = \"error\"\n");
         assert_eq!(level(&settings(&config).unwrap(), rule), Some(ERROR));
     }
 
@@ -560,7 +586,7 @@ mod tests {
     #[test]
     fn severity_shift_moves_inherited_levels_and_keeps_authored_levels_and_off() {
         let config = format!(
-            "{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = 1\n\n[rules]\n\
+            "{LEGACY}\n[profile]\nname = \"normal\"\nseverity_shift = 1\n\n[rules]\n\
              \"core:prose-inflation.slop-lexicon\" = \"warning\"\n"
         );
         let s = settings(&config).unwrap();
@@ -573,7 +599,7 @@ mod tests {
         );
         // Off stays off.
         assert_eq!(level(&s, COMMAND_PROMPT), Some(Level::Off));
-        let down = format!("{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n");
+        let down = format!("{LEGACY}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n");
         let s = settings(&down).unwrap();
         assert_eq!(
             level(&s, "core:prose-craft.hyphens"),
@@ -634,7 +660,7 @@ mod tests {
         // `ste-punctuation` is a suggestion category. A shift of -1 cannot go lower, and the
         // floor of warning raises the shifted level.
         let config = format!(
-            "{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
+            "{LEGACY}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
              [categories.ste-punctuation]\nminimum_severity = \"warning\"\n"
         );
         let s = settings(&config).unwrap();
@@ -644,7 +670,7 @@ mod tests {
         );
         // A category at error shifted down by one lands on warning, which the floor allows.
         let config = format!(
-            "{HEAD}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
+            "{LEGACY}\n[profile]\nname = \"normal\"\nseverity_shift = -1\n\n\
              [categories.orwell]\nminimum_severity = \"warning\"\n"
         );
         let s = settings(&config).unwrap();

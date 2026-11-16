@@ -678,3 +678,20 @@ fn a_local_file_named_like_a_renamed_external_identity_keeps_its_own_name_in_sar
     paths.dedup();
     assert_eq!(paths.len(), 3, "{paths:?}");
 }
+
+#[test]
+fn the_legacy_profile_style_applies_only_when_the_config_lists_it() {
+    // `prose-craft.command-prompt` ships as a warning; the 2.x normal levels turn it off.
+    let text = "# Title\n\nRun the setup:\n\n```sh\n$ make build\n```\n\nThen use `$ make test` to check.\n";
+    let listed_config = "schema_version = 3\nstyles = [\"core:legacy-normal\"]\n";
+    let (_a, listed) = project("a.md", text, Some(listed_config));
+    let (_b, default) = project("a.md", text, None);
+    let without = rule_ids(&json_report(&default, &[]));
+    assert_eq!(without, ["core:prose-craft.command-prompt"]);
+    let with = rule_ids(&json_report(&listed, &[]));
+    assert!(
+        !with.iter().any(|id| id.ends_with("command-prompt")),
+        "{with:?}"
+    );
+    slopvac().arg("lint").arg(&listed).assert().code(0);
+}
