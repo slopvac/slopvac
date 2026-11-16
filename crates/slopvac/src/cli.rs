@@ -67,7 +67,7 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 11] = [
+pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
     (
         "terms",
         "Check and list the project terms.",
