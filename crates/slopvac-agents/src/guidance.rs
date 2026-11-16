@@ -15,8 +15,10 @@ use crate::prime::Level;
 pub struct Guidance {
     /// `guidance.level`: detail of the rendered `prime` topics.
     pub level: Level,
-    /// `guidance.write`: `false` for `"off"`, which means no skill is installed.
+    /// `guidance.write` is not `"off"`.
     pub write: bool,
+    /// `guidance.review` is not `"off"`.
+    pub review: bool,
 }
 
 impl Default for Guidance {
@@ -24,6 +26,7 @@ impl Default for Guidance {
         Self {
             level: Level::Default,
             write: true,
+            review: true,
         }
     }
 }
@@ -46,6 +49,13 @@ impl Guidance {
         }
     }
 
+    /// Whether setup installs the skill: any guidance on. With write and review both off it
+    /// installs none, as 2.x does.
+    #[must_use]
+    pub fn skill_wanted(&self) -> bool {
+        self.write || self.review
+    }
+
     fn from_config(config: &LoadedConfig) -> Self {
         let text = |key: &str| {
             config
@@ -59,6 +69,7 @@ impl Guidance {
                 _ => Level::Default,
             },
             write: text("write").as_deref() != Some("off"),
+            review: text("review").as_deref() != Some("off"),
         }
     }
 }

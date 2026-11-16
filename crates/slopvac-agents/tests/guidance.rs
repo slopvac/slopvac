@@ -92,26 +92,56 @@ fn level_flag_skips_loading_the_config() {
     assert!(prime_out(dir.path(), &["--level", "full"]).is_ok());
 }
 
-fn run_setup(root: &Path) {
-    let m = setup::command()
-        .try_get_matches_from(["setup", "claude", "--root", root.to_str().unwrap()])
-        .unwrap();
-    setup::run(&m).unwrap();
+fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError> {
+    let root = root.to_str().unwrap();
+    let words = ["setup", "claude", "--root", root]
+        .into_iter()
+        .chain(extra.iter().copied());
+    setup::run(&setup::command().try_get_matches_from(words).unwrap())
+}
+
+fn skill_installed(root: &Path) -> bool {
+    root.join(".claude/skills").exists()
 }
 
 #[test]
-fn write_off_installs_no_skill() {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), "slopvac.toml", "write = \"off\"");
-    run_setup(dir.path());
-    assert!(dir.path().join("CLAUDE.md").exists());
-    assert!(!dir.path().join(".claude/skills").exists());
+fn skill_follows_write_and_review() {
+    for (write, review, wanted) in [
+        ("off", "off", false),
+        ("off", "auto", true),
+        ("auto", "off", true),
+        ("auto", "auto", true),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write_config(
+            dir.path(),
+            "slopvac.toml",
+            &format!("write = \"{write}\"\nreview = \"{review}\""),
+        );
+        run_setup(dir.path(), &[]).unwrap();
+        assert!(dir.path().join("CLAUDE.md").exists());
+        assert_eq!(skill_installed(dir.path()), wanted, "{write}/{review}");
+    }
 }
 
 #[test]
-fn write_auto_installs_the_skill() {
+fn no_skill_flag_wins_over_enabled_guidance() {
     let dir = tempfile::tempdir().unwrap();
     write_config(dir.path(), "slopvac.toml", "write = \"auto\"");
-    run_setup(dir.path());
-    assert!(dir.path().join(".claude/skills").exists());
+    run_setup(dir.path(), &["--no-skill"]).unwrap();
+    assert!(!skill_installed(dir.path()));
+}
+
+#[test]
+fn list_and_remove_work_with_a_broken_config() {
+    let dir = tempfile::tempdir().unwrap();
+    run_setup(dir.path(), &[]).unwrap();
+    fs::write(dir.path().join("slopvac.toml"), "mode = \"2.x\"\n").unwrap();
+    assert!(run_setup(dir.path(), &["--check"]).is_err());
+    let list = setup::command()
+        .try_get_matches_from(["setup", "--list", "--root", dir.path().to_str().unwrap()])
+        .unwrap();
+    assert!(setup::run(&list).is_ok());
+    run_setup(dir.path(), &["--remove"]).unwrap();
+    assert!(!skill_installed(dir.path()));
 }
