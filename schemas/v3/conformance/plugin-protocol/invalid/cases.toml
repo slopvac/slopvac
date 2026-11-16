@@ -89,3 +89,6 @@
 "BinaryExtractResult--part-trailing-lf.json" = "/results/0/segments/0/part"
 "PluginDeclaration--binary-extractor-format-trailing-lf.json" = "/hooks/0/formats/0"
 "binary-extract-path-trailing-dotdot.json" = "/params/documents/0/path"
+"PluginDeclaration--binary-extractor-unknown-format.json" = "/hooks/0/formats/1"
+"binary-extract-unknown-format.json" = "/params/documents/0/format"
+"BinaryExtractResult--part-too-long.json" = "/results/0/segments/0/part"

@@ -587,9 +587,29 @@
       ]
     },
     "BinaryFormat": {
-      "description": "Format id of a binary document, kebab-case. The 3.0 registry is in docs/contract/plugin-protocol.md section 5.5.1. The set is extensible: a reader ignores a format id it does not know, so the schema fixes only the form.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
+      "description": "Format id of a binary document, from the closed 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. A hook may declare only these ids; the host refuses a manifest that declares any other id when it validates the manifest. Plugin-defined formats are not part of 3.0.",
+      "enum": [
+        "docx",
+        "docm",
+        "dotx",
+        "dotm",
+        "pptx",
+        "pptm",
+        "ppsx",
+        "ppsm",
+        "potx",
+        "potm",
+        "xlsx",
+        "xlsm",
+        "xltx",
+        "xltm",
+        "odt",
+        "odp",
+        "ods",
+        "drawio-png",
+        "excalidraw-png",
+        "plantuml-png"
+      ]
     },
     "BinaryDocument": {
       "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows Document.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
@@ -647,7 +667,7 @@
       ]
     },
     "BinarySegment": {
-      "description": "A region of prose that a binary extractor hands to the rules. part names the container member, locator the place inside it; together they identify the segment and are unique within one document result. Both hold 1 to 1024 characters with no control or bidirectional-control characters. span is physical provenance only. text is the extracted UTF-8 prose that rules match; findings use offsets into it. context is a context tag. role is the structural role, from an extensible set (plugin-protocol.md section 5.5.3).",
+      "description": "A region of prose that a binary extractor hands to the rules. part names the container member, locator the place inside it; together they identify the segment and are unique within one document result. Both hold 1 to 1024 characters with no control or bidirectional-control characters. The 1024-character bound is a fixed host cap: the host reports a longer value as binary-budget, and the pattern bound is a backstop for other readers. span is physical provenance only. text is the extracted UTF-8 prose that rules match; findings use offsets into it. context is a context tag. role is the structural role, from an extensible set (plugin-protocol.md section 5.5.3).",
       "type": "object",
       "properties": {
         "part": {

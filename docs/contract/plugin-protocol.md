@@ -160,23 +160,26 @@ A segment from an extractor keeps the span of the source it came from. When the 
 
 ### 5.5 Binary extraction
 
-The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
+The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). A validator failure is `plugin-output-invalid` for a plugin and `builtin-output-invalid` for a first-party extractor (section 10). Below, `plugin-output-invalid` covers both. Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
 
 #### 5.5.1 Formats and eligibility
 
-A format is a kebab-case id. The 3.0 registry holds these ids:
+A format is an id from a closed list. The 3.0 list holds these ids:
 
-- Office Open XML: `docx`, `docm`, `dotx`, `dotm`, `pptx`, `pptm`, `potx`, `potm`, `xlsx`, `xlsm`, `xltx` and `xltm`. Macro and template variants are read as documents, and the extractor never runs a macro.
+- Office Open XML: `docx`, `docm`, `dotx`, `dotm`, `pptx`, `pptm`, `ppsx`, `ppsm`, `potx`, `potm`, `xlsx`, `xlsm`, `xltx` and `xltm`. Macro, slide-show and template variants are read as documents, and the extractor never runs a macro. The main content type in `[Content_Types].xml` tells the variants apart.
 - OpenDocument: `odt`, `odp` and `ods`.
 - PNG with an embedded diagram source: `drawio-png`, `excalidraw-png` and `plantuml-png`.
 
+Plugin-defined formats are not part of 3.0. A hook may declare only ids from this list. The host validates the manifest before spawn and refuses a manifest that declares any other id. Opening the list is a 3.x feature with its own contract.
+
 The host sends a file to a binary extractor only under these rules:
 
-- A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3). A reader ignores a format id it does not know, as it ignores an unknown hook kind.
+- A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3).
 - The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
 - When the signature and the name disagree, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
 - When no extractor reads the detected format, the host reports `binary-unsupported`, and the run exits 2.
 - The host sends a document only to a hook that lists its format, and to one binary extractor only. A plugin that gets a format it did not list answers that document with `binary-unsupported`.
+- No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. `slopvac-8l4.2` fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
 #### 5.5.2 Request
@@ -208,7 +211,7 @@ The span is a [`BinarySpan`](../../schemas/v3/plugin-protocol.schema.json#/$defs
 Identity and order follow these rules:
 
 - The pair of `part` and `locator` identifies a segment. It is unique within one document result, and a duplicate is `plugin-output-invalid`.
-- `part` and `locator` each hold 1 to 1024 characters. Neither may hold a control character (U+0000 to U+001F, U+007F to U+009F) or a bidirectional control (U+202A to U+202E, U+2066 to U+2069). The host still escapes both before it shows them.
+- `part` and `locator` each hold 1 to 1024 characters (section 5.5.5). Neither may hold a control character (U+0000 to U+001F, U+007F to U+009F) or a bidirectional control (U+202A to U+202E, U+2066 to U+2069). The host still escapes both before it shows them.
 - A locator comes only from the structure of the file: ids stored in it, cell references and ordinal positions. A counter across documents, a clock or a random value is not an input, so the same bytes give the same locators.
 - Segments arrive in the reading order of the format, which the format's extractor bead defines. The host keeps that order. The same bytes give the same order.
 
@@ -222,7 +225,7 @@ Each document ends in exactly one outcome:
 |---|---|---|---|
 | `extracted` | The file holds prose. | `outcome` `extracted` with one or more segments. | Complete. |
 | `empty` | A valid file of the format with no prose, such as a docx file with no text. | `outcome` `empty`, no segments. | Complete with no findings. |
-| `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | Incomplete. The host reports `binary-no-source`, and the run exits 2. |
+| `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | Incomplete. The host reports the coded notice `binary-no-source`, which names the document and its locator, so the user can exclude the file. The run exits 2, never 0. |
 | `unsupported` | A file of the format that the extractor cannot read: encrypted, protected by a password, or a variant it does not handle. | Error -32008 `binary-unsupported`. | Exit 2. |
 | `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `binary-malformed`. | Exit 2. |
 | `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `binary-budget`. | Exit 2. |
@@ -233,14 +236,16 @@ Each document ends in exactly one outcome:
 
 #### 5.5.5 Limits
 
-These limits hold for every binary extractor:
+These limits hold for every binary extractor. They are fixed host constants, and `initialize` does not negotiate them. A later raise is additive. A cut breaks compatibility, and policies.md section 3.6 applies.
 
 | Limit | Value | On breach |
 |---|---|---|
-| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `binary-budget` from the extractor. Output over the limit is `plugin-output-invalid`. |
-| Segments | 1,000,000 per document | Same. |
-| `part` and `locator` | 1024 characters each | `plugin-output-invalid`. |
+| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `binary-budget`, cap `text-bytes`. |
+| Segments | 1,000,000 per document | `binary-budget`, cap `segments`. |
+| `part` and `locator` | 1024 characters each | `binary-budget`, cap `part-length` or `locator-length`. |
 | Time | The 30 s hook timeout of section 6.3 | `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative. |
+
+An extractor that reaches a cap reports `binary-budget` itself. When its output still exceeds a cap, the validator fails that document with `binary-budget`. In both cases `data.cap` names the cap. The schema pattern also bounds `part` and `locator`, but the host checks the caps first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each cap.
 
 Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). Every host read of a binary file has a bound. The wire adapter reads under section 5.5.6, and the native adapter reads at most its input limit plus one byte. The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
 
@@ -319,7 +324,7 @@ Only recipes return paths. Each is relative to the project root with the same re
 - A reader ignores a field it does not know, in every message and at every depth. It may log the field at debug level.
 - A key with the prefix `x-` is ignored everywhere. Its meaning stays undefined. A plugin or host may use one for private data.
 - The schema leaves `additionalProperties` open on every protocol message. This differs from user-written files, where an unknown key is an error (policies.md section 3.3).
-- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names, binary format ids and segment roles (section 5.5). Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
+- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names and segment roles (section 5.5). Binary format ids are a closed list (section 5.5.1). Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
 - A required field that is missing or has the wrong type makes the message invalid, however lenient the rest of the rules are.
 - Additive changes within version 1 are: a new optional field, a new hook kind, a new feature, a new optional notification. Everything else needs version 2.
 
@@ -363,6 +368,8 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
 | `binary-no-source` | A binary extractor found no embedded source in a valid container. |
 | `binary-input-changed` | A binary file grew between the preflight and the read (section 5.5.6). |
+| `binary-format-ambiguous` | Two or more enabled hooks claim a format, and the config maps it to none of them (section 5.5.1). |
+| `builtin-output-invalid` | A first-party extractor's output fails the shared validator. The cause is a slopvac bug, and the message points to the issue tracker. Severity and exit match `plugin-output-invalid`. |
 
 A first-party extractor reports `binary-unsupported`, `binary-malformed` and `binary-budget` with the same strings. The host also raises `binary-unsupported` when no extractor reads a format.
 
@@ -458,6 +465,9 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
 | H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P22. |
 | H42 | Concurrent binary requests whose reservations exceed the in-flight budget, and a file that grows after the preflight. | The later requests wait, and peak memory for request buffers stays under the budget. The grown file gets `binary-input-changed`, and the run exits 2. |
+| H43 | Two enabled hooks list one format: two plugins, and a plugin with a built-in extractor. Run with and without a config mapping. | Without a mapping, the host reports `binary-format-ambiguous`, names both hooks and the config key, gives no extractor the file, and exits 2. With a mapping, only the mapped hook gets the file. |
+| H44 | A manifest whose `binary-extractor` hook lists a format outside the 3.0 list. | The manifest is refused before spawn. |
+| H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-cap cases fail with `binary-budget`, and `data.cap` names the cap. At-cap cases pass. The first-party failure is `builtin-output-invalid`. |
 
 ### 12.2 Plugin
 
@@ -501,4 +511,4 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
 | Binary extraction contract (section 5.5) | `slopvac-8l4.2.27` |
 | Shared binary extraction types and validator | `slopvac-8l4.20.1` |
-| Wire adapter for `binary-extractor/extract` | `slopvac-8l4.20.3` |
+| Wire adapter for `binary-extractor/extract`, and the Python SDK `binary-extractor` decorator | `slopvac-8l4.20.3` |

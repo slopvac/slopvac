@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "binary-extractor/extract",
+  "params": {
+    "extractor": "office",
+    "documents": [
+      {
+        "id": "d1",
+        "format": "pages",
+        "byte_length": 7,
+        "bytes": "UEsDBBQABg=="
+      }
+    ]
+  }
+}

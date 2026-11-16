@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "binary-extractor/extract",
+  "params": {
+    "extractor": "office",
+    "documents": [
+      {
+        "id": "d1",
+        "format": "ppsx",
+        "byte_length": 7,
+        "bytes": "UEsDBBQABg==",
+        "media_type": "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
+      }
+    ]
+  }
+}
