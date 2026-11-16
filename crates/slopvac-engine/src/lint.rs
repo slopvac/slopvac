@@ -1251,7 +1251,10 @@ impl Run<'_> {
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect()
         });
-        let matched = self.input.source[span.start()..span.end()].to_owned();
+        let matched = hit
+            .matched
+            .clone()
+            .unwrap_or_else(|| self.input.source[span.start()..span.end()].to_owned());
         if let Some(rule) = rule
             && self.guarded_with(
                 Some(slopvac_diagrams::CONTEXT),
