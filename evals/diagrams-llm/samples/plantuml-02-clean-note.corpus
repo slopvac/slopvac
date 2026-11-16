@@ -1,0 +1,15 @@
+# Key rotation
+
+The server rotates its signing key on a schedule.
+
+```plantuml
+@startuml
+participant Client
+participant Server
+Client -> Server : token request
+note right of Server : nightly rotation
+Server --> Client : signed token
+@enduml
+```
+
+Clients refetch the key set when verification fails.

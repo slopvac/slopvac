@@ -1,0 +1,11 @@
+# Config
+
+The retry settings come from one file.
+
+```mermaid
+flowchart LR
+  A[Read retry_policy.max_attempts from the config file] --> B[Retry handler]
+  C[call src/api/handler.rs for the retry logic path] --> B
+```
+
+A bad value stops the service at startup.

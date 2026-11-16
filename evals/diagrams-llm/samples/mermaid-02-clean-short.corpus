@@ -1,0 +1,11 @@
+# Request path
+
+Requests carry a bearer token that the gateway checks before routing.
+
+```mermaid
+flowchart LR
+  Client --> Gateway[API gateway] --> Auth[Auth service]
+  Gateway --> Orders[Order service] --> DB[(Orders database)]
+```
+
+Tokens expire after 15 minutes, so clients must refresh them. The orders database is the only component with write access to order state.

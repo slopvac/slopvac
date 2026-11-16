@@ -1,0 +1,505 @@
+{
+ "schema": 1,
+ "name": "diagrams-llm",
+ "description": "LLM-written diagrams with their surrounding prose, labelled by hand per diagram rule. Measures recall and precision of the diagram pack; the human diagrams in corpus/diagrams only bound false positives.",
+ "origin": "authored-llm",
+ "license": "Apache-2.0",
+ "provenance": {
+  "author": {
+   "agent": "opencode coder subagent for bead slopvac-8l4.10.9",
+   "model": "Claude Sonnet 5.5 (Global)",
+   "provider": "amazon-bedrock",
+   "model_id": "global.anthropic.claude-sonnet-5-5"
+  },
+  "date": "2026-11-16",
+  "method": "Written in context by the agent in one session. No model API was called to sample the diagrams, and no sample was drawn from a public source.",
+  "instruction": "Write LLM-style diagrams (Mermaid and PlantUML fenced in Markdown with the paragraphs before and after, and draw.io files), as an assistant writes them in documentation and answers: positives that carry each target pattern of diagram.label-run-on, label-title-plus-gloss, note-long, meta-reference and prose-restates-labels, and clean negatives, including near misses and boundary cases (six words against seven, a five-word note against six). Include title-cased glosses after a line break and after a colon (PR 452 trade-off). Label each sample by hand from the rule definitions in crates/slopvac-diagrams/pack/diagram.json, not from rule output.",
+  "limitations": [
+   "The author read the rule definitions and thresholds, so the positives are close to the rule wording and recall is likely higher than on unprompted model output.",
+   "One author and one annotator: labels carry no inter-annotator agreement.",
+   "Samples are short and synthetic. draw.io files have no prose, so the prose rules have no draw.io positives.",
+   "The set is small (see labels.json); every rate carries a wide Wilson interval."
+  ]
+ },
+ "labels": "labels.json",
+ "label_semantics": "Each label names a rule and a text that the rule's finding should contain. An empty text means one finding of the rule anywhere in the document. A sample with no labels is a clean negative.",
+ "samples": [
+  {
+   "id": "mermaid-01-runon-meta",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "9ee229689323656ceaa58a04e746371ccf1e2dcea209070599309e18b2dbcb2a",
+   "bytes": 286,
+   "committed": true,
+   "path": "samples/mermaid-01-runon-meta.corpus"
+  },
+  {
+   "id": "mermaid-02-clean-short",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "95911d06d3194f97c446d985b87c518af8f774ced1ed65c1521783f0947f0755",
+   "bytes": 373,
+   "committed": true,
+   "path": "samples/mermaid-02-clean-short.corpus"
+  },
+  {
+   "id": "mermaid-03-clean-reasons",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "61a82cc36814e86b82613d2d20f50fb0466e2acbd5547113f1afc93af4155ee0",
+   "bytes": 465,
+   "committed": true,
+   "path": "samples/mermaid-03-clean-reasons.corpus"
+  },
+  {
+   "id": "mermaid-04-restates",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "e9dc9ab9a2db78f49a5561be18ab0baaa49835f60c2b70ad316e73b32c1818e0",
+   "bytes": 409,
+   "committed": true,
+   "path": "samples/mermaid-04-restates.corpus"
+  },
+  {
+   "id": "mermaid-05-note-long",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "b86e4f79ad67b04341bdbd690aea35f8fcfd6a96a3ef1dd9af22db1bd6ae52c0",
+   "bytes": 322,
+   "committed": true,
+   "path": "samples/mermaid-05-note-long.corpus"
+  },
+  {
+   "id": "mermaid-06-clean-seq",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "547dd1c520de9e603816b8b0123e026cf5a281c46907d15712d54e13f4068a92",
+   "bytes": 339,
+   "committed": true,
+   "path": "samples/mermaid-06-clean-seq.corpus"
+  },
+  {
+   "id": "mermaid-07-gloss",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "1a5cb8e3c2484d720c315916b0f0195301bdbcc035d47a75e395e25dce9e372f",
+   "bytes": 264,
+   "committed": true,
+   "path": "samples/mermaid-07-gloss.corpus"
+  },
+  {
+   "id": "mermaid-08-gloss-titlecase-colon",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "f62fb4696625c2bc7b1b3900f239fd75b5ba7a4f4b925ea9116b6a6c32bd2d2f",
+   "bytes": 191,
+   "committed": true,
+   "path": "samples/mermaid-08-gloss-titlecase-colon.corpus"
+  },
+  {
+   "id": "mermaid-09-gloss-titlecase-br",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "bfac50f0b466c54518e388485bc703aa55804901696e165e5ef68fcf1360785f",
+   "bytes": 271,
+   "committed": true,
+   "path": "samples/mermaid-09-gloss-titlecase-br.corpus"
+  },
+  {
+   "id": "mermaid-10-gloss-br-lowercase",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "ea7837df2a35455beb9197b6fea6895314522b03cf632feec9c09129cdafe4f2",
+   "bytes": 253,
+   "committed": true,
+   "path": "samples/mermaid-10-gloss-br-lowercase.corpus"
+  },
+  {
+   "id": "mermaid-11-clean-names-br",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "80152019697c4e0cedf4daa1397698ab3add3e9e0beaa0a4f889d3e653c04b2f",
+   "bytes": 208,
+   "committed": true,
+   "path": "samples/mermaid-11-clean-names-br.corpus"
+  },
+  {
+   "id": "mermaid-12-edge-runon-meta",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "621d43aac84376b3b36e3313fc6865009c4b5ef987c5f81f1e31d332726f91ac",
+   "bytes": 268,
+   "committed": true,
+   "path": "samples/mermaid-12-edge-runon-meta.corpus"
+  },
+  {
+   "id": "mermaid-13-meta-figure",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "ee736e1957072517c8f974f1008aae48d5cf1f2ab43b5d8749cab8dea76a380c",
+   "bytes": 216,
+   "committed": true,
+   "path": "samples/mermaid-13-meta-figure.corpus"
+  },
+  {
+   "id": "mermaid-14-meta-after",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "72ec8488d29296979a18e8bf9a7095edcee337c7699f89df839b30267739b151",
+   "bytes": 220,
+   "committed": true,
+   "path": "samples/mermaid-14-meta-after.corpus"
+  },
+  {
+   "id": "mermaid-15-clean-nearmiss-meta",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "3ad2ca3636b8fcd93f6a305ffe62e6f38109a253710b0d16bede20f85754eb39",
+   "bytes": 247,
+   "committed": true,
+   "path": "samples/mermaid-15-clean-nearmiss-meta.corpus"
+  },
+  {
+   "id": "mermaid-16-state-note-long",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "f44f107ae772e2e6d334a5812ded9da979556b8a655491aa5f56bb733743f562",
+   "bytes": 292,
+   "committed": true,
+   "path": "samples/mermaid-16-state-note-long.corpus"
+  },
+  {
+   "id": "mermaid-17-clean-class",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "e623880daf24bdc17b62c85faca195ab62ce90c053c4470dc91e482aed65e4a5",
+   "bytes": 229,
+   "committed": true,
+   "path": "samples/mermaid-17-clean-class.corpus"
+  },
+  {
+   "id": "mermaid-18-clean-er",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "9eacabb49b1bcf9a07fb0e35d1a3cfa5b5ca4749bdd5a0ae546a19a4a24c17d9",
+   "bytes": 182,
+   "committed": true,
+   "path": "samples/mermaid-18-clean-er.corpus"
+  },
+  {
+   "id": "mermaid-19-group-runon",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "b6f09f866fdab2b58bc3cde005ddbd56c142f271a370a13a2fbd6482dd5cb1ea",
+   "bytes": 241,
+   "committed": true,
+   "path": "samples/mermaid-19-group-runon.corpus"
+  },
+  {
+   "id": "mermaid-20-kitchen-sink",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "b586025c6d126301805cfcdf56d59f2402b493078c5481f056af2b0fa00a1c55",
+   "bytes": 445,
+   "committed": true,
+   "path": "samples/mermaid-20-kitchen-sink.corpus"
+  },
+  {
+   "id": "mermaid-21-restates-pipeline",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "3569ab8e5f6f1fba783ec87f779a096c0d5601ffefe7b8e08b210e5bd9f1bdcf",
+   "bytes": 374,
+   "committed": true,
+   "path": "samples/mermaid-21-restates-pipeline.corpus"
+  },
+  {
+   "id": "mermaid-22-clean-code-token",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "be10806f615918a626d7c47964cf36deab6ae1c18bc5b482e2e9e889806acf39",
+   "bytes": 259,
+   "committed": true,
+   "path": "samples/mermaid-22-clean-code-token.corpus"
+  },
+  {
+   "id": "mermaid-23-clean-six-words",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "44bac6ef9a9559ad7df0a42548cb7865097a39efc98365811881640c18b32573",
+   "bytes": 164,
+   "committed": true,
+   "path": "samples/mermaid-23-clean-six-words.corpus"
+  },
+  {
+   "id": "mermaid-24-runon-seven-words",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "2ebf84eb6dba1e2b933d3b64685dc23bc66ef1b29b8367b488fe09d127900c8e",
+   "bytes": 168,
+   "committed": true,
+   "path": "samples/mermaid-24-runon-seven-words.corpus"
+  },
+  {
+   "id": "mermaid-25-clean-note-five",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "d22d107c448b735833f0213f0a1ed83a6993475679831d94f8b47ffb752237ca",
+   "bytes": 191,
+   "committed": true,
+   "path": "samples/mermaid-25-clean-note-five.corpus"
+  },
+  {
+   "id": "mermaid-26-note-six",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "7cd3d1352209e52b69969707e1fc11add14d67cfff65d9ed36e7c75b35d3a4bf",
+   "bytes": 197,
+   "committed": true,
+   "path": "samples/mermaid-26-note-six.corpus"
+  },
+  {
+   "id": "mermaid-27-clean-hard-restates",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "db617c91c6b49f35c2b7c11482e02137ef8ca9b98c7da89d2e30c448b338d699",
+   "bytes": 422,
+   "committed": true,
+   "path": "samples/mermaid-27-clean-hard-restates.corpus"
+  },
+  {
+   "id": "mermaid-28-clean-two-labels",
+   "format": "markdown",
+   "diagram": "mermaid",
+   "sha256": "8e21543bfa05530198f93c7d6fd1a4bf7c568a5733fc0207a67da0431009ac4d",
+   "bytes": 314,
+   "committed": true,
+   "path": "samples/mermaid-28-clean-two-labels.corpus"
+  },
+  {
+   "id": "plantuml-01-note-long",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "a066c1b2778006b6554059a6c4f21a68614eefbe0337c77f81cd7e9e43578a74",
+   "bytes": 318,
+   "committed": true,
+   "path": "samples/plantuml-01-note-long.corpus"
+  },
+  {
+   "id": "plantuml-02-clean-note",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "02f35042a623ce39a15c794f75f9db0560e9a27a5adfbb691a74d7c1aa6b179a",
+   "bytes": 299,
+   "committed": true,
+   "path": "samples/plantuml-02-clean-note.corpus"
+  },
+  {
+   "id": "plantuml-03-runon",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "490e6ee313575a60b5068dd1105cbf9069f722ceb187604db8fc824269c63907",
+   "bytes": 246,
+   "committed": true,
+   "path": "samples/plantuml-03-runon.corpus"
+  },
+  {
+   "id": "plantuml-04-clean-activity",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "bc15b2cfec050594e0f73d413863a13ec9e0c3f5cc3302c940d2737fa418ff2b",
+   "bytes": 159,
+   "committed": true,
+   "path": "samples/plantuml-04-clean-activity.corpus"
+  },
+  {
+   "id": "plantuml-05-gloss",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "967a89140f21800efb284ab96dcd36eaa9c2349b7f3346eb6b0203c42e9749f1",
+   "bytes": 205,
+   "committed": true,
+   "path": "samples/plantuml-05-gloss.corpus"
+  },
+  {
+   "id": "plantuml-06-meta-restates",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "bcb29207938b7362e52352f5554e5872f0ebe531a28118902d8c1cf9f0d698e0",
+   "bytes": 459,
+   "committed": true,
+   "path": "samples/plantuml-06-meta-restates.corpus"
+  },
+  {
+   "id": "plantuml-07-clean-note-block",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "27eaca724f0e8fbcc7363d5457d2f2abc69085aca1375f46d16bc4060475e6ff",
+   "bytes": 189,
+   "committed": true,
+   "path": "samples/plantuml-07-clean-note-block.corpus"
+  },
+  {
+   "id": "plantuml-08-note-block-long",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "c661aa0c0fbf226014826c8cb04222f86039e5cb29ad51f2e263eb2e677eef2b",
+   "bytes": 240,
+   "committed": true,
+   "path": "samples/plantuml-08-note-block-long.corpus"
+  },
+  {
+   "id": "plantuml-09-gloss-titlecase",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "ecef8ab501a67e6a8d6563cd837e9f1b2b5df4e8f37b7ee8190c09c6784a9848",
+   "bytes": 204,
+   "committed": true,
+   "path": "samples/plantuml-09-gloss-titlecase.corpus"
+  },
+  {
+   "id": "plantuml-10-gloss-titlecase-newline",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "84dd00a2bd2353e079876efb1619498e94df970bed8941f867b45e2c2c9b659f",
+   "bytes": 204,
+   "committed": true,
+   "path": "samples/plantuml-10-gloss-titlecase-newline.corpus"
+  },
+  {
+   "id": "plantuml-11-clean-seq-messages",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "dadf9ea21896487f26d2580a093e50fdae4316863eac1e76c5ced49c010992d9",
+   "bytes": 277,
+   "committed": true,
+   "path": "samples/plantuml-11-clean-seq-messages.corpus"
+  },
+  {
+   "id": "plantuml-12-edge-runon",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "0a989038ddc91a44d576b465406d7e418edc7cfa2c4027be3bd2a840d65becf9",
+   "bytes": 227,
+   "committed": true,
+   "path": "samples/plantuml-12-edge-runon.corpus"
+  },
+  {
+   "id": "plantuml-13-clean-hard-restates",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "87a91ecc98d664b080deaa993e865004df8ec1b2f46e14d42c9b331a906f2d35",
+   "bytes": 505,
+   "committed": true,
+   "path": "samples/plantuml-13-clean-hard-restates.corpus"
+  },
+  {
+   "id": "plantuml-14-clean-usecase",
+   "format": "markdown",
+   "diagram": "plantuml",
+   "sha256": "05a277969a861ff7296f686f2aa700bd15918a8e2570c94870b0dd6ab5c8bea7",
+   "bytes": 214,
+   "committed": true,
+   "path": "samples/plantuml-14-clean-usecase.corpus"
+  },
+  {
+   "id": "drawio-01-runon",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "fc712e2e39ce715cf4adbb309ba1f6ac58017532f2a11c18842d0eed34c09c7d",
+   "bytes": 775,
+   "committed": true,
+   "path": "samples/drawio-01-runon.corpus"
+  },
+  {
+   "id": "drawio-02-clean",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "ad831c5cd057f9c9822aedef6a301d68910ec72965d15c57a58a4c27af51fd88",
+   "bytes": 728,
+   "committed": true,
+   "path": "samples/drawio-02-clean.corpus"
+  },
+  {
+   "id": "drawio-03-gloss-lowercase",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "e6ae6dff9c6247fee3464104dc976da2a3f13893f510b43b9002491c08c31637",
+   "bytes": 587,
+   "committed": true,
+   "path": "samples/drawio-03-gloss-lowercase.corpus"
+  },
+  {
+   "id": "drawio-04-gloss-titlecase-br",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "c39d6917c49e1b0685f988ca65391ef8daaa0e92ee619ec3de75f217772d3988",
+   "bytes": 586,
+   "committed": true,
+   "path": "samples/drawio-04-gloss-titlecase-br.corpus"
+  },
+  {
+   "id": "drawio-05-clean-names-br",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "bfcf87cacaab18d58d8d9d6c0346963a7d165aeec0a99ba6905f2c4de40fb7ca",
+   "bytes": 612,
+   "committed": true,
+   "path": "samples/drawio-05-clean-names-br.corpus"
+  },
+  {
+   "id": "drawio-06-edge-runon",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "e352147a2ea9b09f06422db962585ad0ee4ddf6204ca0425a5d799273faebfb4",
+   "bytes": 781,
+   "committed": true,
+   "path": "samples/drawio-06-edge-runon.corpus"
+  },
+  {
+   "id": "drawio-07-clean-six-words",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "3d8a4c55c97c7a0c39c2b8347074564f20eef737cf547e82d2bc02f307d45bd9",
+   "bytes": 576,
+   "committed": true,
+   "path": "samples/drawio-07-clean-six-words.corpus"
+  },
+  {
+   "id": "drawio-08-mixed",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "aa2e6c06e1a3fbf8c6a0029731b3f93e33e858b71d0664260f93fe91dca1f259",
+   "bytes": 806,
+   "committed": true,
+   "path": "samples/drawio-08-mixed.corpus"
+  },
+  {
+   "id": "drawio-09-clean-code-token",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "abdafc34b1bac622139dda029616775d57e3b471912fe7d755fb4b675a30095d",
+   "bytes": 592,
+   "committed": true,
+   "path": "samples/drawio-09-clean-code-token.corpus"
+  },
+  {
+   "id": "drawio-10-gloss-dash",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "a658f2ba9765480b89591c9585194659f24dbab2125b5c931d1640f3f3185380",
+   "bytes": 580,
+   "committed": true,
+   "path": "samples/drawio-10-gloss-dash.corpus"
+  },
+  {
+   "id": "drawio-11-clean-title-case-names",
+   "format": "drawio",
+   "diagram": "drawio",
+   "sha256": "a45c001452604089890130c45b68fadefe7d9942a5979a81e40fbcd7fd9e6bcd",
+   "bytes": 762,
+   "committed": true,
+   "path": "samples/drawio-11-clean-title-case-names.corpus"
+  }
+ ]
+}

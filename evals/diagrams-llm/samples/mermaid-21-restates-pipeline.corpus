@@ -1,0 +1,11 @@
+# Scheduled jobs
+
+The scheduler enqueues a job every five minutes. A worker from the worker pool picks the job up and writes its output to the result store.
+
+```mermaid
+flowchart TD
+  A[Scheduler] --> B[Worker pool] --> C[Result store]
+  C --> D[Alerting]
+```
+
+When a job fails, alerting pages the on-call engineer after the result store records the failure twice in a row.

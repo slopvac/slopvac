@@ -1,0 +1,11 @@
+# Checkout flow
+
+The diagram below shows how an order moves through checkout.
+
+```mermaid
+flowchart TD
+  A[User submits the order form through the web checkout page] --> B[Validate the payload]
+  B --> C[Order service]
+```
+
+Orders are rejected when the payload fails schema validation.

@@ -1,0 +1,10 @@
+# Mesh
+
+The mesh runs a proxy next to every workload.
+
+```mermaid
+flowchart LR
+  A[Istio Sidecar<br/>Envoy Pilot Proxy] --> B[Control Plane<br/>Istiod Citadel Galley]
+```
+
+Certificates rotate every 24 hours.

@@ -1,0 +1,11 @@
+# Services
+
+Two services share the database.
+
+```mermaid
+flowchart LR
+  A[Order Service<br/>Handles checkout and refunds] --> B[(Orders database)]
+  C[Billing Service<br/>computes monthly invoices] --> B
+```
+
+Both services use the same connection pool.

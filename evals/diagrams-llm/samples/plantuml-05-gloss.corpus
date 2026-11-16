@@ -1,0 +1,13 @@
+# Cache
+
+A cache sits in front of the database.
+
+```plantuml
+@startuml
+rectangle "Cache Layer: hot keys, TTL eviction" as C
+database "Database" as D
+C --> D
+@enduml
+```
+
+Entries expire after five minutes.
