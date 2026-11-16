@@ -264,3 +264,15 @@ fn combining_marks_stay_attached_to_their_word() {
     let c = counts("We use Cafe\u{301} daily and Kubernetes too.");
     assert_eq!(words(&c, &Dictionary::default()), ["kubernetes"]);
 }
+
+#[test]
+fn the_first_token_is_everything_up_to_the_first_space() {
+    let c = counts("We use Redis daily.");
+    let found = infer(&c, &Dictionary::default());
+    // "Source" sits inside the first token, so it is exempt.
+    assert_eq!(found.residual_capitals("Open-Source Redis"), 0);
+    // A lone symbol is the first token, so "Configure" is not exempt.
+    assert_eq!(found.residual_capitals("& Configure Redis"), 1);
+    // A code span that holds a space is one token.
+    assert_eq!(found.residual_capitals("`a b` Install Redis"), 1);
+}

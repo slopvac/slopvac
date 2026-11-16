@@ -280,12 +280,19 @@ impl Inferred {
     #[must_use]
     pub fn residual_capitals(&self, heading: &str) -> usize {
         let named = self.mask(heading);
-        // The first word is the first thing in the heading. A leading code span
-        // is that thing, so the first word after it is not exempt.
-        let leads_with_code = blank_spans(heading.trim_start()).starts_with('\u{1}');
+        // The first token is the first run of non-space characters, as the
+        // title-case pattern reads it. Every word inside it is exempt, so
+        // "Open-Source Redis" exempts "Source", while "& Configure Redis" and
+        // "`run` Install" exempt nothing after the first token. Code spans are
+        // blanked first so one that holds a space stays a single token.
+        let lead = heading.len() - heading.trim_start().len();
+        let blanked = blank_spans(heading);
+        let first_end = blanked[lead..]
+            .find(char::is_whitespace)
+            .map_or(heading.len(), |i| lead + i);
         scan(heading, false)
             .iter()
-            .skip(usize::from(!leads_with_code))
+            .filter(|t| t.range.start >= first_end)
             .filter(|t| t.shape == Shape::Cap && !named.contains(&t.range))
             .count()
     }
