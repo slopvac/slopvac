@@ -114,6 +114,18 @@ impl Resolved {
         }
     }
 
+    /// Merge `layers`, lowest first, with no core defaults. Each layer is one scope, so a
+    /// later layer outranks an earlier one. Use it to resolve a part of the stack, such as the
+    /// style layers alone.
+    #[must_use]
+    pub fn from_layers(layers: impl IntoIterator<Item = Vec<Setting>>) -> Self {
+        let mut out = Self::default();
+        for layer in layers {
+            out.apply_all(layer);
+        }
+        out
+    }
+
     fn winner<'a>(path: &[String], history: &'a [Contribution]) -> Option<&'a Contribution> {
         if is_sticky(path)
             && let Some(on) = history.iter().find(|c| c.value == json!(true))
@@ -352,10 +364,13 @@ impl LoadedConfig {
             .project_value(&["styles"])
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
-        for name in styles.iter().filter_map(Json::as_str) {
-            if let Some(settings) = inputs.presets.style(name) {
-                out.apply_all(settings);
-            }
+        let listed: Vec<String> = styles
+            .iter()
+            .filter_map(Json::as_str)
+            .map(str::to_owned)
+            .collect();
+        for settings in inputs.presets.style_layers(&listed) {
+            out.apply_all(settings);
         }
 
         // The genre can come from any layer above the genre layer, so pick the winner first.

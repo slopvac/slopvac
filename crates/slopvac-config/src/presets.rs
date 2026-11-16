@@ -16,6 +16,14 @@ pub trait Presets {
     /// The settings of a style preset, in layer `style`. `None` when no active pack has it.
     fn style(&self, name: &str) -> Option<Vec<Setting>>;
 
+    /// The style layers for the `styles` list, lowest first: one entry per layer. The default
+    /// is one layer per listed name that [`Presets::style`] knows. A provider whose styles
+    /// extend other styles overrides it, so each style keeps its own layer and a shared
+    /// ancestor applies once.
+    fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
+        listed.iter().filter_map(|n| self.style(n)).collect()
+    }
+
     /// The settings of a genre and of the genres it extends, lowest first, in layer `genre`.
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>>;
 
