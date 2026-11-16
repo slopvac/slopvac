@@ -88,6 +88,7 @@ A results file holds the engine name, command and version, the manifest hash, an
 - `precision`: adjudicated findings labelled true over all labelled findings, with `--labels`.
 - `control_fpr`: clean-control sentences where the rule fires within one line.
 - `human_per_100_words`: findings on pre-2022 human text, a floor on false positives.
+- `llm_per_100_words`: findings on `stated-llm` and `model-twin` text, the rate at which the rule fires on LLM writing. `llm_findings` is the count. A twin counts once it has been generated and run.
 
 Each rate carries a Wilson interval and a bootstrap interval that resamples whole documents. Findings in one document are correlated, so the document is the unit of resampling.
 
