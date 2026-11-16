@@ -11,7 +11,7 @@ use crate::color::{self, ColorChoice};
 use crate::engine_stub::{LintRequest, Linter, StubLinter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, inspect, logging, offline, stdin};
+use crate::{exit, generate, init, inspect, logging, offline, stdin};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +62,9 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString>,
 {
-    main_with_stdout(args, env, &mut std::io::stdout().lock())
+    // Not locked for the whole run: `slopvac lsp` writes from its own thread, which would
+    // wait forever on a lock held here.
+    main_with_stdout(args, env, &mut std::io::stdout())
 }
 
 /// Like [`main_with`], with the standard output stream supplied by the caller.
@@ -144,12 +146,21 @@ fn dispatch(
 ) -> Result<u8, CliError> {
     match matches.subcommand() {
         Some(("lint", m)) => lint(m, err_out),
+        Some(("lsp", m)) => slopvac_lsp::run(m)
+            .map(|exit| match exit {
+                slopvac_lsp::Exit::AfterShutdown => exit::PASS,
+                // LSP says `exit` without `shutdown` ends the process with status 1.
+                slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
+            })
+            .map_err(|e| CliError::new("lsp-failed", e.to_string())),
+        Some(("migrate", m)) => migrate(m, out),
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
                 .expect("required");
             write_stdout(out, &generate::completions(shell))
         }
+        Some(("init", m)) => init::run(m, out),
         Some(("rules", m)) => {
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::rules(m, out)
@@ -172,7 +183,6 @@ fn dispatch(
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
                     "doctor" => Some("slopvac-8l4.12.5"),
                     "self" => Some("slopvac-8l4.12.4"),
-                    "lsp" => Some("slopvac-8l4.12.7"),
                     _ => None,
                 });
             Err(CliError::new(
@@ -200,6 +210,14 @@ fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+    // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
+    // 2.x config and a migrated tree.
+    slopvac_migrate::execute(m, &slopvac_migrate::NullLinter, out)
+        .map(|()| exit::PASS)
+        .map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
 fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliError> {

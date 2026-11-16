@@ -6,7 +6,8 @@ use std::path::Path;
 use slopvac_agents::content::{self, BlockKind};
 use slopvac_agents::harness::{AgentFormat, SKILL_NAME};
 use slopvac_agents::setup::{
-    EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK, Options, command, execute, options,
+    EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK, Options, command, execute,
+    install_keeping_unrequested, options,
 };
 
 fn opts(root: &Path, harness: &str) -> Options {
@@ -344,4 +345,78 @@ fn command_parses_the_documented_flags() {
 fn reviewer_agent_formats_differ_by_harness() {
     assert!(content::reviewer_agent(AgentFormat::Claude, None).contains("tools: Read"));
     assert!(content::reviewer_agent(AgentFormat::Opencode, None).contains("mode: subagent"));
+}
+
+fn managed_files(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let h = slopvac_agents::harness::find("claude").unwrap();
+    (
+        root.join(h.skill_path().unwrap().unwrap()),
+        root.join(h.agent_path().unwrap().unwrap()),
+    )
+}
+
+#[test]
+fn keeping_install_leaves_an_existing_reviewer_and_skill_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    execute(&Options {
+        agent: true,
+        ..opts(dir.path(), "claude")
+    })
+    .unwrap();
+    let (skill, reviewer) = managed_files(dir.path());
+    assert!(skill.is_file() && reviewer.is_file());
+    let r = install_keeping_unrequested(&Options {
+        no_skill: true,
+        ..opts(dir.path(), "claude")
+    })
+    .unwrap();
+    assert!(skill.is_file() && reviewer.is_file(), "files were removed");
+    assert_eq!(
+        r.lines.len(),
+        1,
+        "only the steering block is reported: {:?}",
+        r.lines
+    );
+}
+
+#[test]
+fn execute_still_removes_what_the_options_leave_out() {
+    let dir = tempfile::tempdir().unwrap();
+    execute(&Options {
+        agent: true,
+        ..opts(dir.path(), "claude")
+    })
+    .unwrap();
+    execute(&Options {
+        no_skill: true,
+        ..opts(dir.path(), "claude")
+    })
+    .unwrap();
+    let (skill, reviewer) = managed_files(dir.path());
+    assert!(!skill.exists() && !reviewer.exists());
+}
+
+#[test]
+fn keeping_install_refuses_list_remove_and_check_and_changes_nothing() {
+    let flags: [fn(&mut Options); 3] = [|o| o.list = true, |o| o.remove = true, |o| o.check = true];
+    for set in flags {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("CLAUDE.md"), "mine\n").unwrap();
+        let mut o = opts(dir.path(), "claude");
+        set(&mut o);
+        let err = install_keeping_unrequested(&o).unwrap_err();
+        assert!(
+            matches!(err, slopvac_agents::AgentsError::Usage(_)),
+            "{err:?}"
+        );
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["CLAUDE.md"], "the project changed");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
+            "mine\n"
+        );
+    }
 }
