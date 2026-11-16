@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::origin::Origin;
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
@@ -272,6 +273,8 @@ pub struct Finding {
     pub fix: Option<Fix>,
     /// Rule provenance.
     pub provenance: Option<RuleProvenance>,
+    /// Segment of a container document that holds the match, if any.
+    pub origin: Option<Origin>,
 }
 
 /// Wire shape of [`Finding`].
@@ -340,6 +343,14 @@ struct FindingWire {
     )]
     #[schemars(transform = absent_not_null)]
     provenance: Option<RuleProvenance>,
+    /// Segment of a container document that holds the match.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[schemars(transform = absent_not_null)]
+    origin: Option<Origin>,
 }
 
 impl TryFrom<FindingWire> for Finding {
@@ -366,6 +377,7 @@ impl TryFrom<FindingWire> for Finding {
             matched_text: w.matched_text,
             fix: w.fix,
             provenance: w.provenance,
+            origin: w.origin,
         })
     }
 }
@@ -388,6 +400,7 @@ impl From<Finding> for FindingWire {
             matched_text: f.matched_text,
             fix: f.fix,
             provenance: f.provenance,
+            origin: f.origin,
         }
     }
 }

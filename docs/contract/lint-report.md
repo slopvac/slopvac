@@ -33,7 +33,88 @@ These keys have no 2.x counterpart.
 - Document: `genre` with its `reasons`, `contexts_seen`, `config_sources`
   ([`ConfigSource`](../../schemas/v3/common.schema.json#/$defs/ConfigSource)) and `gate`.
 - Finding: `pack`, `span`, `end_line`, `contexts`, `fix` and `provenance`
-  ([`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance)).
+  ([`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance)) and
+  the optional `origin` (see [Finding origin](#finding-origin)).
+
+## Finding origin
+
+A container document, such as a Word file or a draw.io diagram, is linted as a list of
+extracted text segments. `origin` names the segment that holds a match. It is optional
+and absent for plain text files. The bead is slopvac-8l4.2.29.
+
+| Key | Meaning |
+| --- | --- |
+| `locator` | Percent-escaped address of the segment in the container. |
+| `label` | Display name for people. Never an identity. |
+| `segment` | Segment id, unique within the document. |
+| `range` | Match range as UTF-8 byte offsets into the segment text, `[start, end)`. |
+
+`range` uses the closed `SegmentRange` shape, not the common `Span`. A `Span` addresses
+the original file bytes, and a segment range does not. `SegmentRange` takes no `x-` keys.
+`start` is at most `end`, and both fall on code point boundaries of the segment text.
+`matched_text` equals the segment text inside `range`.
+
+### Positions of a finding with an origin
+
+- `line`, `column`, `end_line` and `end_column` count in the segment text, not in the
+  container. They follow the rules in [positions](positions.md) with the segment text as
+  the file.
+- `span` is optional. When present it is the physical byte range in the container, and
+  it can be wider than the match, for example the whole entry when the container
+  compresses it. A consumer must not read it as the match. The existing rule still ties
+  `span` to `end_line` and `end_column`.
+- `fix.edits` are not allowed for a finding with an origin until a later bead defines
+  edits against a container. A producer must omit `fix` for such a finding.
+
+### Locator
+
+- A locator is opaque. A consumer compares two locators byte for byte after JSON
+  decoding, and treats each as a whole string without parsing, normalizing or case-folding.
+- Escaping: these characters are written as `%XX` for each of their UTF-8 bytes, with
+  uppercase hex: `%`, controls (U+0000 to U+001F, U+007F to U+009F), U+2028, U+2029 and
+  bidirectional overrides (U+202A to U+202E, U+2066 to U+2069). Every other character,
+  including `/`, `#`, `[`, `]`, `@` and non-ASCII text, appears as is. A `%` in a locator
+  is always the start of a `%XX` escape, so the schema rejects `%zz` and `%0a`.
+- Length: at most 512 code points. A producer that needs more shortens the path by using
+  a stable id the format provides, and never truncates.
+- Uniqueness: within one document, a `locator` identifies one `segment` and a `segment`
+  has one `locator`. Findings in the same segment share both and differ in `range`. Each pair of
+  segments has distinct locators and distinct ids. JSON Schema cannot check this across findings, so the
+  producer validator of slopvac-8l4.20.1 enforces it, and a consumer may rely on it.
+- The `label` holds at most 256 code points, with the same forbidden characters but no
+  escaping. A segment id matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`.
+
+### Stability
+
+Take the same container bytes, the same extractor and the same `schema_version`. A
+document then yields the same segments, with the same locators, segment ids and ranges,
+on every run and platform and in any order of work.
+
+A producer prefers an id that the format stores, such as a Word `w14:paraId`, over a
+position. The locator grammar of a format is frozen for the whole 3.x line. A change
+waits for 4.0.
+
+A locator can differ between two versions of the container. An example is a paragraph
+inserted before a position-based locator.
+
+### SARIF
+
+A SARIF result for a finding with an origin gets:
+
+- `locations[0].physicalLocation.artifactLocation` for the container file.
+- `region.byteOffset` and `region.byteLength` from `span`, when present. It sets no
+  `startLine` or `startColumn`, because those would count in the container.
+- `locations[0].logicalLocations[0]` with `fullyQualifiedName` set to `locator`, `name`
+  set to `label`, and an `index` into `run.logicalLocations`.
+- `properties.slopvac.origin` with `segment` and `range`, so a reader can find the match.
+
+### Fingerprints
+
+A fingerprint for a finding with an origin hashes the rule id, `locator`, the start and
+end of `range`, and the normalized `matched_text`. It leaves out `span` and every position in
+the container. Moving a segment inside the container, or recompressing it, keeps the
+fingerprint, and editing the segment text before the match changes `range` and the
+fingerprint, as it does for plain text. The renderers and fingerprints are slopvac-8l4.20.12.
 
 ## 2.x key dispositions
 

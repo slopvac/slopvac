@@ -31,6 +31,7 @@ const IGNORED_MEMBER_ONLY: &[&str] = &[
     "2x-notes-key.json",
     "document-2x-passed-key.json",
     "finding-2x-replacement.json",
+    "finding-origin-range-extension-key.json",
 ];
 
 fn decodes_as(name: &str, value: &Value) -> bool {
@@ -337,6 +338,7 @@ fn built_finding(with_extent: bool) -> Finding {
             .unwrap(),
         ),
         provenance: None,
+        origin: None,
     }
 }
 

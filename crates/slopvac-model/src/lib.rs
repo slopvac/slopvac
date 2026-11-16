@@ -6,6 +6,7 @@
 
 mod edit;
 mod ids;
+mod origin;
 mod report;
 mod source;
 mod span;
@@ -16,6 +17,7 @@ pub use ids::{
     ApiVersion, ContextTag, Contexts, DuplicateContext, IdError, PackId, RuleId, SchemaVersion,
     Severity,
 };
+pub use origin::{Origin, OriginError, OriginLabel, OriginLocator, SegmentId, SegmentRange};
 pub use report::{
     AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigLayer,
     ConfigSource, Document, Extent, Finding, FindingError, Fix, FixError, Gate, GateError,

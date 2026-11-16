@@ -28,6 +28,7 @@ fn finding(category: &str, severity: Severity) -> Finding {
         matched_text: String::new(),
         fix: None,
         provenance: None,
+        origin: None,
     }
 }
 
