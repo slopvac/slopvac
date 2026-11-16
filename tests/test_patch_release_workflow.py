@@ -187,6 +187,7 @@ def test_hardening_the_pinned_dist_output_reproduces_the_committed_workflow(hard
 # Each string is a spot in dist's template that a rewrite depends on.
 ANCHORS = [
     "      - '**[0-9]+.[0-9]+.[0-9]+*'\n",
+    "on:\n  pull_request:\n  push:\n",
     "dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json",
     '          gh release upload "${{ needs.plan.outputs.tag }}" artifacts/*\n',
     '          gh release edit "${{ needs.plan.outputs.tag }}" --target',

@@ -4,7 +4,10 @@ name: CI
 # with job-level conditions so required checks never disappear because an entire
 # workflow was path-filtered.
 on:
+  # Draft pull requests do no work: the root jobs below skip, and the gate fails
+  # so no required check turns green. Marking the PR ready starts the real run.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # The merge queue builds each entry on gh-readonly-queue/main/pr-N-<sha>. The
@@ -30,6 +33,7 @@ concurrency:
 jobs:
   changes:
     name: Classify changes
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -92,6 +96,7 @@ jobs:
   # malformed hook manifests even for docs/config-only changes.
   quick-lint:
     name: Quick lint
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -582,6 +587,7 @@ jobs:
       - name: Verify required runs and valid skips
         env:
           RESULTS: ${{ toJSON(needs) }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
           FORCE_ALL: ${{ needs.changes.outputs.force_all }}
           CODE: ${{ needs.changes.outputs.code }}
           PACKAGE: ${{ needs.changes.outputs.package }}
@@ -600,6 +606,12 @@ jobs:
           import json
           import os
           import sys
+
+          # A skipped job reports success to branch protection, so a draft must
+          # fail here rather than pass with nothing run.
+          if os.environ["DRAFT"] == "true":
+              print("::error::draft pull request: CI runs once it is marked ready for review")
+              sys.exit(1)
 
           needs = json.loads(os.environ["RESULTS"])
           problems = []

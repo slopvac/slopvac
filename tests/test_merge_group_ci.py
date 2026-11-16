@@ -28,7 +28,8 @@ def load(name: str) -> dict:
 def evaluate(template: str, context: dict) -> str:
     """Evaluate a `${{ }}` template over the `||`, `&&`, `==`, `!=` and property subset.
 
-    Missing properties are empty strings; `a || b` yields the first truthy operand.
+    Missing properties are empty strings, booleans and the `true`/`false` literals
+    are "true"/"false", and `a || b` yields the first truthy operand.
     """
     assert "${{" in template, template
     return re.sub(
@@ -76,9 +77,13 @@ def _compare(expr: str, context: dict) -> str:
 def _operand(token: str, context: dict) -> str:
     if token.startswith("'"):
         return token.strip("'")
+    if token in ("true", "false"):
+        return token
     value = context
     for key in token.split("."):
         value = value.get(key, "") if isinstance(value, dict) else ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return str(value)
 
 
@@ -350,3 +355,89 @@ def test_security_gate_requires_dependency_review_exactly_when_classified(
 def test_security_gate_expects_dependency_review_skipped_on_push():
     assert run_security_gate("push", True, "skipped") == 0
     assert run_security_gate("push", True, "success") == 1
+
+
+# --- draft pull requests -----------------------------------------------------
+
+DRAFT_PR = {**PULL_REQUEST, "event": {"pull_request": {"number": 7, "draft": True}}}
+READY_PR = {**PULL_REQUEST, "event": {"pull_request": {"number": 7, "draft": False}}}
+MAIN_PUSH = {"event_name": "push", "ref": "refs/heads/main"}
+TAG_PUSH = {"event_name": "push", "ref": "refs/tags/v3.0.0"}
+NOT_DRAFT = [READY_PR, MERGE_GROUP, MAIN_PUSH, TAG_PUSH]
+NOT_DRAFT_IDS = ["ready", "queue", "main", "tag"]
+
+
+def pull_request_workflows() -> dict[str, dict]:
+    found = {}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = load(path.name)
+        triggers = workflow["on"]
+        if "pull_request" in (
+            triggers if isinstance(triggers, (dict, list)) else [triggers]
+        ):
+            found[path.name] = workflow
+    return found
+
+
+def runs(condition: str, context: dict) -> bool:
+    template = condition if "${{" in condition else "${{ " + condition + " }}"
+    return evaluate(template, ctx(context)) == "true"
+
+
+def test_every_pull_request_workflow_runs_when_a_draft_is_marked_ready():
+    workflows = pull_request_workflows()
+    assert set(workflows) == {
+        "action-v3-test.yml",
+        "release.yml",
+        "test.yml",
+        "wheels.yml",
+    }
+    for name, workflow in workflows.items():
+        assert workflow["on"]["pull_request"]["types"] == [
+            "opened",
+            "synchronize",
+            "reopened",
+            "ready_for_review",
+        ], name
+
+
+ROOT_JOBS = [
+    ("action-v3-test.yml", "action"),
+    ("release.yml", "route"),
+    ("test.yml", "changes"),
+    ("test.yml", "quick-lint"),
+    ("wheels.yml", "build"),
+]
+
+
+def test_every_job_that_needs_nothing_is_listed_as_a_root():
+    roots = [
+        (name, job)
+        for name, workflow in pull_request_workflows().items()
+        for job, spec in workflow["jobs"].items()
+        if "needs" not in spec
+    ]
+    assert roots == ROOT_JOBS
+
+
+@pytest.mark.parametrize(("workflow", "job"), ROOT_JOBS)
+def test_root_jobs_skip_a_draft(workflow, job):
+    assert not runs(load(workflow)["jobs"][job]["if"], DRAFT_PR)
+
+
+@pytest.mark.parametrize("context", NOT_DRAFT, ids=NOT_DRAFT_IDS)
+@pytest.mark.parametrize(("workflow", "job"), ROOT_JOBS)
+def test_root_jobs_run_for_everything_but_a_draft(workflow, job, context):
+    assert runs(load(workflow)["jobs"][job]["if"], context)
+
+
+GATE_DRAFT = load("test.yml")["jobs"]["gate"]["steps"][0]["env"]["DRAFT"]
+
+
+def test_the_gate_sees_a_draft():
+    assert evaluate(GATE_DRAFT, ctx(DRAFT_PR)) == "true"
+
+
+@pytest.mark.parametrize("context", NOT_DRAFT, ids=NOT_DRAFT_IDS)
+def test_the_gate_sees_no_draft_otherwise(context):
+    assert evaluate(GATE_DRAFT, ctx(context)) != "true"

@@ -16,7 +16,8 @@ so that is command injection. This script rewrites the generated text:
   variables, not as `${{ }}` text;
 * the CycloneDX step output is read as `outputs`, which dist spells `output`;
 * artifacts are signed with minisign before they reach the draft release;
-* the Homebrew job pushes with a token minted from the release App, not a stored secret.
+* the Homebrew job pushes with a token minted from the release App, not a stored secret;
+* a draft pull request runs no job, and marking it ready for review starts the run.
 
 Run `scripts/dist_generate.sh` instead of `dist generate`. Each rewrite must
 match exactly once, so a dist upgrade that changes the template fails loudly
@@ -32,6 +33,15 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/release.yml")
 
 _TRIGGER = ("      - '**[0-9]+.[0-9]+.[0-9]+*'\n", "      - 'v[0-9]+.[0-9]+.[0-9]+'\n")
+
+# Marking a draft ready must start a run; the route job skips drafts.
+_PR_TRIGGER = (
+    "on:\n  pull_request:\n  push:\n",
+    (
+        "on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n"
+        "  push:\n"
+    ),
+)
 
 _VALIDATE = """\
       - name: Validate the tag
@@ -125,6 +135,7 @@ def _replace_once(text: str, old: str, new: str, what: str) -> str:
 
 def harden(text: str) -> str:
     text = _replace_once(text, *_TRIGGER, "tag trigger")
+    text = _replace_once(text, *_PR_TRIGGER, "pull request trigger")
     text = _insert_validation(text)
     text = _replace_once(text, _PLAN_RUN_OLD, _PLAN_RUN_NEW, "plan command")
     text = _replace_once(
@@ -301,7 +312,9 @@ def _verify_tag_before_publishing(text: str) -> str:
 _ROUTE_JOB = """\
   # Tags of major 3 and later go through dist. Earlier tags (2.x) only publish the
   # draft release release-please made, so they release as they always did.
+  # Every other job needs this one, so a draft pull request skips them all.
   route:
+    if: ${{ github.event.pull_request.draft != true }}
     runs-on: "ubuntu-22.04"
     outputs:
       gated: ${{ steps.route.outputs.gated }}
