@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for regressions.
 //! Regressions found in review. Each test goes through the public parse functions.
 
 use markdown::{ParseOptions, mdast::Node, to_mdast};
@@ -6,14 +6,26 @@ use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use slopvac_model::Span;
 use slopvac_parse::{BlockKind, Document, TokenKind, parse_markdown, parse_mdx};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn md(source: &str) -> Document {
     parse_markdown(source, whole(source)).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn mdx(source: &str) -> Document {
     parse_mdx(source, whole(source)).unwrap()
 }
@@ -37,6 +49,10 @@ fn admonitions(doc: &Document) -> usize {
         .count()
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn code_bodies(doc: &Document) -> Vec<Span> {
     doc.blocks
         .iter()
@@ -301,6 +317,14 @@ fn pulldown_options() -> Options {
 /// comes with its container prefix, so the hull starts at that line's terminator.
 type Open = (std::ops::Range<usize>, Option<(usize, usize)>);
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn pulldown_code(source: &str) -> Vec<(Span, Option<Span>)> {
     let mut out = Vec::new();
     let mut open: Option<Open> = None;
@@ -347,6 +371,10 @@ fn pulldown_code(source: &str) -> Vec<(Span, Option<Span>)> {
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn mdast_code(source: &str) -> Vec<Span> {
     fn walk(node: &Node, source: &str, out: &mut Vec<Span>) {
         if let Node::Code(_) = node {
@@ -374,6 +402,10 @@ fn mdast_code(source: &str) -> Vec<Span> {
     out
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn own_code(doc: &Document) -> Vec<(Span, Span)> {
     doc.blocks
         .iter()

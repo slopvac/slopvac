@@ -1,13 +1,21 @@
-#![allow(missing_docs, clippy::cast_possible_truncation)]
+//! Integration tests for projection.
 
 use serde_json::Value;
 use slopvac_model::Span;
 use slopvac_parse::{Projection, TokenKind};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn n(v: &Value) -> usize {
-    v.as_u64().unwrap() as usize
+    usize::try_from(v.as_u64().unwrap()).unwrap()
 }
 
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn kind(name: &str) -> TokenKind {
     match name {
         "identity" => TokenKind::Identity,

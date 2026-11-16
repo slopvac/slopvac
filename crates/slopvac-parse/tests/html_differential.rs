@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for html differential.
 //! Differential test: the prose `parse_html` extracts must match the text that html5ever's
 //! full tree builder renders.
 //!
@@ -76,6 +76,10 @@ const HIDDEN: &[&str] = &[
     "script", "style", "noscript", "template", "head", "title", "pre", "code", "kbd", "samp",
 ];
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn walk(node: &Handle, out: &mut String) {
     match &node.data {
         NodeData::Text { contents } => out.push_str(&contents.borrow()),
@@ -169,6 +173,10 @@ fn oracle(source: &str) -> Vec<String> {
 }
 
 /// Words the extractor finds.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn ours(source: &str) -> Vec<String> {
     let (doc, stats) =
         slopvac_parse::parse_html_stats(source, Span::new(0, source.len()).unwrap()).unwrap();
@@ -492,6 +500,10 @@ fn budget(source: &str) -> usize {
     slopvac_parse::WORK_PER_BYTE * source.len() + slopvac_parse::WORK_BASE
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn work(source: &str) -> usize {
     let body = Span::new(0, source.len()).unwrap();
     slopvac_parse::parse_html_stats(source, body)

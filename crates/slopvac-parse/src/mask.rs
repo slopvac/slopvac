@@ -5,6 +5,8 @@
 //! lose their indentation. Both parsers then see plain Markdown, and [`Masked`] maps their
 //! offsets back to the original source.
 
+use crate::span_between;
+use crate::sub;
 use std::ops::Range;
 
 use slopvac_model::Span;
@@ -45,19 +47,27 @@ impl Masked {
     /// Source offset of a masked offset that starts a range.
     pub(crate) fn src_start(&self, offset: usize) -> usize {
         let n = self.removals.partition_point(|&(pos, _)| pos <= offset);
-        self.base + offset + n.checked_sub(1).map_or(0, |i| self.removals[i].1)
+        self.base
+            + offset
+            + n.checked_sub(1)
+                .and_then(|i| self.removals.get(i))
+                .map_or(0, |r| r.1)
     }
 
     /// Source offset of a masked offset that ends a range.
     pub(crate) fn src_end(&self, offset: usize) -> usize {
         let n = self.removals.partition_point(|&(pos, _)| pos < offset);
-        self.base + offset + n.checked_sub(1).map_or(0, |i| self.removals[i].1)
+        self.base
+            + offset
+            + n.checked_sub(1)
+                .and_then(|i| self.removals.get(i))
+                .map_or(0, |r| r.1)
     }
 
     /// Source span of a masked range.
     pub(crate) fn span(&self, start: usize, end: usize) -> Span {
         let s = self.src_start(start);
-        Span::new(s, self.src_end(end).max(s)).expect("end is clamped to start")
+        span_between(s, self.src_end(end).max(s))
     }
 }
 
@@ -71,6 +81,14 @@ impl End {
         #[cfg(test)]
         crate::work::add(&crate::work::FRAME_OPS, 1);
         self.0 = end;
+    }
+}
+
+/// Set the end of the admonition at `block`. Block indexes come from `pending` itself, so a
+/// missing entry does not occur.
+fn set_end(pending: &mut [Pending], block: usize, end: usize) {
+    if let Some(p) = pending.get_mut(block) {
+        p.end.set(end);
     }
 }
 
@@ -109,7 +127,10 @@ struct Directive {
 /// admonition directive becomes an admonition. No fence rules are repeated here.
 ///
 /// With `indented_code`, as in Markdown, a marker indented four columns is not a marker.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass over the lines; splitting it would pass the scanner state through many parameters"
+)]
 pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: bool) -> Masked {
     let mut out = String::with_capacity(text.len());
     let mut removals: Vec<(usize, usize)> = Vec::new();
@@ -131,7 +152,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
             let cols = leading_cols(line);
             while indents.last().is_some_and(|f| f.body_cols > cols) {
                 if let Some(frame) = indents.pop() {
-                    pending[frame.block].end.set(last_nonblank_end);
+                    set_end(&mut pending, frame.block, last_nonblank_end);
                 }
             }
         }
@@ -140,7 +161,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         } else {
             strip_cols(line, 4 * indents.len())
         };
-        let content = &line[strip..];
+        let content = sub(line, strip..);
         let content_abs = abs + strip;
         let line_end = abs + line.len();
         if !blank {
@@ -149,7 +170,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         let quote = quote_body(content);
         if let Some(index) = alert {
             if quote.is_some() {
-                pending[index].end.set(line_end);
+                set_end(&mut pending, index, line_end);
             } else {
                 alert = None;
             }
@@ -211,7 +232,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                 && open.end == region.range.end
                 && is_fence_closer(t, open.ch, open.count)
             {
-                pending[open.block].end.set(line_end);
+                set_end(&mut pending, open.block, line_end);
                 directive = None;
                 mask_from = Some(0);
             }
@@ -249,7 +270,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
                 start: t_abs,
                 end: End(line_end),
             });
-            mask_from = Some(offset_in(content, body) + bracket);
+            mask_from = offset_in(content, body).map(|offset| offset + bracket);
         }
         prev_quoted = quote.is_some() && region.is_none();
 
@@ -259,7 +280,7 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         }
         match mask_from {
             Some(from) => {
-                out.push_str(&content[..from]);
+                out.push_str(sub(content, ..from));
                 out.extend(std::iter::repeat_n(' ', content.len() - from));
             }
             None => out.push_str(content),
@@ -267,19 +288,19 @@ pub(crate) fn scan(text: &str, base: usize, code: &[CodeRegion], indented_code: 
         out.push_str(terminator);
     }
     for frame in &indents {
-        pending[frame.block].end.set(last_nonblank_end);
+        set_end(&mut pending, frame.block, last_nonblank_end);
     }
     for (_, block) in &colons {
-        pending[*block].end.set(last_nonblank_end);
+        set_end(&mut pending, *block, last_nonblank_end);
     }
     if let Some(open) = &directive {
-        pending[open.block].end.set(last_nonblank_end);
+        set_end(&mut pending, open.block, last_nonblank_end);
     }
     let admonitions = pending
         .into_iter()
         .map(|p| Block {
             kind: BlockKind::Admonition(p.admonition),
-            span: Span::new(p.start, p.end.0.max(p.start)).expect("end is clamped to start"),
+            span: span_between(p.start, p.end.0.max(p.start)),
             projection: None,
             containers: Vec::new(),
         })
@@ -301,7 +322,7 @@ fn lines(text: &str) -> impl Iterator<Item = (usize, &str, &str)> {
             return None;
         }
         let start = pos;
-        while pos < bytes.len() && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
+        while bytes.get(pos).is_some_and(|b| !matches!(b, b'\n' | b'\r')) {
             pos += 1;
         }
         let end = pos;
@@ -310,7 +331,7 @@ fn lines(text: &str) -> impl Iterator<Item = (usize, &str, &str)> {
         } else if pos < bytes.len() {
             pos += 1;
         }
-        Some((start, &text[start..end], &text[end..pos]))
+        Some((start, sub(text, start..end), sub(text, end..pos)))
     })
 }
 
@@ -347,8 +368,8 @@ fn nonempty(s: &str) -> Option<String> {
 }
 
 /// Byte offset of `part` inside `whole`. `part` must be a subslice of `whole`.
-fn offset_in(whole: &str, part: &str) -> usize {
-    part.as_ptr() as usize - whole.as_ptr() as usize
+fn offset_in(whole: &str, part: &str) -> Option<usize> {
+    part.as_ptr().addr().checked_sub(whole.as_ptr().addr())
 }
 
 /// Source span of `title`, a subslice of `line` that starts at source offset `line_abs`.
@@ -356,7 +377,7 @@ fn title_span(title: &str, line: &str, line_abs: usize) -> Option<Span> {
     if title.is_empty() {
         return None;
     }
-    let start = line_abs + offset_in(line, title);
+    let start = line_abs + offset_in(line, title)?;
     Span::new(start, start + title.len()).ok()
 }
 
@@ -367,12 +388,12 @@ fn fence_opener(t: &str) -> Option<(u8, usize, &str)> {
         return None;
     }
     let count = t.bytes().take_while(|&b| b == ch).count();
-    (count >= 3).then(|| (ch, count, &t[count..]))
+    (count >= 3).then(|| (ch, count, sub(t, count..)))
 }
 
 fn is_fence_closer(t: &str, ch: u8, count: usize) -> bool {
     let run = t.bytes().take_while(|&b| b == ch).count();
-    run >= count && t[run..].trim().is_empty()
+    run >= count && sub(t, run..).trim().is_empty()
 }
 
 /// The text after the `>` of a quote line that has at most three columns of indent.
@@ -419,17 +440,17 @@ fn parse_title_line(rest: &str, bang: bool) -> Option<TitleLine<'_>> {
         let end = rest
             .find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
             .unwrap_or(rest.len());
-        let after = rest[end..].trim();
+        let after = sub(rest, end..).trim();
         // Docusaurus writes the title in brackets: `:::note[Title]`.
         let after = after
             .strip_prefix('[')
             .and_then(|r| r.strip_suffix(']'))
             .unwrap_or(after);
         // The name must end at a blank or a bracket, not in the middle of other text.
-        if !rest[end..].is_empty() && !rest[end..].starts_with([' ', '\t', '[']) {
+        if !sub(rest, end..).is_empty() && !sub(rest, end..).starts_with([' ', '\t', '[']) {
             return None;
         }
-        (&rest[..end], after)
+        (sub(rest, ..end), after)
     };
     let valid = !kind.is_empty()
         && kind
@@ -464,12 +485,12 @@ fn colon_line(
     colons: &mut Vec<(usize, usize)>,
 ) -> Option<usize> {
     let count = t.bytes().take_while(|&b| b == b':').count();
-    let rest = &t[count..];
+    let rest = sub(t, count..);
     if rest.trim().is_empty() {
         if let Some(&(open, block)) = colons.last()
             && count >= open
         {
-            pending[block].end.set(line_end);
+            set_end(pending, block, line_end);
             colons.pop();
             return Some(0);
         }

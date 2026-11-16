@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for eol.
 //! Line endings. Every input in the corpus is parsed with LF, CRLF and lone CR, and the
 //! results must match: the same blocks, prose, token kinds and spans, shifted to the
 //! converted offsets.
@@ -11,10 +11,18 @@
 use slopvac_model::Span;
 use slopvac_parse::{Block, BlockKind, Document, parse_markdown, parse_mdx};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn corpus() -> Vec<String> {
     serde_json::from_str(include_str!("fixtures/eol_corpus.json")).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn parse(source: &str, mdx: bool) -> Option<Document> {
     let body = Span::new(0, source.len()).unwrap();
     if mdx {
@@ -40,6 +48,10 @@ impl Shift<'_> {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn describe(block: &Block, shift: &Shift<'_>) -> String {
     let kind = match &block.kind {
         BlockKind::Admonition(a) => format!(

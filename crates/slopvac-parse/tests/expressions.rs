@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for expressions.
 //! The MDX expression checker must never reject what markdown-rs accepts with plain
 //! brace counting. These properties compare `parse_mdx` with markdown-rs and no hook.
 

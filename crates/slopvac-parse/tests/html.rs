@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for html.
 //! Behaviour of `parse_html` through its public interface.
 //!
 //! Expected values are worked out from the HTML in each test, not from the parser output.
@@ -6,6 +6,10 @@
 use slopvac_model::Span;
 use slopvac_parse::{Block, BlockKind, Container, Document, Projection, TokenKind, parse_html};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn parse(source: &str) -> Document {
     parse_html(source, Span::new(0, source.len()).unwrap()).unwrap()
 }
@@ -20,6 +24,10 @@ fn texts(doc: &Document) -> Vec<&str> {
 }
 
 /// The source text a projected range of block `index` maps to.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn source_of<'a>(source: &'a str, block: &Block, start: usize, end: usize) -> &'a str {
     let span = block
         .projection
@@ -29,6 +37,10 @@ fn source_of<'a>(source: &'a str, block: &Block, start: usize, end: usize) -> &'
     &source[span.start()..span.end()]
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn kinds(block: &Block) -> Vec<TokenKind> {
     block
         .projection
@@ -235,6 +247,10 @@ fn head_ends_at_the_first_element_that_does_not_belong_in_it() {
 }
 
 #[test]
+#[expect(
+    clippy::unreachable,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pre_is_a_code_block_with_its_body_span() {
     let source = "<p>Run:</p><pre>cargo test\nok</pre><p>Done</p>";
     let doc = parse(source);
@@ -630,6 +646,10 @@ fn a_comment_after_the_last_child_belongs_to_the_code_span() {
 }
 
 #[test]
+#[expect(
+    clippy::unreachable,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn a_comment_after_the_last_child_belongs_to_the_pre_block() {
     let source = "<pre>x<!-- c --></pre>";
     let doc = parse(source);

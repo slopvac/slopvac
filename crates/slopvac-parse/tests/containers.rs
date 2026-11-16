@@ -1,17 +1,29 @@
-#![allow(missing_docs)]
+//! Integration tests for containers.
 //! Container ancestry of blocks: the lists and block quotes that hold each block.
 
 use slopvac_model::Span;
 use slopvac_parse::{Container, Document, parse_markdown, parse_mdx};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn md(source: &str) -> Document {
     parse_markdown(source, whole(source)).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn mdx(source: &str) -> Document {
     parse_mdx(source, whole(source)).unwrap()
 }
@@ -39,9 +51,11 @@ const ITEM: Container = Container::ListItem {
 
 type Parser = fn(&str) -> Document;
 
+const PARSERS: [Parser; 2] = [md, mdx];
+
 #[test]
 fn a_top_level_paragraph_has_no_container() {
-    for parse in [md as Parser, mdx as Parser] {
+    for parse in PARSERS {
         let source = "Plain text.\n";
         assert_eq!(
             ancestry(source, &parse(source)),
@@ -67,7 +81,7 @@ fn list_items_record_order_and_depth_for_markdown_and_mdx() {
         ),
         ("three".to_owned(), vec![ITEM]),
     ];
-    for parse in [md as Parser, mdx as Parser] {
+    for parse in PARSERS {
         assert_eq!(ancestry(source, &parse(source)), want);
     }
 }
@@ -79,7 +93,7 @@ fn a_loose_list_item_paragraph_is_inside_its_item() {
         ordered: true,
         depth: 1,
     };
-    for parse in [md as Parser, mdx as Parser] {
+    for parse in PARSERS {
         let got = ancestry(source, &parse(source));
         assert_eq!(got[0], ("first".to_owned(), vec![ordered]));
         assert_eq!(got[1], ("second".to_owned(), vec![ordered]));
@@ -95,7 +109,7 @@ fn block_quotes_and_nesting_in_lists_are_recorded_outer_to_inner() {
         vec![ITEM],
         vec![ITEM, Container::BlockQuote],
     ];
-    for parse in [md as Parser, mdx as Parser] {
+    for parse in PARSERS {
         let got: Vec<_> = ancestry(source, &parse(source))
             .into_iter()
             .map(|(_, containers)| containers)
@@ -107,7 +121,7 @@ fn block_quotes_and_nesting_in_lists_are_recorded_outer_to_inner() {
 #[test]
 fn code_blocks_carry_their_containers() {
     let source = "- item\n\n  ```\n  code\n  ```\n";
-    for parse in [md as Parser, mdx as Parser] {
+    for parse in PARSERS {
         let doc = parse(source);
         let code = doc
             .blocks

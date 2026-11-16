@@ -4,6 +4,8 @@
 //! two together and emits projection tokens: identity runs, entities, backslash escapes
 //! and soft wraps. Source the decoded text does not contain is a gap.
 
+use crate::span_between;
+use crate::sub;
 use pulldown_cmark::{Event, Parser};
 use slopvac_model::Span;
 
@@ -73,7 +75,7 @@ impl ProseBuilder {
             let kept = text.trim_end().len();
             if kept < text.len() {
                 text.truncate(kept);
-                *src = Span::new(src.start(), src.start() + kept).expect("kept <= len");
+                *src = span_between(src.start(), src.start() + kept);
             }
         }
         self.tokens
@@ -109,7 +111,7 @@ pub(crate) fn align(
     value: &str,
 ) {
     let (node_start, node_end) = node;
-    let tokens = walk(&masked[node_start..node_end], node_start, value).unwrap_or_else(|| {
+    let tokens = walk(sub(masked, node_start..node_end), node_start, value).unwrap_or_else(|| {
         vec![Raw {
             kind: TokenKind::Opaque,
             text: value.to_owned(),
@@ -136,31 +138,35 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
         if let Some((si, sj)) = run.take() {
             tokens.push(Raw {
                 kind: TokenKind::Identity,
-                text: value[sj..j].to_owned(),
+                text: sub(value, sj..j).to_owned(),
                 start: base + si,
                 end: base + i,
             });
         }
     };
     while j < value.len() {
-        let vc = value[j..].chars().next()?;
-        let sc = src[i..].chars().next()?;
+        let vc = sub(value, j..).chars().next()?;
+        let sc = sub(src, i..).chars().next()?;
         if matches!(vc, '\n' | '\r') {
             // A soft wrap, with any of the three line endings. Trailing blanks, the
             // terminator and the next line's quote marker and indentation are gaps.
             flush(&mut tokens, &mut run, i, j);
-            j += if value[j..].starts_with("\r\n") { 2 } else { 1 };
-            while src[i..].starts_with([' ', '\t']) {
+            j += if sub(value, j..).starts_with("\r\n") {
+                2
+            } else {
+                1
+            };
+            while sub(src, i..).starts_with([' ', '\t']) {
                 i += 1;
             }
-            i += if src[i..].starts_with("\r\n") {
+            i += if sub(src, i..).starts_with("\r\n") {
                 2
-            } else if src[i..].starts_with(['\n', '\r']) {
+            } else if sub(src, i..).starts_with(['\n', '\r']) {
                 1
             } else {
                 return None;
             };
-            while src[i..].starts_with([' ', '\t', '>']) {
+            while sub(src, i..).starts_with([' ', '\t', '>']) {
                 i += 1;
             }
             tokens.push(Raw {
@@ -172,9 +178,9 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
             continue;
         }
         if sc == '&'
-            && let Some(len) = entity_len(&src[i..])
-            && let Some(decoded) = decode_entity(&src[i..i + len])
-            && value[j..].starts_with(&decoded)
+            && let Some(len) = entity_len(sub(src, i..))
+            && let Some(decoded) = decode_entity(sub(src, i..i + len))
+            && sub(value, j..).starts_with(&decoded)
         {
             flush(&mut tokens, &mut run, i, j);
             let take = decoded.len();
@@ -189,7 +195,7 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
             continue;
         }
         if sc == '\\'
-            && let Some(next) = src[i + 1..].chars().next()
+            && let Some(next) = sub(src, i + 1..).chars().next()
             && next.is_ascii_punctuation()
             && next == vc
         {
@@ -220,7 +226,7 @@ fn walk(src: &str, base: usize, value: &str) -> Option<Vec<Raw>> {
         return None;
     }
     flush(&mut tokens, &mut run, i, j);
-    src[i..]
+    sub(src, i..)
         .chars()
         .all(|c| c.is_whitespace() || c == '>')
         .then_some(tokens)
@@ -249,17 +255,19 @@ fn entity_len(s: &str) -> Option<usize> {
             _ => return None,
         }
     }
-    let name = &body[..end?];
-    let valid = match name.strip_prefix(b"#") {
-        Some(digits) => match digits
-            .strip_prefix(b"x")
-            .or_else(|| digits.strip_prefix(b"X"))
-        {
-            Some(hex) => (1..=6).contains(&hex.len()) && hex.iter().all(u8::is_ascii_hexdigit),
-            None => (1..=7).contains(&digits.len()) && digits.iter().all(u8::is_ascii_digit),
+    let name = body.get(..end?)?;
+    let valid = name.strip_prefix(b"#").map_or_else(
+        || (1..=31).contains(&name.len()) && name.first().is_some_and(u8::is_ascii_alphabetic),
+        |digits| {
+            digits
+                .strip_prefix(b"x")
+                .or_else(|| digits.strip_prefix(b"X"))
+                .map_or_else(
+                    || (1..=7).contains(&digits.len()) && digits.iter().all(u8::is_ascii_digit),
+                    |hex| (1..=6).contains(&hex.len()) && hex.iter().all(u8::is_ascii_hexdigit),
+                )
         },
-        None => (1..=31).contains(&name.len()) && name[0].is_ascii_alphabetic(),
-    };
+    );
     valid.then_some(name.len() + 2)
 }
 
@@ -270,7 +278,18 @@ fn decode_entity(reference: &str) -> Option<String> {
     let decoded: String = Parser::new(reference)
         .filter_map(|event| match event {
             Event::Text(text) => Some(text.into_string()),
-            _ => None,
+            Event::Start(_)
+            | Event::End(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule
+            | Event::TaskListMarker(_) => None,
         })
         .collect();
     (decoded != reference).then_some(decoded)

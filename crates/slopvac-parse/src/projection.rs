@@ -4,6 +4,8 @@
 //! wraps, so a match offset is not a source offset. A [`Projection`] carries the mapping
 //! as an ordered list of tokens. See `docs/contract/positions.md`.
 
+use crate::span_between;
+use crate::sub;
 use slopvac_model::Span;
 
 /// How a token's projected text relates to its source bytes.
@@ -127,7 +129,7 @@ impl Projection {
         extents.extend(current);
         extents
             .into_iter()
-            .map(|(a, b)| Span::new(a, b).expect("start <= end"))
+            .map(|(a, b)| span_between(a, b))
             .collect()
     }
 
@@ -168,7 +170,7 @@ impl Projection {
         extents.extend(current);
         extents
             .into_iter()
-            .map(|(a, b)| Span::new(a, b).expect("start <= end"))
+            .map(|(a, b)| span_between(a, b))
             .collect()
     }
 
@@ -204,7 +206,12 @@ impl Projection {
             if start >= t0 && start < t1 && point_at_start.is_none() {
                 point_at_start = Some(match token.kind {
                     TokenKind::Identity => token.src.start() + char_byte(&token.text, start - t0),
-                    _ => token.src.start(),
+                    TokenKind::Entity
+                    | TokenKind::Backslash
+                    | TokenKind::Opaque
+                    | TokenKind::Collapse
+                    | TokenKind::Masked
+                    | TokenKind::Wrap => token.src.start(),
                 });
             }
             let (a, b) = (start.max(t0), end.min(t1));
@@ -224,7 +231,7 @@ impl Projection {
             found = true;
         }
         if found {
-            return Span::new(lo, hi).expect("lo <= hi: both come from valid token spans");
+            return span_between(lo, hi);
         }
         let at = point_at_start
             .or_else(|| self.tokens.last().map(|t| t.src.end()))
@@ -238,7 +245,7 @@ impl Projection {
     /// Panics if an offset is not on a character boundary of the projected text.
     #[must_use]
     pub fn span_for_bytes(&self, start: usize, end: usize) -> Span {
-        let cp = |b: usize| self.text[..b].chars().count();
+        let cp = |b: usize| sub(&self.text, ..b).chars().count();
         self.span_for_range(cp(start), cp(end))
     }
 }

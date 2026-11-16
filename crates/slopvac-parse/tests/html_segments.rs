@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for html segments.
 //! `parse_html_segments`: several source ranges read as one HTML stream. Expected values
 //! are the source text each range covers, worked out from the input.
 
@@ -10,6 +10,11 @@ use slopvac_parse::{
     parse_html_segments_stats,
 };
 
+#[expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn spans(source: &str, parts: &[&str]) -> Vec<Span> {
     let mut from = 0;
     parts
@@ -22,6 +27,10 @@ fn spans(source: &str, parts: &[&str]) -> Vec<Span> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn parse(source: &str, parts: &[&str]) -> Document {
     parse_html_segments(source, &SourceIndex::disk(source), &spans(source, parts)).unwrap()
 }
@@ -122,12 +131,16 @@ fn a_segment_outside_the_source_is_refused() {
     ));
 }
 /// The work of reading one paragraph of `lines` one-word lines, each its own segment.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn work_for(lines: usize) -> usize {
     let mut source = String::from("<p>\n");
     let mut parts = vec![(0, source.len())];
     for i in 0..lines {
         let start = source.len();
-        let _ = writeln!(source, "w{i}");
+        source.push_str(&format!("w{i}\n"));
         parts.push((start, source.len()));
     }
     let segments: Vec<Span> = parts
