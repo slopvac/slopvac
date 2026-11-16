@@ -67,7 +67,7 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another epic owns, with their owner bead.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
+pub const PLACEHOLDERS: [(&str, &str, &str); 11] = [
     (
         "terms",
         "Check and list the project terms.",
@@ -89,11 +89,6 @@ pub const PLACEHOLDERS: [(&str, &str, &str); 12] = [
         "slopvac-8l4.9",
     ),
     ("packs", "List installed rule packs.", "slopvac-8l4.9"),
-    (
-        "migrate",
-        "Rewrite a 2.x configuration for 3.0.",
-        "slopvac-8l4.2",
-    ),
     (
         "setup",
         "Install slopvac guidance into agent harnesses.",
@@ -387,6 +382,7 @@ pub fn command() -> Command {
         .subcommand(doctor())
         .subcommand(self_cmd())
         .subcommand(slopvac_lsp::command())
+        .subcommand(slopvac_migrate::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));

@@ -2413,6 +2413,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-lsp",
+ "slopvac-migrate",
  "slopvac-model",
  "slopvac-report",
  "slopvac-rules",

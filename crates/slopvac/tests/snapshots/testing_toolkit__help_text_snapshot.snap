@@ -15,6 +15,7 @@ Commands:
   doctor       Check the binary, configuration and pack health.
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
+  migrate      Migrate a 2.x project to 3.0: config, inline directives and steering blocks
   completions  Print a shell completion script.
   man          Write man pages.
   terms        Check and list the project terms.
@@ -22,7 +23,6 @@ Commands:
   validate     Validate configuration, packs and front matter.
   plugins      Manage plugins and packs: sync, trust, update.
   packs        List installed rule packs.
-  migrate      Rewrite a 2.x configuration for 3.0.
   setup        Install slopvac guidance into agent harnesses.
   prime        Print guidance for agents, by topic.
   init         Write 3.0 configuration templates.
