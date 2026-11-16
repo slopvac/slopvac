@@ -19,7 +19,7 @@ use flate2::write::GzEncoder;
 use sha2::{Digest as _, Sha256};
 use slopvac_plugins::extract::{Limits, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
-use slopvac_plugins::pyenv::{MANIFEST_FILE, PyEnvError, PyLock, PythonRuntime};
+use slopvac_plugins::pyenv::{MANIFEST_FILE, PyEnvError, PyLock, PythonRuntime, pep440_specifier};
 use slopvac_plugins::trust::VerifiedPlugin;
 
 const PLUGIN_PY: &str = include_str!("fixtures/fake_plugin.py");
@@ -654,7 +654,8 @@ fn a_manifest_over_one_mebibyte_is_refused_even_when_it_is_valid_toml() {
     let at_limit = format!("{m}#{}\n", "x".repeat((1 << 20) - m.len() - 2));
     assert_eq!(at_limit.len(), 1 << 20);
     assert!(read_runtime("limit", Some(&at_limit)).unwrap().is_some());
-    let over = format!("{at_limit}#\n");
+    let over = format!("{at_limit}\n");
+    assert_eq!(over.len(), (1 << 20) + 1);
     let err = read_runtime("over", Some(&over)).unwrap_err();
     assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
 }
@@ -679,6 +680,97 @@ fn manifest_values_are_escaped_once_in_the_error_text() {
     let expected = r"`x\\y\u{7}` is not a runtime; use `native` or `python`";
     assert!(err.to_string().ends_with(expected), "{err}");
 }
+#[test]
+fn version_requirements_translate_to_pep_440_specifiers() {
+    // Worked out by hand from semver's rules for partial versions.
+    let cases = [
+        // A lone bare version is already a uv request.
+        ("3", "3"),
+        ("3.12", "3.12"),
+        ("3.12.4", "3.12.4"),
+        ("=3", "==3.*"),
+        ("=3.12", "==3.12.*"),
+        ("=3.12.4", "==3.12.4"),
+        ("^3", ">=3,<4"),
+        ("^3.12", ">=3.12,<4"),
+        ("^3.12.4", ">=3.12.4,<4"),
+        ("^0", ">=0,<1"),
+        ("^0.0", ">=0.0,<0.1"),
+        ("^0.2", ">=0.2,<0.3"),
+        ("^0.2.3", ">=0.2.3,<0.3"),
+        ("^0.0.3", ">=0.0.3,<0.0.4"),
+        ("^0.0.0", ">=0.0.0,<0.0.1"),
+        ("~3", ">=3,<4"),
+        ("~3.12", ">=3.12,<3.13"),
+        ("~3.12.4", ">=3.12.4,<3.13"),
+        (">=3", ">=3"),
+        (">=3.12", ">=3.12"),
+        (">=3.12.4", ">=3.12.4"),
+        ("<4", "<4"),
+        ("<3.13", "<3.13"),
+        ("<3.13.1", "<3.13.1"),
+        (">3", ">=4"),
+        (">3.12", ">=3.13"),
+        (">3.12.4", ">3.12.4"),
+        ("<=3", "<4"),
+        ("<=3.12", "<3.13"),
+        ("<=3.12.4", "<=3.12.4"),
+        // Lists join with commas; a bare version in a list means `=`.
+        (">=3.11,<3.13", ">=3.11,<3.13"),
+        (">=3.11,<=3.12", ">=3.11,<3.13"),
+        ("^3.11,<3.13", ">=3.11,<4,<3.13"),
+        ("3.12,>=3.12.1", "==3.12.*,>=3.12.1"),
+    ];
+    for (req, expected) in cases {
+        assert_eq!(pep440_specifier(req).as_deref(), Ok(expected), "{req}");
+    }
+}
+
+#[test]
+fn version_requirements_with_no_pep_440_form_are_refused_naming_the_value() {
+    let cases = [
+        ("^3.12-rc.1", "pre-release"),
+        ("3.12-rc1", "pre-release"),
+        (">=3.12,<3.13-beta", "pre-release"),
+        ("", "one to three numbers"),
+        ("^", "one to three numbers"),
+        (">=3.12,,<4", "one to three numbers"),
+        ("3.12.4.1", "one to three numbers"),
+        ("3..4", "one to three numbers"),
+        ("^99999999999999999999", "too large"),
+        ("^18446744073709551615", "too large"),
+        (">18446744073709551615", "too large"),
+    ];
+    for (req, why) in cases {
+        let err = pep440_specifier(req).unwrap_err();
+        assert!(err.contains(&format!("`{req}`")), "{req}: {err}");
+        assert!(err.contains(why), "{req}: {err}");
+    }
+    // Five caret comparators of `^10.10.10` translate to 5 x 2 clauses past 64 bytes.
+    let long = ["^10.10.10"; 5].join(",");
+    let err = pep440_specifier(&long).unwrap_err();
+    assert!(err.contains("more than 64 bytes"), "{err}");
+}
+
+#[test]
+fn the_manifest_reader_hands_uv_the_translated_request() {
+    let m = manifest(
+        "plugin",
+        "runtime = \"python\"\npython = \"^3.12\"\ncommand = \"a.py\"\n",
+    );
+    let rt = read_runtime("translate", Some(&m)).unwrap().unwrap();
+    assert_eq!(rt.python, ">=3.12,<4");
+    let m = manifest(
+        "plugin",
+        "runtime = \"python\"\npython = \"3.12-rc.1\"\ncommand = \"a.py\"\n",
+    );
+    let err = read_runtime("translate-pre", Some(&m)).unwrap_err();
+    assert!(
+        matches!(&err, PyEnvError::Manifest { why, .. } if why.contains("`3.12-rc.1`")),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
     let wheel = format!(
@@ -1979,6 +2071,28 @@ mod live {
         assert!(p.shutdown().clean());
         // Running the plugin wrote nothing into the environment.
         b.env.verify_full().unwrap();
+    }
+
+    #[test]
+    fn live_a_caret_requirement_from_the_manifest_builds_an_environment() {
+        let Some(uv) = uv() else { return };
+        let s = Scratch::new("live-caret");
+        let wheels = [wheel("demo-pkg", "1.0", "one", &[])];
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let request = pep440_specifier("^3.11").unwrap();
+        assert_eq!(request, ">=3.11,<4");
+        let env = EnvStore::open(s.dir("envs"))
+            .build(
+                &Installer {
+                    python: request,
+                    ..installer(uv)
+                },
+                &vp.root,
+                &vp.tree,
+            )
+            .unwrap_or_else(|e| panic!("uv is present but the build failed: {e}"));
+        assert_eq!(import_value(&env, "demo_pkg"), "one");
+        env.verify_full().unwrap();
     }
 
     #[test]

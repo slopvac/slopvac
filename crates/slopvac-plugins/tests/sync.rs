@@ -1426,6 +1426,29 @@ mod python {
     }
 
     #[test]
+    fn sync_passes_uv_the_pep_440_form_of_a_semver_requirement() {
+        let caret = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"^3.12\"");
+        let t = Setup::python(&[
+            ("slopvac-pack.toml", caret.as_str()),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let log = t.uv_log();
+        assert!(
+            log.contains("--python >=3.12,<4\n") || log.contains("--python >=3.12,<4 "),
+            "{log}"
+        );
+        assert!(!log.contains("^3.12"), "{log}");
+        let key = EnvStore::key(&t.hash, ">=3.12,<4");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        // Status finds the same environment, and a second sync reuses it.
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(t.uv_log(), log, "uv ran again");
+    }
+
+    #[test]
     fn a_repeated_sync_keeps_a_sound_environment() {
         let t = Setup::python(&PLUGIN_FILES);
         t.sync(Network::Offline, true).unwrap();

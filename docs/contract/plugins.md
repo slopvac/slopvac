@@ -214,4 +214,20 @@ The slopvac repository holds the source of each first-party plugin under `plugin
 | K8 | A config with a `[[packs]]` array | Rejected as an unknown key. |
 | K9 | A config that lists one plugin id twice | The config validator rejects the second entry. JSON Schema cannot express this rule, so it has no schema case. |
 
+**K4a translation.** `python` follows semver rules, and uv takes PEP 440 specifiers, so the host translates the value before it calls uv. The environment key uses the translated form. A part may have one to three numbers.
+
+| Manifest | uv request |
+| --- | --- |
+| `3.12` or `3.12.4`, alone | unchanged |
+| `=3`, `=3.12`, `=3.12.4` | `==3.*`, `==3.12.*`, `==3.12.4` |
+| `^3.12` | `>=3.12,<4` |
+| `^0.2.3`, `^0.0.3` | `>=0.2.3,<0.3`, `>=0.0.3,<0.0.4` |
+| `~3.12`, `~3.12.4`, `~3` | `>=3.12,<3.13`, `>=3.12.4,<3.13`, `>=3,<4` |
+| `>=3.12`, `<3.13` | unchanged |
+| `>3.12`, `>3`, `>3.12.4` | `>=3.13`, `>=4`, `>3.12.4` |
+| `<=3.12`, `<=3`, `<=3.12.4` | `<3.13`, `<4`, `<=3.12.4` |
+| `>=3.11,<3.13` | the comparators joined with commas |
+
+A bare version inside a list means `=`. A pre-release suffix such as `3.12-rc.1` has no PEP 440 interpreter form, so the host refuses the plugin and names the value.
+
 The host behaviors in sections 3 to 11 (conflict notices, genre ties, digest mismatch, the command surface and key handling) get tests in the engine and plugin loader, which cite this file.

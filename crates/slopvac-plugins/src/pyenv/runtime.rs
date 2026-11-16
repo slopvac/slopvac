@@ -36,7 +36,9 @@ struct PluginTable {
 /// A plugin that runs in a managed Python environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PythonRuntime {
-    /// The interpreter request, for example `3.12`.
+    /// The interpreter request as a PEP 440 specifier set that uv takes, for
+    /// example `3.12` or `>=3.12,<4` (see [`pep440_specifier`]). The environment
+    /// store keys on this value.
     pub python: String,
     /// The script to run, relative to the plugin tree.
     pub command: String,
@@ -91,6 +93,10 @@ impl PythonRuntime {
                 if !super::is_python_request(&python) {
                     return Err(bad(format!("`{python}` is not a Python version request")));
                 }
+                let python = pep440_specifier(&python).map_err(bad)?;
+                if !super::is_python_request(&python) {
+                    return Err(bad(format!("`{python}` is not a Python version request")));
+                }
                 let command = plugin
                     .command
                     .ok_or_else(|| bad("`runtime = \"python\"` needs `command`".into()))?;
@@ -135,4 +141,115 @@ fn is_script_path(command: &str) -> bool {
         && !drive
         && !command.contains(['\\', '\0'])
         && !command.split('/').any(|s| s == "..")
+}
+
+/// Translate a `python` value of the manifest (the `VersionReq` def of the
+/// pack-manifest schema, semver rules) into the PEP 440 specifier set that uv
+/// takes as `--python`.
+///
+/// The grammar is comma-separated comparators, each an optional operator
+/// (`^ ~ = >= <= > <`) and a version of one to three numeric parts, with an
+/// optional `-` pre-release suffix. Rules, with semver's partial-version
+/// meaning:
+///
+/// | Manifest | PEP 440 |
+/// | --- | --- |
+/// | `3.12`, `3.12.4` alone | unchanged (uv reads `3.12` as any 3.12.x) |
+/// | `=3.12`, `=3`, `=3.12.4` | `==3.12.*`, `==3.*`, `==3.12.4` |
+/// | `^3.12`, `^3`, `^0.2.3`, `^0.0.3` | `>=3.12,<4`, `>=3,<4`, `>=0.2.3,<0.3`, `>=0.0.3,<0.0.4` |
+/// | `~3.12`, `~3.12.4`, `~3` | `>=3.12,<3.13`, `>=3.12.4,<3.13`, `>=3,<4` |
+/// | `>=3.12`, `<3.13` | unchanged |
+/// | `>3.12`, `>3`, `>3.12.4` | `>=3.13`, `>=4`, `>3.12.4` |
+/// | `<=3.12`, `<=3`, `<=3.12.4` | `<3.13`, `<4`, `<=3.12.4` |
+///
+/// In a list, a bare version means `=`. Comma-separated parts join with `,`.
+///
+/// # Errors
+/// A message naming the value, for a pre-release suffix (PEP 440 interpreter
+/// requests cannot express it), a part that is not a number, a list entry
+/// that is empty, a number too large, or a result over 64 bytes.
+pub fn pep440_specifier(req: &str) -> Result<String, String> {
+    let parts: Vec<&str> = req.split(',').map(str::trim).collect();
+    if let [only] = parts[..]
+        && let Ok((None, _)) = comparator(only)
+    {
+        return Ok(only.to_owned());
+    }
+    let mut out = Vec::new();
+    for part in &parts {
+        let (op, v) = comparator(part).map_err(|why| format!("`{req}`: {why}"))?;
+        out.extend(clauses(op.unwrap_or("="), &v).map_err(|why| format!("`{req}`: {why}"))?);
+    }
+    let joined = out.join(",");
+    if joined.len() > 64 {
+        return Err(format!("`{req}` translates to more than 64 bytes"));
+    }
+    Ok(joined)
+}
+
+fn comparator(part: &str) -> Result<(Option<&'static str>, Vec<u64>), String> {
+    let (op, rest) = ["<=", ">=", "^", "~", "=", ">", "<"]
+        .iter()
+        .find_map(|o| part.strip_prefix(o).map(|r| (Some(*o), r)))
+        .unwrap_or((None, part));
+    let rest = rest.trim();
+    if rest.contains('-') {
+        return Err(format!(
+            "`{part}` has a pre-release suffix, which a Python version request cannot express"
+        ));
+    }
+    let nums: Vec<u64> = rest
+        .split('.')
+        .map(|n| {
+            if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(format!("`{part}` is not a version of one to three numbers"));
+            }
+            n.parse()
+                .map_err(|_| format!("`{part}` has a number that is too large"))
+        })
+        .collect::<Result<_, _>>()?;
+    if nums.is_empty() || nums.len() > 3 {
+        return Err(format!("`{part}` is not a version of one to three numbers"));
+    }
+    Ok((op, nums))
+}
+
+fn dotted(v: &[u64]) -> String {
+    v.iter().map(u64::to_string).collect::<Vec<_>>().join(".")
+}
+
+/// `v` with the number at `idx` raised by one and the later parts dropped.
+fn bumped(v: &[u64], idx: usize) -> Result<String, String> {
+    let mut head = v[..=idx].to_vec();
+    head[idx] = head[idx]
+        .checked_add(1)
+        .ok_or_else(|| "a number is too large".to_owned())?;
+    Ok(dotted(&head))
+}
+
+fn clauses(op: &str, v: &[u64]) -> Result<Vec<String>, String> {
+    let n = v.len();
+    let ver = dotted(v);
+    Ok(match op {
+        "=" if n == 3 => vec![format!("=={ver}")],
+        "=" => vec![format!("=={ver}.*")],
+        ">=" | "<" => vec![format!("{op}{ver}")],
+        ">" if n == 3 => vec![format!(">{ver}")],
+        ">" => vec![format!(">={}", bumped(v, n - 1)?)],
+        "<=" if n == 3 => vec![format!("<={ver}")],
+        "<=" => vec![format!("<{}", bumped(v, n - 1)?)],
+        "~" => vec![
+            format!(">={ver}"),
+            format!("<{}", bumped(v, usize::from(n > 1))?),
+        ],
+        // "^": the leftmost non-zero number stays; a trailing all-zero version
+        // keeps its last given number.
+        _ => {
+            let idx = v
+                .iter()
+                .position(|x| *x != 0)
+                .map_or(n - 1, |i| i.min(n - 1));
+            vec![format!(">={ver}"), format!("<{}", bumped(v, idx)?)]
+        }
+    })
 }

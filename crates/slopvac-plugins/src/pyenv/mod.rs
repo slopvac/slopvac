@@ -81,7 +81,7 @@ use serde_json::json;
 use slopvac_sanitize::{line as esc, terminal};
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
-pub use runtime::{MANIFEST_FILE, PythonRuntime};
+pub use runtime::{MANIFEST_FILE, PythonRuntime, pep440_specifier};
 
 use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
@@ -312,7 +312,17 @@ pub(crate) fn is_python_request(p: &str) -> bool {
             b.is_ascii_alphanumeric()
                 || matches!(
                     b,
-                    b'.' | b'@' | b'-' | b'+' | b'=' | b'<' | b'>' | b',' | b'~' | b'!' | b'^'
+                    b'.' | b'@'
+                        | b'-'
+                        | b'+'
+                        | b'='
+                        | b'<'
+                        | b'>'
+                        | b','
+                        | b'~'
+                        | b'!'
+                        | b'^'
+                        | b'*'
                 )
         })
 }
