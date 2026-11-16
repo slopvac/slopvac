@@ -1,4 +1,5 @@
 //! The bundled presets load and resolve.
+#![cfg(test)]
 
 use serde_json::{Value, json};
 use slopvac_styles::{BuiltinSource, Resolution, resolve};

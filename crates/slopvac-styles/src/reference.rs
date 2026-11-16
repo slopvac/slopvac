@@ -61,23 +61,24 @@ fn names(list: &[String]) -> String {
 fn page(name: &str, style: &Style, text: &str) -> String {
     let mut out = format!("# Style: {name}\n\n");
     if let Some(description) = &style.description {
-        let _ = writeln!(out, "{description}\n");
+        writeln!(out, "{description}\n").ok();
     }
-    let _ = writeln!(out, "- Extends: {}", names(&style.extends));
-    let _ = writeln!(out, "- Conflicts with: {}", names(&style.conflicts));
-    let _ = writeln!(
+    writeln!(out, "- Extends: {}", names(&style.extends)).ok();
+    writeln!(out, "- Conflicts with: {}", names(&style.conflicts)).ok();
+    writeln!(
         out,
         "- Enable it with `styles = [\"{name}\"]` in `slopvac.toml`.\n"
-    );
+    )
+    .ok();
     let notes = notes(text);
     if !notes.is_empty() {
-        let _ = writeln!(out, "## Notes\n\n{notes}\n");
+        writeln!(out, "## Notes\n\n{notes}\n").ok();
     }
     let cats = &style.categories;
     if !cats.is_empty() {
         out.push_str("## Categories\n\n| Category | Settings |\n| --- | --- |\n");
         for (k, c) in cats {
-            let _ = writeln!(out, "| `{k}` | {} |", dials(&c.dials()));
+            writeln!(out, "| `{k}` | {} |", dials(&c.dials())).ok();
         }
         out.push('\n');
     }
@@ -85,7 +86,7 @@ fn page(name: &str, style: &Style, text: &str) -> String {
     if !rules.is_empty() {
         out.push_str("## Rules\n\n| Rule | Level |\n| --- | --- |\n");
         for (k, l) in rules {
-            let _ = writeln!(out, "| `{k}` | `{}` |", level(*l));
+            writeln!(out, "| `{k}` | `{}` |", level(*l)).ok();
         }
         out.push('\n');
     }
@@ -106,9 +107,13 @@ pub fn reference_pages() -> Vec<(String, String)> {
          winner, and `--strict-styles` turns it into an error.\n\n| Style | Description |\n| --- | --- |\n",
     );
     for (name, text) in BUILTIN {
+        #[expect(
+            clippy::expect_used,
+            reason = "bundled presets are parsed by the builtin tests, so a failure is a build defect"
+        )]
         let style = Style::parse(name, text).expect("bundled preset is valid");
         let description = style.description.as_deref().unwrap_or_default();
-        let _ = writeln!(index, "| [`{name}`]({name}.md) | {description} |");
+        writeln!(index, "| [`{name}`]({name}.md) | {description} |").ok();
         pages.push((format!("styles/{name}.md"), page(name, &style, text)));
     }
     pages.insert(0, ("styles/index.md".to_owned(), index));

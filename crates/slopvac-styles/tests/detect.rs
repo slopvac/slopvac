@@ -1,4 +1,5 @@
 //! House-style detection over fixture repositories.
+#![cfg(test)]
 
 use std::fs;
 

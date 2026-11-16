@@ -1,4 +1,5 @@
 //! The shared style conformance corpus (`schemas/v3/conformance/style/`) through the loader.
+#![cfg(test)]
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -1,4 +1,5 @@
 //! The generated style reference pages.
+#![cfg(test)]
 
 use slopvac_styles::{BuiltinSource, StyleSource, reference_pages};
 

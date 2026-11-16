@@ -85,10 +85,10 @@ impl Suggestion {
     #[must_use]
     pub fn describe(&self) -> String {
         let at = format!("{}:{}", self.evidence.file, self.evidence.line);
-        match &self.preset {
-            Some(p) => format!("{}: suggest the \"{p}\" preset ({at})", self.style),
-            None => format!("{}: no bundled preset ({at})", self.style),
-        }
+        self.preset.as_ref().map_or_else(
+            || format!("{}: no bundled preset ({at})", self.style),
+            |p| format!("{}: suggest the \"{p}\" preset ({at})", self.style),
+        )
     }
 }
 
@@ -145,7 +145,7 @@ fn read(root: &Path, name: &str) -> Option<String> {
     let file = open_regular(&path).ok()?;
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1).read_to_end(&mut bytes).ok()?;
-    if bytes.len() as u64 > MAX_BYTES {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_BYTES {
         return None;
     }
     String::from_utf8(bytes).ok()
@@ -416,7 +416,7 @@ mod tests {
         );
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(open_regular(&fifo).map(|_| ()));
+            tx.send(open_regular(&fifo).map(|_| ())).ok();
         });
         let result = rx
             .recv_timeout(Duration::from_secs(5))

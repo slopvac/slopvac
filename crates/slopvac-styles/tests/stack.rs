@@ -1,4 +1,5 @@
 //! Styles as layer 2 of the config stack: values keep the preset and line that set them.
+#![cfg(test)]
 
 use std::path::Path;
 

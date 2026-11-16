@@ -1,4 +1,5 @@
 //! Behavior of style resolution through the public API.
+#![cfg(test)]
 
 use serde_json::{Value, json};
 use slopvac_config::resolve::Contribution;
