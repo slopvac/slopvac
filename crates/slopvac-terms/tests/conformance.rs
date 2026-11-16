@@ -99,7 +99,7 @@ fn valid_terms_files_load_with_the_terms_they_declare() {
     let load =
         |name: &str| TermsFile::load(&Path::new(ROOT).join("terms/valid").join(name)).unwrap();
     assert_eq!(load("empty.toml").terms, []);
-    assert!(!load("full.toml").terms.is_empty());
+    assert!(load("full.toml").terms.len() > 1);
     let casing = load("casing.toml");
     assert!(casing.terms.iter().any(|t| t.ignore_case));
     assert!(casing.terms.iter().any(|t| t.case_sensitive));
