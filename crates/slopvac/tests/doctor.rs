@@ -3,6 +3,7 @@
 //!
 //! Every JSON document the binary prints in these tests is also validated against
 //! `schemas/v3/doctor-report.schema.json`.
+#![cfg(test)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -464,7 +465,7 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
     store.pin_key("acme", &key, "2026-11-15T00:00:00Z").unwrap();
     store
         .record(TrustRecord {
-            hash: "sha256:".to_owned() + &"a".repeat(64),
+            hash: format!("sha256:{}", "a".repeat(64)),
             name: "acme-tagger".into(),
             version: Some("0.3.1".into()),
             source: "oci:ghcr.io/acme/p@sha256:x".into(),

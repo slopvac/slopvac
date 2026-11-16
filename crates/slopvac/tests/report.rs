@@ -5,6 +5,7 @@
 //! nothing, so each test checks the shape of an empty-findings report: that the
 //! output parses in its format and names the document. Content checks per
 //! finding live in `slopvac-report`'s own tests.
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

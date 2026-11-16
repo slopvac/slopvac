@@ -1,4 +1,5 @@
 //! Installed-binary tests for the command tree, exit codes and global settings.
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -222,10 +223,7 @@ fn failures_carry_stable_bracketed_codes() {
     let (_dir, bad) = doc(&[0xff]);
     let cases: Vec<(Vec<std::ffi::OsString>, &str)> = vec![
         (vec!["lint".into()], "error[no-input]: "),
-        (
-            vec![bad.clone().into_os_string()],
-            "error[input-not-utf8]: ",
-        ),
+        (vec![bad.into_os_string()], "error[input-not-utf8]: "),
         (
             vec!["/nonexistent/x.md".into()],
             "error[input-unreadable]: ",
@@ -684,6 +682,10 @@ fn stopped_reader_run(documents: usize) -> Stopped {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "test cleanup: the child may already have exited"
+            )]
             let _ = child.lock().unwrap().kill();
         })
     };
@@ -735,15 +737,22 @@ fn stopped_reader_run(documents: usize) -> Stopped {
         }
     };
     finished.store(true, Ordering::SeqCst);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "test cleanup: the child may already have exited"
+    )]
     let _ = child.lock().unwrap().kill();
     // Reap the child so discarded attempts leave no zombie behind.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "test cleanup: the child may already have exited"
+    )]
     let _ = child.lock().unwrap().wait();
     watchdog.join().unwrap();
     drop((stdin, stdout));
-    match outcome {
-        None => Stopped::NotReached { received },
-        Some(code) => Stopped::Held { code },
-    }
+    outcome.map_or(Stopped::NotReached { received }, |code| Stopped::Held {
+        code,
+    })
 }
 
 #[test]

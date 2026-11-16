@@ -3,6 +3,7 @@
 //!
 //! The engine behind the CLI is still STUB(slopvac-8l4.12.12), so these tests
 //! cover input handling, option checks and name redaction, not findings.
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

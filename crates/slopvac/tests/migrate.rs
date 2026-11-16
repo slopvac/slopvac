@@ -1,4 +1,5 @@
 //! Installed-binary tests for `slopvac migrate`.
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

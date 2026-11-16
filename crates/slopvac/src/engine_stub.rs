@@ -55,6 +55,10 @@ impl Default for RunOutcome {
 }
 
 /// A report with no findings for documents given as `(path, words)`.
+#[expect(
+    clippy::expect_used,
+    reason = "the literal matches the v3 report model; the stub's tests build it"
+)]
 fn clean_report(docs: &[(String, usize)]) -> Report {
     let register = json!({
         "strong": {"findings": 0, "errors": 0, "warnings": 0, "per_100_words": 0.0},
@@ -135,6 +139,10 @@ impl Linter for StubLinter {
 }
 
 /// Record a skipped input as an incomplete-run error and a report notice.
+#[expect(
+    clippy::expect_used,
+    reason = "skip codes are kebab-case literals and the message comes from CliError::new, which is never empty"
+)]
 fn skip(
     code: &'static str,
     shown: &str,

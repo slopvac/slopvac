@@ -116,9 +116,12 @@ pub fn plan(m: &ArgMatches) -> Result<StdinPlan, CliError> {
 /// of the first bad byte otherwise.
 pub fn read(source: &mut dyn Read) -> Result<Vec<u8>, CliError> {
     let mut buf = Vec::new();
-    source
-        .read_to_end(&mut buf)
-        .map_err(|_| CliError::new("input-unreadable", format!("{STDIN_NAME}: cannot read")))?;
+    source.read_to_end(&mut buf).map_err(|e| {
+        CliError::new(
+            "input-unreadable",
+            format!("{STDIN_NAME}: cannot read: {e}"),
+        )
+    })?;
     if let Err(err) = std::str::from_utf8(&buf) {
         return Err(CliError::new(
             "input-not-utf8",

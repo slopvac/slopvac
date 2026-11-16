@@ -14,8 +14,8 @@ pub enum ReadProblem {
     NotRegular,
     /// Over the cap.
     TooLarge,
-    /// Any other I/O failure, including invalid UTF-8.
-    Io,
+    /// Any other I/O failure, including invalid UTF-8; carries the failure's kind.
+    Io(std::io::ErrorKind),
 }
 
 /// The text of `path`, or `None` when it does not exist.
@@ -44,17 +44,21 @@ pub fn read_bounded(path: &Path, cap: u64) -> Result<Option<String>, ReadProblem
         {
             return Ok(None);
         }
-        Err(_) => return Err(ReadProblem::Io),
+        Err(e) => return Err(ReadProblem::Io(e.kind())),
     };
-    if !handle.metadata().map_err(|_| ReadProblem::Io)?.is_file() {
+    if !handle
+        .metadata()
+        .map_err(|e| ReadProblem::Io(e.kind()))?
+        .is_file()
+    {
         return Err(ReadProblem::NotRegular);
     }
     let mut text = String::new();
     handle
         .take(cap + 1)
         .read_to_string(&mut text)
-        .map_err(|_| ReadProblem::Io)?;
-    if text.len() as u64 > cap {
+        .map_err(|e| ReadProblem::Io(e.kind()))?;
+    if !u64::try_from(text.len()).is_ok_and(|n| n <= cap) {
         return Err(ReadProblem::TooLarge);
     }
     Ok(Some(text))
@@ -113,7 +117,7 @@ mod tests {
         std::fs::write(dir.path().join("a"), [0xff, 0xfe]).unwrap();
         assert_eq!(
             read_bounded(&dir.path().join("a"), 10),
-            Err(ReadProblem::Io)
+            Err(ReadProblem::Io(std::io::ErrorKind::InvalidData))
         );
     }
 }

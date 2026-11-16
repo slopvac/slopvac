@@ -1,8 +1,12 @@
 //! The generated CLI reference documents every visible argument, default, possible value,
 //! built-in help and version flag, and `help` subcommand, and keeps help text inert.
+#![cfg(test)]
 
 #[path = "../examples/cli-reference.rs"]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the example's main() and helpers are only used when it runs as an example"
+)]
 mod reference;
 
 use clap::{Arg, ArgAction, Command};

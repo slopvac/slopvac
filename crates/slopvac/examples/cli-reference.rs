@@ -3,6 +3,10 @@
 //! `cargo run -p slopvac --example cli-reference -- <out-dir>` writes `cli/index.md` and one
 //! page per top-level command below `<out-dir>`. It reads the clap tree through its public
 //! API and changes nothing in it.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -24,10 +28,17 @@ const EXIT_CODES: [(u8, &str); 3] = [
 ];
 
 fn main() -> std::io::Result<()> {
-    let out = PathBuf::from(std::env::args().nth(1).expect("usage: reference <out-dir>"));
+    let out = PathBuf::from(
+        std::env::args()
+            .nth(1)
+            .ok_or_else(|| std::io::Error::other("usage: reference <out-dir>"))?,
+    );
     for (path, text) in pages(&slopvac_cli::cli::command()) {
         let file = out.join(path);
-        std::fs::create_dir_all(file.parent().expect("page paths have a directory"))?;
+        let dir = file
+            .parent()
+            .ok_or_else(|| std::io::Error::other("page paths have a directory"))?;
+        std::fs::create_dir_all(dir)?;
         std::fs::write(file, text)?;
     }
     Ok(())

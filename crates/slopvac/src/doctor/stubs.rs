@@ -77,10 +77,10 @@ pub struct LocalConfigSources;
 
 impl ConfigSources for LocalConfigSources {
     fn scan(&self, cwd: &Path, explicit: Option<&Path>) -> ConfigScan {
-        let (layer, path) = match explicit {
-            Some(p) => ("explicit", Some(cwd.join(p))),
-            None => ("project", nearest(cwd)),
-        };
+        let (layer, path) = explicit.map_or_else(
+            || ("project", nearest(cwd)),
+            |p| ("explicit", Some(cwd.join(p))),
+        );
         let Some(path) = path else {
             return ConfigScan::default();
         };
@@ -139,7 +139,7 @@ fn inspect(path: &Path) -> (SourceStatus, Option<String>, Network) {
                 (false, None),
             );
         }
-        Err(ReadProblem::Io) => {
+        Err(ReadProblem::Io(_)) => {
             return (
                 SourceStatus::Unreadable,
                 Some("cannot read the file".into()),

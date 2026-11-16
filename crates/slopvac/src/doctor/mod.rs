@@ -3,6 +3,10 @@
 //! The JSON shape is `schemas/v3/doctor-report.schema.json`; docs/contract/doctor.md specifies
 //! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
 //! the traits below; [`stubs`] holds the local stand-ins.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 pub mod read;
 pub mod stubs;
@@ -31,6 +35,10 @@ fn path_for_log(path: &Path, cwd: &Path) -> String {
 }
 
 /// Largest lockfile doctor reads, as the lock reader's own cap.
+#[expect(
+    clippy::as_conversions,
+    reason = "const context: usize to u64 never truncates on the supported targets"
+)]
 const MAX_LOCK_BYTES: u64 = slopvac_plugins::lock::MAX_LOCK_BYTES as u64;
 /// Most entries the directory size walk visits. The schema and the spec say 10000.
 pub const WALK_LIMIT: usize = 10_000;
@@ -404,7 +412,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
             let why = match problem {
                 ReadProblem::NotRegular => "not a regular file",
                 ReadProblem::TooLarge => "larger than the lockfile limit",
-                ReadProblem::Io => "cannot read the file",
+                ReadProblem::Io(_) => "cannot read the file",
             };
             return empty(lock("unreadable", Some(why.to_owned())));
         }
@@ -419,8 +427,14 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
             Some("pack store: no data directory could be derived".to_owned()),
         ));
     };
-    match status(&Store::new(root), project_root, &parsed) {
-        Ok(statuses) => Packs {
+    status(&Store::new(root), project_root, &parsed).map_or_else(
+        |_| {
+            empty(lock(
+                "unreadable",
+                Some("pack store: cannot read the installed packs".to_owned()),
+            ))
+        },
+        |statuses| Packs {
             lockfile: lock("ok", None),
             items: parsed
                 .packs()
@@ -437,11 +451,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
                 })
                 .collect(),
         },
-        Err(_) => empty(lock(
-            "unreadable",
-            Some("pack store: cannot read the installed packs".to_owned()),
-        )),
-    }
+    )
 }
 
 /// A pinned namespace: the pack id pattern, `^[a-z][a-z0-9-]{0,63}$`.
@@ -472,7 +482,7 @@ fn trust_report(state_dir: Option<&Path>) -> Trust {
             let why = match problem {
                 ReadProblem::NotRegular => "the trust store is not a regular file",
                 ReadProblem::TooLarge => "the trust store is larger than the reader accepts",
-                ReadProblem::Io => "the trust store cannot be read",
+                ReadProblem::Io(_) => "the trust store cannot be read",
             };
             return none("unreadable", Some(why));
         }
@@ -624,6 +634,10 @@ pub fn build(i: &Inputs<'_>) -> Report {
 impl Report {
     /// Pretty JSON with a trailing newline.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "Report holds only strings, numbers and string-keyed maps, which serde_json always serialises"
+    )]
     pub fn to_json(&self) -> String {
         let mut text = serde_json::to_string_pretty(self).expect("the report serialises");
         text.push('\n');

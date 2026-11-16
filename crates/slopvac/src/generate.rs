@@ -1,4 +1,8 @@
 //! Completions, man pages and the Markdown CLI reference, all from the tree.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use clap::Command;
 use std::fmt::Write as _;

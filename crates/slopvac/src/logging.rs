@@ -19,6 +19,10 @@ pub fn level_from(env: &dyn Env) -> Option<LevelFilter> {
 pub fn init(env: &dyn Env, ansi: bool) {
     if let Some(level) = level_from(env) {
         // A second init in one process (tests) is harmless.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a second init in one process (tests) is harmless"
+        )]
         let _ = tracing_subscriber::fmt()
             .with_max_level(level)
             .with_writer(std::io::stderr)

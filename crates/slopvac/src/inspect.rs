@@ -3,6 +3,10 @@
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
 //! Output order is deterministic: category, then rule, as the pack lists them.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -106,8 +110,8 @@ impl Filter {
         let genre = m
             .get_one::<String>("genre")
             .map(|g| {
-                GenreId::new(g.clone()).map_err(|_| {
-                    CliError::new("usage", format!("--genre {g:?} is not a genre id."))
+                GenreId::new(g.clone()).map_err(|e| {
+                    CliError::new("usage", format!("--genre {g:?} is not a genre id: {e}."))
                 })
             })
             .transpose()?;
@@ -359,7 +363,13 @@ fn example_lines(number: usize, example: &Example) -> Vec<String> {
 fn question_of(rule: &LoadedRule) -> Option<&str> {
     match &rule.rule().match_ {
         Match::Judgement(j) => Some(j.question.as_str()),
-        _ => None,
+        Match::Tokens(_)
+        | Match::Pattern(_)
+        | Match::Substitution(_)
+        | Match::Metric(_)
+        | Match::Structure(_)
+        | Match::Capitalization(_)
+        | Match::Vocabulary(_) => None,
     }
 }
 
@@ -430,7 +440,9 @@ fn suppression(rule: &LoadedRule) -> Option<String> {
 /// `unknown-rule` when the ID matches no shipped rule; a bare 2.x ID gets a pointer to
 /// `slopvac migrate`.
 pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    let id = m.get_one::<String>("rule").expect("required");
+    let id = m
+        .get_one::<String>("rule")
+        .ok_or_else(|| CliError::new("usage", "a rule ID is required."))?;
     let set = load(m)?;
     let found = slopvac_model::RuleId::new(id.clone())
         .ok()
@@ -450,7 +462,12 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         .categories()
         .iter()
         .find(|c| c.id() == rule.category())
-        .expect("a rule has a category");
+        .ok_or_else(|| {
+            CliError::new(
+                "rules-unavailable",
+                format!("rule {id} names a category that is not loaded."),
+            )
+        })?;
     let text = match format_of(m) {
         "json" => {
             let mut value = rule_json(category, rule);

@@ -4,6 +4,7 @@
 //!
 //! The output is validated against the published config schema.
 //! STUB(slopvac-8l4.12.25): swap to `slopvac validate` when 8l4.4.6 lands.
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

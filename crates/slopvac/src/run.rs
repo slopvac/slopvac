@@ -112,6 +112,10 @@ where
                 redact::path_for_log(err.path(), &cwd),
                 err.problem()
             );
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a failed stderr diagnostic has nowhere left to be reported"
+            )]
             let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
             return exit::code(exit::INCOMPLETE);
         }
@@ -127,6 +131,10 @@ where
         return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
             Ok(code) => exit::code(code),
             Err(failure) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a failed stderr diagnostic has nowhere left to be reported"
+                )]
                 let _ = writeln!(err_out, "{failure}");
                 exit::code(exit::INCOMPLETE)
             }
@@ -148,6 +156,10 @@ where
             } else {
                 styled.to_string()
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a failed stderr diagnostic has nowhere left to be reported"
+            )]
             let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
             return exit::code(exit::INCOMPLETE);
         }
@@ -161,6 +173,10 @@ where
             return match write_stdout(out, text.as_bytes()) {
                 Ok(code) => exit::code(code),
                 Err(failure) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "a failed stderr diagnostic has nowhere left to be reported"
+                    )]
                     let _ = writeln!(err_out, "{failure}");
                     exit::code(exit::INCOMPLETE)
                 }
@@ -177,6 +193,10 @@ where
     match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
         Ok(code) => exit::code(code),
         Err(err) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a failed stderr diagnostic has nowhere left to be reported"
+            )]
             let _ = writeln!(err_out, "{err}");
             exit::code(exit::INCOMPLETE)
         }
@@ -218,7 +238,7 @@ fn dispatch(
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
-                .expect("required");
+                .ok_or_else(|| CliError::new("usage", "completions needs a shell name."))?;
             write_stdout(out, &generate::completions(shell))
         }
         Some(("init", m)) => init::run(m, out),
@@ -435,6 +455,10 @@ fn lint_with(
         stdin_plan: plan,
     });
     for err in &outcome.incomplete {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed stderr diagnostic has nowhere left to be reported"
+        )]
         let _ = writeln!(err_out, "{err}");
     }
     output::deliver(m, &outcome, out)?;

@@ -17,6 +17,10 @@ use crate::errors::CliError;
 /// # Panics
 /// When the clap tree offers a format that `slopvac-report` does not know.
 #[must_use]
+#[expect(
+    clippy::expect_used,
+    reason = "clap restricts --format to the names Format::from_name accepts"
+)]
 pub fn chosen_format(m: &ArgMatches) -> Format {
     let given = m.value_source("format") == Some(ValueSource::CommandLine);
     let name = if m.get_one::<PathBuf>("out").is_some() && !given {

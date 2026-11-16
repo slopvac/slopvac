@@ -6,6 +6,10 @@
 //!
 //! [`generate`] with `live = true` writes the same text with every example uncommented. A
 //! test validates that config against the schema, so each example meets its constraints.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 
@@ -186,7 +190,9 @@ fn toml_value(v: &Value) -> String {
             "[{}]",
             items.iter().map(toml_value).collect::<Vec<_>>().join(", ")
         ),
-        other => other.to_string(),
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_)) => {
+            other.to_string()
+        }
     }
 }
 

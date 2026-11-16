@@ -123,7 +123,8 @@ const FILES: [(&str, &str); 26] = [
 /// # Errors
 /// `rules-unavailable` when an embedded file fails to load.
 pub fn core() -> Result<RuleSet, CliError> {
-    let pack = PackId::new("core").expect("core is a valid pack id");
+    let pack = PackId::new("core")
+        .map_err(|e| CliError::new("rules-unavailable", format!("the core pack id: {e}")))?;
     let sources = FILES
         .iter()
         .map(|(name, text)| (PathBuf::from(name), (*text).to_owned()));

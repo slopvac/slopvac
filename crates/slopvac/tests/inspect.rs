@@ -5,6 +5,7 @@
 //! Expected counts come from the converted 2.x core files under
 //! `crates/slopvac-rules/tests/fixtures/core-v3`, counted with `jq`, not from
 //! the code under test. The rules are embedded by STUB(slopvac-8l4.12.20).
+#![cfg(test)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;
