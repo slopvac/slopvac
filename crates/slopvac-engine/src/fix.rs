@@ -153,15 +153,21 @@ pub fn fix_document(
     let mut skipped = Vec::new();
     for finding in &doc.findings {
         let Some(fix) = &finding.fix else { continue };
+        // A canonical term spelling is the fix itself: it keeps the case it declares.
+        let exact = engine.is_term_casing(&finding.rule_id);
         let cased: Vec<Edit> = fix
             .edits()
             .iter()
             .map(|e| Edit {
                 span: e.span,
-                text: preserve_case(
-                    input.source.get(e.span.start()..e.span.end()).unwrap_or(""),
-                    &e.text,
-                ),
+                text: if exact {
+                    e.text.clone()
+                } else {
+                    preserve_case(
+                        input.source.get(e.span.start()..e.span.end()).unwrap_or(""),
+                        &e.text,
+                    )
+                },
             })
             .collect();
         let mut reason = refusal(

@@ -58,7 +58,7 @@ A person gives these approvals, so the script reads them from `scripts/release-e
 | Item id | Approval | Bead |
 | --- | --- | --- |
 | `security-review` | Security review sign-off for the plugin host, trust store, OCI client, and extraction | `slopvac-8l4.9.11` |
-| `signed-artifacts-<triple>` | Signed installed artifacts, one item for each of the six distribution targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `x86_64-pc-windows-msvc` | `slopvac-8l4.13.3` |
+| `signed-artifacts-<triple>` | Signed installed artifacts, one item for each of the five distribution targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` | `slopvac-8l4.13.3` |
 | `action-contract` | GitHub Action contract | `slopvac-8l4.13.6` |
 | `hook-contract` | Published pre-commit hook contract | `slopvac-8l4.13.8` |
 | `policies-doc` | `docs/contract/policies.md` approved | `slopvac-8l4.2.12` |

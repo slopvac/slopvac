@@ -2438,6 +2438,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "slopvac-config",
  "slopvac-migrate",
  "slopvac-text",
  "tempfile",
@@ -2450,6 +2451,7 @@ version = "0.0.0"
 dependencies = [
  "annotate-snippets",
  "clap",
+ "frontmatter-spans",
  "ignore",
  "insta",
  "saphyr",
@@ -2653,8 +2655,10 @@ name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
  "serde",
+ "serde_json",
+ "slopvac-config",
+ "tempfile",
  "thiserror",
- "toml",
 ]
 
 [[package]]

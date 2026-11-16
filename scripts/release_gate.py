@@ -76,7 +76,6 @@ TARGET_TRIPLES = (
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",
-    "x86_64-pc-windows-msvc",
 )
 
 # Approvals a person gives. Each needs a passing record in the evidence file.
