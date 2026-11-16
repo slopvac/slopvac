@@ -386,6 +386,18 @@ jobs:
       - name: Run every discovered pytest suite
         run: python3 -m pytest
 
+      # Needs history to find the merge-base, so this step alone fetches in full.
+      - name: Schema additive-only check
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --unshallow origin "$BASE_REF" \
+            || git fetch --no-tags origin "$BASE_REF"
+          base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          python3 scripts/contract/schema_compat.py --base "$base"
+
   # Exercise the published package across every Python version claimed in
   # project metadata. This is intentionally separate from the full-suite job.
   lint-package:
