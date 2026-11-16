@@ -90,17 +90,24 @@ fn linked_packages(lock: &toml::Table) -> Vec<(String, String, Option<String>)> 
 /// The only source this check can resolve exactly: the crates.io index.
 const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
-/// The unpacked source of the linked package, identified by its `Cargo.lock` source.
+/// Registry cache directories that hold crates.io sources. The sparse protocol unpacks
+/// under `index.crates.io-<hash>`, the git protocol under `github.com-<hash>`.
+fn is_crates_io_cache(dir_name: &str) -> bool {
+    dir_name.starts_with("index.crates.io-") || dir_name.starts_with("github.com-")
+}
+
+/// Every unpacked copy of the linked package, identified by its `Cargo.lock` source.
 ///
 /// A path or git dependency, a patch, or another registry has a different source, and a
 /// cached crates.io copy of the same name and version is not what links. Those fail
-/// closed instead of inspecting the wrong files.
-fn resolve_source(
+/// closed instead of inspecting the wrong files. Copies from both crates.io protocols are
+/// the same crate, so the caller inspects all of them; none found is an error.
+fn resolve_sources(
     cargo_home: &Path,
     name: &str,
     version: &str,
     source: Option<&str>,
-) -> Result<PathBuf, String> {
+) -> Result<Vec<PathBuf>, String> {
     if source != Some(CRATES_IO) {
         return Err(format!(
             "{name} {version}: source {source:?} cannot be resolved; only {CRATES_IO} is supported"
@@ -113,11 +120,7 @@ fn resolve_source(
     for entry in entries {
         let index =
             entry.map_err(|error| format!("bad entry in {}: {error}", sources.display()))?;
-        if !index
-            .file_name()
-            .to_string_lossy()
-            .starts_with("index.crates.io-")
-        {
+        if !is_crates_io_cache(&index.file_name().to_string_lossy()) {
             continue;
         }
         let candidate = index.path().join(format!("{name}-{version}"));
@@ -125,16 +128,14 @@ fn resolve_source(
             found.push(candidate);
         }
     }
-    match found.len() {
-        1 => Ok(found.remove(0)),
-        0 => Err(format!(
+    if found.is_empty() {
+        return Err(format!(
             "{name} {version} is not unpacked under {}",
             sources.display()
-        )),
-        _ => Err(format!(
-            "{name} {version} is unpacked more than once: {found:?}"
-        )),
+        ));
     }
+    found.sort();
+    Ok(found)
 }
 
 fn cargo_home() -> PathBuf {
@@ -196,10 +197,11 @@ fn grammar_crates() -> Vec<(String, PathBuf)> {
     linked_packages(&lock())
         .into_iter()
         .filter(|(name, _, _)| name.starts_with("tree-sitter-") && name != "tree-sitter-language")
-        .map(|(name, version, source)| {
-            let dir = resolve_source(&cargo_home(), &name, &version, source.as_deref())
-                .unwrap_or_else(|error| panic!("{error}"));
-            (name, dir)
+        .flat_map(|(name, version, source)| {
+            resolve_sources(&cargo_home(), &name, &version, source.as_deref())
+                .unwrap_or_else(|error| panic!("{error}"))
+                .into_iter()
+                .map(move |dir| (name.clone(), dir))
         })
         .collect()
 }
@@ -349,17 +351,73 @@ fn cached_home(label: &str) -> Scratch {
 }
 
 #[test]
-fn a_crates_io_package_resolves_to_its_cached_source() {
+fn a_sparse_index_cache_resolves() {
     let home = cached_home("resolve-ok");
-    let dir = resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect("found");
-    assert!(dir.ends_with("tree-sitter-fake-1.0.0"));
+    let dirs =
+        resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect("found");
+    assert_eq!(dirs.len(), 1);
+    assert!(dirs[0].ends_with("tree-sitter-fake-1.0.0"));
+}
+
+#[test]
+fn a_git_protocol_cache_resolves() {
+    let home = Scratch::new("resolve-git-cache");
+    home.write(
+        "registry/src/github.com-1ecc6299db9ec823/tree-sitter-fake-1.0.0/src/parser.c",
+        "int parser;",
+    );
+    let dirs =
+        resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect("found");
+    assert_eq!(dirs.len(), 1);
+}
+
+#[test]
+fn a_mixed_cache_returns_both_copies_and_a_scanner_in_either_fails() {
+    for planted in [
+        "index.crates.io-0000000000000000",
+        "github.com-1ecc6299db9ec823",
+    ] {
+        let home = cached_home("resolve-mixed");
+        home.write(
+            "registry/src/github.com-1ecc6299db9ec823/tree-sitter-fake-1.0.0/src/parser.c",
+            "int parser;",
+        );
+        home.write(
+            &format!("registry/src/{planted}/tree-sitter-fake-1.0.0/src/scanner.c"),
+            "int scanner;",
+        );
+        let dirs =
+            resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).expect("found");
+        assert_eq!(dirs.len(), 2, "{dirs:?}");
+        let results: Vec<_> = dirs
+            .iter()
+            .map(|dir| inspect("tree-sitter-fake", dir))
+            .collect();
+        assert_eq!(
+            results.iter().filter(|r| r.is_err()).count(),
+            1,
+            "{planted}"
+        );
+    }
+}
+
+#[test]
+fn no_cached_copy_fails() {
+    let home = Scratch::new("resolve-none");
+    home.write(
+        "registry/src/index.crates.io-0000000000000000/other-1.0.0/x",
+        "",
+    );
+    let error = resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO))
+        .expect_err("no copy");
+    assert!(error.contains("not unpacked"), "{error}");
 }
 
 #[test]
 fn a_path_override_does_not_fall_back_to_the_cached_original() {
     // A path dependency has no `source` in Cargo.lock, but the cache holds the original.
     let home = cached_home("resolve-path");
-    let error = resolve_source(&home.0, "tree-sitter-fake", "1.0.0", None).expect_err("path");
+    let error = resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", None).expect_err("path");
     assert!(error.contains("cannot be resolved"), "{error}");
 }
 
@@ -371,7 +429,7 @@ fn git_and_alternate_registry_sources_fail_closed() {
         "registry+https://example.com/index",
         "sparse+https://example.com/index/",
     ] {
-        assert!(resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(source)).is_err());
+        assert!(resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(source)).is_err());
     }
 }
 
@@ -382,5 +440,5 @@ fn a_copy_under_another_registry_cache_is_not_used() {
         "registry/src/index.example.com-0000000000000000/tree-sitter-fake-1.0.0/src/parser.c",
         "int parser;",
     );
-    assert!(resolve_source(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).is_err());
+    assert!(resolve_sources(&home.0, "tree-sitter-fake", "1.0.0", Some(CRATES_IO)).is_err());
 }
