@@ -193,14 +193,41 @@ fn normalise(path: &Path) -> PathBuf {
     out
 }
 
+/// Whether two path components name the same place. A verbatim prefix (`\\?\C:`) and its plain
+/// form (`C:`) are the same drive, and `Path` equality treats them as different.
+fn same_component(a: Component<'_>, b: Component<'_>) -> bool {
+    use std::path::Prefix::{Disk, UNC, VerbatimDisk, VerbatimUNC};
+    let (Component::Prefix(a), Component::Prefix(b)) = (a, b) else {
+        return a == b;
+    };
+    match (a.kind(), b.kind()) {
+        (Disk(x) | VerbatimDisk(x), Disk(y) | VerbatimDisk(y)) => x.eq_ignore_ascii_case(&y),
+        (UNC(s1, h1) | VerbatimUNC(s1, h1), UNC(s2, h2) | VerbatimUNC(s2, h2)) => {
+            s1.eq_ignore_ascii_case(s2) && h1.eq_ignore_ascii_case(h2)
+        }
+        (x, y) => x == y,
+    }
+}
+
 /// The path of `file` relative to `root`, with `..` for each directory it climbs out of.
+///
+/// A file that shares no prefix with the root, such as one on another drive or UNC share, has no
+/// relative form. It shows as `<external>/<file name>`, the form policies.md section 1.7 gives to
+/// a path outside the root, so a report never carries an absolute path.
 fn relative_display(file: &Path, root: &Path) -> String {
     let file = normalise(file);
     let f: Vec<_> = file.components().collect();
     let r: Vec<_> = root.components().collect();
-    let common = f.iter().zip(&r).take_while(|(a, b)| a == b).count();
+    let common = f
+        .iter()
+        .zip(&r)
+        .take_while(|(a, b)| same_component(**a, **b))
+        .count();
     if common == 0 {
-        return file.display().to_string();
+        let name = file
+            .file_name()
+            .map_or_else(String::new, |n| format!("/{}", n.to_string_lossy()));
+        return format!("<external>{name}");
     }
     // `/` on every platform, so provenance reads the same in reports on Windows.
     let mut parts: Vec<String> = vec!["..".to_owned(); r.len() - common];
@@ -494,5 +521,27 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
                 path: vec!["exclude".into(), i.to_string()],
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_sharing_no_prefix_with_the_root_shows_as_external() {
+        // Two relative paths share no first component, as a path on another drive would not.
+        assert_eq!(
+            relative_display(Path::new("other/base.toml"), Path::new("proj/dir")),
+            "<external>/base.toml"
+        );
+    }
+
+    #[test]
+    fn a_file_sharing_a_prefix_shows_relative_with_parent_segments() {
+        assert_eq!(
+            relative_display(Path::new("a/shared/base.toml"), Path::new("a/proj")),
+            "../shared/base.toml"
+        );
     }
 }
