@@ -75,7 +75,8 @@ pub struct Blocklist {
 
 #[derive(Deserialize)]
 struct Raw {
-    schema_version: Option<u32>,
+    // Kept as a value so a quoted `"3"` stays a string instead of coercing to 3.
+    schema_version: Option<serde_json::Value>,
     entries: Option<Vec<RawEntry>>,
     #[serde(flatten)]
     #[allow(clippy::zero_sized_map_values)] // only the key names are reported
@@ -94,12 +95,12 @@ struct RawEntry {
 }
 
 /// Require `schema_version = 3`. A 2.x blocklist has none.
-fn check_version(path: &str, declared: Option<u32>) -> Result<(), TermsError> {
+fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(), TermsError> {
     match declared {
-        Some(3) => Ok(()),
+        Some(found) if found.as_u64() == Some(3) => Ok(()),
         Some(found) => Err(TermsError::SchemaVersion {
             path: path.to_owned(),
-            found,
+            found: found.to_string(),
         }),
         None => Err(TermsError::MissingSchemaVersion {
             path: path.to_owned(),
@@ -177,7 +178,7 @@ impl Blocklist {
                 )));
             }
         };
-        check_version(path, raw.schema_version)?;
+        check_version(path, raw.schema_version.as_ref())?;
         let Some(records) = raw.entries else {
             let named = raw
                 .other

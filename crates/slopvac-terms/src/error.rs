@@ -30,14 +30,14 @@ pub enum TermsError {
     },
     /// The file declares an unsupported `schema_version`.
     #[error(
-        "{path}: schema_version {found} is not supported, expected 3. \
+        "{path}: schema_version {found} is not supported, expected the integer 3. \
          Run `slopvac migrate` to move an older file to 3.0"
     )]
     SchemaVersion {
         /// File path as given.
         path: String,
-        /// Version found.
-        found: u32,
+        /// Value found, as JSON text: `2`, `"3"` or `3.5`.
+        found: String,
     },
     /// The file has an unknown key.
     #[error("{path}: unknown key `{key}`")]

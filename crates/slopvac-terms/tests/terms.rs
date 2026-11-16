@@ -528,7 +528,7 @@ fn blocklist_without_schema_version_points_to_migrate_in_every_format() {
 fn blocklist_with_another_schema_version_is_rejected_with_a_pointer_to_migrate() {
     let e = Blocklist::parse("b.toml", "toml", "schema_version = 2\nentries = []\n").unwrap_err();
     assert!(
-        matches!(e, TermsError::SchemaVersion { found: 2, .. }),
+        matches!(e, TermsError::SchemaVersion { ref found, .. } if found == "2"),
         "{e}"
     );
     assert!(e.to_string().contains("slopvac migrate"), "{e}");
@@ -544,4 +544,23 @@ fn blocklist_ignores_x_keys_and_rejects_other_unknown_keys() {
         matches!(e, TermsError::UnknownKey { ref key, .. } if key == "extra"),
         "{e}"
     );
+}
+
+#[test]
+fn blocklist_schema_version_must_be_an_integer_in_every_format() {
+    let cases = [
+        ("toml", "schema_version = \"3\"\nentries = []\n"),
+        ("json", r#"{"schema_version":"3","entries":[]}"#),
+        ("yaml", "schema_version: \"3\"\nentries: []\n"),
+        ("yaml", "schema_version: 3.5\nentries: []\n"),
+        ("toml", "schema_version = true\nentries = []\n"),
+    ];
+    for (format, text) in cases {
+        let e = Blocklist::parse("b", format, text).unwrap_err();
+        assert!(
+            matches!(e, TermsError::SchemaVersion { .. }),
+            "{format}: {text}: {e}"
+        );
+        assert!(e.to_string().contains("slopvac migrate"), "{e}");
+    }
 }
