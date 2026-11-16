@@ -1,4 +1,5 @@
 //! Extraction tests: the malicious-archive corpus (TM-43 to TM-47).
+#![cfg(test)]
 
 use std::collections::HashSet;
 use std::fs;
@@ -128,7 +129,7 @@ struct Store(std::path::PathBuf);
 impl Store {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-extract-{name}-{}", std::process::id()));
-        let _ = evict(&p);
+        evict(&p).ok();
         Self(p)
     }
     fn path(&self) -> &Path {
@@ -150,7 +151,7 @@ impl Store {
 
 impl Drop for Store {
     fn drop(&mut self) {
-        let _ = evict(&self.0);
+        evict(&self.0).ok();
     }
 }
 
@@ -690,7 +691,7 @@ fn tm44_a_well_formed_sparse_archive_is_refused() {
         .next()
         .expect("one entry")
         .expect("a readable sparse entry");
-    assert_eq!(entry.size(), real_size as u64);
+    assert_eq!(entry.size(), u64::try_from(real_size).unwrap());
     let mut content = Vec::new();
     std::io::Read::read_to_end(&mut entry, &mut content).unwrap();
     assert_eq!(content.len(), real_size);
@@ -1089,14 +1090,13 @@ mod hostile_store {
     #[test]
     fn tm47_evicting_a_symlink_removes_the_link_not_its_target() {
         // The plain path and the spellings that make lstat follow the link.
-        for (label, spell) in [
-            (
-                "plain",
-                (|p: &Path| p.to_owned()) as fn(&Path) -> std::path::PathBuf,
-            ),
+        type Spell = fn(&Path) -> std::path::PathBuf;
+        let spellings: [(&str, Spell); 3] = [
+            ("plain", |p| p.to_owned()),
             ("slash", |p| format!("{}/", p.display()).into()),
             ("dot", |p| p.join(".")),
-        ] {
+        ];
+        for (label, spell) in spellings {
             let (outside, child) = outside_with_child(&format!("evict-outside-{label}"));
             let store = Store::new(&format!("evict-linked-{label}"));
             fs::create_dir_all(store.path()).unwrap();

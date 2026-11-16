@@ -6,6 +6,7 @@
 //! gate. The `live` tests use the real uv. They skip when no uv is found,
 //! fail when one is found but cannot build, and fail instead of skipping when
 //! `SLOPVAC_PYENV_LIVE` is set.
+#![cfg(test)]
 
 mod common;
 
@@ -29,7 +30,7 @@ struct Scratch(PathBuf, bool);
 impl Scratch {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-pyenv-{name}-{}", std::process::id()));
-        let _ = evict(&p);
+        evict(&p).ok();
         fs::create_dir_all(&p).unwrap();
         Self(p, true)
     }
@@ -47,7 +48,7 @@ impl Scratch {
 impl Drop for Scratch {
     fn drop(&mut self) {
         if self.1 {
-            let _ = evict(&self.0);
+            evict(&self.0).ok();
         }
     }
 }
@@ -56,7 +57,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
+            write!(s, "{b:02x}").ok();
             s
         })
 }
@@ -162,9 +163,9 @@ fn wheel<'a>(name: &'a str, version: &'a str, value: &str, extra: &[(&str, &str)
     let mut record = String::new();
     for (n, t) in &files {
         let digest = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(t));
-        let _ = writeln!(record, "{n},sha256={digest},{}", t.len());
+        writeln!(record, "{n},sha256={digest},{}", t.len()).ok();
     }
-    let _ = writeln!(record, "{info}/RECORD,,");
+    writeln!(record, "{info}/RECORD,,").ok();
     files.push((format!("{info}/RECORD"), record));
     let refs: Vec<(&str, &[u8])> = files
         .iter()
@@ -176,14 +177,14 @@ fn wheel<'a>(name: &'a str, version: &'a str, value: &str, extra: &[(&str, &str)
 fn lock_text(wheels: &[Wheel<'_>]) -> String {
     let mut out = String::from("lock-version = \"1.0\"\ncreated-by = \"test\"\n");
     for w in wheels {
-        let _ = write!(
+        write!(
             out,
             "\n[[packages]]\nname = \"{}\"\nversion = \"{}\"\nwheels = [{{ path = \"{}\", hashes = {{ sha256 = \"{}\" }} }}]\n",
             w.name,
             w.version,
             w.path,
             sha256_hex(&w.bytes)
-        );
+        ).ok();
     }
     out
 }
@@ -192,7 +193,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut tar = tar::Builder::new(Vec::new());
     for (name, data) in files {
         let mut h = tar::Header::new_gnu();
-        h.set_size(data.len() as u64);
+        h.set_size(u64::try_from(data.len()).unwrap());
         h.set_mode(0o644);
         h.set_cksum();
         tar.append_data(&mut h, name, *data).unwrap();
@@ -285,7 +286,17 @@ fn tm49_a_package_that_is_not_a_vendored_wheel_is_refused() {
                 assert_eq!(package, "demo-pkg");
                 assert_eq!(source_kind, kind, "{body}");
             }
-            other => panic!("{body}: {other:?}"),
+            other @ (PyEnvError::Lock(_)
+            | PyEnvError::Wheel { .. }
+            | PyEnvError::Installer(_)
+            | PyEnvError::OfflinePythonMissing(_)
+            | PyEnvError::Step { .. }
+            | PyEnvError::Changed { .. }
+            | PyEnvError::Refused(_)
+            | PyEnvError::UnsupportedPlatform
+            | PyEnvError::Record { .. }
+            | PyEnvError::Tree(_)
+            | PyEnvError::Io { .. }) => panic!("{body}: {other:?}"),
         }
     }
 }
@@ -1162,7 +1173,7 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
             );
         }
         for (k, v) in controls {
-            let _ = fs::remove_file(&marker);
+            fs::remove_file(&marker).ok();
             Command::new(python())
                 .env_clear()
                 .env(k, v)
@@ -1171,7 +1182,7 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
                 .unwrap();
             assert!(marker.exists(), "the {k} hook did not load in the control");
         }
-        let _ = fs::remove_file(&marker);
+        fs::remove_file(&marker).ok();
         hostile_child(
             "unix_only::tm51_pythonpath_and_usercustomize_have_no_effect_on_the_run",
             &s.dir("child"),

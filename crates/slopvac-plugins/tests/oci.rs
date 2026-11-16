@@ -1,4 +1,5 @@
 //! OCI client tests against a scripted loopback registry (threat model section 6.4).
+#![cfg(test)]
 
 mod oci_server;
 
@@ -919,7 +920,7 @@ fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
                         return;
                     }
                 };
-                let _ = out.write_all(reply.as_bytes());
+                out.write_all(reply.as_bytes()).ok();
             });
         }
     });
@@ -929,7 +930,8 @@ fn an_upload_to_a_registry_that_stops_reading_fails_instead_of_blocking() {
             Client::with_send_timeout_for_tests(Box::new(Anonymous), Duration::from_secs(1));
         let r = Reference::parse(&format!("127.0.0.1:{port}/a/b:1")).unwrap();
         // Larger than any socket buffer pair, so the sender must block.
-        let _ = tx.send(client.push_blob(&r, "x", &vec![0u8; 64 << 20]));
+        tx.send(client.push_blob(&r, "x", &vec![0u8; 64 << 20]))
+            .ok();
     });
     let outcome = rx
         .recv_timeout(Duration::from_secs(60))
@@ -1228,7 +1230,9 @@ mod helpers {
         let (dir, creds) = setup(name, store, script);
         let r = creds.credential("ghcr.io");
         let _ = Path::new(&dir);
-        std::fs::remove_dir_all(&dir).unwrap();
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            panic!("removing {}: {e}", dir.display());
+        }
         r
     }
 

@@ -4,6 +4,7 @@
 //! The fixed vectors in `fixtures/revoke` come from the `minisign` command line
 //! and Python; see the README there. Scenario tests sign at run time with the
 //! `minisign` crate and write the JSON by hand.
+#![cfg(test)]
 
 mod oci_server;
 mod revocations;
@@ -634,7 +635,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut tar = tar::Builder::new(Vec::new());
     for (name, data) in files {
         let mut h = tar::Header::new_gnu();
-        h.set_size(data.len() as u64);
+        h.set_size(u64::try_from(data.len()).unwrap());
         h.set_mode(0o644);
         h.set_cksum();
         tar.append_data(&mut h, name, *data).unwrap();
@@ -869,7 +870,7 @@ fn k5_a_different_key_that_claims_the_new_key_id_cannot_complete_a_rotation() {
     assert_eq!(forged_key.key_id(), NEW_KEY_ID);
     let mut lines: Vec<String> = attacker.sign(ROTATION).lines().map(str::to_owned).collect();
     lines[1] = STANDARD.encode(with_key_id(STANDARD.decode(&lines[1]).unwrap(), id));
-    let forged_sig = lines.join("\n") + "\n";
+    let forged_sig = format!("{}\n", lines.join("\n"));
 
     let err = verify_rotation(
         &proof(ROTATION_OLD_SIG, &forged_sig, &forged_key),

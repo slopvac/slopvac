@@ -1,5 +1,5 @@
 //! Read paths that `doctor` and `plugins status` share must not block on a swapped-in FIFO.
-
+#![cfg(test)]
 #![cfg(unix)]
 
 use std::fs;
@@ -30,7 +30,7 @@ fn inspect_with_ref(make_ref: impl FnOnce(&std::path::Path)) -> TreeState {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let digest: Digest = format!("sha256:{DIGEST_HEX}").parse().unwrap();
-        let _ = tx.send(Store::new(root).inspect(&digest).unwrap());
+        tx.send(Store::new(root).inspect(&digest).unwrap()).ok();
     });
     let state = rx
         .recv_timeout(Duration::from_secs(10))

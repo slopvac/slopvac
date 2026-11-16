@@ -1,5 +1,6 @@
 //! Sync, status, offline cache and CI lock check (bead 8l4.9.3; threat model
 //! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
+#![cfg(test)]
 
 mod oci_server;
 mod revocations;
@@ -59,7 +60,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut builder = tar::Builder::new(Vec::new());
     for (name, data) in files {
         let mut header = tar::Header::new_gnu();
-        header.set_size(data.len() as u64);
+        header.set_size(u64::try_from(data.len()).unwrap());
         header.set_mode(0o644);
         header.set_entry_type(tar::EntryType::Regular);
         builder.append_data(&mut header, name, *data).unwrap();
@@ -543,7 +544,10 @@ fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
 fn tamper_edit(tree: &Path) {
     let file = tree.join("rules/a.yml");
     let mut perms = fs::metadata(&file).unwrap().permissions();
-    #[expect(clippy::permissions_set_readonly_false)]
+    #[expect(
+        clippy::permissions_set_readonly_false,
+        reason = "the test makes its own scratch file writable to tamper with it"
+    )]
     perms.set_readonly(false);
     fs::set_permissions(&file, perms).unwrap();
     fs::write(&file, b"rule: evil\n").unwrap();
@@ -564,7 +568,8 @@ fn tamper_add(tree: &Path) {
 #[test]
 fn a_tampered_tree_is_reinstalled_online() {
     // TM-46: edit a file; add a file.
-    for tamper in [tamper_edit as fn(&Path), tamper_add] {
+    let tampers: [fn(&Path); 2] = [tamper_edit, tamper_add];
+    for tamper in tampers {
         let key = Key::new();
         let p = publish(&key, "acme", FILES);
         let server = registry(&[&p]);

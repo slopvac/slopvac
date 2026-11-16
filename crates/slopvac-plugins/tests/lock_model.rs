@@ -1,4 +1,5 @@
 //! Behaviour of the lock model through its public API.
+#![cfg(test)]
 
 use std::collections::BTreeMap;
 

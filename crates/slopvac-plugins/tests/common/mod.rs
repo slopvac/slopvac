@@ -1,5 +1,10 @@
 //! Shared helpers for the host tests: a scripted fake plugin and test gates.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "each test binary uses a different subset of these shared helpers; the items are crate-private test support"
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -219,7 +224,10 @@ pub fn wait_gone_within(pids: &[i32], limit: Duration) -> bool {
 /// Kill processes the host leaves running on purpose, so no test leaks them.
 pub fn end(pids: &[i32]) {
     for p in pids {
-        let _ = Command::new("kill").args(["-9", &p.to_string()]).status();
+        Command::new("kill")
+            .args(["-9", &p.to_string()])
+            .status()
+            .ok();
     }
 }
 

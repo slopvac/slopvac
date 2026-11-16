@@ -6,6 +6,7 @@
 //! its scratch directory as its first argument and the test process id as its
 //! second. `kill_all_live` kills every plugin of the process, so these tests
 //! run in their own binary and one at a time.
+#![cfg(test)]
 #![cfg(unix)]
 
 mod common;
@@ -159,7 +160,7 @@ fn dropping_a_plugin_waits_for_a_teardown_in_flight() {
 #[test]
 fn an_interrupt_waits_for_a_teardown_in_flight() {
     waits_for_held_teardown("hold-interrupt", |p| {
-        let _ = kill_all_live();
+        drop(kill_all_live());
         Some(p)
     });
 }
@@ -178,7 +179,7 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
     // pids[0] stays in the plugin's group; pids[1] left it with `setsid`.
     let pids = pids_from(&dir.join("pids"));
     let started = Instant::now();
-    let _ = kill_all_live();
+    drop(kill_all_live());
     let took = started.elapsed();
     let helper: i32 = std::fs::read_to_string(dir.join("helper"))
         .unwrap()
@@ -188,9 +189,10 @@ fn a_hung_table_helper_neither_blocks_the_kill_nor_outlives_it() {
     let group_gone = wait_gone(&pids[..1]);
     let helper_gone = wait_gone(&[helper]);
     // The walk failed, so the child that left the group is the test's to end.
-    let _ = std::process::Command::new("kill")
+    std::process::Command::new("kill")
         .args(["-9", &pids[1].to_string()])
-        .status();
+        .status()
+        .ok();
     drop(p);
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(took < NO_HANG, "the kill waited {took:?} for the helper");
@@ -221,8 +223,8 @@ fn repeated_kills_walk_the_process_table_once() {
     let (dir, cfg) = seam("walk-once", "echo run >> \"$1/runs\"\nexit 1\n", WALK);
     let p = start_mode("hang", &dir, &cfg);
     let _ = pids_n(&dir.join("pids"), 1);
-    let _ = kill_all_live();
-    let _ = kill_all_live();
+    drop(kill_all_live());
+    drop(kill_all_live());
     // Fails the plugin, kills it again and waits for the reap.
     drop(p);
     let runs = std::fs::read_to_string(dir.join("runs")).unwrap_or_default();
@@ -247,7 +249,7 @@ echo "$2 $leader $2 T $t"
     let p = start_mode("hang", &dir, &cfg);
     let leader = pids_n(&dir.join("pids"), 1);
     // A stopped host would hang here; a killed one would end the test binary.
-    let _ = kill_all_live();
+    drop(kill_all_live());
     let gone = wait_gone(&leader);
     drop(p);
     std::fs::remove_dir_all(&dir).unwrap();

@@ -4,6 +4,7 @@
 //! call `SpawnGate::check` and never start a process. Tests that start the fake
 //! plugin or the Python SDK example through the host, or depend on Unix
 //! permissions and symlinks, live in `unix_only`.
+#![cfg(test)]
 
 mod common;
 
@@ -32,7 +33,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let p = std::env::temp_dir().join(format!("slopvac-trust-{name}-{}", std::process::id()));
-        let _ = evict(&p);
+        evict(&p).ok();
         fs::create_dir_all(&p).unwrap();
         Self(p)
     }
@@ -43,7 +44,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        let _ = evict(&self.0);
+        evict(&self.0).ok();
     }
 }
 
@@ -51,7 +52,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut tar = tar::Builder::new(Vec::new());
     for (name, data) in files {
         let mut h = tar::Header::new_gnu();
-        h.set_size(data.len() as u64);
+        h.set_size(u64::try_from(data.len()).unwrap());
         h.set_mode(0o644);
         h.set_cksum();
         tar.append_data(&mut h, name, *data).unwrap();

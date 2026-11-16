@@ -1,5 +1,6 @@
 //! Fixer-edit validation against the shared position vectors in
 //! `schemas/v3/conformance/positions` (docs/contract/positions.md).
+#![cfg(test)]
 
 use std::collections::HashMap;
 use std::fs;
@@ -44,7 +45,7 @@ fn check(text: &str, edits: &Value) -> bool {
         severity: "warning".into(),
         span: Span {
             start: 0,
-            end: text.len() as u64,
+            end: u64::try_from(text.len()).unwrap(),
         },
         message: "m".into(),
     }];

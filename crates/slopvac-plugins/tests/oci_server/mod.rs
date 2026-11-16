@@ -1,5 +1,10 @@
 //! A scripted HTTP/1.1 server for the OCI client tests.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "each test binary uses a different subset of this shared server; the items are crate-private test support"
+)]
 
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -167,7 +172,9 @@ pub fn base64_std(bytes: &[u8]) -> String {
             .fold(0u32, |a, (i, &b)| a | (u32::from(b) << (16 - 8 * i)));
         for i in 0..4 {
             if i <= chunk.len() {
-                out.push(char::from(T[((n >> (18 - 6 * i)) & 63) as usize]));
+                out.push(char::from(
+                    T[usize::try_from((n >> (18 - 6 * i)) & 63).unwrap()],
+                ));
             } else {
                 out.push('=');
             }
@@ -225,13 +232,13 @@ fn serve(
         let resp = handler(&req);
         let mut head = format!("HTTP/1.1 {} X\r\nConnection: close\r\n", resp.status);
         for (k, v) in &resp.headers {
-            let _ = write!(head, "{k}: {v}\r\n");
+            write!(head, "{k}: {v}\r\n").ok();
         }
-        let _ = write!(head, "Content-Length: {}\r\n\r\n", resp.body.len());
-        let _ = out.write_all(head.as_bytes());
+        write!(head, "Content-Length: {}\r\n\r\n", resp.body.len()).ok();
+        out.write_all(head.as_bytes()).ok();
         if req.method != "HEAD" {
-            let _ = out.write_all(&resp.body);
+            out.write_all(&resp.body).ok();
         }
-        let _ = out.flush();
+        out.flush().ok();
     }
 }
