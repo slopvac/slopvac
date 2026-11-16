@@ -167,15 +167,18 @@ fn rewrite_paragraph(
         out.push_str(&text[consumed..start]);
         let comment = &text[start..end];
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
-        if !quoted && comment.contains("slopvac-allow") {
+        if !quoted && is_directive(comment) {
             let line = start_line + text[..start].matches('\n').count();
             if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
             } else {
-                // A deleted directive that filled its line takes the line with it.
-                let alone = out.is_empty() || out.ends_with('\n');
-                if alone && text[end..].starts_with('\n') {
-                    consumed = end + 1;
+                // A deleted directive alone on its line takes the whole line with it.
+                let line_start = out.rfind('\n').map_or(0, |n| n + 1);
+                let rest = &text[end..];
+                let line_end = rest.find('\n').unwrap_or(rest.len());
+                if out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty() {
+                    out.truncate(line_start);
+                    consumed = (end + line_end + 1).min(text.len());
                     continue;
                 }
             }
@@ -188,44 +191,65 @@ fn rewrite_paragraph(
     out
 }
 
+/// The text after `slopvac-allow:` when the comment is a directive: it starts with
+/// `slopvac-allow:` and its first attribute is `rule=`. Prose that only mentions the
+/// directive is not one.
+fn directive_body(comment: &str) -> Option<&str> {
+    let inner = comment.strip_prefix("<!--")?;
+    let inner = inner.strip_suffix("-->").unwrap_or(inner);
+    let body = inner.trim_start().strip_prefix("slopvac-allow:")?;
+    body.trim_start().starts_with("rule=").then_some(body)
+}
+
+fn is_directive(comment: &str) -> bool {
+    directive_body(comment).is_some()
+}
+
+/// Rewrite the comma-separated ids of a directive one by one. Returns `None` when
+/// every id was removed and the directive should go.
 fn rewrite_comment(
     comment: &str,
     line: usize,
     renames: &RenameTable,
     found: &mut Found,
 ) -> Option<String> {
-    let Some(pos) = comment.find("rule=") else {
-        return Some(comment.to_owned());
-    };
-    let id_start = pos + 5;
-    let id_len = comment[id_start..]
-        .find(char::is_whitespace)
-        .unwrap_or(comment.len() - id_start);
-    let raw = &comment[id_start..id_start + id_len];
-    let id = raw.strip_suffix("-->").unwrap_or(raw);
-    if id.contains(':') {
-        return Some(comment.to_owned());
+    let body = directive_body(comment)?;
+    let body_at = body.as_ptr() as usize - comment.as_ptr() as usize;
+    let rule_at = body_at + (body.len() - body.trim_start().len());
+    let value_start = rule_at + "rule=".len();
+    let tail = &comment[value_start..];
+    let mut value_len = tail.find(char::is_whitespace).unwrap_or(tail.len());
+    if tail[..value_len].ends_with("-->") {
+        value_len -= 3;
     }
-    if renames.is_removed(id) {
-        found.removed.push(RemovedId {
-            id: id.to_owned(),
-            line,
-        });
-        None
-    } else if let Some(new) = renames.rule(id) {
-        Some(format!(
-            "{}{}{}",
-            &comment[..id_start],
-            new,
-            &comment[id_start + id.len()..]
-        ))
-    } else {
-        found.unknown.push(UnknownId {
-            id: id.to_owned(),
-            line,
-        });
-        Some(comment.to_owned())
+    let mut kept = Vec::new();
+    for id in tail[..value_len].split(',') {
+        if id.contains(':') {
+            kept.push(id.to_owned());
+        } else if renames.is_removed(id) {
+            found.removed.push(RemovedId {
+                id: id.to_owned(),
+                line,
+            });
+        } else if let Some(new) = renames.rule(id) {
+            kept.push(new);
+        } else {
+            found.unknown.push(UnknownId {
+                id: id.to_owned(),
+                line,
+            });
+            kept.push(id.to_owned());
+        }
     }
+    if kept.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}{}{}",
+        &comment[..value_start],
+        kept.join(","),
+        &tail[value_len..]
+    ))
 }
 
 #[cfg(test)]
@@ -237,35 +261,99 @@ mod tests {
         (out, found.unknown)
     }
 
+    const GONE: &str = "ste-sentences.vertical-list-item-punctuation";
+    const GONE2: &str = "ste-words.inconsistent-term-for-same-thing";
+
+    fn rewrite(text: &str) -> (String, Found) {
+        rewrite_directives(text, &RenameTable::bundled())
+    }
+
+    fn removed_ids(found: &Found) -> Vec<&str> {
+        found.removed.iter().map(|r| r.id.as_str()).collect()
+    }
+
     #[test]
-    fn a_directive_for_a_removed_rule_is_deleted_and_reported() {
-        let text = "Intro
-<!-- slopvac-allow: rule=ste-sentences.vertical-list-item-punctuation reason=x -->
-Body <!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=x --> end.
-";
-        let (out, found) = rewrite_directives(text, &RenameTable::bundled());
-        assert_eq!(
-            out,
-            "Intro
-Body  end.
-"
-        );
+    fn a_directive_for_a_removed_rule_is_deleted_with_its_line() {
+        let text = format!("Intro\n<!-- slopvac-allow: rule={GONE} reason=x -->\nBody\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, "Intro\nBody\n");
         assert_eq!(
             found.removed,
-            vec![
-                RemovedId {
-                    id: "ste-sentences.vertical-list-item-punctuation".to_owned(),
-                    line: 2
-                },
-                RemovedId {
-                    id: "ste-words.inconsistent-term-for-same-thing".to_owned(),
-                    line: 3
-                },
-            ]
+            vec![RemovedId {
+                id: GONE.to_owned(),
+                line: 2
+            }]
         );
         assert_eq!(found.unknown, Vec::<UnknownId>::new());
     }
 
+    #[test]
+    fn an_inline_directive_keeps_the_text_around_it() {
+        let text = format!("Body <!-- slopvac-allow: rule={GONE2} reason=x --> end.\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, "Body  end.\n");
+        assert_eq!(removed_ids(&found), vec![GONE2]);
+    }
+
+    #[test]
+    fn an_indented_or_trailing_space_directive_takes_its_whole_line() {
+        let text = format!("A\n   <!-- slopvac-allow: rule={GONE} reason=x -->  \nB\n");
+        let (out, _) = rewrite(&text);
+        assert_eq!(out, "A\nB\n");
+    }
+
+    #[test]
+    fn a_removed_id_next_to_a_bare_survivor_is_dropped_in_either_order() {
+        for (value, want) in [
+            (
+                format!("{GONE},prose-format.no-unicode-dash"),
+                "core:prose-format.no-unicode-dash",
+            ),
+            (
+                format!("prose-format.no-unicode-dash,{GONE}"),
+                "core:prose-format.no-unicode-dash",
+            ),
+        ] {
+            let (out, found) = rewrite(&format!(
+                "<!-- slopvac-allow: rule={value} reason=x -->\nT\n"
+            ));
+            assert_eq!(
+                out,
+                format!("<!-- slopvac-allow: rule={want} reason=x -->\nT\n")
+            );
+            assert_eq!(removed_ids(&found), vec![GONE]);
+            assert_eq!(found.unknown, Vec::<UnknownId>::new());
+        }
+    }
+
+    #[test]
+    fn a_removed_id_next_to_a_qualified_survivor_is_dropped() {
+        let (out, found) = rewrite(&format!(
+            "<!-- slopvac-allow: rule=core:prose-format.no-unicode-dash,{GONE},prose-craft.latinisms reason=x -->\n"
+        ));
+        assert_eq!(
+            out,
+            "<!-- slopvac-allow: rule=core:prose-format.no-unicode-dash,core:prose-craft.latinisms reason=x -->\n"
+        );
+        assert_eq!(removed_ids(&found), vec![GONE]);
+    }
+
+    #[test]
+    fn a_directive_whose_ids_are_all_removed_is_deleted() {
+        let (out, found) = rewrite(&format!("<!-- slopvac-allow: rule={GONE},{GONE2} -->\nT\n"));
+        assert_eq!(out, "T\n");
+        assert_eq!(removed_ids(&found), vec![GONE, GONE2]);
+    }
+
+    #[test]
+    fn a_comment_that_only_mentions_a_removed_rule_stays() {
+        let text = format!(
+            "<!-- note: the slopvac-allow rule={GONE} comment was removed -->\n<!-- see slopvac-allow: rule={GONE2} -->\n"
+        );
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, text);
+        assert_eq!(found, Found::default());
+    }
     #[test]
     fn qualifies_a_bare_rule_id() {
         let (out, unknown) = run(
