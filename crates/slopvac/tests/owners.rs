@@ -322,3 +322,71 @@ fn validate_names_an_external_directory_entry_without_its_directories() {
     assert!(text.contains(" --> <external>/doc.md:3:3"), "{text}");
     assert_clean(&text, &outside);
 }
+
+#[test]
+fn prime_with_a_missing_absolute_config_hides_its_directories_and_prefix_repeat() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    let out = slopvac(work.path())
+        .args(["prime", "--config"])
+        .arg(outside.path().join("nope.toml"))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[config-io]: cannot read <external>/nope.toml: no such file"),
+        "{err}"
+    );
+    assert_clean(&err, &outside);
+}
+
+#[test]
+fn prime_with_a_missing_config_under_the_working_directory_shows_it_relative() {
+    let work = tempfile::Builder::new()
+        .prefix("SENTINEL cwd")
+        .tempdir()
+        .unwrap();
+    let out = slopvac(work.path())
+        .args(["prime", "--config"])
+        .arg(
+            work.path()
+                .canonicalize()
+                .unwrap()
+                .join("sub dir")
+                .join("nope.toml"),
+        )
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.contains("cannot read sub dir/nope.toml: no such file"),
+        "{err}"
+    );
+    assert_clean(&err, &work);
+}
+
+#[test]
+fn setup_with_a_nonexistent_absolute_root_hides_its_directories() {
+    let work = tempfile::Builder::new()
+        .prefix("SENTINEL cwd")
+        .tempdir()
+        .unwrap();
+    // The working directory as the process reports it, so the root sits under it.
+    let root = work
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("no dir")
+        .join("deeper");
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.contains("no dir/deeper"), "{err}");
+    assert_clean(&err, &work);
+}

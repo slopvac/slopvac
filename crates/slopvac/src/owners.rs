@@ -74,6 +74,37 @@ fn terms_error(err: &TermsError) -> CliError {
     CliError::new(code, message)
 }
 
+/// Replace each absolute path in `text` with its shown form.
+///
+/// Only for text that an owner crate has already rendered. A path starts at a `/` that opens
+/// a word and runs to the next `: `, backtick or line end, so a path with spaces stays whole.
+fn redact_absolute(text: &str, cwd: &Path) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('/') {
+        let opens = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| c.is_whitespace() || c == '`');
+        let (head, tail) = rest.split_at(at);
+        out.push_str(head);
+        if !opens {
+            out.push('/');
+            rest = &tail[1..];
+            continue;
+        }
+        let end = [": ", "`", "\n"]
+            .iter()
+            .filter_map(|stop| tail.find(stop))
+            .min()
+            .unwrap_or(tail.len());
+        out.push_str(&redact::shown_path(Path::new(&tail[..end]), cwd));
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Name an owner's error from its fields, with every path shown through `shown_path`.
 fn agents_error(err: &AgentsError) -> CliError {
     let cwd = cwd();
@@ -93,9 +124,15 @@ fn agents_error(err: &AgentsError) -> CliError {
             path(p)
         ),
         AgentsError::Io { path: p, source } => format!("{}: {source}", path(p)),
-        AgentsError::Usage(m)
-        | AgentsError::Coded { message: m, .. }
-        | AgentsError::Config { message: m, .. } => m.clone(),
+        AgentsError::Usage(m) | AgentsError::Coded { message: m, .. } => m.clone(),
+        // The config crate's rendered text, which leads with its own `error[code]:` and names
+        // paths as the user typed them.
+        AgentsError::Config { code, message } => {
+            let body = message
+                .strip_prefix(&format!("error[{code}]: "))
+                .unwrap_or(message);
+            redact_absolute(body, &cwd)
+        }
     };
     CliError::new(err.code(), message)
 }
