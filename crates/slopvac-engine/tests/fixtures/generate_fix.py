@@ -72,6 +72,7 @@ def to_2x(text: str) -> str:
     """The 3.0 directive form to the 2.x form: ``rule=core:cat.id`` to ``rule=cat.id``."""
     return text.replace("rule=core:", "rule=")
 
+
 SAMPLES = {
     "fix/case": "We Utilize the tool. UTILIZE it now. We utilize it too.\n",
     "fix/crlf": "# Title\r\n\r\nWe utilize the tool\r\nin order to win.\r\n\r\nSecond utilize here.\r\n",
@@ -111,7 +112,11 @@ def documents() -> list[tuple[str, str]]:
     # A document with 3.0 directive text would need the 2.x spelling, which does not map
     # back to the same text, so the fix corpus leaves those to the parity fixture.
     docs = [(n, t) for n, t in docs if to_2x(t) == t]
-    return docs + list(SAMPLES.items())
+    # Merge by name: the stored fixture already holds the samples, and a sample's text in
+    # this file wins over the stored one.
+    merged = dict(docs)
+    merged.update(SAMPLES)
+    return list(merged.items())
 
 
 def render(rules, config, docs: list[tuple[str, str]], keep_all: bool) -> str:

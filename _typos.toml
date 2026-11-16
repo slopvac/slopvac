@@ -23,6 +23,8 @@ extend-exclude = [
   # Golden suite: inputs hold the misspellings and defects that rules report, and the
   # recorded parity output quotes them.
   "tests/golden/v3/",
+  # Recorded differences from the golden suite: input ids are truncated manifest names.
+  "crates/slopvac-engine/tests/golden-divergences.json",
 ]
 
 [default.extend-words]

@@ -3,8 +3,13 @@
 //! The suite records what the Python 2.x reference reports for each input at each profile,
 //! reduced to one projection (`scripts/contract/golden.py`). This test lints the same inputs
 //! with the same profile and the `core:legacy-<profile>` style that the parity mode runs, and
-//! compares the projection fact by fact. `golden-divergences.json` lists the facts that differ
-//! on purpose. A listed fact must still differ, and every other fact must agree.
+//! compares the projection fact by fact. `golden-divergences.json` records, for each run that
+//! differs, the exact difference: the golden findings Rust misses, the findings it adds, the
+//! findings whose end, message, AI signal or replacement differ, and the values Rust reports
+//! for the document facts that differ. A run passes only when its difference equals the
+//! record, so an unrecorded difference and a recorded one that no longer occurs both fail.
+//! `record` (ignored by default) rewrites the record from the engine; the reasons are written
+//! by hand, one for each input.
 //!
 //! Inputs that the engine cannot lint yet are in `SKIPPED`, each with the bead that owns it.
 //! The run summary and process exit status of a group belong to the CLI, which builds them.
@@ -48,24 +53,6 @@ const SKIPPED: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// Every fact `differences` can report, in the order of the agreement table.
-const FACTS: [&str; 14] = [
-    "findings",
-    "position",
-    "end",
-    "message",
-    "ai_signal",
-    "replacement",
-    "counts",
-    "tallies",
-    "density",
-    "score",
-    "categories",
-    "gate",
-    "exit",
-    "unchecked",
-];
-
 /// The repository is the project: an interpreter inside it is never used.
 fn rst_options() -> RstOptions {
     let mut options = RstOptions::default();
@@ -107,7 +94,13 @@ fn skipped(id: &str) -> bool {
 
 /// The engine's report for one input in the shape of the golden document.
 fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
-    let name = entry.path.file_name().unwrap().to_str().unwrap();
+    // The runner stages every Markdown input as `.md`; the corpus files end in `.corpus`.
+    let staged = format!("{}.md", entry.id);
+    let name = if entry.tier == "corpus" {
+        staged.as_str()
+    } else {
+        entry.path.file_name().unwrap().to_str().unwrap()
+    };
     let text = std::fs::read_to_string(&entry.path).unwrap();
     let input = match entry.language.as_str() {
         "markdown" => Input::markdown(name, &text),
@@ -181,54 +174,63 @@ fn s(f: &Value, key: &str) -> String {
     field(f, key).to_string()
 }
 
-/// One sorted row for each finding of `doc`.
-fn rows(doc: &Value, key: impl Fn(&Value) -> String) -> Vec<String> {
-    let mut rows: Vec<String> = doc["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(key)
-        .collect();
-    rows.sort();
-    rows
+/// The identity of a finding: what it reports and where it starts. Its other facts are
+/// compared once two findings share an identity.
+fn identity(f: &Value) -> Value {
+    json!({
+        "rule_id": field(f, "rule_id"),
+        "category": field(f, "category"),
+        "severity": field(f, "severity"),
+        "line": field(f, "line"),
+        "column": field(f, "column"),
+        "matched_text": field(f, "matched_text"),
+    })
 }
 
-/// Rules of a kind the engine does not run yet (structure) or runs only with a blocklist
-/// (vocabulary): the golden findings of these rules have no counterpart to compare.
-fn unrun_rules() -> Vec<String> {
-    let core = root().join("crates/slopvac-rules/tests/fixtures/core-v3");
-    // The spelling rule is generated from the locale (`locale.rs` tests it); the core data has
-    // no such rule, so the engine built here never reports it.
-    let mut ids = vec!["core:ste-words.spelling".to_owned()];
-    for entry in std::fs::read_dir(core).unwrap() {
-        let doc = read_json(&entry.unwrap().path());
-        for rule in doc["rules"].as_array().into_iter().flatten() {
-            if matches!(
-                rule["match"]["kind"].as_str(),
-                Some("structure" | "vocabulary")
-            ) {
-                ids.push(format!(
-                    "core:{}.{}",
-                    doc["id"].as_str().unwrap(),
-                    rule["id"].as_str().unwrap()
-                ));
-            }
-        }
-    }
-    ids
-}
+/// The facts of a finding other than its identity, each a class of the agreement table.
+const ATTRIBUTES: [(&str, &[&str]); 4] = [
+    ("end", &["end_line", "end_column", "span"]),
+    ("message", &["message"]),
+    ("ai_signal", &["ai_signal"]),
+    ("replacement", &["replacement"]),
+];
 
-/// Make the two documents comparable. A finding whose golden span is null had its code spans
-/// masked by 2.x, so its matched text, message and end cannot be proved: both sides drop them.
-/// Golden findings of unrun rules are removed; the count is returned.
-fn prepare(want: &mut Value, got: &mut Value, unrun: &[String]) -> usize {
+/// The scalar facts of a document and the class of the agreement table each belongs to.
+const DOCUMENT: [(&str, &str); 12] = [
+    ("words", "counts"),
+    ("sentences", "counts"),
+    ("paragraphs", "counts"),
+    ("total_findings", "tallies"),
+    ("errors", "tallies"),
+    ("warnings", "tallies"),
+    ("suggestions", "tallies"),
+    ("per_100_words", "density"),
+    ("ai_register", "density"),
+    ("prose", "density"),
+    ("score", "score"),
+    ("gate", "gate"),
+];
+
+/// The classes of the agreement table, in order.
+const CLASSES: [&str; 12] = [
+    "findings",
+    "end",
+    "message",
+    "ai_signal",
+    "replacement",
+    "counts",
+    "tallies",
+    "density",
+    "score",
+    "categories",
+    "gate",
+    "exit",
+];
+
+/// A finding whose golden span is null had its code spans masked by 2.x, so its matched
+/// text, message and end cannot be proved: both sides drop them.
+fn mask(want: &mut Value, got: &mut Value) {
     let findings = want["document"]["findings"].as_array_mut().unwrap();
-    let before = findings.len();
-    findings.retain(|f| {
-        let id = f["rule_id"].as_str().unwrap();
-        !unrun.iter().any(|r| r == id)
-    });
-    let removed = before - findings.len();
     let masked: Vec<(String, String, String)> = findings
         .iter()
         .filter(|f| field(f, "span").is_null())
@@ -240,137 +242,197 @@ fn prepare(want: &mut Value, got: &mut Value, unrun: &[String]) -> usize {
             o.insert(k.into(), Value::Null);
         }
     };
-    for f in findings.iter_mut() {
-        if field(f, "span").is_null() {
-            blank(f);
-        }
-    }
+    findings
+        .iter_mut()
+        .filter(|f| field(f, "span").is_null())
+        .for_each(blank);
     for f in got["findings"].as_array_mut().unwrap() {
         if masked.contains(&(s(f, "rule_id"), s(f, "line"), s(f, "column"))) {
             blank(f);
         }
     }
-    removed
 }
 
-/// The facts that follow from all findings of a document, so they are not compared when a
-/// golden finding has no counterpart.
-const DERIVED: [&str; 7] = [
-    "tallies",
-    "density",
-    "score",
-    "categories",
-    "gate",
-    "exit",
-    "unchecked",
-];
-
-/// How the engine's document differs from the golden one, by fact. The facts, from coarse to
-/// exact: `findings` (rule, category, severity, matched text), `position` (start line and
-/// column), `end` (end line, end column and byte span), `message`, `ai_signal`,
-/// `replacement`, `counts` (words, sentences, paragraphs), `tallies` (totals by severity),
-/// `density`, `score`, `categories`, `gate` and `exit`.
-fn differences(want: &Value, got: &Value) -> BTreeMap<&'static str, String> {
-    let mut out = BTreeMap::new();
-    let w = &want["document"];
-    let mut check = |name: &'static str, a: Vec<String>, b: Vec<String>| {
-        if a != b {
-            let missing: Vec<_> = a.iter().filter(|x| !b.contains(x)).take(500).collect();
-            let extra: Vec<_> = b.iter().filter(|x| !a.contains(x)).take(500).collect();
-            out.insert(name, format!("missing {missing:?}, extra {extra:?}"));
-        }
-    };
-    let loose = |f: &Value| {
-        format!(
-            "{} {} {} {}",
-            s(f, "rule_id"),
-            s(f, "category"),
-            s(f, "severity"),
-            s(f, "matched_text")
-        )
-    };
-    check("findings", rows(w, loose), rows(got, loose));
-    let keyed = |doc: &Value, facts: &[&str]| {
-        rows(doc, |f| {
-            let mut row = format!("{} {} {}", s(f, "rule_id"), s(f, "line"), s(f, "column"));
-            for k in facts {
-                row = format!("{row} {}", s(f, k));
-            }
-            row
-        })
-    };
-    check("position", keyed(w, &[]), keyed(got, &[]));
-    let end_of = |doc: &Value| keyed(doc, &["end_line", "end_column", "span"]);
-    check("end", end_of(w), end_of(got));
-    for (name, fact) in [
-        ("message", "message"),
-        ("ai_signal", "ai_signal"),
-        ("replacement", "replacement"),
-    ] {
-        check(name, keyed(w, &[fact]), keyed(got, &[fact]));
-    }
-    for (name, keys) in [
-        ("counts", &["words", "sentences", "paragraphs"][..]),
-        (
-            "tallies",
-            &["total_findings", "errors", "warnings", "suggestions"],
-        ),
-        ("density", &["per_100_words", "ai_register", "prose"]),
-        ("score", &["score"]),
-        ("categories", &["categories"]),
-        ("gate", &["gate"]),
-        ("unchecked", &["unchecked"]),
-    ] {
-        for k in keys {
-            if field(w, k) != field(got, k) {
-                out.insert(
-                    name,
-                    format!("{k}: want {}, got {}", field(w, k), field(got, k)),
-                );
-            }
-        }
-    }
-    // The exit status of one document: 2 when a check did not run, else 0 or 1 by its gate.
-    let exit = if got["unchecked"].as_array().unwrap().is_empty() {
-        i64::from(!got["gate"]["passed"].as_bool().unwrap())
+/// The exit status of one document: 2 when a check did not run, else 0 or 1 by its gate.
+fn exit_of(doc: &Value) -> i64 {
+    if doc["unchecked"].as_array().unwrap().is_empty() {
+        i64::from(!doc["gate"]["passed"].as_bool().unwrap())
     } else {
         2
-    };
-    if want["exit_code"].as_i64().unwrap() != exit {
-        out.insert("exit", format!("want {}, got {exit}", want["exit_code"]));
+    }
+}
+
+/// A finding reduced to the facts of the golden projection.
+fn reduced(f: &Value) -> Value {
+    let mut out = identity(f);
+    for (_, keys) in ATTRIBUTES {
+        for k in keys {
+            out[*k] = field(f, k).clone();
+        }
     }
     out
 }
 
-#[derive(Default)]
-struct Tally {
-    documents: usize,
-    compared: BTreeMap<&'static str, usize>,
-    agree: BTreeMap<&'static str, usize>,
-    findings_want: usize,
-    findings_exact: usize,
-    findings_unrun: usize,
-}
-
-/// The facts that `golden-divergences.json` lists for a document: the entries for every input
-/// (`*`), for an input at every profile (`*/<id>`) and for one run (`<profile>/<id>`).
-fn allowed_facts(divergences: &BTreeMap<String, Value>, profile: &str, id: &str) -> Vec<String> {
-    ["*".to_owned(), format!("*/{id}"), format!("{profile}/{id}")]
+/// The findings of a document, reduced, with their identity, in a fixed order.
+fn sorted(doc: &Value) -> Vec<(String, Value)> {
+    let mut all: Vec<(String, Value)> = doc["findings"]
+        .as_array()
+        .unwrap()
         .iter()
-        .filter_map(|k| divergences.get(k))
-        .flat_map(|d| d["ignore"].as_array().unwrap())
-        .map(|v| v.as_str().unwrap().to_owned())
-        .collect()
+        .map(|f| (identity(f).to_string(), reduced(f)))
+        .collect();
+    all.sort_by_key(|(k, f)| (k.clone(), f.to_string()));
+    all
 }
 
-fn run_tier(tier: &str) {
-    let divergences: BTreeMap<String, Value> = serde_json::from_value(read_json(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json"),
-    ))
-    .unwrap();
-    let unrun = unrun_rules();
-    let mut tally = Tally::default();
-    let mut problems = Vec::new();
+/// Every way the engine's document differs from the golden one, as the exact values Rust
+/// reports. An empty object means the two agree.
+///
+/// - `missing`: golden findings that Rust does not report (identity only);
+/// - `extra`: Rust findings that the golden does not hold;
+/// - `changed`: findings with the same identity whose `end`, `message`, `ai_signal` or
+///   `replacement` differ, with Rust's values;
+/// - `document`: the scalar facts that differ, with Rust's values; `categories` holds the
+///   Rust entry of each category that differs;
+/// - `exit` and `unchecked`: Rust's exit status and notice codes.
+fn differences(want: &Value, got: &Value) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    let w = &want["document"];
+    let (mut left, mut right) = (sorted(w), sorted(got));
+    let (mut missing, mut extra, mut changed) = (Vec::new(), Vec::new(), Vec::new());
+    // Identical findings cancel first; what is left pairs by identity.
+    let mut i = 0;
+    while i < left.len() {
+        if let Some(j) = right.iter().position(|r| r.1 == left[i].1) {
+            right.remove(j);
+            left.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+    for (key, f) in left {
+        if let Some(j) = right.iter().position(|r| r.0 == key) {
+            let (_, g) = right.remove(j);
+            let mut attrs = serde_json::Map::new();
+            for (_, keys) in ATTRIBUTES {
+                for k in keys {
+                    if field(&f, k) != field(&g, k) {
+                        attrs.insert((*k).to_owned(), field(&g, k).clone());
+                    }
+                }
+            }
+            let mut entry = identity(&f);
+            entry["rust"] = Value::Object(attrs);
+            changed.push(entry);
+        } else {
+            missing.push(identity(&f));
+        }
+    }
+    extra.extend(right.into_iter().map(|(_, g)| identity(&g)));
+    for (name, list) in [("missing", missing), ("extra", extra), ("changed", changed)] {
+        if !list.is_empty() {
+            out.insert(name.to_owned(), Value::Array(list));
+        }
+    }
+    let mut document = serde_json::Map::new();
+    for (k, _) in DOCUMENT {
+        if field(w, k) != field(got, k) {
+            document.insert(k.to_owned(), field(got, k).clone());
+        }
+    }
+    let by_name = |doc: &Value| -> BTreeMap<String, Value> {
+        doc["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (s(c, "category"), c.clone()))
+            .collect()
+    };
+    let (wc, gc) = (by_name(w), by_name(got));
+    let categories: serde_json::Map<String, Value> = gc
+        .iter()
+        .filter(|(name, c)| wc.get(*name) != Some(c))
+        .map(|(name, c)| (name.trim_matches('"').to_owned(), c.clone()))
+        .collect();
+    assert_eq!(wc.len(), gc.len(), "the categories are the catalogue");
+    if !categories.is_empty() {
+        document.insert("categories".to_owned(), Value::Object(categories));
+    }
+    if !document.is_empty() {
+        out.insert("document".to_owned(), Value::Object(document));
+    }
+    if want["exit_code"].as_i64().unwrap() != exit_of(got) {
+        out.insert("exit".to_owned(), json!(exit_of(got)));
+    }
+    let messages = |doc: &Value| -> Vec<String> {
+        doc["unchecked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.get("message").map_or_else(|| n.clone(), Clone::clone))
+            .map(|m| m.as_str().unwrap().to_owned())
+            .collect()
+    };
+    if messages(w) != messages(got) {
+        let codes: Vec<&Value> = got["unchecked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| &n["code"])
+            .collect();
+        out.insert("unchecked".to_owned(), json!(codes));
+    }
+    out
+}
+
+/// The classes of the agreement table in which `diff` records a difference.
+fn classes_of(diff: &serde_json::Map<String, Value>) -> Vec<&'static str> {
+    let mut classes = Vec::new();
+    let mut add = |c: &'static str| {
+        if !classes.contains(&c) {
+            classes.push(c);
+        }
+    };
+    if diff.contains_key("missing") || diff.contains_key("extra") {
+        add("findings");
+    }
+    for entry in diff
+        .get("changed")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        for (class, keys) in ATTRIBUTES {
+            if keys.iter().any(|k| entry["rust"].get(k).is_some()) {
+                add(class);
+            }
+        }
+    }
+    for (k, class) in DOCUMENT {
+        if diff.get("document").is_some_and(|d| d.get(k).is_some()) {
+            add(class);
+        }
+    }
+    if diff
+        .get("document")
+        .is_some_and(|d| d.get("categories").is_some())
+    {
+        add("categories");
+    }
+    if diff.contains_key("exit") {
+        add("exit");
+    }
+    classes
+}
+
+fn divergence_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
+}
+
+/// Lint every input of `tier` at every profile and return the differences, by `profile/id`.
+/// Runs that the engine skips (RST without docutils) are absent.
+fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
+    let mut runs = BTreeMap::new();
     for profile in PROFILES {
         let engine = legacy_engine(profile).with_rst(rst_options());
         for entry in inputs()
@@ -382,95 +444,155 @@ fn run_tier(tier: &str) {
             let Some(mut got) = lint(&engine, entry) else {
                 continue;
             };
-            let removed = prepare(&mut want, &mut got, &unrun);
-            let mut diff = differences(&want, &got);
-            // With a golden finding unmatched, the facts that follow from all findings differ
-            // by construction: they are not compared.
-            let compared: Vec<&'static str> = FACTS
-                .into_iter()
-                .filter(|f| removed == 0 || !DERIVED.contains(f))
-                .collect();
-            diff.retain(|f, _| compared.contains(f));
-            let key = format!("{profile}/{}", entry.id);
-            let allowed = allowed_facts(&divergences, profile, &entry.id);
-            tally.documents += 1;
-            tally.findings_unrun += removed;
-            for fact in &compared {
-                *tally.compared.entry(fact).or_default() += 1;
-                if !diff.contains_key(fact) {
-                    *tally.agree.entry(fact).or_default() += 1;
-                }
-            }
-            let exact = |d: &Value| {
-                rows(d, |f| {
-                    format!(
-                        "{} {} {} {}",
-                        s(f, "rule_id"),
-                        s(f, "line"),
-                        s(f, "column"),
-                        s(f, "severity")
-                    )
-                })
-            };
-            let (w, g) = (exact(&want["document"]), exact(&got));
-            tally.findings_want += w.len();
-            tally.findings_exact += w.iter().filter(|r| g.contains(r)).count();
-            for (fact, detail) in &diff {
-                if !allowed.iter().any(|a| a == fact) {
-                    problems.push(format!("{key}: {fact}: {detail}"));
-                }
-            }
-            for fact in &allowed {
-                let fact = fact.as_str();
-                if compared.contains(&fact) && !diff.contains_key(fact) {
-                    problems.push(format!(
-                        "{key}: `{fact}` now agrees; remove it from golden-divergences.json"
-                    ));
-                }
-            }
+            mask(&mut want, &mut got);
+            runs.insert(format!("{profile}/{}", entry.id), differences(&want, &got));
         }
     }
-    let agree: Vec<String> = FACTS
+    runs
+}
+
+fn check_tier(tier: &str) {
+    let stored = read_json(&divergence_path());
+    let runs = compute(tier);
+    let mut problems = Vec::new();
+    let mut agree: BTreeMap<&str, usize> = BTreeMap::new();
+    let (mut exact_want, mut exact_got) = (0, 0);
+    for (key, diff) in &runs {
+        let expected = stored["runs"]
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if expected != Value::Object(diff.clone()) {
+            problems.push(format!(
+                "{key}\n  recorded: {expected}\n  actual:   {}",
+                Value::Object(diff.clone())
+            ));
+        }
+        let classes = classes_of(diff);
+        for class in CLASSES {
+            if !classes.contains(&class) {
+                *agree.entry(class).or_default() += 1;
+            }
+        }
+        let count = |k: &str| diff.get(k).and_then(Value::as_array).map_or(0, Vec::len);
+        let want_total = {
+            let id = key.split_once('/').unwrap();
+            let golden =
+                read_json(&root().join(format!("tests/golden/v3/parity/{}/{}.json", id.0, id.1)));
+            golden["document"]["findings"].as_array().unwrap().len()
+        };
+        exact_want += want_total;
+        exact_got += want_total - count("missing");
+    }
+    let table: Vec<String> = CLASSES
         .iter()
-        .map(|f| {
-            let n = tally.agree.get(f).copied().unwrap_or(0);
-            format!("{f} {n}/{}", tally.compared.get(f).copied().unwrap_or(0))
-        })
+        .map(|c| format!("{c} {}/{}", agree.get(c).copied().unwrap_or(0), runs.len()))
         .collect();
     println!(
-        "AGREEMENT {tier} ({} runs): {}; findings at the golden position and severity {}/{}; \
-         golden findings of unrun rules {}",
-        tally.documents,
-        agree.join(", "),
-        tally.findings_exact,
-        tally.findings_want,
-        tally.findings_unrun
+        "AGREEMENT {tier} ({} runs): {}; golden findings that Rust reports {exact_got}/{exact_want}",
+        runs.len(),
+        table.join(", ")
     );
     assert!(
         problems.is_empty(),
-        "{} problems:\n{}",
+        "{} runs differ from golden-divergences.json (record with `GOLDEN_RECORD=1 cargo test -p slopvac-engine --test golden record -- --ignored` and review the diff):\n{}",
         problems.len(),
         problems.join("\n")
     );
 }
+
 #[test]
 fn rule_examples_agree_with_the_golden() {
-    run_tier("rule-examples");
+    check_tier("rule-examples");
 }
 
 #[test]
 fn stacklok_pages_agree_with_the_golden() {
-    run_tier("stacklok");
+    check_tier("stacklok");
 }
 
 #[test]
 fn issue_samples_agree_with_the_golden() {
-    run_tier("issues");
+    check_tier("issues");
 }
 
 #[test]
 fn format_samples_agree_with_the_golden() {
-    run_tier("formats");
+    check_tier("formats");
+}
+
+#[test]
+fn corpus_documents_agree_with_the_golden() {
+    check_tier("corpus");
+}
+
+/// Every recorded difference belongs to a run of the suite and has a reason; every reason
+/// belongs to a recorded difference.
+#[test]
+fn the_divergence_file_matches_the_suite() {
+    let stored = read_json(&divergence_path());
+    let ids: Vec<String> = inputs().into_iter().map(|e| e.id).collect();
+    let mut recorded_inputs = Vec::new();
+    for (key, diff) in stored["runs"].as_object().unwrap() {
+        let (profile, id) = key.split_once('/').unwrap();
+        assert!(PROFILES.contains(&profile), "{key}: unknown profile");
+        assert!(ids.iter().any(|i| i == id), "{key}: not a golden input");
+        assert!(!skipped(id), "{key}: the input is skipped");
+        assert!(!diff.as_object().unwrap().is_empty(), "{key}: empty entry");
+        recorded_inputs.push(id.to_owned());
+    }
+    let reasons = stored["reasons"].as_object().unwrap();
+    for id in &recorded_inputs {
+        let reason = reasons.get(id).and_then(Value::as_str);
+        assert!(
+            reason.is_some_and(|r| !r.is_empty() && !r.starts_with("TODO")),
+            "{id}: no reason"
+        );
+    }
+    for id in reasons.keys() {
+        assert!(
+            recorded_inputs.contains(id),
+            "{id}: a reason without a recorded difference"
+        );
+    }
+}
+
+/// Rewrite `runs` in `golden-divergences.json` from the current engine, keeping the reasons.
+/// Run it by hand, then read the diff: each change is a new or changed difference.
+#[test]
+#[ignore = "writes tests/golden-divergences.json; run with GOLDEN_RECORD=1"]
+fn record() {
+    assert!(
+        std::env::var_os("GOLDEN_RECORD").is_some(),
+        "set GOLDEN_RECORD=1 to rewrite the file"
+    );
+    assert!(
+        RstAdapter::new(rst_options()).interpreter().is_ok(),
+        "recording needs docutils for the RST sample"
+    );
+    let old = read_json(&divergence_path());
+    let mut runs = serde_json::Map::new();
+    let mut reasons = serde_json::Map::new();
+    for tier in ["rule-examples", "stacklok", "issues", "formats", "corpus"] {
+        for (key, diff) in compute(tier) {
+            if diff.is_empty() {
+                continue;
+            }
+            let id = key.split_once('/').unwrap().1.to_owned();
+            let reason = old["reasons"]
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| json!("TODO: explain"));
+            reasons.insert(id, reason);
+            runs.insert(key, Value::Object(diff));
+        }
+    }
+    let file = json!({"reasons": reasons, "runs": runs});
+    std::fs::write(
+        divergence_path(),
+        serde_json::to_string_pretty(&file).unwrap() + "\n",
+    )
+    .unwrap();
 }
 
 /// Every finding that the markup does not change reads back from its byte span as its matched
@@ -504,4 +626,21 @@ fn every_skipped_input_is_in_the_suite() {
     for (id, _, _) in SKIPPED {
         assert!(ids.iter().any(|i| i == id), "{id} is not a golden input");
     }
+}
+
+/// An engine that reports nothing must not pass: the recorded differences are exact, so an
+/// empty report differs from every golden document that holds findings.
+#[test]
+fn an_empty_report_is_a_difference() {
+    let want = read_json(&root().join("tests/golden/v3/parity/normal/issue-254.json"));
+    let mut got = project(
+        &legacy_engine("normal")
+            .lint(&Input::markdown("empty.md", ""))
+            .unwrap(),
+        "",
+    );
+    got["findings"] = json!([]);
+    let diff = differences(&want, &got);
+    assert_eq!(diff["missing"].as_array().unwrap().len(), 3);
+    assert!(diff.contains_key("document"));
 }
