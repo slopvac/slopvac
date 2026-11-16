@@ -39,6 +39,8 @@ rust:
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'crates/**'
+  # Rust conformance tests read the v3 corpus.
+  - 'schemas/v3/conformance/**'
   - 'rust-toolchain.toml'
   - 'rustfmt.toml'
   - 'deny.toml'

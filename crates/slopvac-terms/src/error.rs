@@ -19,13 +19,25 @@ pub enum TermsError {
         /// Parser message with position.
         message: String,
     },
+    /// A blocklist has no `schema_version`, as a 2.x blocklist.
+    #[error(
+        "{path}: missing `schema_version`; a 3.0 blocklist sets `schema_version = 3`. \
+         Run `slopvac migrate` to move a 2.x blocklist to 3.0"
+    )]
+    MissingSchemaVersion {
+        /// File path as given.
+        path: String,
+    },
     /// The file declares an unsupported `schema_version`.
-    #[error("{path}: schema_version {found} is not supported, expected 3")]
+    #[error(
+        "{path}: schema_version {found} is not supported, expected the integer 3. \
+         Run `slopvac migrate` to move an older file to 3.0"
+    )]
     SchemaVersion {
         /// File path as given.
         path: String,
-        /// Version found.
-        found: u32,
+        /// Value found, as JSON text: `2`, `"3"` or `3.5`.
+        found: String,
     },
     /// The file has an unknown key.
     #[error("{path}: unknown key `{key}`")]
