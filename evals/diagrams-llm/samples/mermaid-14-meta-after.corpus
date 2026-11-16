@@ -1,0 +1,11 @@
+# Caching
+
+Reads go to the cache first.
+
+```mermaid
+flowchart LR
+  R[Read] --> C[Cache]
+  C -->|miss| D[(Database)]
+```
+
+This flowchart illustrates the read path. Writes bypass the cache and go straight to the database.

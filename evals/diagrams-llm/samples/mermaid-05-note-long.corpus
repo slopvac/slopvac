@@ -1,0 +1,14 @@
+# Token issue
+
+The client asks the server for a token before every session.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant S as Server
+  C->>S: Request token
+  Note right of S: Tokens are signed with a key that rotates every night
+  S-->>C: Signed token
+```
+
+Clients cache the token until it expires.

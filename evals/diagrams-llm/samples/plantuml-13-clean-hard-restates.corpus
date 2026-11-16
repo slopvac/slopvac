@@ -1,0 +1,17 @@
+# Platform
+
+The web app calls the order service, and the order service reads from the orders database and publishes to the message bus. Calls time out after two seconds because the checkout page blocks on them.
+
+```plantuml
+@startuml
+component "Web app" as W
+component "Order service" as O
+database "Orders database" as D
+queue "Message bus" as M
+W --> O
+O --> D
+O --> M
+@enduml
+```
+
+If the message bus is unavailable the order service buffers up to 10,000 events on disk and drops the oldest after that.

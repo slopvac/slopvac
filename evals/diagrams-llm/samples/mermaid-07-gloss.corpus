@@ -1,0 +1,11 @@
+# Data cleaning
+
+Raw records pass through two cleaning steps before training.
+
+```mermaid
+flowchart LR
+  A[Clean Data: remove duplicates, nulls] --> B[Validate Output - check schema, ranges]
+  B --> C[Load]
+```
+
+Rows that fail validation go to a quarantine table.

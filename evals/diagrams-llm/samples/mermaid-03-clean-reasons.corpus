@@ -1,0 +1,11 @@
+# Delivery pipeline
+
+Messages that fail three delivery attempts are parked for 24 hours so an operator can inspect them. The retry budget of three keeps a poison message from blocking healthy traffic, and the 24 hour hold matches our on-call handover window.
+
+```mermaid
+flowchart LR
+  A[Producer] --> B[Queue] --> C[Consumer]
+  B --> D[Dead letter queue]
+```
+
+Capacity is sized for 5,000 messages per second, with a hard cap of 8,000 before the broker sheds load.
