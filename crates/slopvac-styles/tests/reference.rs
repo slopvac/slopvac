@@ -26,7 +26,7 @@ fn index_lists_every_preset_with_its_description() {
         assert!(
             index.contains(&format!(
                 "| [`{name}`]({name}.md) | {} |",
-                style.description
+                style.description.as_deref().unwrap_or_default()
             )),
             "{name}"
         );
@@ -38,10 +38,10 @@ fn every_rule_and_category_entry_appears_on_its_page() {
     for name in BuiltinSource::names() {
         let style = BuiltinSource.load(name).unwrap();
         let text = page(&format!("styles/{name}.md"));
-        for key in style.settings.rules.keys() {
+        for key in style.rules.keys() {
             assert!(text.contains(&format!("| `{key}` |")), "{name}: {key}");
         }
-        for key in style.settings.categories.keys() {
+        for key in style.categories.keys() {
             assert!(text.contains(&format!("| `{key}` |")), "{name}: {key}");
         }
     }

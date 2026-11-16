@@ -310,6 +310,52 @@ fn strip_extension_keys(v: &mut serde_json::Value) {
     }
 }
 
+fn parse_store_file(raw: &[u8], path: &Path) -> Result<StoreFile, TrustError> {
+    let corrupt = |why: String| TrustError::Corrupt {
+        path: path.to_owned(),
+        why,
+    };
+    if raw.len() as u64 > MAX_STORE_BYTES {
+        return Err(corrupt("larger than 8 MiB".into()));
+    }
+    let mut value: serde_json::Value =
+        serde_json::from_slice(raw).map_err(|e| corrupt(e.to_string()))?;
+    strip_extension_keys(&mut value);
+    let parsed: StoreFile = serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
+    if parsed.schema_version != 1 {
+        return Err(corrupt("unsupported schema_version".into()));
+    }
+    Ok(parsed)
+}
+
+/// Largest trust store file the reader accepts.
+pub const MAX_STORE_FILE_BYTES: u64 = MAX_STORE_BYTES;
+
+/// The contents of a trust store file, for read-only tools such as `doctor`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustSnapshot {
+    /// Plugin approvals.
+    pub records: Vec<TrustRecord>,
+    /// Pinned publisher keys.
+    pub pins: Vec<KeyPin>,
+}
+
+/// Parse the bytes of a trust store file with the rules the store itself applies: at most
+/// [`MAX_STORE_FILE_BYTES`], unknown keys refused, `x-` keys ignored, `schema_version` 1.
+///
+/// The caller supplies the bytes, so it can read them without blocking and under its own size
+/// cap. `path` only names the file in the error.
+///
+/// # Errors
+/// [`TrustError::Corrupt`] for bytes the store would refuse.
+pub fn parse_store(raw: &[u8], path: &Path) -> Result<TrustSnapshot, TrustError> {
+    let file = parse_store_file(raw, path)?;
+    Ok(TrustSnapshot {
+        records: file.records,
+        pins: file.pins,
+    })
+}
+
 /// The per-user trust store.
 #[derive(Debug, Clone)]
 pub struct TrustStore {
@@ -349,19 +395,7 @@ impl TrustStore {
                 why: "larger than 8 MiB".into(),
             });
         }
-        let corrupt = |why: String| TrustError::Corrupt {
-            path: path.clone(),
-            why,
-        };
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&raw).map_err(|e| corrupt(e.to_string()))?;
-        strip_extension_keys(&mut value);
-        let parsed: StoreFile =
-            serde_json::from_value(value).map_err(|e| corrupt(e.to_string()))?;
-        if parsed.schema_version != 1 {
-            return Err(corrupt("unsupported schema_version".into()));
-        }
-        Ok(parsed)
+        parse_store_file(&raw, &path)
     }
 
     /// Run `f` on the store under an exclusive lock and write the result atomically.

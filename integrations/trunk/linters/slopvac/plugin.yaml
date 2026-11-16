@@ -1,0 +1,39 @@
+# Trunk Code Quality definition for slopvac. See docs/ci/megalinter-trunk.md.
+# The layout mirrors trunk-io/plugins (linters/<name>/plugin.yaml) so the file can be
+# contributed upstream unchanged. Update both known_good_version values with every slopvac release.
+version: 0.1
+tools:
+  definitions:
+    - name: slopvac
+      runtime: python
+      package: slopvac
+      shims: [slopvac]
+      known_good_version: 3.0.0
+lint:
+  files:
+    - name: slopvac-prose
+      extensions: [md, markdown, rst, txt, html]
+  definitions:
+    - name: slopvac
+      description: Lint prose for AI writing patterns and technical-writing problems
+      # 3.0 has no native Windows build; Windows users run Trunk inside WSL.
+      supported_platforms: [linux, macos]
+      files: [slopvac-prose]
+      tools: [slopvac]
+      commands:
+        - name: lint
+          output: sarif
+          run: slopvac lint --format sarif --out ${tmpfile} ${target}
+          read_output_from: tmp_file
+          # Exit 0 passes and 1 reports findings. Exit 2 means the check was incomplete,
+          # so it stays out of this list and Trunk reports a tool failure.
+          success_codes: [0, 1]
+          batch: true
+          cache_results: true
+      direct_configs: [slopvac.toml]
+      affects_cache: [slopvac.toml]
+      suggest_if: config_present
+      known_good_version: 3.0.0
+      version_command:
+        parse_regex: ${semver}
+        run: slopvac --version

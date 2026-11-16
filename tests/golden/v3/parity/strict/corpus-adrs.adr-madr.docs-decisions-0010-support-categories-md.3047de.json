@@ -1,0 +1,788 @@
+{
+  "document": {
+    "ai_register": {
+      "strong": {
+        "errors": 0,
+        "findings": 0,
+        "per_100_words": 0.0,
+        "warnings": 0
+      },
+      "weak": {
+        "errors": 0,
+        "findings": 6,
+        "per_100_words": 1.791,
+        "warnings": 0
+      }
+    },
+    "categories": [
+      {
+        "budget": 0.0,
+        "category": "ai-residue",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-agentic",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "ai-tells-content-shape",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ai-tells-figurative",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ai-tells-formatting",
+        "errors": 0,
+        "findings": 6,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 1.791,
+        "score": 95.5,
+        "suggestions": 6,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-register",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ai-tells-structure",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "docs-discipline",
+        "errors": 7,
+        "findings": 7,
+        "gating_per_100_words": 2.09,
+        "over_budget": true,
+        "per_100_words": 2.09,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "orwell",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-agency",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.8,
+        "category": "prose-craft",
+        "errors": 0,
+        "findings": 1,
+        "gating_per_100_words": 0.149,
+        "over_budget": false,
+        "per_100_words": 0.299,
+        "score": 94.4,
+        "suggestions": 0,
+        "warnings": 1
+      },
+      {
+        "budget": 0.4,
+        "category": "prose-discipline",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-format",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "prose-inclusive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-inflation",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.299,
+        "over_budget": false,
+        "per_100_words": 0.299,
+        "score": 70.1,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.2,
+        "category": "prose-promotion",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "prose-scope",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-descriptive",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.3,
+        "category": "ste-nouns",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-practices",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-procedural",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-punctuation",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.0,
+        "category": "ste-safety",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-sentences",
+        "errors": 0,
+        "findings": 0,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
+        "per_100_words": 0.0,
+        "score": 100.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.4,
+        "category": "ste-verbs",
+        "errors": 9,
+        "findings": 9,
+        "gating_per_100_words": 2.687,
+        "over_budget": true,
+        "per_100_words": 2.687,
+        "score": 0.0,
+        "suggestions": 0,
+        "warnings": 0
+      },
+      {
+        "budget": 0.5,
+        "category": "ste-words",
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.299,
+        "over_budget": false,
+        "per_100_words": 0.299,
+        "score": 82.1,
+        "suggestions": 0,
+        "warnings": 0
+      }
+    ],
+    "errors": 18,
+    "findings": [
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 3,
+        "end_column": 21,
+        "end_line": 5,
+        "line": 5,
+        "matched_text": "Support Categories",
+        "message": "title-case heading: Support Categories -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 60,
+          "start": 42
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 33,
+        "end_line": 7,
+        "line": 7,
+        "matched_text": "Context and Problem Statement",
+        "message": "title-case heading: Context and Problem Statement -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 94,
+          "start": 65
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 1,
+        "end_column": 5,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 100,
+          "start": 96
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 6,
+        "end_column": 18,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "are recorded",
+        "message": "Passive voice \"are recorded\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 113,
+          "start": 101
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 34,
+        "end_column": 38,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 133,
+          "start": 129
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 76,
+        "end_column": 80,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 175,
+          "start": 171
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 20,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "Decision Drivers",
+        "message": "title-case heading: Decision Drivers -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 241,
+          "start": 225
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 23,
+        "end_column": 27,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 269,
+          "start": 265
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 43,
+        "end_column": 47,
+        "end_line": 13,
+        "line": 13,
+        "matched_text": "ADRs",
+        "message": "internal reference: ADRs -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 289,
+          "start": 285
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 27,
+        "end_column": 33,
+        "end_line": 17,
+        "line": 17,
+        "matched_text": "should",
+        "message": "Use \"must\" rather than \"should\".",
+        "replacement": "must",
+        "rule_id": "core:ste-words.obligation-word-substitution",
+        "severity": "error",
+        "span": {
+          "end": 395,
+          "start": 389
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 22,
+        "end_line": 20,
+        "line": 20,
+        "matched_text": "Considered Options",
+        "message": "title-case heading: Considered Options -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 465,
+          "start": 447
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 20,
+        "end_line": 30,
+        "line": 30,
+        "matched_text": "Decision Outcome",
+        "message": "title-case heading: Decision Outcome -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 771,
+          "start": 755
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 73,
+        "end_column": 82,
+        "end_line": 32,
+        "line": 32,
+        "matched_text": "see below",
+        "message": "directional reference: use 'see the named section' instead of 'see below', or link the heading by name",
+        "replacement": "see the named section",
+        "rule_id": "core:prose-craft.directional-ref",
+        "severity": "warning",
+        "span": {
+          "end": 854,
+          "start": 845
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-formatting",
+        "column": 4,
+        "end_column": 32,
+        "end_line": 34,
+        "line": 34,
+        "matched_text": "Pros and Cons of the Options",
+        "message": "title-case heading: Pros and Cons of the Options -- use sentence case unless house style says otherwise",
+        "replacement": null,
+        "rule_id": "core:ai-tells-formatting.title-case-heading",
+        "severity": "suggestion",
+        "span": {
+          "end": 889,
+          "start": 861
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 59,
+        "end_column": 70,
+        "end_line": 77,
+        "line": 77,
+        "matched_text": "be filtered",
+        "message": "Passive voice \"be filtered\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 2229,
+          "start": 2218
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 27,
+        "end_column": 33,
+        "end_line": 94,
+        "line": 94,
+        "matched_text": "easily",
+        "message": "borderline hype: easily -- keep it only if a number or example backs it",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.borderline-hype",
+        "severity": "error",
+        "span": {
+          "end": 2747,
+          "start": 2741
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 34,
+        "end_column": 44,
+        "end_line": 94,
+        "line": 94,
+        "matched_text": "be spotted",
+        "message": "Passive voice \"be spotted\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 2758,
+          "start": 2748
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 57,
+        "end_column": 60,
+        "end_line": 95,
+        "line": 95,
+        "matched_text": "ADR",
+        "message": "internal reference: ADR -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 2818,
+          "start": 2815
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 28,
+        "end_column": 49,
+        "end_line": 96,
+        "line": 96,
+        "matched_text": "have to be maintained",
+        "message": "Auxiliary stack \"have to be maintained\". Give the action directly.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.auxiliary-stacking",
+        "severity": "error",
+        "span": {
+          "end": 2867,
+          "start": 2846
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 36,
+        "end_column": 49,
+        "end_line": 96,
+        "line": 96,
+        "matched_text": "be maintained",
+        "message": "Passive voice \"be maintained\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 2867,
+          "start": 2854
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 70,
+        "end_column": 80,
+        "end_line": 96,
+        "line": 96,
+        "matched_text": "be updated",
+        "message": "Passive voice \"be updated\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 2898,
+          "start": 2888
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 19,
+        "end_column": 22,
+        "end_line": 97,
+        "line": 97,
+        "matched_text": "adr",
+        "message": "internal reference: adr -- consumer docs describe the released artifact only",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.internal-refs",
+        "severity": "error",
+        "span": {
+          "end": 2921,
+          "start": 2918
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 63,
+        "end_column": 73,
+        "end_line": 97,
+        "line": 97,
+        "matched_text": "be adapted",
+        "message": "Passive voice \"be adapted\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 2972,
+          "start": 2962
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 30,
+        "end_column": 40,
+        "end_line": 98,
+        "line": 98,
+        "matched_text": "is unknown",
+        "message": "Passive voice \"is unknown\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 3057,
+          "start": 3047
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 39,
+        "end_column": 51,
+        "end_line": 99,
+        "line": 99,
+        "matched_text": "be hampering",
+        "message": "Complex verb construction \"be hampering\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 3144,
+          "start": 3132
+        }
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "reasons": [
+        "18 error(s), limit 0",
+        "5.52 severity-weighted findings per 100 words, budget 1.5",
+        "score 3.0, minimum 85.0",
+        "docs-discipline at 2.09 severity-weighted findings per 100 words, budget 0.2",
+        "ste-verbs at 2.69 severity-weighted findings per 100 words, budget 0.4"
+      ]
+    },
+    "paragraphs": 9,
+    "path": "corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de.md",
+    "per_100_words": 7.463,
+    "profile": "strict",
+    "prose": {
+      "errors": 18,
+      "findings": 19,
+      "per_100_words": 5.672,
+      "warnings": 1
+    },
+    "score": 3.0,
+    "sentences": 61,
+    "suggestions": 6,
+    "total_findings": 25,
+    "unchecked": [],
+    "warnings": 1,
+    "words": 335
+  },
+  "exit_code": 1
+}

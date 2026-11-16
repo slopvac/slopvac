@@ -12,7 +12,7 @@ use std::sync::Arc;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_context::{TagIndex, TagRegistry};
-use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract};
+use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
     KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
@@ -20,7 +20,7 @@ use slopvac_model::{
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
-use slopvac_terms::Blocklist;
+use slopvac_terms::{Blocklist, TermSet};
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
@@ -37,7 +37,9 @@ use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
 use crate::tagging;
+use crate::terms;
 
+mod casing;
 mod vocabulary;
 use vocabulary::Vocabulary;
 
@@ -133,6 +135,9 @@ pub enum EngineError {
     /// prose it was given.
     #[error("diagram checker returned a bad range: {0}")]
     BadRange(String),
+    /// A terms file could not be read or is not valid.
+    #[error("terms file: {0}")]
+    Terms(String),
     /// A value the engine built broke a model invariant. This is a bug.
     #[error("internal error: {0}")]
     Internal(String),
@@ -188,6 +193,10 @@ pub struct Engine {
     vocabulary_rules: Vec<Active>,
     /// The blocklist sweep and the notices about it.
     vocabulary: Vocabulary,
+    /// Term-casing rules that run.
+    casing_rules: Vec<Active>,
+    /// The terms the casing rules enforce.
+    pub(crate) terms: TermSet,
     /// Metric rules that run.
     metrics: Vec<Active>,
     /// Diagram rules that run, by id.
@@ -285,6 +294,8 @@ impl Engine {
             active: Vec::new(),
             vocabulary_rules: Vec::new(),
             vocabulary: Vocabulary::default(),
+            casing_rules: Vec::new(),
+            terms: TermSet::default(),
             metrics: Vec::new(),
             diagram_rules: HashMap::new(),
             signal_rules: Vec::new(),
@@ -296,6 +307,9 @@ impl Engine {
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
+        if !engine.casing_rules.is_empty() {
+            engine.terms = TermSet::builtin();
+        }
         engine.add_signal_checker();
         engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
@@ -307,6 +321,45 @@ impl Engine {
         self.plan_vocabulary(blocklist)?;
         self.blocklist = blocklist.clone();
         Ok(self)
+    }
+
+    /// Set the terms that the term-casing rules enforce, replacing the built-in list. Build
+    /// the set from the project's terms files, the built-in list or both. Words in
+    /// `Settings::allowed_words` are never flagged.
+    #[must_use]
+    pub fn with_terms(mut self, terms: TermSet) -> Self {
+        self.terms = terms;
+        self
+    }
+
+    /// Set the terms from project terms files, then the built-in list. A spelling in an
+    /// earlier file wins over a later file and over the built-in list. The paths are the
+    /// resolved `terms.files` of the configuration and the `terms` of the active styles.
+    ///
+    /// # Errors
+    /// A file cannot be read or is not a valid terms file.
+    pub fn with_term_files<P: AsRef<std::path::Path>>(
+        mut self,
+        files: &[P],
+    ) -> Result<Self, EngineError> {
+        let mut entries = Vec::new();
+        for path in files {
+            entries.extend(
+                slopvac_terms::TermsFile::load(path.as_ref())
+                    .map_err(|e| EngineError::Terms(e.to_string()))?
+                    .terms,
+            );
+        }
+        entries.extend(slopvac_terms::TermsFile::builtin().terms);
+        self.terms = TermSet::new(entries);
+        Ok(self)
+    }
+
+    /// Whether `id` is a term-casing rule.
+    pub(crate) fn is_term_casing(&self, id: &RuleId) -> bool {
+        self.casing_rules
+            .iter()
+            .any(|a| self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id)
     }
 
     /// Replace the exception detectors.
@@ -467,7 +520,14 @@ impl Engine {
                             }
                         }
                         MatchKind::Vocabulary => {
-                            self.vocabulary_rules.push(Active::new(s, c, r, severity));
+                            let casing =
+                                matches!(&rule.match_, Match::Vocabulary(v) if terms::is_casing(v));
+                            let list = if casing {
+                                &mut self.casing_rules
+                            } else {
+                                &mut self.vocabulary_rules
+                            };
+                            list.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Capitalization => {
                             *unrun.entry(CAPITALIZATION).or_default() += 1;
@@ -505,6 +565,7 @@ impl Engine {
         let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
         let executes = self.active.iter().any(|a| at(&a))
             || self.metrics.iter().any(|a| at(&a))
+            || self.casing_rules.iter().any(|a| at(&a))
             || owner.is_some_and(|a| at(&a));
         if executes {
             None
@@ -602,6 +663,7 @@ impl Engine {
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
+        findings.extend(run.term_casing()?);
         findings.extend(run.metrics()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
@@ -1129,9 +1191,8 @@ impl Run<'_> {
                     let Some(format) = DiagramFormat::from_lang(lang) else {
                         continue;
                     };
-                    let text = &self.input.source[body.start()..body.end()];
                     diagrams.push((
-                        extract(format, text, body.start()),
+                        extract_fenced(format, self.input.source, body.start()..body.end()),
                         self.nearby_prose(block.span),
                     ));
                 }
@@ -1251,7 +1312,10 @@ impl Run<'_> {
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect()
         });
-        let matched = self.input.source[span.start()..span.end()].to_owned();
+        let matched = hit
+            .matched
+            .clone()
+            .unwrap_or_else(|| self.input.source[span.start()..span.end()].to_owned());
         if let Some(rule) = rule
             && self.guarded_with(
                 Some(slopvac_diagrams::CONTEXT),

@@ -8,6 +8,7 @@ use crate::block::{self, State};
 use crate::content::{self, BlockKind};
 use crate::error::AgentsError;
 use crate::fsx::Project;
+use crate::guidance::Guidance;
 use crate::harness::{self, Harness};
 use crate::managed;
 
@@ -96,7 +97,14 @@ pub fn options(matches: &ArgMatches) -> Options {
 
 /// Run the parsed `setup` command.
 pub fn run(matches: &ArgMatches) -> Result<Outcome, AgentsError> {
-    execute(&options(matches))
+    let mut opts = options(matches);
+    // `--list` and `--remove` need no config, so a broken one must not stop them.
+    // `--no-skill` wins; otherwise the skill goes when write and review are both off.
+    let needs_config = !opts.list && !opts.remove && !opts.no_skill;
+    if needs_config && !Guidance::load(&opts.root, None)?.skill_wanted() {
+        opts.no_skill = true;
+    }
+    execute(&opts)
 }
 
 fn usage(message: &str) -> AgentsError {
