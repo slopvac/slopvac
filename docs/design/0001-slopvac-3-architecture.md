@@ -280,8 +280,8 @@ Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
   - the Windows archive and installer smoke jobs.
   - the Windows item in the signed-artifacts gate. The release gate of decision 24 now needs five targets.
   - the Windows build and test requirement for PCRE2.
-- This decision also supersedes, for 3.0, the Windows process-containment notes (job objects) in the plugin threat model and protocol. The contract owners decide how to word them.
-- Kept: the 2.x Python package keeps its existing Windows code paths. Windows CI jobs for the Rust workspace stay until the code-quality epic decides, because native Windows work continues in 3.x.
+- For 3.0, this decision also supersedes the Windows containment notes (job objects) in the threat model and the plugin protocol. The contract owners decide how to word them.
+- Kept: the 2.x Python package keeps the code it has for Windows. The Rust workspace keeps its CI jobs on Windows until the code-quality epic decides, because native Windows work continues in 3.x.
 - Tracking: bead `slopvac-8l4.13.26`.
 - Rejected: shipping a best-effort Windows build without a gate. It would carry an unverified signing and containment story.
 
