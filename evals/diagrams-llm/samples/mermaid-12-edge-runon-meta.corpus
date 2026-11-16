@@ -1,0 +1,10 @@
+# Event fan-out
+
+As shown in the diagram, the publisher sends every event to the consumer group.
+
+```mermaid
+flowchart LR
+  A[Publisher] -->|sends the validated event to the downstream consumer group| B[Consumers]
+```
+
+Each consumer acknowledges events independently.

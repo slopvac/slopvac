@@ -1,0 +1,11 @@
+# Rate limiting
+
+The gateway rate limits each tenant at 200 requests per second because the shared cache saturates beyond that, and the auth service is excluded from the limit so logins never queue behind bulk traffic.
+
+```mermaid
+flowchart LR
+  A[Tenant] --> B[Gateway] --> C[Auth service]
+  B --> D[Shared cache]
+```
+
+If the shared cache is down, the gateway falls back to a local counter set to 50 requests per second.

@@ -1,0 +1,366 @@
+{
+ "mermaid-01-runon-meta": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "User submits the order form"
+   },
+   {
+    "rule": "diagram.meta-reference",
+    "text": "The diagram below"
+   }
+  ]
+ },
+ "mermaid-02-clean-short": {
+  "labels": []
+ },
+ "mermaid-03-clean-reasons": {
+  "labels": []
+ },
+ "mermaid-04-restates": {
+  "labels": [
+   {
+    "rule": "diagram.prose-restates-labels",
+    "text": ""
+   }
+  ]
+ },
+ "mermaid-05-note-long": {
+  "labels": [
+   {
+    "rule": "diagram.note-long",
+    "text": "rotates every night"
+   }
+  ]
+ },
+ "mermaid-06-clean-seq": {
+  "labels": []
+ },
+ "mermaid-07-gloss": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Clean Data: remove duplicates"
+   },
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Validate Output - check schema"
+   }
+  ]
+ },
+ "mermaid-08-gloss-titlecase-colon": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Ingest Service: Validates Incoming Events"
+   }
+  ],
+  "note": "Title-cased gloss after a colon: the line-break capitalisation exemption does not apply."
+ },
+ "mermaid-09-gloss-titlecase-br": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Ingest Service<br/>Validates Incoming Events"
+   },
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Export Service<br/>Writes Daily Batch Files"
+   }
+  ],
+  "note": "Title-cased gloss after a line break: the PR 452 exemption skips these, so they are expected misses."
+ },
+ "mermaid-10-gloss-br-lowercase": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Order Service<br/>Handles checkout"
+   },
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Billing Service<br/>computes monthly"
+   }
+  ]
+ },
+ "mermaid-11-clean-names-br": {
+  "labels": [],
+  "note": "Line break between capitalised names lists components; the PR 452 exemption must keep these quiet."
+ },
+ "mermaid-12-edge-runon-meta": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "sends the validated event"
+   },
+   {
+    "rule": "diagram.meta-reference",
+    "text": "As shown in the diagram"
+   }
+  ]
+ },
+ "mermaid-13-meta-figure": {
+  "labels": [
+   {
+    "rule": "diagram.meta-reference",
+    "text": "In the figure above"
+   }
+  ]
+ },
+ "mermaid-14-meta-after": {
+  "labels": [
+   {
+    "rule": "diagram.meta-reference",
+    "text": "This flowchart illustrates"
+   }
+  ]
+ },
+ "mermaid-15-clean-nearmiss-meta": {
+  "labels": [],
+  "note": "Near misses: 'As shown in the logs', 'The chart of', 'the graph database'."
+ },
+ "mermaid-16-state-note-long": {
+  "labels": [
+   {
+    "rule": "diagram.note-long",
+    "text": "billed on the first"
+   }
+  ]
+ },
+ "mermaid-17-clean-class": {
+  "labels": []
+ },
+ "mermaid-18-clean-er": {
+  "labels": []
+ },
+ "mermaid-19-group-runon": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "Payment and fulfilment services"
+   }
+  ]
+ },
+ "mermaid-20-kitchen-sink": {
+  "labels": [
+   {
+    "rule": "diagram.meta-reference",
+    "text": "The flowchart above"
+   },
+   {
+    "rule": "diagram.label-run-on",
+    "text": "rejects the file and notifies"
+   },
+   {
+    "rule": "diagram.prose-restates-labels",
+    "text": ""
+   }
+  ]
+ },
+ "mermaid-21-restates-pipeline": {
+  "labels": [
+   {
+    "rule": "diagram.prose-restates-labels",
+    "text": ""
+   }
+  ]
+ },
+ "mermaid-22-clean-code-token": {
+  "labels": [],
+  "note": "Run-on length, but the code tokens exempt the labels."
+ },
+ "mermaid-23-clean-six-words": {
+  "labels": [],
+  "note": "Six words: below the run-on threshold of seven."
+ },
+ "mermaid-24-runon-seven-words": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "Send the request to the remote service"
+   }
+  ],
+  "note": "Seven words: the run-on threshold."
+ },
+ "mermaid-25-clean-note-five": {
+  "labels": [],
+  "note": "Five words: below the note threshold of six."
+ },
+ "mermaid-26-note-six": {
+  "labels": [
+   {
+    "rule": "diagram.note-long",
+    "text": "Retries three times on every timeout"
+   }
+  ],
+  "note": "Six words: the note threshold."
+ },
+ "mermaid-27-clean-hard-restates": {
+  "labels": [],
+  "note": "Hard negative: the prose names the labels but adds limits, reasons and a failure mode."
+ },
+ "mermaid-28-clean-two-labels": {
+  "labels": [],
+  "note": "Two labels: too few for the restatement check."
+ },
+ "plantuml-01-note-long": {
+  "labels": [
+   {
+    "rule": "diagram.note-long",
+    "text": "keys rotate every night"
+   }
+  ]
+ },
+ "plantuml-02-clean-note": {
+  "labels": []
+ },
+ "plantuml-03-runon": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "Receives the raw upload"
+   }
+  ]
+ },
+ "plantuml-04-clean-activity": {
+  "labels": []
+ },
+ "plantuml-05-gloss": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Cache Layer: hot keys"
+   }
+  ]
+ },
+ "plantuml-06-meta-restates": {
+  "labels": [
+   {
+    "rule": "diagram.meta-reference",
+    "text": "The diagram above"
+   },
+   {
+    "rule": "diagram.prose-restates-labels",
+    "text": ""
+   }
+  ]
+ },
+ "plantuml-07-clean-note-block": {
+  "labels": []
+ },
+ "plantuml-08-note-block-long": {
+  "labels": [
+   {
+    "rule": "diagram.note-long",
+    "text": "retries failed calls three times"
+   }
+  ]
+ },
+ "plantuml-09-gloss-titlecase": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Billing Service: Calculates Monthly Invoices"
+   }
+  ],
+  "note": "Title-cased gloss after a colon."
+ },
+ "plantuml-10-gloss-titlecase-newline": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Billing Service"
+   }
+  ],
+  "note": "Title-cased gloss after a literal backslash-n escape; the label may reach the rule unconverted."
+ },
+ "plantuml-11-clean-seq-messages": {
+  "labels": [],
+  "note": "Long message labels are exempt."
+ },
+ "plantuml-12-edge-runon": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "sends the validated order"
+   }
+  ]
+ },
+ "plantuml-13-clean-hard-restates": {
+  "labels": [],
+  "note": "Hard negative: names the labels but adds a limit, a reason and a failure mode."
+ },
+ "plantuml-14-clean-usecase": {
+  "labels": []
+ },
+ "drawio-01-runon": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "User submits the order form"
+   }
+  ]
+ },
+ "drawio-02-clean": {
+  "labels": []
+ },
+ "drawio-03-gloss-lowercase": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Order Service"
+   }
+  ]
+ },
+ "drawio-04-gloss-titlecase-br": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Ingest Service"
+   }
+  ],
+  "note": "Title-cased gloss after a line break: expected miss under the PR 452 exemption."
+ },
+ "drawio-05-clean-names-br": {
+  "labels": [],
+  "note": "A list of names across a line break."
+ },
+ "drawio-06-edge-runon": {
+  "labels": [
+   {
+    "rule": "diagram.label-run-on",
+    "text": "sends the validated event"
+   }
+  ]
+ },
+ "drawio-07-clean-six-words": {
+  "labels": [],
+  "note": "Six words."
+ },
+ "drawio-08-mixed": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Clean Data: remove duplicates"
+   },
+   {
+    "rule": "diagram.label-run-on",
+    "text": "Each incoming record is validated"
+   }
+  ]
+ },
+ "drawio-09-clean-code-token": {
+  "labels": [],
+  "note": "Code token exempts a seven-word label."
+ },
+ "drawio-10-gloss-dash": {
+  "labels": [
+   {
+    "rule": "diagram.label-title-plus-gloss",
+    "text": "Auth Service - issues and verifies"
+   }
+  ]
+ },
+ "drawio-11-clean-title-case-names": {
+  "labels": []
+ }
+}
