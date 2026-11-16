@@ -207,3 +207,60 @@ fn a_link_to_another_page_is_body_evidence() {
         counts("See the docs for Kubernetes [here](https://example.com/x) and [Redis](other.md).");
     assert_eq!(words(&c, &Dictionary::default()), ["kubernetes", "redis"]);
 }
+
+#[test]
+fn a_pair_that_starts_a_sentence_is_not_evidence() {
+    let c = counts("Claude Code is fine. Claude Code works.");
+    let found = infer(&c, &Dictionary::default());
+    assert_eq!(found.phrases().count(), 0);
+}
+
+#[test]
+fn a_pair_after_a_sentence_start_word_still_counts_from_its_second_word() {
+    let c = counts("Install Docker Desktop now.");
+    let found = infer(&c, &Dictionary::default());
+    assert_eq!(
+        found.phrases().map(|(p, _)| p).collect::<Vec<_>>(),
+        ["docker desktop"]
+    );
+}
+
+#[test]
+fn front_matter_is_not_body_evidence() {
+    let c = counts("---\ntitle: We use Kubernetes here\n---\n\nPlain text.\n");
+    assert_eq!(words(&c, &Dictionary::default()), no_words());
+}
+
+#[test]
+fn headings_inside_quotes_and_lists_are_not_body_evidence() {
+    let c = counts("> # Using Kubernetes now\n\n- ## Docker Desktop here\n");
+    assert_eq!(words(&c, &Dictionary::default()), no_words());
+}
+
+#[test]
+fn a_double_backtick_span_may_hold_a_backtick() {
+    let c = counts("Call ``Foo `Bar` Baz`` then stop.");
+    assert_eq!(words(&c, &Dictionary::default()), no_words());
+}
+
+#[test]
+fn a_fence_closes_only_with_its_own_character_and_length() {
+    let tilde = counts("~~~\nRun Kubernetes\n```\nmore Kubernetes\n~~~\n");
+    assert_eq!(words(&tilde, &Dictionary::default()), no_words());
+    let long = counts("````\n```\nRun Kubernetes\n```\n````\n\nAfter we run Redis.\n");
+    assert_eq!(words(&long, &Dictionary::default()), ["redis"]);
+}
+
+#[test]
+fn a_heading_that_starts_with_code_has_its_first_word_after_the_code() {
+    let c = counts("We use Docker daily.");
+    let found = infer(&c, &Dictionary::default());
+    assert_eq!(found.residual_capitals("Install Docker"), 0);
+    assert_eq!(found.residual_capitals("`run` Install Docker"), 1);
+}
+
+#[test]
+fn combining_marks_stay_attached_to_their_word() {
+    let c = counts("We use Cafe\u{301} daily and Kubernetes too.");
+    assert_eq!(words(&c, &Dictionary::default()), ["kubernetes"]);
+}

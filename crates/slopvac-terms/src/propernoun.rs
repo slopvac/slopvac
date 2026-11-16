@@ -28,6 +28,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Range;
 
+pub mod ab;
+
 use serde::{Deserialize, Serialize};
 
 /// Minimum share of capitalised uses, in fifths.
@@ -114,7 +116,11 @@ impl Counts {
         let mut seen: HashSet<String> = HashSet::new();
         let mut buf = String::new();
         for pair in toks.windows(2) {
-            if pair[1].joined && pair[0].shape == Shape::Cap && pair[1].shape == Shape::Cap {
+            if pair[1].joined
+                && !pair[0].starts
+                && pair[0].shape == Shape::Cap
+                && pair[1].shape == Shape::Cap
+            {
                 pair_key(&mut buf, &pair[0].key, &pair[1].key);
                 self.pairs.entry(buf.clone()).or_default().hits += 1;
                 seen.insert(buf.clone());
@@ -274,9 +280,12 @@ impl Inferred {
     #[must_use]
     pub fn residual_capitals(&self, heading: &str) -> usize {
         let named = self.mask(heading);
+        // The first word is the first thing in the heading. A leading code span
+        // is that thing, so the first word after it is not exempt.
+        let leads_with_code = blank_spans(heading.trim_start()).starts_with('\u{1}');
         scan(heading, false)
             .iter()
-            .skip(1)
+            .skip(usize::from(!leads_with_code))
             .filter(|t| t.shape == Shape::Cap && !named.contains(&t.range))
             .count()
     }
@@ -318,6 +327,22 @@ fn shape_of(word: &str) -> Shape {
     Shape::Other
 }
 
+/// Length of the code span that opens `rest`: a run of backticks up to the
+/// next run of the same length. `None` when the run never closes.
+fn code_span_len(rest: &str) -> Option<usize> {
+    let open = rest.bytes().take_while(|b| *b == b'`').count();
+    let mut at = open;
+    while let Some(found) = rest[at..].find('`') {
+        let start = at + found;
+        let run = rest[start..].bytes().take_while(|b| *b == b'`').count();
+        if run == open {
+            return Some(start + run);
+        }
+        at = start + run;
+    }
+    None
+}
+
 /// Replace code spans, link destinations, URLs and tags with a filler that
 /// keeps byte offsets and separates tokens.
 fn blank_spans(line: &str) -> String {
@@ -325,8 +350,8 @@ fn blank_spans(line: &str) -> String {
     let mut i = 0;
     while i < line.len() {
         let rest = &line[i..];
-        let end = if let Some(after) = rest.strip_prefix('`') {
-            after.find('`').map(|j| j + 2)
+        let end = if rest.starts_with('`') {
+            code_span_len(rest)
         } else if rest.starts_with("](") {
             rest.find(')').map(|j| j + 1)
         } else if rest.starts_with("http://") || rest.starts_with("https://") {
@@ -420,41 +445,79 @@ fn is_setext_rule(line: &str) -> bool {
     t.len() >= 2 && (t.bytes().all(|b| b == b'=') || t.bytes().all(|b| b == b'-'))
 }
 
+/// An opening or closing fence: its character, run length and what follows.
+fn fence_of(rest: &str) -> Option<(char, usize, &str)> {
+    let t = rest.trim_start_matches([' ', '\t']);
+    let ch = t.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let run = t.chars().take_while(|c| *c == ch).count();
+    (run >= 3).then(|| (ch, run, &t[run..]))
+}
+
+fn is_atx_heading(rest: &str) -> bool {
+    let t = rest.trim_start_matches([' ', '\t']);
+    let after = t.trim_start_matches('#');
+    t.starts_with('#')
+        && t.len() - after.len() <= 6
+        && (after.is_empty() || after.starts_with([' ', '\t']))
+}
+
 fn scan(text: &str, body: bool) -> Vec<Token> {
     let mut out = Vec::new();
     let mut start = true;
-    let mut in_fence = false;
+    let mut fence: Option<(char, usize)> = None;
+    let mut front: Option<&str> = None;
     let mut offset = 0;
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     for (n, raw) in lines.iter().enumerate() {
         let base = offset;
         offset += raw.len();
         let line = raw.trim_end_matches(['\n', '\r']);
-        let trimmed = line.trim_start();
-        if body && !trimmed.is_empty() && lines.get(n + 1).is_some_and(|l| is_setext_rule(l)) {
-            start = true;
-            continue;
-        }
+        let trimmed = line.trim();
         if body {
-            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-                in_fence = !in_fence;
+            if n == 0 && matches!(trimmed, "---" | "+++") {
+                front = Some(if trimmed == "---" { "---" } else { "+++" });
+                continue;
+            }
+            if let Some(delim) = front {
+                if trimmed == delim || (delim == "---" && trimmed == "...") {
+                    front = None;
+                    start = true;
+                }
+                continue;
+            }
+        }
+        let skip = if body { marker_len(line) } else { 0 };
+        let rest = &line[skip..];
+        if body {
+            if let Some((ch, len)) = fence {
+                if let Some((c, run, tail)) = fence_of(rest)
+                    && c == ch
+                    && run >= len
+                    && tail.trim().is_empty()
+                {
+                    fence = None;
+                }
                 start = true;
                 continue;
             }
-            let heading = trimmed.trim_start_matches('#');
-            let is_heading = trimmed.starts_with('#')
-                && (heading.is_empty() || heading.starts_with([' ', '\t']));
-            if in_fence || is_heading {
+            if let Some((c, run, tail)) = fence_of(rest)
+                && (c == '~' || !tail.contains('`'))
+            {
+                fence = Some((c, run));
                 start = true;
                 continue;
             }
-            if trimmed.is_empty() || trimmed.starts_with("!!!") || trimmed.starts_with("???") {
+            if (!trimmed.is_empty() && lines.get(n + 1).is_some_and(|l| is_setext_rule(l)))
+                || is_atx_heading(rest)
+                || trimmed.is_empty()
+                || trimmed.starts_with("!!!")
+                || trimmed.starts_with("???")
+            {
                 start = true;
                 continue;
             }
         }
         let cleaned = blank_spans(&blank_anchor_links(line));
-        let skip = if body { marker_len(&cleaned) } else { 0 };
         if body && is_bold_only(&cleaned[skip..]) {
             start = true;
             continue;
@@ -467,11 +530,20 @@ fn scan(text: &str, body: bool) -> Vec<Token> {
     out
 }
 
+/// Characters that belong to a word: letters, digits and combining marks.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric()
+        || matches!(
+            c as u32,
+            0x0300..=0x036f | 0x1ab0..=0x1aff | 0x1dc0..=0x1dff | 0x20d0..=0x20ff | 0xfe20..=0xfe2f
+        )
+}
+
 fn scan_line(line: &str, from: usize, base: usize, start: &mut bool, out: &mut Vec<Token>) {
     let mut words: Vec<Range<usize>> = Vec::new();
     let mut begin: Option<usize> = None;
     for (i, c) in line.char_indices().filter(|(i, _)| *i >= from) {
-        match (c.is_alphanumeric(), begin) {
+        match (is_word_char(c), begin) {
             (true, None) => begin = Some(i),
             (false, Some(s)) => {
                 words.push(s..i);
