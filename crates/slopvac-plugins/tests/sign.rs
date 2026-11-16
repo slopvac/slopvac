@@ -13,7 +13,8 @@ use slopvac_plugins::oci::{
 };
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT,
-    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, signature_layers, verify,
+    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, release_key,
+    signature_layers, verify,
 };
 
 const NS: &str = "acme";
@@ -804,4 +805,67 @@ fn a_minisig_descriptor_at_the_limit_is_fetched() {
         "{result:?}"
     );
     assert_eq!(hits, 1);
+}
+
+// ---- The compiled first-party key ----
+
+const RELEASE_PUB_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
+
+#[test]
+fn the_compiled_release_key_has_the_published_key_id() {
+    // The key id is bytes 2..10 of the decoded key line, shown little-endian.
+    // Worked out by hand from the base64 line: 6D AC 70 45 DB 4B 91 D9.
+    let line = RELEASE_PUB_FILE.lines().nth(1).unwrap();
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, line).unwrap();
+    assert_eq!(raw[2..10], [0x6D, 0xAC, 0x70, 0x45, 0xDB, 0x4B, 0x91, 0xD9]);
+    assert_eq!(release_key().unwrap().key_id(), "D9914BDB4570AC6D");
+}
+
+fn first_party_signed(key: &Key) -> Signed {
+    sign_manifest(
+        key,
+        "slopvac",
+        "core",
+        "1.2.0",
+        "2026-11-01T00:00:00Z",
+        &[(LAYER, b"x")],
+    )
+}
+
+fn first_party_expect() -> Expectation<'static> {
+    Expectation {
+        id: "core",
+        namespace: "slopvac",
+        ..expect()
+    }
+}
+
+#[test]
+fn the_compiled_policy_binds_the_first_party_namespace_to_the_release_key() {
+    let policy = KeyPolicy::compiled().unwrap();
+    assert_eq!(policy.first_party.len(), 1);
+    assert_eq!(policy.first_party[0].key_id(), "D9914BDB4570AC6D");
+    assert_eq!(policy.first_party_namespaces, ["slopvac"]);
+    assert!(policy.pinned.is_empty());
+}
+
+#[test]
+fn a_first_party_pack_signed_by_another_key_is_refused_with_the_compiled_key() {
+    let other = Key::new();
+    let s = first_party_signed(&other);
+    assert!(matches!(
+        run(&s, &KeyPolicy::compiled().unwrap(), &first_party_expect()),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_first_party_pack_verifies_only_when_the_signing_key_is_injected() {
+    let test_key = Key::new();
+    let s = first_party_signed(&test_key);
+    let injected = KeyPolicy {
+        first_party: vec![test_key.public()],
+        ..KeyPolicy::compiled().unwrap()
+    };
+    assert_eq!(run(&s, &injected, &first_party_expect()), Ok(()));
 }

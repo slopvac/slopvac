@@ -39,6 +39,7 @@
 //! work tree changed, to scope findings and fixes to them.
 
 mod capitalization;
+pub mod cases;
 mod commit;
 mod diagrams;
 pub mod diff_scope;
@@ -60,7 +61,10 @@ mod skip;
 mod tagging;
 
 pub use commit::{MAX_FILE_BYTES, Refusal, Step};
-pub use diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
+pub use diagrams::{
+    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,
+    diagram_rule_set,
+};
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite};
 pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
 pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};

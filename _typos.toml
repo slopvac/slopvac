@@ -70,6 +70,11 @@ AKS = "AKS"
 # `Caf\u{e9}` escapes in slopvac-pos test strings.
 Caf = "Caf"
 
+# Deliberate misspellings in slopvac-config tests: the "did you mean" suggestion
+# for an unknown key (`max_eror` -> `max_errors`, `modee` -> `mode`).
+eror = "eror"
+modee = "modee"
+
 # Mixed-case YAML boolean probe in frontmatter-spans tests.
 [default.extend-identifiers]
 TrUe = "TrUe"

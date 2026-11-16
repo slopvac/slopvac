@@ -284,16 +284,6 @@ fn colour_flag_colours_help_and_no_color_does_not() {
 }
 
 #[test]
-fn rules_category_is_repeatable() {
-    // The command is unwired, but the arguments must parse: a parse error is a usage error.
-    slopvac()
-        .args(["rules", "--category", "a", "--category", "b"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::starts_with("error[command-not-wired]"));
-}
-
-#[test]
 fn man_pages_into_an_unwritable_directory_exit_2() {
     let (_dir, file) = doc(b"not a directory");
     slopvac()
@@ -318,4 +308,227 @@ fn usage_errors_keep_clap_styling_when_colour_is_forced() {
         .code(2)
         .stderr(predicate::str::contains("\u{1b}[").not())
         .stderr(predicate::str::starts_with("error[usage]:"));
+}
+
+fn frame(body: &str) -> String {
+    format!("Content-Length: {}\r\n\r\n{body}", body.len())
+}
+
+#[test]
+fn lsp_answers_initialize_over_stdio_and_exits_0_after_shutdown() {
+    let input = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(r#""positionEncoding":"utf-16""#))
+        .stdout(predicate::str::contains(r#""name":"slopvac""#));
+}
+
+const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#;
+
+#[test]
+fn lsp_exit_without_shutdown_exits_1() {
+    let input = [
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .code(1);
+}
+
+#[test]
+fn lsp_stops_on_a_fatal_error_while_stdin_stays_open() {
+    use std::io::Write as _;
+    // `params` is a number, so the server cannot read the initialize request and ends in
+    // error. The client keeps its end of stdin open, so the reader thread never sees EOF.
+    let bad = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":5}"#;
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
+        .arg("lsp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn slopvac");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    stdin.write_all(frame(bad).as_bytes()).expect("write");
+    stdin.flush().expect("flush");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait") {
+            break Some(status);
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().expect("kill");
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    drop(stdin);
+    let status = status.expect("the process exits while stdin is open");
+    assert_eq!(status.code(), Some(2));
+}
+
+/// Read one framed LSP message body from `reader`.
+fn read_message(reader: &mut impl std::io::BufRead) -> String {
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        assert!(
+            reader.read_line(&mut line).expect("header") > 0,
+            "stdout closed"
+        );
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        if let Some(value) = line.strip_prefix("Content-Length: ") {
+            length = value.parse().expect("length");
+        }
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body).expect("body");
+    String::from_utf8(body).expect("utf-8")
+}
+
+/// What one run of the stopped-reader scenario showed.
+enum Stopped {
+    /// The worker had already written so many diagnostics before the shutdown response that
+    /// too few were left to fill the pipe: the run proves nothing.
+    NotReached { received: usize },
+    /// The scenario held. `code` is the exit code, or `None` if the process was still
+    /// running at the deadline.
+    Held { code: Option<i32> },
+}
+
+/// Size of one `publishDiagnostics` message for a document with the long uri below.
+const PUBLISH_BYTES: usize = 2000;
+/// Unread diagnostics that must remain when the client stops reading: far more than any
+/// OS pipe buffer (64 KiB on Linux, up to 64 KiB on macOS).
+const MIN_UNREAD_BYTES: usize = 1 << 20;
+
+/// Open `documents` documents and ask for shutdown in one write, read until the shutdown
+/// response, and stop reading. The worker lints the documents while the main loop answers
+/// the shutdown, so diagnostics are still queued behind the response.
+fn stopped_reader_run(documents: usize) -> Stopped {
+    use std::io::Write as _;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
+        .arg("lsp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn slopvac");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
+    let child = Arc::new(std::sync::Mutex::new(child));
+    // A hung server must not hang the test run: kill it after a while.
+    let finished = Arc::new(AtomicBool::new(false));
+    let watchdog = {
+        let (child, finished) = (Arc::clone(&child), Arc::clone(&finished));
+        std::thread::spawn(move || {
+            for _ in 0..1800 {
+                if finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            let _ = child.lock().unwrap().kill();
+        })
+    };
+
+    let mut input = String::new();
+    input.push_str(&frame(INITIALIZE));
+    input.push_str(&frame(
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+    ));
+    let padding = "a".repeat(PUBLISH_BYTES - 100);
+    for n in 0..documents {
+        let open = format!(
+            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///{padding}{n}.md","languageId":"markdown","version":1,"text":"x"}}}}}}"#
+        );
+        input.push_str(&frame(&open));
+    }
+    input.push_str(&frame(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#));
+    // One write, so the shutdown is read right behind the last document.
+    stdin.write_all(input.as_bytes()).expect("write requests");
+    stdin.flush().expect("flush");
+
+    // Read up to the shutdown response, then stop reading but keep the pipe open.
+    let mut received = 0;
+    loop {
+        let body = read_message(&mut stdout);
+        if body.contains("publishDiagnostics") {
+            received += 1;
+        } else if body.contains(r#""id":2"#) && !body.contains("method") {
+            break;
+        }
+    }
+    let unread = documents.saturating_sub(received);
+    let outcome = if unread * PUBLISH_BYTES < MIN_UNREAD_BYTES {
+        None
+    } else {
+        stdin
+            .write_all(frame(r#"{"jsonrpc":"2.0","method":"exit"}"#).as_bytes())
+            .expect("write exit");
+        stdin.flush().expect("flush");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            if let Some(status) = child.lock().unwrap().try_wait().expect("wait") {
+                break Some(status.code());
+            }
+            if std::time::Instant::now() > deadline {
+                break Some(None);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    };
+    finished.store(true, Ordering::SeqCst);
+    let _ = child.lock().unwrap().kill();
+    // Reap the child so discarded attempts leave no zombie behind.
+    let _ = child.lock().unwrap().wait();
+    watchdog.join().unwrap();
+    drop((stdin, stdout));
+    match outcome {
+        None => Stopped::NotReached { received },
+        Some(code) => Stopped::Held { code },
+    }
+}
+
+#[test]
+fn lsp_exits_after_shutdown_although_the_client_stopped_reading_stdout() {
+    // The scenario needs diagnostics still queued behind the shutdown response. How many
+    // are depends on the machine's speed, so grow the load until the run shows they were.
+    let mut seen = Vec::new();
+    for documents in [1000, 3000, 8000] {
+        match stopped_reader_run(documents) {
+            Stopped::Held { code } => {
+                assert_eq!(code, Some(0), "the process exits while stdout is unread");
+                return;
+            }
+            Stopped::NotReached { received } => seen.push((documents, received)),
+        }
+    }
+    panic!(
+        "the stopped-reader scenario was never reached; (documents, diagnostics read before \
+         the shutdown response): {seen:?}"
+    );
 }

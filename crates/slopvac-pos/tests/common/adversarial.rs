@@ -3,7 +3,7 @@
 #![allow(unreachable_pub, missing_docs, dead_code)]
 
 /// Every adversarial input, by name.
-pub const NAMES: [&str; 13] = [
+pub const NAMES: [&str; 14] = [
     "bang run",
     "prefix run",
     "wrapped word",
@@ -17,6 +17,7 @@ pub const NAMES: [&str; 13] = [
     "backtick runs",
     "closed code spans",
     "quote pairs",
+    "long sentence",
 ];
 
 /// An input of about `n` bytes shaped to stress one pass.
@@ -47,6 +48,8 @@ pub fn adversarial(name: &str, n: usize) -> String {
             .collect(),
         "closed code spans" => "`ab` ".repeat(n / 5),
         "quote pairs" => "\u{201c}x\u{201d} ".repeat(n / 4),
+        // Many words, no sentence end: one sentence is tagged as a whole.
+        "long sentence" => "ab ".repeat(n / 3),
         other => panic!("unknown input {other}"),
     }
 }

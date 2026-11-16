@@ -7,11 +7,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_context::{TagIndex, TagRegistry};
-use slopvac_diagrams::{Extraction, Format as DiagramFormat, extract};
+use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
     KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
@@ -23,14 +24,14 @@ use slopvac_terms::Blocklist;
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
-use crate::diagrams::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule};
+use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite};
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit};
+use crate::prepare::{Prepared, Unit, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -139,9 +140,9 @@ pub enum EngineError {
 
 /// A rule that runs.
 struct Active {
-    set: usize,
-    category: usize,
-    rule: usize,
+    pub(crate) set: usize,
+    pub(crate) category: usize,
+    pub(crate) rule: usize,
     severity: Severity,
     replacements: LazyReplacements,
 }
@@ -161,6 +162,9 @@ impl Active {
 /// A diagram rule that runs.
 struct ActiveDiagram {
     severity: Severity,
+    /// Where the loaded rule is, as set, category and rule. A rule of a custom checker has no
+    /// loaded rule.
+    at: Option<(usize, usize, usize)>,
 }
 
 /// Where a rule id points.
@@ -171,8 +175,10 @@ enum Catalog {
 
 /// The engine.
 pub struct Engine {
-    sets: Vec<RuleSet>,
-    settings: Settings,
+    pub(crate) sets: Vec<Arc<RuleSet>>,
+    /// The blocklist the vocabulary rules enforce, kept to rebuild a restricted engine.
+    pub(crate) blocklist: Blocklist,
+    pub(crate) settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
     checkers: Vec<Box<dyn DiagramChecker>>,
@@ -186,10 +192,12 @@ pub struct Engine {
     metrics: Vec<Active>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
+    /// The rules that run a signal of `slopvac-diagrams`.
+    signal_rules: Vec<(Signal, DiagramRule)>,
     /// Every known rule id.
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
-    running: HashSet<String>,
+    pub(crate) running: HashSet<String>,
     /// Notices every document carries.
     notices: Vec<Notice>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
@@ -260,10 +268,16 @@ impl Engine {
     /// capitalization, and metrics it does not measure) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
+        Self::new_shared(sets.into_iter().map(Arc::new).collect(), settings)
+    }
+
+    /// Like [`Engine::new`], over rule sets that other engines share.
+    pub fn new_shared(sets: Vec<Arc<RuleSet>>, settings: Settings) -> Result<Self, EngineError> {
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
             sets,
+            blocklist: Blocklist::default(),
             settings,
             detectors: Detectors::builtin(),
             tagger,
@@ -273,6 +287,7 @@ impl Engine {
             vocabulary: Vocabulary::default(),
             metrics: Vec::new(),
             diagram_rules: HashMap::new(),
+            signal_rules: Vec::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
             notices: Vec::new(),
@@ -281,6 +296,7 @@ impl Engine {
             rst: RstAdapter::new(RstOptions::from_env()),
         };
         engine.resolve()?;
+        engine.add_signal_checker();
         engine.plan_vocabulary(&Blocklist::default())?;
         Ok(engine)
     }
@@ -289,6 +305,7 @@ impl Engine {
     /// empty one, they have nothing to check and each document says so in an `info` notice.
     pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
         self.plan_vocabulary(blocklist)?;
+        self.blocklist = blocklist.clone();
         Ok(self)
     }
 
@@ -339,14 +356,25 @@ impl Engine {
             self.catalog.insert(key.clone(), Catalog::Diagram);
             if let Level::On(severity) = level_of(&self.settings, &id, &category, severity) {
                 self.running.insert(key);
-                self.diagram_rules.insert(id, ActiveDiagram { severity });
+                self.diagram_rules
+                    .insert(id, ActiveDiagram { severity, at: None });
             }
         }
         self.checkers.push(checker);
         self
     }
 
+    /// One checker for the signal rules that run.
+    fn add_signal_checker(&mut self) {
+        if !self.signal_rules.is_empty() {
+            let rules = std::mem::take(&mut self.signal_rules);
+            self.checkers
+                .push(Box::new(SignalChecker::from_rules(rules)));
+        }
+    }
+
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
+    #[allow(clippy::too_many_lines)]
     fn resolve(&mut self) -> Result<(), EngineError> {
         let mut unrun: std::collections::BTreeMap<&'static str, usize> =
             std::collections::BTreeMap::new();
@@ -423,7 +451,21 @@ impl Engine {
                                 *unrun.entry("metric").or_default() += 1;
                             }
                         }
-                        MatchKind::Structure => *unrun.entry("structure").or_default() += 1,
+                        MatchKind::Structure => {
+                            if let Some(signal) = signal_of_rule(loaded) {
+                                let id = loaded.id().clone();
+                                let rule = DiagramRule {
+                                    id: id.clone(),
+                                    severity,
+                                };
+                                let at = Some((s, c, r));
+                                self.diagram_rules
+                                    .insert(id, ActiveDiagram { severity, at });
+                                self.signal_rules.push((signal, rule));
+                            } else {
+                                *unrun.entry("structure").or_default() += 1;
+                            }
+                        }
                         MatchKind::Vocabulary => {
                             self.vocabulary_rules.push(Active::new(s, c, r, severity));
                         }
@@ -444,6 +486,33 @@ impl Engine {
             self.notices.push(not_run_notice(kind, count)?);
         }
         Ok(())
+    }
+
+    /// Why the engine does not execute `rule`, or `None` when it does.
+    ///
+    /// A rule that is switched off, limited by `applies_to` to another genre or mode, of a
+    /// kind the engine does not implement, or of a capitalization style or metric it does
+    /// not run is not executed. A vocabulary rule runs only with a blocklist it can use.
+    #[must_use]
+    pub fn unexecuted(&self, rule: &LoadedRule) -> Option<&'static str> {
+        let id = rule.id();
+        let at = |a: &&crate::lint::Active| {
+            self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id
+        };
+        if !self.running.contains(id.as_str()) {
+            return Some("the rule is switched off or does not apply under the engine settings");
+        }
+        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let executes = self.active.iter().any(|a| at(&a))
+            || self.metrics.iter().any(|a| at(&a))
+            || owner.is_some_and(|a| at(&a));
+        if executes {
+            None
+        } else if rule.kind() == MatchKind::Vocabulary {
+            Some("a vocabulary rule needs a usable word blocklist")
+        } else {
+            Some("the engine does not run this kind, style or metric of rule")
+        }
     }
 
     /// The loaded rule for a qualified id.
@@ -482,6 +551,8 @@ impl Engine {
             Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
         };
+        let index = SourceIndex::new(input.source, input.bom);
+        let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(input.source, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
@@ -526,9 +597,8 @@ impl Engine {
             lines: &lines,
             directives: &directives,
             front_matter: front_span,
-            front: front_matter.as_ref(),
             subject: &subject,
-            index: SourceIndex::new(input.source, input.bom),
+            index,
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
@@ -631,6 +701,14 @@ fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Ve
     }
 }
 
+/// The signal a loaded rule runs, if it runs one.
+fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
+    match &loaded.rule().match_ {
+        Match::Structure(m) => diagrams::signal_of(m),
+        _ => None,
+    }
+}
+
 fn category_of(id: &RuleId) -> CategoryId {
     let local = id.local();
     CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
@@ -657,8 +735,6 @@ struct Run<'a> {
     lines: &'a Lines<'a>,
     directives: &'a Directives,
     front_matter: Option<Span>,
-    /// The parsed front matter, for context tags.
-    front: Option<&'a FrontMatter<'a>>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
 }
@@ -799,9 +875,26 @@ impl Run<'_> {
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
+        self.guarded_with(None, rule, detectors, text, range, span, covering)
+    }
+
+    /// [`Self::guarded`] for a match that sits in `extra` context, a tag the context index
+    /// does not hold, such as `diagram-label`.
+    #[allow(clippy::too_many_arguments)]
+    fn guarded_with(
+        &self,
+        extra: Option<&'static str>,
+        rule: &slopvac_rules::Rule,
+        detectors: &[&str],
+        text: &str,
+        range: &Range<usize>,
+        span: Span,
+        covering: &[Range<usize>],
+    ) -> bool {
         self.guarded_in(
             self.tags,
             self.parsed,
+            extra,
             rule,
             detectors,
             text,
@@ -818,6 +911,7 @@ impl Run<'_> {
         &self,
         tags: &TagIndex,
         document: &Parsed,
+        extra: Option<&'static str>,
         rule: &slopvac_rules::Rule,
         detectors: &[&str],
         text: &str,
@@ -826,11 +920,12 @@ impl Run<'_> {
         covering: &[Range<usize>],
     ) -> bool {
         let gate = rule.contexts.as_ref();
-        let kinds = if gate.is_some() || !detectors.is_empty() {
+        let mut kinds = if gate.is_some() || !detectors.is_empty() {
             kinds_of(tags, span, covering)
         } else {
             Vec::new()
         };
+        kinds.extend(extra.filter(|e| !kinds.contains(e)));
         if let Some(gate) = gate {
             let has = |tags: &Option<slopvac_rules::UniqueVec<ContextTag>>| {
                 tags.as_ref()
@@ -1143,22 +1238,52 @@ impl Run<'_> {
             return Ok(None);
         };
         let span = self.source_span(&hit.span, nearby)?;
-        if self.suppressed(hit.rule.as_str(), &[], span) {
+        let loaded = active
+            .at
+            .map(|(s, c, r)| &self.engine.sets[s].categories()[c].rules()[r]);
+        let rule = loaded.map(LoadedRule::rule);
+        let exceptions: Vec<&str> = rule.map_or_else(Vec::new, |r| {
+            r.exceptions().iter().map(|e| e.name.as_str()).collect()
+        });
+        let detectors: Vec<&str> = rule.map_or_else(Vec::new, |r| {
+            r.exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect()
+        });
+        let matched = self.input.source[span.start()..span.end()].to_owned();
+        if let Some(rule) = rule
+            && self.guarded_with(
+                Some(slopvac_diagrams::CONTEXT),
+                rule,
+                &detectors,
+                self.input.source,
+                &(span.start()..span.end()),
+                span,
+                &[],
+            )
+        {
+            return Ok(None);
+        }
+        if self.suppressed(hit.rule.as_str(), &exceptions, span) {
             return Ok(None);
         }
         let pack =
             PackId::new(hit.rule.pack()).map_err(|e| EngineError::Internal(e.to_string()))?;
         let rule_id = hit.rule.clone();
-        let matched = self.input.source[span.start()..span.end()].to_owned();
+        let message = rule.map_or_else(
+            || hit.message.clone(),
+            |r| format_message(r.message.as_str(), &matched, ""),
+        );
         self.finding(Candidate {
             rule_id: &rule_id,
             pack: &pack,
             category: category_of(&rule_id),
             severity: active.severity,
-            message: hit.message.clone(),
+            message,
             span,
             matched_text: matched,
-            ai_signal: AiSignal::None,
+            ai_signal: rule.map_or(AiSignal::None, |r| r.ai_signal),
             fix: None,
             extra_context: Some(slopvac_diagrams::CONTEXT),
             covering: Vec::new(),

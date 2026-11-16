@@ -348,3 +348,72 @@ fn every_js_line_terminator_ends_a_comment_in_a_tag() {
         assert_eq!(fixed, want, "{terminator:?}");
     }
 }
+
+#[test]
+fn raw_html_prose_is_rewritten_but_its_tags_and_attributes_are_not() {
+    let e = single("delta", "d", &json!({}));
+    let text = "<p title=\"delta\">A delta <a href=\"delta\">delta</a> end.</p>\n";
+    let report = fix(&e, text, None);
+    assert_eq!(
+        report.text,
+        "<p title=\"delta\">A d <a href=\"delta\">d</a> end.</p>\n"
+    );
+}
+
+#[test]
+fn a_fence_in_a_raw_html_block_is_never_rewritten() {
+    let e = single("delta", "d", &json!({}));
+    let text = "<div>\n```\ndelta code\n```\nSee delta now.\n</div>\n";
+    assert_eq!(
+        fix(&e, text, None).text,
+        "<div>\n```\ndelta code\n```\nSee d now.\n</div>\n"
+    );
+}
+
+#[test]
+fn html_code_and_pre_contents_stay_while_neighbouring_prose_is_fixed() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    let text = "<p>delta <code>delta</code> delta <kbd>delta</kbd></p>\n\n<pre>\ndelta\n</pre>\n";
+    assert_eq!(
+        fix(&raw, text, None).text,
+        "<p>d <code>delta</code> d <kbd>delta</kbd></p>\n\n<pre>\ndelta\n</pre>\n"
+    );
+}
+
+#[test]
+fn a_tab_indented_fence_in_a_raw_html_block_is_never_rewritten() {
+    let raw = single("delta", "d", &json!({"scope": "raw"}));
+    let text = "<div>\n\t```\ndelta code\n\t```\nSee delta now.\n</div>\n";
+    assert_eq!(
+        fix(&raw, text, None).text,
+        "<div>\n\t```\ndelta code\n\t```\nSee d now.\n</div>\n"
+    );
+}
+
+#[test]
+fn fenced_code_in_a_raw_html_block_stays_with_every_line_ending() {
+    let e = single("delta", "d", &json!({}));
+    for eol in ["\n", "\r\n", "\r"] {
+        let text = [
+            "<div>",
+            "```",
+            "delta code",
+            "```",
+            "See delta now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        let want = [
+            "<div>",
+            "```",
+            "delta code",
+            "```",
+            "See d now.",
+            "</div>",
+            "",
+        ]
+        .join(eol);
+        assert_eq!(fix(&e, &text, None).text, want, "{eol:?}");
+    }
+}

@@ -17,6 +17,7 @@ homepage = "https://github.com/srobroek/slopvac"
 publish = false
 
 [workspace.dependencies]
+annotate-snippets = "0.12.18"
 base64 = "0.23"
 cap-fs-ext = "4"
 cap-std = "4"
@@ -32,6 +33,8 @@ ignore = "0.4"
 insta = "1.49"
 # No default features: they pull reqwest and tokio, which ADR 0001 bans (cargo-deny).
 jsonschema = { version = "0.61.2", default-features = false }
+lsp-server = "0.10"
+lsp-types = "0.97"
 markdown = "1"
 markup5ever_rcdom = "0.40"
 minijinja = "3"
@@ -76,6 +79,7 @@ slopvac-styles = { path = "crates/slopvac-styles" }
 slopvac-terms = { path = "crates/slopvac-terms" }
 slopvac-text = { path = "crates/slopvac-text" }
 snapbox = "1.2"
+strsim = "0.11.1"
 tar = { version = "0.4", default-features = false }
 tempfile = "3"
 thiserror = "2"
@@ -115,10 +119,7 @@ ignored = [
   "pcre2-sys",
   "slopvac-agents",
   "slopvac-config",
-  "slopvac-engine",
-  "slopvac-lsp",
   "slopvac-plugins",
-  "slopvac-report",
   "slopvac-styles",
 ]
 

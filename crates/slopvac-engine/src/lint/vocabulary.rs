@@ -14,17 +14,13 @@ use std::ops::Range;
 
 use slopvac_model::Span;
 use slopvac_model::{Finding, Notice, NoticeLevel};
-use slopvac_parse::{Document as Parsed, parse_html_segments};
 use slopvac_pos::{Mask, Tagger};
 use slopvac_rules::{LoadedRule, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
 
 use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
 use crate::matching::format_message;
-use crate::prepare::Prepared;
 use crate::skip;
-use crate::tagging;
-use slopvac_context::TagIndex;
 
 /// The rules that may own the sweep, most preferred first. STE 1.1 is the clause that a
 /// blocklist answers.
@@ -54,7 +50,7 @@ pub(super) struct Vocabulary {
     /// Listed words, lower case, with the parts of speech they are refused as.
     words: HashMap<String, Vec<Pos>>,
     /// The vocabulary rule that owns the sweep, as an index into `vocabulary_rules`.
-    owner: Option<usize>,
+    pub(super) owner: Option<usize>,
     notices: Vec<Notice>,
 }
 
@@ -162,8 +158,8 @@ struct Sweep<'a> {
 
 impl Run<'_> {
     /// Findings of the vocabulary sweep: tokens that are a listed word in a refused part of
-    /// speech. The sweep reads the Markdown prose and the prose of raw HTML blocks, which
-    /// Vale lints too (`<td>`, `<em>`).
+    /// speech. The sweep reads the prepared document, which holds the prose of raw HTML
+    /// blocks too (`<td>`, `<em>`).
     pub(super) fn vocabulary(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
         let Some(owner) = engine.vocabulary.owner else {
@@ -188,63 +184,14 @@ impl Run<'_> {
                 .collect(),
         };
         let mut out = Vec::new();
-        self.sweep_document(&sweep, self.parsed, self.tags, self.prepared, &mut out)?;
-        let mut extracted = Vec::with_capacity(self.parsed.html_blocks.len());
-        for block in &self.parsed.html_blocks {
-            let mut html = parse_html_segments(self.input.source, &self.index, &block.segments)?;
-            // The block's prose sits in the containers of the Markdown block it came from,
-            // outside any ancestry of its own.
-            for inner in &mut html.blocks {
-                inner
-                    .containers
-                    .splice(0..0, block.containers.iter().copied());
-            }
-            extracted.push(html);
-        }
-        if extracted.is_empty() {
-            return Ok(out);
-        }
-        // The Markdown parse has no blocks for the HTML, so its tags stop short of it: the
-        // section of an "Examples" heading ends at the heading when only HTML follows. Tag
-        // the Markdown blocks and the extracted ones together, so the HTML prose has the
-        // tags of its section, its containers and the front matter.
-        let mut blocks = self.parsed.blocks.clone();
-        blocks.extend(
-            extracted
-                .iter()
-                .flat_map(|html| html.blocks.iter().cloned()),
-        );
-        blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
-        let merged = Parsed {
-            blocks,
-            code_spans: Vec::new(),
-            html_blocks: Vec::new(),
-        };
-        let tags = tagging::tag(
-            &self.engine.tagger,
-            self.input.path,
-            self.input.source,
-            &merged,
-            self.front,
-        )
-        .map_err(|e| EngineError::Context(e.to_string()))?;
-        for html in &extracted {
-            let prepared = Prepared::new(self.input.source, html)?;
-            self.sweep_document(&sweep, html, &tags, &prepared, &mut out)?;
-        }
+        self.sweep_document(&sweep, &mut out)?;
         Ok(out)
     }
 
-    fn sweep_document(
-        &self,
-        sweep: &Sweep<'_>,
-        doc: &Parsed,
-        tags: &TagIndex,
-        prepared: &Prepared<'_>,
-        out: &mut Vec<Finding>,
-    ) -> Result<(), EngineError> {
+    fn sweep_document(&self, sweep: &Sweep<'_>, out: &mut Vec<Finding>) -> Result<(), EngineError> {
         let engine = self.engine;
         let rule = sweep.loaded.rule();
+        let (doc, tags, prepared) = (self.parsed, self.tags, self.prepared);
         let skip = skip::build(
             doc,
             rule.exclude_blocks.as_deref().unwrap_or(&[]),
@@ -267,6 +214,7 @@ impl Run<'_> {
                     || self.guarded_in(
                         tags,
                         doc,
+                        None,
                         rule,
                         &sweep.detectors,
                         unit.text,
