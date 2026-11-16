@@ -98,7 +98,7 @@ fn terms_cases_file_lists_exactly_the_invalid_files() {
 fn valid_terms_files_load_with_the_terms_they_declare() {
     let load =
         |name: &str| TermsFile::load(&Path::new(ROOT).join("terms/valid").join(name)).unwrap();
-    assert!(load("empty.toml").terms.is_empty());
+    assert_eq!(load("empty.toml").terms, []);
     assert!(!load("full.toml").terms.is_empty());
     let casing = load("casing.toml");
     assert!(casing.terms.iter().any(|t| t.ignore_case));
