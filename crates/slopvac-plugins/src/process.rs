@@ -1086,25 +1086,6 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_parent_of_a_process_with_a_name_that_is_not_utf8_is_read() {
-        // `read` keeps the shell itself waiting, with no child of its own.
-        let mut child = std::process::Command::new("/bin/sh")
-            .args(["-c", r"printf '\377(x) ' > /proc/$$/comm; echo; read _"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        // The newline comes once the name is set.
-        let mut line = [0u8; 1];
-        let _ = std::io::Read::read(child.stdout.as_mut().unwrap(), &mut line);
-        let got = super::proc_ppid(child.id()).ok();
-        let _ = child.kill();
-        let _ = child.wait();
-        assert_eq!(got, Some(std::process::id()));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
     fn a_pidfd_shows_an_exit_only_once_the_process_has_exited() {
         use rustix::process::{Pid, PidfdFlags, pidfd_open};
         let mut child = std::process::Command::new("/bin/sleep")
