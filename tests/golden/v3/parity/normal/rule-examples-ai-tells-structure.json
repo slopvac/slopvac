@@ -2,15 +2,15 @@
   "document": {
     "ai_register": {
       "strong": {
-        "errors": 7,
-        "findings": 8,
-        "per_100_words": 0.999,
+        "errors": 4,
+        "findings": 5,
+        "per_100_words": 0.611,
         "warnings": 0
       },
       "weak": {
         "errors": 16,
-        "findings": 40,
-        "per_100_words": 4.994,
+        "findings": 44,
+        "per_100_words": 5.379,
         "warnings": 17
       }
     },
@@ -90,13 +90,13 @@
       {
         "budget": 0.6,
         "category": "ai-tells-structure",
-        "errors": 23,
-        "findings": 48,
-        "gating_per_100_words": 3.933,
+        "errors": 20,
+        "findings": 49,
+        "gating_per_100_words": 3.484,
         "over_budget": true,
-        "per_100_words": 5.993,
+        "per_100_words": 5.99,
         "score": 0.0,
-        "suggestions": 8,
+        "suggestions": 12,
         "warnings": 17
       },
       {
@@ -116,10 +116,10 @@
         "category": "orwell",
         "errors": 1,
         "findings": 1,
-        "gating_per_100_words": 0.125,
+        "gating_per_100_words": 0.122,
         "over_budget": false,
-        "per_100_words": 0.125,
-        "score": 95.3,
+        "per_100_words": 0.122,
+        "score": 95.4,
         "suggestions": 0,
         "warnings": 0
       },
@@ -140,10 +140,10 @@
         "category": "prose-craft",
         "errors": 0,
         "findings": 3,
-        "gating_per_100_words": 0.062,
+        "gating_per_100_words": 0.061,
         "over_budget": false,
-        "per_100_words": 0.375,
-        "score": 98.1,
+        "per_100_words": 0.367,
+        "score": 98.2,
         "suggestions": 2,
         "warnings": 1
       },
@@ -188,10 +188,10 @@
         "category": "prose-inflation",
         "errors": 2,
         "findings": 2,
-        "gating_per_100_words": 0.25,
+        "gating_per_100_words": 0.244,
         "over_budget": false,
-        "per_100_words": 0.25,
-        "score": 87.5,
+        "per_100_words": 0.244,
+        "score": 87.8,
         "suggestions": 0,
         "warnings": 0
       },
@@ -238,7 +238,7 @@
         "findings": 2,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.25,
+        "per_100_words": 0.244,
         "score": 99.4,
         "suggestions": 2,
         "warnings": 0
@@ -250,7 +250,7 @@
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.125,
+        "per_100_words": 0.122,
         "score": 99.7,
         "suggestions": 1,
         "warnings": 0
@@ -262,7 +262,7 @@
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.125,
+        "per_100_words": 0.122,
         "score": 99.7,
         "suggestions": 1,
         "warnings": 0
@@ -271,12 +271,12 @@
         "budget": 1.5,
         "category": "ste-punctuation",
         "errors": 0,
-        "findings": 10,
+        "findings": 11,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 1.248,
-        "score": 96.9,
-        "suggestions": 10,
+        "per_100_words": 1.345,
+        "score": 96.6,
+        "suggestions": 11,
         "warnings": 0
       },
       {
@@ -296,10 +296,10 @@
         "category": "ste-sentences",
         "errors": 0,
         "findings": 2,
-        "gating_per_100_words": 0.062,
+        "gating_per_100_words": 0.061,
         "over_budget": false,
-        "per_100_words": 0.25,
-        "score": 98.4,
+        "per_100_words": 0.244,
+        "score": 98.5,
         "suggestions": 1,
         "warnings": 1
       },
@@ -310,8 +310,8 @@
         "findings": 8,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.999,
-        "score": 97.5,
+        "per_100_words": 0.978,
+        "score": 97.6,
         "suggestions": 8,
         "warnings": 0
       },
@@ -320,15 +320,15 @@
         "category": "ste-words",
         "errors": 0,
         "findings": 3,
-        "gating_per_100_words": 0.187,
+        "gating_per_100_words": 0.183,
         "over_budget": false,
-        "per_100_words": 0.375,
+        "per_100_words": 0.367,
         "score": 96.3,
         "suggestions": 0,
         "warnings": 3
       }
     ],
-    "errors": 26,
+    "errors": 23,
     "findings": [
       {
         "ai_signal": "strong",
@@ -365,34 +365,34 @@
         }
       },
       {
-        "ai_signal": "strong",
+        "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 40,
         "end_line": 9,
         "line": 9,
         "matched_text": "The Harness Measures, It Does Not Judge",
-        "message": "contrastive inversion: The Harness Measures, It Does Not Judge -- state what the thing is; cut the strawman",
+        "message": "appositive contrast: The Harness Measures, It Does Not Judge -- state what the thing does; keep the negation only if it limits what the reader can do",
         "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "error",
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
         "span": {
           "end": 238,
           "start": 199
         }
       },
       {
-        "ai_signal": "strong",
+        "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 45,
         "end_line": 13,
         "line": 13,
         "matched_text": "The parser reads JSON; it does not read YAML",
-        "message": "contrastive inversion: The parser reads JSON; it does not read YAML -- state what the thing is; cut the strawman",
+        "message": "appositive contrast: The parser reads JSON; it does not read YAML -- state what the thing does; keep the negation only if it limits what the reader can do",
         "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "error",
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
         "span": {
           "end": 307,
           "start": 263
@@ -416,17 +416,17 @@
         }
       },
       {
-        "ai_signal": "strong",
+        "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 50,
         "end_line": 17,
         "line": 17,
         "matched_text": "The client supports HTTP; it does not support FTP",
-        "message": "contrastive inversion: The client supports HTTP; it does not support FTP -- state what the thing is; cut the strawman",
+        "message": "appositive contrast: The client supports HTTP; it does not support FTP -- state what the thing does; keep the negation only if it limits what the reader can do",
         "replacement": null,
-        "rule_id": "core:ai-tells-structure.contrastive-inversion-frames",
-        "severity": "error",
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
         "span": {
           "end": 383,
           "start": 334
@@ -453,17 +453,51 @@
         "ai_signal": "weak",
         "category": "ai-tells-structure",
         "column": 1,
-        "end_column": 38,
+        "end_column": 70,
         "end_line": 21,
         "line": 21,
+        "matched_text": "The control acknowledges the run; it does not confirm that it started",
+        "message": "appositive contrast: The control acknowledges the run; it does not confirm that it started -- state what the thing does; keep the negation only if it limits what the reader can do",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.contrastive-appositive",
+        "severity": "suggestion",
+        "span": {
+          "end": 482,
+          "start": 413
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-punctuation",
+        "column": 33,
+        "end_column": 34,
+        "end_line": 21,
+        "line": 21,
+        "matched_text": ";",
+        "message": "The semicolon is not permitted. Write two sentences.",
+        "replacement": null,
+        "rule_id": "core:ste-punctuation.semicolon-used",
+        "severity": "suggestion",
+        "span": {
+          "end": 446,
+          "start": 445
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 38,
+        "end_line": 25,
+        "line": 25,
         "matched_text": "Testing is not a phase. It is a habit",
         "message": "definitional contrast across sentences: Testing is not a phase. It is a habit -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 450,
-          "start": 413
+          "end": 557,
+          "start": 520
         }
       },
       {
@@ -471,16 +505,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 105,
-        "end_line": 25,
-        "line": 25,
+        "end_line": 29,
+        "line": 29,
         "matched_text": "The monorepo is a coordination boundary. It is not a requirement to combine services into one deployment",
         "message": "definitional contrast across sentences: The monorepo is a coordination boundary. It is not a requirement to combine services into one deployment -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 587,
-          "start": 483
+          "end": 694,
+          "start": 590
         }
       },
       {
@@ -488,16 +522,16 @@
         "category": "ste-punctuation",
         "column": 37,
         "end_column": 38,
-        "end_line": 27,
-        "line": 27,
+        "end_line": 31,
+        "line": 31,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 627,
-          "start": 626
+          "end": 734,
+          "start": 733
         }
       },
       {
@@ -505,16 +539,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 47,
-        "end_line": 29,
-        "line": 29,
+        "end_line": 33,
+        "line": 33,
         "matched_text": "This isn't about speed. It's about correctness",
         "message": "definitional contrast across sentences: This isn't about speed. It's about correctness -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 706,
-          "start": 660
+          "end": 813,
+          "start": 767
         }
       },
       {
@@ -522,16 +556,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 99,
-        "end_line": 33,
-        "line": 33,
+        "end_line": 37,
+        "line": 37,
         "matched_text": "The question is not whether the cache is sophisticated. It is whether freshness justifies the cost",
         "message": "definitional contrast across sentences: The question is not whether the cache is sophisticated. It is whether freshness justifies the cost -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 871,
-          "start": 773
+          "end": 978,
+          "start": 880
         }
       },
       {
@@ -539,16 +573,16 @@
         "category": "ste-verbs",
         "column": 39,
         "end_column": 55,
-        "end_line": 33,
-        "line": 33,
+        "end_line": 37,
+        "line": 37,
         "matched_text": "is sophisticated",
         "message": "Passive voice \"is sophisticated\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 827,
-          "start": 811
+          "end": 934,
+          "start": 918
         }
       },
       {
@@ -556,16 +590,16 @@
         "category": "ste-punctuation",
         "column": 29,
         "end_column": 30,
-        "end_line": 35,
-        "line": 35,
+        "end_line": 39,
+        "line": 39,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 903,
-          "start": 902
+          "end": 1010,
+          "start": 1009
         }
       },
       {
@@ -573,16 +607,16 @@
         "category": "ste-verbs",
         "column": 41,
         "end_column": 55,
-        "end_line": 35,
-        "line": 35,
+        "end_line": 39,
+        "line": 39,
         "matched_text": "is invalidated",
         "message": "Passive voice \"is invalidated\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 928,
-          "start": 914
+          "end": 1035,
+          "start": 1021
         }
       },
       {
@@ -590,16 +624,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 53,
-        "end_line": 37,
-        "line": 37,
+        "end_line": 41,
+        "line": 41,
         "matched_text": "The plugin is not loaded at all; it is replaced, not",
         "message": "definitional contrast across sentences: The plugin is not loaded at all; it is replaced, not -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 1006,
-          "start": 954
+          "end": 1113,
+          "start": 1061
         }
       },
       {
@@ -607,16 +641,16 @@
         "category": "ste-punctuation",
         "column": 32,
         "end_column": 33,
-        "end_line": 37,
-        "line": 37,
+        "end_line": 41,
+        "line": 41,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 986,
-          "start": 985
+          "end": 1093,
+          "start": 1092
         }
       },
       {
@@ -624,16 +658,16 @@
         "category": "ste-verbs",
         "column": 37,
         "end_column": 48,
-        "end_line": 37,
-        "line": 37,
+        "end_line": 41,
+        "line": 41,
         "matched_text": "is replaced",
         "message": "Passive voice \"is replaced\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 1001,
-          "start": 990
+          "end": 1108,
+          "start": 1097
         }
       },
       {
@@ -641,33 +675,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 36,
-        "end_line": 41,
-        "line": 41,
+        "end_line": 45,
+        "line": 45,
         "matched_text": "Not because it is fast, but because",
         "message": "definitional contrast across sentences: Not because it is fast, but because -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 1114,
-          "start": 1079
-        }
-      },
-      {
-        "ai_signal": "weak",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 54,
-        "end_line": 45,
-        "line": 45,
-        "matched_text": "Documentation is not an afterthought. It is a feature",
-        "message": "definitional contrast across sentences: Documentation is not an afterthought. It is a feature -- state what the thing is once; cut the invented alternative",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.definitional-negation-pair",
-        "severity": "warning",
-        "span": {
-          "end": 1254,
-          "start": 1201
+          "end": 1221,
+          "start": 1186
         }
       },
       {
@@ -677,14 +694,31 @@
         "end_column": 54,
         "end_line": 49,
         "line": 49,
+        "matched_text": "Documentation is not an afterthought. It is a feature",
+        "message": "definitional contrast across sentences: Documentation is not an afterthought. It is a feature -- state what the thing is once; cut the invented alternative",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.definitional-negation-pair",
+        "severity": "warning",
+        "span": {
+          "end": 1361,
+          "start": 1308
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 54,
+        "end_line": 53,
+        "line": 53,
         "matched_text": "The limit is a ceiling. It is not a target to aim for",
         "message": "definitional contrast across sentences: The limit is a ceiling. It is not a target to aim for -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 1365,
-          "start": 1312
+          "end": 1472,
+          "start": 1419
         }
       },
       {
@@ -692,33 +726,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 44,
-        "end_line": 53,
-        "line": 53,
+        "end_line": 57,
+        "line": 57,
         "matched_text": "Security is not a checkbox. It is a process",
         "message": "definitional contrast across sentences: Security is not a checkbox. It is a process -- state what the thing is once; cut the invented alternative",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.definitional-negation-pair",
         "severity": "warning",
         "span": {
-          "end": 1474,
-          "start": 1431
-        }
-      },
-      {
-        "ai_signal": "weak",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 27,
-        "end_line": 57,
-        "line": 57,
-        "matched_text": "Not a bug. Not a feature. ",
-        "message": "staccato negative parallel: Not a bug. Not a feature.  -- one plain sentence naming the thing",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.staccato-negative-parallel-frames",
-        "severity": "suggestion",
-        "span": {
-          "end": 1544,
-          "start": 1518
+          "end": 1581,
+          "start": 1538
         }
       },
       {
@@ -728,14 +745,31 @@
         "end_column": 27,
         "end_line": 61,
         "line": 61,
+        "matched_text": "Not a bug. Not a feature. ",
+        "message": "staccato negative parallel: Not a bug. Not a feature.  -- one plain sentence naming the thing",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.staccato-negative-parallel-frames",
+        "severity": "suggestion",
+        "span": {
+          "end": 1651,
+          "start": 1625
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 27,
+        "end_line": 65,
+        "line": 65,
         "matched_text": "fast, reliable, and secure",
         "message": "tricolon: fast, reliable, and secure -- cut to the one or two that carry load; break the symmetry",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.tricolon-abuse-core",
         "severity": "suggestion",
         "span": {
-          "end": 1642,
-          "start": 1616
+          "end": 1749,
+          "start": 1723
         }
       },
       {
@@ -743,16 +777,16 @@
         "category": "ai-tells-structure",
         "column": 15,
         "end_column": 48,
-        "end_line": 65,
-        "line": 65,
+        "end_line": 69,
+        "line": 69,
         "matched_text": "fast, reliable, and battle-tested",
         "message": "tricolon: fast, reliable, and battle-tested -- cut to the one or two that carry load; break the symmetry",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.tricolon-abuse-core",
         "severity": "suggestion",
         "span": {
-          "end": 1743,
-          "start": 1710
+          "end": 1850,
+          "start": 1817
         }
       },
       {
@@ -760,16 +794,16 @@
         "category": "orwell",
         "column": 35,
         "end_column": 48,
-        "end_line": 65,
-        "line": 65,
+        "end_line": 69,
+        "line": 69,
         "matched_text": "battle-tested",
         "message": "\"battle-tested\" evaluates without evidence. Add the number, or cut the word.",
         "replacement": null,
         "rule_id": "core:orwell.unsupported-evaluative",
         "severity": "error",
         "span": {
-          "end": 1743,
-          "start": 1730
+          "end": 1850,
+          "start": 1837
         }
       },
       {
@@ -777,16 +811,16 @@
         "category": "prose-inflation",
         "column": 35,
         "end_column": 48,
-        "end_line": 65,
-        "line": 65,
+        "end_line": 69,
+        "line": 69,
         "matched_text": "battle-tested",
         "message": "slop lexicon: battle-tested -- delete it or replace it with a measurable claim",
         "replacement": null,
         "rule_id": "core:prose-inflation.slop-lexicon",
         "severity": "error",
         "span": {
-          "end": 1743,
-          "start": 1730
+          "end": 1850,
+          "start": 1837
         }
       },
       {
@@ -794,16 +828,16 @@
         "category": "ai-tells-structure",
         "column": 14,
         "end_column": 48,
-        "end_line": 69,
-        "line": 69,
+        "end_line": 73,
+        "line": 73,
         "matched_text": "clear, concise, and easy to follow",
         "message": "tricolon: clear, concise, and easy to follow -- cut to the one or two that carry load; break the symmetry",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.tricolon-abuse-core",
         "severity": "suggestion",
         "span": {
-          "end": 1845,
-          "start": 1811
+          "end": 1952,
+          "start": 1918
         }
       },
       {
@@ -811,33 +845,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 17,
-        "end_line": 73,
-        "line": 73,
+        "end_line": 77,
+        "line": 77,
         "matched_text": "Here's the thing",
         "message": "false suspense: Here's the thing -- delete the drumroll; state the point",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.false-suspense-frames",
         "severity": "error",
         "span": {
-          "end": 1923,
-          "start": 1907
-        }
-      },
-      {
-        "ai_signal": "weak",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 25,
-        "end_line": 77,
-        "line": 77,
-        "matched_text": "The result? Devastating.",
-        "message": "fragment-question pivot: The result? Devastating. -- one declarative sentence",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.fragment-question-pivot",
-        "severity": "suggestion",
-        "span": {
-          "end": 2013,
-          "start": 1989
+          "end": 2030,
+          "start": 2014
         }
       },
       {
@@ -847,99 +864,31 @@
         "end_column": 25,
         "end_line": 81,
         "line": 81,
+        "matched_text": "The result? Devastating.",
+        "message": "fragment-question pivot: The result? Devastating. -- one declarative sentence",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.fragment-question-pivot",
+        "severity": "suggestion",
+        "span": {
+          "end": 2120,
+          "start": 2096
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 25,
+        "end_line": 85,
+        "line": 85,
         "matched_text": "So why does this matter?",
         "message": "rhetorical question: So why does this matter? -- answer directly; delete the question",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.rhetorical-question-transition",
         "severity": "suggestion",
         "span": {
-          "end": 2072,
-          "start": 2048
-        }
-      },
-      {
-        "ai_signal": "weak",
-        "category": "ai-tells-structure",
-        "column": 1,
-        "end_column": 14,
-        "end_line": 85,
-        "line": 85,
-        "matched_text": "In this guide",
-        "message": "meta-narration: In this guide -- delete it; navigation is the TOC's job",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.meta-narration-frames",
-        "severity": "error",
-        "span": {
-          "end": 2137,
-          "start": 2124
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "prose-inflation",
-        "column": 1,
-        "end_column": 14,
-        "end_line": 85,
-        "line": 85,
-        "matched_text": "In this guide",
-        "message": "preamble: In this guide -- the title already says this; start with the first fact",
-        "replacement": null,
-        "rule_id": "core:prose-inflation.document-preamble",
-        "severity": "error",
-        "span": {
-          "end": 2137,
-          "start": 2124
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "prose-craft",
-        "column": 16,
-        "end_column": 21,
-        "end_line": 85,
-        "line": 85,
-        "matched_text": "we'll",
-        "message": "future tense: we'll -- describe what it does now",
-        "replacement": null,
-        "rule_id": "core:prose-craft.future-tense",
-        "severity": "suggestion",
-        "span": {
-          "end": 2144,
-          "start": 2139
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "prose-craft",
-        "column": 16,
-        "end_column": 22,
-        "end_line": 85,
-        "line": 85,
-        "matched_text": "we'll ",
-        "message": "first-person plural: we'll  -- name the artifact instead of the vendor",
-        "replacement": null,
-        "rule_id": "core:prose-craft.first-person-plural",
-        "severity": "suggestion",
-        "span": {
-          "end": 2145,
-          "start": 2139
-        }
-      },
-      {
-        "ai_signal": "weak",
-        "category": "ai-tells-structure",
-        "column": 16,
-        "end_column": 29,
-        "end_line": 85,
-        "line": 85,
-        "matched_text": "we'll explore",
-        "message": "meta-narration: we'll explore -- delete it; navigation is the TOC's job",
-        "replacement": null,
-        "rule_id": "core:ai-tells-structure.meta-narration-frames",
-        "severity": "error",
-        "span": {
-          "end": 2152,
-          "start": 2139
+          "end": 2179,
+          "start": 2155
         }
       },
       {
@@ -949,14 +898,99 @@
         "end_column": 14,
         "end_line": 89,
         "line": 89,
+        "matched_text": "In this guide",
+        "message": "meta-narration: In this guide -- delete it; navigation is the TOC's job",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.meta-narration-frames",
+        "severity": "error",
+        "span": {
+          "end": 2244,
+          "start": 2231
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 89,
+        "line": 89,
+        "matched_text": "In this guide",
+        "message": "preamble: In this guide -- the title already says this; start with the first fact",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.document-preamble",
+        "severity": "error",
+        "span": {
+          "end": 2244,
+          "start": 2231
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 16,
+        "end_column": 21,
+        "end_line": 89,
+        "line": 89,
+        "matched_text": "we'll",
+        "message": "future tense: we'll -- describe what it does now",
+        "replacement": null,
+        "rule_id": "core:prose-craft.future-tense",
+        "severity": "suggestion",
+        "span": {
+          "end": 2251,
+          "start": 2246
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 16,
+        "end_column": 22,
+        "end_line": 89,
+        "line": 89,
+        "matched_text": "we'll ",
+        "message": "first-person plural: we'll  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "suggestion",
+        "span": {
+          "end": 2252,
+          "start": 2246
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 16,
+        "end_column": 29,
+        "end_line": 89,
+        "line": 89,
+        "matched_text": "we'll explore",
+        "message": "meta-narration: we'll explore -- delete it; navigation is the TOC's job",
+        "replacement": null,
+        "rule_id": "core:ai-tells-structure.meta-narration-frames",
+        "severity": "error",
+        "span": {
+          "end": 2259,
+          "start": 2246
+        }
+      },
+      {
+        "ai_signal": "weak",
+        "category": "ai-tells-structure",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 93,
+        "line": 93,
         "matched_text": "In conclusion",
         "message": "summary closer: In conclusion -- end on the last fact",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.summary-closer-frames",
         "severity": "error",
         "span": {
-          "end": 2228,
-          "start": 2215
+          "end": 2335,
+          "start": 2322
         }
       },
       {
@@ -964,16 +998,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 16,
-        "end_line": 93,
-        "line": 93,
+        "end_line": 97,
+        "line": 97,
         "matched_text": "Happy migrating",
         "message": "summary closer: Happy migrating -- end on the last fact",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.summary-closer-frames",
         "severity": "error",
         "span": {
-          "end": 2311,
-          "start": 2296
+          "end": 2418,
+          "start": 2403
         }
       },
       {
@@ -981,16 +1015,16 @@
         "category": "ste-procedural",
         "column": 1,
         "end_column": 48,
-        "end_line": 95,
-        "line": 95,
+        "end_line": 99,
+        "line": 99,
         "matched_text": "Restart the worker after the config is written.",
         "message": "The condition follows the command (\"Restart the worker after the config is written.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
         "severity": "suggestion",
         "span": {
-          "end": 2361,
-          "start": 2314
+          "end": 2468,
+          "start": 2421
         }
       },
       {
@@ -998,16 +1032,16 @@
         "category": "ste-verbs",
         "column": 37,
         "end_column": 47,
-        "end_line": 95,
-        "line": 95,
+        "end_line": 99,
+        "line": 99,
         "matched_text": "is written",
         "message": "Passive voice \"is written\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 2360,
-          "start": 2350
+          "end": 2467,
+          "start": 2457
         }
       },
       {
@@ -1015,16 +1049,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 14,
-        "end_line": 97,
-        "line": 97,
+        "end_line": 101,
+        "line": 101,
         "matched_text": "Three pillars",
         "message": "cataphoric lead-in: Three pillars -- let the list carry its own length; cut the forecast",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.cataphoric-lead-in-core",
         "severity": "suggestion",
         "span": {
-          "end": 2376,
-          "start": 2363
+          "end": 2483,
+          "start": 2470
         }
       },
       {
@@ -1032,16 +1066,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 16,
-        "end_line": 101,
-        "line": 101,
+        "end_line": 105,
+        "line": 105,
         "matched_text": "The only way to",
         "message": "absolute assertion: The only way to -- state the claim with its actual scope",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.absolute-assertion-core",
         "severity": "error",
         "span": {
-          "end": 2498,
-          "start": 2483
+          "end": 2605,
+          "start": 2590
         }
       },
       {
@@ -1049,16 +1083,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 31,
-        "end_line": 105,
-        "line": 105,
+        "end_line": 109,
+        "line": 109,
         "matched_text": "Every Project Needs A Lockfile",
         "message": "absolute assertion: Every Project Needs A Lockfile -- state the claim with its actual scope",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.absolute-assertion-core",
         "severity": "error",
         "span": {
-          "end": 2630,
-          "start": 2600
+          "end": 2737,
+          "start": 2707
         }
       },
       {
@@ -1066,16 +1100,16 @@
         "category": "ai-tells-structure",
         "column": 9,
         "end_column": 19,
-        "end_line": 109,
-        "line": 109,
+        "end_line": 113,
+        "line": 113,
         "matched_text": "not pinned",
         "message": "negative inventory: not pinned -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 2717,
-          "start": 2707
+          "end": 2824,
+          "start": 2814
         }
       },
       {
@@ -1083,16 +1117,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 26,
-        "end_line": 113,
-        "line": 113,
+        "end_line": 117,
+        "line": 117,
         "matched_text": "Excluded from this review",
         "message": "negative inventory: Excluded from this review -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 2818,
-          "start": 2793
+          "end": 2925,
+          "start": 2900
         }
       },
       {
@@ -1100,16 +1134,16 @@
         "category": "ste-punctuation",
         "column": 27,
         "end_column": 28,
-        "end_line": 115,
-        "line": 115,
+        "end_line": 119,
+        "line": 119,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 2882,
-          "start": 2881
+          "end": 2989,
+          "start": 2988
         }
       },
       {
@@ -1117,16 +1151,16 @@
         "category": "ai-tells-structure",
         "column": 3,
         "end_column": 18,
-        "end_line": 119,
-        "line": 119,
+        "end_line": 123,
+        "line": 123,
         "matched_text": "Outside tooling",
         "message": "negative inventory: Outside tooling -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 2971,
-          "start": 2956
+          "end": 3078,
+          "start": 3063
         }
       },
       {
@@ -1134,16 +1168,16 @@
         "category": "ai-tells-structure",
         "column": 27,
         "end_column": 39,
-        "end_line": 119,
-        "line": 119,
+        "end_line": 123,
+        "line": 123,
         "matched_text": "Not included",
         "message": "negative inventory: Not included -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 2992,
-          "start": 2980
+          "end": 3099,
+          "start": 3087
         }
       },
       {
@@ -1151,16 +1185,16 @@
         "category": "ste-nouns",
         "column": 1,
         "end_column": 1,
-        "end_line": 121,
-        "line": 121,
+        "end_line": 125,
+        "line": 125,
         "matched_text": "",
         "message": "This noun stack has 4 words. Use three or fewer.",
         "replacement": null,
         "rule_id": "core:ste-nouns.multiword-noun-too-long",
         "severity": "suggestion",
         "span": {
-          "end": 2996,
-          "start": 2996
+          "end": 3103,
+          "start": 3103
         }
       },
       {
@@ -1168,16 +1202,16 @@
         "category": "ste-punctuation",
         "column": 43,
         "end_column": 44,
-        "end_line": 121,
-        "line": 121,
+        "end_line": 125,
+        "line": 125,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 3039,
-          "start": 3038
+          "end": 3146,
+          "start": 3145
         }
       },
       {
@@ -1185,16 +1219,16 @@
         "category": "ste-verbs",
         "column": 8,
         "end_column": 19,
-        "end_line": 123,
-        "line": 123,
+        "end_line": 127,
+        "line": 127,
         "matched_text": "is recorded",
         "message": "Passive voice \"is recorded\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 3093,
-          "start": 3082
+          "end": 3200,
+          "start": 3189
         }
       },
       {
@@ -1202,16 +1236,16 @@
         "category": "ai-tells-structure",
         "column": 11,
         "end_column": 29,
-        "end_line": 123,
-        "line": 123,
+        "end_line": 127,
+        "line": 127,
         "matched_text": "recorded elsewhere",
         "message": "negative inventory: recorded elsewhere -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 3103,
-          "start": 3085
+          "end": 3210,
+          "start": 3192
         }
       },
       {
@@ -1219,16 +1253,16 @@
         "category": "ai-tells-structure",
         "column": 3,
         "end_column": 11,
-        "end_line": 127,
-        "line": 127,
+        "end_line": 131,
+        "line": 131,
         "matched_text": "Excluded",
         "message": "negative inventory: Excluded -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 3188,
-          "start": 3180
+          "end": 3295,
+          "start": 3287
         }
       },
       {
@@ -1236,16 +1270,16 @@
         "category": "ste-verbs",
         "column": 15,
         "end_column": 26,
-        "end_line": 131,
-        "line": 131,
+        "end_line": 135,
+        "line": 135,
         "matched_text": "is excluded",
         "message": "Passive voice \"is excluded\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 3316,
-          "start": 3305
+          "end": 3423,
+          "start": 3412
         }
       },
       {
@@ -1253,16 +1287,16 @@
         "category": "ai-tells-structure",
         "column": 18,
         "end_column": 44,
-        "end_line": 131,
-        "line": 131,
+        "end_line": 135,
+        "line": 135,
         "matched_text": "excluded from this release",
         "message": "negative inventory: excluded from this release -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 3334,
-          "start": 3308
+          "end": 3441,
+          "start": 3415
         }
       },
       {
@@ -1270,16 +1304,16 @@
         "category": "prose-craft",
         "column": 32,
         "end_column": 44,
-        "end_line": 131,
-        "line": 131,
+        "end_line": 135,
+        "line": 135,
         "matched_text": "this release",
         "message": "relative date: this release -- give the absolute date or version",
         "replacement": null,
         "rule_id": "core:prose-craft.relative-date",
         "severity": "warning",
         "span": {
-          "end": 3334,
-          "start": 3322
+          "end": 3441,
+          "start": 3429
         }
       },
       {
@@ -1287,16 +1321,16 @@
         "category": "ste-verbs",
         "column": 23,
         "end_column": 32,
-        "end_line": 133,
-        "line": 133,
+        "end_line": 137,
+        "line": 137,
         "matched_text": "be pinned",
         "message": "Passive voice \"be pinned\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 3368,
-          "start": 3359
+          "end": 3475,
+          "start": 3466
         }
       },
       {
@@ -1304,16 +1338,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 13,
-        "end_line": 135,
-        "line": 135,
+        "end_line": 139,
+        "line": 139,
         "matched_text": "Out of scope",
         "message": "negative inventory: Out of scope -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 3395,
-          "start": 3383
+          "end": 3502,
+          "start": 3490
         }
       },
       {
@@ -1321,16 +1355,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 9,
-        "end_line": 139,
-        "line": 139,
+        "end_line": 143,
+        "line": 143,
         "matched_text": "Excluded",
         "message": "negative inventory: Excluded -- state the supported behavior or constraint",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-inventory-core",
         "severity": "error",
         "span": {
-          "end": 3466,
-          "start": 3458
+          "end": 3573,
+          "start": 3565
         }
       },
       {
@@ -1338,16 +1372,16 @@
         "category": "ste-nouns",
         "column": 1,
         "end_column": 1,
-        "end_line": 143,
-        "line": 143,
+        "end_line": 147,
+        "line": 147,
         "matched_text": "",
         "message": "This noun stack has 5 words. Use three or fewer.",
         "replacement": null,
         "rule_id": "core:ste-nouns.multiword-noun-too-long",
         "severity": "suggestion",
         "span": {
-          "end": 3555,
-          "start": 3555
+          "end": 3662,
+          "start": 3662
         }
       },
       {
@@ -1355,16 +1389,16 @@
         "category": "ste-sentences",
         "column": 1,
         "end_column": 1,
-        "end_line": 143,
-        "line": 143,
+        "end_line": 147,
+        "line": 147,
         "matched_text": "",
         "message": "This sentence carries 4 coordinated items. Use a vertical list.",
         "replacement": null,
         "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
         "severity": "warning",
         "span": {
-          "end": 3555,
-          "start": 3555
+          "end": 3662,
+          "start": 3662
         }
       },
       {
@@ -1372,16 +1406,16 @@
         "category": "ste-words",
         "column": 1,
         "end_column": 11,
-        "end_line": 143,
-        "line": 143,
+        "end_line": 147,
+        "line": 147,
         "matched_text": "The deploy",
         "message": "Do not use \"The deploy\" as a noun. Use the noun form.",
         "replacement": null,
         "rule_id": "core:ste-words.verb-used-as-noun",
         "severity": "warning",
         "span": {
-          "end": 3565,
-          "start": 3555
+          "end": 3672,
+          "start": 3662
         }
       },
       {
@@ -1389,16 +1423,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 39,
-        "end_line": 143,
-        "line": 143,
+        "end_line": 147,
+        "line": 147,
         "matched_text": "The deploy helper itself never creates",
         "message": "negative guarantee: The deploy helper itself never creates -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 3593,
-          "start": 3555
+          "end": 3700,
+          "start": 3662
         }
       },
       {
@@ -1406,16 +1440,16 @@
         "category": "ste-words",
         "column": 1,
         "end_column": 11,
-        "end_line": 145,
-        "line": 145,
+        "end_line": 149,
+        "line": 149,
         "matched_text": "The deploy",
         "message": "Do not use \"The deploy\" as a noun. Use the noun form.",
         "replacement": null,
         "rule_id": "core:ste-words.verb-used-as-noun",
         "severity": "warning",
         "span": {
-          "end": 3646,
-          "start": 3636
+          "end": 3753,
+          "start": 3743
         }
       },
       {
@@ -1423,16 +1457,16 @@
         "category": "ste-punctuation",
         "column": 56,
         "end_column": 57,
-        "end_line": 145,
-        "line": 145,
+        "end_line": 149,
+        "line": 149,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 3692,
-          "start": 3691
+          "end": 3799,
+          "start": 3798
         }
       },
       {
@@ -1441,7 +1475,7 @@
         "column": 1,
         "end_column": null,
         "end_line": null,
-        "line": 148,
+        "line": 152,
         "matched_text": "They never stop",
         "message": "negative guarantee: They never stop -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
@@ -1454,16 +1488,16 @@
         "category": "ste-punctuation",
         "column": 45,
         "end_column": 46,
-        "end_line": 149,
-        "line": 149,
+        "end_line": 153,
+        "line": 153,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 3862,
-          "start": 3861
+          "end": 3969,
+          "start": 3968
         }
       },
       {
@@ -1471,16 +1505,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 31,
-        "end_line": 151,
-        "line": 151,
+        "end_line": 155,
+        "line": 155,
         "matched_text": "The release agent never merges",
         "message": "negative guarantee: The release agent never merges -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 3936,
-          "start": 3906
+          "end": 4043,
+          "start": 4013
         }
       },
       {
@@ -1488,16 +1522,16 @@
         "category": "ai-tells-structure",
         "column": 48,
         "end_column": 65,
-        "end_line": 151,
-        "line": 151,
+        "end_line": 155,
+        "line": 155,
         "matched_text": "It runs no deploy",
         "message": "negative guarantee: It runs no deploy -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 3970,
-          "start": 3953
+          "end": 4077,
+          "start": 4060
         }
       },
       {
@@ -1505,16 +1539,16 @@
         "category": "ste-words",
         "column": 57,
         "end_column": 67,
-        "end_line": 153,
-        "line": 153,
+        "end_line": 157,
+        "line": 157,
         "matched_text": "the deploy",
         "message": "Do not use \"the deploy\" as a noun. Use the noun form.",
         "replacement": null,
         "rule_id": "core:ste-words.verb-used-as-noun",
         "severity": "warning",
         "span": {
-          "end": 4077,
-          "start": 4067
+          "end": 4184,
+          "start": 4174
         }
       },
       {
@@ -1522,16 +1556,16 @@
         "category": "ste-punctuation",
         "column": 26,
         "end_column": 27,
-        "end_line": 155,
-        "line": 155,
+        "end_line": 159,
+        "line": 159,
         "matched_text": ";",
         "message": "The semicolon is not permitted. Write two sentences.",
         "replacement": null,
         "rule_id": "core:ste-punctuation.semicolon-used",
         "severity": "suggestion",
         "span": {
-          "end": 4142,
-          "start": 4141
+          "end": 4249,
+          "start": 4248
         }
       },
       {
@@ -1539,16 +1573,16 @@
         "category": "ai-tells-structure",
         "column": 28,
         "end_column": 44,
-        "end_line": 155,
-        "line": 155,
+        "end_line": 159,
+        "line": 159,
         "matched_text": "it never deletes",
         "message": "negative guarantee: it never deletes -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 4159,
-          "start": 4143
+          "end": 4266,
+          "start": 4250
         }
       },
       {
@@ -1556,16 +1590,16 @@
         "category": "ste-sentences",
         "column": 28,
         "end_column": 40,
-        "end_line": 157,
-        "line": 157,
+        "end_line": 161,
+        "line": 161,
         "matched_text": "The database",
         "message": "Missing article before \"The database\".",
         "replacement": null,
         "rule_id": "core:ste-sentences.missing-article-or-determiner",
         "severity": "suggestion",
         "span": {
-          "end": 4205,
-          "start": 4193
+          "end": 4312,
+          "start": 4300
         }
       },
       {
@@ -1573,16 +1607,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 25,
-        "end_line": 159,
-        "line": 159,
+        "end_line": 163,
+        "line": 163,
         "matched_text": "The client never retries",
         "message": "negative guarantee: The client never retries -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 4272,
-          "start": 4248
+          "end": 4379,
+          "start": 4355
         }
       },
       {
@@ -1590,16 +1624,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 22,
-        "end_line": 163,
-        "line": 163,
+        "end_line": 167,
+        "line": 167,
         "matched_text": "The agent never edits",
         "message": "negative guarantee: The agent never edits -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 4380,
-          "start": 4359
+          "end": 4487,
+          "start": 4466
         }
       },
       {
@@ -1607,16 +1641,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 43,
-        "end_line": 167,
-        "line": 167,
+        "end_line": 171,
+        "line": 171,
         "matched_text": "Outside a run the plugin spawns no process",
         "message": "negative guarantee: Outside a run the plugin spawns no process -- state what the component does, or name the hook, test, gate, or permission that stops it",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.negative-guarantee-core",
         "severity": "warning",
         "span": {
-          "end": 4472,
-          "start": 4430
+          "end": 4579,
+          "start": 4537
         }
       },
       {
@@ -1624,16 +1658,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 17,
-        "end_line": 171,
-        "line": 171,
+        "end_line": 175,
+        "line": 175,
         "matched_text": "Think of it like",
         "message": "teacher voice: Think of it like -- explain the actual mechanism once; cut the teacher voice",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.think-of-it-as-core",
         "severity": "suggestion",
         "span": {
-          "end": 4552,
-          "start": 4536
+          "end": 4659,
+          "start": 4643
         }
       },
       {
@@ -1641,16 +1675,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 14,
-        "end_line": 175,
-        "line": 175,
+        "end_line": 179,
+        "line": 179,
         "matched_text": "Experts agree",
         "message": "vague attribution: Experts agree -- name the source or own the claim",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.vague-attribution-core",
         "severity": "error",
         "span": {
-          "end": 4653,
-          "start": 4640
+          "end": 4760,
+          "start": 4747
         }
       },
       {
@@ -1658,16 +1692,16 @@
         "category": "ai-tells-structure",
         "column": 1,
         "end_column": 69,
-        "end_line": 179,
-        "line": 179,
+        "end_line": 183,
+        "line": 183,
         "matched_text": "Whether you're a beginner or a seasoned pro, this guide has somethin",
         "message": "audience straddle: Whether you're a beginner or a seasoned pro, this guide has somethin -- write for the one audience the doc has",
         "replacement": null,
         "rule_id": "core:ai-tells-structure.audience-straddle-core",
         "severity": "error",
         "span": {
-          "end": 4830,
-          "start": 4762
+          "end": 4937,
+          "start": 4869
         }
       },
       {
@@ -1675,16 +1709,16 @@
         "category": "ste-practices",
         "column": 12,
         "end_column": 23,
-        "end_line": 181,
-        "line": 181,
+        "end_line": 185,
+        "line": 185,
         "matched_text": "assumes you",
         "message": "Add \"that\" after \"assumes you\".",
         "replacement": null,
         "rule_id": "core:ste-practices.omitted-conjunction-that",
         "severity": "suggestion",
         "span": {
-          "end": 4864,
-          "start": 4853
+          "end": 4971,
+          "start": 4960
         }
       },
       {
@@ -1692,45 +1726,45 @@
         "category": "ste-verbs",
         "column": 24,
         "end_column": 32,
-        "end_line": 181,
-        "line": 181,
+        "end_line": 185,
+        "line": 185,
         "matched_text": "have run",
         "message": "Complex verb construction \"have run\". Use a simple present, past, or future tense.",
         "replacement": null,
         "rule_id": "core:ste-verbs.complex-tense",
         "severity": "suggestion",
         "span": {
-          "end": 4873,
-          "start": 4865
+          "end": 4980,
+          "start": 4972
         }
       }
     ],
     "gate": {
       "passed": false,
       "reasons": [
-        "26 error(s), limit 0",
-        "4.62 severity-weighted findings per 100 words, budget 3.0",
-        "score 47.1, minimum 70.0",
-        "ai-tells-structure at 3.93 severity-weighted findings per 100 words, budget 0.6"
+        "23 error(s), limit 0",
+        "4.16 severity-weighted findings per 100 words, budget 3.0",
+        "score 49.4, minimum 70.0",
+        "ai-tells-structure at 3.48 severity-weighted findings per 100 words, budget 0.6"
       ]
     },
-    "paragraphs": 88,
+    "paragraphs": 90,
     "path": "rule-examples-ai-tells-structure.md",
-    "per_100_words": 10.112,
+    "per_100_words": 10.147,
     "profile": "normal",
     "prose": {
       "errors": 3,
-      "findings": 33,
-      "per_100_words": 4.12,
+      "findings": 34,
+      "per_100_words": 4.156,
       "warnings": 5
     },
-    "score": 47.1,
-    "sentences": 109,
-    "suggestions": 33,
-    "total_findings": 81,
+    "score": 49.4,
+    "sentences": 111,
+    "suggestions": 38,
+    "total_findings": 83,
     "unchecked": [],
     "warnings": 22,
-    "words": 801
+    "words": 818
   },
   "exit_code": 1
 }
