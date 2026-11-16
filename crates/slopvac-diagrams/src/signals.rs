@@ -26,7 +26,7 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
-use crate::{Fragment, Role};
+use crate::{Format, Fragment, Role};
 
 /// A deterministic check that a rule of the diagram pack names in `match.check`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,40 +118,47 @@ fn label_text<'a>(source: &'a str, f: &'a Fragment) -> &'a str {
     f.text.as_deref().unwrap_or_else(|| &source[f.span.clone()])
 }
 
-/// The length of a line break at the start of `s`: a newline, a literal backslash-n as
-/// `PlantUML` writes it, or an HTML `<br>` tag in any case, with optional spaces and a self-closing slash.
-fn break_len(s: &str) -> Option<usize> {
-    if s.starts_with("\\n") {
-        return Some(2);
-    }
-    if s.starts_with('\n') {
-        return Some(1);
-    }
+/// The length of an HTML `<br>` tag at the start of `s`: `<br` in any case, then whitespace,
+/// `/` or `>`, then any attributes up to the closing `>`. `<brand>` and `<br-x>` are not breaks.
+fn br_tag_len(s: &str) -> Option<usize> {
     let head = s.get(..3)?;
     if !head.eq_ignore_ascii_case("<br") {
         return None;
     }
     let rest = &s[3..];
-    let trimmed = rest.trim_start();
-    let trimmed = trimmed.strip_prefix('/').unwrap_or(trimmed).trim_start();
-    trimmed
-        .starts_with('>')
-        .then(|| s.len() - trimmed.len() + 1)
+    let first = rest.chars().next()?;
+    if !(first == '>' || first == '/' || first.is_whitespace()) {
+        return None;
+    }
+    let end = rest.find(['<', '>'])?;
+    rest[end..].starts_with('>').then_some(3 + end + 1)
+}
+
+/// The length of a line break at the start of `s`: a newline, an HTML `<br>` tag, or, when
+/// `literal_n` is set, a backslash followed by `n`. Only `PlantUML` renders that escape as a break.
+fn break_len(s: &str, literal_n: bool) -> Option<usize> {
+    if literal_n && s.starts_with("\\n") {
+        return Some(2);
+    }
+    if s.starts_with('\n') {
+        return Some(1);
+    }
+    br_tag_len(s)
 }
 
 /// The first line break in `label` as `(start, length)`.
-fn find_break(label: &str) -> Option<(usize, usize)> {
+fn find_break(label: &str, literal_n: bool) -> Option<(usize, usize)> {
     label
         .char_indices()
-        .find_map(|(at, _)| break_len(&label[at..]).map(|len| (at, len)))
+        .find_map(|(at, _)| break_len(&label[at..], literal_n).map(|len| (at, len)))
 }
 
 /// Split a label into words. Line breaks separate words, and tokens without a letter or digit are dropped.
-fn words(label: &str) -> Vec<&str> {
+fn words(label: &str, literal_n: bool) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = label;
     loop {
-        let (line, next) = match find_break(rest) {
+        let (line, next) = match find_break(rest, literal_n) {
             Some((at, len)) => (&rest[..at], Some(&rest[at + len..])),
             None => (rest, None),
         };
@@ -166,8 +173,8 @@ fn words(label: &str) -> Vec<&str> {
     }
 }
 
-fn word_count(label: &str) -> usize {
-    words(label).len()
+fn word_count(label: &str, literal_n: bool) -> usize {
+    words(label, literal_n).len()
 }
 
 fn is_code_token(word: &str) -> bool {
@@ -185,8 +192,8 @@ fn is_code_token(word: &str) -> bool {
         || inner('.')
 }
 
-fn gloss_split(label: &str) -> Option<(&str, &str)> {
-    let line = find_break(label).map(|(at, len)| (at, len, true));
+fn gloss_split(label: &str, literal_n: bool) -> Option<(&str, &str)> {
+    let line = find_break(label, literal_n).map(|(at, len)| (at, len, true));
     let other = [":", " - ", " – ", " / ", "("]
         .iter()
         .filter_map(|sep| label.find(sep).map(|at| (at, sep.len(), false)))
@@ -204,12 +211,12 @@ fn gloss_split(label: &str) -> Option<(&str, &str)> {
     let (head, gloss) = (&label[..at], &label[at + len..]);
     // A line break between two names lists components, as in "Istio Sidecar" over
     // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
-    (!is_break || !all_capitalised(gloss)).then_some((head, gloss))
+    (!is_break || !all_capitalised(gloss, literal_n)).then_some((head, gloss))
 }
 
 /// Every word starts with a capital letter, so the text reads as a name.
-fn all_capitalised(text: &str) -> bool {
-    let list = words(text);
+fn all_capitalised(text: &str, literal_n: bool) -> bool {
+    let list = words(text, literal_n);
     !list.is_empty()
         && list.iter().all(|w| {
             w.chars()
@@ -218,20 +225,23 @@ fn all_capitalised(text: &str) -> bool {
         })
 }
 
-/// Check the labels of one diagram.
+/// Check the labels of one diagram written in `format`.
+///
+/// The format matters for the literal `\n` escape, which only `PlantUML` renders as a line break.
 #[must_use]
-pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<SignalHit> {
+pub fn check_labels(source: &str, fragments: &[Fragment], format: Format) -> Vec<SignalHit> {
+    let literal_n = format == Format::PlantUml;
     let mut out = Vec::new();
     for f in fragments {
         let label = label_text(source, f);
-        let count = word_count(label);
+        let count = word_count(label, literal_n);
         let finding = |signal, message: String| SignalHit {
             signal,
             span: f.span.clone(),
             message,
             matched: f.text.clone(),
         };
-        let has_code = words(label).iter().any(|w| is_code_token(w));
+        let has_code = words(label, literal_n).iter().any(|w| is_code_token(w));
         if has_code && matches!(f.role, Role::Node | Role::Edge | Role::Group | Role::Note) {
             continue;
         }
@@ -250,10 +260,10 @@ pub fn check_labels(source: &str, fragments: &[Fragment]) -> Vec<SignalHit> {
                     ));
                 } else if f.role != Role::Edge
                     && count >= GLOSS_MIN_WORDS
-                    && let Some((head, gloss)) = gloss_split(label)
+                    && let Some((head, gloss)) = gloss_split(label, literal_n)
                 {
-                    let head_words = word_count(head);
-                    let gloss_words = word_count(gloss);
+                    let head_words = word_count(head, literal_n);
+                    let gloss_words = word_count(gloss, literal_n);
                     let list = gloss.contains(',') || gloss_words >= 3;
                     if (1..=4).contains(&head_words) && gloss_words >= 2 && list {
                         out.push(finding(Signal::LabelTitlePlusGloss,
@@ -358,7 +368,7 @@ pub fn check_prose(
             });
         }
     }
-    let prose_words: usize = prose.iter().map(|b| word_count(b.text)).sum();
+    let prose_words: usize = prose.iter().map(|b| word_count(b.text, false)).sum();
     let labels: Vec<Vec<String>> = fragments
         .iter()
         .filter(|f| matches!(f.role, Role::Node | Role::Group))
@@ -411,12 +421,16 @@ mod tests {
         }
     }
 
-    fn rules(source: &str, parts: &[(Role, &str)]) -> Vec<Signal> {
+    fn rules_in(format: Format, source: &str, parts: &[(Role, &str)]) -> Vec<Signal> {
         let fragments: Vec<_> = parts.iter().map(|(r, l)| frag(*r, source, l)).collect();
-        check_labels(source, &fragments)
+        check_labels(source, &fragments, format)
             .iter()
             .map(|f| f.signal)
             .collect()
+    }
+
+    fn rules(source: &str, parts: &[(Role, &str)]) -> Vec<Signal> {
+        rules_in(Format::Mermaid, source, parts)
     }
 
     #[test]
@@ -461,8 +475,7 @@ mod tests {
     #[case::bare("Order Service<br>handles checkout and refunds")]
     #[case::upper_case("Order Service<BR/>handles checkout and refunds")]
     #[case::inner_space("Order Service<br / >handles checkout and refunds")]
-    #[case::literal_backslash_n(r"Order Service\nhandles checkout and refunds")]
-    fn a_break_variant_separates_name_from_gloss_and_is_not_a_word(#[case] label: &str) {
+    fn a_br_variant_separates_name_from_gloss_and_is_not_a_word(#[case] label: &str) {
         let src = format!("{label}\n");
         assert_eq!(
             rules(&src, &[(Role::Node, label)]),
@@ -470,10 +483,40 @@ mod tests {
         );
     }
 
+    // Five visible words. If `<br class=x>` were not a break, `br` and `class=x` would add two
+    // words and the label would read as seven: a run-on.
     #[test]
-    fn a_tag_that_only_starts_with_br_is_a_word_boundary_not_a_break() {
-        // `<brand>` is not a break: words are "brand" and the five around it.
-        assert_eq!(words("a <brand> b c d"), ["a", "brand", "b", "c", "d"]);
+    fn a_br_tag_with_attributes_is_a_break_not_two_words() {
+        let label = "Order Service<br class=x>handles checkout refunds";
+        let src = format!("{label}\n");
+        assert_eq!(
+            rules(&src, &[(Role::Node, label)]),
+            [Signal::LabelTitlePlusGloss]
+        );
+    }
+
+    // Six visible words and no separator. A matcher that stops at the `<br` prefix would split
+    // after "Order Service" and report a gloss.
+    #[rstest::rstest]
+    #[case::brand("Order Service<brand>handles checkout refunds")]
+    #[case::hyphenated("Order Service<br-x>handles checkout refunds")]
+    fn a_tag_that_only_starts_with_br_is_not_a_break(#[case] label: &str) {
+        let src = format!("{label}\n");
+        assert_eq!(rules(&src, &[(Role::Node, label)]), Vec::<Signal>::new());
+    }
+
+    // The same 6-word label with a literal backslash-n. Only PlantUML renders the escape as a break.
+    #[rstest::rstest]
+    #[case::plantuml(Format::PlantUml, vec![Signal::LabelTitlePlusGloss])]
+    #[case::mermaid(Format::Mermaid, vec![])]
+    #[case::drawio(Format::Drawio, vec![])]
+    fn a_literal_backslash_n_is_a_break_only_in_plantuml(
+        #[case] format: Format,
+        #[case] want: Vec<Signal>,
+    ) {
+        let label = r"Order Service\nhandles checkout and refunds";
+        let src = format!("{label}\n");
+        assert_eq!(rules_in(format, &src, &[(Role::Node, label)]), want);
     }
 
     #[test]
@@ -513,7 +556,7 @@ mod tests {
             role: Role::Node,
             logical: String::new(),
         };
-        let hits = check_labels(source, std::slice::from_ref(&fragment));
+        let hits = check_labels(source, std::slice::from_ref(&fragment), Format::Mermaid);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].span, fragment.span);
         assert_eq!(
@@ -548,7 +591,10 @@ mod tests {
             role: Role::Node,
             logical: String::new(),
         };
-        assert_eq!(check_labels(src, &[f])[0].signal, Signal::LabelRunOn);
+        assert_eq!(
+            check_labels(src, &[f], Format::Mermaid)[0].signal,
+            Signal::LabelRunOn
+        );
     }
 
     fn prose_rules(source: &str, labels: &[&str], text: &str) -> Vec<SignalHit> {
