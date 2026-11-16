@@ -66,6 +66,26 @@ fn write_migrates_and_restore_undoes_it() {
 }
 
 #[test]
+fn preview_reports_the_findings_the_engine_counts_on_each_side() {
+    let dir = project("profile = \"normal\"\n");
+    fs::write(
+        dir.path().join("doc.md"),
+        "<!-- slopvac-allow: rule=orwell.stale-figure reason=dead-metaphor -->\nPick the low-hanging fruit.\n",
+    )
+    .expect("write");
+    // Before, the directive names a 2.x id: the engine reports it and the stale figure.
+    // After, `core:orwell.stale-figure` with its listed `dead-metaphor` exception holds.
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "Findings by rule (before -> after):\n  core:meta.invalid-suppression: 1 -> 0\n  core:orwell.stale-figure: 1 -> 0\n",
+        ));
+}
+
+#[test]
 fn unrepresentable_setting_exits_2_and_writes_nothing() {
     let dir = project("[vale]\nenabled = true\n");
     slopvac()

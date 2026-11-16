@@ -155,6 +155,28 @@ fn migration_is_idempotent() {
 }
 
 #[test]
+fn a_config_the_version_gate_accepts_or_finds_newer_is_already_migrated() {
+    for text in ["schema_version = 4\n", "schema_version = \"3\"\n"] {
+        assert!(
+            matches!(migrate(text), Err(Error::AlreadyMigrated { .. })),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_2x_config_migrates_to_one_the_version_gate_accepts() {
+    for text in ["profile = \"strict\"\n", "schema_version = 2\n"] {
+        let out = migrate(text).unwrap();
+        let root = slopvac_config::tree::parse_toml(&out).unwrap();
+        assert!(
+            slopvac_config::version::check_version(&root, &out).is_ok(),
+            "{out}"
+        );
+    }
+}
+
+#[test]
 fn guidance_and_thresholds_copy() {
     let src = "[thresholds]\nmax_errors = 2\nmin_score = 80.0\n[guidance]\nwrite = \"auto\"\nreview_depth = \"self\"\n";
     let out = migrate(src).unwrap();
