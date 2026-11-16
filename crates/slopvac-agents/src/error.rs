@@ -12,8 +12,14 @@ pub enum AgentsError {
     #[error("malformed or ambiguous slopvac markers in {0}; repair the begin/end pair first")]
     MalformedMarkers(PathBuf),
     /// The file is not UTF-8.
-    #[error("steering must be UTF-8: {0}")]
-    NotUtf8(PathBuf),
+    #[error("steering must be UTF-8: {path}")]
+    NotUtf8 {
+        /// The steering file.
+        path: PathBuf,
+        /// Where the bytes stopped being UTF-8.
+        #[source]
+        source: std::string::FromUtf8Error,
+    },
     /// The file changed between read and write.
     #[error("file changed during setup; retry: {0}")]
     Conflict(PathBuf),
@@ -65,7 +71,7 @@ impl AgentsError {
         match self {
             Self::UnsafeTarget(_) => "steering-unsafe-target",
             Self::MalformedMarkers(_) => "steering-malformed",
-            Self::NotUtf8(_) => "steering-not-utf8",
+            Self::NotUtf8 { .. } => "steering-not-utf8",
             Self::Conflict(_) => "steering-conflict",
             Self::NotManaged(_) => "steering-not-managed",
             Self::Usage(_) => "setup-usage",

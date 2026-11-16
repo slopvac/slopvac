@@ -123,7 +123,7 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
                 .take(MAX_BINARY_BYTES + 1)
                 .read_to_end(&mut buf)
                 .map_err(err)?;
-            if u64::try_from(buf.len()).unwrap_or(u64::MAX) > MAX_BINARY_BYTES {
+            if !u64::try_from(buf.len()).is_ok_and(|n| n <= MAX_BINARY_BYTES) {
                 return Err(UpdateError::Archive("binary is too large".into()));
             }
             return Ok(buf);

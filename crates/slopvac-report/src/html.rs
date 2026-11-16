@@ -1,6 +1,10 @@
 //! Standalone accessible HTML report (docs/contract/policies.md, 2.3).
 //!
 //! No scripts and no remote resources. Every dynamic string goes through `escape::xml`.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 
@@ -25,7 +29,7 @@ pub(crate) fn render(report: &Report) -> String {
     let verdict = if s.passed { "PASS" } else { "FAIL" };
     let class = if s.passed { "pass" } else { "fail" };
     let mut out = String::new();
-    write!(
+    let _ = write!(
         out,
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n\
@@ -41,18 +45,16 @@ pub(crate) fn render(report: &Report) -> String {
         s.suggestions,
         f64::from(s.score),
         e(report.slopvac_version.as_str())
-    )
-    .ok();
+    );
     if !report.notices.is_empty() {
         out.push_str("<section class=\"panel\"><h2>Notices</h2>\n<ul>\n");
         for n in &report.notices {
-            writeln!(
+            let _ = writeln!(
                 out,
                 "<li><code>{}</code>: {}</li>",
                 e(n.code.as_str()),
                 e(n.message.as_str())
-            )
-            .ok();
+            );
         }
         out.push_str("</ul></section>\n");
     }
@@ -60,14 +62,13 @@ pub(crate) fn render(report: &Report) -> String {
     out.push_str("<table><caption>Result for each document</caption>\n<thead><tr><th scope=\"col\">Document</th><th scope=\"col\">Verdict</th><th scope=\"col\">Score</th><th scope=\"col\">Findings</th></tr></thead>\n<tbody>\n");
     for doc in &report.documents {
         let v = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
-        writeln!(
+        let _ = writeln!(
             out,
             "<tr><th scope=\"row\">{}</th><td>{v}</td><td>{:.1}</td><td>{}</td></tr>",
             e(doc.path.as_str()),
             f64::from(doc.score),
             doc.total_findings
-        )
-        .ok();
+        );
     }
     out.push_str("</tbody></table></section>\n");
     for doc in &report.documents {
@@ -79,39 +80,37 @@ pub(crate) fn render(report: &Report) -> String {
 
 fn document(out: &mut String, doc: &Document) {
     let v = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
-    writeln!(
+    let _ = writeln!(
         out,
         "<details class=\"panel\"{}><summary>{} &mdash; {v}</summary>",
         if doc.gate.is_passed() { "" } else { " open" },
         e(doc.path.as_str())
-    )
-    .ok();
+    );
     if !doc.gate.reasons().is_empty() || !doc.unchecked.is_empty() {
         out.push_str("<ul>\n");
         for r in doc.gate.reasons() {
-            writeln!(out, "<li>{}</li>", e(r)).ok();
+            let _ = writeln!(out, "<li>{}</li>", e(r));
         }
         for n in &doc.unchecked {
-            writeln!(
+            let _ = writeln!(
                 out,
                 "<li>UNCHECKED <code>{}</code>: {}</li>",
                 e(n.code.as_str()),
                 e(n.message.as_str())
-            )
-            .ok();
+            );
         }
         out.push_str("</ul>\n");
     }
     if doc.findings.is_empty() {
         out.push_str("<p class=\"muted\">No findings.</p>\n");
     } else {
-        write!(
+        let _ = write!(
             out,
             "<table><caption>Findings in {}</caption>\n<thead><tr><th scope=\"col\">Location</th><th scope=\"col\">Severity</th><th scope=\"col\">Rule</th><th scope=\"col\">Message</th></tr></thead>\n<tbody>\n",
             e(doc.path.as_str())
-        ).ok();
+        );
         for f in &doc.findings {
-            writeln!(
+            let _ = writeln!(
                 out,
                 "<tr><td>{}:{}</td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
                 f.start.line(),
@@ -119,8 +118,7 @@ fn document(out: &mut String, doc: &Document) {
                 severity_word(f.severity),
                 e(f.rule_id.as_str()),
                 e(f.message.as_str())
-            )
-            .ok();
+            );
         }
         out.push_str("</tbody></table>\n");
     }

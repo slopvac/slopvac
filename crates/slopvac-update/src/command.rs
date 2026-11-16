@@ -223,12 +223,14 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         Failure::new(code, e.to_string())
     })?;
     if let Some(cache) = &rt.cache {
-        cache
-            .write(&notice::Entry {
-                checked_at: rt.now,
-                latest: latest.clone(),
-            })
-            .ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the update already succeeded; a failed cache write only repeats the next version check"
+        )]
+        let _ = cache.write(&notice::Entry {
+            checked_at: rt.now,
+            latest: latest.clone(),
+        });
     }
     Ok(format!("Updated slopvac {} to {latest}.\n", rt.current))
 }

@@ -4,6 +4,10 @@
 //! deterministic: segment both texts into blocks (Markdown here) and sentences (`slopvac-text`), align original to revised by
 //! TF-IDF cosine similarity, then diff the literals of each aligned pair (numbers,
 //! code spans, flags, identifiers, names) and their negation. Local files only.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -509,13 +513,13 @@ fn compare_with(
     })
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "sentence counts are tiny"
+)]
 fn ratio(part: usize, whole: usize) -> f64 {
-    count(part) / count(whole)
-}
-
-/// A sentence count as a float; counts are far below `u32::MAX`.
-pub(crate) fn count(n: usize) -> f64 {
-    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
+    part as f64 / whole as f64
 }
 
 fn dropped_facts(
@@ -589,15 +593,15 @@ pub fn command() -> Command {
 pub fn render_text(report: &Report) -> String {
     let mut out = String::new();
     for c in &report.claims {
-        writeln!(out, "{} line {}: {}", c.change, c.line, c.text).ok();
+        let _ = writeln!(out, "{} line {}: {}", c.change, c.line, c.text);
         for l in &c.literals_removed {
-            writeln!(out, "  removed {} {}", l.kind, l.text).ok();
+            let _ = writeln!(out, "  removed {} {}", l.kind, l.text);
         }
         for l in &c.literals_added {
-            writeln!(out, "  added {} {}", l.kind, l.text).ok();
+            let _ = writeln!(out, "  added {} {}", l.kind, l.text);
         }
         if c.negation_changed {
-            writeln!(out, "  negation changed").ok();
+            let _ = writeln!(out, "  negation changed");
         }
     }
     for d in &report.dropped {
@@ -606,7 +610,7 @@ pub fn render_text(report: &Report) -> String {
         } else {
             "dropped, covered"
         };
-        writeln!(out, "{tag} line {}: {}", d.line, d.text).ok();
+        let _ = writeln!(out, "{tag} line {}: {}", d.line, d.text);
     }
     out
 }

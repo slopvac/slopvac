@@ -58,7 +58,11 @@ pub fn run(
     match execute(matches, linter, steering, out) {
         Ok(()) => 0,
         Err(e) => {
-            writeln!(err, "error[{}]: {e}", e.code()).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a failed stderr diagnostic has nowhere left to be reported"
+            )]
+            let _ = writeln!(err, "error[{}]: {e}", e.code());
             2
         }
     }

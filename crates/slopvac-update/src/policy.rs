@@ -121,7 +121,7 @@ fn read_bounded(file: &Path) -> Result<Option<String>, PolicyError> {
         .take(MAX_CONFIG_BYTES + 1)
         .read_to_string(&mut text)
         .map_err(|e| unreadable(&e))?;
-    if u64::try_from(text.len()).unwrap_or(u64::MAX) > MAX_CONFIG_BYTES {
+    if !u64::try_from(text.len()).is_ok_and(|n| n <= MAX_CONFIG_BYTES) {
         return Err(PolicyError::TooLarge(file.to_owned()));
     }
     Ok(Some(text))

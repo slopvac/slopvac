@@ -111,7 +111,7 @@ impl Fetcher for UreqFetcher {
                 FetchError::Network(e.to_string())
             }
         })?;
-        if u64::try_from(n).unwrap_or(u64::MAX) > limit {
+        if !u64::try_from(n).is_ok_and(|n| n <= limit) {
             return Err(FetchError::TooLarge(limit));
         }
         Ok(buf)
@@ -148,11 +148,23 @@ mod tests {
             while !head.ends_with(b"\r\n\r\n") && sock.read(&mut byte).unwrap_or(0) == 1 {
                 head.push(byte[0]);
             }
-            sock.write_all(&reply).ok();
-            sock.flush().ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "test server: a client that hung up needs no reply"
+            )]
+            let _ = sock.write_all(&reply);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "test server: a client that hung up needs no reply"
+            )]
+            let _ = sock.flush();
             if hold {
                 // Keep the connection open until the test ends.
-                rx.recv_timeout(Duration::from_secs(10)).ok();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "test server: the wait only keeps the connection open, so its result carries nothing"
+                )]
+                let _ = rx.recv_timeout(Duration::from_secs(10));
             }
         });
         Server {

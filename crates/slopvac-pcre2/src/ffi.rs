@@ -181,10 +181,13 @@ impl MatchData {
     }
 
     /// Number of ovector pairs: capture groups including group 0.
+    #[expect(
+        clippy::as_conversions,
+        reason = "u32 to usize never truncates on the 32- and 64-bit targets PCRE2 builds for"
+    )]
     pub(crate) fn group_count(&self) -> usize {
         // SAFETY: `self.ptr` is live match data.
-        usize::try_from(unsafe { pcre2_get_ovector_count_8(self.ptr.as_ptr()) })
-            .unwrap_or(usize::MAX)
+        unsafe { pcre2_get_ovector_count_8(self.ptr.as_ptr()) as usize }
     }
 
     /// Byte offsets of group `index` after a successful match, or `None` if the group

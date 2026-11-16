@@ -237,8 +237,8 @@ pub enum RegistryError {
     #[error(transparent)]
     Fetch(#[from] FetchError),
     /// The answer is not what the registry documents.
-    #[error("unexpected registry response")]
-    Shape,
+    #[error("unexpected registry response: {0}")]
+    Shape(String),
 }
 
 /// Ask the registry for the newest stable version.
@@ -249,16 +249,16 @@ pub fn latest_version(fetcher: &dyn Fetcher, pypi: bool) -> Result<String, Regis
     let url = if pypi { PYPI_JSON } else { GITHUB_LATEST };
     let body = fetcher.get(url, MAX_REGISTRY_BYTES)?;
     let json: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_err| RegistryError::Shape)?;
+        serde_json::from_slice(&body).map_err(|e| RegistryError::Shape(e.to_string()))?;
     let raw = if pypi {
         json.pointer("/info/version")
     } else {
         json.get("tag_name")
     }
     .and_then(serde_json::Value::as_str)
-    .ok_or(RegistryError::Shape)?;
+    .ok_or_else(|| RegistryError::Shape("the version field is missing or not a string".into()))?;
     let version = raw.strip_prefix('v').unwrap_or(raw);
-    Version::parse(version).map_err(|_err| RegistryError::Shape)?;
+    Version::parse(version).map_err(|e| RegistryError::Shape(e.to_string()))?;
     Ok(version.to_owned())
 }
 
@@ -303,7 +303,11 @@ pub fn notice(
         && let Some(fetcher) = fetcher
         && let Some(fresh) = refresh(fetcher, ctx.method.uses_pypi(), ctx.now, deadline)
     {
-        cache.write(&fresh).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the update already succeeded; a failed cache write only repeats the next version check"
+        )]
+        let _ = cache.write(&fresh);
         entry = Some(fresh);
     }
     notice_for(ctx.current, &entry?.latest, ctx.method)
@@ -317,7 +321,11 @@ fn refresh(
 ) -> Option<Entry> {
     let (tx, rx) = crossbeam_channel::bounded(1);
     std::thread::spawn(move || {
-        tx.send(latest_version(fetcher.as_ref(), pypi)).ok();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "test server: the wait only keeps the connection open, so its result carries nothing"
+        )]
+        let _ = tx.send(latest_version(fetcher.as_ref(), pypi));
     });
     let latest = rx.recv_timeout(deadline).ok()?.ok()?;
     Some(Entry {

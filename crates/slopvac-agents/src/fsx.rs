@@ -225,7 +225,11 @@ impl Project {
             parent.rename(&tmp_name, &parent, name)
         };
         finish().map_err(|e| {
-            parent.remove_file(&tmp_name).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "cleanup on an error path; the original error is the one reported"
+            )]
+            let _ = parent.remove_file(&tmp_name);
             self.map(&rel, e)
         })?;
         Ok(true)
@@ -242,7 +246,11 @@ impl Project {
         // Windows cannot delete a directory while a handle to it is open.
         drop(parent);
         if let Some(dir) = rel.parent().filter(|p| !p.as_os_str().is_empty()) {
-            self.dir.remove_dir(dir).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "best effort: a directory that is not empty or already gone stays as it is"
+            )]
+            let _ = self.dir.remove_dir(dir);
         }
         Ok(())
     }

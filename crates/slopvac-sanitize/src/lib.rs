@@ -59,6 +59,10 @@
 //!
 //! The functions are total and never panic. They do not truncate. The caller
 //! bounds the length.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 #![warn(
     clippy::arithmetic_side_effects,
     clippy::indexing_slicing,
@@ -92,7 +96,7 @@ pub fn is_unsafe(c: char) -> bool {
 }
 
 fn push_escape(out: &mut String, c: char) {
-    write!(out, "\\u{{{:x}}}", u32::from(c)).ok();
+    let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
 }
 
 fn map(text: &str, mut each: impl FnMut(char, &mut String)) -> String {

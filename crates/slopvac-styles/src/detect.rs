@@ -145,7 +145,7 @@ fn read(root: &Path, name: &str) -> Option<String> {
     let file = open_regular(&path).ok()?;
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1).read_to_end(&mut bytes).ok()?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_BYTES {
+    if !u64::try_from(bytes.len()).is_ok_and(|n| n <= MAX_BYTES) {
         return None;
     }
     String::from_utf8(bytes).ok()
@@ -416,7 +416,11 @@ mod tests {
         );
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            tx.send(open_regular(&fifo).map(|_| ())).ok();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "test: a dropped receiver means the test already finished"
+            )]
+            let _ = tx.send(open_regular(&fifo).map(|_| ()));
         });
         let result = rx
             .recv_timeout(Duration::from_secs(5))

@@ -45,14 +45,18 @@ impl MinisignVerifier {
 }
 
 impl ArtifactVerifier for MinisignVerifier {
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "callers and tests match on the unit variant Rejected; every minisign failure here refuses the artifact"
+    )]
     fn verify(&self, artifact: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
         let text = std::str::from_utf8(signature)
-            .map_err(|_err| VerifyError::Invalid("signature is not UTF-8".into()))?;
+            .map_err(|e| VerifyError::Invalid(format!("signature is not UTF-8: {e}")))?;
         let sig = minisign_verify::Signature::decode(text)
             .map_err(|e| VerifyError::Invalid(e.to_string()))?;
         self.key
             .verify(artifact, &sig, false)
-            .map_err(|_err| VerifyError::Rejected)
+            .map_err(|_| VerifyError::Rejected)
     }
 }
 

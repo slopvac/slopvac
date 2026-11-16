@@ -4,6 +4,10 @@
 //! the gate failed, with the reasons as its message. Findings are separate test cases that
 //! pass and carry the diagnostic as `system-out`, so a warning under the threshold never
 //! fails a build.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 
@@ -20,11 +24,10 @@ pub(crate) fn render(report: &Report) -> String {
         .iter()
         .filter(|d| !d.gate.is_passed())
         .count();
-    writeln!(
+    let _ = writeln!(
         out,
         "<testsuites name=\"slopvac\" tests=\"{tests}\" failures=\"{failures}\">"
-    )
-    .ok();
+    );
     for doc in &report.documents {
         suite(&mut out, doc);
     }
@@ -34,23 +37,21 @@ pub(crate) fn render(report: &Report) -> String {
 
 fn suite(out: &mut String, doc: &Document) {
     let path = xml_attr(doc.path.as_str());
-    writeln!(
+    let _ = writeln!(
         out,
         "  <testsuite name=\"{path}\" tests=\"{}\" failures=\"{}\">",
         doc.findings.len() + 1,
         usize::from(!doc.gate.is_passed())
-    )
-    .ok();
+    );
     for f in &doc.findings {
-        write!(
+        let _ = write!(
             out,
             "    <testcase classname=\"{path}\" name=\"{} {}:{}\">",
             xml_attr(f.rule_id.as_str()),
             f.start.line(),
             f.start.column()
-        )
-        .ok();
-        write!(
+        );
+        let _ = write!(
             out,
             "<system-out>{}:{} {} {}: {}</system-out>",
             f.start.line(),
@@ -58,20 +59,18 @@ fn suite(out: &mut String, doc: &Document) {
             severity_word(f.severity),
             xml(f.rule_id.as_str()),
             xml(f.message.as_str())
-        )
-        .ok();
+        );
         out.push_str("</testcase>\n");
     }
-    write!(out, "    <testcase classname=\"{path}\" name=\"gate\">").ok();
+    let _ = write!(out, "    <testcase classname=\"{path}\" name=\"gate\">");
     if !doc.gate.is_passed() {
         let reasons = doc.gate.reasons().join("; ");
-        write!(
+        let _ = write!(
             out,
             "<failure type=\"gate\" message=\"{}\">{}</failure>",
             xml_attr(&reasons),
             xml(&reasons)
-        )
-        .ok();
+        );
     }
     out.push_str("</testcase>\n  </testsuite>\n");
 }

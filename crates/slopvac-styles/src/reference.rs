@@ -2,6 +2,10 @@
 //!
 //! [`reference_pages`] returns `(path, markdown)` pairs relative to the docs
 //! site root. The docs builder writes them under `styles/`.
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "fmt::Write for String never returns an error"
+)]
 
 use std::fmt::Write as _;
 
@@ -61,24 +65,23 @@ fn names(list: &[String]) -> String {
 fn page(name: &str, style: &Style, text: &str) -> String {
     let mut out = format!("# Style: {name}\n\n");
     if let Some(description) = &style.description {
-        writeln!(out, "{description}\n").ok();
+        let _ = writeln!(out, "{description}\n");
     }
-    writeln!(out, "- Extends: {}", names(&style.extends)).ok();
-    writeln!(out, "- Conflicts with: {}", names(&style.conflicts)).ok();
-    writeln!(
+    let _ = writeln!(out, "- Extends: {}", names(&style.extends));
+    let _ = writeln!(out, "- Conflicts with: {}", names(&style.conflicts));
+    let _ = writeln!(
         out,
         "- Enable it with `styles = [\"{name}\"]` in `slopvac.toml`.\n"
-    )
-    .ok();
+    );
     let notes = notes(text);
     if !notes.is_empty() {
-        writeln!(out, "## Notes\n\n{notes}\n").ok();
+        let _ = writeln!(out, "## Notes\n\n{notes}\n");
     }
     let cats = &style.categories;
     if !cats.is_empty() {
         out.push_str("## Categories\n\n| Category | Settings |\n| --- | --- |\n");
         for (k, c) in cats {
-            writeln!(out, "| `{k}` | {} |", dials(&c.dials())).ok();
+            let _ = writeln!(out, "| `{k}` | {} |", dials(&c.dials()));
         }
         out.push('\n');
     }
@@ -86,7 +89,7 @@ fn page(name: &str, style: &Style, text: &str) -> String {
     if !rules.is_empty() {
         out.push_str("## Rules\n\n| Rule | Level |\n| --- | --- |\n");
         for (k, l) in rules {
-            writeln!(out, "| `{k}` | `{}` |", level(*l)).ok();
+            let _ = writeln!(out, "| `{k}` | `{}` |", level(*l));
         }
         out.push('\n');
     }
@@ -113,7 +116,7 @@ pub fn reference_pages() -> Vec<(String, String)> {
         )]
         let style = Style::parse(name, text).expect("bundled preset is valid");
         let description = style.description.as_deref().unwrap_or_default();
-        writeln!(index, "| [`{name}`]({name}.md) | {description} |").ok();
+        let _ = writeln!(index, "| [`{name}`]({name}.md) | {description} |");
         pages.push((format!("styles/{name}.md"), page(name, &style, text)));
     }
     pages.insert(0, ("styles/index.md".to_owned(), index));
