@@ -102,11 +102,11 @@
       {
         "budget": 0.2,
         "category": "docs-discipline",
-        "errors": 10,
-        "findings": 10,
-        "gating_per_100_words": 8.772,
+        "errors": 15,
+        "findings": 15,
+        "gating_per_100_words": 7.937,
         "over_budget": true,
-        "per_100_words": 8.772,
+        "per_100_words": 7.937,
         "score": 0.0,
         "suggestions": 0,
         "warnings": 0
@@ -139,13 +139,13 @@
         "budget": 0.8,
         "category": "prose-craft",
         "errors": 0,
-        "findings": 0,
-        "gating_per_100_words": 0.0,
+        "findings": 1,
+        "gating_per_100_words": 0.265,
         "over_budget": false,
-        "per_100_words": 0.0,
-        "score": 100.0,
+        "per_100_words": 0.529,
+        "score": 90.1,
         "suggestions": 0,
-        "warnings": 0
+        "warnings": 1
       },
       {
         "budget": 0.4,
@@ -210,12 +210,12 @@
       {
         "budget": 0.3,
         "category": "prose-scope",
-        "errors": 0,
-        "findings": 0,
-        "gating_per_100_words": 0.0,
-        "over_budget": false,
-        "per_100_words": 0.0,
-        "score": 100.0,
+        "errors": 1,
+        "findings": 1,
+        "gating_per_100_words": 0.529,
+        "over_budget": true,
+        "per_100_words": 0.529,
+        "score": 52.2,
         "suggestions": 0,
         "warnings": 0
       },
@@ -260,10 +260,10 @@
         "category": "ste-procedural",
         "errors": 1,
         "findings": 1,
-        "gating_per_100_words": 0.877,
+        "gating_per_100_words": 0.529,
         "over_budget": true,
-        "per_100_words": 0.877,
-        "score": 42.2,
+        "per_100_words": 0.529,
+        "score": 62.5,
         "suggestions": 0,
         "warnings": 0
       },
@@ -294,12 +294,12 @@
       {
         "budget": 0.5,
         "category": "ste-sentences",
-        "errors": 0,
-        "findings": 0,
-        "gating_per_100_words": 0.0,
-        "over_budget": false,
-        "per_100_words": 0.0,
-        "score": 100.0,
+        "errors": 2,
+        "findings": 2,
+        "gating_per_100_words": 1.058,
+        "over_budget": true,
+        "per_100_words": 1.058,
+        "score": 44.0,
         "suggestions": 0,
         "warnings": 0
       },
@@ -308,10 +308,10 @@
         "category": "ste-verbs",
         "errors": 3,
         "findings": 3,
-        "gating_per_100_words": 2.632,
+        "gating_per_100_words": 1.587,
         "over_budget": true,
-        "per_100_words": 2.632,
-        "score": 0.0,
+        "per_100_words": 1.587,
+        "score": 0.7,
         "suggestions": 0,
         "warnings": 0
       },
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 14,
+    "errors": 22,
     "findings": [
       {
         "ai_signal": "none",
@@ -567,36 +567,191 @@
           "end": 621,
           "start": 615
         }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 26,
+        "end_column": 40,
+        "end_line": 37,
+        "line": 37,
+        "matched_text": "commit 3f9a2c1",
+        "message": "internal history reference: commit 3f9a2c1 -- state the behaviour; the tracker and the log carry the origin",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-internal-reference",
+        "severity": "error",
+        "span": {
+          "end": 694,
+          "start": 680
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-scope",
+        "column": 22,
+        "end_column": 28,
+        "end_line": 39,
+        "line": 39,
+        "matched_text": "200 ms",
+        "message": "implementation leak: 200 ms -- the reader cannot act on this; move it to the commit, ADR, or spec",
+        "replacement": null,
+        "rule_id": "core:prose-scope.implementation-leak",
+        "severity": "error",
+        "span": {
+          "end": 741,
+          "start": 735
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 35,
+        "end_column": 41,
+        "end_line": 41,
+        "line": 41,
+        "matched_text": "PR 482",
+        "message": "internal history reference: PR 482 -- state the behaviour; the tracker and the log carry the origin",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-internal-reference",
+        "severity": "error",
+        "span": {
+          "end": 801,
+          "start": 795
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 845,
+          "start": 836
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 34,
+        "end_column": 43,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "PLAT-1042",
+        "message": "internal history reference: PLAT-1042 -- state the behaviour; the tracker and the log carry the origin",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-internal-reference",
+        "severity": "error",
+        "span": {
+          "end": 878,
+          "start": 869
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-sentences",
+        "column": 1,
+        "end_column": 10,
+        "end_line": 47,
+        "line": 47,
+        "matched_text": "The cache",
+        "message": "Missing article before \"The cache\".",
+        "replacement": null,
+        "rule_id": "core:ste-sentences.missing-article-or-determiner",
+        "severity": "error",
+        "span": {
+          "end": 890,
+          "start": 881
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 34,
+        "end_column": 44,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "issue #596",
+        "message": "internal history reference: issue #596 -- state the behaviour; the tracker and the log carry the origin",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-internal-reference",
+        "severity": "error",
+        "span": {
+          "end": 963,
+          "start": 953
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 1,
+        "end_column": 4,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "We ",
+        "message": "first-person plural: We  -- name the artifact instead of the vendor",
+        "replacement": null,
+        "rule_id": "core:prose-craft.first-person-plural",
+        "severity": "warning",
+        "span": {
+          "end": 1009,
+          "start": 1006
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "docs-discipline",
+        "column": 1,
+        "end_column": 14,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "We refactored",
+        "message": "internal history reference: We refactored -- state the behaviour; the tracker and the log carry the origin",
+        "replacement": null,
+        "rule_id": "core:docs-discipline.history-internal-reference",
+        "severity": "error",
+        "span": {
+          "end": 1019,
+          "start": 1006
+        }
       }
     ],
     "gate": {
       "passed": false,
       "reasons": [
-        "14 error(s), limit 0",
-        "12.28 severity-weighted findings per 100 words, budget 1.5",
+        "22 error(s), limit 0",
+        "11.90 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
-        "docs-discipline at 8.77 severity-weighted findings per 100 words, budget 0.2",
-        "ste-procedural at 0.88 severity-weighted findings per 100 words, budget 0.4",
-        "ste-verbs at 2.63 severity-weighted findings per 100 words, budget 0.4"
+        "docs-discipline at 7.94 severity-weighted findings per 100 words, budget 0.2",
+        "prose-scope at 0.53 severity-weighted findings per 100 words, budget 0.3",
+        "ste-procedural at 0.53 severity-weighted findings per 100 words, budget 0.4",
+        "ste-sentences at 1.06 severity-weighted findings per 100 words, budget 0.5",
+        "ste-verbs at 1.59 severity-weighted findings per 100 words, budget 0.4"
       ]
     },
-    "paragraphs": 18,
+    "paragraphs": 28,
     "path": "rule-examples-docs-discipline.md",
-    "per_100_words": 12.281,
+    "per_100_words": 12.169,
     "profile": "strict",
     "prose": {
-      "errors": 14,
-      "findings": 14,
-      "per_100_words": 12.281,
-      "warnings": 0
+      "errors": 22,
+      "findings": 23,
+      "per_100_words": 12.169,
+      "warnings": 1
     },
     "score": 0.0,
-    "sentences": 18,
+    "sentences": 28,
     "suggestions": 0,
-    "total_findings": 14,
+    "total_findings": 23,
     "unchecked": [],
-    "warnings": 0,
-    "words": 114
+    "warnings": 1,
+    "words": 189
   },
   "exit_code": 1
 }
