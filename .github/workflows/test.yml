@@ -461,6 +461,8 @@ jobs:
 
       - name: Run every discovered pytest suite
         run: python3 -m pytest
+        env:
+          SLOPVAC_EVALS_LIVE_ENGINE: "1"
 
       # Needs history for the baseline, so this step alone fetches in full. A pull
       # request compares with its merge-base; a merge-queue entry compares with the

@@ -198,6 +198,19 @@ def test_folded_job_ignores_the_other_class(job, other):
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-diagrams/src/mermaid.rs",
+        "crates/slopvac-engine/src/lint.rs",
+        "evals/diagrams.py",
+    ],
+)
+def test_live_diagram_adapter_inputs_run_the_python_suite(path):
+    outputs = {klass for klass in CLASSES if in_class(klass, path)}
+    assert evaluate(JOBS["test"]["if"], outputs)
+
+
+@pytest.mark.parametrize(
     ("condition", "outputs", "expected"),
     [
         (
