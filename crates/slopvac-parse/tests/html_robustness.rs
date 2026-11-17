@@ -70,10 +70,9 @@ fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
-#[test]
-fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
-    let n = 200_000;
-    let cases: Vec<(&str, String)> = vec![
+/// Hostile shapes with `n` repeats each, or a fixed size for the long attribute values.
+fn hostile_shapes(n: usize) -> Vec<(&'static str, String)> {
+    vec![
         ("unclosed inline tags", "<b>x".repeat(n)),
         ("deep nesting of blocks", cat([&"<div>".repeat(n), "text"])),
         ("deep nesting of divs and text", "<div>w ".repeat(n)),
@@ -136,13 +135,81 @@ fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
             "open templates",
             cat([&"<template>".repeat(n), &"</div>".repeat(n)]),
         ),
+    ]
+}
+
+/// How far the work for the second step of `n` repeats may differ from the first.
+///
+/// The count is deterministic, and for linear work the steps match: measured at `n` = 5,000,
+/// every shape's steps are equal except `many cells` and `tables restarting`, which differ
+/// by 67 units. The slack does not grow with the input, so super-linear work fails:
+///
+/// - `100 r ln r` units for `r` repeats gives steps of 4,951,744 and 5,213,368, which differ
+///   by 261,624. Even `r ln r` differs by 2,616.
+/// - `c r²` units gives steps that differ by `c` × 50,000,000.
+const SLOPE_SLACK: usize = 256;
+
+#[test]
+fn hostile_input_shapes_cost_linear_work_within_the_bound_and_stay_valid() {
+    // Every size repeats each shape far past the depth cap (512) and the table cap (16), so
+    // every cap is in force. Work, not time: the count does not depend on how loaded the
+    // machine is. Linear work grows by the same amount for each further `n` repeats, and
+    // super-linear work grows by more each time at any size, so the inputs can stay small
+    // enough for a debug build.
+    let n = 5_000;
+    let sizes = [
+        hostile_shapes(n),
+        hostile_shapes(2 * n),
+        hostile_shapes(3 * n),
     ];
-    for (name, source) in cases {
-        let (_, stats) = checked(&source, whole(&source));
-        // Work, not time: a quadratic scan over these inputs costs orders of magnitude more
-        // than this, and the count does not depend on how loaded the machine is.
-        let work = stats.work;
-        assert!(work <= 256 * source.len() + 4_096, "{name}: {work} units");
+    for i in 0..sizes[0].len() {
+        let name = sizes[0][i].0;
+        let [one, two, three] = sizes.each_ref().map(|shapes| {
+            let source = &shapes[i].1;
+            let (_, stats) = checked(source, whole(source));
+            assert!(
+                stats.work <= 256 * source.len() + 4_096,
+                "{name}: {} units for {} bytes",
+                stats.work,
+                source.len()
+            );
+            stats.work
+        });
+        let (first, second) = (two - one, three - two);
+        assert!(
+            second.abs_diff(first) <= SLOPE_SLACK,
+            "{name}: work {one}, {two}, {three} for 1, 2 and 3 times {n} repeats"
+        );
+    }
+}
+
+#[test]
+fn text_past_the_stand_in_rollover_keeps_its_text_and_positions() {
+    // The scan hands each non-whitespace character to the tree builder as one of 65,534
+    // stand-ins and reuses them in turn. Four such characters a unit over 35,000 units make
+    // 140,000, which wraps the stand-ins twice. Each token must still map to its own source.
+    let unit = [("x", "x"), ("&", "&amp;"), ("y", "y"), ("A", "&#x41;")];
+    let units = 35_000;
+    let body = unit
+        .iter()
+        .map(|(_, src)| *src)
+        .collect::<String>()
+        .repeat(units);
+    let source = format!("<p>{body}</p>");
+    let (doc, _) = checked(&source, whole(&source));
+    assert_eq!(doc.blocks.len(), 1);
+    let projection = doc.blocks[0].projection.as_ref().unwrap();
+    let expected = unit
+        .iter()
+        .map(|(text, _)| *text)
+        .collect::<String>()
+        .repeat(units);
+    assert_eq!(projection.text(), expected);
+    let tokens = projection.tokens();
+    assert_eq!(tokens.len(), unit.len() * units);
+    for (i, (token, (text, src))) in tokens.iter().zip(unit.iter().cycle()).enumerate() {
+        let found = &source[token.src.start()..token.src.end()];
+        assert_eq!((token.text.as_str(), found), (*text, *src), "token {i}");
     }
 }
 

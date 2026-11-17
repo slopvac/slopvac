@@ -92,7 +92,7 @@ digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 
 #[test]
 fn unsorted_input_is_written_in_canonical_order() {
-    let full = include_str!("fixtures/packs-lock/valid/full.toml");
+    let full = include_str!("../../../schemas/v3/conformance/packs-lock/valid/full.toml");
     let lock = Lockfile::parse(full).unwrap();
     assert_eq!(lock.to_toml(), FULL_CANONICAL);
 }
@@ -105,7 +105,10 @@ fn canonical_text_round_trips_byte_for_byte() {
 
 #[test]
 fn serialise_then_parse_gives_an_equal_lock() {
-    let lock = Lockfile::parse(include_str!("fixtures/packs-lock/valid/full.toml")).unwrap();
+    let lock = Lockfile::parse(include_str!(
+        "../../../schemas/v3/conformance/packs-lock/valid/full.toml"
+    ))
+    .unwrap();
     assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
 }
 

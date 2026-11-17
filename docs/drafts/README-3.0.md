@@ -8,13 +8,13 @@
   </picture>
 </p>
 
-[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)
-[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)
+[![CI](https://github.com/slopvac/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/slopvac/slopvac/actions/workflows/test.yml)
+[![Security](https://github.com/slopvac/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/slopvac/slopvac/actions/workflows/security.yml)
 [![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)
 
 [Install](#install) · [Quick start](#quick-start) · [What it checks](#what-it-checks) ·
 [Agent setup](#agent-setup) · [CI](#ci-integration) · [Packs and plugins](#packs-and-plugins) ·
-[Upgrade from 2.x](#upgrade-from-2x) · [Reference](https://srobroek.github.io/slopvac/)
+[Upgrade from 2.x](#upgrade-from-2x) · [Reference](https://slopvac.github.io/slopvac/)
 
 `slopvac` lints prose and source comments. Its rules cover AI writing patterns and general prose
 quality, including documentation discipline and technical-writing constraints. Use it on
@@ -31,8 +31,8 @@ may need a Python runtime for its bundled docutils adapter. A plugin can need it
 | Channel | Command |
 | --- | --- |
 | uv (default) | `uv tool install slopvac`, or run once with `uvx slopvac` |
-| Homebrew | `brew install srobroek/tap/slopvac` |
-| Release archive or installer | Download from the slopvac [GitHub releases](https://github.com/srobroek/slopvac/releases) |
+| Homebrew | `brew install slopvac/tap/slopvac` |
+| Release archive or installer | Download from the slopvac [GitHub releases](https://github.com/slopvac/slopvac/releases) |
 
 `uvx slopvac@latest` forces the latest stable release. Release archives carry minisign signatures
 and GitHub attestations.
@@ -172,7 +172,7 @@ does not call a model. Set `[guidance] level` in `slopvac.toml` to change the de
 
 ```yaml
 repos:
-  - repo: https://github.com/srobroek/slopvac
+  - repo: https://github.com/slopvac/slopvac
     rev: v3.0.0 # x-release-please-version
     hooks:
       - id: slopvac
@@ -182,7 +182,7 @@ repos:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: srobroek/slopvac@v3.0.0 # x-release-please-version
+- uses: slopvac/slopvac@v3.0.0 # x-release-please-version
   with:
     paths: README.md docs/
 ```
@@ -245,7 +245,7 @@ For Markdown hygiene, use [rumdl](https://github.com/rvben/rumdl) next to slopva
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance. Use
 [SECURITY.md](SECURITY.md) to report vulnerabilities in private. File bugs, rule findings, and
-proposals with an [issue form](https://github.com/srobroek/slopvac/issues/new/choose). Do not post
+proposals with an [issue form](https://github.com/slopvac/slopvac/issues/new/choose). Do not post
 security reports as issues.
 
 ## License

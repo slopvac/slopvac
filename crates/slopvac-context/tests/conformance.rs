@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use slopvac_context::{GenreSpec, TaggerSpec};
 
-const BASE: &str = "https://srobroek.github.io/slopvac/schemas/v3";
+const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3";
 
 fn schemas() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3")
@@ -33,14 +33,22 @@ fn read_json(path: &Path) -> Value {
     reason = "test helper outside a test fn: a setup failure should fail the calling test"
 )]
 fn validator(file: &str) -> jsonschema::Validator {
+    validator_with(file, &[])
+}
+
+/// Like [`validator`], but a schema in `replace` stands in for the published file of the
+/// same name.
+fn validator_with(file: &str, replace: &[(&str, Value)]) -> jsonschema::Validator {
     let mut registry = jsonschema::Registry::new();
     for entry in fs::read_dir(schemas()).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|e| e == "json") {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            registry = registry
-                .add(format!("{BASE}/{name}"), read_json(&path))
-                .unwrap();
+            let schema = replace
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map_or_else(|| read_json(&path), |(_, v)| v.clone());
+            registry = registry.add(format!("{BASE}/{name}"), schema).unwrap();
         }
     }
     let registry = registry.prepare().unwrap();
@@ -187,4 +195,80 @@ fn every_built_in_tagger_satisfies_the_tagger_schema() {
         let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
     }
+}
+
+#[test]
+fn every_built_in_structural_tagger_satisfies_the_tagger_schema() {
+    let v = validator("tagger.schema.json");
+    let list = builtin("structural.yaml");
+    let taggers = list.as_array().unwrap();
+    assert!(taggers.len() >= 14, "{} taggers", taggers.len());
+    for t in taggers {
+        let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
+    }
+}
+
+/// Files from the merge-base of the change that added `contexts`, `when` and `scope`.
+fn before(file: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pre-8l4.5.14")
+        .join(file)
+}
+
+/// Schema evolution within one `schema_version` is additive (`docs/contract/policies.md`,
+/// section 3.2): an input that the previous schemas accepted stays valid. The previous
+/// genre and tagger schemas and the inputs they accepted are snapshots from the merge-base:
+/// the valid conformance files and the built-in genre and tagger files of that time.
+#[test]
+fn schema_evolution_is_additive() {
+    let old_schemas = [
+        ("genre.schema.json", read_json(&before("genre.schema.json"))),
+        (
+            "tagger.schema.json",
+            read_json(&before("tagger.schema.json")),
+        ),
+    ];
+    let yaml_list = |file: &str| -> Vec<Value> {
+        let v: Value = serde_saphyr::from_str(&fs::read_to_string(before(file)).unwrap()).unwrap();
+        v.as_array().unwrap().clone()
+    };
+    let inputs: [(&str, Vec<Value>); 2] = [
+        (
+            "genre.schema.json",
+            vec![
+                load(&before("genre-minimal.toml")),
+                load(&before("genre-how-to.toml")),
+            ]
+            .into_iter()
+            .chain(yaml_list("genres.yaml"))
+            .collect(),
+        ),
+        (
+            "tagger.schema.json",
+            vec![
+                load(&before("tagger-minimal.toml")),
+                load(&before("tagger-requirement.toml")),
+            ]
+            .into_iter()
+            .chain(yaml_list("taggers.yaml"))
+            .collect(),
+        ),
+    ];
+    let mut checked = 0;
+    for (schema, values) in inputs {
+        let old = validator_with(schema, &old_schemas);
+        let new = validator(schema);
+        for value in values {
+            assert!(
+                old.is_valid(&value),
+                "snapshot is not valid: {}",
+                value["id"]
+            );
+            let errors: Vec<String> = new.iter_errors(&value).map(|e| e.to_string()).collect();
+            assert!(errors.is_empty(), "{}: {errors:?}", value["id"]);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 12, "{checked} inputs");
 }

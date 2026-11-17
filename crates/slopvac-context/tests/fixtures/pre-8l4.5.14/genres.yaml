@@ -1,0 +1,136 @@
+# Built-in genres, as `genre.schema.json` defines them. Heading and text patterns are PCRE2
+# and case-insensitive. Path globs ignore case. Each genre needs a score of 3 to be detected.
+# Each entry is one genre file; the list is a bundle for the built-in pack.
+
+- schema_version: 3
+  id: consumer
+  description: Shipped behavior and reader use. README, docs, guides.
+  profile: normal
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/readme*', weight: 2 }
+      - { kind: path, glob: '**/{doc,docs,guide,guides,manual}/**', weight: 1.5 }
+      - { kind: heading, pattern: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
+
+- schema_version: 3
+  id: reference
+  description: Exact operations and dated facts for use or verification. API docs, runbooks, procedures, safety text.
+  profile: strict
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{reference,api,runbook,runbooks,procedure,procedures,man}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
+      - { kind: heading, pattern: '\b(?:runbook|procedure|safety)\b', weight: 2 }
+
+- schema_version: 3
+  id: change-comms
+  description: Change, rationale, verification. PR and MR text, commits, release notes, migration guides.
+  profile: normal
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{changelog,changes,history,news,release,releases,upgrading,migration}*', weight: 3 }
+      - { kind: heading, pattern: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
+
+- schema_version: 3
+  id: internal
+  description: Requirements and decision rationale. Specifications, decision records, contributor docs.
+  profile: normal
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{adr,decision,decisions,rfc,rfcs,spec,specs,design}{/**,[-_]*,[-_]*/**}', weight: 3 }
+      - { kind: path, glob: '**/{contributing,development}*', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
+
+- schema_version: 3
+  id: informal
+  description: Immediate context. Issue comments, discussions, blogs, drafts.
+  profile: relaxed
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{blog,post,posts,draft,drafts,note,notes,discussion,discussions}/**', weight: 3 }
+      - { kind: front-matter, key: status, equals: draft, weight: 3 }
+
+# Declared, never detected: it has no `detect`. The built-in registry declares the
+# `security` context for it, see `builtin_genres`.
+- schema_version: 3
+  id: security
+  extends: [reference]
+  description: Security guidance, threat models and policies. Declared, never detected.
+
+- schema_version: 3
+  id: ui-copy
+  description: UI strings, error messages and CLI help.
+  profile: normal
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{ui-copy,ux-writing,microcopy,strings,messages}{/**,[-_.]*,[-_.]*/**}', weight: 3 }
+      - { kind: front-matter, key: type, equals: ui-copy, weight: 3 }
+
+- schema_version: 3
+  id: agent-instructions
+  extends: [reference]
+  description: Instructions for coding agents. Normative MUST and NEVER are allowed.
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{agents,claude,gemini}.md', weight: 3 }
+      - { kind: path, glob: '**/copilot-instructions.md', weight: 3 }
+      - { kind: path, glob: '**/{.cursor/rules,.github/instructions}/**', weight: 3 }
+  rules:
+    prose-craft.negative-requirement: 'off'
+
+# Diataxis content types. Each one is a consumer genre. Compass: does the reader act or
+# study, and does the page serve learning or work? Tutorial = act + learn, how-to = act +
+# work, reference = study + work, explanation = study + learn. A page that serves two
+# quadrants should be split.
+- schema_version: 3
+  id: tutorial
+  extends: [consumer]
+  description: Diataxis tutorial. A guided lesson that ends in something the reader built.
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{tutorial,tutorials}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:what you.ll (?:learn|build)|next steps|step \d+)\b', weight: 1.5 }
+  rules:
+    prose-craft.future-tense: 'off'
+
+- schema_version: 3
+  id: how-to
+  extends: [consumer]
+  description: Diataxis how-to guide. Steps that solve one task for a reader who knows the basics.
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{howto,howtos,how-to,how-tos}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*how to\b', weight: 3 }
+
+- schema_version: 3
+  id: reference-page
+  extends: [consumer]
+  description: Diataxis reference. Neutral, complete description of the machinery.
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/cli/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:options|parameters|configuration|settings|fields)\W*$', weight: 1.5 }
+
+- schema_version: 3
+  id: explanation
+  extends: [consumer]
+  description: Diataxis explanation. Background, reasons and trade-offs.
+  detect:
+    min_score: 3
+    signals:
+      - { kind: path, glob: '**/{explanation,concept,concepts,background,architecture}/**', weight: 3 }
+      - { kind: heading, pattern: '^\W*(?:background|why|design|how it works)\b', weight: 1.5 }
+  rules:
+    prose-scope.contrastive-inversion-frames: 'off'
+    prose-scope.contrastive-inversion-remainder: 'off'

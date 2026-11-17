@@ -143,7 +143,7 @@ fn schemas() -> PathBuf {
 
 /// The published schema, with its siblings registered for `$ref`.
 fn validator() -> jsonschema::Validator {
-    const BASE: &str = "https://srobroek.github.io/slopvac/schemas/v3";
+    const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3";
     let mut registry = jsonschema::Registry::new();
     for entry in fs::read_dir(schemas()).unwrap() {
         let path = entry.unwrap().path();

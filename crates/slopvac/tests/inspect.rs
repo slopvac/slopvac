@@ -113,7 +113,7 @@ fn rules_json_has_pack_categories_and_linked_rules() {
     assert_eq!(rule["severity"], "error");
     assert_eq!(
         rule["url"],
-        "https://srobroek.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"
+        "https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"
     );
 }
 
@@ -153,7 +153,7 @@ fn explain_text_shows_the_rule_in_full() {
         "{text}"
     );
     assert!(
-        text.contains("Page: https://srobroek.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"),
+        text.contains("Page: https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/"),
         "{text}"
     );
 }

@@ -1,8 +1,10 @@
 //! The generated built-in terms reference page.
 #![cfg(test)]
 
+use std::ffi::OsStr;
+use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use slopvac_terms::{TermsFile, reference_pages};
 
@@ -66,9 +68,26 @@ fn profile() -> String {
     }
 }
 
+/// Run the example with `args`. It holds a lock that every test in this file
+/// takes, and builds the example under it.
+///
+/// Each test process builds the example, and cargo replaces the executable
+/// on every build, even when nothing changed: it removes the file and links
+/// it again. Without the lock, a build in a parallel test process can remove
+/// the file just as another test starts it, and the start fails with
+/// `NotFound`.
+fn run_example(args: &[&OsStr]) -> Output {
+    let lock =
+        File::create(Path::new(env!("CARGO_TARGET_TMPDIR")).join("slopvac-terms-example.lock"))
+            .unwrap();
+    lock.lock().unwrap();
+    Command::new(example()).args(args).output().unwrap()
+}
+
 /// Build the example with the test's own profile and return the executable
 /// path that cargo reports, so any profile or target directory works. Building
 /// here also covers `cargo test --test reference`, which skips examples.
+/// Call it only while holding the lock in [`run_example`].
 fn example() -> PathBuf {
     static BUILT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     BUILT
@@ -105,18 +124,11 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn the_example_writes_terms_index_md_under_the_out_dir() {
     let out = scratch("write");
-    let status = Command::new(example()).arg(&out).status().unwrap();
-    assert!(status.success());
+    assert!(run_example(&[out.as_os_str()]).status.success());
     let written = std::fs::read_to_string(out.join("terms/index.md")).unwrap();
     assert_eq!(written, page());
     // Running again over existing output succeeds and rewrites the page.
-    assert!(
-        Command::new(example())
-            .arg(&out)
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(run_example(&[out.as_os_str()]).status.success());
     std::fs::remove_dir_all(&out).unwrap();
 }
 
@@ -125,7 +137,7 @@ fn the_example_fails_without_writing_when_the_out_dir_is_a_file() {
     let dir = scratch("io-failure");
     let blocker: &Path = &dir.join("not-a-dir");
     std::fs::write(blocker, "x").unwrap();
-    let output = Command::new(example()).arg(blocker).output().unwrap();
+    let output = run_example(&[blocker.as_os_str()]);
     assert!(!output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
     assert_eq!(std::fs::read_to_string(blocker).unwrap(), "x");
@@ -134,7 +146,7 @@ fn the_example_fails_without_writing_when_the_out_dir_is_a_file() {
 
 #[test]
 fn the_example_needs_an_out_dir_argument() {
-    let output = Command::new(example()).output().unwrap();
+    let output = run_example(&[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("usage: reference <out-dir>"));
 }

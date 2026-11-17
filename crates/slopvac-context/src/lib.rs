@@ -40,7 +40,7 @@ pub use genre::{
 pub use mixed::{MIXED_TYPES_RULE_ID, mixed_types_entry, mixed_types_rule};
 pub use pattern::{Pattern, normalize_path};
 pub use reference::reference_pages;
-pub use structural::{FrontmatterCondition, Scope, StructuralSpec, StructuralTagger, When};
+pub use structural::{FrontMatterCondition, Scope, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,

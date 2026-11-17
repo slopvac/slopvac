@@ -238,7 +238,7 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 - Changes within one `schema_version` are additive only.
   - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
-- A schema's `$id` never changes within a version. The published URL has the form `https://srobroek.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
+- A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.

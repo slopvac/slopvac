@@ -94,10 +94,11 @@ impl Contained {
         };
         #[cfg(not(unix))]
         let mut failure: Option<io::Error> = None;
-        // Residual (slopvac-8l4.9.13): once the helper has exited, Windows no
-        // longer has its pid to name a tree, so a descendant that outlived it and
-        // still holds stdout is not killed here. The lookup still ends at its
-        // deadline and never joins the blocked reader. Job objects close this gap.
+        // Residual (native Windows, slopvac-8l4.18.8): once the helper has
+        // exited, Windows no longer has its pid to name a tree, so a descendant
+        // that outlived it and still holds stdout is not killed here. The
+        // lookup still ends at its deadline and never joins the blocked
+        // reader. Job objects close this gap.
         #[cfg(not(unix))]
         if self.status.is_none() {
             if let Err(e) = Command::new(taskkill_path())

@@ -8,9 +8,18 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Polling a pidfd shows whether its process exited.
+# The plugin launcher as its own program, for this package's tests. The
+# `slopvac` binary runs the same code through `launch::intercept`.
+[[bin]]
+name = "slopvac-plugin-launcher"
+path = "src/bin/slopvac-plugin-launcher.rs"
+test = false
+doc = false
+
+# Polling a pidfd shows whether its process exited. The launcher points its
+# own standard streams at /dev/null once the plugin holds them.
 [target.'cfg(target_os = "linux")'.dependencies]
-rustix = { workspace = true, features = ["event"] }
+rustix = { workspace = true, features = ["event", "stdio"] }
 
 # O_NONBLOCK for opens in `apply`, so a swapped-in FIFO cannot block them.
 [target.'cfg(unix)'.dependencies]

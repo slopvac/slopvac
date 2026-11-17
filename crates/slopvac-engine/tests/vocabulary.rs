@@ -34,7 +34,7 @@ fn owner() -> Value {
     reason = "test helper outside a test fn: a setup failure should fail the calling test"
 )]
 fn list(entries: &[(&str, &str)]) -> Blocklist {
-    let mut text = String::new();
+    let mut text = String::from("schema_version = 3\n");
     for (word, pos) in entries {
         text.push_str("[[entries]]\nword = \"");
         text.push_str(word);

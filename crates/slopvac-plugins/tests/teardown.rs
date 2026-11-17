@@ -28,11 +28,12 @@ const WALK: Duration = Duration::from_secs(2);
 
 const PS: &str = "exec /bin/ps -A -o pid=,ppid=,pgid=,stat=,lstart=\n";
 
-/// Log the plugin leader's state, then print the real table. With a `hold`
+/// Log the state of the host's leader (the launcher on Linux, the plugin
+/// elsewhere), then print the real table. With a `hold`
 /// marker, the first run also creates `ps-started` and waits for `release`,
 /// so a teardown is held in flight.
 const OBSERVE: &str = r#"d="$1"
-leader=$(sed -n 2p "$d/pids" 2>/dev/null)
+leader=$(cat "$d/pids.leader" 2>/dev/null)
 if [ -n "$leader" ]; then
   state=$(/bin/ps -o stat= -p "$leader" | tr -d ' ')
   echo "${state:-gone}" >> "$d/leader-states"
@@ -100,10 +101,16 @@ fn the_group_is_signalled_before_its_exited_leader_is_reaped() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (dir, cfg) = seam("reap-order", &format!("{OBSERVE}{PS}"), WALK);
     // A plugin that leaves a same-group child holding its pipes, then exits.
-    let _p = start_mode("orphan-init", &dir, &cfg);
+    let p = start_mode("orphan-init", &dir, &cfg);
     let pids = pids_from(&dir.join("pids"));
-    // The leader has exited; the child dies only by the host's teardown kill.
+    // The plugin has exited. Its child dies by the host's teardown kill, or
+    // on Linux by the launcher first.
     let gone = wait_gone(&pids);
+    // The exit is reported only after the teardown that runs before the reap.
+    let end = Instant::now() + NO_HANG;
+    while p.failure().is_none() && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let states = leader_states(&dir);
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(gone, "processes {pids:?} survived");
@@ -237,9 +244,9 @@ fn table_rows_naming_the_host_or_init_as_descendants_are_never_signalled() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // The `hang` fixture writes the leader's pid at `initialize`. The rows
+    // The fixture writes the host's leader to `pids.leader`. The rows
     // claim the host and pid 1 as stopped children of the stopped leader.
-    let forged = r#"leader=$(cat "$1/pids")
+    let forged = r#"leader=$(cat "$1/pids.leader")
 t='Sat Nov 14 23:00:07 2026'
 echo "1 $leader 1 T $t"
 echo "$leader $2 $leader T $t"
@@ -270,7 +277,7 @@ fn a_row_that_lies_about_a_process_parent_does_not_reach_that_process() {
         .spawn()
         .unwrap();
     let forged = format!(
-        r#"leader=$(cat "$1/pids")
+        r#"leader=$(cat "$1/pids.leader")
 t='Sat Nov 14 23:00:07 2026'
 echo "$leader $2 $leader T $t"
 echo "{v} $leader {v} S $t"
@@ -294,6 +301,29 @@ echo "{v} $leader {v} S $t"
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(gone, "the leader {leader:?} survived");
     assert!(untouched, "the unrelated process was signalled");
+}
+
+/// A descendant the walk has not stopped yet can kill the launcher while the
+/// host walks. The launcher's orphans then go to init, so the teardown must
+/// not report complete. The table helper stands in for that descendant.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_killed_during_the_walk_leaves_the_teardown_incomplete() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let script = format!(
+        "if mkdir \"$1/killed\" 2>/dev/null; then kill -KILL \"$(cat \"$1/pids.leader\")\"; fi\n{PS}"
+    );
+    let (dir, cfg) = seam("killed-mid-walk", &script, WALK);
+    let p = start_mode("hang", &dir, &cfg);
+    let _ = pids_n(&dir.join("pids"), 1);
+    let left = kill_all_live();
+    let ran = dir.join("killed").exists();
+    drop(p);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(ran, "the helper never ran");
+    assert!(left.incomplete, "{left:?}");
 }
 
 /// Reaching the cap on held descendants ends the walk as incomplete, and the
@@ -336,7 +366,7 @@ fn forged_descendant(
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Both rows are stopped, so the walk settles after one round.
     let table = format!(
-        r#"leader=$(cat "$1/pids")
+        r#"leader=$(cat "$1/pids.leader")
 t='Sat Nov 14 23:00:07 2026'
 echo "$leader $2 $leader T $t"
 echo "{FAKE} $leader {FAKE} T $t"

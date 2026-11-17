@@ -1,6 +1,6 @@
 # 0001. Slopvac 3.0 architecture
 
-- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences.
+- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences. Decision 27 (2026-11-16) adds binary container inputs.
 - Deciders: slopvac maintainers
 - Tracking: bead `slopvac-8l4.2.1`, epic `slopvac-8l4`
 - Detail: [Slopvac 3.0 plan](slopvac-3.md)
@@ -13,9 +13,9 @@ Slopvac 2.x is a Python package. It generates Vale configuration, runs Vale, and
 - An ordinary Vale-enabled lint run starts a Python process and a Vale subprocess. `prime` does not call Vale, and `--no-vale` or a disabled config skips it.
 - Users install two tools, and the Vale version affects results.
 
-A documentation trial (GitHub issues #252 to #257) also found rule defects that need fixes. No 2.x release ships, so those fixes and a public data and plugin API land together in 3.0.0.
+A documentation trial (GitHub issue range [#252](https://github.com/slopvac/slopvac/issues/252) to [#257](https://github.com/slopvac/slopvac/issues/257)) also found rule defects that need fixes. No 2.x release ships, so those fixes and a public data and plugin API land together in 3.0.0.
 
-Labels in the experiments below come from one annotator, and several samples are small (40 to 92 documents). Treat the figures as estimates for those corpora.
+Labels in the experiments below come from one annotator, and some samples are small (40 to 92 documents). Treat the figures as estimates for those corpora.
 
 ## Decision drivers
 
@@ -81,7 +81,7 @@ Use rayon for CPU work. Use dedicated threads for waiting work, joined by crossb
 
 Build the stack on `toml_edit`, `saphyr`, serde, and `schemars`. Record file, line, and column for every contribution.
 
-- Evidence (`slopvac-8l4.4.1`): both prototypes resolved 10,000 files in under 9 µs per file with identical values.
+- Evidence (`slopvac-8l4.4.1`): both prototypes resolved 10,000 files within 9 µs per file with identical values.
   - `schematic` 0.20.12 has no per-list-element provenance, gives YAML errors without spans, reports the first error only, and overflows the stack on a cyclic `extends`. It adds 54 crates and 1.64 MB, and it was still pre-1.0.
   - The layer stack is about 850 lines. `schematic` would save about 25 to 30% of the code.
 - Rejected: `schematic`.
@@ -119,15 +119,15 @@ Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship mini
 
 ### 12. Distribution: cargo-dist, Homebrew tap, and maturin wheels
 
-cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
+cargo-dist builds archives and installers and feeds a Homebrew tap (`slopvac/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
 
 ### 13. Dependabot only
 
-Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x in PR #260, together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
+Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x in [#260](https://github.com/slopvac/slopvac/pull/260), together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
 
 ### 14. reviewdog for PR reporting
 
-The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed. The 2.x repository already reports lint findings on pull requests with reviewdog (PR #262).
+The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed. The 2.x repository already reports lint findings on pull requests with reviewdog, in [#262](https://github.com/slopvac/slopvac/pull/262).
 
 - Evidence (`slopvac-8l4.2.18`): reviewdog 0.21.3 parsed slopvac rdjsonl (151 diagnostics, 8 with replacements) and SARIF locally. The GitHub reporters were not tested.
 - Also: rumdl 0.3.4 reported 7,806 findings on the corpus with defaults. About 95% were style or flavor noise (MD013 3,381, MD033 1,712, MD051 689). It overlaps slopvac only on heading hierarchy, and partly on dashes and bold. The docs mention rumdl and nothing integrates it.
@@ -284,6 +284,20 @@ Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
 - Kept: the 2.x Python package keeps the code it has for Windows. The Rust workspace keeps its CI jobs on Windows until the code-quality epic decides, because native Windows work continues in 3.x.
 - Tracking: bead `slopvac-8l4.13.26`.
 - Rejected: shipping a best-effort Windows build without a gate. It would carry an unverified signing and containment story.
+
+### 27. Binary container inputs
+
+Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and inside PNG images that embed a diagram source. Formats: `docx`, `pptx`, `xlsx` and their macro and template variants (read-only), `odt`, `odp`, `ods`, and draw.io, Excalidraw and PlantUML PNG. EPUB and PDF are out of scope, as are Mermaid, tldraw and Inkscape images and encrypted files.
+
+- Engine: `Engine::lint_binary` takes `BinaryInput { path, bytes, format }`. Text input stays `&str`.
+- Extraction contract: a new plugin hook kind, `binary-extractor/extract`, sends bytes inline as base64. First-party extractors use the same contract in process, and wire conformance tests run them too. One validator separates valid-empty, no-source, unsupported, malformed and over-budget. A malformed payload exits 2.
+- Positions: segment-local coordinates drive matching, contexts, exclusions and fingerprints. The container byte range is provenance only. `Finding.origin` is an optional structure that carries the locator, label, segment id and local range.
+- Fix: `--fix` skips binary hosts with `SkipReason::BinaryHost`.
+- Limits: 256 MiB input, ZIP entry-count, size and ratio caps checked before expensive work, DTD off, and bounded PNG chunks. A breach exits 2.
+- Approved tradeoffs: in-process first-party extractors, PNG discovery only for `.drawio.png`, `.excalidraw.png` and explicit includes, no binary stdin, macro and template variants included, and xlsx and ods kept with a cell-occurrence model.
+- Evidence: a crate survey (`zip` has no read-side bomb guards; `roxmltree` can disable the DTD) and an adversarial review whose revisions are all adopted. No spike measured extraction speed. The PlantUML PNG value encoding is unverified.
+- Rejected: bundled subprocess plugins for first-party formats (a spawn plus base64 per file, in return for crash and memory isolation and host-enforced deadlines that the in-process extractors give up), sniffing every PNG, and a container byte offset as the finding position.
+- Tracking: epic `slopvac-8l4.20`, bead `slopvac-8l4.2.31`. Detail: [Binary container inputs](binary-inputs.md).
 
 ## Consequences
 

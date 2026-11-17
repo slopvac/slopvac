@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const BASE: &str = "https://srobroek.github.io/slopvac/schemas/v3";
+const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3";
 
 pub fn manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()

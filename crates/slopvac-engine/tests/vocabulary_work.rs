@@ -26,7 +26,7 @@ fn builds_for(blocks: usize) -> (usize, usize) {
     let list = Blocklist::parse(
         "b.toml",
         "toml",
-        "[[entries]]\nword = \"request\"\npos = \"verb\"\nreason = \"r\"\n",
+        "schema_version = 3\n[[entries]]\nword = \"request\"\npos = \"verb\"\nreason = \"r\"\n",
     )
     .unwrap();
     let engine = Engine::new(

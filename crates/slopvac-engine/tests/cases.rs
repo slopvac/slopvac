@@ -291,7 +291,7 @@ fn a_vocabulary_rule_needs_a_blocklist_and_isolation_keeps_it() {
     let list = slopvac_terms::Blocklist::parse(
         "b.toml",
         "toml",
-        "[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"r\"\n",
+        "schema_version = 3\n[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"r\"\n",
     )
     .unwrap();
     let with = engine(&[vocabulary_rule()]).with_blocklist(&list).unwrap();

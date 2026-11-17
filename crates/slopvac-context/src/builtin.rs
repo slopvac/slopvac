@@ -1,11 +1,11 @@
-//! Built-in taggers: declarative ones from `taggers.yaml`, structural ones from
-//! `structural.yaml`, and sentence-level code taggers.
+//! Built-in taggers: declarative ones from `taggers.yaml` (text) and `structural.yaml`
+//! (`when`), and sentence-level code taggers.
 
 mod leadin;
 mod sentence;
 mod text;
 
-use crate::{Error, GenreRegistry, StructuralSpec, TagRegistry, TaggerSpec, parse_genres};
+use crate::{Error, GenreRegistry, TagRegistry, TaggerSpec, parse_genres};
 
 pub use leadin::ListLeadInTagger;
 pub use sentence::{EnforcedInvariantTagger, RequirementTagger};
@@ -16,15 +16,13 @@ const GENRES: &str = include_str!("builtin/genres.yaml");
 
 /// The built-in genres. `consumer` is the fallback.
 pub fn builtin_genres() -> Result<GenreRegistry, Error> {
-    GenreRegistry::new(parse_genres(GENRES)?, "consumer")?.with_contexts("security", &["security"])
+    GenreRegistry::new(parse_genres(GENRES)?, "consumer")
 }
 
 /// A registry with every built-in tagger.
 pub fn builtin_registry() -> Result<TagRegistry, Error> {
-    let structural: Vec<StructuralSpec> =
-        serde_saphyr::from_str(STRUCTURAL).map_err(|e| Error::Parse(e.to_string()))?;
     let mut reg = TagRegistry::new();
-    for spec in structural {
+    for spec in TaggerSpec::list_from_yaml(STRUCTURAL)? {
         reg.register(Box::new(spec.compile()?))?;
     }
     for spec in TaggerSpec::list_from_yaml(TAGGERS)? {

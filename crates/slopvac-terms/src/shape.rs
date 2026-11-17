@@ -136,7 +136,7 @@ impl TermsFile {
         if raw.schema_version != 3 {
             return Err(TermsError::SchemaVersion {
                 path: path.to_owned(),
-                found: raw.schema_version,
+                found: raw.schema_version.to_string(),
             });
         }
         let entry_err = |message: String| TermsError::Entry {

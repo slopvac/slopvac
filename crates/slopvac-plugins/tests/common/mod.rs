@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use slopvac_plugins::hooks::Document;
+use slopvac_plugins::launch::Launcher;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::{
     HookKind, HostConfig, Plugin, PluginDeclaration, PluginError, PluginSpec, SpawnGate,
@@ -127,6 +128,11 @@ pub fn spec(mode: &str) -> PluginSpec {
     spec_with(mode, &json!({}), None, decl())
 }
 
+/// The launcher binary of this package, which the tests' plugins start through.
+pub fn launcher() -> Launcher {
+    Launcher::Program(env!("CARGO_BIN_EXE_slopvac-plugin-launcher").into())
+}
+
 /// Timers far above anything a healthy test needs, so load cannot fire them.
 pub fn cfg() -> HostConfig {
     HostConfig {
@@ -137,7 +143,9 @@ pub fn cfg() -> HostConfig {
             cancel_grace: Duration::from_secs(10),
             shutdown: Duration::from_secs(10),
             exit: Duration::from_secs(10),
+            ..Timeouts::default()
         },
+        launcher: launcher(),
         ..HostConfig::default()
     }
 }
@@ -152,7 +160,9 @@ pub fn tight() -> HostConfig {
             cancel_grace: Duration::from_millis(400),
             shutdown: Duration::from_millis(500),
             exit: Duration::from_millis(500),
+            ..Timeouts::default()
         },
+        launcher: launcher(),
         ..HostConfig::default()
     }
 }

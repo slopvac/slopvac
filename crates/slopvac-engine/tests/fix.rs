@@ -9,7 +9,7 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use common::parity_engine;
+use common::legacy_engine;
 use common::{engine, rule};
 use serde_json::Value;
 use serde_json::json;
@@ -40,7 +40,7 @@ fn fixed_text_matches_the_2x_reference() {
             .unwrap_or_else(|_| "{}".to_owned()),
     )
     .unwrap();
-    let engine = parity_engine();
+    let engine = legacy_engine("normal");
     let mut problems = Vec::new();
     for entry in fixture["documents"].as_array().unwrap() {
         let name = entry["name"].as_str().unwrap();

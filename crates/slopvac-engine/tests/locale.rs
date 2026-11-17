@@ -1,7 +1,8 @@
 //! Parity of the generated spelling rule with 2.x on the interim locale fixture.
 //!
-//! STUB(slopvac-8l4.3.29): `fixtures/locale-parity.json` holds what 2.x builds and reports
-//! (`fixtures/generate_locale.py`). The golden suite replaces it.
+//! `fixtures/locale-parity.json` holds what 2.x builds and reports (`fixtures/generate_locale.py`).
+//! The golden suite has no locale input, so this fixture stays the reference for the spelling
+//! rule until slopvac-8l4.3.44 wires that rule into the golden runs.
 //! `fixtures/locale-divergences.json` lists the documents whose positions differ on purpose,
 //! with the reason; every other fact is still compared, and a listed difference must still
 //! exist.

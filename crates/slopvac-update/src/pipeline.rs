@@ -3,7 +3,7 @@
 //! The order is fixed and every step is fail-closed:
 //!
 //! 1. download the archive and its `.minisig`;
-//! 2. [`ArtifactVerifier::verify`] the archive bytes;
+//! 2. [`ArtifactVerifier::verify`] the archive bytes and the release identity the signature names;
 //! 3. extract the binary into memory;
 //! 4. write it beside the installed binary and rename it into place.
 //!
@@ -16,7 +16,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
-use crate::verify::{ArtifactVerifier, VerifyError};
+use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
 /// Where release assets live.
 pub const DOWNLOAD_BASE: &str = "https://github.com/srobroek/slopvac/releases/download";
@@ -40,6 +40,19 @@ pub enum UpdateError {
         /// Transport failure.
         source: FetchError,
     },
+    /// The requested version is not newer than the running one. `self update` never downgrades.
+    #[error("refusing to install {requested}: it is not newer than the running {current}")]
+    NotNewer {
+        /// Version of this binary.
+        current: String,
+        /// Version the update asked for.
+        requested: String,
+    },
+    /// The requested version is a prerelease. `self update` installs stable releases only.
+    #[error(
+        "refusing to install {0}: it is a prerelease, and self update installs stable releases only"
+    )]
+    Prerelease(String),
     /// The signature check refused the archive.
     #[error("refusing to install: {0}")]
     Verify(#[from] VerifyError),
@@ -70,23 +83,44 @@ pub fn target_triple() -> Option<&'static str> {
 
 /// Archive file name for a target.
 ///
-/// cargo-dist's default Unix archive is `.tar.xz`. This reads `.tar.gz` only, because the
-/// workspace has no xz decoder. Releases must publish `.tar.gz` for `self update` to work
-/// (`unix-archive = ".tar.gz"` in `dist-workspace.toml`).
+/// This reads `.tar.gz` only, because the workspace has no xz decoder. The release publishes
+/// `.tar.gz` through `unix-archive = ".tar.gz"` in `dist-workspace.toml`.
 #[must_use]
 pub fn asset_name(target: &str) -> String {
     format!("slopvac-{target}.tar.gz")
 }
 
-/// Run the pipeline and replace `exe` with the release for `version`.
+/// Run the pipeline and replace `exe`, which runs `current`, with the release for `version`.
+///
+/// The verifier must see a signature made for this exact asset of this exact `version`, so a
+/// server cannot pass off an older or another target's signed archive. `version` must also be
+/// a stable release newer than `current`: `self update` has no downgrade flag and no
+/// candidate channel, so a signed prerelease is refused before any download.
 pub fn update(
     fetcher: &dyn Fetcher,
     verifier: &dyn ArtifactVerifier,
     base_url: &str,
+    current: &str,
     version: &str,
     target: &str,
     exe: &Path,
 ) -> Result<(), UpdateError> {
+    let newer = match (
+        semver::Version::parse(current),
+        semver::Version::parse(version),
+    ) {
+        (Ok(_), Ok(new)) if !new.pre.is_empty() => {
+            return Err(UpdateError::Prerelease(version.to_owned()));
+        }
+        (Ok(cur), Ok(new)) => new > cur,
+        _ => false,
+    };
+    if !newer {
+        return Err(UpdateError::NotNewer {
+            current: current.to_owned(),
+            requested: version.to_owned(),
+        });
+    }
     let asset = asset_name(target);
     let url = format!("{}/v{version}/{asset}", base_url.trim_end_matches('/'));
     let download = |url: &str, name: &str, limit| {
@@ -101,7 +135,11 @@ pub fn update(
     let sig_name = format!("{asset}.minisig");
     let signature = download(&format!("{url}.minisig"), &sig_name, MAX_SIGNATURE_BYTES)?;
 
-    verifier.verify(&archive, &signature)?;
+    let expected = ReleaseFile {
+        name: &asset,
+        version,
+    };
+    verifier.verify(&archive, &signature, &expected)?;
 
     let binary = extract_binary(&archive)?;
     replace(exe, &binary)
@@ -166,7 +204,7 @@ mod tests {
 
     struct Verdict(Result<(), VerifyError>);
     impl ArtifactVerifier for Verdict {
-        fn verify(&self, _: &[u8], _: &[u8]) -> Result<(), VerifyError> {
+        fn verify(&self, _: &[u8], _: &[u8], _: &ReleaseFile<'_>) -> Result<(), VerifyError> {
             self.0.clone()
         }
     }
@@ -215,7 +253,16 @@ mod tests {
     fn verified_archive_replaces_the_binary() {
         let (dir, exe) = installed();
         let files = release(tar_gz("slopvac-x/slopvac", b"new"));
-        update(&files, &Verdict(Ok(())), BASE, "3.1.0", TARGET, &exe).unwrap();
+        update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
         assert_eq!(leftovers(dir.path()), ["slopvac"]);
     }
@@ -227,7 +274,16 @@ mod tests {
         let (_dir, exe) = installed();
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
         let files = release(tar_gz("slopvac", b"new"));
-        update(&files, &Verdict(Ok(())), BASE, "3.1.0", TARGET, &exe).unwrap();
+        update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap();
         assert_eq!(
             std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
             0o755
@@ -238,7 +294,7 @@ mod tests {
     fn verifier_rejection_leaves_the_binary_untouched() {
         for reject in [
             VerifyError::Rejected,
-            VerifyError::NoKey,
+            VerifyError::Invalid("bad key".into()),
             VerifyError::MissingSignature,
         ] {
             let (dir, exe) = installed();
@@ -247,6 +303,7 @@ mod tests {
                 &files,
                 &Verdict(Err(reject.clone())),
                 BASE,
+                "3.0.0",
                 "3.1.0",
                 TARGET,
                 &exe,
@@ -263,10 +320,11 @@ mod tests {
 
     #[test]
     fn verifier_sees_the_downloaded_bytes_before_extraction() {
-        struct Spy(std::cell::RefCell<Option<(Vec<u8>, Vec<u8>)>>);
+        type Seen = (Vec<u8>, Vec<u8>, String);
+        struct Spy(std::cell::RefCell<Option<Seen>>);
         impl ArtifactVerifier for Spy {
-            fn verify(&self, a: &[u8], s: &[u8]) -> Result<(), VerifyError> {
-                *self.0.borrow_mut() = Some((a.to_vec(), s.to_vec()));
+            fn verify(&self, a: &[u8], s: &[u8], f: &ReleaseFile<'_>) -> Result<(), VerifyError> {
+                *self.0.borrow_mut() = Some((a.to_vec(), s.to_vec(), f.trusted_comment()));
                 Err(VerifyError::Rejected)
             }
         }
@@ -274,12 +332,69 @@ mod tests {
         // Not a valid archive: if extraction ran first the error would be `Archive`.
         let files = release(b"not an archive".to_vec());
         let spy = Spy(std::cell::RefCell::default());
-        let err = update(&files, &spy, BASE, "3.1.0", TARGET, &exe).unwrap_err();
+        let err = update(&files, &spy, BASE, "3.0.0", "3.1.0", TARGET, &exe).unwrap_err();
         assert!(matches!(err, UpdateError::Verify(_)));
         assert_eq!(
             spy.0.take().unwrap(),
-            (b"not an archive".to_vec(), b"sig".to_vec())
+            (
+                b"not an archive".to_vec(),
+                b"sig".to_vec(),
+                format!("slopvac-release file:slopvac-{TARGET}.tar.gz version:3.1.0")
+            )
         );
+    }
+
+    #[test]
+    fn a_prerelease_target_is_refused_before_any_download() {
+        for requested in ["3.2.0-rc.1", "4.0.0-alpha", "3.1.1-rc.2+build"] {
+            let (_dir, exe) = installed();
+            let files = Files(HashMap::new());
+            let err = update(
+                &files,
+                &Verdict(Ok(())),
+                BASE,
+                "3.1.0",
+                requested,
+                TARGET,
+                &exe,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err, UpdateError::Prerelease(_)),
+                "{requested}: {err}"
+            );
+            assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+        }
+    }
+
+    #[test]
+    fn a_version_that_is_not_newer_is_refused_before_any_download() {
+        for (current, requested) in [
+            ("3.1.0", "3.1.0"),
+            ("3.1.0", "3.0.9"),
+            ("3.1.0", "2.9.0"),
+            ("3.1.0", "latest"),
+            ("garbage", "3.1.0"),
+        ] {
+            let (_dir, exe) = installed();
+            // An empty server: any download would fail with `Download`, not `NotNewer`.
+            let files = Files(HashMap::new());
+            let err = update(
+                &files,
+                &Verdict(Ok(())),
+                BASE,
+                current,
+                requested,
+                TARGET,
+                &exe,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err, UpdateError::NotNewer { .. }),
+                "{current} -> {requested}: {err}"
+            );
+            assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+        }
     }
 
     #[test]
@@ -287,7 +402,16 @@ mod tests {
         let (_dir, exe) = installed();
         let mut files = release(tar_gz("slopvac", b"new"));
         files.0.retain(|k, _| !k.ends_with(".minisig"));
-        let err = update(&files, &Verdict(Ok(())), BASE, "3.1.0", TARGET, &exe).unwrap_err();
+        let err = update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
         assert!(matches!(err, UpdateError::Download { .. }));
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
@@ -296,7 +420,16 @@ mod tests {
     fn archive_without_the_binary_leaves_it_untouched() {
         let (_dir, exe) = installed();
         let files = release(tar_gz("README.md", b"hi"));
-        let err = update(&files, &Verdict(Ok(())), BASE, "3.1.0", TARGET, &exe).unwrap_err();
+        let err = update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
         assert!(matches!(err, UpdateError::NoBinary));
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
@@ -305,7 +438,16 @@ mod tests {
     fn corrupt_archive_leaves_it_untouched() {
         let (_dir, exe) = installed();
         let files = release(b"\x1f\x8b garbage".to_vec());
-        let err = update(&files, &Verdict(Ok(())), BASE, "3.1.0", TARGET, &exe).unwrap_err();
+        let err = update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
         assert!(matches!(err, UpdateError::Archive(_)));
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
@@ -315,9 +457,16 @@ mod tests {
         use crate::verify::MinisignVerifier;
         let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
         let archive = tar_gz("slopvac", b"new");
-        let sig = minisign::sign(None, &kp.sk, std::io::Cursor::new(&archive), None, None)
-            .unwrap()
-            .to_string();
+        let comment = format!("slopvac-release file:slopvac-{TARGET}.tar.gz version:3.1.0");
+        let sig = minisign::sign(
+            None,
+            &kp.sk,
+            std::io::Cursor::new(&archive),
+            Some(&comment),
+            None,
+        )
+        .unwrap()
+        .to_string();
         let verifier = MinisignVerifier::from_base64(&kp.pk.to_base64()).unwrap();
         let url = format!("{BASE}/v3.1.0/slopvac-{TARGET}.tar.gz");
 
@@ -326,7 +475,7 @@ mod tests {
             (format!("{url}.minisig"), sig.clone().into_bytes()),
             (url.clone(), archive),
         ]));
-        update(&good, &verifier, BASE, "3.1.0", TARGET, &exe).unwrap();
+        update(&good, &verifier, BASE, "3.0.0", "3.1.0", TARGET, &exe).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
 
         let (_d, exe) = installed();
@@ -335,7 +484,7 @@ mod tests {
             (format!("{url}.minisig"), sig.into_bytes()),
             (url, evil),
         ]));
-        let err = update(&bad, &verifier, BASE, "3.1.0", TARGET, &exe).unwrap_err();
+        let err = update(&bad, &verifier, BASE, "3.0.0", "3.1.0", TARGET, &exe).unwrap_err();
         assert!(matches!(err, UpdateError::Verify(VerifyError::Rejected)));
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }

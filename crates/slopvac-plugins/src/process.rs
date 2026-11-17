@@ -41,11 +41,12 @@
 //! A stopped parent cannot fork, so a process that a pidfd names and that
 //! still has the parent from the snapshot is the process from the snapshot.
 //!
-//! Residual risk R2 (`slopvac-8l4.9.13`): on macOS and any Unix without
-//! pidfds, a descendant that left the group survives the teardown and is
-//! only reported. A descendant whose parent exited before the walk was
-//! reparented to init and is not found at all; the Linux subreaper of that
-//! bead closes the gap on Linux.
+//! Residual risk R2: on macOS and any Unix without pidfds, a descendant that
+//! left the group survives the teardown and is only reported. On Linux the
+//! group leader is the launcher, a child subreaper (see
+//! [`launch`](crate::launch)), so a descendant whose parent exited before the
+//! walk is reparented to it and found. Elsewhere such a descendant is
+//! reparented to init and not found at all.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -103,7 +104,10 @@ pub struct Teardown {
     /// started, may still run.
     pub escaped: Vec<u32>,
     /// A walk ended early: the process table could not be read, or the
-    /// deadline or the cap on held descendants was reached. On Windows,
+    /// deadline or the cap on held descendants was reached. On Linux, also
+    /// a launcher that a signal ended before any kill from the host, or
+    /// during the walk: its cleanup missed something, or the plugin or a
+    /// descendant killed it. On Windows,
     /// `taskkill` did not exit with status 0; it does not run after the
     /// plugin answered `shutdown` and exited with status 0 without a kill.
     /// Descendants it did not reach may still run.
@@ -353,7 +357,8 @@ impl Group {
     }
 }
 
-/// The plugin's top process, owned by the waiter.
+/// The plugin's top process, owned by the waiter: the launcher on Linux, the
+/// plugin itself elsewhere.
 pub(crate) struct Leader {
     child: Child,
     exited: Option<std::io::Result<ExitStatus>>,
@@ -562,13 +567,26 @@ fn tear_down(leader: u32, table: Option<&TableSource>, then: Then) -> Teardown {
         &failed,
     );
     let within = table.map_or(WALK_DEADLINE, |t| t.deadline);
-    let left = unix::walk(leader, table, Instant::now() + within).kill();
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(unused_mut, reason = "only the launcher's end is checked")
+    )]
+    let mut left = unix::walk(leader, table, Instant::now() + within).kill();
     drop(last);
+    // The host has sent the leader nothing but SIGSTOP and SIGCONT so far.
+    // On Linux the leader is the launcher, which confirms its cleanup only by
+    // exiting. A launcher that a signal ended, before this teardown or during
+    // its walk, may have lost its orphans to init.
+    #[cfg(target_os = "linux")]
+    if unix::ended_by_signal(leader) {
+        left.incomplete = true;
+    }
     with_signal_outcome(left, failed.get())
 }
 
 /// `taskkill /T /F` on the leader's tree. The leader's open handle keeps its
-/// id reserved; the tree walk itself is `taskkill`'s (job objects: NEW-3).
+/// id reserved; the tree walk itself is `taskkill`'s (job objects:
+/// `slopvac-8l4.18.8`).
 #[cfg(not(unix))]
 fn tear_down(pid: u32, _table: Option<&TableSource>, then: Then) -> Teardown {
     if matches!(then, Then::Resume) {
@@ -627,7 +645,7 @@ fn graceful(acknowledged: bool, forced: bool, exited_zero: bool) -> bool {
 /// After a `graceful` exit `taskkill` does not run and the teardown is
 /// complete. Once the leader has exited, `taskkill` finds no tree, and
 /// containing the leader's descendants then is the work of job objects
-/// (residual risk, NEW-3, `slopvac-8l4.9.13`).
+/// (residual risk, native Windows support: `slopvac-8l4.18.8`).
 ///
 /// Any other teardown, a kill on a timeout, a failure, a drop or an
 /// interrupt, is complete only if `taskkill` exits with status 0. Status
@@ -668,6 +686,21 @@ mod unix {
 
     pub(super) fn pid(raw: u32) -> Option<Pid> {
         i32::try_from(raw).ok().and_then(Pid::from_raw)
+    }
+
+    /// Whether the unreaped `leader` has ended by a signal, observed without
+    /// reaping it. A leader still running, or one that exited, has not.
+    #[cfg(target_os = "linux")]
+    pub(super) fn ended_by_signal(leader: u32) -> bool {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+        let Some(p) = pid(leader) else {
+            return false;
+        };
+        let opts = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
+        matches!(
+            waitid(WaitId::Pid(p), opts),
+            Ok(Some(s)) if s.terminating_signal().is_some()
+        )
     }
 
     /// One row of the process table.
@@ -766,6 +799,9 @@ mod unix {
         /// Without pidfds no process outside the group is bound to its id:
         /// a stopped parent that ignores `SIGCHLD` still has its exited
         /// children reaped, and their ids reused.
+        ///
+        /// Best-effort macOS descendant tracking follows in slopvac-8l4.9.39;
+        /// until then escaped descendants are reported and never signalled.
         #[cfg(not(target_os = "linux"))]
         fn open(_e: &Entry) -> Reach {
             Reach::Escaped
@@ -850,11 +886,13 @@ mod unix {
 
     /// The parent of `pid` from `/proc/<pid>/stat`.
     #[cfg(target_os = "linux")]
-    fn proc_ppid(pid: u32) -> std::io::Result<u32> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    pub(crate) fn proc_ppid(pid: u32) -> std::io::Result<u32> {
+        // Bytes, not text: a process may give itself a name that is not UTF-8.
+        let stat = std::fs::read(format!("/proc/{pid}/stat"))?;
         let bad = || std::io::Error::from(std::io::ErrorKind::InvalidData);
         // The command name may hold spaces and parentheses; it ends at the last `)`.
-        let rest = &stat[stat.rfind(')').ok_or_else(bad)? + 1..];
+        let end = stat.iter().rposition(|&b| b == b')').ok_or_else(bad)?;
+        let rest = std::str::from_utf8(&stat[end + 1..]).map_err(|_| bad())?;
         rest.split_ascii_whitespace()
             .nth(1)
             .and_then(|s| s.parse().ok())
@@ -1155,6 +1193,8 @@ pub(crate) mod testing {
         }
     }
 }
+#[cfg(target_os = "linux")]
+pub(crate) use unix::proc_ppid;
 
 #[cfg(test)]
 mod tests {

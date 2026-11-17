@@ -28,7 +28,7 @@ use slopvac_text::{TextError, TextType};
 use crate::capitalization::{self, SentenceCase};
 use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
-use crate::exceptions::{Detectors, MatchSite};
+use crate::exceptions::{Detectors, MatchSite, TextOrigin};
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
@@ -987,16 +987,18 @@ impl Run<'_> {
 
     /// Whether the rule's context gate or an exception detector drops a match: `range` in
     /// `text`, at `span` in the source.
+    #[allow(clippy::too_many_arguments)]
     fn guarded(
         &self,
         rule: &slopvac_rules::Rule,
         detectors: &[&str],
         text: &str,
         range: &Range<usize>,
+        origin: Option<TextOrigin<'_>>,
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
-        self.guarded_with(None, rule, detectors, text, range, span, covering)
+        self.guarded_with(None, rule, detectors, text, range, origin, span, covering)
     }
 
     /// [`Self::guarded`] for a match that sits in `extra` context, a tag the context index
@@ -1012,6 +1014,7 @@ impl Run<'_> {
         detectors: &[&str],
         text: &str,
         range: &Range<usize>,
+        origin: Option<TextOrigin<'_>>,
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
@@ -1023,6 +1026,7 @@ impl Run<'_> {
             detectors,
             text,
             range,
+            origin,
             span,
             covering,
         )
@@ -1043,6 +1047,7 @@ impl Run<'_> {
         detectors: &[&str],
         text: &str,
         range: &Range<usize>,
+        origin: Option<TextOrigin<'_>>,
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
@@ -1066,6 +1071,7 @@ impl Run<'_> {
             text,
             range,
             span,
+            origin,
             document,
             tags: &kinds,
         };
@@ -1107,7 +1113,15 @@ impl Run<'_> {
                 // measurement has no unit to guard.
                 if let Some(unit) = &hit.unit
                     && (skip.hides(unit.span)
-                        || self.guarded(rule, &detectors, unit.text, &unit.range, unit.span, &[]))
+                        || self.guarded(
+                            rule,
+                            &detectors,
+                            unit.text,
+                            &unit.range,
+                            None,
+                            unit.span,
+                            &[],
+                        ))
                 {
                     continue;
                 }
@@ -1185,7 +1199,15 @@ impl Run<'_> {
             return Ok(None);
         }
         let covering = unit.ranges(range);
-        if self.guarded(rule, detectors, unit.text, range, span, &covering) {
+        if self.guarded(
+            rule,
+            detectors,
+            unit.text,
+            range,
+            unit.origin(),
+            span,
+            &covering,
+        ) {
             return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
@@ -1244,10 +1266,10 @@ impl Run<'_> {
         if engine.checkers.is_empty() {
             return Ok(Vec::new());
         }
-        let mut diagrams: Vec<(Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
+        let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
         match self.input.kind {
             Kind::Diagram(format) => {
-                diagrams.push((extract(format, self.input.source, 0), Vec::new()));
+                diagrams.push((format, extract(format, self.input.source, 0), Vec::new()));
             }
             Kind::Markdown | Kind::Mdx | Kind::Rst => {
                 for block in &self.parsed.blocks {
@@ -1264,6 +1286,7 @@ impl Run<'_> {
                         continue;
                     };
                     diagrams.push((
+                        format,
                         extract_fenced(format, self.input.source, body.start()..body.end()),
                         self.nearby_prose(block.span),
                     ));
@@ -1271,7 +1294,7 @@ impl Run<'_> {
             }
         }
         let mut out = Vec::new();
-        for (extraction, nearby) in &diagrams {
+        for (format, extraction, nearby) in &diagrams {
             let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
                 .iter()
                 .map(|n| slopvac_diagrams::ProseBlock {
@@ -1280,6 +1303,7 @@ impl Run<'_> {
                 })
                 .collect();
             let input = DiagramInput {
+                format: *format,
                 source: self.input.source,
                 extraction,
                 prose: &prose,
@@ -1393,6 +1417,7 @@ impl Run<'_> {
                 &detectors,
                 self.input.source,
                 &(span.start()..span.end()),
+                None,
                 span,
                 &[],
             )

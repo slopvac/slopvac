@@ -11,15 +11,37 @@ pub struct UnknownId {
     pub line: usize,
 }
 
+/// A directive for a rule that 3.0 removed. The rewrite deletes the directive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovedId {
+    /// The 2.x id as written.
+    pub id: String,
+    /// One-based line of the directive.
+    pub line: usize,
+}
+
+/// Ids found while rewriting directives.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Found {
+    /// Ids that the rename table does not know; those directives stay unchanged.
+    pub unknown: Vec<UnknownId>,
+    /// Ids of removed rules; those directives are deleted.
+    pub removed: Vec<RemovedId>,
+    /// One-based lines of comma-list directives. 2.x took one id per directive, so
+    /// these were already invalid; they stay as written.
+    pub invalid: Vec<usize>,
+}
+
 /// Rewrite 2.x rule ids in `slopvac-allow` directives to 3.0 qualified ids.
 ///
 /// Directives inside fenced code or inline code spans are documentation and stay as
-/// they are. The second value lists ids that the rename table does not know; those
-/// directives are left unchanged.
+/// they are. The second value lists ids that the rename table does not know (those
+/// directives are left unchanged) and ids of removed rules (those directives are
+/// deleted).
 #[must_use]
-pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<UnknownId>) {
+pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) {
     let mut out = String::with_capacity(text.len());
-    let mut unknown = Vec::new();
+    let mut found = Found::default();
     let mut fence: Option<(char, usize)> = None;
     let mut paragraph = String::new();
     // One-based line of the first line in `paragraph`.
@@ -29,7 +51,7 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<Unk
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
+            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
             paragraph.clear();
             out.push_str(line);
         } else {
@@ -39,8 +61,8 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Vec<Unk
             paragraph.push_str(line);
         }
     }
-    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut unknown));
-    (out, unknown)
+    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+    (out, found)
 }
 
 fn is_indented_code(line: &str) -> bool {
@@ -131,7 +153,7 @@ fn rewrite_paragraph(
     text: &str,
     start_line: usize,
     renames: &RenameTable,
-    unknown: &mut Vec<UnknownId>,
+    found: &mut Found,
 ) -> String {
     if text.is_empty() {
         return String::new();
@@ -148,9 +170,21 @@ fn rewrite_paragraph(
         out.push_str(&text[consumed..start]);
         let comment = &text[start..end];
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
-        if !quoted && comment.contains("slopvac-allow") {
+        if !quoted && is_directive(comment) {
             let line = start_line + text[..start].matches('\n').count();
-            out.push_str(&rewrite_comment(comment, line, renames, unknown));
+            if let Some(new) = rewrite_comment(comment, line, renames, found) {
+                out.push_str(&new);
+            } else {
+                // A deleted directive alone on its line takes the whole line with it.
+                let line_start = out.rfind('\n').map_or(0, |n| n + 1);
+                let rest = &text[end..];
+                let line_end = rest.find('\n').unwrap_or(rest.len());
+                if out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty() {
+                    out.truncate(line_start);
+                    consumed = (end + line_end + 1).min(text.len());
+                    continue;
+                }
+            }
         } else {
             out.push_str(comment);
         }
@@ -160,41 +194,65 @@ fn rewrite_paragraph(
     out
 }
 
+/// The text after `slopvac-allow:` when the comment is a directive: it starts with
+/// `slopvac-allow:` and its first attribute is `rule=`. Prose that only mentions the
+/// directive is not one.
+fn directive_body(comment: &str) -> Option<&str> {
+    let inner = comment.strip_prefix("<!--")?;
+    let inner = inner.strip_suffix("-->").unwrap_or(inner);
+    let body = inner.trim_start().strip_prefix("slopvac-allow:")?;
+    body.trim_start().starts_with("rule=").then_some(body)
+}
+
+fn is_directive(comment: &str) -> bool {
+    directive_body(comment).is_some()
+}
+
+/// Rewrite the id of one directive. `None` means the rule was removed and the
+/// directive should go. A comma list was invalid in 2.x (one id per directive), so it
+/// is reported and left as written.
 fn rewrite_comment(
     comment: &str,
     line: usize,
     renames: &RenameTable,
-    unknown: &mut Vec<UnknownId>,
-) -> String {
+    found: &mut Found,
+) -> Option<String> {
     let Some(pos) = comment.find("rule=") else {
-        return comment.to_owned();
+        return Some(comment.to_owned());
     };
-    let id_start = pos + 5;
-    let id_len = comment[id_start..]
-        .find(char::is_whitespace)
-        .unwrap_or(comment.len() - id_start);
-    let raw = &comment[id_start..id_start + id_len];
-    let id = raw.strip_suffix("-->").unwrap_or(raw);
-    if id.contains(':') {
-        return comment.to_owned();
+    let value_start = pos + "rule=".len();
+    let tail = &comment[value_start..];
+    let mut value_len = tail.find(char::is_whitespace).unwrap_or(tail.len());
+    if tail[..value_len].ends_with("-->") {
+        value_len -= 3;
     }
-    renames.rule(id).map_or_else(
-        || {
-            unknown.push(UnknownId {
-                id: id.to_owned(),
-                line,
-            });
-            comment.to_owned()
-        },
-        |new| {
-            format!(
-                "{}{}{}",
-                &comment[..id_start],
-                new,
-                &comment[id_start + id.len()..]
-            )
-        },
-    )
+    let id = &tail[..value_len];
+    if id.contains(',') {
+        found.invalid.push(line);
+        return Some(comment.to_owned());
+    }
+    if id.contains(':') {
+        return Some(comment.to_owned());
+    }
+    if renames.is_removed(id) {
+        found.removed.push(RemovedId {
+            id: id.to_owned(),
+            line,
+        });
+        return None;
+    }
+    if let Some(new) = renames.rule(id) {
+        return Some(format!(
+            "{}{new}{}",
+            &comment[..value_start],
+            &tail[value_len..]
+        ));
+    }
+    found.unknown.push(UnknownId {
+        id: id.to_owned(),
+        line,
+    });
+    Some(comment.to_owned())
 }
 
 #[cfg(test)]
@@ -202,9 +260,78 @@ mod tests {
     use super::*;
 
     fn run(text: &str) -> (String, Vec<UnknownId>) {
+        let (out, found) = rewrite_directives(text, &RenameTable::bundled());
+        (out, found.unknown)
+    }
+
+    const GONE: &str = "ste-sentences.vertical-list-item-punctuation";
+    const GONE2: &str = "ste-words.inconsistent-term-for-same-thing";
+
+    fn rewrite(text: &str) -> (String, Found) {
         rewrite_directives(text, &RenameTable::bundled())
     }
 
+    fn removed_ids(found: &Found) -> Vec<&str> {
+        found.removed.iter().map(|r| r.id.as_str()).collect()
+    }
+
+    #[test]
+    fn a_directive_for_a_removed_rule_is_deleted_with_its_line() {
+        let text = format!("Intro\n<!-- slopvac-allow: rule={GONE} reason=x -->\nBody\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, "Intro\nBody\n");
+        assert_eq!(
+            found.removed,
+            vec![RemovedId {
+                id: GONE.to_owned(),
+                line: 2
+            }]
+        );
+        assert_eq!(found.unknown, Vec::<UnknownId>::new());
+    }
+
+    #[test]
+    fn an_inline_directive_keeps_the_text_around_it() {
+        let text = format!("Body <!-- slopvac-allow: rule={GONE2} reason=x --> end.\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, "Body  end.\n");
+        assert_eq!(removed_ids(&found), vec![GONE2]);
+    }
+
+    #[test]
+    fn an_indented_or_trailing_space_directive_takes_its_whole_line() {
+        let text = format!("A\n   <!-- slopvac-allow: rule={GONE} reason=x -->  \nB\n");
+        let (out, _) = rewrite(&text);
+        assert_eq!(out, "A\nB\n");
+    }
+
+    #[test]
+    fn a_comma_list_stays_as_written_and_is_reported() {
+        let lists = [
+            "prose-format.no-unicode-dash,prose-craft.latinisms".to_owned(),
+            format!("{GONE},prose-format.no-unicode-dash"),
+            format!("prose-format.no-unicode-dash,{GONE}"),
+            format!("core:prose-format.no-unicode-dash,{GONE},prose-craft.latinisms"),
+        ];
+        for value in lists {
+            let text = format!("A\n  <!-- slopvac-allow: rule={value} reason=x -->\nB\n");
+            let (out, found) = rewrite(&text);
+            assert_eq!(out, text, "{value}");
+            assert_eq!(found.invalid, vec![2], "{value}");
+            assert_eq!(found.removed, Vec::<RemovedId>::new(), "{value}");
+            assert_eq!(found.unknown, Vec::<UnknownId>::new(), "{value}");
+        }
+    }
+
+    #[test]
+    fn a_comment_that_only_mentions_a_removed_rule_stays() {
+        let text = format!(
+            "<!-- note: the slopvac-allow rule={GONE} comment was removed -->\n<!-- see slopvac-allow: rule={GONE2} -->\n"
+        );
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, text);
+        assert_eq!(found, Found::default());
+    }
     #[test]
     fn qualifies_a_bare_rule_id() {
         let (out, unknown) = run(

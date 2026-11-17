@@ -20,7 +20,7 @@ import build_site
 GENRES_YAML = ROOT / "crates/slopvac-context/src/builtin/genres.yaml"
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
 # The committed schemas use this author-side prefix; the fixture schemas share it.
-OLD_PREFIX = "https://srobroek.github.io/slopvac/schemas/v3/"
+OLD_PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
 
 DATA_PACK = """\
 schema_version = 3

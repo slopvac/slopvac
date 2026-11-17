@@ -72,6 +72,7 @@ impl Run<'_> {
                             &detectors,
                             unit.text,
                             &hit.span,
+                            unit.origin(),
                             span,
                             &[],
                         )
