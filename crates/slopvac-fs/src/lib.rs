@@ -2,14 +2,38 @@
 //! read within a cap and write atomically.
 //!
 //! The crate is a leaf. It knows no slopvac domain types and depends only on the standard
-//! library, `cap-std`, `cap-fs-ext`, `etcetera` and `thiserror`. It targets Unix; 3.0 has no Windows support.
+//! library, `cap-std`, `cap-fs-ext`, `etcetera`, `rustix` and `thiserror`. It targets Unix; 3.0
+//! has no Windows support.
+//!
+//! # Threat model
+//!
+//! Repository content is hostile; a concurrent local writer is not. The confined readers and
+//! writers refuse symlinks, special files and escapes that the content of the tree can plant.
+//! They do not defend against another process that can write to the directories involved while
+//! an operation runs, such as one that swaps the destination or its parent, or replaces a
+//! temporary name. Such a process is out of scope. The one check that costs little is made: a
+//! staged file is compared with its name before it replaces the destination, and a mismatch
+//! fails the write.
+//!
+//! # Directories are UTF-8 only
+//!
+//! The per-user directory functions reject an environment variable that is not valid UTF-8 with
+//! an error. Their rules follow the XDG base directory specification, but they are not an
+//! equivalent of `etcetera`.
 
 mod dirs;
 mod error;
 mod io;
 mod path;
+mod read;
 
-pub use dirs::{CACHE_DIR_VAR, Lookup, cache_dir, cache_dir_with, config_dir, config_dir_with};
-pub use error::{Error, Result};
+pub use dirs::{
+    CACHE_DIR_VAR, HomeFallback, Lookup, cache_dir, cache_dir_with, config_dir, config_dir_with,
+};
+pub use error::{Error, InputKind, Op, Reason, Result};
 pub use io::{MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic};
 pub use path::{EXTERNAL, display_under_root, lexical_normalize};
+pub use read::{
+    ReadOptions, read_capped_regular, read_capped_regular_in, read_capped_regular_to_string,
+    read_capped_regular_to_string_in,
+};

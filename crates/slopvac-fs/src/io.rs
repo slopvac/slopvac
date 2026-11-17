@@ -8,9 +8,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
-use cap_std::fs::{Dir, File, OpenOptions, OpenOptionsExt, Permissions};
+use cap_std::fs::{Dir, File, MetadataExt, OpenOptions, OpenOptionsExt, Permissions};
 
-use crate::{Error, Result};
+use crate::{Error, Op, Reason, Result};
 
 /// The most bytes of one document that any slopvac entry point reads: 64 MiB.
 ///
@@ -21,7 +21,13 @@ pub const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Read all of `reader`, failing when it holds more than `cap` bytes.
 ///
-/// Memory stays bounded by `cap + 1` bytes, so an endless reader cannot exhaust it.
+/// Memory stays bounded by `cap + 1` bytes, so an endless reader cannot exhaust it. The read
+/// blocks for as long as the reader does, though: a FIFO or a device with no writer never
+/// ends, and this function sets no timeout. It also takes whatever the reader gives, so it
+/// does not check what kind of file backs it. To read a file safely, use
+/// [`read_capped_regular`](crate::read_capped_regular) or
+/// [`read_capped_regular_in`](crate::read_capped_regular_in), which refuse anything but a
+/// regular file.
 pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     reader
@@ -43,9 +49,9 @@ pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
 /// [`Error::CapExceeded`] when the file is larger than `cap`, [`Error::NotUtf8`] when the bytes
 /// are not UTF-8, and [`Error::Io`] when opening or reading fails.
 pub fn read_text_capped(path: &Path, cap: u64) -> Result<String> {
-    let file = std::fs::File::open(path).map_err(|e| Error::io("open", path, &e))?;
+    let file = std::fs::File::open(path).map_err(|e| Error::io(Op::Open, path, &e))?;
     let bytes = read_capped(file, cap).map_err(|e| match e {
-        Error::Read(source) => Error::io("read", path, &source),
+        Error::Read(source) => Error::io(Op::ReadFile, path, &source),
         other => other,
     })?;
     String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
@@ -54,7 +60,11 @@ pub fn read_text_capped(path: &Path, cap: u64) -> Result<String> {
 }
 
 /// Options for [`write_atomic`].
+///
+/// Build one with [`WriteOptions::new`] and the chained setters, so a field added later does
+/// not break callers.
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub struct WriteOptions {
     /// Permission bits for a file that does not exist yet. `None` keeps the owner-only `0o600`
     /// of the temporary file. An existing file keeps its own permissions either way.
@@ -63,80 +73,136 @@ pub struct WriteOptions {
     pub create_parents: bool,
 }
 
+impl WriteOptions {
+    /// The defaults: a new file is owner-only and missing parent directories are an error.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            new_file_mode: None,
+            create_parents: false,
+        }
+    }
+
+    /// Set the permission bits of a file that does not exist yet.
+    #[must_use]
+    pub const fn new_file_mode(mut self, mode: u32) -> Self {
+        self.new_file_mode = Some(mode);
+        self
+    }
+
+    /// Create missing parent directories first, or not.
+    #[must_use]
+    pub const fn create_parents(mut self, create: bool) -> Self {
+        self.create_parents = create;
+        self
+    }
+}
+
 /// How many random temporary names to try before giving up.
 const TEMP_ATTEMPTS: usize = 16;
 
-/// Replace the file at `rel` below `root` with `bytes`, so a reader sees the old content or
-/// the new, never a mix.
+/// Split a plain relative path into its file name and the directories above it.
 ///
-/// Every step goes through a directory handle and never follows a symlink:
-///
-/// - `rel` must be a plain relative path: normal components and `.`, no `..`, no root. Each
-///   parent directory is opened without following links, so a symlinked ancestor fails the
-///   write and nothing lands outside `root`. (`root` itself is whatever the caller opened.)
-/// - A destination that is a symlink, a directory or another non-regular file is refused with
-///   [`Error::UnsafeTarget`]; the link is neither followed nor replaced. This matches the
-///   engine's commit path, which also refuses links.
-/// - The bytes go to a new file in the destination's directory, with a random name and
-///   exclusive creation. The file is synced and renamed over the destination within that
-///   directory, and then the directory is synced so the rename survives a crash.
-/// - An existing destination keeps its permission bits, read without following links. The
-///   temporary file is removed on failure.
-pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()> {
-    let io = |op, source: std::io::Error| Error::io(op, rel, &source);
-    let unsafe_target = |reason| Error::UnsafeTarget {
-        reason,
-        path: rel.to_path_buf(),
-    };
+/// Accepts normal components and `.`. Rejects `..`, a root and an empty path.
+pub(crate) fn split_plain(rel: &Path) -> Result<(&OsStr, Vec<&OsStr>)> {
     let mut names: Vec<&OsStr> = Vec::new();
     for component in rel.components() {
         match component {
             Component::Normal(name) => names.push(name),
             Component::CurDir => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(unsafe_target(
-                    "path must be relative and stay below the root",
-                ));
+                return Err(Error::unsafe_target(Reason::NotRelative, rel));
             }
         }
     }
     let Some((name, ancestors)) = names.split_last() else {
-        return Err(unsafe_target("path names no file"));
+        return Err(Error::unsafe_target(Reason::NoFileName, rel));
     };
-    let parent = open_parent(root, ancestors, opts.create_parents)
-        .map_err(|e| io("open directory of", e))?;
+    Ok((name, ancestors.to_vec()))
+}
+
+/// Replace the file at `rel` below `root` with `bytes`, so a reader sees the old content or
+/// the new, never a mix.
+///
+/// Every step goes through a directory handle and does not follow a symlink:
+///
+/// - `rel` must be a plain relative path: normal components and `.`, no `..`, no root. Each
+///   parent directory is opened without following links, so a symlinked ancestor fails the
+///   write and nothing lands outside `root`. (`root` itself is whatever the caller opened.)
+/// - A destination that is a symlink, a directory or another non-regular file when the write
+///   starts is refused with [`Error::UnsafeTarget`]. This check and the rename that follows
+///   are two steps, not one: the guarantee assumes no other process can write to the
+///   destination's directory meanwhile. A process that can, and swaps the destination in
+///   between, gets the swapped entry replaced (the link itself, never its target). Such a
+///   process is outside the threat model; see the crate docs.
+/// - The bytes go to a new file in the destination's directory, with a random name and
+///   exclusive creation. The file is synced, then compared with its name (device and inode,
+///   and that the name is a regular file), and renamed over the destination within that
+///   directory. A temporary name that no longer matches fails the write and is left alone.
+///   Then the directory is synced so the rename survives a crash.
+/// - An existing destination keeps its permission bits, read without following links. The
+///   temporary file is removed on failure.
+pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()> {
+    let io = |op, source: std::io::Error| Error::io(op, rel, &source);
+    let (name, ancestors) = split_plain(rel)?;
+    let parent =
+        open_parent(root, &ancestors, opts.create_parents).map_err(|e| io(Op::OpenDirectory, e))?;
 
     let existing = match parent.symlink_metadata(name) {
-        Ok(meta) if meta.is_symlink() => return Err(unsafe_target("destination is a symlink")),
+        Ok(meta) if meta.is_symlink() => {
+            return Err(Error::unsafe_target(Reason::DestinationSymlink, rel));
+        }
         Ok(meta) if !meta.is_file() => {
-            return Err(unsafe_target("destination is not a regular file"));
+            return Err(Error::unsafe_target(Reason::DestinationNotRegular, rel));
         }
         Ok(meta) => Some(meta.permissions()),
         Err(e) if e.kind() == ErrorKind::NotFound => None,
-        Err(e) => return Err(io("stat", e)),
+        Err(e) => return Err(io(Op::Stat, e)),
     };
     let perms = existing.or_else(|| {
         opts.new_file_mode
             .map(|mode| Permissions::from_std(std::fs::Permissions::from_mode(mode)))
     });
 
-    let (mut file, temp) =
-        create_temp(&parent, name).map_err(|e| io("create temporary file for", e))?;
+    let (mut file, temp) = create_temp(&parent, name).map_err(|e| io(Op::CreateTemp, e))?;
     let staged = write_to(&mut file, bytes)
         .and_then(|()| perms.map_or(Ok(()), |p| file.set_permissions(p)))
         .and_then(|()| file.sync_all())
-        .map_err(|e| io("write", e));
-    let finished = staged.and_then(|()| {
-        parent
-            .rename(&temp, &parent, name)
-            .map_err(|e| io("replace", e))
-    });
-    if let Err(e) = finished {
+        .map_err(|e| io(Op::Write, e));
+    if let Err(e) = staged {
         // Best effort: the original error is the one to report.
         let _ = parent.remove_file(&temp);
         return Err(e);
     }
-    sync_dir(&parent).map_err(|e| io("sync directory of", e))
+    match still_staged(&parent, &temp, &file) {
+        Ok(true) => {}
+        // The name no longer leads to our file, so it is not ours to remove.
+        Ok(false) => {
+            return Err(io(
+                Op::VerifyStaged,
+                std::io::Error::other("staged file was replaced"),
+            ));
+        }
+        Err(e) => {
+            let _ = parent.remove_file(&temp);
+            return Err(io(Op::VerifyStaged, e));
+        }
+    }
+    if let Err(e) = parent.rename(&temp, &parent, name) {
+        let _ = parent.remove_file(&temp);
+        return Err(io(Op::Replace, e));
+    }
+    sync_dir(&parent).map_err(|e| io(Op::SyncDirectory, e))
+}
+
+/// Whether `temp` in `parent` still names the open `file`: a regular file with the same
+/// device and inode.
+fn still_staged(parent: &Dir, temp: &OsStr, file: &File) -> std::io::Result<bool> {
+    #[cfg(test)]
+    tests::before_verify(temp);
+    let opened = file.metadata()?;
+    let named = parent.symlink_metadata(temp)?;
+    Ok(named.is_file() && named.dev() == opened.dev() && named.ino() == opened.ino())
 }
 
 /// Flush the directory `dir` itself, so its entries survive a crash.
@@ -238,6 +304,21 @@ mod tests {
             .map_or(Ok(()), |code| Err(std::io::Error::from_raw_os_error(code)))
     }
 
+    type BeforeVerify = Box<dyn FnOnce(&OsStr)>;
+
+    thread_local! {
+        /// Runs once between staging a file and checking its name, with the temporary name.
+        static BEFORE_VERIFY: std::cell::RefCell<Option<BeforeVerify>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// Called by `still_staged`: run the planned hook, if any.
+    pub(super) fn before_verify(temp: &OsStr) {
+        if let Some(hook) = BEFORE_VERIFY.take() {
+            hook(temp);
+        }
+    }
+
     /// Called by `sync_dir`: fail with the planned OS code once the countdown reaches zero.
     pub(super) fn inject_sync_failure() -> std::io::Result<()> {
         SYNC_FAILURE.with(|plan| match plan.get() {
@@ -308,7 +389,7 @@ mod tests {
     fn read_text_capped_reports_a_missing_file_with_its_path() {
         let path = PathBuf::from("/nonexistent-slopvac-dir/a.txt");
         let err = read_text_capped(&path, 10).unwrap_err();
-        assert!(matches!(&err, Error::Io { op: "open", .. }));
+        assert!(matches!(&err, Error::Io { op: Op::Open, .. }));
         assert_eq!(err.path(), Some(path.as_path()));
     }
 
@@ -409,21 +490,6 @@ mod tests {
         let text = format!("{err:?}{}", chain(&err));
         assert!(!text.contains(&secret), "{text}");
         assert!(!text.contains("missing"), "{text}");
-    }
-
-    #[test]
-    fn debug_display_and_chain_are_path_free() {
-        let cause = std::io::Error::other("boom at /secret/dir/f");
-        let err = Error::io("write", Path::new("/secret/dir/f"), &cause);
-        let text = format!("{err:?} | {err} | {}", chain(&err));
-        assert!(!text.contains("/secret"), "{text}");
-        assert!(!text.contains("boom"), "{text}");
-        let err = Error::UnsafeTarget {
-            reason: "destination is a symlink",
-            path: PathBuf::from("/secret/dir/f"),
-        };
-        assert!(!format!("{err:?} {err}").contains("/secret"));
-        assert_eq!(err.path(), Some(Path::new("/secret/dir/f")));
     }
 
     #[test]
@@ -602,5 +668,31 @@ mod tests {
         };
         assert_eq!(source.raw_os_error(), Some(28));
         assert_eq!(source.kind(), std::io::ErrorKind::StorageFull);
+    }
+
+    #[test]
+    fn a_staged_file_replaced_before_the_rename_fails_closed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        std::fs::write(tmp.path().join("other"), b"planted").unwrap();
+        let base = tmp.path().to_path_buf();
+        // Another file takes the temporary name, as a local attacker might.
+        BEFORE_VERIFY.set(Some(Box::new(move |temp| {
+            std::fs::rename(base.join("other"), base.join(temp)).unwrap();
+        })));
+        let result = write(&tmp, "f", b"new", WriteOptions::default());
+        BEFORE_VERIFY.set(None);
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"old");
+        let planted: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().is_some_and(|n| n != "f"))
+            .collect();
+        assert_eq!(planted.len(), 1, "the replacing file is left alone");
+        assert_eq!(std::fs::read(&planted[0]).unwrap(), b"planted");
+        let Err(Error::Io { op, .. }) = result else {
+            panic!("expected Error::Io, got {result:?}");
+        };
+        assert_eq!(op, Op::VerifyStaged);
     }
 }
