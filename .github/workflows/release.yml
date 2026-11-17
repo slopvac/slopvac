@@ -411,13 +411,13 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: srobroek
+          owner: slopvac
           repositories: homebrew-tap
           permission-contents: write
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: true
-          repository: "srobroek/homebrew-tap"
+          repository: "slopvac/homebrew-tap"
           token: ${{ steps.tap-token.outputs.token }}
       # So we have access to the formula
       - name: Fetch homebrew formulae

@@ -528,12 +528,12 @@ def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workfl
     assert mint["with"] == {
         "client-id": "${{ vars.RELEASE_APP_CLIENT_ID }}",
         "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
-        "owner": "srobroek",
+        "owner": "slopvac",
         "repositories": "homebrew-tap",
         "permission-contents": "write",
     }
     checkout = steps[1]
-    assert checkout["with"]["repository"] == "srobroek/homebrew-tap"
+    assert checkout["with"]["repository"] == "slopvac/homebrew-tap"
     assert checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
     # No stored secret feeds the tap push, in this or any other workflow.
     for path in (ROOT / ".github" / "workflows").glob("*.yml"):

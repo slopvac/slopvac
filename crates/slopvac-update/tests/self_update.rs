@@ -12,7 +12,7 @@ use slopvac_update::verify::{
     ArtifactVerifier, MinisignVerifier, ReleaseFile, ReleaseVerifier, VerifyError,
 };
 
-const LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/slopvac/slopvac/releases/latest";
 const BASE: &str = "https://example.test/dl";
 /// The variable that locates the per-user config directory (receipts) on this platform.
 const CONFIG_HOME_VAR: &str = if cfg!(windows) {
@@ -88,7 +88,7 @@ fn installed() -> Fixture {
     std::fs::create_dir_all(&cfg).unwrap();
     let receipt = serde_json::json!({
         "install_prefix": prefix,
-        "source": {"app_name": "slopvac", "owner": "srobroek", "name": "slopvac", "release_type": "github"},
+        "source": {"app_name": "slopvac", "owner": "slopvac", "name": "slopvac", "release_type": "github"},
     });
     std::fs::write(cfg.join("slopvac-receipt.json"), receipt.to_string()).unwrap();
     Fixture { dir, exe }
@@ -349,7 +349,7 @@ fn other_installs_print_their_upgrade_command_and_change_nothing() {
     assert_eq!(err.code, "self-update-unmanaged");
     assert!(err.message.contains("homebrew"), "{}", err.message);
     assert!(
-        err.message.contains("brew upgrade srobroek/tap/slopvac"),
+        err.message.contains("brew upgrade slopvac/tap/slopvac"),
         "{}",
         err.message
     );
@@ -391,5 +391,25 @@ fn version_json_never_starts_a_refresh() {
     let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
     let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
     assert_eq!(doc["notices"], serde_json::json!([]));
+    assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn unknown_installs_point_to_the_slopvac_org_releases() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("somewhere/else/slopvac");
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"old binary").unwrap();
+    let fx = Fixture { dir, exe };
+    let srv = server("3.1.0");
+    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "self-update-unmanaged");
+    assert!(
+        err.message
+            .contains("download a release from https://github.com/slopvac/slopvac/releases"),
+        "{}",
+        err.message
+    );
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
 }

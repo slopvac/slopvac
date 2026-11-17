@@ -246,7 +246,7 @@ _TAP_MINT_STEP = """\
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: srobroek
+          owner: slopvac
           repositories: homebrew-tap
           permission-contents: write
 """
@@ -258,7 +258,7 @@ _TAP_CHECKOUT = re.compile(
     r"      - uses: actions/checkout@\S+ # \S+\n"
     r"        with:\n"
     r"(?:          [^\n]*\n)*?"
-    r"          repository: \"srobroek/homebrew-tap\"\n"
+    r"          repository: \"slopvac/homebrew-tap\"\n"
     r"(?:          [^\n]*\n)*?" + re.escape(_TAP_TOKEN_OLD)
 )
 

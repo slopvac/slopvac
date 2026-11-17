@@ -4,7 +4,7 @@ name: Publish slopvac
 # is stored anywhere. The identity PyPI must be configured to trust is the
 # combination below, and every field has to match exactly:
 #
-#   Owner:               srobroek
+#   Owner:               slopvac
 #   Repository:          slopvac
 #   Workflow filename:   publish-lint.yml
 #   Environment:         pypi

@@ -175,7 +175,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     let method = rt.method();
     if method != InstallMethod::Installer {
         let advice = method.upgrade_command().map_or_else(
-            || "download a release from https://github.com/srobroek/slopvac/releases".to_owned(),
+            || "download a release from https://github.com/slopvac/slopvac/releases".to_owned(),
             |c| format!("run `{c}`"),
         );
         return Err(Failure::new(

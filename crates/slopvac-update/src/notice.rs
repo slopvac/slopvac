@@ -23,7 +23,7 @@ pub const CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 /// Longest a refresh may delay a command.
 pub const REFRESH_DEADLINE: Duration = Duration::from_millis(1500);
 const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
-const GITHUB_LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
+const GITHUB_LATEST: &str = "https://api.github.com/repos/slopvac/slopvac/releases/latest";
 const PYPI_JSON: &str = "https://pypi.org/pypi/slopvac/json";
 
 /// Reads an environment variable.
@@ -82,7 +82,7 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
             message.push_str(cmd);
             message.push_str("`.");
         }
-        None => message.push_str(" See https://github.com/srobroek/slopvac/releases."),
+        None => message.push_str(" See https://github.com/slopvac/slopvac/releases."),
     }
     if let Some(hint) = &migrate_hint {
         message.push(' ');
@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(n.latest, "3.1.0");
         assert_eq!(
             n.upgrade_command.as_deref(),
-            Some("brew upgrade srobroek/tap/slopvac")
+            Some("brew upgrade slopvac/tap/slopvac")
         );
         assert_eq!(n.migrate_hint, None);
         assert_eq!(cache.read().unwrap(), entry(T0, "3.1.0"));
@@ -571,7 +571,7 @@ mod tests {
     fn unknown_channel_points_at_releases() {
         let n = notice_for("3.0.0", "3.1.0", InstallMethod::Unknown).unwrap();
         assert_eq!(n.upgrade_command, None);
-        assert!(n.message.contains("github.com/srobroek/slopvac/releases"));
+        assert!(n.message.contains("github.com/slopvac/slopvac/releases"));
     }
 
     #[test]

@@ -14,8 +14,8 @@ edition = "2024"
 # slightly older toolchain still build. rust-toolchain.toml pins the dev toolchain.
 rust-version = "1.97"
 license = "Apache-2.0"
-repository = "https://github.com/srobroek/slopvac"
-homepage = "https://github.com/srobroek/slopvac"
+repository = "https://github.com/slopvac/slopvac"
+homepage = "https://github.com/slopvac/slopvac"
 publish = false
 
 [workspace.dependencies]
