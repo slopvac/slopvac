@@ -1,6 +1,8 @@
 //! Generated text: steering blocks, the skill and the reviewer agent files, and
 //! Agent Skills validation (<https://agentskills.io/specification>).
 
+use std::fmt::Write as _;
+
 use crate::harness::{AgentFormat, REVIEWER_NAME, SKILL_NAME};
 use crate::managed::MARKER;
 
@@ -114,6 +116,82 @@ pub fn check_model_format(format: AgentFormat, model: &str) -> Result<(), String
     }
 }
 
+/// Shell rules of the reviewer, in match order: the last matching rule wins, so the
+/// catch-all deny comes first. Only read-only subcommands are allowed. `lint` is left out
+/// because it can write (`--fix`), and `setup`, `init`, `fix` and `review` (which may call a
+/// provider) match no allow rule.
+///
+/// The shell operators are denied after the allows as a second layer. `OpenCode` splits a
+/// compound command into subcommands and checks each one, and it refuses a command whose
+/// dynamic evaluation it cannot analyse. Those two behaviours are the first layer; the
+/// documentation does not spell out every substitution form, so these rules do not rely on
+/// them alone.
+///
+/// Semantics: <https://opencode.ai/docs/permissions/> (matching, scanner) and
+/// <https://opencode.ai/docs/agents/#permissions>.
+const SHELL_RULES: [(&str, &str); 12] = [
+    ("*", "deny"),
+    ("slopvac prime *", "allow"),
+    ("slopvac rules *", "allow"),
+    ("slopvac explain *", "allow"),
+    ("slopvac claims *", "allow"),
+    ("*>*", "deny"),
+    ("*;*", "deny"),
+    ("*&*", "deny"),
+    ("*|*", "deny"),
+    ("*$(*", "deny"),
+    ("*`*", "deny"),
+    ("*\n*", "deny"),
+];
+
+/// Quote `value` as a YAML double-quoted scalar.
+fn yaml_quote(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    format!("\"{escaped}\"")
+}
+
+/// The reviewer's permissions in both `OpenCode` frontmatter dialects.
+///
+/// `OpenCode` reads a file with any of `permissions`, `system`, `request` or `disabled` as the
+/// current (V2) format and ignores V1 fields in it; every other file is read as V1. The file
+/// carries both fields, so each version enforces the same policy and neither sees the other.
+fn opencode_permissions() -> String {
+    let mut v2 =
+        String::from("permissions:\n  - action: \"*\"\n    resource: \"*\"\n    effect: deny\n");
+    for action in ["read", "grep", "glob"] {
+        let _ = write!(
+            v2,
+            "  - action: {action}\n    resource: \"*\"\n    effect: allow\n"
+        );
+    }
+    for env in ["*.env", "*.env.*"] {
+        let _ = write!(
+            v2,
+            "  - action: read\n    resource: {}\n    effect: deny\n",
+            yaml_quote(env)
+        );
+    }
+    for (resource, effect) in SHELL_RULES {
+        let _ = write!(
+            v2,
+            "  - action: shell\n    resource: {}\n    effect: {effect}\n",
+            yaml_quote(resource)
+        );
+    }
+    let mut v1 = String::from(
+        "permission:\n  \"*\": deny\n  edit: deny\n  task: deny\n  webfetch: deny\n  websearch: deny\n  \
+         external_directory: deny\n  grep: allow\n  glob: allow\n  read:\n    \"*\": allow\n    \"*.env\": deny\n    \
+         \"*.env.*\": deny\n  bash:\n",
+    );
+    for (resource, effect) in SHELL_RULES {
+        let _ = writeln!(v1, "    {}: {effect}", yaml_quote(resource));
+    }
+    v2 + &v1
+}
+
 /// The reviewer agent file. It runs only when `slopvac prime review` invokes it.
 ///
 /// With no model, the file carries [`MODEL_PLACEHOLDER`] as a comment, so the
@@ -133,15 +211,13 @@ pub fn reviewer_agent(format: AgentFormat, model: Option<&str>) -> String {
     let head = match format {
         AgentFormat::Opencode => format!(
             "name: {REVIEWER_NAME}\ndescription: \"{description}\"\nmode: subagent\n{model_line}\
-             permissions:\n  - action: \"*\"\n    resource: \"*\"\n    effect: deny\n  \
-             - action: read\n    resource: \"*\"\n    effect: allow\n  \
-             - action: grep\n    resource: \"*\"\n    effect: allow\n  \
-             - action: glob\n    resource: \"*\"\n    effect: allow\n  \
-             - action: shell\n    resource: \"slopvac *\"\n    effect: allow\n"
+             {}",
+            opencode_permissions()
         ),
+        // The `tools` allowlist cannot scope Bash to commands, so the reviewer gets no Bash.
         AgentFormat::Claude => format!(
             "name: {REVIEWER_NAME}\ndescription: \"{description}\"\n\
-             tools: Read, Grep, Glob, Bash\n{model_line}"
+             tools: Read, Grep, Glob\n{model_line}"
         ),
     };
     format!("---\n{head}---\n{MARKER}\n\n{body}\n")

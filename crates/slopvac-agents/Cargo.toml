@@ -29,6 +29,7 @@ thiserror.workspace = true
 [dev-dependencies]
 # Enable counters for integration tests without changing the default features.
 slopvac-agents = { path = ".", features = ["test-counters"] }
+serde-saphyr.workspace = true
 tempfile.workspace = true
 
 [lints]
