@@ -70,6 +70,7 @@ pub use error::SyncError;
 use crate::extract::{
     ExtractError, Limits, StagedTree, TreeHash, extract_targz, tree_hash, verify_tree,
 };
+use crate::launch::Launcher;
 use crate::lock::{
     LockedPack, Lockfile, PackId, ResolvedPack, SourceKind, diff, outdated as lock_outdated,
 };
@@ -166,6 +167,8 @@ pub struct Syncer<'a> {
 /// a local repository in place of the locked HTTPS URL.
 struct GitSettings {
     timeout: Duration,
+    memory: u64,
+    launcher: Launcher,
     /// `(locked URL prefix, replacement prefix)`, tests only.
     rewrite: Option<(String, String)>,
 }
@@ -192,6 +195,8 @@ impl<'a> Syncer<'a> {
             executables: BTreeMap::new(),
             git: GitSettings {
                 timeout: GIT_TIMEOUT,
+                memory: git::GIT_MEMORY_BYTES,
+                launcher: Launcher::CurrentExe,
                 rewrite: None,
             },
         }
@@ -207,6 +212,23 @@ impl<'a> Syncer<'a> {
     #[must_use]
     pub fn with_git_rewrite_for_tests(mut self, from: &str, to: &str) -> Self {
         self.git.rewrite = Some((from.to_owned(), to.to_owned()));
+        self
+    }
+
+    /// The program that runs `git` under resource limits. The default is the
+    /// running executable, which must call [`crate::launch::intercept`] first
+    /// thing in `main`; a test points this at the package's launcher binary.
+    #[must_use]
+    pub fn with_launcher(mut self, launcher: Launcher) -> Self {
+        self.git.launcher = launcher;
+        self
+    }
+
+    /// Test seam: a lower memory limit for `git`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_git_memory_for_tests(mut self, bytes: u64) -> Self {
+        self.git.memory = bytes;
         self
     }
 
@@ -634,6 +656,11 @@ impl<'a> Syncer<'a> {
         };
         let program = git::find_git(self.project_root)
             .ok_or_else(|| git_failed("git was not found in a trusted PATH directory".into()))?;
+        let launcher = self
+            .git
+            .launcher
+            .path()
+            .map_err(|e| git_failed(format!("cannot find the launcher: {e}")))?;
         let scratch = self.store.scratch_dir()?;
         let mut staged = StagedTree::new(&self.store.trees(), self.limits).map_err(extract)?;
         let request = git::Request {
@@ -643,6 +670,10 @@ impl<'a> Syncer<'a> {
             allow_local,
             timeout: self.git.timeout,
             limits: self.limits,
+            confinement: Some(git::Confinement {
+                launcher: &launcher,
+                memory: self.git.memory,
+            }),
         };
         git::export_commit(&request, scratch.path(), &mut staged).map_err(|e| match e {
             git::GitError::Failed(msg) => git_failed(msg),

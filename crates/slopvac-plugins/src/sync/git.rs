@@ -54,11 +54,13 @@
 //!
 //! # Residual risks
 //!
-//! `git` has no option to cap the memory of `index-pack`. Until the plugin
-//! launcher (`slopvac-8l4.9.13`) can run `git` under an `RLIMIT_AS` cap
-//! (`confine` is the stub; `unsafe` is forbidden here), a delta chain that
-//! expands one object past the memory of the machine is bounded only by the
-//! deadline and `core.deltaBaseCacheLimit`.
+//! `git` has no option to cap the memory of `index-pack`, so every `git`
+//! command runs through the plugin launcher ([`crate::launch`]) with a data
+//! memory limit of 2 GiB, a CPU limit, an open-file limit and a file-size limit.
+//! The launcher sets `RLIMIT_DATA` on Linux only; macOS enforces no memory limit,
+//! so there a delta chain is bounded by the deadline and
+//! `core.deltaBaseCacheLimit` alone. The binary that runs the sync must call
+//! [`crate::launch::intercept`] first thing in `main`.
 //!
 //! The caller compares the resulting tree hash with the lock before anything
 //! reaches the store.
@@ -136,6 +138,9 @@ pub(super) struct Request<'a> {
     pub(super) allow_local: bool,
     pub(super) timeout: Duration,
     pub(super) limits: Limits,
+    /// Production always sets this. Only the unit tests that inspect the
+    /// command line leave it `None`.
+    pub(super) confinement: Option<Confinement<'a>>,
 }
 
 /// The `git` program: the first in a trusted `PATH` directory (see the module
@@ -201,22 +206,74 @@ fn trusted_path(path: &Path, me: u32) -> bool {
     }
 }
 
-/// Most address space a `git` process may use (CWE-409, threat model E4).
+/// Most data memory a `git` process may use (CWE-409, threat model E4).
 /// `index-pack` rebuilds delta chains in memory, and `git` has no setting that
 /// caps it.
-const GIT_MEMORY_BYTES: u64 = 2 << 30;
+pub(super) const GIT_MEMORY_BYTES: u64 = 2 << 30;
+/// Open files for one `git` process.
+const GIT_OPEN_FILES: u64 = 1024;
 
-/// Run `cmd` under a memory cap of `memory_bytes`.
-///
-/// STUB(slopvac-8l4.9.13): the cap is an `RLIMIT_AS` and `RLIMIT_DATA` limit set
-/// before `git` starts. `unsafe` is forbidden here, so it needs the plugin
-/// launcher of `slopvac-8l4.9.13`, which sets rlimits through `rustix` in a
-/// re-executed mode. Until that lands this returns `cmd` unchanged and a hostile
-/// delta chain is bounded only by the deadline. The ignored test
-/// `a_deep_delta_chain_to_a_huge_object_is_stopped_by_the_memory_cap` in
-/// `tests/sync_git.rs` is the regression to enable with it.
-fn confine(cmd: Command, _memory_bytes: u64) -> Command {
-    cmd
+/// How `git` is started: through the plugin launcher, which sets the resource
+/// limits (memory, CPU time, open files, file size) before `git` runs and
+/// kills the whole process tree when `git` ends. `unsafe` is forbidden here, so
+/// there is no `pre_exec`; the launcher is the one place that sets limits.
+#[derive(Clone, Copy)]
+pub(super) struct Confinement<'a> {
+    /// The launcher program (see [`crate::launch`]).
+    pub(super) launcher: &'a Path,
+    /// Data-memory limit in bytes. Enforced on Linux; macOS has none (R2).
+    pub(super) memory: u64,
+}
+
+/// `cmd` run through the launcher under the limits for `request`. The launcher
+/// starts with an empty environment and hands `git` exactly the variables of
+/// `cmd`; the working directory and the arguments carry over.
+#[cfg(unix)]
+fn confine(cmd: &Command, request: &Request<'_>, how: Confinement<'_>) -> Command {
+    let secs = request.timeout.as_secs().saturating_add(5);
+    let limits = crate::launch::Limits {
+        cpu_secs: secs,
+        open_files: GIT_OPEN_FILES,
+        file_size: request
+            .limits
+            .compressed_bytes
+            .saturating_mul(2)
+            .saturating_add(1 << 20),
+        memory: how.memory,
+    };
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let envs: Vec<(String, String)> = cmd
+        .get_envs()
+        .filter_map(|(k, v)| {
+            Some((
+                k.to_string_lossy().into_owned(),
+                v?.to_string_lossy().into_owned(),
+            ))
+        })
+        .collect();
+    let mut out = crate::launch::command(
+        how.launcher,
+        limits,
+        Duration::from_secs(2),
+        &PathBuf::from(cmd.get_program()),
+        &args,
+        envs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+    );
+    if let Some(dir) = cmd.get_current_dir() {
+        out.current_dir(dir);
+    }
+    out
+}
+
+#[cfg(not(unix))]
+fn confine(cmd: &Command, _: &Request<'_>, _: Confinement<'_>) -> Command {
+    // Not a supported platform for 3.0: no launcher exists here.
+    let mut out = Command::new(cmd.get_program());
+    out.args(cmd.get_args());
+    out
 }
 
 /// Fetch exactly `request.commit` into a scratch repository under `scratch`
@@ -326,7 +383,10 @@ impl<'a> Git<'a> {
         for entry in config {
             cmd.arg("-c").arg(entry);
         }
-        confine(cmd, GIT_MEMORY_BYTES)
+        match self.request.confinement {
+            Some(how) => confine(&cmd, self.request, how),
+            None => cmd,
+        }
     }
 
     /// A command that works on the scratch repository.
@@ -572,7 +632,7 @@ struct Watch {
     max: u64,
 }
 
-/// Bytes in the files under `dir`, counting at most [`MAX_WATCHED_NODES`] entries.
+/// Bytes in the files under `dir`, counting at most `MAX_WATCHED_NODES` entries.
 fn dir_size(dir: &Path) -> u64 {
     const MAX_WATCHED_NODES: usize = 100_000;
     let mut total = 0u64;
@@ -964,6 +1024,7 @@ mod tests {
             allow_local: false,
             timeout: Duration::from_secs(30),
             limits: Limits::default(),
+            confinement: None,
         };
         let git = Git {
             request: &request,

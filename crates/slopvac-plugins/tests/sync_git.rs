@@ -12,6 +12,7 @@ use std::process::Command;
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
 use slopvac_plugins::extract::{Limits, tree_hash};
+use slopvac_plugins::launch::Launcher;
 use slopvac_plugins::lock::Lockfile;
 use slopvac_plugins::oci::{Anonymous, Client};
 use slopvac_plugins::revoke::Revocations;
@@ -194,6 +195,18 @@ impl Env {
         lock: &Lockfile,
         limits: Limits,
     ) -> Result<SyncReport, SyncError> {
+        self.sync_capped(network, served_from, lock, limits, None)
+    }
+
+    /// Like `sync_from`, with a memory limit for `git` in place of the default.
+    fn sync_capped(
+        &self,
+        network: Network<'_>,
+        served_from: &str,
+        lock: &Lockfile,
+        limits: Limits,
+        memory: Option<u64>,
+    ) -> Result<SyncReport, SyncError> {
         let store = self.store();
         let revocations = Revocations::new(
             self.data.path().join("state"),
@@ -203,10 +216,15 @@ impl Env {
         )
         .unwrap();
         let policy = KeyPolicy::default();
-        Syncer::new(&store, network, &policy, self.project.path(), &revocations)
+        let syncer = Syncer::new(&store, network, &policy, self.project.path(), &revocations)
             .with_limits(limits)
-            .with_git_rewrite_for_tests(LOCKED_HOST, served_from)
-            .sync(lock)
+            .with_launcher(Launcher::Program(launcher().into()))
+            .with_git_rewrite_for_tests(LOCKED_HOST, served_from);
+        match memory {
+            Some(bytes) => syncer.with_git_memory_for_tests(bytes),
+            None => syncer,
+        }
+        .sync(lock)
     }
 
     fn trees(&self) -> Vec<PathBuf> {
@@ -227,6 +245,11 @@ impl Env {
         let trees = self.trees();
         assert!(trees.is_empty(), "unexpected trees: {trees:?}");
     }
+}
+
+/// The package's launcher binary, which runs `git` under resource limits.
+fn launcher() -> &'static str {
+    env!("CARGO_BIN_EXE_slopvac-plugin-launcher")
 }
 
 fn client() -> Client {
@@ -551,6 +574,7 @@ fn a_transport_other_than_https_is_refused_before_git_starts() {
         env.project.path(),
         &revocations,
     )
+    .with_launcher(Launcher::Program(launcher().into()))
     .with_git_rewrite_for_tests(LOCKED_HOST, &hostile)
     .sync(&lock)
     .unwrap_err();
@@ -751,9 +775,10 @@ fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
     );
 }
 
-/// 300 MiB of a repeating pattern, with the last byte set to `last`.
+/// 100 MiB of a repeating pattern, with the last byte set to `last`.
+#[cfg(target_os = "linux")]
 fn huge(last: u8) -> Vec<u8> {
-    let mut data: Vec<u8> = (0..300usize << 20)
+    let mut data: Vec<u8> = (0..100usize << 20)
         .map(|i| u8::try_from(i % 251).unwrap())
         .collect();
     *data.last_mut().unwrap() = last;
@@ -761,27 +786,29 @@ fn huge(last: u8) -> Vec<u8> {
 }
 
 // Regression for the delta-memory residual of CWE-409 (threat model E4): two
-// near-identical huge blobs are sent as one base and one delta, and `index-pack`
-// rebuilds the delta in memory. With git run under the memory cap of
-// `slopvac-8l4.9.13`, the fetch must fail instead of completing. Until the
-// launcher exists nothing caps `git`, so the sync succeeds and this fails.
+// near-identical large blobs are sent as one base and one delta, and
+// `index-pack` rebuilds the delta in memory. Run through the launcher with a
+// 64 MiB data limit, git must fail. Without the limit the sync succeeds (the
+// digest below is the real one), so `unwrap_err` panics: that is the
+// revert-check. Linux only: macOS enforces no memory limit (residual R2).
+#[cfg(target_os = "linux")]
 #[test]
-#[ignore = "needs the plugin launcher (slopvac-8l4.9.13) to run git under a memory cap"]
 fn a_deep_delta_chain_to_a_huge_object_is_stopped_by_the_memory_cap() {
     let (a, b) = (huge(1), huge(2));
     let files: &[(&str, &[u8])] = &[("a.bin", &a), ("b.bin", &b)];
     let remote = Remote::with_files(files, &[]);
     let env = Env::new();
     let c = client();
-    // The digest is never reached: the fetch must already have failed.
-    let lock = remote.lock(&format!("sha256:{}", "0".repeat(64)));
-    let limits = Limits {
-        expanded_bytes: 1 << 31,
-        ..Limits::default()
-    };
+    let lock = remote.lock(&expected_digest(files));
 
     let err = env
-        .sync_with(Network::Online(&c), &remote, &lock, limits)
+        .sync_capped(
+            Network::Online(&c),
+            &remote.served_from(),
+            &lock,
+            Limits::default(),
+            Some(64 << 20),
+        )
         .unwrap_err();
 
     assert!(matches!(err, SyncError::Git { .. }), "{err:?}");
