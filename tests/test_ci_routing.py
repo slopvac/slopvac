@@ -435,3 +435,63 @@ def test_compat_checks_pass_only_when_the_gate_passed(job, result, code):
         ["bash", "-c", step["run"]], env={**os.environ, "RESULT": result}, check=False
     )
     assert proc.returncode == code
+
+
+# --- full suite on the queue and main ---------------------------------------
+
+FORCE_STEP = next(s for s in JOBS["changes"]["steps"] if s.get("id") == "force")
+ROUTED_JOBS = sorted(set(GATE_NEEDS) - ALWAYS - {"changes"})
+
+
+def force_all_for(event: str, routing_changed: bool, tmp_path: Path) -> str:
+    out = tmp_path / "output"
+    out.touch()
+    env = {
+        **os.environ,
+        "EVENT_NAME": event,
+        "ROUTING_CHANGED": "true" if routing_changed else "false",
+        "GITHUB_OUTPUT": str(out),
+    }
+    subprocess.run(["bash", "-c", FORCE_STEP["run"]], env=env, check=True)
+    return out.read_text().strip()
+
+
+def test_changes_job_exposes_the_forced_flag_not_the_raw_routing_filter():
+    assert JOBS["changes"]["outputs"]["force_all"] == (
+        "${{ steps.force.outputs.force_all }}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("event", "routing_changed", "expected"),
+    [
+        ("merge_group", False, "force_all=true"),
+        ("push", False, "force_all=true"),
+        ("pull_request", True, "force_all=true"),
+        ("pull_request", False, "force_all=false"),
+    ],
+)
+def test_force_all_is_set_for_the_queue_main_and_routing_edits(
+    event, routing_changed, expected, tmp_path
+):
+    assert force_all_for(event, routing_changed, tmp_path) == expected
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+@pytest.mark.parametrize("job", ROUTED_JOBS)
+def test_every_routed_job_runs_on_the_queue_and_main_with_no_class_matched(
+    event, job, tmp_path
+):
+    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+    outputs = {"force_all"} if forced else set()
+    assert evaluate(JOBS[job]["if"], outputs) is True
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+def test_gate_expects_every_suite_to_succeed_on_the_queue_and_main(event, tmp_path):
+    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+    flags = {"force_all"} if forced else set()
+    everything = ok(*(set(GATE_NEEDS) - ALWAYS))
+    assert run_gate(flags, everything).returncode == 0
+    skipped = {**everything, "test": "skipped"}
+    assert run_gate(flags, skipped).returncode == 1
