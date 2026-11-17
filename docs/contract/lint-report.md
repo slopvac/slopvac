@@ -46,10 +46,23 @@ keys, and a consumer must ignore keys it does not know.
 
 | Key | Meaning |
 | --- | --- |
-| `data.budget` | Name of the cap that stopped extraction, from the plugin-protocol limits table. |
-| `data.limit` | The configured number, in the unit of that cap. |
+| `data.budget` | Name of the cap that stopped extraction. |
+| `data.limit` | The integer limit, in the unit of that cap. |
 
-These keys match the `data` of the plugin-protocol error with the same code.
+`data.budget` takes one of these values:
+
+| Value | Unit of `data.limit` |
+| --- | --- |
+| `segments` | Count of segments. |
+| `part` | Unicode code points. |
+| `locator` | Unicode code points. |
+| `text` | UTF-8 bytes of extracted text. |
+| `in-flight` | Bytes. |
+| `frame` | Bytes, the negotiated `maxMessageBytes`. |
+
+The list of budget names can grow in a later 3.x release, so a consumer must handle a
+name it does not know. The plugin protocol's error `data` for the same code uses the
+same keys.
 
 ## Finding origin
 
