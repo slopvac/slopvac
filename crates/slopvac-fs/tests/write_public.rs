@@ -1,5 +1,6 @@
 //! Atomic writes through the public API: visibility, cleanup and path-free errors.
 
+use std::fmt::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +17,7 @@ fn chain(err: &Error) -> String {
     let mut text = format!("{err} | {err:?}");
     let mut src = std::error::Error::source(err);
     while let Some(e) = src {
-        text.push_str(&format!(" | {e} | {e:?}"));
+        write!(text, " | {e} | {e:?}").unwrap();
         src = e.source();
     }
     text
