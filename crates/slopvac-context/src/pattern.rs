@@ -38,7 +38,7 @@ impl Pattern {
         let re =
             Regex::new(source, Options::new().caseless(caseless)).map_err(|e| Error::Pattern {
                 pattern: source.to_string(),
-                message: e.to_string(),
+                source: e,
             })?;
         Ok(Self {
             source: source.to_string(),
@@ -66,7 +66,7 @@ impl Pattern {
     fn exec_error(&self, e: &MatchError) -> Error {
         Error::Match {
             pattern: self.source.clone(),
-            message: e.to_string(),
+            source: e.clone(),
         }
     }
 }

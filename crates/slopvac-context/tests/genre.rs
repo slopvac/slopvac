@@ -542,3 +542,57 @@ fn an_assign_error_escapes_the_argument() {
     let msg = slopvac_context::run(&m).unwrap_err().to_string();
     assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
 }
+
+mod error_sources {
+    use std::error::Error as _;
+
+    use slopvac_context::{Error, GenreSpec, Pattern, TaggerSpec, files_match, parse_genres};
+
+    const BAD_YAML: &str = "{ unclosed";
+    const BAD_GLOB_GENRE: &str = "- schema_version: 3\n  id: a\n  detect:\n    signals:\n      - { kind: path, glob: '[' }\n";
+
+    fn has_source(e: &Error) -> bool {
+        e.source().is_some()
+    }
+
+    #[test]
+    fn yaml_errors_keep_their_source() {
+        assert!(has_source(&GenreSpec::from_yaml(BAD_YAML).unwrap_err()));
+        assert!(has_source(&parse_genres(BAD_YAML).unwrap_err()));
+        assert!(has_source(&TaggerSpec::from_yaml(BAD_YAML).unwrap_err()));
+        assert!(has_source(
+            &TaggerSpec::list_from_yaml(BAD_YAML).unwrap_err()
+        ));
+    }
+
+    #[test]
+    fn glob_errors_keep_their_source() {
+        let config = files_match(&["{a".to_string()], "a.md");
+        let config = config.unwrap_err();
+        assert!(has_source(&config), "{config:?}");
+        let signal =
+            slopvac_context::GenreRegistry::new(parse_genres(BAD_GLOB_GENRE).unwrap(), "a")
+                .err()
+                .unwrap();
+        assert!(has_source(&signal), "{signal:?}");
+    }
+
+    #[test]
+    fn pattern_errors_keep_their_source() {
+        assert!(has_source(&Pattern::new("(").unwrap_err()));
+        let p = Pattern::new("^(a+)+$").unwrap();
+        let text = format!("{}b", "a".repeat(64));
+        assert!(has_source(&p.is_match(&text).unwrap_err()));
+        assert!(has_source(&p.find(&text).unwrap_err()));
+    }
+
+    #[test]
+    fn a_read_error_keeps_the_io_source() {
+        let m = slopvac_context::command()
+            .try_get_matches_from(["genre", "no-such-file.md"])
+            .unwrap();
+        let err = slopvac_context::run(&m).unwrap_err();
+        assert!(has_source(&err), "{err:?}");
+        assert!(err.to_string().starts_with("no-such-file.md: "), "{err}");
+    }
+}

@@ -88,8 +88,10 @@ fn explain(
     assignments: &[GenreAssignment],
 ) -> Result<String, Error> {
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
-    let src = std::fs::read_to_string(path)
-        .map_err(|e| Error::Parse(format!("{}: {}", line(path), line(&e.to_string()))))?;
+    let src = std::fs::read_to_string(path).map_err(|source| Error::Read {
+        path: path.to_string(),
+        source,
+    })?;
     let doc = PlainDocument::from_markdown(path, &src);
     let result = registry.resolve(
         &doc as &dyn DocumentView,

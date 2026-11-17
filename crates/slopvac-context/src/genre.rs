@@ -284,7 +284,7 @@ pub struct GenreSpec {
 impl GenreSpec {
     /// Parse one genre from YAML.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Check the rules that the schema states beyond field types.
@@ -424,7 +424,7 @@ impl Signal {
 
 /// Parse a YAML list of genre definitions.
 pub fn parse_genres(yaml: &str) -> Result<Vec<GenreSpec>, Error> {
-    serde_saphyr::from_str(yaml).map_err(|e| Error::Parse(e.to_string()))
+    serde_saphyr::from_str(yaml).map_err(Error::Yaml)
 }
 
 struct CompiledSignal {
@@ -830,10 +830,12 @@ type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
     let mut b = ignore::gitignore::GitignoreBuilder::new("");
     for p in patterns {
-        b.add_line(None, p.trim())
-            .map_err(|e| Error::Parse(format!("glob `{p}`: {e}")))?;
+        b.add_line(None, p.trim()).map_err(|source| Error::Glob {
+            pattern: p.clone(),
+            source,
+        })?;
     }
-    let set = b.build().map_err(|e| Error::Parse(e.to_string()))?;
+    let set = b.build().map_err(Error::GlobSet)?;
     let rel = normalize_path(rel);
     Ok(set
         .matched_path_or_any_parents(rel.as_str(), false)
@@ -856,8 +858,10 @@ fn compile(spec: GenreSpec) -> Result<Genre, Error> {
                         .case_insensitive(true)
                         .literal_separator(true)
                         .build()
-                        .map_err(|e| {
-                            Error::Parse(format!("genre `{}`: glob `{glob}`: {e}", spec.id))
+                        .map_err(|source| Error::SignalGlob {
+                            genre: spec.id.clone(),
+                            glob: glob.clone(),
+                            source,
                         })?;
                     Matcher::Path(g.compile_matcher())
                 }

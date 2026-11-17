@@ -125,12 +125,12 @@ fn to_f32(confidence: f64) -> f32 {
 impl TaggerSpec {
     /// Parse one tagger from YAML.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Parse a YAML list of taggers.
     pub fn list_from_yaml(text: &str) -> Result<Vec<Self>, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Check the rules that the schema states and compile the patterns.
