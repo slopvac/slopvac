@@ -72,3 +72,15 @@ pub enum Help {
     #[notice("Use {{name}} placeholders")]
     Braces {},
 }
+
+/// A variant whose cause is a field named `source` with no attribute.
+#[derive(Debug, Catalog)]
+pub enum Implicit {
+    /// The step failed.
+    #[code("step-failed")]
+    #[message("step {step} failed")]
+    Step {
+        step: String,
+        source: std::io::Error,
+    },
+}

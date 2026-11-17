@@ -1,12 +1,13 @@
 id: derive-without-catalog
 language: rust
 severity: error
-message: An error type that derives `Error` must also derive `Catalog`.
+message: Derive `Catalog` instead of `thiserror::Error`; `Catalog` supplies `Display`, `Error` and `From`.
 note: >-
-  Give each variant `#[code("kebab-case")]` and a `#[message("…")]` template, so the code and
-  text live in the registry. Files under tests, benches and examples are exempt. The check
-  reads every `#[derive(...)]` on the item, so `#[derive(Error)]` plus a separate
-  `#[derive(Catalog)]` passes.
+  A type that derives `Error` and `Catalog` has conflicting impls, and an `Error` derive with
+  no `Catalog` keeps its code and text out of the registry. Give each variant
+  `#[code("kebab-case")]` and a `#[message("…")]` template, and derive `Catalog` alone. Files
+  under tests, benches and examples are exempt. The rule reads every identifier in each
+  `#[derive(...)]`, so a split or multi-line derive is covered.
 files:
   - crates/slopvac-messages/src/**
   - crates/slopvac-messages-derive/src/**
@@ -15,22 +16,5 @@ ignores:
   - "**/benches/**"
   - "**/examples/**"
 rule:
-  # Attributes are siblings of the item, so look along the run of attributes: a derive that
-  # names `Error` as a whole word, with no derive naming `Catalog` anywhere in the same run.
   kind: attribute_item
   regex: (?s)derive\(.*\bError\b
-  not:
-    any:
-      - precedes:
-          kind: attribute_item
-          regex: (?s)derive\(.*\bCatalog\b
-          stopBy:
-            not:
-              kind: attribute_item
-      - follows:
-          kind: attribute_item
-          regex: (?s)derive\(.*\bCatalog\b
-          stopBy:
-            not:
-              kind: attribute_item
-      - regex: (?s)derive\(.*\bCatalog\b

@@ -1,5 +1,16 @@
 id: derive-without-catalog
 snapshots:
+  "#[derive(\n    Debug,\n    thiserror::Error,\n    Catalog,\n)]\nenum E { A }\n":
+    labels:
+    - source: |-
+        #[derive(
+            Debug,
+            thiserror::Error,
+            Catalog,
+        )]
+      style: primary
+      start: 0
+      end: 58
   "#[derive(\n    Debug,\n    thiserror::Error,\n)]\nenum E { A }\n":
     labels:
     - source: |-
@@ -10,6 +21,12 @@ snapshots:
       style: primary
       start: 0
       end: 45
+  "#[derive(Catalog)]\n#[derive(Debug, thiserror::Error)]\nenum E { A }\n":
+    labels:
+    - source: "#[derive(Debug, thiserror::Error)]"
+      style: primary
+      start: 19
+      end: 53
   "#[derive(Debug)]\n#[derive(\n    Clone,\n    Error,\n)]\nenum E { A }\n":
     labels:
     - source: |-
@@ -20,12 +37,24 @@ snapshots:
       style: primary
       start: 17
       end: 51
+  "#[derive(Debug, Error)]\n#[derive(Catalog)]\nenum E { A }\n":
+    labels:
+    - source: "#[derive(Debug, Error)]"
+      style: primary
+      start: 0
+      end: 23
   "#[derive(Debug, Error)]\nstruct E;\n":
     labels:
     - source: "#[derive(Debug, Error)]"
       style: primary
       start: 0
       end: 23
+  "#[derive(Debug, Error, Catalog)]\n#[cfg(unix)]\nstruct E;\n":
+    labels:
+    - source: "#[derive(Debug, Error, Catalog)]"
+      style: primary
+      start: 0
+      end: 32
   "#[derive(Debug, Error, NotCatalog)]\nenum E { A }\n":
     labels:
     - source: "#[derive(Debug, Error, NotCatalog)]"
@@ -38,3 +67,9 @@ snapshots:
       style: primary
       start: 0
       end: 34
+  "#[derive(Debug, thiserror::Error, Catalog)]\nenum E { A }\n":
+    labels:
+    - source: "#[derive(Debug, thiserror::Error, Catalog)]"
+      style: primary
+      start: 0
+      end: 43
