@@ -48,9 +48,9 @@ const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 fn rules_lists_every_core_and_term_casing_rule_with_a_count_line() {
     // 232 core rules in 26 categories, and the one rule of the `terms` category.
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 234, "233 rules and the count line");
+    assert_eq!(text.lines().count(), 235, "234 rules and the count line");
     assert!(
-        text.ends_with("233 rule(s) in 27 category(ies)\n"),
+        text.ends_with("234 rule(s) in 27 category(ies)\n"),
         "{text}"
     );
 }
@@ -89,14 +89,14 @@ fn category_may_repeat() {
 #[test]
 fn kind_filter_counts_match_the_data() {
     let v = json(&["rules", "--kind", "judgement", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 68);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 69);
 }
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
     // 227 core rules and the term-casing rule, which suits `consumer`.
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 228);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 229);
 }
 
 #[test]

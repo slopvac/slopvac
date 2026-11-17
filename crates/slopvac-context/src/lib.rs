@@ -18,7 +18,9 @@ mod work;
 pub use builtin::{
     EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_genres, builtin_registry,
 };
-pub use checklist::{ChecklistEntry, ChecklistRule, checklist, effective_gates, rule_allows};
+pub use checklist::{
+    ChecklistEntry, ChecklistRule, checklist, checklist_rules, effective_gates, rule_allows,
+};
 pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, Matcher, TaggerSpec, Unit};
 pub use declared::{DeclaredContextTagger, context_hint};
@@ -27,7 +29,7 @@ pub use genre::{
     GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
     SignalKind, files_match, parse_genres,
 };
-pub use mixed::{MIXED_TYPES_RULE_ID, mixed_types_entry, mixed_types_rule};
+pub use mixed::mixed_types_entry;
 pub use pattern::{Pattern, normalize_path};
 pub use reference::reference_pages;
 pub use structural::{FrontMatterCondition, Scope, When};

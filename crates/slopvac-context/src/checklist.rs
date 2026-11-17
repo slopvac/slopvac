@@ -4,6 +4,8 @@
 //! checklist drops rules that cannot apply to the contexts a document has. Rule data comes
 //! from the rule loader; this module sees only ids and gates.
 
+use slopvac_rules::{LoadedRule, MatchKind, RuleSet};
+
 use crate::{ContextGate, context_hint};
 
 /// A rule as the checklist sees it.
@@ -17,6 +19,43 @@ pub struct ChecklistRule {
     pub core: Option<String>,
     /// Contexts whose hint belongs in this rule's entry when the context occurs.
     pub hint_contexts: Vec<String>,
+}
+
+impl ChecklistRule {
+    /// The checklist view of a loaded rule: its qualified id and its `contexts` gate.
+    /// A loaded rule names no core rule and no hint contexts, so both stay empty.
+    #[must_use]
+    pub fn from_loaded(rule: &LoadedRule) -> Self {
+        let gate = rule
+            .rule()
+            .contexts
+            .as_ref()
+            .map_or_else(ContextGate::default, |g| {
+                let names = |tags: &Option<slopvac_rules::UniqueVec<slopvac_model::ContextTag>>| {
+                    tags.as_ref().map_or_else(Vec::new, |t| {
+                        t.as_slice().iter().map(|k| k.as_str().to_owned()).collect()
+                    })
+                };
+                ContextGate {
+                    only: names(&g.only),
+                    skip: names(&g.skip),
+                }
+            });
+        Self {
+            id: rule.id().as_str().to_owned(),
+            gate,
+            core: None,
+            hint_contexts: Vec::new(),
+        }
+    }
+}
+
+/// The judgement rules of `set` as checklist rules, in load order.
+#[must_use]
+pub fn checklist_rules(set: &RuleSet) -> Vec<ChecklistRule> {
+    set.rules_of_kind(MatchKind::Judgement)
+        .map(ChecklistRule::from_loaded)
+        .collect()
 }
 
 /// One kept checklist entry.
