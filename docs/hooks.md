@@ -31,11 +31,12 @@ prek reads the same file, so `prek run` and `pre-commit run` behave the same.
 
 The hook has no pinned tool version. The `rev` selects the hook definition, and the binary on `PATH` selects the rules. Pin the binary version in your tool manager, for example with `mise`.
 
-`--profile` is removed in 3.0, and the CLI has no per-command style option. The `slopvac-strict` hook is removed with it. To gate reference material more strictly, set the style in `slopvac.toml` (`slopvac migrate --preserve-behavior` selects `core:legacy-strict`) and scope the hook with `files:`:
+`--profile` is removed in 3.0, and the CLI has no per-command style option. The `slopvac-strict` hook is removed with it. To keep the 2.x strict gate, add `styles = ["core:legacy-strict"]` to `slopvac.toml`. `slopvac migrate --preserve-behavior` adds `core:legacy-<profile>` from the profile in your 2.x config, which is `normal` when the config sets none. A style applies to the whole run, so to gate only reference material, keep a second config file with that style and pass it to the `slopvac` hook with `args` and `files`:
 
 ```yaml
 - id: slopvac
   files: ^docs/reference/
+  args: [--config, slopvac-strict.toml]
 ```
 
 ## lefthook

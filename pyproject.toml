@@ -8,8 +8,8 @@ dependencies = ["slopvac", "slopvac-plugin[conformance]"]
 [project.optional-dependencies]
 dev = [
   "docutils>=0.21",
-  "pre-commit>=4.0",
-  "prek>=0.5",
+  "pre-commit==4.7.0",
+  "prek==0.5.11",
   "pytest>=8.2",
   "pytest-cov>=5.0",
 ]
