@@ -902,6 +902,14 @@ def _map_jobs(
         pool.shutdown(wait=True, cancel_futures=False)
 
 
+def review_job_id(
+    review_task: Mapping[str, Any], author: str, reviewer: str, repeat: int
+) -> str:
+    return job_id(
+        "review", reviewer, review_task["prompt"], repeat, author, review_task["id"]
+    )
+
+
 def same_file(a: Path, b: Path) -> bool:
     """True when both paths name one file, through links, or one resolved path."""
     try:
@@ -944,6 +952,20 @@ def frozen_candidates(
                     missing.append(f"{model['name']}/{task['id']}/{repeat}")
                 else:
                     found.append((task, model, repeat, entry["answer"]))
+    done = [
+        job_id("task", only_model, task["prompt"], repeat)
+        for task in tasks
+        for repeat in range(repeats)
+    ]
+    for task, author, repeat, answer in found:
+        review_task = authored_review_task(task, answer)
+        done.append(review_job_id(review_task, author["name"], only_model, repeat))
+    overlap = sum(1 for job in done if candidates.done(job))
+    if overlap:
+        raise ModelEvalError(
+            f"{overlap} jobs of {only_model} already ran in {candidates.path}; "
+            "choose a model the frozen journal has not run, or a fresh candidates journal"
+        )
     if missing:
         raise ModelEvalError(
             f"{len(missing)} candidate rewrites are missing from {candidates.path} "
@@ -1047,14 +1069,7 @@ def execute(
         review_task, author, reviewer, repeat = job
         return _safe(
             asks[reviewer["name"]],
-            job_id(
-                "review",
-                reviewer["name"],
-                review_task["prompt"],
-                repeat,
-                author["name"],
-                review_task["id"],
-            ),
+            review_job_id(review_task, author["name"], reviewer["name"], repeat),
             review_task["prompt"],
             journal,
             reviewer["name"],

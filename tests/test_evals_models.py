@@ -453,6 +453,48 @@ def test_the_frozen_journal_is_never_a_writable_destination(
     assert not (tmp_path / "x.ledger.jsonl").exists() or alias == "ledger"
 
 
+@pytest.fixture
+def frozen_with_c(tmp_path):
+    """A finished earlier run that already includes model c."""
+    path = tmp_path / "with-c.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_a_selection_the_frozen_journal_already_ran_is_refused_before_any_call(
+    command, frozen_with_c, tmp_path, monkeypatch, capsys
+):
+    # c ran 9 answers (3 tasks x 3 repeats) and reviewed 2 authors x 3 repeats = 6.
+    assert (
+        add_c_run(monkeypatch, frozen_with_c, tmp_path / "y.json", command=command) == 2
+    )
+    assert "15 jobs of c already ran" in capsys.readouterr().err
+    assert not (tmp_path / "y.ledger.jsonl").exists()
+
+
+def test_execute_makes_no_call_for_a_selection_the_frozen_journal_ran(frozen_with_c):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="15 jobs of c already ran"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen_with_c),
+        )
+    assert calls == []
+
+
 def test_execute_refuses_a_journal_that_is_also_the_candidates(frozen):
     calls: list[str] = []
     with pytest.raises(models.ModelEvalError, match="read-only"):
