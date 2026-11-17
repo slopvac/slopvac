@@ -1,0 +1,16 @@
+# Actors
+
+Two actors use the system.
+
+```plantuml
+@startuml
+actor Customer
+actor Admin
+usecase "Place order" as UC1
+usecase "Refund order" as UC2
+Customer --> UC1
+Admin --> UC2
+@enduml
+```
+
+Only admins can refund.

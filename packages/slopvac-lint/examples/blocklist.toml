@@ -23,6 +23,11 @@
 #
 #   replacement  optional metadata. It is stored but not shown as a finding fix;
 #                use it as a project note, not as a suggestion surfaced by lint.
+#
+# SCHEMA VERSION. 3.0 requires `schema_version = 3` and rejects a blocklist
+# without it. 2.x ignores the key, so one file loads under both.
+schema_version = 3
+
 # --- Verb-as-noun -------------------------------------------------------------
 # The verb is fine; the noun is a verb wearing a noun's clothes. Each of these has
 # a real noun already, and using the verb form loses it.

@@ -2,12 +2,19 @@
 """Sign and verify slopvac release artifacts with minisign.
 
     release_signing.py require-key
-    release_signing.py sign DIR
+    release_signing.py sign DIR --version VERSION
     release_signing.py verify FILE [FILE ...]
 
 ``sign`` writes ``<file>.minisig`` next to every regular file in DIR, then checks
 each signature against the committed public key before it returns. The workflows
 run it before they upload to the release, so a release never ships unsigned.
+
+Every signature carries the trusted comment ``slopvac-release file:<name>
+version:<VERSION>``. Minisign's global signature covers the trusted comment, so a
+verifier that checks it knows which file of which release the key signed.
+``slopvac self update`` requires it to match the archive it asked for
+(``crates/slopvac-update/src/verify.rs`` defines the same format). VERSION is
+``X.Y.Z`` or ``X.Y.Z-rc.N`` without the ``v``.
 
 Environment of ``sign`` (set only on the signing step):
 
@@ -27,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,10 +44,23 @@ from pathlib import Path
 
 PUBKEY = Path(__file__).resolve().parents[1] / "keys" / "slopvac-release.pub"
 SIGNATURE_SUFFIX = ".minisig"
+_NUM = r"(?:0|[1-9][0-9]*)"
+_VERSION = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}(?:-rc\.[1-9][0-9]*)?")
 
 
 class SigningError(Exception):
     """A signing or verification step failed; the release must not go on."""
+
+
+def trusted_comment(name: str, version: str) -> str:
+    """The authenticated identity of one release file."""
+    if _VERSION.fullmatch(version) is None:
+        raise SigningError(
+            f"not a release version (expected X.Y.Z or X.Y.Z-rc.N): {version}"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9._+-]+", name):
+        raise SigningError(f"file name cannot go in a trusted comment: {name!r}")
+    return f"slopvac-release file:{name} version:{version}"
 
 
 def minisign_binary() -> str:
@@ -100,12 +121,15 @@ def artifacts(directory: Path) -> list[Path]:
     return files
 
 
-def sign(directory: Path, pubkey: Path, environ: dict[str, str]) -> list[Path]:
+def sign(
+    directory: Path, pubkey: Path, environ: dict[str, str], version: str
+) -> list[Path]:
     secret = environ.get("MINISIGN_SECRET_KEY", "")
     if not secret.strip():
         raise SigningError("MINISIGN_SECRET_KEY is not set")
     require_key(pubkey)
     files = artifacts(directory)
+    comments = {f: trusted_comment(f.name, version) for f in files}
     binary = minisign_binary()
 
     key_dir = Path(tempfile.mkdtemp(prefix="minisign-", dir=environ.get("RUNNER_TEMP")))
@@ -117,7 +141,7 @@ def sign(directory: Path, pubkey: Path, environ: dict[str, str]) -> list[Path]:
         for file in files:
             signature = file.with_name(file.name + SIGNATURE_SUFFIX)
             argv = [binary, "-S", "-s", str(key_file), "-m", str(file)]
-            argv += ["-x", str(signature)]
+            argv += ["-x", str(signature), "-t", comments[file]]
             # -W reads the key as unencrypted; an encrypted key then fails instead of prompting.
             _run([*argv, "-W"])
     finally:
@@ -132,14 +156,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pubkey", type=Path, default=PUBKEY)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("require-key")
-    commands.add_parser("sign").add_argument("directory", type=Path)
+    sign_parser = commands.add_parser("sign")
+    sign_parser.add_argument("directory", type=Path)
+    sign_parser.add_argument("--version", required=True)
     commands.add_parser("verify").add_argument("files", type=Path, nargs="+")
     args = parser.parse_args(argv)
     try:
         if args.command == "require-key":
             require_key(args.pubkey)
         elif args.command == "sign":
-            for signature in sign(args.directory, args.pubkey, dict(os.environ)):
+            for signature in sign(
+                args.directory, args.pubkey, dict(os.environ), args.version
+            ):
                 print(f"signed {signature.name}")
         else:
             verify(args.files, args.pubkey)

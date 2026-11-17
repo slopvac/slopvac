@@ -1,0 +1,45 @@
+# cargo-about configuration: licence notices for the release artefacts.
+#
+# `pcre2-sys` declares only its own `MIT OR Unlicense` licence, but it vendors PCRE2
+# (BSD-3-Clause WITH PCRE2-exception) and sljit (BSD-2-Clause) as C sources. The clarify
+# block below makes cargo-about report all three, each tied to a checksummed excerpt of
+# the vendored source. A checksum mismatch after a `pcre2-sys` bump fails the run, which
+# is the cue to re-read the licences. The full texts ship in
+# crates/slopvac-pcre2/licenses/ (PCRE2.txt, SLJIT.txt) for the release notices.
+accepted = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+  "CDLA-Permissive-2.0",
+]
+
+[pcre2-sys.clarify]
+license = "(MIT OR Unlicense) AND BSD-3-Clause AND BSD-2-Clause"
+
+[[pcre2-sys.clarify.files]]
+path = "COPYING"
+license = "MIT OR Unlicense"
+checksum = "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+
+# PCRE2's licence header, as carried by every PCRE2 source file. The BSD-3-Clause text
+# is the one that PCRE2's "exemption for binary library-like packages" qualifies.
+[[pcre2-sys.clarify.files]]
+path = "upstream/src/pcre2_compile.c"
+license = "BSD-3-Clause"
+start = "Written by Philip Hazel"
+end = "POSSIBILITY OF SUCH DAMAGE."
+checksum = "5d7737ea2017ca42c14e363535d1d611b053e98b76d7486b9e825b6b20ed90c0"
+
+[[pcre2-sys.clarify.files]]
+path = "upstream/deps/sljit/sljit_src/sljitLir.c"
+license = "BSD-2-Clause"
+start = "Copyright Zoltan Herczeg"
+end = "SUCH DAMAGE."
+checksum = "1bc1f100861b4a49d19e483874536955dcfe04730407dfdb5de9027a881057b4"

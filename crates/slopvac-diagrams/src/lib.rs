@@ -14,7 +14,7 @@ mod mermaid;
 mod plantuml;
 mod signals;
 
-pub use fences::{DiagramBlock, find_markdown_blocks, find_mdx_blocks};
+pub use fences::{DiagramBlock, extract_fenced, find_markdown_blocks, find_mdx_blocks};
 pub use signals::{PACK, ProseBlock, Signal, SignalHit, check_labels, check_prose};
 
 use std::ops::Range;

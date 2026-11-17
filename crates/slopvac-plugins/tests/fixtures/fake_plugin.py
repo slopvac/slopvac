@@ -126,6 +126,8 @@ def tags_for(params):
             evidence = str(tag_requests)
         if mode in ("ids", "ids-cancel"):
             evidence = str(current_id)
+        if mode == "rlimits":
+            evidence = limits_evidence()
         results.append(
             {
                 "document": doc["id"],
@@ -149,6 +151,12 @@ def write_pids(path, pids):
     os.rename(path + ".tmp", path)
 
 
+if pidfile:
+    # The host's leader heads the plugin's process group: the launcher on
+    # Linux, the plugin itself elsewhere.
+    write_pids(pidfile + ".leader", [os.getpgrp()])
+
+
 def wait_for(path):
     """The contents of a file that a child creates by rename."""
     end = time.time() + 10
@@ -165,11 +173,12 @@ def spawn_orphan():
         write_pids(pidfile, [child, os.getpid()])
 
 
-def spawn_children():
+def spawn_children(write=True):
     pids = [subprocess.Popen(["sleep", "300"]).pid]
     pids.append(subprocess.Popen(["sleep", "300"], start_new_session=True).pid)
-    if pidfile:
+    if pidfile and write:
         write_pids(pidfile, pids)
+    return pids
 
 
 def spawn_nested():
@@ -203,6 +212,72 @@ def move_group():
     write_pids(pidfile, [os.getpid(), child])
 
 
+def spawn_daemon():
+    """Double fork: a child in a new session starts a grandchild and exits first."""
+    inner = pidfile + ".daemon"
+    sh = subprocess.Popen(
+        ["sh", "-c", 'sleep 300 & echo $! > "$0.tmp"; mv "$0.tmp" "$0"', inner],
+        start_new_session=True,
+    )
+    sh.wait()
+    return int(wait_for(inner))
+
+
+def loop_started():
+    """Mark that a loop is running, so a test knows the cap did not end the
+    plugin before the loop."""
+    if pidfile:
+        write_pids(pidfile + ".loop", [os.getpid()])
+
+
+def fork_loop():
+    """Fork a sleeping child every 10 ms until the host ends the plugin."""
+    first = True
+    while True:
+        if os.fork() == 0:
+            time.sleep(300)
+            os._exit(0)
+        if first:
+            loop_started()
+            first = False
+        time.sleep(0.01)
+
+
+def allocate():
+    """Allocate and touch 1 MiB every 20 ms until an allocation fails."""
+    held = [bytearray(1 << 20)]
+    loop_started()
+    while True:
+        held.append(bytearray(1 << 20))
+        time.sleep(0.02)
+
+
+ODD_NAME = """import os, sys, time
+with open("/proc/self/comm", "wb") as f:
+    f.write(b"\\xff(x) ")
+with open(sys.argv[1] + ".tmp", "w") as f:
+    f.write(str(os.getpid()))
+os.rename(sys.argv[1] + ".tmp", sys.argv[1])
+time.sleep(300)
+"""
+
+
+def spawn_odd_name():
+    """A child in a new session whose process name is not UTF-8."""
+    inner = pidfile + ".odd"
+    subprocess.Popen([sys.executable, "-c", ODD_NAME, inner], start_new_session=True)
+    return int(wait_for(inner))
+
+
+def limits_evidence():
+    import resource
+
+    names = ["CPU", "NOFILE", "CORE", "FSIZE", "DATA"]
+    return json.dumps(
+        {n: resource.getrlimit(getattr(resource, "RLIMIT_" + n)) for n in names}
+    )
+
+
 if mode == "stray-stdout":
     out.write(b"hello\r\n")
     out.flush()
@@ -231,7 +306,7 @@ while True:
         if mode == "version-unsupported":
             error(id_, -32001, "protocol-version-unsupported")
             continue
-        if mode == "hang" and pidfile:
+        if mode in ("hang", "stderr-after-exit") and pidfile:
             write_pids(pidfile, [os.getpid()])
         if mode == "stray-init":
             # A child outside the group, started before a reply the host refuses.
@@ -253,8 +328,9 @@ while True:
         if mode == "orphan-init":
             spawn_orphan()
             sys.exit(0)
-        if mode == "flood":
-            for _ in range(1500):
+        if mode == "flood" or mode.startswith("flood:"):
+            count = int(mode.split(":")[1]) if ":" in mode else 1500
+            for _ in range(count):
                 send({"jsonrpc": "2.0", "method": "noise", "params": {}})
         if mode == "header-padding":
             # Valid frames whose bodies are tiny and whose headers are not.
@@ -277,6 +353,55 @@ while True:
             move_group()
             time.sleep(300)
         if mode == "no-read":
+            time.sleep(300)
+        if mode == "three-children":
+            # TM-4: one in the group, one after `setsid`, one by double fork.
+            write_pids(pidfile, spawn_children(write=False) + [spawn_daemon()])
+            time.sleep(300)
+        if mode == "busy":
+            while True:
+                pass
+        if mode == "alloc":
+            allocate()
+        if mode == "fork-loop":
+            fork_loop()
+        if mode == "stall-idle":
+            # Part of a frame, then nothing, with no request in flight.
+            out.write(b"Content-Length: 100\r\n\r\n{")
+            out.flush()
+            time.sleep(300)
+        if mode == "stderr-lines":
+            sys.stderr.write("first line\nsecond \x1b[31mline\nthird\r\n")
+            sys.stderr.write("x" * 5000 + "\n")
+            sys.stderr.flush()
+            if pidfile:
+                write_pids(pidfile, [os.getpid()])
+        if mode == "detach-then-term":
+            # On Linux the parent is the launcher, and the daemon is its child.
+            write_pids(pidfile, [spawn_daemon()])
+            os.kill(os.getppid(), 15)
+            time.sleep(300)
+        if mode == "leave-and-exit":
+            # A child in the group, one after `setsid` and one by double fork.
+            write_pids(pidfile, spawn_children(write=False) + [spawn_daemon()])
+            sys.exit(3)
+        if mode.startswith("odd-name:"):
+            write_pids(pidfile, [spawn_odd_name()])
+            if mode == "odd-name:exit":
+                sys.exit(0)
+            time.sleep(300)
+        if mode == "kill-launcher":
+            # On Linux the parent is the launcher.
+            os.kill(os.getppid(), 9)
+            time.sleep(300)
+        if mode == "big-file":
+            # Python ignores SIGXFSZ; restore the default so the limit kills.
+            import signal
+
+            signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
+            with open(pidfile + ".big", "wb") as f:
+                f.write(b"x" * (2 << 20))
+                f.flush()
             time.sleep(300)
         if mode == "stderr-flood":
             sys.stderr.write("x" * (10 * 1024 * 1024))
@@ -302,6 +427,9 @@ while True:
             time.sleep(0.3)
         if mode == "exit-3":
             sys.exit(3)
+        if mode == "stderr-after-exit":
+            sys.stderr.write("x" * (2 * 1024 * 1024))
+            sys.stderr.flush()
         if mode == "refuse-shutdown":
             sys.exit(0)
         sys.exit(0 if shut else 1)
@@ -316,6 +444,17 @@ while True:
         if mode in ("hang", "cancel-ok", "cancel-late-answer"):
             pending_tag = id_
             pending_params = msg["params"]
+        elif mode == "slow-frame":
+            # Half a frame, a pause longer than the stall limit, then the rest.
+            body = json.dumps(
+                {"jsonrpc": "2.0", "id": id_, "result": tags_for(msg["params"])}
+            ).encode()
+            head = b"Content-Length: %d\r\n\r\n" % len(body)
+            out.write(head + body[:10])
+            out.flush()
+            time.sleep(1.0)
+            out.write(body[10:])
+            out.flush()
         elif mode == "orphan-tag":
             spawn_orphan()
             sys.exit(3)
@@ -348,6 +487,11 @@ while True:
             sys.exit(3)
         elif mode == "partial-frame":
             out.write(b"Content-Length: 100\r\n\r\n{")
+            out.flush()
+            time.sleep(300)
+        elif mode == "partial-big":
+            # A header for a 1,000,000-byte body and 600,000 of its bytes.
+            out.write(b"Content-Length: 1000000\r\n\r\n" + b" " * 600000)
             out.flush()
             time.sleep(300)
         elif mode == "oversize":

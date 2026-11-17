@@ -102,6 +102,9 @@ where
     let cwd = std::env::current_dir().unwrap_or_default();
     let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
+        // `doctor` exists to report this state, so it runs on the default policy and its own
+        // config scan shows the unreadable file (and exits 2 itself).
+        Err(_) if invokes_doctor(&args, &tree) => slopvac_update::policy::NetworkPolicy::default(),
         Err(err) => {
             // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
             let message = format!(
@@ -180,6 +183,14 @@ where
     }
 }
 
+/// Whether these arguments run `slopvac doctor`. A parse failure or help request does not.
+fn invokes_doctor(args: &[OsString], tree: &clap::Command) -> bool {
+    let args = cli::insert_default_command(args.to_vec(), tree);
+    tree.clone()
+        .try_get_matches_from(args)
+        .is_ok_and(|m| m.subcommand_name() == Some("doctor"))
+}
+
 fn dispatch(
     matches: &ArgMatches,
     globals: Globals,
@@ -220,6 +231,7 @@ fn dispatch(
             inspect::explain(m, out)
         }
         Some(("man", m)) => man(m, out),
+        Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
@@ -231,7 +243,6 @@ fn dispatch(
                 .map(|(_, _, o)| *o)
                 .or(match name {
                     "rules" | "explain" => Some("slopvac-8l4.12.11"),
-                    "doctor" => Some("slopvac-8l4.12.5"),
                     _ => None,
                 });
             Err(CliError::new(
@@ -247,6 +258,39 @@ fn dispatch(
             write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
+}
+
+/// `slopvac doctor`: print the report, and exit 2 when something needs attention.
+fn doctor(
+    root: &ArgMatches,
+    m: &ArgMatches,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let report = crate::doctor::build(&crate::doctor::Inputs {
+        env,
+        cwd: &cwd,
+        offline_flag: root.get_flag("offline"),
+        explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
+        version: env!("CARGO_PKG_VERSION"),
+        update: &LocalUpdateProbe,
+        config: &LocalConfigSources,
+        dirs: &EnvDirs,
+        walk_limit: crate::doctor::WALK_LIMIT,
+    });
+    let text = if m.get_one::<String>("format").is_some_and(|f| f == "json") {
+        report.to_json()
+    } else {
+        report.to_text()
+    };
+    write_stdout(out, text.as_bytes())?;
+    Ok(if report.ok {
+        exit::PASS
+    } else {
+        exit::INCOMPLETE
+    })
 }
 
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
@@ -304,11 +348,11 @@ fn update_runtime(
 }
 
 fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
-    // 2.x config and a migrated tree.
+    let linter = slopvac_migrate::EngineLinter::new(vec![crate::rule_catalog::core()?])
+        .map_err(|e| CliError::new(e.code(), e.to_string()))?;
     slopvac_migrate::execute(
         m,
-        &slopvac_migrate::NullLinter,
+        &linter,
         &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
         out,
     )
@@ -393,7 +437,7 @@ fn lint_with(
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
-    output::deliver(m, &outcome, out)?;
+    output::deliver(m, &outcome, out, err_out)?;
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
         exit::INCOMPLETE

@@ -76,11 +76,7 @@ pub fn migrate_config(
             file: file.to_owned(),
             message: e.to_string(),
         })?;
-    if doc
-        .get("schema_version")
-        .and_then(Item::as_integer)
-        .is_some_and(|v| v >= 3)
-    {
+    if !is_legacy(text, file)? {
         return Err(Error::AlreadyMigrated {
             file: file.to_owned(),
         });
@@ -116,6 +112,22 @@ pub fn migrate_config(
     } else {
         Err(Error::Dropped(cx.dropped))
     }
+}
+
+/// Whether the migration chain starts at the 2.x to 3.0 step for this text.
+///
+/// The version gate of `slopvac-config` decides, so migrate and the 3.0 loader always
+/// agree. A file the gate refuses as 2.x needs the step. A file it accepts, or one from a
+/// newer slopvac, needs none.
+fn is_legacy(text: &str, file: &str) -> Result<bool, Error> {
+    let root = slopvac_config::tree::parse_toml(text).map_err(|e| Error::Parse {
+        file: file.to_owned(),
+        message: e.message,
+    })?;
+    Ok(matches!(
+        slopvac_config::version::check_version(&root, text),
+        Err(d) if d.code == slopvac_config::Code::LegacyVersion
+    ))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

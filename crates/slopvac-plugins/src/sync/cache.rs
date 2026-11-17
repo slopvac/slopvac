@@ -191,11 +191,17 @@ impl Store {
 
     fn recorded(&self, locked: &LockDigest) -> Option<TreeHash> {
         let path = self.refs().join(&locked.as_str()[7..]);
-        let meta = fs::symlink_metadata(&path).ok()?;
-        if !meta.is_file() || meta.len() > 64 {
+        // The handle is checked, not the name: a ref swapped for a FIFO cannot hang the read.
+        let mut text = String::new();
+        crate::extract::open_regular(&path)
+            .ok()?
+            .take(65)
+            .read_to_string(&mut text)
+            .ok()?;
+        if text.len() > 64 {
             return None;
         }
-        TreeHash::from_hex(fs::read_to_string(path).ok()?.trim())
+        TreeHash::from_hex(text.trim())
     }
 
     /// What the store holds for a locked digest. Reads the tree again.

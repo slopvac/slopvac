@@ -13,10 +13,10 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol reference, styles, terms and genres come
-from real data. The styles, terms and genres pages come from each crate's
-``reference`` example, which the builder runs through cargo. Plugin packs are a
-stub generator that emits a placeholder page until the owning crate exists.
+Rules, schemas, the plugin protocol and pack manifest references, the pack
+pages, styles, terms and genres come from real data. The styles, terms and
+genres pages come from each crate's ``reference`` example, which the builder
+runs through cargo.
 """
 
 from __future__ import annotations
@@ -37,13 +37,23 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import mdlinks
+import plugin_pages
 import starlight
 import yaml
+from mdtext import cell as _cell
+from mdtext import code, untrusted, untrusted_cell
+from mdtext import one_line as _one_line
+from mdtext import text as _text
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 DEFAULT_OUT = ROOT / "build" / "site-src"
+# Pack manifests to document. The example plugin pack is the only committed one
+# until the pack loader and the bundled core pack exist.
+PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
+CONTRACT_DIR = ROOT / "docs" / "contract"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
 CARGO = "cargo"
 
@@ -83,23 +93,6 @@ def rule_url(category: str, rule: str, site: Site | None = None) -> str:
     """Stable public URL of a rule page, as outputs link to it."""
     site = site or load_site()
     return site.versioned_url(rule_page_path(category, rule).removesuffix(".md") + "/")
-
-
-def _one_line(text: object) -> str:
-    return " ".join(str(text).split())
-
-
-def _text(value: object) -> str:
-    """Catalogue prose as one Markdown line, with HTML specials escaped.
-
-    Unicode dashes become the ASCII ``--`` that the prose rules ask for.
-    """
-    one_line = _one_line(value).replace("\u2014", "--").replace("\u2013", "--")
-    return html.escape(one_line, quote=False)
-
-
-def _cell(value: object) -> str:
-    return _text(value).replace("|", "\\|")
 
 
 _SLOT = re.compile(r"\{(\w+)\}")
@@ -244,36 +237,11 @@ def generate_schemas(site: Site, schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     return pages
 
 
-def generate_protocol(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
-    schema = json.loads((schemas_dir / "plugin-protocol.schema.json").read_text())
-    lines = [
-        "# Plugin protocol v1",
-        "",
-        _text(schema["description"]),
-        "",
-        "## Definitions",
-        "",
-    ]
-    for name, definition in sorted(schema["$defs"].items()):
-        kind = definition.get("type") or (
-            "union" if {"oneOf", "anyOf"} & definition.keys() else "any"
-        )
-        description = _text(definition.get("description", "No description."))
-        lines.append(f"- `{name}` ({kind}): {description}")
-    return {"plugins/protocol.md": "\n".join(lines) + "\n"}
-
-
-def _placeholder(path: str, title: str, swap: str) -> Pages:
-    return {
-        path: f"# {title}\n\nThis reference is not generated yet. Bead {swap} tracks it.\n"
-    }
-
-
 @cache
-def rust_reference(crate: str) -> Pages:
-    """Pages printed by a crate's ``reference`` example, keyed by site path."""
+def rust_reference(crate: str, example: str = "reference") -> Pages:
+    """Pages printed by a crate's reference example, keyed by site path."""
     with tempfile.TemporaryDirectory() as tmp:
-        command = [CARGO, "run", "--quiet", "-p", crate, "--example", "reference"]
+        command = [CARGO, "run", "--quiet", "-p", crate, "--example", example]
         result = subprocess.run(
             [*command, "--", tmp], cwd=ROOT, capture_output=True, text=True, check=False
         )
@@ -297,9 +265,131 @@ def generate_genres() -> Pages:
     return rust_reference("slopvac-context")
 
 
-def generate_packs() -> Pages:
-    # STUB(slopvac-8l4.19.12): needs the pack loader (slopvac-8l4.9.1).
-    return _placeholder("plugins/packs.md", "Packs", "slopvac-8l4.19.12")
+def generate_cli() -> Pages:
+    return rust_reference("slopvac", "cli-reference")
+
+
+class _ConfigSchema:
+    """Walks ``config.schema.json`` into one row per key path."""
+
+    def __init__(self, config: dict, common: dict) -> None:
+        self.config = config
+        self.common = common
+
+    def resolve(self, node: dict) -> dict:
+        """The node with a local or ``common.schema.json`` ``$ref`` followed."""
+        ref = node.get("$ref")
+        if not ref:
+            return node
+        base, _, pointer = ref.partition("#")
+        target = self.common if base == "common.schema.json" else self.config
+        for part in pointer.strip("/").split("/"):
+            target = target[part]
+        own = {k: v for k, v in node.items() if k != "$ref"}
+        return {**self.resolve(target), **own}
+
+    def _parts(self, node: dict) -> list[dict]:
+        """The node and every schema merged into it by ``allOf`` or ``then``."""
+        node = self.resolve(node)
+        parts = [node]
+        for sub in [*node.get("allOf", []), *([node["then"]] if "then" in node else [])]:
+            parts += self._parts(sub)
+        return parts
+
+    def properties(self, node: dict) -> dict[str, dict]:
+        found: dict[str, dict] = {}
+        for part in self._parts(node):
+            found.update(part.get("properties", {}))
+        return found
+
+    def required(self, node: dict) -> set[str]:
+        return {key for part in self._parts(node) for key in part.get("required", [])}
+
+    @staticmethod
+    def literal(value: object) -> str:
+        return code(value if isinstance(value, str) else json.dumps(value), in_table=True)
+
+    def kind(self, node: dict) -> str:
+        node = self.resolve(node)
+        if "enum" in node:
+            return "one of " + ", ".join(self.literal(v) for v in node["enum"])
+        if "const" in node:
+            return self.literal(node["const"])
+        if "oneOf" in node:
+            return " or ".join(self.kind(n) for n in node["oneOf"])
+        if "then" in node:
+            return f"{self.kind(node['else'])} or table"
+        kind = node.get("type")
+        if kind == "array":
+            return f"array of {self.kind(node.get('items', {}))}"
+        if kind == "object" and isinstance(node.get("additionalProperties"), dict):
+            return f"table of {self.kind(node['additionalProperties'])}"
+        if kind in (None, "object"):
+            return "table"
+        return kind if isinstance(kind, str) else " or ".join(kind)
+
+    def rows(self, node: dict, prefix: str = "") -> list[tuple[str, str, str, str]]:
+        found = []
+        required = self.required(node)
+        for key, child in self.properties(node).items():
+            path = prefix + key
+            resolved = self.resolve(child)
+            default = resolved.get("default")
+            found.append(
+                (
+                    path + (" (required)" if key in required else ""),
+                    self.kind(child),
+                    "none" if default is None else self.literal(default),
+                    resolved.get("description", ""),
+                )
+            )
+            found += self.children(resolved, path)
+        return found
+
+    def map_rows(
+        self, node: dict, values: dict, path: str
+    ) -> list[tuple[str, str, str, str]]:
+        """A row for the user-chosen key, then rows for the keys of each value.
+
+        The key row carries the ``propertyNames`` metadata: which names are
+        allowed and that ``x-`` has no special meaning for them.
+        """
+        names = self.resolve(node.get("propertyNames", {}))
+        pattern = names.get("pattern")
+        description = names.get("description", "A name chosen by the user.")
+        if pattern:
+            description += f" Names match the pattern {pattern}"
+        key_row = (f"{path}.<name>", self.kind(values), "none", description)
+        return [key_row, *self.rows(values, path + ".<name>.")]
+
+    def children(self, node: dict, path: str) -> list[tuple[str, str, str, str]]:
+        if node.get("type") == "array" and "items" in node:
+            return self.rows(node["items"], path + "[].")
+        extra = node.get("additionalProperties")
+        if isinstance(extra, dict):
+            return self.map_rows(node, extra, path)
+        return self.rows(node, path + ".")
+
+
+def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
+    config = json.loads((schemas_dir / "config.schema.json").read_text())
+    common = json.loads((schemas_dir / "common.schema.json").read_text())
+    lines = [
+        "# Configuration reference",
+        "",
+        untrusted(config.get("description", "")),
+        "",
+        "This page writes a key inside an array of tables as `name[].key`.",
+        "It writes a key inside a table of user-chosen names as `table.<name>.key`.",
+        "",
+        "| Key | Type | Default | Description |",
+        "| --- | --- | --- | --- |",
+    ]
+    for path, kind, default, description in _ConfigSchema(config, common).rows(config):
+        key, _, note = path.partition(" ")
+        label = code(key, in_table=True) + (" " + note if note else "")
+        lines.append(f"| {label} | {kind} | {default} | {untrusted_cell(description)} |")
+    return {"config/index.md": "\n".join(lines) + "\n"}
 
 
 SECTIONS = (
@@ -308,7 +398,10 @@ SECTIONS = (
     ("Genres", "genres/index.md"),
     ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
-    ("Packs", "plugins/packs.md"),
+    ("Pack manifest", "plugins/manifest.md"),
+    ("Packs", "plugins/packs/index.md"),
+    ("Command line", "cli/index.md"),
+    ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
 
@@ -323,16 +416,22 @@ def build(
     site: Site,
     rules_dir: Path = RULES_DIR,
     schemas_dir: Path = SCHEMAS_DIR,
+    packs_dir: Path = PACKS_DIR,
+    contract_dir: Path = CONTRACT_DIR,
 ) -> Pages:
     pages: Pages = {}
+    schemas = plugin_pages.SchemaSet(schemas_dir)
     generated = (
         generate_rules(rules_dir),
         generate_schemas(site, schemas_dir),
-        generate_protocol(schemas_dir),
+        plugin_pages.generate_protocol(schemas, contract_dir),
+        plugin_pages.generate_manifest(schemas),
         generate_styles(),
         generate_terms(),
         generate_genres(),
-        generate_packs(),
+        plugin_pages.generate_packs(schemas, packs_dir),
+        generate_cli(),
+        generate_config(schemas_dir),
         {"index.md": index_page()},
     )
     for group in generated:
@@ -343,21 +442,18 @@ def build(
     return pages
 
 
-_LINK = re.compile(r"\]\(([^)#:]+\.(?:md|json))(?:#[^)]*)?\)")
-
-
 def broken_links(pages: Pages) -> list[str]:
     """Relative links that point at no generated file."""
     problems = []
     for path, text in pages.items():
         if not path.endswith(".md"):
             continue
-        for target in _LINK.findall(text):
+        for link in mdlinks.find_links(text):
             resolved = posixpath.normpath(
-                posixpath.join(posixpath.dirname(path), target)
+                posixpath.join(posixpath.dirname(path), link.target)
             )
             if resolved not in pages:
-                problems.append(f"{path}: broken link {target}")
+                problems.append(f"{path}: broken link {link.target}")
     return problems
 
 
@@ -405,6 +501,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
+    parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
+    parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -418,7 +516,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     site = load_site(args.config)
-    pages = build(site, args.rules_dir, args.schemas_dir)
+    pages = build(
+        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+    )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:
         problems += stale_problems(pages, args.out)

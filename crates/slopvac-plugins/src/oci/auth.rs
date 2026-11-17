@@ -159,7 +159,7 @@ struct DockerConfig {
     creds_store: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, PartialEq, Eq)]
 struct AuthEntry {
     #[serde(default)]
     auth: Option<String>,
@@ -173,6 +173,25 @@ struct AuthEntry {
 fn auth_key_host(key: &str) -> &str {
     let k = key.split_once("://").map_or(key, |(_, r)| r);
     k.split('/').next().unwrap_or(k)
+}
+
+/// The one value among `matches`, the config entries whose key names `registry`
+/// up to ASCII case. Keys that differ only in case are one host (RFC 4343), so
+/// differing values are ambiguous and refused instead of picked by map order.
+fn unique_match<'a, T: PartialEq>(
+    mut matches: impl Iterator<Item = &'a T>,
+    section: &str,
+    registry: &str,
+) -> Result<Option<&'a T>, OciError> {
+    let first = matches.next();
+    if let Some(a) = first
+        && matches.any(|b| a != b)
+    {
+        return Err(OciError::Credential(format!(
+            "the Docker config has conflicting `{section}` entries for `{registry}`"
+        )));
+    }
+    Ok(first)
 }
 
 /// A registry name safe to hand to a helper: host characters and an optional port.
@@ -382,7 +401,15 @@ impl DefaultCredentials {
         }
         let cfg: DockerConfig = serde_json::from_slice(&raw)
             .map_err(|_| OciError::Credential("the Docker config is not valid JSON".into()))?;
-        let helper = cfg.cred_helpers.get(registry).or(cfg.creds_store.as_ref());
+        let helper = unique_match(
+            cfg.cred_helpers
+                .iter()
+                .filter(|(k, _)| k.eq_ignore_ascii_case(registry))
+                .map(|(_, v)| v),
+            "credHelpers",
+            registry,
+        )?
+        .or(cfg.creds_store.as_ref());
         if let Some(name) = helper
             && let Some(c) = run_helper(
                 name,
@@ -393,11 +420,14 @@ impl DefaultCredentials {
         {
             return Ok(Some(c));
         }
-        let entry = cfg
-            .auths
-            .iter()
-            .find(|(k, _)| auth_key_host(k) == registry)
-            .map(|(_, v)| v);
+        let entry = unique_match(
+            cfg.auths
+                .iter()
+                .filter(|(k, _)| auth_key_host(k).eq_ignore_ascii_case(registry))
+                .map(|(_, v)| v),
+            "auths",
+            registry,
+        )?;
         let Some(entry) = entry else {
             return Ok(None);
         };
@@ -434,7 +464,7 @@ impl CredentialSource for DefaultCredentials {
                 secret: t.clone(),
             }));
         }
-        if registry == "ghcr.io"
+        if registry.eq_ignore_ascii_case("ghcr.io")
             && let Some(t) = &e.github_token
         {
             return Ok(Some(Credential {

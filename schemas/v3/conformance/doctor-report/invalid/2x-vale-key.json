@@ -1,0 +1,103 @@
+{
+  "schema_version": 3,
+  "ok": false,
+  "slopvac": {
+    "version": "3.0.0",
+    "install_method": "homebrew",
+    "upgrade_command": "brew upgrade srobroek/tap/slopvac"
+  },
+  "platform": {
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "update": {
+    "checks": "disabled",
+    "disabled_by": "offline",
+    "state": "available",
+    "latest": "3.1.0",
+    "checked_at": 1790000000
+  },
+  "offline": {
+    "effective": true,
+    "sources": [
+      "flag",
+      "env",
+      "config"
+    ]
+  },
+  "config": {
+    "ok": false,
+    "sources": [
+      {
+        "layer": "explicit",
+        "file": "ci/slopvac.toml",
+        "status": "legacy",
+        "error": "2.x configuration: run `slopvac migrate`"
+      },
+      {
+        "layer": "project",
+        "file": "slopvac.toml",
+        "status": "ok",
+        "error": null
+      }
+    ]
+  },
+  "packs": {
+    "lockfile": {
+      "file": ".slopvac/packs.lock",
+      "status": "ok",
+      "error": null
+    },
+    "items": [
+      {
+        "id": "acme.style",
+        "version": "1.2.0",
+        "kind": "data",
+        "state": "recorded"
+      },
+      {
+        "id": "acme.tagger",
+        "version": "0.4.1",
+        "kind": "plugin",
+        "state": "tampered"
+      }
+    ]
+  },
+  "trust": {
+    "status": "ok",
+    "error": null,
+    "trusted_plugins": 1,
+    "pinned_keys": [
+      {
+        "namespace": "acme",
+        "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "directories": {
+    "cache": {
+      "path": "<external>/slopvac",
+      "source": "SLOPVAC_CACHE_DIR",
+      "exists": true,
+      "bytes": 4096,
+      "truncated": false
+    },
+    "data": {
+      "path": "<external>/slopvac",
+      "source": "XDG_DATA_HOME",
+      "exists": true,
+      "bytes": 1048576,
+      "truncated": true
+    },
+    "state": {
+      "path": "<external>/slopvac",
+      "source": "default",
+      "exists": false,
+      "bytes": null,
+      "truncated": false
+    }
+  },
+  "vale": {
+    "binary": "vale"
+  }
+}

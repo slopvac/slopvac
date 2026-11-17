@@ -219,6 +219,7 @@ impl Run<'_> {
                         &sweep.detectors,
                         unit.text,
                         &range,
+                        unit.origin(),
                         span,
                         &[],
                     )

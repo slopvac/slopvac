@@ -277,7 +277,7 @@ fn a_vocabulary_rule_needs_a_blocklist_and_isolation_keeps_it() {
     let list = slopvac_terms::Blocklist::parse(
         "b.toml",
         "toml",
-        "[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"r\"\n",
+        "schema_version = 3\n[[entries]]\nword = \"deploy\"\npos = \"noun\"\nreason = \"r\"\n",
     )
     .unwrap();
     let with = engine(&[vocabulary_rule()]).with_blocklist(&list).unwrap();
@@ -720,7 +720,7 @@ fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
     // The lexical rules: tokens, substitution and pattern.
-    assert_eq!(cov.findings.len(), 145);
+    assert_eq!(cov.findings.len(), 146);
     assert!(
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"

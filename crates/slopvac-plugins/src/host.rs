@@ -2,9 +2,13 @@
 //!
 //! No async runtime. Each plugin has five threads: a reader that parses
 //! frames and routes responses by request id, a writer fed by a bounded
-//! channel, a stderr drain, a waiter that reaps the child and a lifetime
-//! watchdog. Callers block in `crossbeam_channel::select!` against a
-//! wall-clock deadline.
+//! channel, a stderr drain, a waiter that reaps the child and a watchdog for
+//! the lifetime cap and stalled frames. Callers block in
+//! `crossbeam_channel::select!` against a wall-clock deadline.
+//!
+//! On Unix the plugin starts through the [`launch`](crate::launch) launcher,
+//! which sets its resource limits and, on Linux, keeps the plugin's orphaned
+//! descendants below the group leader.
 //!
 //! Teardown has one owner, the plugin's `process::Group`. The waiter sees the
 //! leader exit without reaping it, tears the group down (stop, walk, kill; see
@@ -24,12 +28,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, Sender, bounded, select};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select};
 use serde_json::{Value, json};
 
+use crate::budget::RunBudget;
 use crate::error::{PluginError, StartError};
 use crate::frame::{FrameError, encode_frame, read_frame_with};
 use crate::hooks::parse_error_object;
+use crate::launch::Launcher;
 use crate::process::{Group, Leader, TableSource, Teardown};
 use crate::protocol::{
     FEATURE_DOCUMENT_PATH, HookDecl, HookKind, InitializeResult, MIN_PROTOCOL_VERSION, NameVersion,
@@ -45,9 +51,15 @@ pub const MIN_MESSAGE_BYTES: u64 = 65_536;
 pub const MAX_REQUEST_ID: u64 = (1 << 53) - 1;
 const STDERR_RING: usize = 64 * 1024;
 const STDERR_SHOWN: usize = 4 * 1024;
+/// Longest stderr line logged; the rest of a longer line is dropped.
+const STDERR_LOG_LINE: usize = 4 * 1024;
+/// The `tracing` target of the plugin stderr lines logged under `SLOPVAC_LOG`.
+pub const STDERR_LOG_TARGET: &str = "slopvac_plugins::stderr";
 /// How long a drop waits for a killed leader to be reaped. A leader that is
 /// still unreaped after this stays registered for `kill_all_live`.
 const REAP_WAIT: Duration = Duration::from_secs(5);
+/// How long shutdown waits for the output readers to reach end of stream.
+const DRAIN_WAIT: Duration = Duration::from_millis(500);
 
 /// Timers from plugin-protocol.md section 6.3. Zero is invalid.
 #[derive(Debug, Clone, Copy)]
@@ -64,6 +76,9 @@ pub struct Timeouts {
     pub shutdown: Duration,
     /// Exit after `exit`.
     pub exit: Duration,
+    /// No bytes for this long in the middle of a frame, with no request in
+    /// flight, is a `plugin-protocol-violation`.
+    pub stalled_frame: Duration,
 }
 
 impl Default for Timeouts {
@@ -75,11 +90,18 @@ impl Default for Timeouts {
             cancel_grace: Duration::from_secs(2),
             shutdown: Duration::from_secs(3),
             exit: Duration::from_secs(2),
+            stalled_frame: Duration::from_secs(10),
         }
     }
 }
 
-/// Per-run caps from the threat model, section 5.5.
+/// Per-run caps from the threat model, section 5.5, and the resource limits
+/// of each plugin process (P6, NEW-3).
+///
+/// The resource limits apply on Unix, through the [`launch`](crate::launch)
+/// launcher. Each process of the plugin gets them, not the plugin as a whole.
+/// Their defaults are the approved values of threat-model.md section 5.5.
+/// They are fixed in 3.0: no configuration key changes them.
 #[derive(Debug, Clone, Copy)]
 pub struct RunCaps {
     /// Unsolicited messages and unmatched responses before a kill.
@@ -90,6 +112,16 @@ pub struct RunCaps {
     pub stderr_bytes: u64,
     /// Wall-clock time per plugin.
     pub wall_clock: Duration,
+    /// CPU time per process, in whole seconds rounded up: SIGXCPU at the
+    /// limit and SIGKILL a second later.
+    pub cpu_time: Duration,
+    /// Open files per process.
+    pub open_files: u64,
+    /// Largest file a process may write, in bytes.
+    pub file_size: u64,
+    /// Data limit per process in bytes, on Linux only. macOS enforces no
+    /// memory limit (residual R2).
+    pub memory: u64,
 }
 
 impl Default for RunCaps {
@@ -99,7 +131,30 @@ impl Default for RunCaps {
             stdout_bytes: 512 << 20,
             stderr_bytes: 128 << 20,
             wall_clock: Duration::from_mins(30),
+            cpu_time: Duration::from_mins(30),
+            open_files: 1024,
+            file_size: 256 << 20,
+            memory: 4 << 30,
         }
+    }
+}
+
+/// Test seam: called by the standard error reader with the plugin's running
+/// byte count, after each read and before the read is charged.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ReadHook(Arc<dyn Fn(u64) + Send + Sync>);
+
+impl ReadHook {
+    /// Wrap `f`.
+    pub fn new(f: impl Fn(u64) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for ReadHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReadHook")
     }
 }
 
@@ -126,10 +181,26 @@ pub struct HostConfig {
     pub timeouts: Timeouts,
     /// Run caps.
     pub caps: RunCaps,
+    /// Whole-run budget. Clones of one config share it, so every plugin
+    /// started from them draws on the same counters.
+    pub budget: Arc<RunBudget>,
+    /// The program that starts each plugin on Unix.
+    pub launcher: Launcher,
     /// Test seam: where a teardown reads the process table. `None`, the
     /// default, means `/bin/ps`; production code never sets it.
     #[doc(hidden)]
     pub process_table: Option<TableSource>,
+    /// Test seam: how long the Linux launcher may spend clearing what a
+    /// plugin left behind. Production keeps two seconds.
+    #[doc(hidden)]
+    pub launcher_sweep: Duration,
+    /// Test seam: a pause between the `initialize` reply and installing the
+    /// negotiated limits. Production keeps zero.
+    #[doc(hidden)]
+    pub limits_pause: Duration,
+    /// Test seam for the standard error reader; production code never sets it.
+    #[doc(hidden)]
+    pub stderr_read_hook: Option<ReadHook>,
 }
 
 impl Default for HostConfig {
@@ -145,7 +216,12 @@ impl Default for HostConfig {
             max_in_flight: 16,
             timeouts: Timeouts::default(),
             caps: RunCaps::default(),
+            budget: Arc::default(),
+            launcher: Launcher::CurrentExe,
             process_table: None,
+            launcher_sweep: Duration::from_secs(2),
+            limits_pause: Duration::ZERO,
+            stderr_read_hook: None,
         }
     }
 }
@@ -232,8 +308,39 @@ struct Shared {
     frames: Mutex<Option<Sender<Vec<u8>>>>,
     stderr: Mutex<VecDeque<u8>>,
     stderr_done: Receiver<()>,
+    /// Disconnects when the standard output reader has ended.
+    reader_done: Receiver<()>,
     caps: RunCaps,
+    budget: Arc<RunBudget>,
+    stderr_read_hook: Option<ReadHook>,
     exit_timeout: Duration,
+    stream: Activity,
+}
+
+/// What the reader has seen of standard output, for the stalled-frame rule.
+struct Activity {
+    /// Bytes read from the pipe.
+    read: AtomicU64,
+    /// Bytes that complete frames consumed. Fewer than `read` means a frame
+    /// has started and not ended.
+    framed: AtomicU64,
+    /// When the last byte arrived.
+    last: Mutex<Instant>,
+    /// The reader is blocked on the pipe. Bytes it has buffered but not
+    /// parsed yet, for example while it waits for the negotiated limits,
+    /// are no stalled frame.
+    reading: AtomicBool,
+}
+
+impl Activity {
+    fn new() -> Self {
+        Self {
+            read: AtomicU64::new(0),
+            framed: AtomicU64::new(0),
+            last: Mutex::new(Instant::now()),
+            reading: AtomicBool::new(false),
+        }
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -284,10 +391,18 @@ impl Shared {
     /// Collect the exit status and stderr tail, fail every pending request.
     fn tear_down_after_exit(&self) {
         let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
-        let status = self
+        let mut status = self
             .group
             .status()
             .unwrap_or_else(|| "status unknown".into());
+        if let Some(limit) = self
+            .group
+            .exit_status()
+            .and_then(|s| limit_hit(s, &self.caps))
+        {
+            status.push_str(": ");
+            status.push_str(&limit);
+        }
         self.fail(PluginError::Exited {
             plugin: self.name.clone(),
             status,
@@ -301,9 +416,14 @@ impl Shared {
             self.release_pending();
             return;
         }
-        // Let the waiter reap the leader first, so the error carries its status.
-        self.group.kill();
-        let _ = self.group.wait_done(self.exit_timeout);
+        // Let the waiter reap the leader first, so the error carries its
+        // status. A leader that is still running gets the exit timer to leave
+        // on its own: on Linux the launcher outlives the plugin's output by
+        // the time it takes to clear what the plugin left behind.
+        if !self.group.wait_done(self.exit_timeout) {
+            self.group.kill();
+            let _ = self.group.wait_done(self.exit_timeout);
+        }
         self.tear_down_after_exit();
     }
 
@@ -314,6 +434,18 @@ impl Shared {
             return;
         }
         self.tear_down_after_exit();
+    }
+
+    /// A frame has started, stopped short and stayed silent for `limit`,
+    /// with no request in flight (plugin-protocol.md section 6.3). Inside a
+    /// request the request's deadline covers the silence.
+    fn stalled(&self, limit: Duration) -> bool {
+        if self.shutting_down.load(Ordering::SeqCst) || !lock(&self.pending).is_empty() {
+            return false;
+        }
+        let s = &self.stream;
+        let partial = s.read.load(Ordering::SeqCst) > s.framed.load(Ordering::SeqCst);
+        s.reading.load(Ordering::SeqCst) && partial && lock(&s.last).elapsed() >= limit
     }
 
     fn violation(&self, msg: impl Into<String>) {
@@ -332,13 +464,15 @@ impl Shared {
         }
         let unmatched = |n: &mut u32| {
             *n += 1;
+            // Counts even when the message also crosses the plugin's own cap.
+            let charged = self.budget.charge_unsolicited();
             if *n > self.caps.unsolicited_messages {
                 Err(format!(
                     "more than {} unsolicited messages",
                     self.caps.unsolicited_messages
                 ))
             } else {
-                Ok(false)
+                charged.map(|()| false)
             }
         };
         if obj.contains_key("method") {
@@ -371,16 +505,34 @@ impl Shared {
     }
 }
 
-/// Counts every byte read from the stream.
-struct Counted<R> {
+/// Counts every byte read from the stream, charges it to the whole-run
+/// budget and notes when the last arrived.
+struct Counted<'a, R> {
     inner: R,
     read: u64,
+    seen: &'a Activity,
+    budget: Arc<RunBudget>,
+    /// Set when a read broke the whole-run budget.
+    breach: Option<String>,
 }
 
-impl<R: Read> Read for Counted<R> {
+impl<R: Read> Read for Counted<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
-        self.read = self.read.saturating_add(n as u64);
+        self.seen.reading.store(true, Ordering::SeqCst);
+        let got = self.inner.read(buf);
+        self.seen.reading.store(false, Ordering::SeqCst);
+        let n = got?;
+        if n > 0 {
+            self.read = self.read.saturating_add(n as u64);
+            *lock(&self.seen.last) = Instant::now();
+            self.seen.read.store(self.read, Ordering::SeqCst);
+        }
+        // Charged as bytes leave the pipe: partial frames, read-ahead and
+        // failed streams count too.
+        if let Err(m) = self.budget.charge_stdout(n as u64) {
+            self.breach = Some(m);
+            return Err(io::Error::other("whole-run budget exceeded"));
+        }
         Ok(n)
     }
 }
@@ -397,16 +549,24 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
     let mut r = BufReader::new(Counted {
         inner: stdout,
         read: 0,
+        seen: &shared.stream,
+        budget: Arc::clone(&shared.budget),
+        breach: None,
     });
     let mut unsolicited = 0u32;
     let mut negotiated = false;
     loop {
-        match read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst)) {
+        let frame = read_frame_with(&mut r, &|| shared.max_body.load(Ordering::SeqCst));
+        if let Some(m) = r.get_mut().breach.take() {
+            return shared.violation(m);
+        }
+        match frame {
             Ok(None) | Err(FrameError::Io(_)) => return shared.on_stream_end(),
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
                 // Bytes buffered for the next frame are not consumed yet.
                 let total = r.get_ref().read - r.buffer().len() as u64;
+                shared.stream.framed.store(total, Ordering::SeqCst);
                 if total > shared.caps.stdout_bytes {
                     return shared.violation("standard output volume cap reached");
                 }
@@ -429,19 +589,63 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
     }
 }
 
+/// Splits stderr into lines for the debug log (plugin-protocol.md section 7).
+/// A line longer than [`STDERR_LOG_LINE`] is cut there.
+struct LogLines {
+    line: Vec<u8>,
+    cut: bool,
+}
+
+impl LogLines {
+    fn feed(&mut self, plugin: &str, bytes: &[u8]) {
+        for &b in bytes {
+            if b == b'\n' {
+                self.emit(plugin);
+            } else if self.line.len() < STDERR_LOG_LINE {
+                self.line.push(b);
+            } else {
+                self.cut = true;
+            }
+        }
+    }
+
+    fn emit(&mut self, plugin: &str) {
+        let line = self.line.strip_suffix(b"\r").unwrap_or(&self.line);
+        let text = slopvac_sanitize::line(&String::from_utf8_lossy(line));
+        let cut = if self.cut { " [cut]" } else { "" };
+        tracing::debug!(target: STDERR_LOG_TARGET, plugin, "{text}{cut}");
+        self.line.clear();
+        self.cut = false;
+    }
+}
+
 fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
     let mut buf = [0u8; 8192];
     let mut total: u64 = 0;
+    let mut log = LogLines {
+        line: Vec::new(),
+        cut: false,
+    };
     loop {
         match stderr.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
                 total = total.saturating_add(n as u64);
+                if tracing::enabled!(target: STDERR_LOG_TARGET, tracing::Level::DEBUG) {
+                    log.feed(&shared.name, &buf[..n]);
+                }
                 {
                     let mut ring = lock(&shared.stderr);
                     ring.extend(&buf[..n]);
                     let excess = ring.len().saturating_sub(STDERR_RING);
                     ring.drain(..excess);
+                }
+                if let Some(hook) = &shared.stderr_read_hook {
+                    (hook.0)(total);
+                }
+                if let Err(m) = shared.budget.charge_stderr(n as u64) {
+                    shared.violation(m);
+                    break;
                 }
                 if total > shared.caps.stderr_bytes {
                     shared.fail(PluginError::ProtocolViolation(format!(
@@ -452,6 +656,9 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                 }
             }
         }
+    }
+    if !log.line.is_empty() || log.cut {
+        log.emit(&shared.name);
     }
     drop(done);
 }
@@ -817,11 +1024,25 @@ impl Plugin {
         cfg: &HostConfig,
         gate: &dyn SpawnGate,
     ) -> Result<Self, StartError> {
+        if let Some(m) = cfg.budget.breach() {
+            return Err(StartError {
+                error: PluginError::ProtocolViolation(format!("{}: {m}", spec.name)),
+                teardown: Teardown::default(),
+            });
+        }
         prespawn(spec, cfg, gate).map_err(|error| StartError {
             error,
             teardown: Teardown::default(),
         })?;
-        let conn = spawn(spec, cfg)?;
+        // The breach is published under the lock that guards the spawn, so a
+        // start that waited in its gate cannot spawn after a breach.
+        let conn = cfg
+            .budget
+            .admit(|| spawn(spec, cfg))
+            .map_err(|m| StartError {
+                error: PluginError::ProtocolViolation(format!("{}: {m}", spec.name)),
+                teardown: Teardown::default(),
+            })??;
         let group = Arc::clone(&conn.shared.group);
         // A failed handshake drops the connection, which kills the group and
         // waits for the reap, so the teardown is final here.
@@ -869,6 +1090,9 @@ impl Plugin {
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
         // The reader stopped after the reply; it resumes under the new limit.
         if let Some(ready) = conn.limits_ready.take() {
+            if !cfg.limits_pause.is_zero() {
+                thread::sleep(cfg.limits_pause);
+            }
             let _ = ready.send(());
         }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
@@ -985,7 +1209,21 @@ impl Plugin {
         shared.group.kill();
         // The waiter reaps a killed leader; its status belongs in the report.
         let _ = shared.group.wait_done(REAP_WAIT);
+        // Output that is still in the pipes counts against the caps, so read
+        // both streams to the end before the verdict.
+        // A reader that is still running when the wait ends has not finished
+        // its accounting.
+        let stderr_drained =
+            shared.stderr_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
+        let stdout_drained =
+            shared.reader_done.recv_timeout(DRAIN_WAIT) != Err(RecvTimeoutError::Timeout);
+        let violation = match lock(&shared.dead).as_ref() {
+            Some(PluginError::ProtocolViolation(m)) => Some(m.clone()),
+            _ => None,
+        };
         Shutdown {
+            accounting_incomplete: !(stderr_drained && stdout_drained),
+            violation,
             acknowledged,
             left,
             status: shared.group.exit_status(),
@@ -1014,6 +1252,13 @@ pub struct Shutdown {
     pub status: Option<ExitStatus>,
     /// What the teardowns left undone.
     pub teardown: Teardown,
+    /// The protocol violation that ended the plugin, such as output past a
+    /// cap that arrived after the shutdown acknowledgement.
+    pub violation: Option<String>,
+    /// A standard output or standard error reader was still running when the
+    /// drain wait ended, for example because a descendant holds the pipe, so
+    /// output may be uncounted.
+    pub accounting_incomplete: bool,
 }
 
 impl Shutdown {
@@ -1022,7 +1267,9 @@ impl Shutdown {
     /// running that they found.
     #[must_use]
     pub fn clean(&self) -> bool {
-        self.acknowledged
+        self.violation.is_none()
+            && !self.accounting_incomplete
+            && self.acknowledged
             && self.left
             && self.status.is_some_and(|s| s.success())
             && self.teardown.is_complete()
@@ -1038,27 +1285,120 @@ impl Drop for Slot<'_> {
 }
 
 /// The lifetime cap (threat model 5.5) holds whatever the plugin does, with or
-/// without a request in flight. Dropping the `stop` sender ends the thread.
-fn spawn_watchdog(shared: &Arc<Shared>, stop: Receiver<()>, cap: Duration) {
+/// without a request in flight. The same thread applies the stalled-frame
+/// rule, checking ten times per `stall`. Dropping the `stop` sender ends it.
+fn spawn_watchdog(shared: &Arc<Shared>, stop: Receiver<()>, cap: Duration, stall: Duration) {
     let shared = Arc::clone(shared);
+    let tick = (stall / 10).max(Duration::from_millis(10));
     thread::spawn(move || {
-        if stop.recv_timeout(cap) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
-            shared.fail(PluginError::Timeout {
-                plugin: shared.name.clone(),
-                what: format!("the wall-clock cap of {cap:?} expired"),
-            });
+        let end = Instant::now() + cap;
+        loop {
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                shared.fail(PluginError::Timeout {
+                    plugin: shared.name.clone(),
+                    what: format!("the wall-clock cap of {cap:?} expired"),
+                });
+                return;
+            }
+            if stop.recv_timeout(tick.min(left))
+                != Err(crossbeam_channel::RecvTimeoutError::Timeout)
+            {
+                return;
+            }
+            if lock(&shared.dead).is_some() {
+                return;
+            }
+            if shared.stalled(stall) {
+                return shared
+                    .violation(format!("a frame stalled for {stall:?} outside any request"));
+            }
         }
     });
 }
 
+/// The resource limit that a leader's exit status shows it hit, if any.
+#[cfg(unix)]
+fn limit_hit(status: ExitStatus, caps: &RunCaps) -> Option<String> {
+    use std::os::unix::process::ExitStatusExt;
+    // On Linux the launcher relays a plugin that a signal ended as exit code
+    // 128 plus the signal number.
+    let relayed = || {
+        status
+            .code()
+            .filter(|_| cfg!(target_os = "linux"))
+            .and_then(|c| c.checked_sub(128))
+            .filter(|&n| n > 0)
+    };
+    let sig = status.signal().or_else(relayed)?;
+    if sig == rustix::process::Signal::XCPU.as_raw() {
+        Some(format!(
+            "the CPU time limit of {:?} was reached",
+            caps.cpu_time
+        ))
+    } else if sig == rustix::process::Signal::XFSZ.as_raw() {
+        Some(format!(
+            "the file size limit of {} bytes was reached",
+            caps.file_size
+        ))
+    } else {
+        None
+    }
+}
+
+#[cfg(not(unix))]
+fn limit_hit(_status: ExitStatus, _caps: &RunCaps) -> Option<String> {
+    None
+}
+
+/// The command that starts the plugin: through the launcher on Unix,
+/// directly elsewhere. The environment holds only the allowlist.
+#[cfg_attr(
+    not(unix),
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "only the Unix launcher path can fail"
+    )
+)]
+fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
+    let env = [("PATH", spec.path_env.as_str()), ("LANG", "C.UTF-8")]
+        .into_iter()
+        .chain(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    #[cfg(unix)]
+    {
+        let c = &cfg.caps;
+        let limits = crate::launch::Limits {
+            cpu_secs: c.cpu_time.as_secs() + u64::from(c.cpu_time.subsec_nanos() > 0),
+            open_files: c.open_files,
+            file_size: c.file_size,
+            memory: c.memory,
+        };
+        let launcher = cfg.launcher.path()?;
+        Ok(crate::launch::command(
+            &launcher,
+            limits,
+            cfg.launcher_sweep,
+            &spec.program,
+            &spec.args,
+            env,
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = cfg;
+        let mut cmd = Command::new(&spec.program);
+        cmd.args(&spec.args).env_clear().envs(env);
+        Ok(cmd)
+    }
+}
+
 fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
-    let mut cmd = Command::new(&spec.program);
-    cmd.args(&spec.args)
-        .current_dir(&spec.cwd)
-        .env_clear()
-        .env("PATH", &spec.path_env)
-        .env("LANG", "C.UTF-8")
-        .envs(spec.env.iter().map(|(k, v)| (k, v)))
+    let spawn_failed = |e: io::Error| StartError {
+        error: PluginError::SpawnFailed(format!("{}: {e}", spec.name)),
+        teardown: Teardown::default(),
+    };
+    let mut cmd = plugin_command(spec, cfg).map_err(spawn_failed)?;
+    cmd.current_dir(&spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -1067,10 +1407,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
-    let child = cmd.spawn().map_err(|e| StartError {
-        error: PluginError::SpawnFailed(format!("{}: {e}", spec.name)),
-        teardown: Teardown::default(),
-    })?;
+    let child = cmd.spawn().map_err(spawn_failed)?;
     let group = Group::register(child.id(), cfg.process_table.clone());
     let mut leader = Leader::new(child);
     let (Some(stdin), Some(stdout), Some(stderr)) = leader.take_pipes() else {
@@ -1082,6 +1419,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     };
     let (frames_tx, frames_rx) = bounded::<Vec<u8>>(2 * cfg.max_in_flight + 4);
     let (stderr_done_tx, stderr_done) = bounded::<()>(0);
+    let (reader_done_tx, reader_done) = bounded::<()>(0);
     let (limits_ready, limits_rx) = bounded::<()>(1);
     let (watchdog_stop, watchdog_rx) = bounded::<()>(0);
     let shared = Arc::new(Shared {
@@ -1094,8 +1432,12 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         frames: Mutex::new(Some(frames_tx)),
         stderr: Mutex::new(VecDeque::new()),
         stderr_done,
+        reader_done,
         caps: cfg.caps,
+        budget: Arc::clone(&cfg.budget),
+        stderr_read_hook: cfg.stderr_read_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
+        stream: Activity::new(),
     });
     {
         let shared = Arc::clone(&shared);
@@ -1106,7 +1448,12 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
             shared.on_process_exit();
         });
     }
-    spawn_watchdog(&shared, watchdog_rx, cfg.caps.wall_clock);
+    spawn_watchdog(
+        &shared,
+        watchdog_rx,
+        cfg.caps.wall_clock,
+        cfg.timeouts.stalled_frame,
+    );
     thread::spawn(move || {
         let mut stdin = stdin;
         for frame in frames_rx {
@@ -1121,11 +1468,20 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     });
     {
         let shared = Arc::clone(&shared);
-        thread::spawn(move || stderr_loop(&shared, stderr, stderr_done_tx));
+        // Stderr lines go to the caller's subscriber, not only a global one.
+        let log = tracing::dispatcher::get_default(Clone::clone);
+        thread::spawn(move || {
+            tracing::dispatcher::with_default(&log, || {
+                stderr_loop(&shared, stderr, stderr_done_tx);
+            });
+        });
     }
     {
         let shared = Arc::clone(&shared);
-        thread::spawn(move || reader_loop(&shared, stdout, &limits_rx));
+        thread::spawn(move || {
+            let _done = reader_done_tx;
+            reader_loop(&shared, stdout, &limits_rx);
+        });
     }
     Ok(Conn {
         shared,

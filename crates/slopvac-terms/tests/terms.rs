@@ -149,7 +149,27 @@ fn terms_file_needs_only_term() {
 fn terms_file_rejects_bad_input() {
     let cases = [
         ("schema_version = 2\n", "schema_version 2"),
-        ("schema_version = 3\nfoo = 1\n", "unknown key `foo`"),
+        (
+            "schema_version = 3\nterms = []\nfoo = 1\n",
+            "unknown key `foo`",
+        ),
+        ("schema_version = 3\n", "missing `terms`"),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\ncase = \"exact\"\n",
+            "unknown key `terms[1].case`",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nkind = \"Proper Noun\"\n",
+            "kebab-case",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nvariants = [\"a\", \"a\"]\n",
+            "variant `a` twice",
+        ),
+        (
+            "schema_version = 3\n[[terms]]\nterm = \"A\"\nvariants = [\"\"]\n",
+            "empty variant",
+        ),
         (
             "schema_version = 3\n[[terms]]\nterm = \"A\"\n[[terms]]\nterm = \"A\"\n",
             "duplicate term `A`",
@@ -167,10 +187,13 @@ fn terms_file_rejects_bad_input() {
 
 #[test]
 fn terms_file_ignores_x_keys() {
-    assert!(TermsFile::parse("t.toml", "schema_version = 3\nx-note = 1\n").is_ok());
+    let text = "schema_version = 3\nx-note = 1\n[[terms]]\nterm = \"A\"\nx-source = \"doc\"\n";
+    assert_eq!(TermsFile::parse("t.toml", text).unwrap().terms.len(), 1);
 }
 
 const BLOCK: &str = r#"
+schema_version = 3
+
 [[entries]]
 word = "Utilize"
 pos = "v"
@@ -195,7 +218,8 @@ fn blocklist_loads_toml_and_looks_up_by_word_and_pos() {
 
 #[test]
 fn blocklist_loads_json() {
-    let json = r#"{"entries":[{"word":"leverage","pos":"verb","reason":"Say use."}]}"#;
+    let json =
+        r#"{"schema_version":3,"entries":[{"word":"leverage","pos":"verb","reason":"Say use."}]}"#;
     let b = Blocklist::parse("b.json", "json", json).unwrap();
     assert!(b.lookup("leverage", Pos::Verb).is_some());
 }
@@ -204,28 +228,28 @@ fn blocklist_loads_json() {
 fn blocklist_rejects_bad_files() {
     let cases = [
         (
-            "[[words]]\nword = \"a\"\n",
+            "schema_version = 3\n[[words]]\nword = \"a\"\n",
             "no `entries` array; it defines `words`",
         ),
         (
-            "[[entries]]\nword = \"a\"\npos = \"verb\"\n",
+            "schema_version = 3\n[[entries]]\nword = \"a\"\npos = \"verb\"\n",
             "has no `reason`",
         ),
         (
-            "[[entries]]\nword = \"a\"\npos = \"zzz\"\nreason = \"r\"\n",
+            "schema_version = 3\n[[entries]]\nword = \"a\"\npos = \"zzz\"\nreason = \"r\"\n",
             "unrecognized `pos`",
         ),
         (
-            "[[entries]]\npos = \"verb\"\nreason = \"r\"\n",
+            "schema_version = 3\n[[entries]]\npos = \"verb\"\nreason = \"r\"\n",
             "has no `word`",
         ),
         (
-            "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\n[[entries]]\nword = \"A\"\npos = \"v\"\nreason = \"r\"\n",
+            "schema_version = 3\n[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\n[[entries]]\nword = \"A\"\npos = \"v\"\nreason = \"r\"\n",
             "duplicate entry `a`",
         ),
         (
-            "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\nextra = 1\n",
-            "unknown field",
+            "schema_version = 3\n[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\nextra = 1\n",
+            "unknown key `entries[1].extra`",
         ),
     ];
     for (text, needle) in cases {
@@ -345,6 +369,100 @@ fn terms_file_loads_from_disk_and_reports_read_failures() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+const YAML_BLOCK: &str = "schema_version: 3
+entries:
+  - word: Utilize
+    pos: v
+    reason: Use `use`.
+    replacement: use
+  - word: deploy
+    pos: noun
+    reason: The noun is `deployment`.
+";
+
+#[test]
+fn blocklist_loads_yml_and_yaml_files() {
+    let dir = scratch("blocklist-yaml");
+    for name in ["b.yml", "b.YAML"] {
+        let path = dir.join(name);
+        std::fs::write(&path, YAML_BLOCK).unwrap();
+        let b = Blocklist::load(&path).unwrap();
+        assert_eq!(b.len(), 2, "{name}");
+        let e = b.lookup("utilize", Pos::Verb).unwrap();
+        assert_eq!(e.reason, "Use `use`.");
+        assert_eq!(e.replacement.as_deref(), Some("use"));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn yaml_blocklist_entries_get_the_same_validation() {
+    let text = "schema_version: 3\nentries:\n  - word: leverage\n    pos: verb\n";
+    let e = Blocklist::parse("b.yml", "yml", text).unwrap_err();
+    assert!(matches!(e, TermsError::Entry { .. }), "{e}");
+    assert!(e.to_string().contains("no `reason`"), "{e}");
+    let e = Blocklist::parse("b.yml", "yaml", "schema_version: 3\nother: 1\n").unwrap_err();
+    assert!(e.to_string().contains("no `entries` array"), "{e}");
+}
+
+#[test]
+fn invalid_yaml_blocklist_names_the_file() {
+    let dir = scratch("blocklist-bad-yaml");
+    let path = dir.join("broken.yaml");
+    std::fs::write(&path, "entries: [unclosed\n").unwrap();
+    let e = Blocklist::load(&path).unwrap_err();
+    assert!(matches!(e, TermsError::Parse { .. }), "{e}");
+    assert!(e.to_string().contains("broken.yaml"), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn blocklist_field_types_are_strict_in_every_format() {
+    let cases = [
+        (
+            "toml",
+            "schema_version = 3\n[[entries]]\nword = 5\npos = \"n\"\nreason = \"r\"\n",
+        ),
+        (
+            "toml",
+            "schema_version = 3\n[[entries]]\nword = \"x\"\npos = \"n\"\nreason = true\n",
+        ),
+        (
+            "json",
+            r#"{"schema_version":3,"entries":[{"word":5,"pos":"n","reason":"r"}]}"#,
+        ),
+        (
+            "json",
+            r#"{"schema_version":3,"entries":[{"word":"x","pos":"n","reason":true}]}"#,
+        ),
+        (
+            "yaml",
+            "schema_version: 3\nentries:\n  - {word: 5, pos: n, reason: r}\n",
+        ),
+        (
+            "yaml",
+            "schema_version: 3\nentries:\n  - {word: x, pos: n, reason: true}\n",
+        ),
+        (
+            "yaml",
+            "schema_version: 3\nentries:\n  - {word: x, pos: n, reason: r, replacement: 1.5}\n",
+        ),
+    ];
+    for (format, text) in cases {
+        let e = Blocklist::parse("b", format, text).unwrap_err();
+        assert!(
+            matches!(e, TermsError::Parse { .. }),
+            "{format}: {text}: {e}"
+        );
+    }
+}
+
+#[test]
+fn quoted_scalars_load_from_yaml() {
+    let text = "schema_version: 3\nentries:\n  - {word: \"5\", pos: n, reason: \"true\"}\n";
+    assert_eq!(Blocklist::parse("b", "yaml", text).unwrap().len(), 1);
+}
+
 #[test]
 fn blocklist_load_dispatches_on_suffix() {
     let dir = scratch("blocklist");
@@ -355,18 +473,19 @@ fn blocklist_load_dispatches_on_suffix() {
     std::fs::write(&toml, BLOCK).unwrap();
     std::fs::write(
         &json,
-        r#"{"entries":[{"word":"leverage","pos":"verb","reason":"r"}]}"#,
+        r#"{"schema_version":3,"entries":[{"word":"leverage","pos":"verb","reason":"r"}]}"#,
     )
     .unwrap();
-    std::fs::write(&yaml, "entries: []\n").unwrap();
+    std::fs::write(
+        &yaml,
+        "schema_version: 3\nentries:\n  - {word: x, pos: n, reason: r}\n",
+    )
+    .unwrap();
     std::fs::write(&none, BLOCK).unwrap();
 
     assert_eq!(Blocklist::load(&toml).unwrap().len(), 2);
     assert_eq!(Blocklist::load(&json).unwrap().len(), 1);
-    assert!(matches!(
-        Blocklist::load(&yaml).unwrap_err(),
-        TermsError::Parse { .. }
-    ));
+    assert_eq!(Blocklist::load(&yaml).unwrap().len(), 1);
     assert!(matches!(
         Blocklist::load(&none).unwrap_err(),
         TermsError::Parse { .. }
@@ -378,4 +497,70 @@ fn blocklist_load_dispatches_on_suffix() {
     let invalid = Blocklist::load(&bad).unwrap_err();
     assert!(matches!(invalid, TermsError::Io { .. }));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn blocklist_without_schema_version_points_to_migrate_in_every_format() {
+    let cases = [
+        (
+            "toml",
+            "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\n",
+        ),
+        (
+            "json",
+            r#"{"entries":[{"word":"a","pos":"verb","reason":"r"}]}"#,
+        ),
+        ("yaml", "entries:\n  - {word: a, pos: verb, reason: r}\n"),
+    ];
+    for (format, text) in cases {
+        let e = Blocklist::parse("b", format, text).unwrap_err();
+        assert!(
+            matches!(e, TermsError::MissingSchemaVersion { .. }),
+            "{format}: {e}"
+        );
+        let shown = e.to_string();
+        assert!(shown.contains("schema_version = 3"), "{shown}");
+        assert!(shown.contains("slopvac migrate"), "{shown}");
+    }
+}
+
+#[test]
+fn blocklist_with_another_schema_version_is_rejected_with_a_pointer_to_migrate() {
+    let e = Blocklist::parse("b.toml", "toml", "schema_version = 2\nentries = []\n").unwrap_err();
+    assert!(
+        matches!(e, TermsError::SchemaVersion { ref found, .. } if found == "2"),
+        "{e}"
+    );
+    assert!(e.to_string().contains("slopvac migrate"), "{e}");
+}
+
+#[test]
+fn blocklist_ignores_x_keys_and_rejects_other_unknown_keys() {
+    let ok = "schema_version = 3\nx-note = 1\n[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"r\"\nx-source = \"s\"\n";
+    assert_eq!(Blocklist::parse("b.toml", "toml", ok).unwrap().len(), 1);
+    let top = "schema_version = 3\nextra = 1\nentries = []\n";
+    let e = Blocklist::parse("b.toml", "toml", top).unwrap_err();
+    assert!(
+        matches!(e, TermsError::UnknownKey { ref key, .. } if key == "extra"),
+        "{e}"
+    );
+}
+
+#[test]
+fn blocklist_schema_version_must_be_an_integer_in_every_format() {
+    let cases = [
+        ("toml", "schema_version = \"3\"\nentries = []\n"),
+        ("json", r#"{"schema_version":"3","entries":[]}"#),
+        ("yaml", "schema_version: \"3\"\nentries: []\n"),
+        ("yaml", "schema_version: 3.5\nentries: []\n"),
+        ("toml", "schema_version = true\nentries = []\n"),
+    ];
+    for (format, text) in cases {
+        let e = Blocklist::parse("b", format, text).unwrap_err();
+        assert!(
+            matches!(e, TermsError::SchemaVersion { .. }),
+            "{format}: {text}: {e}"
+        );
+        assert!(e.to_string().contains("slopvac migrate"), "{e}");
+    }
 }

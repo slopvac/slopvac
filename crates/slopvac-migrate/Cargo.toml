@@ -11,6 +11,10 @@ publish.workspace = true
 [dependencies]
 clap.workspace = true
 similar.workspace = true
+slopvac-config.workspace = true
+slopvac-engine.workspace = true
+slopvac-model.workspace = true
+slopvac-rules.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
 

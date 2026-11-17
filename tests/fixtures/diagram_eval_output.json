@@ -1,0 +1,52 @@
+[
+ {
+  "file": "mermaid-20-kitchen-sink.md",
+  "findings": [
+   {
+    "line": 3,
+    "matched": "The flowchart above",
+    "rule": "diagram.meta-reference"
+   },
+   {
+    "line": 3,
+    "matched": "The flowchart above shows the upload path. The upload service hands each file to the virus scanner, and the scanner passes clean files to object storage.",
+    "rule": "diagram.prose-restates-labels"
+   },
+   {
+    "line": 8,
+    "matched": "rejects the file and notifies the uploader by email",
+    "rule": "diagram.label-run-on"
+   }
+  ]
+ },
+ {
+  "file": "plantuml-06-meta-restates.md",
+  "findings": [
+   {
+    "line": 3,
+    "matched": "The diagram above",
+    "rule": "diagram.meta-reference"
+   },
+   {
+    "line": 3,
+    "matched": "The diagram above shows the platform. The web app calls the order service, and the order service reads from the orders database and publishes to the message bus.",
+    "rule": "diagram.prose-restates-labels"
+   }
+  ]
+ },
+ {
+  "file": "drawio-08-mixed.drawio",
+  "findings": [
+   {
+    "line": 7,
+    "matched": "Clean Data: remove duplicates, nulls",
+    "rule": "diagram.label-title-plus-gloss"
+   },
+   {
+    "line": 8,
+    "matched": "Each incoming record is validated against the schema and then written to the lake",
+    "rule": "diagram.label-run-on"
+   }
+  ]
+ }
+]
