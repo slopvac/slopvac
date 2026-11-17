@@ -161,10 +161,13 @@ def renames() -> tuple[dict[str, str], dict[str, str]]:
     for category in converter.load_categories(converter.DEFAULT_RULES_DIR):
         converted = converter.convert_category(category)
         categories[category["id"]] = f"{PACK}:{converted['id']}"
-        for old, new in zip(category["rules"], converted["rules"], strict=True):
-            rules[f"{category['id']}.{old['id']}"] = (
-                f"{PACK}:{converted['id']}.{new['id']}"
-            )
+        # The converter skips the rules 3.0 removed, so pair by rule id.
+        kept = {r["id"] for r in converted["rules"]}
+        for old in category["rules"]:
+            if old["id"] in kept:
+                rules[f"{category['id']}.{old['id']}"] = (
+                    f"{PACK}:{converted['id']}.{old['id']}"
+                )
     injected = load_ruleset()
     note = inject_locale_rule(injected, "en-US")
     if note is not None:

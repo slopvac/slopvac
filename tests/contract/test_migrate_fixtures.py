@@ -49,13 +49,6 @@ def _snapshot(root: Path) -> dict[str, bytes]:
     }
 
 
-# Migrate removal lands in #512 (slopvac-8l4.16.13): its generator still expects the
-# five removed 2.x rules from the converter.
-REMOVAL_IN_512 = pytest.mark.skip(
-    reason="migrate removal lands in #512 (slopvac-8l4.16.13)"
-)
-
-
 @pytest.fixture
 def copy(tmp_path: Path) -> Path:
     """The committed outputs, copied into a scratch crate layout."""
@@ -66,7 +59,6 @@ def copy(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@REMOVAL_IN_512
 def test_migrate_mapping_data_is_current() -> None:
     result = _generate("--check")
     assert result.returncode == 0, result.stderr or result.stdout
@@ -86,7 +78,6 @@ def _make_missing(root: Path) -> None:
     [(_make_stale, "data/renames.toml"), (_make_missing, "data/legacy/catalogue.toml")],
     ids=["stale", "missing"],
 )
-@REMOVAL_IN_512
 def test_check_names_the_file_and_changes_nothing(
     copy: Path, damage, name: str
 ) -> None:
@@ -103,7 +94,6 @@ def test_check_names_the_file_and_changes_nothing(
 @pytest.mark.parametrize(
     "damage", [_make_stale, _make_missing], ids=["stale", "missing"]
 )
-@REMOVAL_IN_512
 def test_regenerating_makes_check_pass(copy: Path, damage) -> None:
     damage(copy)
     assert _generate("--out", str(copy)).returncode == 0
