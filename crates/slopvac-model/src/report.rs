@@ -627,12 +627,12 @@ pub struct Gate {
     transform = x_extensions,
     extend("allOf" = [
         if_then(
-            json!({"properties": {"passed": {"const": true}}}),
-            json!({"properties": {"reasons": {"maxItems": 0}}}),
+            &json!({"properties": {"passed": {"const": true}}}),
+            &json!({"properties": {"reasons": {"maxItems": 0}}}),
         ),
         if_then(
-            json!({"properties": {"passed": {"const": false}}}),
-            json!({"properties": {"reasons": {"minItems": 1}}}),
+            &json!({"properties": {"passed": {"const": false}}}),
+            &json!({"properties": {"reasons": {"minItems": 1}}}),
         ),
     ])
 )]

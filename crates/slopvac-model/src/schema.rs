@@ -93,7 +93,7 @@ pub fn absent_not_null(schema: &mut Schema) {
 
 /// `{"if": .., "then": ..}`: a conditional for an `allOf` list.
 #[must_use]
-pub fn if_then(condition: Value, then: Value) -> Value {
+pub fn if_then(condition: &Value, then: &Value) -> Value {
     json!({"if": condition, "then": then})
 }
 

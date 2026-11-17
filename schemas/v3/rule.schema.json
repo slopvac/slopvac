@@ -159,7 +159,7 @@
     },
     "Citation": {
       "additionalProperties": false,
-      "description": "Where the rule's idea comes from, so a reader can argue with it. Not the runtime RuleProvenance, which names the pack that supplied a rule.",
+      "description": "Where the rule's idea comes from, so a reader can argue with it. Not the runtime `RuleProvenance`, which names the pack that supplied a rule.",
       "patternProperties": {
         "^x-": true
       },

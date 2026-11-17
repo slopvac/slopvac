@@ -251,7 +251,7 @@ impl JsonSchema for SchemaVersion {
     }
 }
 
-/// Plugin API version, separate from schema_version.
+/// Plugin API version, separate from `schema_version`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]

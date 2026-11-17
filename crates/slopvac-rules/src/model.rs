@@ -19,8 +19,8 @@ use slopvac_model::{
     AiSignal, CategoryId, ContextTag, Density, GenreId, NonEmptyString, SchemaVersion, Severity,
 };
 
-use crate::schema::Kind;
 use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newtype};
+use crate::schema::Kind;
 
 text_newtype!(
     /// Rule id inside its category: a lower-case letter, then lower-case letters, digits and
@@ -896,7 +896,7 @@ pub struct Example {
 }
 
 /// Where the rule's idea comes from, so a reader can argue with it. Not the runtime
-/// RuleProvenance, which names the pack that supplied a rule.
+/// `RuleProvenance`, which names the pack that supplied a rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Citation")]
 #[schemars(transform = x_extensions)]
@@ -961,11 +961,11 @@ impl JsonSchema for TextTypeSchema {
 /// A judgement rule is a suggestion and declares no exceptions or cases.
 fn judgement_constraints() -> serde_json::Value {
     if_then(
-        serde_json::json!({
+        &serde_json::json!({
             "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
             "required": ["match"]
         }),
-        serde_json::json!({
+        &serde_json::json!({
             "properties": {
                 "severity": {"const": "suggestion"},
                 "exceptions": {"maxItems": 0},

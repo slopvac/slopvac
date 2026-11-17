@@ -90,7 +90,12 @@ fn owners<'a>(
 /// Keywords whose value is instance data, not a schema.
 const DATA: [&str; 4] = ["const", "enum", "default", "examples"];
 /// Keywords whose value maps names to schemas; the names are not keywords.
-const NAMED: [&str; 4] = ["properties", "patternProperties", "$defs", "dependentSchemas"];
+const NAMED: [&str; 4] = [
+    "properties",
+    "patternProperties",
+    "$defs",
+    "dependentSchemas",
+];
 
 /// Call `f` on the target of every `$ref` in `schema` and its subschemas.
 fn each_ref(schema: &mut Value, f: &mut dyn FnMut(&mut String)) {
@@ -279,8 +284,12 @@ mod tests {
             "type": "object",
             "properties": {"examples": {"items": {"$ref": "#/$defs/Span"}}},
         });
-        link_shared_defs("x.schema.json", &mut schema, &[("common.schema.json", &common())])
-            .unwrap();
+        link_shared_defs(
+            "x.schema.json",
+            &mut schema,
+            &[("common.schema.json", &common())],
+        )
+        .unwrap();
         assert_eq!(
             schema["properties"]["examples"]["items"]["$ref"],
             "common.schema.json#/$defs/Span"
