@@ -1145,6 +1145,15 @@ def merge_results(*docs: Mapping[str, Any]) -> dict[str, Any]:
                     f"cannot merge results: {key} differs "
                     f"({first.get(key)!r} vs {doc.get(key)!r})"
                 )
+    versions = {doc.get("scorer_version") for doc in docs}
+    versions |= {
+        r.get("scorer_version", doc.get("scorer_version"))
+        for doc in docs
+        for r in doc["runs"]
+    }
+    if len(versions) > 1:
+        shown = ", ".join(sorted(str(v or "legacy") for v in versions))
+        raise ModelEvalError(f"cannot merge results: scorer versions differ ({shown})")
     roster: dict[str, dict[str, Any]] = {}
     for doc in docs:
         for m in doc["models"]:
@@ -1161,7 +1170,8 @@ def merge_results(*docs: Mapping[str, Any]) -> dict[str, Any]:
                 raise ModelEvalError(f"cannot merge results: duplicate run {key}")
             seen.add(key)
             runs.append(run)
-    return {
+    joined = {"scorer_version": versions.pop()} if versions != {None} else {}
+    return joined | {
         "schema": first["schema"],
         "date": max(doc["date"] for doc in docs),
         "prompt_version": first["prompt_version"],
@@ -1226,7 +1236,12 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             )
             if ordered:
                 ranking[f"{rtype}/{role}"] = [r["model"] for r in ordered]
-    return {
+    carried = (
+        {"scorer_version": results["scorer_version"]}
+        if results.get("scorer_version") is not None
+        else {}
+    )
+    return carried | {
         "schema": RESULTS_SCHEMA,
         "date": results["date"],
         "prompt_version": results["prompt_version"],

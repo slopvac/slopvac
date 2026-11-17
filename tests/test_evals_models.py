@@ -511,6 +511,72 @@ def test_execute_refuses_a_journal_that_is_also_the_candidates(frozen):
     assert calls == []
 
 
+def results_file(model, *, scorer=None, run_scorer=None, **fields):
+    """A small results file for one model, built apart from `execute`."""
+    run = {
+        "task": "t1",
+        "type": "rewrite",
+        "role": "author",
+        "variant": None,
+        "model": model,
+        "repeat": 0,
+        "score": {"success": True},
+    }
+    if run_scorer is not None:
+        run["scorer_version"] = run_scorer
+    doc = {
+        "schema": models.RESULTS_SCHEMA,
+        "date": "2026-11-17",
+        "prompt_version": "1",
+        "tasks_sha256": "h",
+        "repeats": 3,
+        "models": [{"name": model, "family": "f", "tier": "t"}],
+        "runs": [run],
+    }
+    if scorer is not None:
+        doc["scorer_version"] = scorer
+    return doc | fields
+
+
+def test_a_join_of_two_scorer_versions_is_refused():
+    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+        models.merge_results(
+            results_file("a", scorer="2"), results_file("b", scorer="3")
+        )
+
+
+def test_legacy_results_without_a_scorer_version_join_only_each_other():
+    models.merge_results(results_file("a"), results_file("b"))
+    with pytest.raises(models.ModelEvalError, match="legacy"):
+        models.merge_results(results_file("a"), results_file("b", scorer="2"))
+
+
+def test_a_run_row_with_another_scorer_version_than_its_file_is_refused():
+    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+        models.merge_results(
+            results_file("a", scorer="2"), results_file("b", scorer="2", run_scorer="1")
+        )
+
+
+def test_the_joined_summary_carries_the_shared_scorer_version():
+    joined = models.merge_results(
+        results_file("a", scorer="2"), results_file("b", scorer="2")
+    )
+    assert models.summarize(joined, resamples=5)["scorer_version"] == "2"
+    legacy = models.merge_results(results_file("a"), results_file("b"))
+    assert "scorer_version" not in models.summarize(legacy, resamples=5)
+
+
+def test_summarize_exits_2_for_a_join_across_scorer_versions(tmp_path, capsys):
+    paths = []
+    for name, version in (("a", "2"), ("b", "3")):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(results_file(name, scorer=version)))
+        paths.append(str(path))
+    assert cli.main(["models", "summarize", *paths]) == 2
+    assert "scorer versions differ" in capsys.readouterr().err
+
+
 def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():
     out = models.execute(
         tiny_tasks(), roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
