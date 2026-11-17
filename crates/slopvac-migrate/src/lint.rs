@@ -24,19 +24,19 @@ impl EngineLinter {
     /// An engine over `sets`.
     ///
     /// # Errors
-    /// [`Error::Lint`] when the engine refuses the rule sets.
+    /// [`Error::Engine`] when the engine refuses the rule sets.
     pub fn new(sets: Vec<RuleSet>) -> Result<Self, Error> {
         // STUB(slopvac-8l4.16.12): both sides run under the core defaults. Each side
         // should apply its own config once the config to engine settings bridge exists.
         let settings = Settings::new(
-            NonEmptyString::new("normal").map_err(|e| Error::Lint(e.to_string()))?,
+            NonEmptyString::new("normal").map_err(Error::Setting)?,
             GenreResult {
-                id: GenreId::new("reference").map_err(|e| Error::Lint(e.to_string()))?,
+                id: GenreId::new("reference").map_err(Error::Genre)?,
                 source: GenreSource::Default,
                 reasons: Vec::new(),
             },
         );
-        let engine = Engine::new(sets, settings).map_err(|e| Error::Lint(e.to_string()))?;
+        let engine = Engine::new(sets, settings).map_err(Error::Engine)?;
         Ok(Self { engine })
     }
 }
@@ -131,7 +131,10 @@ impl Linter for EngineLinter {
             .collect();
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for (result, (label, _, _)) in self.engine.lint_all(&inputs).into_iter().zip(&docs) {
-            let doc = result.map_err(|e| Error::Lint(format!("{label}: {e}")))?;
+            let doc = result.map_err(|source| Error::Document {
+                label: label.clone(),
+                source,
+            })?;
             unchecked(label, &doc.unchecked)?;
             for finding in doc.findings {
                 *counts.entry(finding.rule_id.to_string()).or_default() += 1;

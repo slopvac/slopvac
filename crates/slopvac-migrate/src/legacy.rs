@@ -229,19 +229,3 @@ impl Legacy {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bundled_data_names_every_rule_category_in_each_style() {
-        let legacy = Legacy::bundled();
-        assert!(!legacy.rules.is_empty());
-        for p in PROFILES {
-            for qid in legacy.rules.keys() {
-                assert!(legacy.state(p, qid).is_some(), "{p}: {qid}");
-            }
-        }
-    }
-}

@@ -1,6 +1,6 @@
 //! Managed steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->`.
 
-use crate::directives::fence_step;
+use slopvac_parse::marker_lines;
 
 const BEGIN: &str = "<!-- slopvac:begin -->";
 const END: &str = "<!-- slopvac:end -->";
@@ -12,28 +12,14 @@ const END: &str = "<!-- slopvac:end -->";
 /// output so migrate and setup write the same bytes.
 ///
 /// Returns `None` when the text has no managed block. Markers shown inside fenced
-/// code do not count. A begin without a matching end, or the reverse, is left
+/// or indented code do not count; `slopvac setup` uses the same scanner. A begin without a matching end, or the reverse, is left
 /// alone and reported through `Err` so the user repairs it.
 pub fn rewrite_steering(text: &str, block: &str) -> Result<Option<String>, String> {
-    let mut fence: Option<(char, usize)> = None;
-    let mut found: Vec<(&str, usize, usize)> = Vec::new();
-    let mut offset = 0;
-    for line in text.split_inclusive('\n') {
-        if fence_step(&mut fence, line) {
-            // fenced text and fence markers are examples
-        } else {
-            let v = line.trim().trim_start_matches('\u{feff}');
-            if v == BEGIN {
-                found.push((BEGIN, offset, offset + line.len()));
-            } else if v == END {
-                found.push((END, offset, offset + line.len()));
-            }
-        }
-        offset += line.len();
-    }
+    let found = marker_lines(text, &[BEGIN, END]);
     match found.as_slice() {
         [] => Ok(None),
-        [(BEGIN, start, _), (END, _, end)] => {
+        [begin, end] if begin.marker == BEGIN && end.marker == END => {
+            let (start, end) = (&begin.start, &end.end);
             let newline = if text[*start..*end].contains("\r\n") {
                 "\r\n"
             } else {

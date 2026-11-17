@@ -2,6 +2,8 @@
 
 use slopvac_migrate::{Error, Options, RenameTable, migrate_config};
 
+const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
+
 fn migrate(text: &str) -> Result<String, Error> {
     migrate_config(
         text,
@@ -251,5 +253,47 @@ fn removed_rules_leave_the_top_level_and_overrides_with_a_note() {
         let notes: Vec<_> = r.notes.iter().filter(|n| n.contains(id)).collect();
         assert_eq!(notes.len(), 2, "{id}: {:?}", r.notes);
         assert!(notes.iter().all(|n| n.contains("no longer exists in 3.0")));
+    }
+}
+
+#[test]
+fn names_2x_knew_without_a_rule_file_move_into_the_core_pack() {
+    // The generated locale rule and the directive finding keep their names in 3.0;
+    // `meta` is the category of that finding.
+    let out = migrate(
+        "[rules]\n\"ste-words.spelling\" = \"off\"\n\"meta.invalid-suppression\" = \"off\"\n[categories]\nmeta = \"off\"\n",
+    )
+    .unwrap();
+    for key in [
+        "\"core:ste-words.spelling\"",
+        "\"core:meta.invalid-suppression\"",
+        "\"core:meta\"",
+    ] {
+        assert!(out.contains(key), "{key}: {out}");
+    }
+}
+
+#[test]
+fn a_rename_table_value_that_is_not_a_string_is_rejected() {
+    let err = RenameTable::parse("[rules]\n\"a.b\" = 1\n[categories]\n").unwrap_err();
+    assert_eq!(err.code(), "migrate-rename-table");
+}
+
+#[test]
+fn every_profile_expands_without_dropping_a_name_the_rules_use() {
+    // Expansion names each 2.x rule and category the profile selects. A name with no
+    // rename entry, or a rule missing from a profile, would stop or panic here.
+    for profile in PROFILES {
+        let out = migrate_config(
+            &format!("profile = \"{profile}\"\n"),
+            "slopvac.toml",
+            &RenameTable::bundled(),
+            Options {
+                preserve_behavior: true,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{profile}: {e}"))
+        .text;
+        assert!(out.contains("core:"), "{profile}: {out}");
     }
 }

@@ -1,9 +1,8 @@
 //! Managed steering blocks.
 
-use std::ops::Range;
 use std::path::Path;
 
-use pulldown_cmark::{Event, Parser, Tag};
+use slopvac_parse::marker_lines;
 
 use crate::error::AgentsError;
 use crate::fsx::Project;
@@ -51,69 +50,14 @@ fn read_utf8(project: &Project, rel: &Path) -> Result<Option<(Vec<u8>, String)>,
     Ok(Some((bytes, text)))
 }
 
-/// Byte ranges of every line, terminator included. A terminator is `\n`, `\r\n`
-/// or a lone `\r`.
-fn line_spans(text: &str) -> Vec<Range<usize>> {
-    let bytes = text.as_bytes();
-    let mut spans = Vec::new();
-    let mut start = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\n' => {
-                spans.push(start..i + 1);
-                start = i + 1;
-            }
-            b'\r' => {
-                let end = if bytes.get(i + 1) == Some(&b'\n') {
-                    i + 2
-                } else {
-                    i + 1
-                };
-                spans.push(start..end);
-                start = end;
-                i = end - 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    if start < bytes.len() {
-        spans.push(start..bytes.len());
-    }
-    spans
-}
-
-/// Byte range of the managed section, ignoring markers inside code blocks.
-/// Runs in one pass: code block ranges and line starts both ascend.
+/// Byte range of the managed section, ignoring markers inside code blocks. Migrate
+/// finds markers with the same scanner.
 fn section(text: &str, shown: &str) -> Result<Option<(usize, usize)>, AgentsError> {
-    let fenced: Vec<Range<usize>> = Parser::new(text)
-        .into_offset_iter()
-        .filter_map(|(event, range)| {
-            matches!(event, Event::Start(Tag::CodeBlock(_))).then_some(range)
-        })
-        .collect();
-    let mut cursor = 0;
-    let mut found: Vec<(&str, usize, usize)> = Vec::new();
-    for span in line_spans(text) {
-        while cursor < fenced.len() && fenced[cursor].end <= span.start {
-            cursor += 1;
-        }
-        let inside = cursor < fenced.len() && fenced[cursor].start <= span.start;
-        let line = &text[span.clone()];
-        let value = line.trim().trim_start_matches('\u{feff}');
-        if !inside && (value == BEGIN || value == END) {
-            let bom = if line.starts_with('\u{feff}') {
-                '\u{feff}'.len_utf8()
-            } else {
-                0
-            };
-            found.push((value, span.start + bom, span.end));
-        }
-    }
-    match found.as_slice() {
+    match marker_lines(text, &[BEGIN, END]).as_slice() {
         [] => Ok(None),
-        [(BEGIN, start, _), (END, _, end)] => Ok(Some((*start, *end))),
+        [begin, end] if begin.marker == BEGIN && end.marker == END => {
+            Ok(Some((begin.start, end.end)))
+        }
         _ => Err(AgentsError::MalformedMarkers(shown.into())),
     }
 }

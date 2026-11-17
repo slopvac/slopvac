@@ -21,6 +21,7 @@ mod document;
 mod html;
 mod jsexpr;
 mod markdown;
+mod marker;
 mod mask;
 mod mdx;
 mod projection;
@@ -37,5 +38,6 @@ pub use html::{
 };
 pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
+pub use marker::{MarkerLine, marker_lines};
 pub use mdx::{mdx_syntax_spans, mdx_syntax_spans_counted, parse_mdx};
 pub use projection::{Projection, Token, TokenKind};

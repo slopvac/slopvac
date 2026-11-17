@@ -1,5 +1,7 @@
 //! Inline directive ids: `<!-- slopvac-allow: rule=<id> reason=<name> -->`.
 
+use frontmatter_spans::LineIndex;
+
 use crate::RenameTable;
 
 /// A directive rule id that the rename table does not know.
@@ -44,24 +46,31 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) 
     let mut found = Found::default();
     let mut fence: Option<(char, usize)> = None;
     let mut paragraph = String::new();
-    // One-based line of the first line in `paragraph`.
-    let mut start = 1;
-    for (index, line) in text.split_inclusive('\n').enumerate() {
+    let lines = LineIndex::new(text);
+    // Byte offset of the first line in `paragraph`, and of the current line.
+    let mut start = 0;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
         let in_fence = fence_step(&mut fence, line);
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+            out.push_str(&rewrite_paragraph(
+                &paragraph, start, &lines, renames, &mut found,
+            ));
             paragraph.clear();
             out.push_str(line);
         } else {
             if paragraph.is_empty() {
-                start = index + 1;
+                start = offset;
             }
             paragraph.push_str(line);
         }
+        offset += line.len();
     }
-    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+    out.push_str(&rewrite_paragraph(
+        &paragraph, start, &lines, renames, &mut found,
+    ));
     (out, found)
 }
 
@@ -151,7 +160,8 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
 
 fn rewrite_paragraph(
     text: &str,
-    start_line: usize,
+    base: usize,
+    lines: &LineIndex<'_>,
     renames: &RenameTable,
     found: &mut Found,
 ) -> String {
@@ -171,7 +181,7 @@ fn rewrite_paragraph(
         let comment = &text[start..end];
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && is_directive(comment) {
-            let line = start_line + text[..start].matches('\n').count();
+            let line = lines.line_col(base + start).line;
             if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
             } else {
@@ -445,6 +455,25 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn unknown_id_lines_count_every_terminator() {
+        for nl in ["\n", "\r\n", "\r"] {
+            let text = format!(
+                "Intro{nl}{nl}<!-- slopvac-allow: rule=orwell.gone reason=x -->{nl}text{nl}"
+            );
+            let (out, unknown) = run(&text);
+            assert_eq!(out, text);
+            assert_eq!(
+                unknown,
+                vec![UnknownId {
+                    id: "orwell.gone".to_owned(),
+                    line: 3
+                }],
+                "{nl:?}"
+            );
+        }
     }
 
     #[test]

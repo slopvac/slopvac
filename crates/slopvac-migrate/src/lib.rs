@@ -112,6 +112,24 @@ pub enum Error {
     /// The engine could not lint the project.
     #[error("lint: {0}")]
     Lint(String),
+    /// The engine refused its rule sets or settings.
+    #[error("lint: {0}")]
+    Engine(#[source] slopvac_engine::EngineError),
+    /// The engine could not lint one document.
+    #[error("lint: {label}: {source}")]
+    Document {
+        /// The document, relative to the project root.
+        label: String,
+        /// The engine failure.
+        #[source]
+        source: slopvac_engine::EngineError,
+    },
+    /// A built-in lint setting is not a valid value.
+    #[error("lint: {0}")]
+    Setting(#[source] slopvac_model::ValueError),
+    /// A built-in lint genre is not a valid id.
+    #[error("lint: {0}")]
+    Genre(#[source] slopvac_model::IdError),
     /// A filesystem operation failed.
     #[error("{path}: {source}")]
     Io {
@@ -135,7 +153,11 @@ impl Error {
             Self::Unsafe(_) => "migrate-unsafe-path",
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
-            Self::Lint(_) => "migrate-lint-failed",
+            Self::Lint(_)
+            | Self::Engine(_)
+            | Self::Document { .. }
+            | Self::Setting(_)
+            | Self::Genre(_) => "migrate-lint-failed",
             Self::Io { .. } => "migrate-io-failed",
         }
     }

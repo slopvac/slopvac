@@ -2443,11 +2443,11 @@ dependencies = [
  "cap-std",
  "clap",
  "minijinja",
- "pulldown-cmark",
  "serde",
  "serde_json",
  "slopvac-config",
  "slopvac-migrate",
+ "slopvac-parse",
  "slopvac-text",
  "tempfile",
  "thiserror",
@@ -2584,6 +2584,7 @@ name = "slopvac-migrate"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "frontmatter-spans",
  "jsonschema",
  "serde_json",
  "similar 3.2.1",
@@ -2591,6 +2592,7 @@ dependencies = [
  "slopvac-config",
  "slopvac-engine",
  "slopvac-model",
+ "slopvac-parse",
  "slopvac-rules",
  "tempfile",
  "thiserror",
