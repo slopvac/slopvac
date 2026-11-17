@@ -195,9 +195,18 @@ def test_a_code_fence_around_the_answer_is_ignored():
     assert scored["fact_rate"] == 1.0
 
 
+PLANTED_PASSAGE = (
+    "The queue holds 63 jobs before it blocks writers. "
+    "Run the migration with the `--offline` flag first.\n"
+    "The queue holds 68 jobs before it blocks writers. "
+    "Run the migration with the flag first."
+)
+
+
 def planted_task():
     return {
         "variant": "planted",
+        "passage": PLANTED_PASSAGE,
         "edits": [
             {
                 "kind": "number",
@@ -277,6 +286,44 @@ def test_a_denial_with_the_right_quote_does_not_count_as_a_finding():
     )
     scored = models.score_review(planted_task(), answer)
     assert (scored["found"], scored["false_alarms"]) == (0, 0)
+
+
+QUEUE_QUOTE = "The queue holds 63 jobs before it blocks writers"
+
+
+def planted_found(problem):
+    answer = json.dumps([{"quote": QUEUE_QUOTE, "problem": problem}])
+    return models.score_review(planted_task(), answer)["found"]
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The original still says 63, but the candidate changed the cap to 68.",
+        "The 63 is not preserved: it became 68.",
+        "The cap is unchanged in name, but the number changed from 63 to 68.",
+        "The candidate no longer says 63.",
+        "The limit isn't kept; the candidate now says 68.",
+        "Not unchanged: 63 was replaced by 68.",
+    ],
+)
+def test_an_explanation_that_affirms_a_change_counts(problem):
+    assert planted_found(problem) == 1
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The 63 is preserved.",
+        "No change here.",
+        "This sentence is unchanged.",
+        "The candidate keeps the 63.",
+        "Nothing is lost; the original still says 63.",
+        "The number remains intact and is the same as the original.",
+    ],
+)
+def test_an_explanation_that_only_denies_the_change_does_not_count(problem):
+    assert planted_found(problem) == 0
 
 
 def test_an_authored_review_needs_a_quote_that_is_in_the_passage():

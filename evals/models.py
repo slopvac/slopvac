@@ -372,8 +372,23 @@ def _parse_findings(answer: str) -> list[dict[str, str]]:
 REVIEW_METRIC = "detection by quotation"
 AUTHOR_METRIC = "lexical retention smoke check"
 
-# A finding that denies the loss is not a finding. This is a plain phrase list, not
-# a meaning-level oracle; it stops the common "X is preserved" reply from scoring.
+# A finding that denies the loss is not a finding. These are plain phrase lists, not
+# a meaning-level oracle. A denial counts only when nothing else in the explanation
+# asserts a change, so "still says 63, but the candidate changed it" is kept.
+_KEPT = (
+    r"(?:preserved|kept|retained|intact|unchanged|present|correct"
+    r"|says?|states?|reads?|has|contains?|includes?|keeps?|retains?|preserves?)"
+)
+NEGATED_RE = re.compile(
+    rf"(?:\bnot|\bnever|\bno\s+longer|n['\u2019]t)\s+(?:been\s+|be\s+)?{_KEPT}\b",
+    re.IGNORECASE,
+)
+CHANGE_RE = re.compile(
+    r"\b(?:chang(?:ed|es)|now|instead|replaced|became|becomes|differs?|different"
+    r"|lost|loses|dropped|missing|removed|omitted|altered|swapped|deleted"
+    r"|vanished|gone|wrong|incorrect|increased|decreased)\b",
+    re.IGNORECASE,
+)
 DENIAL_RE = re.compile(
     r"\b(?:is|are|was|were|remains?|stays?|been)\s+"
     r"(?:preserved|kept|retained|intact|correct|unchanged|present)\b"
@@ -381,14 +396,24 @@ DENIAL_RE = re.compile(
     r"|\bnot\s+(?:changed|lost|missing|dropped|altered)\b"
     r"|\bnothing\s+(?:is\s+)?(?:lost|missing|changed)\b"
     r"|\bstill\s+(?:says|states|reads|has|contains|includes)\b"
+    r"|\bcandidate\s+(?:still\s+)?(?:keeps|retains|preserves|contains|includes|has)\b"
     r"|\bsame\s+as\s+the\s+original\b",
     re.IGNORECASE,
 )
 
 
 def _asserts_change(problem: str) -> bool:
-    """True unless the explanation denies the loss or change."""
-    return DENIAL_RE.search(problem) is None
+    """True unless the explanation only denies the loss or change.
+
+    A negated denial ("not preserved", "no longer says") asserts a change. A plain
+    denial is overruled by a contrasting assertion left once the denial is removed.
+    """
+    if NEGATED_RE.search(problem):
+        return True
+    rest = DENIAL_RE.sub(" ", problem)
+    if rest == problem:
+        return True  # no denial phrase at all
+    return CHANGE_RE.search(rest) is not None
 
 
 def _in_passage(quote: str, passage: str) -> bool:
