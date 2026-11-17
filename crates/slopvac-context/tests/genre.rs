@@ -663,6 +663,51 @@ mod display_escaping {
     }
 
     #[test]
+    fn a_duplicate_tagger_id_is_escaped() {
+        struct Named;
+        impl slopvac_context::Tagger for Named {
+            fn id(&self) -> &str {
+                BAD
+            }
+            fn tag(
+                &self,
+                _: &dyn slopvac_context::DocumentView,
+            ) -> Result<Vec<slopvac_context::Tag>, Error> {
+                Ok(Vec::new())
+            }
+        }
+        let mut reg = slopvac_context::TagRegistry::new();
+        reg.register(Box::new(Named)).unwrap();
+        let err = reg.register(Box::new(Named)).unwrap_err();
+        assert!(matches!(err, Error::DuplicateTagger(_)));
+        clean(&err);
+    }
+
+    #[test]
+    fn a_yaml_error_that_echoes_input_is_escaped() {
+        let y = "schema_version: 3\nid: a\nprofile: \"x\\e[31m\\u202ey\"\n";
+        let err = GenreSpec::from_yaml(y).unwrap_err();
+        assert!(matches!(err, Error::Yaml(_)));
+        // The parser prints its own escapes next to raw input text, so only the absence of
+        // raw characters is stable.
+        assert!(
+            !err.to_string().contains(['\u{1b}', '\u{202e}']),
+            "{:?}",
+            err.to_string()
+        );
+    }
+
+    #[test]
+    fn a_path_signal_glob_error_is_escaped() {
+        let y = "- schema_version: 3\n  id: a\n  detect:\n    signals:\n      - { kind: path, glob: \"{x\\e[31m\\u202ey\" }\n";
+        let err = GenreRegistry::new(parse_genres(y).unwrap(), "a")
+            .err()
+            .unwrap();
+        assert!(matches!(err, Error::SignalGlob { .. }), "{err:?}");
+        clean(&err);
+    }
+
+    #[test]
     fn glob_errors_are_escaped() {
         clean(&files_match(&[format!("{BAD}\\")], "a.md").unwrap_err());
     }
