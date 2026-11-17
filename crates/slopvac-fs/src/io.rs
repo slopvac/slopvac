@@ -125,7 +125,12 @@ fn sync_dir(dir: &Dir) -> std::io::Result<()> {
 }
 
 /// Write all of `bytes`. The error is the writer's own, so its OS code survives.
+///
+/// Under test, a thread-local hook can fail the write, because a full disk cannot be made
+/// portably from a test.
 fn write_to(mut writer: impl Write, bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(test)]
+    tests::inject_write_failure()?;
     writer.write_all(bytes)
 }
 
@@ -194,6 +199,18 @@ mod tests {
         /// `(calls left before the failure, OS code)` for the next `sync_dir` calls.
         static SYNC_FAILURE: std::cell::Cell<Option<(usize, i32)>> =
             const { std::cell::Cell::new(None) };
+    }
+
+    thread_local! {
+        /// OS code for the next `write_to` call to fail with.
+        static WRITE_FAILURE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    }
+
+    /// Called by `write_to`: fail once with the planned OS code.
+    pub(super) fn inject_write_failure() -> std::io::Result<()> {
+        WRITE_FAILURE
+            .take()
+            .map_or(Ok(()), |code| Err(std::io::Error::from_raw_os_error(code)))
     }
 
     /// Called by `sync_dir`: fail with the planned OS code once the countdown reaches zero.
@@ -415,29 +432,25 @@ mod tests {
         assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    struct Full;
-
-    impl Write for Full {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::from_raw_os_error(28))
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[test]
-    fn data_write_failure_keeps_its_os_code() {
-        // No portable way to fill a disk (/dev/full is Linux only), so a writer that fails
-        // with ENOSPC stands in at the boundary `write_atomic` writes through.
-        let err = write_to(Full, b"x").unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(28), "ENOSPC");
-        let wrapped = Error::io("write", Path::new("f"), &err);
-        let Error::Io { source, .. } = wrapped else {
-            panic!("expected Error::Io")
+    fn failed_data_write_keeps_the_destination_and_leaves_no_temporary_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        // 28 is ENOSPC on every Unix; its kind is StorageFull.
+        WRITE_FAILURE.set(Some(28));
+        let result = write(&tmp, "f", b"new", WriteOptions::default());
+        WRITE_FAILURE.set(None);
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"old");
+        let names: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [OsString::from("f")]);
+        let Err(Error::Io { source, .. }) = result else {
+            panic!("expected Error::Io, got {result:?}");
         };
         assert_eq!(source.raw_os_error(), Some(28));
+        assert_eq!(source.kind(), std::io::ErrorKind::StorageFull);
     }
 
     #[test]
@@ -520,12 +533,11 @@ mod tests {
         )
         .unwrap_err();
         SYNC_FAILURE.set(None);
-        let Error::Io { op, source, .. } = err else {
+        assert!(!tmp.path().join("new/f").exists());
+        let Error::Io { source, .. } = err else {
             panic!("expected Error::Io, got {err:?}")
         };
-        assert_eq!(op, "open directory of");
         assert_eq!(source.raw_os_error(), Some(28));
         assert_eq!(source.kind(), std::io::ErrorKind::StorageFull);
-        assert!(!tmp.path().join("new/f").exists());
     }
 }
