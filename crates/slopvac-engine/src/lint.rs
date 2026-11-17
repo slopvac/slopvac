@@ -211,6 +211,26 @@ struct ActiveDiagram {
     at: Option<(usize, usize, usize)>,
 }
 
+/// An active rule of a kind, style or metric the engine does not run.
+struct NotRun {
+    kind: &'static str,
+    /// The genres the rule is limited to, if any.
+    genres: Option<Vec<GenreId>>,
+}
+
+impl NotRun {
+    fn of(kind: &'static str, rule: &slopvac_rules::Rule) -> Self {
+        Self {
+            kind,
+            genres: rule
+                .applies_to
+                .as_ref()
+                .and_then(|a| a.genres.as_ref())
+                .map(|g| g.iter().cloned().collect()),
+        }
+    }
+}
+
 /// Where a rule id points.
 enum Catalog {
     Loaded(usize),
@@ -248,8 +268,8 @@ pub struct Engine {
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
     pub(crate) running: HashSet<String>,
-    /// Notices every document carries.
-    notices: Vec<Notice>,
+    /// Active rules the engine cannot run. Each document is told about those that apply to it.
+    not_run: Vec<NotRun>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
     /// How RST files are read, and the adapter built from it. The adapter finds its
     /// interpreter on the first file.
@@ -367,7 +387,7 @@ impl Engine {
             signal_rules: Vec::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
-            notices: Vec::new(),
+            not_run: Vec::new(),
             categories: std::collections::BTreeMap::new(),
             rst_options: RstOptions::from_env(),
             rst: RstAdapter::new(RstOptions::from_env()),
@@ -495,8 +515,6 @@ impl Engine {
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
     #[allow(clippy::too_many_lines)]
     fn resolve(&mut self) -> Result<(), EngineError> {
-        let mut unrun: std::collections::BTreeMap<&'static str, usize> =
-            std::collections::BTreeMap::new();
         // A rule id defined by several sets belongs to the last one: a set added later, such as
         // the generated locale rule, replaces the same id in an earlier set.
         let mut owner: HashMap<&RuleId, usize> = HashMap::new();
@@ -572,7 +590,7 @@ impl Engine {
                             if supported {
                                 self.metrics.push(Active::new(s, c, r, severity));
                             } else {
-                                *unrun.entry("metric").or_default() += 1;
+                                self.not_run.push(NotRun::of("metric", rule));
                             }
                         }
                         MatchKind::Structure => {
@@ -587,7 +605,7 @@ impl Engine {
                                     .insert(id, ActiveDiagram { severity, at });
                                 self.signal_rules.push((signal, rule));
                             } else {
-                                *unrun.entry("structure").or_default() += 1;
+                                self.not_run.push(NotRun::of("structure", rule));
                             }
                         }
                         MatchKind::Vocabulary => {
@@ -601,7 +619,7 @@ impl Engine {
                             list.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Capitalization => {
-                            *unrun.entry(CAPITALIZATION).or_default() += 1;
+                            self.not_run.push(NotRun::of(CAPITALIZATION, rule));
                         }
                     }
                 }
@@ -612,9 +630,6 @@ impl Engine {
                 self.catalog
                     .insert(rule.id().as_str().to_owned(), Catalog::Loaded(s));
             }
-        }
-        for (kind, count) in unrun {
-            self.notices.push(not_run_notice(kind, count)?);
         }
         Ok(())
     }
@@ -741,7 +756,23 @@ impl Engine {
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
-        Ok(self.document(input, &prepared, &tags, genre, findings, extra))
+        let not_run = self.not_run_notices(&genre.id)?;
+        Ok(self.document(input, &prepared, &tags, genre, not_run, findings, extra))
+    }
+
+    /// The notices about active rules the engine does not run and that apply to a document of
+    /// `genre`.
+    fn not_run_notices(&self, genre: &GenreId) -> Result<Vec<Notice>, EngineError> {
+        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for n in &self.not_run {
+            if n.genres.as_ref().is_none_or(|g| g.contains(genre)) {
+                *counts.entry(n.kind).or_default() += 1;
+            }
+        }
+        counts
+            .into_iter()
+            .map(|(kind, count)| not_run_notice(kind, count))
+            .collect()
     }
 
     /// The genre of one document: chosen from the document when the settings ask for it,
@@ -873,11 +904,12 @@ impl Engine {
         prepared: &Prepared<'_>,
         tags: &TagIndex,
         genre: GenreResult,
+        not_run: Vec<Notice>,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut unchecked = self.notices.clone();
+        let mut unchecked = not_run;
         unchecked.extend(extra);
         unchecked.extend(self.vocabulary.notices().iter().cloned());
         let scoring = score_document(
