@@ -189,6 +189,81 @@ def test_verify_refuses_a_legacy_signature(tmp_path: Path) -> None:
         lists.verify(out, public, NOW)
 
 
+def _signed(tmp_path: Path, name: str, issued: datetime, days: int = 30) -> Path:
+    """A list issued at ``issued``, signed by the throwaway key of ``tmp_path``."""
+    key, public = tmp_path / "throwaway.key", tmp_path / "throwaway.pub"
+    if not key.exists():
+        _keypair(tmp_path)
+    out = tmp_path / name
+    env = {"MINISIGN_SECRET_KEY": key.read_text(), "RUNNER_TEMP": str(tmp_path)}
+    lists.build(out, public, env, issued, days)
+    return out
+
+
+EARLIER = datetime(2026, 11, 10, 5, 0, 0, tzinfo=UTC)
+LATER = datetime(2026, 11, 17, 5, 0, 0, tzinfo=UTC)
+
+
+@NEEDS_MINISIGN
+def test_check_newer_accepts_a_strictly_newer_candidate(tmp_path: Path) -> None:
+    candidate = _signed(tmp_path, "candidate", LATER)
+    current = _signed(tmp_path, "current", EARLIER)
+    lists.check_newer(candidate, current, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+@pytest.mark.parametrize(
+    ("candidate_at", "current_at"),
+    [(EARLIER, LATER), (LATER, LATER)],
+    ids=["older", "equal"],
+)
+def test_check_newer_refuses_an_older_or_equal_candidate(
+    tmp_path: Path, candidate_at: datetime, current_at: datetime
+) -> None:
+    candidate = _signed(tmp_path, "candidate", candidate_at)
+    current = _signed(tmp_path, "current", current_at)
+    with pytest.raises(lists.SigningError, match="not newer"):
+        lists.check_newer(candidate, current, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_check_newer_allows_the_first_publication(tmp_path: Path) -> None:
+    candidate = _signed(tmp_path, "candidate", LATER)
+    lists.check_newer(
+        candidate, tmp_path / "nothing-published", tmp_path / "throwaway.pub", LATER
+    )
+
+
+@NEEDS_MINISIGN
+def test_check_newer_replaces_a_lapsed_published_list(tmp_path: Path) -> None:
+    current = _signed(tmp_path, "current", EARLIER, days=1)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    lists.check_newer(candidate, current, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_check_newer_refuses_a_published_list_with_a_bad_signature(
+    tmp_path: Path,
+) -> None:
+    candidate = _signed(tmp_path, "candidate", LATER)
+    current = _signed(tmp_path, "current", EARLIER)
+    (current / "revocations.json").write_bytes(lists.render(EARLIER, days=7))
+    with pytest.raises(lists.SigningError, match="signature check failed"):
+        lists.check_newer(candidate, current, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_check_newer_refuses_a_published_directory_without_a_list(
+    tmp_path: Path,
+) -> None:
+    candidate = _signed(tmp_path, "candidate", LATER)
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(lists.SigningError, match="is missing"):
+        lists.check_newer(
+            candidate, tmp_path / "empty", tmp_path / "throwaway.pub", LATER
+        )
+
+
 def test_build_without_a_key_fails_before_writing(tmp_path: Path) -> None:
     with pytest.raises(lists.SigningError, match="MINISIGN_SECRET_KEY is not set"):
         lists.build(tmp_path / "out", lists.PUBKEY, {}, NOW, 30)
@@ -264,11 +339,11 @@ def test_the_secret_is_in_one_step_env_only(workflow: dict) -> None:
     assert "MINISIGN_SECRET_KEY" not in holders[0]["run"]
 
 
-def test_build_sign_runs_in_the_release_environment_with_read_only_contents(
+def test_build_sign_runs_in_the_revocations_environment_with_read_only_contents(
     workflow: dict,
 ) -> None:
     job = workflow["jobs"]["build-sign"]
-    assert job["environment"] == "release"
+    assert job["environment"] == "revocations"
     assert job["permissions"] == {"contents": "read"}
 
 
@@ -279,6 +354,22 @@ def test_push_has_package_write_no_environment_and_depends_on_build_sign(
     assert job["permissions"] == {"contents": "read", "packages": "write"}
     assert "environment" not in job
     assert job["needs"] == "build-sign"
+
+
+def test_push_checks_the_published_list_before_it_pushes(workflow: dict) -> None:
+    runs = [s.get("run", "") for s in workflow["jobs"]["push"]["steps"]]
+    fetch = next(i for i, r in enumerate(runs) if 'oras pull "$IMAGE"' in r)
+    newer = next(i for i, r in enumerate(runs) if "revocation_list.py check-newer" in r)
+    push = next(i for i, r in enumerate(runs) if "oras push" in r)
+    assert fetch < newer < push
+    # Only a "not found" answer means a first run; anything else fails the job.
+    assert "exit 1" in runs[fetch]
+
+
+def test_build_sign_signs_only_from_main(workflow: dict) -> None:
+    condition = workflow["jobs"]["build-sign"]["if"]
+    assert "github.ref == 'refs/heads/main'" in condition
+    assert workflow["jobs"]["push"]["needs"] == "build-sign"
 
 
 def test_push_verifies_again_before_it_pushes(workflow: dict) -> None:

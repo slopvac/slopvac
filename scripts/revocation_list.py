@@ -4,7 +4,10 @@
     revocation_list.py render [--days N] [--now TIME]
     revocation_list.py build DIR [--days N] [--now TIME]
     revocation_list.py verify DIR
+    revocation_list.py check-newer CANDIDATE CURRENT
 
+``check-newer`` stops a push unless the candidate's ``issued`` is strictly later
+than the published list's (CURRENT, which may not exist on the first run).
 ``render`` prints the canonical list. ``build`` writes ``revocations.json`` and
 ``revocations.json.minisig`` into DIR, signs with ``MINISIGN_SECRET_KEY`` and checks
 the result as ``verify`` does. ``verify`` is the only gate before a push: it checks
@@ -114,8 +117,11 @@ def _sorted_unique(values: object, pattern: re.Pattern[str], what: str) -> None:
         raise SigningError(f"{what} must be sorted and unique")
 
 
-def check_list(data: bytes, now: datetime) -> None:
-    """Refuse anything the CLI would refuse, or a list that is already expired."""
+def check_list(data: bytes, now: datetime, *, require_fresh: bool = True) -> datetime:
+    """Refuse anything the CLI would refuse, or a list that is already expired.
+
+    Returns ``issued``.
+    """
     if len(data) > MAX_LIST_BYTES:
         raise SigningError(f"the list is larger than {MAX_LIST_BYTES} bytes")
     try:
@@ -133,10 +139,11 @@ def check_list(data: bytes, now: datetime) -> None:
         raise SigningError(
             f"expires must be after issued by at most {MAX_VALID_DAYS} days"
         )
-    if expires <= now:
+    if require_fresh and expires <= now:
         raise SigningError("the list has already expired")
     _sorted_unique(document["keys"], _KEY_ID, "keys")
     _sorted_unique(document["digests"], _DIGEST, "digests")
+    return issued
 
 
 def check_prehashed(signature: Path) -> None:
@@ -149,17 +156,43 @@ def check_prehashed(signature: Path) -> None:
         raise SigningError(f"{signature.name} is not a prehashed signature")
 
 
-def verify(directory: Path, pubkey: Path, now: datetime) -> None:
-    """The gate before a push: list, mode and signature."""
+def verify(
+    directory: Path, pubkey: Path, now: datetime, *, require_fresh: bool = True
+) -> datetime:
+    """The gate before a push: list, mode and signature. Returns ``issued``.
+
+    ``require_fresh=False`` accepts a list past its ``expires``; ``check-newer``
+    uses it for the published list, which a lapsed list must not block.
+    """
     file = directory / LIST_NAME
     if not file.is_file():
         raise SigningError(f"{file} is missing")
-    check_list(file.read_bytes(), now)
+    issued = check_list(file.read_bytes(), now, require_fresh=require_fresh)
     signature = file.with_name(file.name + SIGNATURE_SUFFIX)
     if not signature.is_file():
         raise SigningError(f"no signature for {file.name}")
     check_prehashed(signature)
     verify_signatures([file], pubkey)
+    return issued
+
+
+def check_newer(candidate: Path, current: Path, pubkey: Path, now: datetime) -> None:
+    """Refuse to replace the published list with one that is not strictly newer.
+
+    The CLI refuses an older ``issued`` than the one it cached, so an older
+    artifact pushed late (a retried job) would break clients. A ``current``
+    directory that does not exist means nothing is published yet. A published
+    list that does not verify is an error: the push stops rather than guess.
+    """
+    issued = verify(candidate, pubkey, now)
+    if not current.exists():
+        return
+    published = verify(current, pubkey, now, require_fresh=False)
+    if issued <= published:
+        raise SigningError(
+            f"the candidate (issued {_format(issued)}) is not newer than the "
+            f"published list (issued {_format(published)})"
+        )
 
 
 def build(
@@ -205,6 +238,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if name == "build":
             sub.add_argument("directory", type=Path)
     commands.add_parser("verify").add_argument("directory", type=Path)
+    newer = commands.add_parser("check-newer")
+    newer.add_argument("candidate", type=Path)
+    newer.add_argument("current", type=Path, help="may not exist: nothing published")
     args = parser.parse_args(argv)
     try:
         now = _parse(args.now) if getattr(args, "now", None) else datetime.now(UTC)
@@ -213,6 +249,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "build":
             build(args.directory, args.pubkey, dict(os.environ), now, args.days)
             print(f"signed and verified {LIST_NAME}")
+        elif args.command == "check-newer":
+            check_newer(args.candidate, args.current, args.pubkey, now)
+            print("the candidate is newer than the published list")
         else:
             verify(args.directory, args.pubkey, now)
             print(f"verified {LIST_NAME}")

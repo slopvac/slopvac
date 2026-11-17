@@ -30,11 +30,13 @@ env:
 jobs:
   build-sign:
     name: Build and sign the list
-    if: ${{ github.repository == 'slopvac/slopvac' }}
+    if: ${{ github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # The environment limits this job to main and v* refs and holds the key.
-    environment: release
+    # Defence in depth only. The `if` above keeps a v* tag or a branch from signing;
+    # the environment's deployment rule (main only) is the real control.
+    # The environment holds the key. Change its name on the next line only.
+    environment: revocations
     permissions:
       contents: read
     steps:
@@ -86,14 +88,36 @@ jobs:
       - name: Verify against the committed public key
         run: python3 scripts/revocation_list.py verify "$RUNNER_TEMP/revocations"
 
-      - name: Push
+      - name: Log in to GHCR
         env:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GH_ACTOR" --password-stdin
+
+      # A retried older run must not replace a newer list: clients that cached the
+      # newer one refuse the older `issued`. Nothing published yet is allowed; any
+      # other pull failure stops the job.
+      - name: Fetch the published list
+        run: |
+          errors="$RUNNER_TEMP/pull.err"
+          if oras pull "$IMAGE" --output "$RUNNER_TEMP/published" 2>"$errors"; then
+            echo "pulled the published list"
+          elif grep -qiE 'not found|name_unknown|manifest_unknown|404' "$errors"; then
+            echo "nothing is published yet"
+            rm -rf "$RUNNER_TEMP/published"
+          else
+            cat "$errors" >&2
+            exit 1
+          fi
+
+      - name: Require a newer list than the published one
+        run: python3 scripts/revocation_list.py check-newer "$RUNNER_TEMP/revocations" "$RUNNER_TEMP/published"
+
+      - name: Push
+        env:
           REPO: ${{ github.repository }}
         working-directory: ${{ runner.temp }}/revocations
         run: |
-          printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GH_ACTOR" --password-stdin
           # The list comes first, its signature second: the CLI accepts only these two layers.
           oras push "$IMAGE" \
             --artifact-type "$ARTIFACT_TYPE" \

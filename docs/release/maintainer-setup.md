@@ -86,14 +86,14 @@ A list is valid for 30 days. The `Revocation list` workflow (`revocations.yml`) 
 
 The workflow has two jobs:
 
-- `build-sign` runs in the `release` environment with `contents: read`. It is the only job that reads `MINISIGN_SECRET_KEY`. It runs `scripts/revocation_list.py build`, which writes the canonical list, signs it in prehashed mode and checks the result against the committed public key.
+- `build-sign` runs in the `revocations` environment with `contents: read`. It is the only job that reads `MINISIGN_SECRET_KEY`. It runs `scripts/revocation_list.py build`, which writes the canonical list, signs it in prehashed mode and checks the result against the committed public key.
 - `push` has `packages: write` and no secret. It checks the signature again, pushes the two files with a pinned `oras` and then pulls the result back to check it.
 
-The `release` environment limits `build-sign` to `main` and `v*` refs, and the workflow has no `pull_request` trigger.
+The `revocations` environment is separate from `release` on purpose. This scheduled job only ever needs `main`, so the environment deploys from `main` alone, with no admin bypass. The `release` environment also allows `v*` tags. With a separate environment, a tag can never reach the key through this workflow. The job also has an `if` guard for `main`, as an extra layer. The workflow has no `pull_request` trigger. Before `push` replaces the list, it pulls the published one and refuses to continue unless the new `issued` time is strictly later, so a retried older run cannot roll clients back.
 
 ### First run
 
-1. Run the `Revocation list` workflow by hand on `main` (`workflow_dispatch`) and approve the `release` environment if it asks.
+1. Run the `Revocation list` workflow by hand on `main` (`workflow_dispatch`) and approve the `revocations` environment if it asks.
 2. Open the new `slopvac-revocations` package under the `slopvac` organisation's packages. Packages in an organisation start private. Change its visibility to public, and link it to the `slopvac/slopvac` repository so the workflow keeps write access. While it is private, users cannot pull the list anonymously and every online sync fails.
 3. Check the result without a login: `oras manifest fetch ghcr.io/slopvac/slopvac-revocations:latest` must show the artifact type `application/vnd.slopvac.revocations.v1` and two layers, the list and then its signature.
 
