@@ -1,5 +1,5 @@
 [tools]
-ast-grep = "0.51.3"                      # Rust message-registry checks (sgconfig.yml); keep in step with test.yml
+ast-grep = "0.51.3"                        # Rust message-registry checks (sgconfig.yml); keep in step with test.yml
 python = "3.14.8"
 uv = "0.13.4"
 vale = "3.24.0"

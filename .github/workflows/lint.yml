@@ -198,6 +198,11 @@ jobs:
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-deny@0.20.2,cargo-shear@1.14.1,cargo-sort@2.1.4,typos-cli@1.51.1
+      # mise reads the ast-grep pin from mise.toml and verifies the download through its aqua backend.
+      - name: Install ast-grep
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: ast-grep
       - name: Run configured hooks
         run: uvx prek@0.5.2 run --all-files
 
