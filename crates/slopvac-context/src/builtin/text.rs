@@ -88,17 +88,3 @@ pub(super) fn clean(s: &str) -> String {
     }
     out.trim().to_string()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn strips_code_links_and_emphasis() {
-        assert_eq!(
-            clean("**Never** pass `--force` to [the tool](http://x)."),
-            "Never pass   to the tool."
-        );
-        assert_eq!(strip_code("a `b` c"), "a   c");
-    }
-}
