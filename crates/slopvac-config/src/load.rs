@@ -136,6 +136,7 @@ pub fn load_labeled(
         entries: 0,
         ids: std::collections::HashMap::new(),
         closure: Vec::new(),
+        height: Vec::new(),
         // The project file counts against the byte budget like every extended file.
         bytes: text.len(),
     };
@@ -285,6 +286,9 @@ struct Loader<'a> {
     ids: std::collections::HashMap<Key, usize>,
     /// For each table entry: it and everything it extends, in application order.
     closure: Vec<Vec<usize>>,
+    /// For each table entry: files in its longest `extends` chain, itself included. A cached
+    /// file reached again checks this against the depth limit.
+    height: Vec<usize>,
     /// `extends` entries read so far, in every file, repeats included.
     entries: usize,
     bytes: usize,
@@ -318,15 +322,58 @@ const MAX_BLOCKS_PER_FILE: usize = 1000;
 const MAX_GLOBS_PER_BLOCK: usize = 100;
 
 impl Loader<'_> {
+    /// The text of an extended file (read from disk unless a pack supplied it), counted against
+    /// the byte budget. The error is the diagnostic code, message and help.
+    fn take_body(
+        &mut self,
+        target: &Key,
+        body: Option<String>,
+        name: &str,
+    ) -> Result<String, (Code, String, Option<String>)> {
+        let body = match body {
+            Some(b) => b,
+            None => match target {
+                Key::Path(p) => crate::read::read_text(p).map_err(|e| {
+                    (
+                        Code::ExtendsMissing,
+                        format!(
+                            "cannot read the extended config `{name}`: {}",
+                            crate::error::reason(&e)
+                        ),
+                        Some("paths are relative to the file that holds the entry".into()),
+                    )
+                })?,
+                Key::Pack(_) => String::new(),
+            },
+        };
+        self.bytes += body.len();
+        if self.bytes > MAX_EXTENDS_BYTES {
+            return Err((
+                Code::ExtendsLimit,
+                format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
+                Some("extend smaller files".into()),
+            ));
+        }
+        Ok(body)
+    }
+
+    /// Whether a chain of `height` files placed under the files now loading is too deep.
+    fn depth_exceeded(&self, height: usize) -> Option<(String, &'static str)> {
+        if self.stack.len() + height <= MAX_EXTENDS_DEPTH {
+            return None;
+        }
+        Some((
+            format!("`extends` is nested more than {MAX_EXTENDS_DEPTH} files deep"),
+            "flatten the chain",
+        ))
+    }
+
     /// Whether loading one more file would break the depth or file budget.
     ///
     /// Every distinct file counts: the finished ones, the ancestors still loading, and the new one.
     fn budget_exceeded(&self) -> Option<(String, &'static str)> {
-        if self.stack.len() >= MAX_EXTENDS_DEPTH {
-            return Some((
-                format!("`extends` is nested more than {MAX_EXTENDS_DEPTH} files deep"),
-                "flatten the chain",
-            ));
+        if let Some(depth) = self.depth_exceeded(1) {
+            return Some(depth);
         }
         if self.ids.len() + self.stack.len() + 1 > MAX_EXTENDS_FILES {
             return Some((
@@ -475,7 +522,7 @@ impl Loader<'_> {
         self.stack.push((key.clone(), display.to_owned()));
         let extended = self.extend(&tree, key, &text, display);
         self.stack.pop();
-        let mut closure = extended?;
+        let (mut closure, below) = extended?;
         let settings = flatten_with(
             &tree,
             Origin {
@@ -497,6 +544,7 @@ impl Loader<'_> {
         self.touch(id);
         closure.push(id);
         self.closure.push(closure);
+        self.height.push(below + 1);
         Ok(())
     }
 
@@ -614,18 +662,19 @@ impl Loader<'_> {
         key: &Key,
         text: &str,
         display: &str,
-    ) -> Result<Vec<usize>, ConfigError> {
+    ) -> Result<(Vec<usize>, usize), ConfigError> {
         let Some(Node {
             value: Value::Array(entries),
             ..
         }) = tree.get("extends")
         else {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), 0));
         };
         if let Some(rejection) = self.entries_exceeded(tree, entries.len(), display, text) {
             return Err(rejection);
         }
         let mut acc = Ordered::default();
+        let mut below = 0usize;
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let label = self.error_label(key, display);
@@ -680,6 +729,11 @@ impl Loader<'_> {
                 ));
             }
             if let Some(&id) = self.ids.get(&target) {
+                // A cached chain sits at this depth now, so its height counts against the limit.
+                if let Some((message, help)) = self.depth_exceeded(self.height[id]) {
+                    return Err(fail(Code::ExtendsLimit, message, Some(help.into())));
+                }
+                below = below.max(self.height[id]);
                 // Already loaded: no new read, but the file and what it extends apply again here,
                 // so this later entry wins over an earlier one that reached it first.
                 for i in self.closure[id].clone() {
@@ -696,11 +750,12 @@ impl Loader<'_> {
                 .map_err(|(code, message, help)| fail(code, message, help))?;
             self.load_text(&target, &shown, body, Layer::Extends)?;
             let id = self.ids[&target];
+            below = below.max(self.height[id]);
             for i in self.closure[id].clone() {
                 acc.push(i);
             }
         }
-        Ok(acc.ids())
+        Ok((acc.ids(), below))
     }
 }
 

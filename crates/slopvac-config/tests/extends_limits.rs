@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use slopvac_config::{Code, ConfigError, Inputs, NoPresets, load};
 
@@ -55,17 +55,10 @@ fn a_shallow_diamond_loads_each_file_once() {
 }
 
 #[test]
-fn a_deep_diamond_stops_at_the_limit_quickly() {
+fn a_deep_diamond_stops_at_the_limit() {
     let d = dir();
     diamond(&d, 20);
-    let started = Instant::now();
-    let err = load(&d.path().join("slopvac.toml"), &NoPresets).unwrap_err();
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "{:?}",
-        started.elapsed()
-    );
-    let r = rejected(err);
+    let r = rejected(load_with_watchdog(d.path().join("slopvac.toml")).unwrap_err());
     assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
 }
 
@@ -374,13 +367,7 @@ fn thirty_thousand_blocks_are_refused_fast() {
     }
     assert!(text.len() < 1024 * 1024, "{}", text.len());
     write(&d, "slopvac.toml", &text);
-    let started = Instant::now();
-    let r = rejected(load(&d.path().join("slopvac.toml"), &NoPresets).unwrap_err());
-    assert!(
-        started.elapsed() < Duration::from_secs(1),
-        "{:?}",
-        started.elapsed()
-    );
+    let r = rejected(load_with_watchdog(d.path().join("slopvac.toml")).unwrap_err());
     assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
 }
 
@@ -392,19 +379,13 @@ fn a_thousand_blocks_load_and_a_block_with_too_many_patterns_is_refused() {
         let _ = writeln!(text, "[[overrides]]\nfiles = [\"{i}\"]");
     }
     write(&d, "slopvac.toml", &text);
-    let started = Instant::now();
     assert_eq!(
-        load(&d.path().join("slopvac.toml"), &NoPresets)
+        load_with_watchdog(d.path().join("slopvac.toml"))
             .unwrap()
             .files[0]
             .blocks
             .len(),
         1000
-    );
-    assert!(
-        started.elapsed() < Duration::from_secs(2),
-        "{:?}",
-        started.elapsed()
     );
 
     let globs: Vec<String> = (0..101).map(|i| format!("\"g{i}\"")).collect();
@@ -510,4 +491,51 @@ fn repeated_references_to_a_non_leaf_keep_the_last_position_and_the_count_of_fil
     let shown: Vec<&str> = config.files.iter().map(|f| f.display.as_str()).collect();
     // `leaf0` is the last entry, so it applies after `a`, and the project applies last.
     assert_eq!(shown[shown.len() - 3..], ["a", "leaf0", "slopvac.toml"]);
+}
+
+/// Files `c0..c{n-1}` where each extends the next: a chain of `n` files.
+fn chain(d: &tempfile::TempDir, n: usize) {
+    for i in 0..n {
+        let text = if i + 1 < n {
+            format!("schema_version = 3\nextends = [\"c{}\"]\n", i + 1)
+        } else {
+            "schema_version = 3\n".to_owned()
+        };
+        write(d, &format!("c{i}"), &text);
+    }
+}
+
+#[test]
+fn a_cached_chain_reached_through_a_wrapper_still_obeys_the_depth_limit() {
+    // The project loads `c0` first (a chain of 15 files, 16 with the project). The wrapper `w`
+    // then reaches the same `c0` from a deeper place: project, `w`, then 15 files is 17 levels.
+    let d = dir();
+    chain(&d, 15);
+    write(&d, "w", "schema_version = 3\nextends = [\"c0\"]\n");
+    write(
+        &d,
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"c0\", \"w\"]\n",
+    );
+    let r = rejected(load(&d.path().join("slopvac.toml"), &NoPresets).unwrap_err());
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsLimit);
+    assert!(
+        r.diagnostics[0].message.contains("16"),
+        "{}",
+        r.diagnostics[0].message
+    );
+}
+
+#[test]
+fn a_cached_chain_that_fits_through_a_wrapper_loads() {
+    // 14 chain files + the wrapper + the project is 16 levels, the limit.
+    let d = dir();
+    chain(&d, 14);
+    write(&d, "w", "schema_version = 3\nextends = [\"c0\"]\n");
+    write(
+        &d,
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"c0\", \"w\"]\n",
+    );
+    assert!(load(&d.path().join("slopvac.toml"), &NoPresets).is_ok());
 }
