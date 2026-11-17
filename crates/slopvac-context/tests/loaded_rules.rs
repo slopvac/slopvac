@@ -77,7 +77,7 @@ fn only_gate_is_kept_and_needs_its_context() {
         .find(|r| r.id.ends_with("needs-steps"))
         .unwrap();
     assert_eq!(rule.gate.only, ["procedure"]);
-    assert!(rule.gate.skip.is_empty());
+    assert_eq!(rule.gate.skip, Vec::<String>::new());
     assert!(!kept(&[], &[]).iter().any(|i| i.ends_with("needs-steps")));
     assert!(
         kept(&["procedure"], &[])
@@ -94,7 +94,7 @@ fn skip_gate_is_kept_and_drops_where_the_context_covers_the_page() {
         .find(|r| r.id.ends_with("not-in-notes"))
         .unwrap();
     assert_eq!(rule.gate.skip, ["change-note"]);
-    assert!(rule.gate.only.is_empty());
+    assert_eq!(rule.gate.only, Vec::<String>::new());
     assert!(kept(&[], &[]).iter().any(|i| i.ends_with("not-in-notes")));
     assert!(
         !kept(&["change-note"], &["change-note"])
