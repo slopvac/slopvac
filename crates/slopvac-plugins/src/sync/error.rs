@@ -159,6 +159,7 @@ impl SyncError {
             }
             Self::Revoked { .. } => "pack-revoked",
             Self::Revocation(e) => e.code(),
+            Self::Fetch { source, .. } => source.code().unwrap_or("sync-failed"),
             _ => "sync-failed",
         }
     }

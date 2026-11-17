@@ -312,6 +312,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - The exit codes keep their meaning. Slopvac uses no other exit code.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `pack-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
+- Registry logins have two codes: `credential-helper-untrusted` (the helper exists only in a directory that is not trusted) and `credential-helper-project-unknown` (the caller did not name the project, so no helper starts).
 - Plugin protocol errors use the JSON-RPC 2.0 error object. Its numeric `code` follows the JSON-RPC ranges, and `data.slopvac_code` carries the string code. The protocol bead defines the numeric range.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 

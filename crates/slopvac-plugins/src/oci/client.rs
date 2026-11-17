@@ -133,9 +133,11 @@ pub struct Client {
 
 impl Client {
     /// Client with credentials from the environment and the Docker config.
+    /// `project_root` is the enclosing project, where no credential helper may
+    /// run from.
     #[must_use]
-    pub fn new() -> Self {
-        Self::with_credentials(Box::new(DefaultCredentials::from_env()))
+    pub fn new(project_root: impl Into<std::path::PathBuf>) -> Self {
+        Self::with_credentials(Box::new(DefaultCredentials::from_env(project_root)))
     }
 
     /// Client with a given credential source.
@@ -834,12 +836,6 @@ impl Client {
             return Err(Self::deny_or_status(&url, status));
         }
         Ok(Digest::of(body))
-    }
-}
-
-impl Default for Client {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

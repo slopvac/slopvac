@@ -200,6 +200,39 @@ and model providers.
 Packs are OCI artifacts on GHCR or any registry. Release archives, local folders, and git commits
 also work. `.slopvac/packs.lock` records the version, source, and digest of each pack.
 
+### Registry logins
+
+For a private registry, slopvac takes the first login it finds, in this order:
+
+1. `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`.
+2. `GITHUB_TOKEN`, for `ghcr.io` only.
+3. A static `auths` entry in `$DOCKER_CONFIG/config.json`, or `~/.docker/config.json` when
+   `DOCKER_CONFIG` is unset.
+4. A static `auths` entry in the first of these files that exists: `$REGISTRY_AUTH_FILE`,
+   `$XDG_RUNTIME_DIR/containers/auth.json`, `$XDG_CONFIG_HOME/containers/auth.json`
+   (`~/.config` when unset).
+5. The credential helper that the Docker config names, through `credHelpers` for the registry or
+   else `credsStore`.
+
+With none of these, access is anonymous. Slopvac reads logins from your environment and home directory, not from the project.
+
+Slopvac looks for `docker-credential-<name>` on `PATH`, but only in safe directories. It skips
+relative and empty entries, entries inside the project, and directories that others can write.
+Root or you must own the helper and every directory above it. A directory that a group can write
+passes when you are the only member of the group. It also passes when root owns it and it
+belongs to `admin` and you are an `admin` member.
+
+If the helper exists only in an unsafe directory, the run stops with the code
+`credential-helper-untrusted` and names the helper path. Set `SLOPVAC_OCI_USER` and
+`SLOPVAC_OCI_TOKEN` to sign in without it.
+
+#### Docker Desktop on macOS
+
+Docker Desktop keeps `docker-credential-desktop` under `/Applications`, which the `admin` group
+can write. That directory passes the check for an administrator. A registry that `docker login`
+set up then works with no extra setup. The `docker-credential-desktop` link that Docker Desktop
+installs must sit in a `PATH` directory that you or root own.
+
 A minisign signature covers each published OCI pack, and `plugins sync` fails with exit 2 when the
 signature is missing or invalid. Local folders and git commits carry no signature. A git pin names a
 commit, and the trust hash covers the content.

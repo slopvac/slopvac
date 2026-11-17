@@ -1063,6 +1063,7 @@ mod windows_helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
+            project_root: Some(dir.join("project")),
             ..DefaultCredentials::default()
         };
         let msg = creds.credential("ghcr.io").unwrap_err().to_string();
@@ -1166,6 +1167,7 @@ mod windows_helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.clone().into_os_string()),
+            project_root: Some(dir.join("project")),
             helper_timeout: Some(std::time::Duration::from_secs(5)),
             ..DefaultCredentials::default()
         };
@@ -1213,6 +1215,7 @@ mod helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
+            project_root: Some(dir.join("project")),
             helper_timeout: Some(Duration::from_secs(8)),
             ..DefaultCredentials::default()
         };
@@ -1432,11 +1435,13 @@ mod helpers {
         (dir, base)
     }
 
-    fn refused(creds: &DefaultCredentials, marker: &Path) {
+    /// The lookup is refused with the typed error and the helper never ran.
+    fn refused(creds: &DefaultCredentials, marker: &Path) -> OciError {
         use slopvac_plugins::oci::CredentialSource;
-        let err = creds.credential("ghcr.io").unwrap_err().to_string();
-        assert!(err.contains("not found"), "{err}");
+        let err = creds.credential("ghcr.io").unwrap_err();
+        assert!(matches!(err, OciError::HelperUntrusted { .. }), "{err:?}");
         assert!(!marker.exists(), "the planted helper ran");
+        err
     }
 
     #[test]
@@ -1471,29 +1476,74 @@ mod helpers {
         result.unwrap();
     }
 
-    #[test]
-    fn tm38_a_helper_inside_the_project_is_not_run() {
+    /// `dir` is relative to the scratch base, whose `project` subdirectory is
+    /// the project. `shown` is how the refusal names the helper.
+    #[rstest::rstest]
+    #[case::inside_the_project("project/tools", 0o755, "tools/docker-credential-planted")]
+    #[case::group_writable_directory("shared", 0o775, "<external>/docker-credential-planted")]
+    fn tm38_a_helper_in_an_untrusted_directory_is_not_run(
+        #[case] dir: &str,
+        #[case] mode: u32,
+        #[case] shown: &str,
+    ) {
         let (_guard, base) = scratch();
         let marker = base.join("ran");
-        let project = base.join("project");
-        let bin = project.join("tools");
-        plant(&bin, "planted", &marker, 0o755);
-        let creds = creds_for(&base, "planted", bin.to_str().unwrap(), &project);
-        refused(&creds, &marker);
-    }
-
-    #[test]
-    fn tm38_a_helper_in_a_group_writable_directory_is_not_run() {
-        let (_guard, base) = scratch();
-        let marker = base.join("ran");
-        let bin = base.join("shared");
-        plant(&bin, "planted", &marker, 0o775);
+        let bin = base.join(dir);
+        plant(&bin, "planted", &marker, mode);
         let creds = creds_for(
             &base,
             "planted",
             bin.to_str().unwrap(),
             &base.join("project"),
         );
+        let err = refused(&creds, &marker);
+        assert_eq!(err.code(), Some("credential-helper-untrusted"));
+        let text = err.to_string();
+        assert!(text.contains("not found in a trusted directory"), "{text}");
+        assert!(text.contains(&format!("exists only at {shown}.")), "{text}");
+        for alternative in ["SLOPVAC_OCI_USER", "SLOPVAC_OCI_TOKEN", "GITHUB_TOKEN"] {
+            assert!(text.contains(alternative), "{text}");
+        }
+        assert!(!text.contains(base.to_str().unwrap()), "{text}");
+    }
+
+    #[test]
+    fn tm38_without_a_project_root_no_helper_runs() {
+        use slopvac_plugins::oci::CredentialSource;
+        // A trusted directory, so only the unknown project stops the helper.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("trusted"), "planted", &marker, 0o755);
+        let mut creds = creds_for(
+            &base,
+            "planted",
+            base.join("trusted").to_str().unwrap(),
+            &base,
+        );
+        creds.project_root = None;
+        let err = creds.credential("ghcr.io").unwrap_err();
+        assert_eq!(err.code(), Some("credential-helper-project-unknown"));
+        assert!(!marker.exists(), "the helper ran");
+    }
+
+    #[test]
+    fn tm38_from_env_keeps_helpers_out_of_a_checkout_the_working_directory_is_inside() {
+        // The working directory may be a subdirectory of the checkout, so the
+        // project root comes from the caller and a sibling `tools/` inside the
+        // checkout is still inside the project.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let checkout = base.join("checkout");
+        let tools = checkout.join("tools");
+        plant(&tools, "planted", &marker, 0o755);
+        let mut creds = DefaultCredentials::from_env(&checkout);
+        creds.docker_config_dir = Some(base.clone());
+        creds.helper_search_path = Some(tools.into_os_string());
+        std::fs::write(
+            base.join("config.json"),
+            json!({"credsStore": "planted"}).to_string(),
+        )
+        .unwrap();
         refused(&creds, &marker);
     }
 
@@ -1551,6 +1601,134 @@ fn docker_config_auth_keys_match_the_host_case_insensitively_and_the_port_exactl
     }
 }
 
+/// Login order after the environment: the Docker config's `auths`, then the
+/// first registry auth file, then the helper the Docker config names.
+mod login_order {
+    use super::*;
+
+    fn write_config(dir: &std::path::Path, name: &str, user: &str) -> std::path::PathBuf {
+        let file = dir.join(name);
+        let auth = base64_std(format!("{user}:pw").as_bytes());
+        let cfg = json!({"auths": {"registry.example": {"auth": auth}}});
+        std::fs::write(&file, cfg.to_string()).unwrap();
+        file
+    }
+
+    fn docker_dir_with(config: &serde_json::Value) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), config.to_string()).unwrap();
+        dir
+    }
+
+    fn user_of(creds: &DefaultCredentials) -> Option<String> {
+        creds
+            .credential("registry.example")
+            .unwrap()
+            .map(|c| c.username)
+    }
+
+    #[test]
+    fn a_registry_auth_file_login_is_used_when_the_docker_config_has_none() {
+        let docker = docker_dir_with(&json!({}));
+        let other = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            auth_files: vec![write_config(other.path(), "auth.json", "from-auth-file")],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("from-auth-file"));
+    }
+
+    #[test]
+    fn the_docker_config_beats_a_registry_auth_file() {
+        let docker = tempfile::tempdir().unwrap();
+        write_config(docker.path(), "config.json", "from-docker");
+        let other = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            auth_files: vec![write_config(other.path(), "auth.json", "from-auth-file")],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("from-docker"));
+    }
+
+    #[test]
+    fn only_the_first_auth_file_that_exists_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            auth_files: vec![
+                dir.path().join("missing.json"),
+                write_config(dir.path(), "first.json", "first"),
+                write_config(dir.path(), "second.json", "second"),
+            ],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn a_static_login_is_used_without_starting_the_helper_the_config_names() {
+        // The helper does not exist and no project root is set: running it
+        // would fail the lookup.
+        let docker = tempfile::tempdir().unwrap();
+        let auth = base64_std(b"static:pw");
+        std::fs::write(
+            docker.path().join("config.json"),
+            json!({
+                "auths": {"registry.example": {"auth": auth}},
+                "credsStore": "absent",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("static"));
+    }
+
+    #[test]
+    fn environment_credentials_beat_every_file() {
+        let docker = tempfile::tempdir().unwrap();
+        write_config(docker.path(), "config.json", "from-docker");
+        let creds = DefaultCredentials {
+            env: EnvCredentials {
+                user: Some("env-user".into()),
+                token: Some("t".into()),
+                ..EnvCredentials::default()
+            },
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("env-user"));
+    }
+
+    #[rstest::rstest]
+    #[case::registry_auth_file_first(
+        &[("REGISTRY_AUTH_FILE", "/r/auth.json"), ("XDG_RUNTIME_DIR", "/run/u"), ("XDG_CONFIG_HOME", "/c"), ("HOME", "/h")],
+        &["/r/auth.json", "/run/u/containers/auth.json", "/c/containers/auth.json"]
+    )]
+    #[case::config_home_falls_back_to_dot_config(
+        &[("HOME", "/h")],
+        &["/h/.config/containers/auth.json"]
+    )]
+    #[case::nothing_set(&[], &[])]
+    fn auth_file_candidates_follow_the_container_tools_order(
+        #[case] vars: &[(&str, &str)],
+        #[case] want: &[&str],
+    ) {
+        let map: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        let got =
+            DefaultCredentials::from_lookup_for_tests(|k| map.get(k).cloned(), false).auth_files;
+        let want: Vec<std::path::PathBuf> = want.iter().map(std::path::PathBuf::from).collect();
+        assert_eq!(got, want);
+    }
+}
+
 mod config_key_case {
     use super::*;
 
@@ -1587,6 +1765,7 @@ mod config_key_case {
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         creds.helper_search_path = Some(bin.into_os_string());
+        creds.project_root = Some(dir.path().join("project"));
         creds.helper_timeout = Some(std::time::Duration::from_secs(30));
         let user = |host: &str| creds.credential(host).unwrap().unwrap().username;
         assert_eq!(user("registry.example:5000"), "from-cred-helpers");

@@ -75,6 +75,25 @@ pub enum OciError {
     /// Credentials could not be read.
     #[error("credential error: {}", esc(.0))]
     Credential(String),
+    /// A credential helper exists only in a directory that is not trusted.
+    /// `path` is already redacted for display.
+    #[error(
+        "credential helper `{}` was not found in a trusted directory; it exists only at {}. \
+         Set SLOPVAC_OCI_USER and SLOPVAC_OCI_TOKEN (or GITHUB_TOKEN for ghcr.io) to sign in \
+         without it; these take precedence over the Docker config",
+        esc(.program),
+        esc(.path)
+    )]
+    HelperUntrusted {
+        /// The helper program name.
+        program: String,
+        /// Where it was found, project-relative or `<external>/<file name>`.
+        path: String,
+    },
+    /// A credential helper was not run because the project directory is unknown,
+    /// so slopvac cannot tell whether the helper lies inside it.
+    #[error("credential helper `{}` was not run: the project directory is unknown", esc(.0))]
+    HelperProjectUnknown(String),
     /// The registry answered 401 or 403. A private or missing package looks like this on GHCR.
     #[error("access denied or not found at {}", esc(.0))]
     Denied(String),
@@ -130,6 +149,19 @@ pub(crate) fn redact_url(url: &str) -> String {
         rest
     } else {
         format!("{scheme}://{rest}")
+    }
+}
+
+impl OciError {
+    /// The stable error code of the contract (policies.md, section 3.5), where
+    /// one exists.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::HelperUntrusted { .. } => Some("credential-helper-untrusted"),
+            Self::HelperProjectUnknown(_) => Some("credential-helper-project-unknown"),
+            _ => None,
+        }
     }
 }
 

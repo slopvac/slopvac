@@ -751,6 +751,34 @@ fn check_status(what: &str, status: ExitStatus, stderr: &[u8]) -> Result<(), Git
 mod tests {
     use super::*;
 
+    /// Removes the file it names when dropped, even if the test panics.
+    #[cfg(unix)]
+    struct RemoveOnDrop(PathBuf);
+
+    #[cfg(unix)]
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn when_every_path_entry_is_rejected_git_is_not_taken_from_the_working_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        // The working directory is outside the project. `.` and a missing
+        // directory are both rejected, which leaves nothing to search.
+        let cwd = std::env::current_dir().unwrap();
+        let planted = cwd.join("git");
+        assert!(!planted.exists(), "a file named git is already here");
+        std::fs::write(&planted, b"#!/bin/sh\n").unwrap();
+        let _cleanup = RemoveOnDrop(planted.clone());
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([Path::new("."), Path::new("/no/such/dir")]).unwrap();
+        assert_eq!(find_trusted("git", Some(&path), project.path()), None);
+    }
+
     #[test]
     fn tree_listing_refuses_links_and_submodules() {
         let oid = "a".repeat(40);

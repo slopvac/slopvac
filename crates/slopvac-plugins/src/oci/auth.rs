@@ -1,9 +1,20 @@
 //! Registry credentials and `WWW-Authenticate` challenges.
 //!
-//! Precedence: `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`, then `GITHUB_TOKEN`
-//! for `ghcr.io` only, then the Docker config (`auths`, `credHelpers`,
-//! `credsStore`), then anonymous. Credentials live in memory and in request
-//! headers only.
+//! Precedence, first match wins:
+//!
+//! 1. `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`;
+//! 2. `GITHUB_TOKEN`, for `ghcr.io` only;
+//! 3. static `auths` in the Docker config (`$DOCKER_CONFIG/config.json` or
+//!    `~/.docker/config.json`);
+//! 4. static `auths` in the first registry auth file that exists, in the order
+//!    go-containerregistry's default keychain uses: `$REGISTRY_AUTH_FILE`,
+//!    `$XDG_RUNTIME_DIR/containers/auth.json`, then
+//!    `$XDG_CONFIG_HOME/containers/auth.json` (`~/.config` when unset);
+//! 5. the credential helper the Docker config names (`credHelpers` for the
+//!    registry, else `credsStore`), found only in trusted `PATH` directories;
+//! 6. anonymous.
+//!
+//! Credentials live in memory and in request headers only.
 //!
 //! The `docker_credential` crate was considered. It runs a helper with no
 //! timeout, no output cap and no name check, which the threat model (N6)
@@ -83,12 +94,17 @@ pub struct DefaultCredentials {
     pub env: EnvCredentials,
     /// Directory that holds `config.json`. `None` disables the Docker config.
     pub docker_config_dir: Option<PathBuf>,
+    /// Registry auth files, tried in order. The first one that is a file
+    /// supplies static `auths`; the others are not read.
+    pub auth_files: Vec<PathBuf>,
     /// Directories searched for `docker-credential-*`. `None` uses `PATH`.
     /// Only trusted directories count: absolute, outside the project, and
     /// closed to group and others (CWE-427).
     pub helper_search_path: Option<std::ffi::OsString>,
-    /// The project directory, where no helper may run from. `None` means the
-    /// working directory.
+    /// The project directory, where no helper may run from. A helper lookup
+    /// without it fails with [`OciError::HelperProjectUnknown`]: slopvac never
+    /// guesses the project from the working directory, which may be a
+    /// subdirectory of a hostile checkout.
     pub project_root: Option<PathBuf>,
     /// Helper time limit. `None` means the default of 10 seconds; tests shorten it.
     pub helper_timeout: Option<Duration>,
@@ -115,10 +131,13 @@ impl fmt::Debug for EnvCredentials {
 
 impl DefaultCredentials {
     /// Read the process environment: `SLOPVAC_OCI_*`, `GITHUB_TOKEN`, `DOCKER_CONFIG`
-    /// and the home directory's `.docker`. The project directory is never consulted.
+    /// and the home directory's `.docker`. The project directory is never read for
+    /// settings; `project_root` only keeps helpers out of it.
     #[must_use]
-    pub fn from_env() -> Self {
-        Self::from_lookup(|k| std::env::var(k).ok(), cfg!(windows))
+    pub fn from_env(project_root: impl Into<PathBuf>) -> Self {
+        let mut creds = Self::from_lookup(|k| std::env::var(k).ok(), cfg!(windows));
+        creds.project_root = Some(project_root.into());
+        creds
     }
 
     /// Test seam: [`Self::from_env`] over any variable lookup and platform, so
@@ -139,6 +158,7 @@ impl DefaultCredentials {
         } else {
             get("HOME")
         };
+        let home_dir = home.clone();
         let docker = get("DOCKER_CONFIG")
             .map(PathBuf::from)
             .or_else(|| home.map(|h| Path::new(&h).join(".docker")));
@@ -149,11 +169,24 @@ impl DefaultCredentials {
                 github_token: get("GITHUB_TOKEN"),
             },
             docker_config_dir: docker,
+            auth_files: auth_file_candidates(&get, home_dir.as_deref()),
             helper_search_path: None,
             project_root: None,
             helper_timeout: None,
         }
     }
+}
+
+/// Where registry auth files may be, in go-containerregistry's order.
+fn auth_file_candidates(get: &impl Fn(&str) -> Option<String>, home: Option<&str>) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    found.extend(get("REGISTRY_AUTH_FILE").map(PathBuf::from));
+    found.extend(get("XDG_RUNTIME_DIR").map(|d| Path::new(&d).join("containers/auth.json")));
+    let config = get("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home.map(|h| Path::new(h).join(".config")));
+    found.extend(config.map(|d| d.join("containers/auth.json")));
+    found
 }
 
 #[derive(Deserialize, Default)]
@@ -283,15 +316,27 @@ fn resolve_helper(
     search: Option<&std::ffi::OsStr>,
     project_root: Option<&Path>,
 ) -> Result<PathBuf, OciError> {
-    let project = project_root
-        .map(Path::to_owned)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_default();
-    find_trusted(program, search, &project).ok_or_else(|| {
-        OciError::Credential(format!(
-            "credential helper `{program}` was not found in a trusted directory"
-        ))
-    })
+    let Some(project) = project_root else {
+        return Err(OciError::HelperProjectUnknown(program.to_owned()));
+    };
+    if let Some(found) = find_trusted(program, search, project) {
+        return Ok(found);
+    }
+    // Not trusted anywhere. Say where it is, if it is anywhere, so the user can
+    // tell a refusal from a missing install. This path is shown, never run.
+    match find_in_path(program, search) {
+        Some(seen) => {
+            let seen = std::fs::canonicalize(&seen).unwrap_or(seen);
+            let project = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_owned());
+            Err(OciError::HelperUntrusted {
+                program: program.to_owned(),
+                path: slopvac_fs::display_under_root(&seen, &project),
+            })
+        }
+        None => Err(OciError::Credential(format!(
+            "credential helper `{program}` was not found"
+        ))),
+    }
 }
 
 fn run_helper(
@@ -405,26 +450,86 @@ fn run_helper(
     }))
 }
 
+/// Read a Docker-format config. `Ok(None)` when the file cannot be opened.
+fn read_config(file: &Path, what: &str) -> Result<Option<DockerConfig>, OciError> {
+    let Ok(f) = std::fs::File::open(file) else {
+        return Ok(None);
+    };
+    let mut raw = Vec::new();
+    f.take(MAX_CONFIG_BYTES + 1)
+        .read_to_end(&mut raw)
+        .map_err(|e| OciError::Credential(format!("reading the {what}: {e}")))?;
+    if raw.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(OciError::Credential(format!(
+            "the {what} is larger than 1 MiB"
+        )));
+    }
+    serde_json::from_slice(&raw)
+        .map(Some)
+        .map_err(|_| OciError::Credential(format!("the {what} is not valid JSON")))
+}
+
+/// The static login `cfg` holds for `registry`, if any.
+fn static_login(cfg: &DockerConfig, registry: &str) -> Result<Option<Credential>, OciError> {
+    let entry = unique_match(
+        cfg.auths
+            .iter()
+            .filter(|(k, _)| auth_key_host(k).eq_ignore_ascii_case(registry))
+            .map(|(_, v)| v),
+        "auths",
+        registry,
+    )?;
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
+    if let Some(auth) = &entry.auth {
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(auth.trim())
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+            .ok_or_else(|| OciError::Credential("an `auth` entry is not base64 text".into()))?;
+        let (u, p) = decoded
+            .split_once(':')
+            .ok_or_else(|| OciError::Credential("an `auth` entry has no colon".into()))?;
+        return Ok(Some(Credential {
+            username: u.to_owned(),
+            secret: p.to_owned(),
+        }));
+    }
+    Ok(match (&entry.username, &entry.password) {
+        (Some(u), Some(p)) => Some(Credential {
+            username: u.clone(),
+            secret: p.clone(),
+        }),
+        _ => None,
+    })
+}
+
 impl DefaultCredentials {
-    fn docker_config_credential(&self, registry: &str) -> Result<Option<Credential>, OciError> {
-        let Some(dir) = &self.docker_config_dir else {
-            return Ok(None);
-        };
-        let file = dir.join("config.json");
-        let Ok(f) = std::fs::File::open(&file) else {
-            return Ok(None);
-        };
-        let mut raw = Vec::new();
-        f.take(MAX_CONFIG_BYTES + 1)
-            .read_to_end(&mut raw)
-            .map_err(|e| OciError::Credential(format!("reading the Docker config: {e}")))?;
-        if raw.len() as u64 > MAX_CONFIG_BYTES {
-            return Err(OciError::Credential(
-                "the Docker config is larger than 1 MiB".into(),
-            ));
+    fn docker_config(&self) -> Result<Option<DockerConfig>, OciError> {
+        match &self.docker_config_dir {
+            Some(dir) => read_config(&dir.join("config.json"), "Docker config"),
+            None => Ok(None),
         }
-        let cfg: DockerConfig = serde_json::from_slice(&raw)
-            .map_err(|_| OciError::Credential("the Docker config is not valid JSON".into()))?;
+    }
+
+    /// Static `auths` from the first auth file that exists.
+    fn auth_file_credential(&self, registry: &str) -> Result<Option<Credential>, OciError> {
+        let Some(file) = self.auth_files.iter().find(|f| f.is_file()) else {
+            return Ok(None);
+        };
+        match read_config(file, "registry auth file")? {
+            Some(cfg) => static_login(&cfg, registry),
+            None => Ok(None),
+        }
+    }
+
+    /// The helper `cfg` names for `registry`, run.
+    fn helper_credential(
+        &self,
+        cfg: &DockerConfig,
+        registry: &str,
+    ) -> Result<Option<Credential>, OciError> {
         let helper = unique_match(
             cfg.cred_helpers
                 .iter()
@@ -434,48 +539,15 @@ impl DefaultCredentials {
             registry,
         )?
         .or(cfg.creds_store.as_ref());
-        if let Some(name) = helper
-            && let Some(c) = run_helper(
+        match helper {
+            Some(name) => run_helper(
                 name,
                 registry,
                 self.helper_search_path.as_deref(),
                 self.project_root.as_deref(),
                 self.helper_timeout.unwrap_or(HELPER_TIMEOUT),
-            )?
-        {
-            return Ok(Some(c));
-        }
-        let entry = unique_match(
-            cfg.auths
-                .iter()
-                .filter(|(k, _)| auth_key_host(k).eq_ignore_ascii_case(registry))
-                .map(|(_, v)| v),
-            "auths",
-            registry,
-        )?;
-        let Some(entry) = entry else {
-            return Ok(None);
-        };
-        if let Some(auth) = &entry.auth {
-            let decoded = base64::engine::general_purpose::STANDARD
-                .decode(auth.trim())
-                .ok()
-                .and_then(|b| String::from_utf8(b).ok())
-                .ok_or_else(|| OciError::Credential("an `auth` entry is not base64 text".into()))?;
-            let (u, p) = decoded
-                .split_once(':')
-                .ok_or_else(|| OciError::Credential("an `auth` entry has no colon".into()))?;
-            return Ok(Some(Credential {
-                username: u.to_owned(),
-                secret: p.to_owned(),
-            }));
-        }
-        match (&entry.username, &entry.password) {
-            (Some(u), Some(p)) => Ok(Some(Credential {
-                username: u.clone(),
-                secret: p.clone(),
-            })),
-            _ => Ok(None),
+            ),
+            None => Ok(None),
         }
     }
 }
@@ -497,7 +569,19 @@ impl CredentialSource for DefaultCredentials {
                 secret: t.clone(),
             }));
         }
-        self.docker_config_credential(registry)
+        let docker = self.docker_config()?;
+        if let Some(cfg) = &docker
+            && let Some(c) = static_login(cfg, registry)?
+        {
+            return Ok(Some(c));
+        }
+        if let Some(c) = self.auth_file_credential(registry)? {
+            return Ok(Some(c));
+        }
+        match &docker {
+            Some(cfg) => self.helper_credential(cfg, registry),
+            None => Ok(None),
+        }
     }
 }
 
