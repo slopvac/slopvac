@@ -2496,6 +2496,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "slopvac-pcre2",
+ "slopvac-sanitize",
  "thiserror",
  "toml",
 ]

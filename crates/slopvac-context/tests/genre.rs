@@ -500,3 +500,45 @@ fn non_finite_numbers_are_errors_everywhere() {
         assert!(r.is_err(), "{y}");
     }
 }
+
+const HOSTILE: &str = "a\u{1b}[31m\u{202e}b.md";
+const HOSTILE_ESCAPED: &str = "a\\u{1b}[31m\\u{202e}b.md";
+
+#[test]
+fn render_escapes_control_and_bidi_characters() {
+    let r = slopvac_context::GenreResult {
+        id: "g".to_string(),
+        source: GenreSource::Detected,
+        reasons: vec![slopvac_context::Reason {
+            signal: "heading".to_string(),
+            detail: format!("heading `{HOSTILE}`"),
+        }],
+        scores: vec![(HOSTILE.to_string(), 1.0)],
+    };
+    let text = slopvac_context::render(HOSTILE, &r);
+    assert_eq!(
+        text,
+        format!(
+            "{HOSTILE_ESCAPED}: g (detected)\n  heading: heading `{HOSTILE_ESCAPED}`\n  scores: {HOSTILE_ESCAPED} 1\n"
+        )
+    );
+}
+
+#[test]
+fn a_read_error_escapes_the_path() {
+    let m = slopvac_context::command()
+        .try_get_matches_from(["genre", "no\u{1b}]8;;\u{202e}/such.md"])
+        .unwrap();
+    let msg = slopvac_context::run(&m).unwrap_err().to_string();
+    assert!(msg.starts_with("no\\u{1b}]8;;\\u{202e}/such.md: "), "{msg}");
+    assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+}
+
+#[test]
+fn an_assign_error_escapes_the_argument() {
+    let m = slopvac_context::command()
+        .try_get_matches_from(["genre", "a.md", "--assign", "x\u{1b}\u{202e}"])
+        .unwrap();
+    let msg = slopvac_context::run(&m).unwrap_err().to_string();
+    assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+}
