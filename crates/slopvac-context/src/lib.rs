@@ -35,6 +35,8 @@ pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
 };
 
+pub use pattern::MAX_PATTERN_BYTES;
+
 /// Errors from this crate.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -45,6 +47,14 @@ pub enum Error {
         pattern: String,
         /// PCRE2 message.
         message: String,
+    },
+    /// A pattern is longer than the data-pack limit.
+    #[error("pattern is {len} bytes, over the {max}-byte limit")]
+    PatternTooLong {
+        /// Pattern length in bytes.
+        len: usize,
+        /// The limit, [`MAX_PATTERN_BYTES`].
+        max: usize,
     },
     /// PCRE2 failed while matching, for example on a match or JIT stack limit.
     #[error("pattern `{pattern}` failed while matching: {message}")]

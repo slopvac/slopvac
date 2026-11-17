@@ -178,3 +178,37 @@ fn present_null_fields_are_errors() {
         assert!(spec(&y).is_err(), "{m}");
     }
 }
+
+/// Whether a tagger whose only matcher has this body compiles.
+fn compiles(matcher: &str) -> Result<(), slopvac_context::Error> {
+    spec(&format!("{HEAD}match:\n  - {matcher}\n")).map(|_| ())
+}
+
+#[test]
+fn a_pattern_is_capped_at_4096_bytes() {
+    assert!(compiles(&format!("pattern: '{}'", "a".repeat(4096))).is_ok());
+    let err = compiles(&format!("pattern: '{}'", "a".repeat(4097))).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            slopvac_context::Error::PatternTooLong {
+                len: 4097,
+                max: 4096
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(err.to_string(), "pattern is 4097 bytes, over the 4096-byte limit");
+}
+
+#[test]
+fn the_generated_words_pattern_is_capped_at_4096_bytes_after_escaping() {
+    // The wrapper around the alternation is 37 bytes, so 4059 literal bytes fill the cap.
+    assert!(compiles(&format!("words: ['{}']", "a".repeat(4059))).is_ok());
+    assert!(compiles(&format!("words: ['{}']", "a".repeat(4060))).is_err());
+    // 2030 dots are 2030 bytes raw and 4060 escaped (`\.` each), so 4097 with the wrapper.
+    assert!(matches!(
+        compiles(&format!("words: ['{}']", ".".repeat(2030))),
+        Err(slopvac_context::Error::PatternTooLong { len: 4097, max: 4096 })
+    ));
+}

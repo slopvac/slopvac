@@ -4,6 +4,10 @@ use slopvac_pcre2::{MatchError, Options, Regex};
 
 use crate::Error;
 
+/// Longest pattern a data pack may carry, in bytes (`docs/contract/threat-model.md`). The
+/// `slopvac-pcre2` limit is larger because it also serves patterns that code builds.
+pub const MAX_PATTERN_BYTES: usize = 4096;
+
 /// A compiled PCRE2 pattern (UTF mode, interpreter under the `slopvac-pcre2` limits).
 #[derive(Debug, Clone)]
 pub struct Pattern {
@@ -23,6 +27,14 @@ impl Pattern {
     }
 
     fn build(source: &str, caseless: bool) -> Result<Self, Error> {
+        // Every pattern, including the alternation that a `words` matcher generates, passes
+        // here after escaping, so one check covers both.
+        if source.len() > MAX_PATTERN_BYTES {
+            return Err(Error::PatternTooLong {
+                len: source.len(),
+                max: MAX_PATTERN_BYTES,
+            });
+        }
         let re =
             Regex::new(source, Options::new().caseless(caseless)).map_err(|e| Error::Pattern {
                 pattern: source.to_string(),
