@@ -435,6 +435,54 @@
       "python": true,
       "rust": false,
       "note": "\\s and \\S: Python counts U+0085 as space and U+FEFF as not; ECMA the other way round"
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "ppt/slides/slide1.xml%23p2",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "ppt/slides/slide1.xml\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "a%2fb",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "Slide 1 notes",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "Slide 1 notes\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "a‮b",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "input": "s1.notes",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "input": "s1.notes\n",
+      "python": false,
+      "rust": false
     }
   ]
 }

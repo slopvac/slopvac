@@ -29,12 +29,12 @@ const END: &str = r"(?![\s\S])";
 const PENDING: &[(&str, &str, &str)] = &[
     (
         "blocklist.schema.json",
-        "/$defs/Entry/properties/reason",
+        "/$defs/BlocklistEntry/properties/reason",
         "slopvac-8l4.2.55",
     ),
     (
         "blocklist.schema.json",
-        "/$defs/Entry/properties/word",
+        "/$defs/BlocklistEntry/properties/word",
         "slopvac-8l4.2.55",
     ),
     ("config.schema.json", "/$defs/Ref", "slopvac-8l4.2.54"),
@@ -51,22 +51,22 @@ const PENDING: &[(&str, &str, &str)] = &[
     ),
     (
         "pack-index.schema.json",
+        "/$defs/PackIndexSemver",
+        "slopvac-8l4.2.56",
+    ),
+    (
+        "pack-index.schema.json",
+        "/$defs/PackIndexSource",
+        "slopvac-8l4.2.56",
+    ),
+    (
+        "pack-index.schema.json",
         "/$defs/PublisherKey/properties/fingerprint",
         "slopvac-8l4.2.56",
     ),
     (
         "pack-index.schema.json",
         "/$defs/PublisherKey/properties/key_id",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-index.schema.json",
-        "/$defs/Semver",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-index.schema.json",
-        "/$defs/Source",
         "slopvac-8l4.2.56",
     ),
     (
@@ -111,11 +111,6 @@ const PENDING: &[(&str, &str, &str)] = &[
     ),
     (
         "plugin-protocol.schema.json",
-        "/$defs/Document/properties/path",
-        "slopvac-8l4.2.53",
-    ),
-    (
-        "plugin-protocol.schema.json",
         "/$defs/ErrorObject/properties/data/properties/slopvac_code",
         "slopvac-8l4.2.53",
     ),
@@ -132,6 +127,11 @@ const PENDING: &[(&str, &str, &str)] = &[
     (
         "plugin-protocol.schema.json",
         "/$defs/HookKind",
+        "slopvac-8l4.2.53",
+    ),
+    (
+        "plugin-protocol.schema.json",
+        "/$defs/PluginDocument/properties/path",
         "slopvac-8l4.2.53",
     ),
     (
