@@ -15,9 +15,9 @@ non-Latin digits and letters, emoji, and `#`, `[`, `]` and newlines.
 Verbs such as `(*MARK:#tag)` have no Python spelling, so they are not in the grammar;
 `slopvac-text`'s unit tests cover them.
 
-A pattern is kept only if Python compiles it and none of its matches is empty. Empty
-matches are skipped because the stub `find_iter` (STUB(slopvac-8l4.3.25)) drops an empty
-match next to a match, as the `pcre2` crate does.
+A pattern is kept only if Python compiles it and none of its matches is empty. The
+fixture predates `slopvac-pcre2`, whose `find_all` follows Python's empty-match rules
+and has its own tests, so this check leaves empty matches out.
 
 `--check` recomputes the spans for the stored patterns and texts and fails on any change.
 Offsets are code points; the Rust test converts them to bytes.

@@ -12,6 +12,7 @@ use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences};
 
 use crate::directives::Lines;
+use crate::exceptions::TextOrigin;
 
 /// `doc` with its raw HTML blocks (`<td>`, `<em>`, `<p>`) read as 2.x reads them: the prose
 /// of one block is one paragraph of the kind `Paragraph`, in source order. Every consumer of
@@ -231,10 +232,22 @@ pub(crate) struct Unit<'p> {
     pub(crate) sentences: Option<&'p [Sentence]>,
 }
 
-impl Unit<'_> {
+impl<'p> Unit<'p> {
     /// Where `text` starts in the projection `sentences` was cut from.
     pub(crate) const fn base(&self) -> usize {
         self.base
+    }
+
+    /// Where `text` sits in the projection it was cut from, for a detector that reads the
+    /// text before a match. A source slice has no projection.
+    pub(crate) const fn origin(&self) -> Option<TextOrigin<'p>> {
+        match self.map {
+            Map::Projected(projection) => Some(TextOrigin {
+                projection,
+                base: self.base,
+            }),
+            Map::Source => None,
+        }
     }
 
     /// The source ranges a match is made of, given in bytes of `text`: one for each run of

@@ -8,6 +8,7 @@ Measures per rule and per split:
 - false-positive rate on clean controls: the rule must stay quiet at the
   counterpart line of the same document,
 - human-baseline rate: findings per 100 words on pre-2022 human text,
+- LLM firing rate: findings per 100 words on stated-LLM and model-twin text,
 - precision, when adjudicated labels are supplied.
 
 Uncertainty is a document-cluster bootstrap, because findings inside one
@@ -26,6 +27,9 @@ from . import metrics
 from .splits import split_of
 
 LINE_SLACK = 1
+# Origins that count as LLM text: answers a publisher labels with the producing
+# model, and documents a model wrote from a human outline.
+LLM_ORIGINS = frozenset({"stated-llm", "model-twin"})
 SCORE_SCHEMA = 1
 
 Label = str  # "tp" or "fp"; anything else (for example "unsure") is ignored
@@ -87,6 +91,8 @@ def score(
     control: dict[str, list[tuple[int, int]]] = defaultdict(list)
     human_hits: dict[str, int] = defaultdict(int)
     human_words = 0
+    llm_hits: dict[str, int] = defaultdict(int)
+    llm_words = 0
     origin_stats: dict[str, dict[str, float]] = defaultdict(
         lambda: {"documents": 0, "words": 0, "findings": 0}
     )
@@ -108,6 +114,10 @@ def score(
             human_words += res["words"]
             for f in res["findings"]:
                 human_hits[f["rule"]] += 1
+        elif doc["origin"] in LLM_ORIGINS:
+            llm_words += res["words"]
+            for f in res["findings"]:
+                llm_hits[f["rule"]] += 1
         for kind, bucket in (("defects", seeded), ("controls", control)):
             entries = doc["source"].get(kind)
             if not entries:
@@ -142,7 +152,7 @@ def score(
                     cell[1] += 1
 
     rules: dict[str, Any] = {}
-    names = set(pooled) | set(control) | set(human_hits) | set(precision_cells)
+    names = set(pooled) | set(control) | set(human_hits) | set(llm_hits) | set(precision_cells)
     for rule in sorted(names):
         entry: dict[str, Any] = {}
         if rule in pooled:
@@ -156,6 +166,10 @@ def score(
         entry["human_findings"] = human_hits.get(rule, 0)
         entry["human_per_100_words"] = (
             100 * human_hits.get(rule, 0) / human_words if human_words else None
+        )
+        entry["llm_findings"] = llm_hits.get(rule, 0)
+        entry["llm_per_100_words"] = (
+            100 * llm_hits.get(rule, 0) / llm_words if llm_words else None
         )
         if rule in precision_cells:
             per_doc = [(h, n) for h, n in precision_cells[rule].values()]

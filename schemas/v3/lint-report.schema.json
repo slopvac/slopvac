@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/lint-report.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/lint-report.schema.json",
   "title": "slopvac v3 lint report",
   "description": "The `slopvac lint --format json` payload. Spec: docs/contract/lint-report.md. Owned by slopvac-8l4.2.2. Keys starting with `x-` are ignored by consumers.",
   "type": "object",

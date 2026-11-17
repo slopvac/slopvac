@@ -49,7 +49,7 @@ fn validator() -> jsonschema::Validator {
     };
     let registry = jsonschema::Registry::new()
         .add(
-            "https://srobroek.github.io/slopvac/schemas/v3/common.schema.json",
+            "https://slopvac.github.io/slopvac/schemas/v3/common.schema.json",
             read("common.schema.json"),
         )
         .expect("register common")

@@ -176,6 +176,48 @@ The `text` is source text and goes into the file verbatim. The rule or the fix g
 escapes it for the host syntax. A fix that cannot be written as source text, such as one
 that needs an entity inside a code span, MUST be suppressed instead of emitted.
 
+## Binary hosts
+
+A binary host is a container, such as a `.docx`, `.pptx` or `.drawio.png`, from which an
+extractor returns one or more text segments. The source model above describes text files.
+For a binary host it applies to each segment, never to the container bytes.
+
+A **segment** is the UTF-8 text an extractor returned. Its **local coordinates** are byte
+offsets into that text, and line and column derive from them by the rules above, with the
+segment as the source. The segment text is not a file, so the BOM rule excludes nothing. A
+leading U+FEFF is an ordinary character of one column, as in an LSP buffer, and the byte
+after it is at column 2. An invalid offset is invalid against the segment text.
+
+- **Matching, contexts, exclusions and fingerprints use local coordinates.** A rule sees the
+  segment text and a span in it. Context windows, exclusion ranges and fingerprint inputs
+  are computed from the same local span. None of them reads a container offset.
+- **The container byte range is physical provenance only.** It says where the segment came
+  from in the container, for example the compressed entry in a ZIP. It can be
+  larger or smaller than the segment, and it is not a position in the text. Moving a segment
+  to another physical range, with the same text, changes the provenance and nothing else.
+- **Rendered output is the locator plus the local line and column.** Text output is
+  `path!locator:line:col`, with the code-point column from the unit table. The locator names
+  the segment inside the container. The text form is normative. The renderer
+  percent-encodes `%` as `%25` and `!` as `%21` inside the path and inside the locator, so
+  the first `!` always joins them. A locator can contain colons, so a reader takes `line`
+  and `col` from the right, splits the rest at the first `!`, and then decodes both parts.
+  The rendered line and column are never container offsets, and they never replace the
+  locator.
+- **SARIF uses `logicalLocations`.** The result location carries the container path as
+  `physicalLocation.artifactLocation.uri`, percent-encoded as the SARIF report does, with
+  no `region`. The locator is `logicalLocations[].fullyQualifiedName`, with kind `resource`
+  for a container part and `element` only for an XML element. A SARIF region would claim a
+  position in the artifact bytes, which the local line and column are not. The local span
+  goes in `location.properties["slopvac/local"]` as a `start` and `end` pair of
+  `LineCol`, and `message.text` repeats the text form for people. GitHub code scanning may
+  show no line annotation for these alerts, because the location has no region.
+- **Binary hosts take no Edit and no fix.** The span addresses segment text, and an `Edit`
+  addresses container bytes that the linter cannot rewrite. The linter MUST NOT emit an
+  `Edit` for a binary-host finding, and an edit set aimed at one is invalid.
+
+The origin contract (bead slopvac-8l4.2.29) defines the locator grammar and the
+`Finding.origin` field that carries it. Neither is defined here.
+
 ## Edit
 
 An edit set belongs to one finding, or to one file for `--fix`. It applies atomically.
@@ -371,6 +413,8 @@ survives editors that normalize text. The sections are:
 - `projections`: token lists and the span each projected range maps to.
 - `lsp_ranges`: LSP ranges per encoding, computed over the received buffer text. They include BOM regression vectors.
 - `lsp_negotiation`: client offers and the encoding the server picks.
+- `binary_hosts` and `binary_host_invalid_spans`: segment-local positions, physical
+  provenance, the rendered text and the SARIF location of binary-host findings.
 
 The documents cover ASCII, emoji, a ZWJ family sequence, supplementary-plane letters, combining marks, CJK, tabs,
 CRLF, a lone CR, a BOM, characters that are not terminators, a final newline and an empty

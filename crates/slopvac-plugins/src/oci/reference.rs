@@ -62,7 +62,7 @@ fn valid_repository(s: &str) -> bool {
         })
 }
 
-fn valid_tag(s: &str) -> bool {
+pub(crate) fn valid_tag(s: &str) -> bool {
     let mut bytes = s.bytes();
     s.len() <= 128
         && bytes

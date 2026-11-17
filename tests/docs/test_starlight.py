@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 import build_site
 
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
-PREFIX = "https://srobroek.github.io/slopvac/schemas/v3/"
+PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def site_dir(tmp_path: Path) -> Path:
     (schemas / "a.schema.json").write_text(
         json.dumps({"$id": f"{PREFIX}a.schema.json", "description": "d", "$defs": {}})
     )
-    for name in ("plugin-protocol", "pack-manifest", "common"):
+    for name in ("plugin-protocol", "pack-manifest", "config", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     packs = tmp_path / "packs" / "demo"
     packs.mkdir(parents=True)

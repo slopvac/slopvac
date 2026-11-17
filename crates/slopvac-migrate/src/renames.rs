@@ -4,7 +4,7 @@
 //! the rule converter (docs/contract/config.md, section 5.2). A name with no entry
 //! is unknown, and `migrate` stops on it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use toml_edit::{DocumentMut, Item};
 
@@ -17,6 +17,7 @@ const BUNDLED: &str = include_str!("../data/renames.toml");
 pub struct RenameTable {
     rules: BTreeMap<String, String>,
     categories: BTreeMap<String, String>,
+    removed: BTreeSet<String>,
 }
 
 impl RenameTable {
@@ -38,6 +39,7 @@ impl RenameTable {
         Ok(Self {
             rules: read_map(&doc, "rules")?,
             categories: read_map(&doc, "categories")?,
+            removed: read_removed(&doc)?,
         })
     }
 
@@ -47,11 +49,33 @@ impl RenameTable {
         self.rules.get(name).cloned()
     }
 
+    /// Whether 3.0 removed this 2.x rule. `migrate` drops every reference to it.
+    #[must_use]
+    pub fn is_removed(&self, name: &str) -> bool {
+        self.removed.contains(name)
+    }
+
     /// The 3.0 name for a 2.x category, or `None` when the name is unknown.
     #[must_use]
     pub fn category(&self, name: &str) -> Option<String> {
         self.categories.get(name).cloned()
     }
+}
+
+fn read_removed(doc: &DocumentMut) -> Result<BTreeSet<String>, Error> {
+    let Some(item) = doc.get("removed") else {
+        return Ok(BTreeSet::new());
+    };
+    item.get("rules")
+        .and_then(Item::as_array)
+        .ok_or_else(|| Error::RenameTable("removed.rules: expected an array".into()))?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| Error::RenameTable("removed.rules: expected strings".into()))
+        })
+        .collect()
 }
 
 fn read_map(doc: &DocumentMut, key: &str) -> Result<BTreeMap<String, String>, Error> {
@@ -126,7 +150,7 @@ mod tests {
         let t = RenameTable::bundled();
         let legacy = Legacy::bundled();
         for qid in legacy.rules.keys() {
-            assert!(t.rule(qid).is_some(), "rule {qid}");
+            assert!(t.rule(qid).is_some() || t.is_removed(qid), "rule {qid}");
             assert!(t.category(category_of(qid)).is_some(), "category of {qid}");
         }
         for p in PROFILES {
@@ -135,7 +159,10 @@ mod tests {
                 assert!(t.category(name).is_some(), "{p}: category {name}");
             }
             for qid in style.rules.keys() {
-                assert!(t.rule(qid).is_some(), "{p}: rule {qid}");
+                assert!(
+                    t.rule(qid).is_some() || t.is_removed(qid),
+                    "{p}: rule {qid}"
+                );
             }
         }
     }
