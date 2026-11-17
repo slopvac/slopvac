@@ -1038,30 +1038,51 @@ def test_results_cost_comes_from_the_executions_section_not_the_rows(tmp_path, c
     assert report["total_cost_usd"] == pytest.approx(4)
 
 
-def test_cache_tokens_are_reported_but_do_not_change_the_cost(tmp_path, capsys):
+CACHE_USAGE = {
+    "input": 200_000,
+    "output": 100_000,
+    "cache_read": 4_000_000,
+    "cache_write": 3_000_000,
+}
+
+
+def cache_priced(**cache):
+    return {"models": {"big": {"input": 2, "output": 10, **cache}}}
+
+
+def test_cache_tokens_are_priced_when_the_model_has_cache_prices(tmp_path, capsys):
+    path = write_results(tmp_path, [{"model": "big", "usage": CACHE_USAGE}])
+    prices = cache_priced(cache_read=0.2, cache_write=2.5)
+    _, report = cost_cli(tmp_path, capsys, path, prices)
+    # 0.2M x $2 + 0.1M x $10 + 4M x $0.2 + 3M x $2.5 = 0.4 + 1.0 + 0.8 + 7.5 = 9.7.
+    assert report["models"]["big"]["cost_usd"] == pytest.approx(9.7)
+    assert report["models"]["big"]["tokens"] == CACHE_USAGE
+    assert report["complete"] is True
+
+
+@pytest.mark.parametrize(
+    "cache",
+    [{}, {"cache_read": 0.2}, {"cache_write": 2.5}],
+    ids=["neither", "read-only", "write-only"],
+)
+def test_cache_tokens_without_a_cache_price_make_the_cost_incomplete(
+    tmp_path, capsys, cache
+):
+    path = write_results(tmp_path, [{"model": "big", "usage": CACHE_USAGE}])
+    _, report = cost_cli(tmp_path, capsys, path, cache_priced(**cache))
+    assert report["models"]["big"]["complete"] is False
+    assert report["complete"] is False
+
+
+def test_a_model_without_cache_usage_stays_complete_with_no_cache_price(
+    tmp_path, capsys
+):
     path = write_results(
-        tmp_path,
-        [
-            {
-                "model": "big",
-                "usage": {
-                    "input": 200_000,
-                    "output": 100_000,
-                    "cache_read": 4_000_000,
-                    "cache_write": 3_000_000,
-                },
-            }
-        ],
+        tmp_path, [{"model": "big", "usage": {"input": 1_000_000, "output": 0}}]
     )
-    _, report = cost_cli(tmp_path, capsys, path)
-    # 0.2M x $2 + 0.1M x $10 = 0.4 + 1.0 = 1.4, whatever the cache holds.
-    assert report["models"]["big"]["cost_usd"] == pytest.approx(1.4)
-    assert report["models"]["big"]["tokens"] == {
-        "input": 200_000,
-        "output": 100_000,
-        "cache_read": 4_000_000,
-        "cache_write": 3_000_000,
-    }
+    _, report = cost_cli(tmp_path, capsys, path, cache_priced())
+    assert report["complete"] is True
+    assert report["models"]["big"]["cost_usd"] == pytest.approx(2)
 
 
 def test_cost_on_a_journal_from_before_usage_was_recorded_is_incomplete(

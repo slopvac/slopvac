@@ -1090,6 +1090,7 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
 # --- token usage and cost ----------------------------------------------------------
 
 PRICES_PATH = lib.EVALS_DIR / "prices.json"
+CACHE_KINDS = ("cache_read", "cache_write")
 UNKNOWN_MODEL = "(unknown)"
 
 
@@ -1125,6 +1126,9 @@ def load_prices(path: Path) -> dict[str, Any]:
         table = prices["models"]
         for price in table.values():
             float(price["input"]), float(price["output"])
+            for kind in CACHE_KINDS:
+                if kind in price:
+                    float(price[kind])
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         raise ModelEvalError(f"{path}: not a usable price list ({exc})") from None
     return prices
@@ -1136,9 +1140,10 @@ def estimate_cost(
     """Tokens and an estimated list-price cost per model.
 
     Cost is input tokens at the input price plus output and reasoning tokens at
-    the output price, per million. Cache tokens are counted but not priced. A
-    model is `complete` only when every one of its invocations reported usage
-    and the price list names it; any gap makes the total incomplete too.
+    the output price, per million, plus cache read and write tokens at their own
+    prices when the model has them. A model is `complete` only when every one of
+    its invocations reported usage, the price list names it, and every kind of
+    cache token it used has a price; any gap makes the total incomplete too.
     """
     table = prices["models"]
     per: dict[str, dict[str, Any]] = {}
@@ -1156,20 +1161,26 @@ def estimate_cost(
     for model, row in sorted(per.items()):
         price = table.get(model)
         tokens = row["tokens"]
+        cache_priced = True
         if price is None:
             row["cost_usd"] = None
         else:
             billed_out = tokens.get("output", 0) + tokens.get("reasoning", 0)
-            row["cost_usd"] = round(
-                (
-                    tokens.get("input", 0) * float(price["input"])
-                    + billed_out * float(price["output"])
-                )
-                / 1_000_000,
-                6,
+            cost = tokens.get("input", 0) * float(price["input"]) + billed_out * float(
+                price["output"]
             )
+            for kind in CACHE_KINDS:
+                if not tokens.get(kind):
+                    continue
+                if kind in price:
+                    cost += tokens[kind] * float(price[kind])
+                else:
+                    cache_priced = False  # cache tokens with no price to bill them at
+            row["cost_usd"] = round(cost / 1_000_000, 6)
             total_cost += row["cost_usd"]
-        row["complete"] = price is not None and row["missing_usage"] == 0
+        row["complete"] = (
+            price is not None and row["missing_usage"] == 0 and cache_priced
+        )
         complete = complete and row["complete"]
     return {
         "source": prices.get("source"),
