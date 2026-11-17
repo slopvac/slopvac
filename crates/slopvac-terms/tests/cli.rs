@@ -470,3 +470,71 @@ fn errors_about_the_project_terms_file_carry_no_absolute_path() {
     assert!(!e.contains(&root), "{e}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+fn assert_no_path(e: &str, root: &Path, what: &str) {
+    assert!(
+        !e.contains(&root.display().to_string()),
+        "{what} leaked an absolute path: {e}"
+    );
+}
+
+#[test]
+fn input_read_errors_carry_no_absolute_path() {
+    let dir = scratch("input-labels");
+    // A directory where a file is expected makes the read fail with an OS error.
+    std::fs::create_dir(dir.join("doc.md")).unwrap();
+    let abs = dir.join("doc.md").display().to_string();
+    for args in [
+        vec!["check", "doc.md"],
+        vec!["check", abs.as_str()],
+        vec!["suggest", "doc.md"],
+        vec!["import", "--from", "vale", "doc.md"],
+        vec!["import", "--from", "vale", abs.as_str()],
+    ] {
+        let e = run_err(&dir, &args);
+        assert_no_path(&e, &dir, &args.join(" "));
+        assert!(e.contains("doc.md"), "{e}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn import_parse_errors_carry_no_absolute_path() {
+    let dir = scratch("import-parse");
+    std::fs::write(dir.join("words.yaml"), "words: []").unwrap();
+    let abs = dir.join("words.yaml").display().to_string();
+    let e = run_err(&dir, &["import", "--from", "cspell", abs.as_str()]);
+    assert_no_path(&e, &dir, "import");
+    assert!(e.contains("words.yaml"), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn save_errors_carry_no_absolute_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch("save-labels");
+    std::fs::write(dir.join("doc.md"), "Acme Acme and Zorp Zorp\n").unwrap();
+    std::fs::write(dir.join("accept.txt"), "Zorp\n").unwrap();
+    let state = dir.join(".slopvac");
+    std::fs::create_dir(&state).unwrap();
+    terms(&dir, &["add", "Acme"]);
+    // A read-only directory makes creating the temporary file fail.
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let writable = std::fs::File::create(state.join("probe")).is_ok();
+    if !writable {
+        for args in [
+            vec!["add", "Beta"],
+            vec!["remove", "Acme"],
+            vec!["suggest", "doc.md", "--accept", "Zorp"],
+            vec!["import", "--from", "vale", "accept.txt"],
+        ] {
+            let e = run_err(&dir, &args);
+            assert_no_path(&e, &dir, &args.join(" "));
+            assert!(e.contains(".slopvac/terms.toml"), "{e}");
+        }
+    }
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}

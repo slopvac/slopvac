@@ -141,6 +141,12 @@ fn label(cwd: &Path, path: &Path) -> String {
     slopvac_fs::display_under_root(path, cwd)
 }
 
+/// Read a file named on the command line, labelled relative to `cwd` in errors.
+fn read_input(cwd: &Path, given: &str, cap: u64) -> Result<String, TermsError> {
+    let path = cwd.join(given);
+    crate::read::read_existing(&path, &label(cwd, &path), cap)
+}
+
 fn load_project(paths: &[PathBuf], cwd: &Path) -> Result<Vec<TermEntry>, TermsError> {
     let mut out = Vec::new();
     for p in paths {
@@ -318,7 +324,7 @@ fn cmd_add(
     let file = &paths[0];
     let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     doc.add(&entry)?;
-    doc.save(file)?;
+    doc.save_labeled(file, &label(cwd, file))?;
     let how = if ignore_case {
         "ignoring case"
     } else if case_sensitive {
@@ -340,7 +346,7 @@ fn cmd_remove(
     let file = &paths[0];
     let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     if doc.remove(term) {
-        doc.save(file)?;
+        doc.save_labeled(file, &label(cwd, file))?;
         writeln!(out, "removed {term}").map_err(|e| io_err(&e))?;
         Ok(0)
     } else {
@@ -362,7 +368,7 @@ fn cmd_check(
     let set = TermSet::new(entries);
     let mut found = 0;
     for p in m.get_many::<String>("paths").expect("required") {
-        let text = crate::read::read_existing(&cwd.join(p), p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
+        let text = read_input(cwd, p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
         for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
             let (line, col) = line_col(&text, f.span.start);
             writeln!(out, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
@@ -389,7 +395,7 @@ fn cmd_suggest(
         .collect();
     let mut texts = Vec::new();
     for p in m.get_many::<String>("paths").expect("required") {
-        let text = crate::read::read_existing(&cwd.join(p), p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
+        let text = read_input(cwd, p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
         texts.push((p.clone(), text));
     }
     let inputs: Vec<_> = texts
@@ -429,7 +435,7 @@ fn cmd_suggest(
             case_sensitive: false,
         })?;
     }
-    doc.save(target)?;
+    doc.save_labeled(target, &label(cwd, target))?;
     for term in accept {
         writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
     }
@@ -445,8 +451,8 @@ fn cmd_import(
     let from = m.get_one::<String>("from").expect("required");
     let source = Source::parse(from).expect("clap value_parser restricts values");
     let file = m.get_one::<String>("file").expect("required");
-    let text = crate::read::read_existing(&cwd.join(file), file, crate::MAX_TERMS_FILE_BYTES)?;
-    let imported = import::parse(file, source, &text)?;
+    let text = read_input(cwd, file, crate::MAX_TERMS_FILE_BYTES)?;
+    let imported = import::parse(&label(cwd, &cwd.join(file)), source, &text)?;
     let target = &paths[0];
     let mut doc = TermsDoc::open_labeled(target, &label(cwd, target))?;
     let (mut added, mut existing) = (0, 0);
@@ -464,7 +470,7 @@ fn cmd_import(
         })?;
         added += 1;
     }
-    doc.save(target)?;
+    doc.save_labeled(target, &label(cwd, target))?;
     writeln!(
         out,
         "imported {added} terms ({existing} already present, {} patterns skipped)",

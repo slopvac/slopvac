@@ -16,6 +16,15 @@ pub(crate) enum ReadFailure {
     Error(TermsError),
 }
 
+/// The text of an I/O error without any path a library may have put in it: the OS error, or
+/// the kind.
+pub(crate) fn scrub(e: &std::io::Error) -> String {
+    e.raw_os_error().map_or_else(
+        || e.kind().to_string(),
+        |code| std::io::Error::from_raw_os_error(code).to_string(),
+    )
+}
+
 /// Read `path` as UTF-8 text of at most `cap` bytes. `shown` names the file in errors. A file
 /// over `cap` fails with [`TermsError::TooLarge`].
 pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFailure> {
@@ -30,12 +39,12 @@ pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFai
             cap,
         }),
         slopvac_fs::Error::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
-            ReadFailure::Missing(source.to_string())
+            ReadFailure::Missing(scrub(&source))
         }
         slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
             ReadFailure::Error(TermsError::Io {
                 path: shown.to_owned(),
-                message: source.to_string(),
+                message: scrub(&source),
             })
         }
         other => ReadFailure::Error(TermsError::Io {
