@@ -1319,14 +1319,16 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
     Repeats of one task are averaged first, so the task is the unit of resampling.
     Reviewer runs that grade a rewrite with no lost facts are excluded: there
     was nothing to find. Unscored runs (an incomplete lint) are left out too.
-    A run without a `scorer_version` is legacy and keeps a legacy label. Rows from
-    different scorer versions never share a ranking: that raises ModelEvalError.
+    The scorer version follows the single rule of `file_scorer_version`: a row
+    inherits its file header, a headerless file is legacy, and a row that
+    disagrees with its header raises ModelEvalError.
     """
     groups: dict[tuple[str, str, str], dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
     info: dict[str, dict[str, str]] = {m["name"]: m for m in results["models"]}
-    versions: set[str] = set()
+    version = file_scorer_version(results)
+    legacy = version is None
     for run in results["runs"]:
         score = run["score"]
         if score is None:
@@ -1337,16 +1339,8 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             and not score["planted"]
         ):
             continue
-        versions.add(run.get("scorer_version") or LEGACY_SCORER)
         key = (run["type"], run["role"], run["model"])
         groups[key][run["task"]].append(1.0 if score["success"] else 0.0)
-    if len(versions) > 1:
-        raise ModelEvalError(
-            f"mixed scorer versions {sorted(versions)}: rescore the legacy rows "
-            "from the journal before summarising"
-        )
-    version = next(iter(versions), results.get("scorer_version") or LEGACY_SCORER)
-    legacy = version == LEGACY_SCORER
     rows = []
     for (rtype, role, model), per_task in sorted(groups.items()):
         means = [sum(v) / len(v) for v in per_task.values()]
@@ -1361,7 +1355,7 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
                 "metric": LEGACY_METRIC
                 if legacy
                 else (REVIEW_METRIC if role == "reviewer" else AUTHOR_METRIC),
-                "scorer_version": version,
+                "scorer_version": version or LEGACY_SCORER,
                 "family": info[model]["family"],
                 "tier": info[model]["tier"],
                 "tasks": len(per_task),
@@ -1379,13 +1373,11 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             )
             if ordered:
                 ranking[f"{rtype}/{role}"] = [r["model"] for r in ordered]
-    version = file_scorer_version(results)
     carried = {"scorer_version": version} if version is not None else {}
     return carried | {
         "schema": RESULTS_SCHEMA,
         "date": results["date"],
         "prompt_version": results["prompt_version"],
-        "scorer_version": version,
         "repeats": results["repeats"],
         "rows": rows,
         "ranking": ranking,

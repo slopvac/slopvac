@@ -1032,7 +1032,7 @@ def test_a_summary_of_freshly_scored_runs_reports_the_scorer_and_metric_names():
 
 def test_a_summary_of_legacy_scores_does_not_wear_the_new_metric_names():
     summary = models.summarize(as_legacy(fresh_results()), resamples=20)
-    assert summary["scorer_version"] == "legacy"
+    assert "scorer_version" not in summary
     assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
     assert {r["scorer_version"] for r in summary["rows"]} == {"legacy"}
 
@@ -1043,20 +1043,33 @@ def test_the_committed_legacy_results_are_labelled_legacy():
     assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
 
 
-def test_legacy_and_freshly_scored_rows_are_never_ranked_together():
-    mixed = fresh_results()
-    mixed["runs"] = as_legacy(mixed)["runs"][:3] + mixed["runs"][3:]
-    with pytest.raises(models.ModelEvalError, match="scorer"):
-        models.summarize(mixed, resamples=20)
+def without_row_versions(results):
+    out = dict(results)
+    out["runs"] = [
+        {k: v for k, v in r.items() if k != "scorer_version"} for r in results["runs"]
+    ]
+    return out
 
 
-def test_the_summarize_command_exits_2_on_mixed_scorer_versions(tmp_path, capsys):
-    mixed = fresh_results()
-    mixed["runs"] = as_legacy(mixed)["runs"][:3] + mixed["runs"][3:]
-    path = tmp_path / "mixed.json"
-    models.dump(mixed, path)
-    assert cli.main(["models", "summarize", str(path)]) == 2
-    assert "scorer" in capsys.readouterr().err
+def disagreeing(results):
+    out = dict(results)
+    out["runs"] = [dict(r) for r in results["runs"]]
+    out["runs"][0]["scorer_version"] = "14.0"
+    return out
+
+
+def test_a_row_without_a_version_inherits_the_file_header():
+    summary = models.summarize(without_row_versions(fresh_results()), resamples=20)
+    assert summary["scorer_version"] == models.SCORER_VERSION
+    assert {r["metric"] for r in summary["rows"]} == {
+        "lexical retention smoke check",
+        "detection by quotation",
+    }
+
+
+def test_a_row_that_disagrees_with_the_header_is_refused_before_any_ranking():
+    with pytest.raises(models.ModelEvalError, match="disagrees"):
+        models.summarize(disagreeing(fresh_results()), resamples=20)
 
 
 def test_authored_reviews_with_nothing_lost_are_left_out_of_the_summary():
