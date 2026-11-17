@@ -854,10 +854,14 @@ impl Engine {
             if explicit {
                 return true;
             }
-            match levels.get(&f.rule_id) {
+            // The profile shifts a genre level as it shifts the shipped one.
+            match levels
+                .get(&f.rule_id)
+                .map(|l| l.shifted(self.settings.severity_shift))
+            {
                 Some(Level::Off) => false,
                 Some(Level::On(severity)) => {
-                    f.severity = *severity;
+                    f.severity = severity;
                     true
                 }
                 None => true,

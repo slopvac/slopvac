@@ -169,3 +169,44 @@ fn a_rule_that_is_not_the_history_rule_ignores_the_genre() {
         .unwrap();
     assert_eq!(severities(&doc), [Severity::Error]);
 }
+
+#[test]
+fn the_severity_shift_moves_the_level_of_the_document_genre() {
+    // consumer is a warning, internal a suggestion; the shift moves one step and clamps.
+    for (genre, shift, want) in [
+        ("consumer", 1, Severity::Error),
+        ("consumer", -1, Severity::Suggestion),
+        ("internal", 1, Severity::Warning),
+        ("internal", -1, Severity::Suggestion),
+        ("consumer", 5, Severity::Error),
+    ] {
+        let mut settings = settings();
+        settings.severity_shift = shift;
+        assert_eq!(
+            severities(&lint_genre(settings, genre)),
+            [want],
+            "{genre} shifted by {shift}"
+        );
+    }
+}
+
+#[test]
+fn the_severity_shift_keeps_a_genre_that_turns_the_rule_off_off() {
+    let mut settings = settings();
+    settings.severity_shift = 1;
+    assert_eq!(severities(&lint_genre(settings, "change-comms")), []);
+}
+
+#[test]
+fn the_severity_shift_does_not_move_an_explicit_rule_level() {
+    let mut settings = settings();
+    settings.severity_shift = 1;
+    settings.rule_levels.insert(
+        id("core:docs-discipline.history-internal-reference"),
+        Level::On(Severity::Warning),
+    );
+    assert_eq!(
+        severities(&lint_genre(settings, "consumer")),
+        [Severity::Warning]
+    );
+}
