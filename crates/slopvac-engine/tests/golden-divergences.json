@@ -1,54 +1,54 @@
 {
   "reasons": {
-    "corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for docs-discipline.internal-refs (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for docs-discipline.internal-refs (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "corpus-product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-descriptive.sentence-too-long-descriptive, ste-verbs.passive-voice (missing in Rust or extra). Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-formatting.title-case-heading, prose-craft.hyphens, ste-procedural.multiple-instructions-per-sentence, ste-punctuation.hyphen-group-too-long (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-punctuation.hyphen-group-too-long (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-reference.rust-lang-reference.src-identifiers-md.521af8": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.negative-requirement, ste-descriptive.sentence-too-long-descriptive, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds findings of the unrun structure rule ai-tells-formatting.heading-hierarchy (slopvac-8l4.3.43). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "format-mdx": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
-    "format-rst": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
-    "issue-252": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "issue-253": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "issue-254": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "issue-255": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "issue-256": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
-    "issue-257": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ai-residue": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "rule-examples-ai-tells-agentic": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ai-tells-content-shape": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ai-tells-figurative": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "rule-examples-ai-tells-formatting": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ai-tells-register": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ai-tells-structure": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core (missing in Rust or extra).",
-    "rule-examples-docs-discipline": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-orwell": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-agency": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-craft": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-discipline": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-discipline.run-on, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "rule-examples-prose-format": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-inclusive": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-inflation": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-promotion": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-prose-scope": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-descriptive": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-descriptive.paragraph-too-many-sentences, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "rule-examples-ste-nouns": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-practices": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-procedural": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-punctuation": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-safety": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "rule-examples-ste-sentences": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-verbs": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
-    "rule-examples-ste-words": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
-    "stacklok-after": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core, docs-discipline.status-language, prose-craft.negative-requirement, prose-craft.versions, ste-descriptive.paragraph-too-many-sentences, ste-descriptive.sentence-too-long-descriptive, ste-nouns.multiword-noun-too-long, ste-procedural.multiple-instructions-per-sentence, ste-sentences.complex-text-not-in-vertical-list, ste-verbs.passive-voice (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
-    "stacklok-before": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core, docs-discipline.status-language, prose-craft.negative-requirement, prose-craft.sentence-length, prose-craft.versions, ste-descriptive.paragraph-too-many-sentences, ste-descriptive.sentence-too-long-descriptive, ste-nouns.multiword-noun-too-long, ste-procedural.condition-after-command, ste-procedural.multiple-instructions-per-sentence, ste-sentences.complex-text-not-in-vertical-list, ste-verbs.passive-voice (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different sentences than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded."
+    "corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for docs-discipline.internal-refs (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for docs-discipline.internal-refs (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.sentence-length, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "corpus-product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-descriptive.sentence-too-long-descriptive, ste-verbs.passive-voice (missing in Rust or extra). Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-formatting.title-case-heading, prose-craft.hyphens, ste-procedural.multiple-instructions-per-sentence, ste-punctuation.hyphen-group-too-long (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-punctuation.hyphen-group-too-long (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-reference.rust-lang-reference.src-identifiers-md.521af8": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-craft.negative-requirement, ste-descriptive.sentence-too-long-descriptive, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "format-mdx": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
+    "format-rst": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
+    "issue-252": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "issue-253": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "issue-254": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "issue-255": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "issue-256": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed.",
+    "issue-257": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ai-residue": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "rule-examples-ai-tells-agentic": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ai-tells-content-shape": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ai-tells-figurative": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "rule-examples-ai-tells-formatting": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ai-tells-register": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ai-tells-structure": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core (missing in Rust or extra).",
+    "rule-examples-docs-discipline": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-orwell": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-agency": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-craft": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-discipline": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for prose-discipline.run-on, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "rule-examples-prose-format": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-inclusive": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-inflation": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-promotion": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-prose-scope": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-descriptive": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-descriptive.paragraph-too-many-sentences, ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "rule-examples-ste-nouns": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-practices": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-procedural": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-punctuation": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-safety": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "rule-examples-ste-sentences": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-verbs": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice.",
+    "rule-examples-ste-words": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ste-procedural.multiple-instructions-per-sentence (missing in Rust or extra). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "stacklok-after": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core, docs-discipline.status-language, prose-craft.negative-requirement, prose-craft.versions, ste-descriptive.paragraph-too-many-sentences, ste-descriptive.sentence-too-long-descriptive, ste-nouns.multiword-noun-too-long, ste-procedural.multiple-instructions-per-sentence, ste-sentences.complex-text-not-in-vertical-list, ste-verbs.passive-voice (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
+    "stacklok-before": "Exit status 2 and the unchecked notice: the engine has no word blocklist (slopvac-8l4.3.44), and the golden reports no such notice. The golden holds ste-words.spelling findings, a rule generated from the locale that this engine setup does not build (slopvac-8l4.3.44). Undiagnosed (slopvac-8l4.3.41): findings differ in presence for ai-tells-structure.negative-guarantee-core, docs-discipline.status-language, prose-craft.negative-requirement, prose-craft.sentence-length, prose-craft.versions, ste-descriptive.paragraph-too-many-sentences, ste-descriptive.sentence-too-long-descriptive, ste-nouns.multiword-noun-too-long, ste-procedural.condition-after-command, ste-procedural.multiple-instructions-per-sentence, ste-sentences.complex-text-not-in-vertical-list, ste-verbs.passive-voice (missing in Rust or extra). Undiagnosed (slopvac-8l4.3.41): Rust counts different sentences than 2.x; the extra 2.x paragraphs sit at marker lines (`:::` directives, MDX `import`, RST markers) in the samples, which Rust treats as non-prose. Inferred, not diagnosed. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them. Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded."
   },
   "runs": {
     "normal/corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": {
@@ -96,7 +96,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -145,7 +144,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -255,7 +253,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -353,7 +350,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -405,7 +401,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -512,7 +507,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -573,7 +567,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -843,7 +836,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -923,14 +915,12 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/corpus-reference.rust-lang-reference.src-identifiers-md.521af8": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1019,65 +1009,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": {
-      "document": {
-        "ai_register": {
-          "strong": {
-            "errors": 0,
-            "findings": 0,
-            "per_100_words": 0.0,
-            "warnings": 0
-          },
-          "weak": {
-            "errors": 0,
-            "findings": 0,
-            "per_100_words": 0.0,
-            "warnings": 0
-          }
-        },
-        "categories": {
-          "ai-tells-formatting": {
-            "budget": 1.0,
-            "category": "ai-tells-formatting",
-            "errors": 0,
-            "findings": 0,
-            "gating_per_100_words": -0.0,
-            "over_budget": false,
-            "per_100_words": 0.0,
-            "score": 100.0,
-            "suggestions": 0,
-            "warnings": 0
-          }
-        },
-        "per_100_words": 3.704,
-        "score": 90.7,
-        "total_findings": 3,
-        "warnings": 0
-      },
       "exit": 2,
-      "missing": [
-        {
-          "category": "ai-tells-formatting",
-          "column": 1,
-          "line": 46,
-          "matched_text": "### See also:",
-          "rule_id": "core:ai-tells-formatting.heading-hierarchy",
-          "severity": "warning"
-        }
-      ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1089,7 +1032,6 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1101,21 +1043,18 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/issue-252": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/issue-253": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1148,14 +1087,12 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/issue-255": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1167,14 +1104,12 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/issue-257": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1223,21 +1158,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ai-tells-agentic": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ai-tells-content-shape": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1289,21 +1221,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ai-tells-formatting": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ai-tells-register": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1339,35 +1268,30 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-docs-discipline": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-orwell": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-agency": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-craft": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1463,42 +1387,36 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-format": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-inclusive": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-inflation": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-promotion": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-prose-scope": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1616,35 +1534,30 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-nouns": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-practices": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-procedural": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-punctuation": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1687,21 +1600,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-sentences": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "normal/rule-examples-ste-verbs": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -1753,7 +1663,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -2309,7 +2218,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -3280,50 +3188,7 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
-      ]
-    },
-    "relaxed/corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186": {
@@ -3377,146 +3242,35 @@
           "warnings": 0
         },
         "words": 390
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf": {
       "document": {
         "words": 250
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-reference.rust-lang-reference.src-identifiers-md.521af8": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/format-mdx": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/format-rst": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-252": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-253": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-254": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-255": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/issue-256": {
       "document": {
         "paragraphs": 2,
         "sentences": 4,
         "words": 33
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-257": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-residue": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-agentic": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-content-shape": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-figurative": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-formatting": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-register": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/rule-examples-ai-tells-structure": {
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -3545,37 +3299,9 @@
           "rule_id": "core:ai-tells-structure.negative-guarantee-core",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-docs-discipline": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-orwell": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-agency": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-craft": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/rule-examples-prose-discipline": {
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "none",
@@ -3604,93 +3330,6 @@
           "rule_id": "core:prose-discipline.run-on",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-format": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-inclusive": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-inflation": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-promotion": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-scope": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-descriptive": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-nouns": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-practices": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-procedural": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-punctuation": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-safety": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-sentences": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-verbs": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-words": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/stacklok-after": {
@@ -3720,7 +3359,6 @@
         "sentences": 343,
         "words": 3514
       },
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -3974,16 +3612,12 @@
           "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/stacklok-before": {
       "document": {
         "sentences": 303
       },
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -4187,9 +3821,6 @@
           "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "strict/corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": {
@@ -4241,7 +3872,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4297,7 +3927,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4412,7 +4041,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4524,7 +4152,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4581,7 +4208,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4695,7 +4321,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -4756,7 +4381,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5033,7 +4657,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5121,14 +4744,12 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/corpus-reference.rust-lang-reference.src-identifiers-md.521af8": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5236,75 +4857,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": {
-      "document": {
-        "ai_register": {
-          "strong": {
-            "errors": 0,
-            "findings": 0,
-            "per_100_words": 0.0,
-            "warnings": 0
-          },
-          "weak": {
-            "errors": 0,
-            "findings": 0,
-            "per_100_words": 0.0,
-            "warnings": 0
-          }
-        },
-        "categories": {
-          "ai-tells-formatting": {
-            "budget": 0.5,
-            "category": "ai-tells-formatting",
-            "errors": 0,
-            "findings": 0,
-            "gating_per_100_words": -0.0,
-            "over_budget": false,
-            "per_100_words": 0.0,
-            "score": 100.0,
-            "suggestions": 0,
-            "warnings": 0
-          }
-        },
-        "gate": {
-          "passed": false,
-          "reasons": [
-            "1 error(s), limit 0",
-            "2.47 severity-weighted findings per 100 words, budget 1.5",
-            "score 54.9, minimum 85.0",
-            "ste-practices at 0.62 severity-weighted findings per 100 words, budget 0.5",
-            "ste-verbs at 1.24 severity-weighted findings per 100 words, budget 0.4"
-          ]
-        },
-        "per_100_words": 3.704,
-        "score": 54.9,
-        "total_findings": 3,
-        "warnings": 2
-      },
       "exit": 2,
-      "missing": [
-        {
-          "category": "ai-tells-formatting",
-          "column": 1,
-          "line": 46,
-          "matched_text": "### See also:",
-          "rule_id": "core:ai-tells-formatting.heading-hierarchy",
-          "severity": "warning"
-        }
-      ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5316,7 +4880,6 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5328,21 +4891,18 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/issue-252": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/issue-253": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5375,14 +4935,12 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/issue-255": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5394,14 +4952,12 @@
       },
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/issue-257": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5450,21 +5006,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ai-tells-agentic": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ai-tells-content-shape": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5519,21 +5072,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ai-tells-formatting": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ai-tells-register": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5569,35 +5119,30 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-docs-discipline": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-orwell": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-agency": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-craft": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5695,42 +5240,36 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-format": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-inclusive": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-inflation": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-promotion": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-prose-scope": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5854,35 +5393,30 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-nouns": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-practices": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-procedural": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-punctuation": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -5935,21 +5469,18 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-sentences": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
     "strict/rule-examples-ste-verbs": {
       "exit": 2,
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -6005,7 +5536,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -6581,7 +6111,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     },
@@ -7562,7 +7091,6 @@
         }
       ],
       "unchecked": [
-        "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
       ]
     }

@@ -136,7 +136,7 @@ FIXTURE_CONFIG = {
             "type": "object",
             "required": ["id"],
             "properties": {"id": {"type": "string", "description": "Use <id>."}},
-        }
+        },
     },
 }
 
@@ -527,7 +527,13 @@ def test_real_data_builds_clean_with_a_page_per_rule_and_matching_ids() -> None:
     pages = build_site.build(site)
     assert build_site.broken_links(pages) == []
     assert build_site.schema_id_problems(pages, site) == []
-    expected = sum(len(c.get("rules", [])) for c in build_site.load_categories())
+    removed = build_site.removed_rules()
+    expected = sum(
+        1
+        for c in build_site.load_categories()
+        for r in c.get("rules", [])
+        if f"{c['id']}.{r['id']}" not in removed
+    )
     rule_pages = [
         p for p in pages if p.startswith("rules/") and not p.endswith("index.md")
     ]
@@ -896,7 +902,7 @@ def test_config_reference_shows_type_default_requirement_and_description(
     _run(sources)
     page = _read(sources, "config/index.md")
     assert "| `schema_version` (required) | `3` | none | Version. |" in page
-    assert '| `mode` | one of `a`, `b` | `a` | A \\| mode. |' in page
+    assert "| `mode` | one of `a`, `b` | `a` | A \\| mode. |" in page
     assert "| `packs[].id` (required) | string | none | Use &lt;id&gt;. |" in page
     assert "(config/index.md)" in _read(sources, "index.md")
 
@@ -912,9 +918,7 @@ def test_config_cells_keep_pipes_backticks_and_link_shaped_text_inert(
         "| See \\[docs\\]\\(nowhere.md\\) and \\!\\[i\\]\\(x.png\\) "
         "\\*now\\* \\`code\\`. |"
     )
-    assert build_site.broken_links(
-        {"config/index.md": page, "index.md": ""}
-    ) == []
+    assert build_site.broken_links({"config/index.md": page, "index.md": ""}) == []
 
 
 def test_map_keys_get_a_row_with_the_property_names_metadata(
@@ -954,14 +958,14 @@ def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
     page = build_site.build(build_site.load_site())["config/index.md"]
     rows = [r for r in page.splitlines() if r.startswith("| `")]
     segments = {
-        part.removesuffix("[]")
-        for row in rows
-        for part in row.split("`")[1].split(".")
+        part.removesuffix("[]") for row in rows for part in row.split("`")[1].split(".")
     }
     assert _json_keys(schema) <= segments
     assert all(r.split(" | ")[1].strip() for r in rows)
     assert "| `network.offline` | boolean | `false` |" in page
-    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |' in page
+    assert (
+        "| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |" in page
+    )
 
 
 def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
@@ -975,3 +979,25 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
+
+
+def test_rule_pages_and_indexes_skip_the_rules_3_0_removed() -> None:
+    import tomllib
+
+    shared = ROOT / "scripts" / "contract" / "removed-rules.toml"
+    removed = tomllib.loads(shared.read_text(encoding="utf-8"))["rules"]
+    assert removed, "the shared list names the removed rules"
+    pages = build_site.generate_rules()
+    for key in removed:
+        category, rule = key.split(".", 1)
+        assert build_site.rule_page_path(category, rule) not in pages, key
+        assert rule not in pages[f"rules/{category}/index.md"], key
+        assert rule not in pages["rules/index.md"], key
+    # A rule next to the removed ones is still listed.
+    assert "rules/ste-words/index.md" in pages
+    assert "spelling" in pages["rules/ste-words/index.md"]
+    assert not [
+        p
+        for p, text in pages.items()
+        if any(k.split(".", 1)[1] in text for k in removed)
+    ]

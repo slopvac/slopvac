@@ -1180,19 +1180,25 @@ impl Run<'_> {
                 {
                     continue;
                 }
-                out.push(self.finding(Candidate {
-                    rule_id: loaded.id(),
-                    pack: set.pack(),
-                    category: loaded.category().clone(),
-                    severity: active.severity,
-                    message: format_message(rule.message.as_str(), "", ""),
-                    span,
-                    matched_text: text.to_owned(),
-                    ai_signal: rule.ai_signal,
-                    fix: None,
-                    extra_context: None,
-                    covering: Vec::new(),
-                })?);
+                out.push(
+                    self.finding(Candidate {
+                        rule_id: loaded.id(),
+                        pack: set.pack(),
+                        category: loaded.category().clone(),
+                        severity: active.severity,
+                        // The 2.x report folded the whitespace left where `{match}` was empty.
+                        message: format_message(rule.message.as_str(), "", "")
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        span,
+                        matched_text: text.to_owned(),
+                        ai_signal: rule.ai_signal,
+                        fix: None,
+                        extra_context: None,
+                        covering: Vec::new(),
+                    })?,
+                );
             }
         }
         Ok(out)

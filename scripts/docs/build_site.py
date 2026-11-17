@@ -307,7 +307,10 @@ class _ConfigSchema:
         """The node and every schema merged into it by ``allOf`` or ``then``."""
         node = self.resolve(node)
         parts = [node]
-        for sub in [*node.get("allOf", []), *([node["then"]] if "then" in node else [])]:
+        for sub in [
+            *node.get("allOf", []),
+            *([node["then"]] if "then" in node else []),
+        ]:
             parts += self._parts(sub)
         return parts
 
@@ -322,7 +325,9 @@ class _ConfigSchema:
 
     @staticmethod
     def literal(value: object) -> str:
-        return code(value if isinstance(value, str) else json.dumps(value), in_table=True)
+        return code(
+            value if isinstance(value, str) else json.dumps(value), in_table=True
+        )
 
     def kind(self, node: dict) -> str:
         node = self.resolve(node)
@@ -403,7 +408,9 @@ def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     for path, kind, default, description in _ConfigSchema(config, common).rows(config):
         key, _, note = path.partition(" ")
         label = code(key, in_table=True) + (" " + note if note else "")
-        lines.append(f"| {label} | {kind} | {default} | {untrusted_cell(description)} |")
+        lines.append(
+            f"| {label} | {kind} | {default} | {untrusted_cell(description)} |"
+        )
     return {"config/index.md": "\n".join(lines) + "\n"}
 
 

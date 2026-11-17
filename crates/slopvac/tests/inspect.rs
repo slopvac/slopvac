@@ -244,6 +244,28 @@ fn unknown_rule_is_an_incomplete_run() {
 }
 
 #[test]
+fn rule_output_never_names_a_removed_rule() {
+    let removed = [
+        "vertical-list-lead-in-missing-colon",
+        "vertical-list-item-punctuation",
+        "safety-block-missing-consequence",
+        "inconsistent-term-for-same-thing",
+        "inconsistent-wording-for-same-step",
+    ];
+    let outputs = [
+        stdout(&["explain", "core:ste-descriptive.missing-key-word-structure"]),
+        stdout(&["rules", "--format", "md"]),
+        stdout(&["rules", "--format", "json"]),
+        stdout(&["rules"]),
+    ];
+    for out in &outputs {
+        for id in removed {
+            assert!(!out.contains(id), "{id} appears in the output");
+        }
+    }
+}
+
+#[test]
 fn the_removed_structure_rules_are_unknown_rules() {
     for id in [
         "core:ste-sentences.vertical-list-lead-in-missing-colon",

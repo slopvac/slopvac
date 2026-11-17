@@ -48,8 +48,8 @@ fn a_skipped_heading_level_is_reported_on_the_heading_line() {
     assert_eq!(f.rule_id.as_str(), "core:cat.heading-hierarchy");
     assert_eq!((f.start.line(), f.start.column()), (5, 1));
     assert_eq!(f.matched_text, "#### Four");
-    // The 2.x script left {match} empty.
-    assert_eq!(f.message.as_str(), "heading hierarchy:  -- fix the level");
+    // {match} is empty and the whitespace around it folds.
+    assert_eq!(f.message.as_str(), "heading hierarchy: -- fix the level");
     let extent = f.extent.as_ref().unwrap();
     assert_eq!((extent.span.start(), extent.span.end()), (19, 28));
     assert_eq!((extent.end.line(), extent.end.column()), (5, 10));

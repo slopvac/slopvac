@@ -324,12 +324,12 @@ def test_no_generated_text_names_a_removed_rule() -> None:
 
 
 def test_a_sentence_that_names_a_removed_rule_is_dropped() -> None:
-    removed = sorted(convert.REMOVED_RULES)[0].replace(".", "/")
+    removed = min(convert.REMOVED_RULES).replace(".", "/")
     note = f"The half overlaps {removed}, which is mechanical. What is unique here is the key word."
     assert convert.scrub_removed_rules(note) == "What is unique here is the key word."
 
 
 def test_text_that_names_only_a_removed_rule_fails_conversion() -> None:
-    removed = sorted(convert.REMOVED_RULES)[0].split(".", 1)[1]
+    removed = min(convert.REMOVED_RULES).split(".", 1)[1]
     with pytest.raises(convert.ConversionError):
         convert.scrub_removed_rules(f"See {removed}.")

@@ -32,6 +32,7 @@ def removed_rules() -> frozenset[str]:
     spec.loader.exec_module(module)
     return module.REMOVED_RULES
 
+
 OUT = ROOT / "docs" / "contract" / "compat" / "profiles"
 MAPPING_JSON = OUT / "mapping.json"
 PROFILES = ("strict", "normal", "relaxed")
@@ -90,7 +91,9 @@ def build_style(profile: str) -> dict:
     removed = removed_rules()
     for rule in ruleset.all_rules:
         if rule.category not in resolved.categories:
-            raise SystemExit(f"{profile}: category {rule.category} has no profile entry")
+            raise SystemExit(
+                f"{profile}: category {rule.category} has no profile entry"
+            )
     for name in sorted(resolved.categories):
         settings = resolved.categories[name]
         dials: dict = {"severity": settings.severity.value}
