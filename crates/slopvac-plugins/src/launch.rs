@@ -152,6 +152,11 @@ pub fn intercept() {
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    clippy::exit,
+    reason = "the launcher runs in the plugin's process: stderr is its output channel and exit its only way out"
+)]
 fn fail(msg: &str) -> ! {
     eprintln!("slopvac plugin launcher: {msg}");
     std::process::exit(127)

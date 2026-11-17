@@ -1,5 +1,6 @@
 //! The `capitalization` rule kind, in the sentence-case style: the 2.x `title-case-heading`
 //! logic. Expected results come from the 2.x pattern rule run on the same headings.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -20,10 +21,6 @@ fn sentence_rule(allowed: &[&str]) -> Value {
     )
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn engine_with(matcher: &Value, locale_allow: &[&str]) -> Engine {
     let mut s = settings();
     s.allowed_words = locale_allow.iter().map(|w| (*w).to_owned()).collect();
@@ -37,10 +34,6 @@ fn engine_with(matcher: &Value, locale_allow: &[&str]) -> Engine {
     .unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn flagged(engine: &Engine, source: &str) -> Vec<String> {
     engine
         .lint(&Input::markdown("a.md", source))

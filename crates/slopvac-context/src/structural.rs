@@ -173,10 +173,9 @@ impl StructuralTagger {
     }
 
     fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
-        let kind_ok = match self.block_kind {
-            Some(k) => b.kind == k,
-            None => b.kind != BlockKind::CodeBlock,
-        };
+        let kind_ok = self
+            .block_kind
+            .map_or_else(|| b.kind != BlockKind::CodeBlock, |k| b.kind == k);
         if !kind_ok {
             return Ok(false);
         }

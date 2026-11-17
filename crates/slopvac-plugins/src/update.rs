@@ -145,7 +145,7 @@ impl UpdateError {
             Self::Busy { .. } => "update-lock-busy",
             Self::UnsupportedOnWindows(_) => "unsupported-on-windows",
             Self::Revocation(e) => e.code(),
-            _ => "update-failed",
+            Self::UnknownPack(_) | Self::Lock { .. } | Self::Write { .. } => "update-failed",
         }
     }
 }
@@ -595,12 +595,12 @@ fn take_guard(
 }
 
 fn read_lock(dir: &Dir, shown: &str) -> Result<String, ApplyError> {
-    let max = MAX_LOCK_BYTES as u64;
+    let max = crate::num::widen(MAX_LOCK_BYTES);
     let bytes = match fs::read_current_limited(dir, OsStr::new(LOCK_NAME), shown, max)? {
         Current::File(bytes) => bytes,
         Current::Absent => return Err(ApplyError::Io(format!("{LOCK_PATH}: no such file"))),
     };
-    String::from_utf8(bytes).map_err(|_| ApplyError::Io(format!("{LOCK_PATH}: not UTF-8")))
+    String::from_utf8(bytes).map_err(|e| ApplyError::Io(format!("{LOCK_PATH}: not UTF-8: {e}")))
 }
 
 fn reference_of(pack: &LockedPack, text: &str) -> Result<Reference, SyncError> {

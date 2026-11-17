@@ -3,7 +3,7 @@
 //!
 //! The opener is the platform program found on `PATH` (`open` on macOS, `xdg-open` on Linux).
 //! Each test puts a fake one first on `PATH`; it records its arguments to a file.
-
+#![cfg(test)]
 #![cfg(unix)]
 
 use assert_cmd::Command;

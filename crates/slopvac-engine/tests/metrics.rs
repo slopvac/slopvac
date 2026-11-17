@@ -1,6 +1,7 @@
 //! Metric rules: a counted measurement compared with a threshold.
 //!
 //! Expected counts are worked out by hand from the metric definitions in the 2.x reference.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -23,10 +24,6 @@ fn metric(name: &str, threshold: f64, comparison: &str, extra: &Value) -> Value 
     )
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(rule: &Value, text: &str) -> Document {
     engine(std::slice::from_ref(rule))
         .lint(&slopvac_engine::Input::markdown("a.md", text))

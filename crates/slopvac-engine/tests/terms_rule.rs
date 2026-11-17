@@ -1,5 +1,6 @@
 //! The term-casing rule beyond the basics: fixes, isolation, rule-contract controls and
 //! terms files. Expected spellings are worked out from the term lists, not the matcher.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -14,36 +15,20 @@ use slopvac_model::PackId;
 
 const PROJECT_TERMS: &str = "schema_version = 3\n\n[[terms]]\nterm = \"AcmeCloud\"\n\n[[terms]]\nterm = \"Zorbix\"\nvariants = [\"Zx\"]\n";
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn pack() -> PackId {
     PackId::new(TERMS_PACK).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn base() -> Engine {
     Engine::new(vec![terms_rule_set(&pack()).unwrap()], settings()).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn project_engine() -> Engine {
     let path = common::private_dir("terms").join("terms.toml");
     std::fs::write(&path, PROJECT_TERMS).unwrap();
     base().with_term_files(&[path]).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint_text(engine: &Engine, text: &str) -> Vec<String> {
     let doc = engine.lint(&Input::markdown("a.md", text)).unwrap();
     matched(&doc).into_iter().map(str::to_owned).collect()
@@ -96,10 +81,6 @@ fn a_missing_terms_file_is_an_error() {
     assert!(base().with_term_files(&[missing]).is_err());
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn engine_with_rule(extra: &Value) -> Engine {
     let mut pack: Value = serde_json::from_str(include_str!("../data/terms-pack.json")).unwrap();
     for (k, v) in extra.as_object().unwrap() {

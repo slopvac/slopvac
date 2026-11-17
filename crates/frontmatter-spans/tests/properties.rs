@@ -20,7 +20,12 @@ fn check_spans(doc: &str, node: &Node) {
             }
         }
         Value::Array(items) => items.iter().for_each(|n| check_spans(doc, n)),
-        _ => {}
+        Value::Null
+        | Value::Bool(_)
+        | Value::Integer(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::Datetime(_) => {}
     }
 }
 

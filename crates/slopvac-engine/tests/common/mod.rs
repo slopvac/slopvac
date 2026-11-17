@@ -10,10 +10,6 @@ use slopvac_model::{
 };
 use slopvac_rules::{CompileOptions, RuleSet};
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn id(text: &str) -> RuleId {
     RuleId::new(text).unwrap()
 }
@@ -23,10 +19,6 @@ pub(crate) fn tokens(id: &str, token: &str, extra: &Value) -> Value {
     rule(id, &json!({"kind": "tokens", "tokens": [token]}), extra)
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn rule(id: &str, matcher: &Value, extra: &Value) -> Value {
     let mut rule = json!({
         "id": id, "name": "n", "message": "Found {match}.", "severity": "warning",
@@ -48,11 +40,6 @@ pub(crate) fn category(id: &str, rules: &[Value]) -> (PathBuf, String) {
     (PathBuf::from(format!("{id}.json")), doc.to_string())
 }
 
-#[expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn ruleset(files: Vec<(PathBuf, String)>) -> RuleSet {
     RuleSet::from_sources(
         &PackId::new("core").unwrap(),
@@ -62,10 +49,6 @@ pub(crate) fn ruleset(files: Vec<(PathBuf, String)>) -> RuleSet {
     .unwrap_or_else(|e| panic!("{e}"))
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn settings() -> Settings {
     Settings::new(
         NonEmptyString::new("normal").unwrap(),
@@ -78,10 +61,6 @@ pub(crate) fn settings() -> Settings {
 }
 
 /// An engine over one category `cat` holding `rules`.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn engine(rules: &[Value]) -> Engine {
     Engine::new(vec![ruleset(vec![category("cat", rules)])], settings()).unwrap()
 }
@@ -110,10 +89,6 @@ pub(crate) fn matched(doc: &Document) -> Vec<&str> {
 /// (`tempfile` picks it), and the directory stays until `cargo clean`: a test process has
 /// no hook that runs after its last test, and its helper cannot be dropped earlier because
 /// other tests of the same process still use the scripts in it.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 pub(crate) fn private_dir(prefix: &str) -> PathBuf {
     tempfile::Builder::new()
         .prefix(&format!("{prefix}-"))
@@ -122,11 +97,11 @@ pub(crate) fn private_dir(prefix: &str) -> PathBuf {
         .keep()
 }
 
-pub fn root() -> PathBuf {
+pub(crate) fn root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-pub fn read_json(path: &std::path::Path) -> Value {
+pub(crate) fn read_json(path: &std::path::Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
@@ -142,7 +117,7 @@ fn level(name: &str) -> Level {
 
 /// The rule that the converted 2.x data still writes as a pattern. Rust runs it as the native
 /// `capitalization` kind, so its findings check that kind against the 2.x pattern.
-pub const TITLE_CASE: &str = "title-case-heading";
+pub(crate) const TITLE_CASE: &str = "title-case-heading";
 
 fn core_sources() -> Vec<(PathBuf, String)> {
     let core = root().join("crates/slopvac-rules/tests/fixtures/core-v3");
@@ -172,7 +147,7 @@ fn core_sources() -> Vec<(PathBuf, String)> {
 
 /// The engine for one profile: the category dials and rule levels of `core:legacy-<profile>`
 /// and the thresholds of the profile, both from the profile mapping contract.
-pub fn legacy_engine(profile: &str) -> Engine {
+pub(crate) fn legacy_engine(profile: &str) -> Engine {
     let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         core_sources(),

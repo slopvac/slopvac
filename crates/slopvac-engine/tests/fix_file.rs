@@ -1,5 +1,6 @@
 //! Fixing files on disk: what is refused, how the write is committed, and what survives a
 //! failure.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -29,20 +30,12 @@ fn swaps() -> Engine {
 }
 
 /// A project root holding `doc.md`.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn project() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("doc.md"), DOC).unwrap();
     root
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn run(root: &Path, rel: &str, dry_run: bool) -> FileFix {
     fix_file(
         &swaps(),
@@ -55,10 +48,6 @@ fn run(root: &Path, rel: &str, dry_run: bool) -> FileFix {
     .unwrap()
 }
 
-#[expect(
-    clippy::panic,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn done(out: FileFix) -> Box<FileResult> {
     match out {
         FileFix::Done(result) => result,
@@ -66,10 +55,6 @@ fn done(out: FileFix) -> Box<FileResult> {
     }
 }
 
-#[expect(
-    clippy::panic,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn refused(out: &FileFix) -> Refusal {
     match out {
         FileFix::Refused(why) => *why,
@@ -77,10 +62,6 @@ fn refused(out: &FileFix) -> Refusal {
     }
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
@@ -90,10 +71,6 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn read(path: impl AsRef<Path>) -> String {
     std::fs::read_to_string(path).unwrap()
 }
@@ -293,10 +270,6 @@ mod unix {
 
     use super::*;
 
-    #[expect(
-        clippy::unwrap_used,
-        reason = "test helper outside a test fn: a setup failure should fail the calling test"
-    )]
     fn fifo(path: &Path) {
         let status = std::process::Command::new("mkfifo")
             .arg(path)

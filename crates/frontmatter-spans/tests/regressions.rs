@@ -42,7 +42,10 @@ fn yaml_quoted_scalar_span_stops_at_the_closing_quote_before_a_comment() {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the type exists to be deserialised; its fields are never read"
+)]
 enum Shape {
     Pair(u8, u8),
 }
@@ -76,7 +79,10 @@ fn sequences_longer_than_the_target_are_an_error_at_the_first_extra_element() {
 
 #[derive(Debug, Deserialize)]
 #[serde(try_from = "String")]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the type exists to be deserialised; its fields are never read"
+)]
 struct Slug(String);
 
 impl TryFrom<String> for Slug {
@@ -93,7 +99,10 @@ impl TryFrom<String> for Slug {
 #[test]
 fn validation_errors_after_a_successful_read_get_the_value_span() {
     #[derive(Debug, Deserialize)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "the type exists to be deserialised; its fields are never read"
+    )]
     struct Page {
         slug: Slug,
         other: u8,

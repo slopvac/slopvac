@@ -13,6 +13,12 @@
 //!
 //! The inference sees committed corpus text plus, when given, documents under
 //! `<cache>/docs/<id>.txt`.
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    reason = "an offline evaluation script: failing fast on bad input and printing results is its job"
+)]
 
 use std::path::PathBuf;
 use std::{env, fs};

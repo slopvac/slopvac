@@ -3,6 +3,7 @@
 //! The same document runs twice: through a fake interpreter that prints the driver output
 //! real docutils wrote for it (always, on Unix), and through the docutils on `PATH` (when
 //! there is one; CI sets `SLOPVAC_RST_LIVE`). Both must give the same fixed text.
+#![cfg(test)]
 #[expect(
     dead_code,
     reason = "each test binary uses the part of the shared helpers it needs"
@@ -18,10 +19,6 @@ use slopvac_engine::{Engine, Input, SkipReason, fix_document};
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rst");
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn source() -> String {
     std::fs::read_to_string(format!("{FIXTURES}/fix.rst.in")).unwrap()
 }
@@ -58,10 +55,6 @@ fn swap(options: RstOptions) -> Engine {
     .with_rst(options)
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn fixed(engine: &Engine, text: &str) -> slopvac_engine::FixReport {
     let input = Input::rst("doc.rst", text);
     let doc = engine.lint(&input).unwrap();
@@ -126,10 +119,6 @@ fn rst_prose_is_fixed_and_everything_else_stays_with_docutils() {
 
 /// A fake interpreter that prints the driver output saved in `fixture`.
 #[cfg(unix)]
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn fake(dir: &std::path::Path, name: &str, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join(name);

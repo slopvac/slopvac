@@ -149,8 +149,16 @@ pub fn deliver_with(
 /// already written, so the run's outcome does not change.
 fn show(path: &Path, opener: &dyn Opener, ci: bool, err_out: &mut dyn std::io::Write) {
     if ci {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed stderr diagnostic has nowhere left to be reported"
+        )]
         let _ = writeln!(err_out, "not opening the report: CI is set.");
     } else if let Err(err) = opener.open(&absolute(path)) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed stderr diagnostic has nowhere left to be reported"
+        )]
         let _ = writeln!(err_out, "warning: could not open the report: {err}");
     }
 }

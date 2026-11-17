@@ -56,10 +56,10 @@ fn repo_of(docs: &BTreeMap<&str, &Value>, id: &str) -> String {
     let mut cur = id;
     for _ in 0..16 {
         let Some(doc) = docs.get(cur) else { break };
-        if let Some(repo) = doc["source"]["repo"].as_str() {
+        if let Some(repo) = doc.pointer("/source/repo").and_then(Value::as_str) {
             return repo.to_owned();
         }
-        match doc["source"]["parents"][0].as_str() {
+        match doc.pointer("/source/parents/0").and_then(Value::as_str) {
             Some(parent) => cur = parent,
             None => break,
         }

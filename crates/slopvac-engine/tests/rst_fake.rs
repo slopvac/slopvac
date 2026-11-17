@@ -4,6 +4,7 @@
 //! `tests/fixtures/rst` come from the real driver on docutils 0.23 (`generate.py`), so the
 //! position mapping runs on real docutils output without Python on the test machine.
 #![cfg(unix)]
+#![cfg(test)]
 #[expect(
     dead_code,
     reason = "each test binary uses the part of the shared helpers it needs"
@@ -42,10 +43,6 @@ struct Fakes {
 }
 
 /// Write an executable script.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn script(path: &Path, body: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -54,11 +51,6 @@ fn script(path: &Path, body: &str) {
 
 /// Every script is written once, before any test starts a process. A script that is still
 /// open for writing when another thread forks cannot be executed (ETXTBSY).
-#[expect(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn fakes() -> &'static Fakes {
     static FAKES: OnceLock<Fakes> = OnceLock::new();
     FAKES.get_or_init(|| {
@@ -148,19 +140,11 @@ fn using(interpreter: &Path) -> RstOptions {
     options
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn read_source(name: &str) -> String {
     fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap()
 }
 
 /// Parse the fixture `name` through its recorded driver output.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn parse_fixture(name: &str) -> (String, RstParse) {
     let source = read_source(name);
     let parsed = parse_rst(&source, &using(&fake(&format!("json-{name}")))).unwrap();
@@ -192,10 +176,6 @@ fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn path_list(dirs: &[&Path]) -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap()
 }

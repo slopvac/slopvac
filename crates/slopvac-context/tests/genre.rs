@@ -455,5 +455,6 @@ fn a_genre_file_declares_contexts_that_extending_genres_inherit() {
 fn the_built_in_security_genre_declares_the_security_context() {
     let reg = slopvac_context::builtin_genres().unwrap();
     assert_eq!(reg.contexts("security").unwrap(), ["security"]);
-    assert!(reg.contexts("consumer").unwrap().is_empty());
+    let none: [String; 0] = [];
+    assert_eq!(reg.contexts("consumer").unwrap(), none);
 }

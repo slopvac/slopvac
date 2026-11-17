@@ -1,4 +1,5 @@
 //! Before and after findings from the engine.
+#![cfg(test)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,6 +1,9 @@
 //! Shared span invariants: every node and key slice is a clean, re-parsable fragment.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each test crate that includes this module uses a different subset"
+)]
 
 use frontmatter_spans::{Format, FrontMatter, Node, Value};
 
@@ -55,7 +58,12 @@ fn walk<'a>(
         Value::Array(items) => items
             .iter()
             .for_each(|n| walk(n, Parent::SeqItem, out, keys)),
-        _ => {}
+        Value::Null
+        | Value::Bool(_)
+        | Value::Integer(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::Datetime(_) => {}
     }
 }
 
@@ -76,7 +84,12 @@ fn first_entry(node: &Node) -> (bool, Option<usize>) {
     match &node.value {
         Value::Table(entries) => (true, entries.first().map(|e| e.key_span.range.start)),
         Value::Array(items) => (true, items.first().map(|n| n.span.range.start)),
-        _ => (false, None),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Integer(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::Datetime(_) => (false, None),
     }
 }
 
@@ -135,7 +148,10 @@ fn has_trailing_comment(text: &str) -> bool {
 }
 
 /// Parse `doc` and assert the span invariants for every node and key. Returns the root shape.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear walk over every span invariant reads better whole"
+)]
 pub(crate) fn check(doc: &str) -> String {
     let fm = FrontMatter::parse(doc)
         .unwrap_or_else(|e| panic!("{doc:?}: {e}"))
@@ -171,7 +187,7 @@ pub(crate) fn check(doc: &str) -> String {
                 let want = match parent {
                     Parent::MapValue => b':',
                     Parent::SeqItem => b'-',
-                    Parent::Root => unreachable!(),
+                    Parent::Root => panic!("the root has no parent"),
                 };
                 let rest = &doc.as_bytes()[at..];
                 let eol = rest.first().is_none_or(|b| matches!(b, b'\n' | b'\r'));
@@ -213,7 +229,12 @@ pub(crate) fn check(doc: &str) -> String {
                     slice.starts_with("[[")
                         && matches!(items.first().map(|n| &n.value), Some(Value::Table(_)))
                 }
-                _ => false,
+                Value::Null
+                | Value::Bool(_)
+                | Value::Integer(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::Datetime(_) => false,
             };
         if toml_table_form {
             continue;
@@ -237,7 +258,7 @@ pub(crate) fn check(doc: &str) -> String {
             .unwrap_or_else(|| panic!("{slice:?} of {doc:?} does not re-parse"));
         let got = match format {
             Format::Yaml => &again.root,
-            _ => again.root.get("v").expect("v"),
+            Format::Toml | Format::Json => again.root.get("v").expect("v"),
         };
         assert_eq!(shape(got), shape(node), "{slice:?} of {doc:?}");
     }

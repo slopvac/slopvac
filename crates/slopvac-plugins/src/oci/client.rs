@@ -888,7 +888,11 @@ fn read_charged(
         .limit(cap.saturating_add(1))
         .reader()
         .read_to_end(&mut buf);
-    let used = buf.len() as u64;
+    let used = widen(buf.len());
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the closure always returns Some, so try_update cannot fail"
+    )]
     let _ = allowance.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(used))
     });

@@ -56,7 +56,7 @@ impl Error {
     pub fn path(&self) -> Option<&Path> {
         match self {
             Self::Io { path, .. } | Self::UnsafeTarget { path, .. } => Some(path),
-            _ => None,
+            Self::CapExceeded { .. } | Self::NoHomeDir | Self::Read(_) => None,
         }
     }
 

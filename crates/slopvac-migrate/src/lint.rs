@@ -85,14 +85,16 @@ fn walk(dir: &Path, out: &mut Vec<(PathBuf, FileKind)>) -> Result<(), Error> {
 
 /// The first warning-level notice, as a failure: part of the document was not checked.
 fn unchecked(label: &str, notices: &[Notice]) -> Result<(), Error> {
-    match notices.iter().find(|n| n.level == NoticeLevel::Warning) {
-        Some(n) => Err(Error::Lint(format!(
-            "{label}: not fully checked: {}: {}",
-            n.code.as_str(),
-            n.message.as_str()
-        ))),
-        None => Ok(()),
-    }
+    notices
+        .iter()
+        .find(|n| n.level == NoticeLevel::Warning)
+        .map_or(Ok(()), |n| {
+            Err(Error::Lint(format!(
+                "{label}: not fully checked: {}: {}",
+                n.code.as_str(),
+                n.message.as_str()
+            )))
+        })
 }
 
 impl Linter for EngineLinter {
@@ -126,7 +128,12 @@ impl Linter for EngineLinter {
             .iter()
             .map(|(label, kind, text)| match kind {
                 FileKind::Mdx => Input::mdx(label, text),
-                _ => Input::markdown(label, text),
+                FileKind::Markdown
+                | FileKind::Html
+                | FileKind::Rst
+                | FileKind::Text
+                | FileKind::Toml
+                | FileKind::Source(_) => Input::markdown(label, text),
             })
             .collect();
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();

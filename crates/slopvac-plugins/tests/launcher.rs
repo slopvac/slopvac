@@ -1,6 +1,7 @@
 //! The plugin launcher, run directly as the host runs it: limits under an
 //! inherited ceiling, and refusals of malformed invocations.
 #![cfg(unix)]
+#![cfg(test)]
 
 mod common;
 

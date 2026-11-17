@@ -1,4 +1,5 @@
 //! Safe fixes: parity with the 2.x `--fix`, and the refusals 3.0 adds.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -75,10 +76,6 @@ fn swaps() -> Engine {
     )])
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn fix(
     engine: &Engine,
     text: &str,
@@ -279,10 +276,6 @@ fn a_definition_inside_a_quote_keeps_its_references_resolving() {
     }
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn fix_mdx(engine: &Engine, text: &str) -> String {
     let input = Input::mdx("doc.mdx", text);
     let doc = engine.lint(&input).unwrap();

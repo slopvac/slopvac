@@ -75,6 +75,10 @@ fn xdg(lookup: Lookup<'_>, var: &str, default: &str) -> Result<PathBuf> {
 /// `HOME` through the lookup. When `HOME` is unset or empty, the standard library's home
 /// directory answers. When `HOME` is set but not valid UTF-8 the result is an error, because
 /// the fallback would read the same rejected value from the process environment again.
+#[expect(
+    clippy::map_err_ignore,
+    reason = "etcetera::HomeDirError is an opaque unit error; NoHomeDir names the same cause"
+)]
 fn home(lookup: Lookup<'_>) -> Result<PathBuf> {
     match lookup("HOME") {
         Ok(h) if !h.is_empty() => Ok(PathBuf::from(h)),

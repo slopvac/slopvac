@@ -27,7 +27,9 @@ pub fn lexical_normalize(path: &Path) -> PathBuf {
                 Some(Component::RootDir | Component::Prefix(_)) => {}
                 _ => stack.push(component),
             },
-            other => stack.push(other),
+            other @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                stack.push(other);
+            }
         }
     }
     if stack.is_empty() {
@@ -54,10 +56,7 @@ pub fn display_under_root(path: &Path, root: &Path) -> String {
         // An empty or `.` root is the working directory: a relative path is already below it.
         path.is_relative().then(|| path.clone())
     } else if path.is_absolute() == root.is_absolute() {
-        match path.strip_prefix(&root) {
-            Ok(rel) => Some(rel.to_path_buf()),
-            Err(_) => None,
-        }
+        path.strip_prefix(&root).ok().map(Path::to_path_buf)
     } else if path.is_relative() {
         Some(path.clone())
     } else {
@@ -68,10 +67,10 @@ pub fn display_under_root(path: &Path, root: &Path) -> String {
     {
         return join_slash(&rel);
     }
-    match path.file_name() {
-        Some(name) => format!("{EXTERNAL}/{}", name.to_string_lossy()),
-        None => EXTERNAL.to_owned(),
-    }
+    path.file_name().map_or_else(
+        || EXTERNAL.to_owned(),
+        |name| format!("{EXTERNAL}/{}", name.to_string_lossy()),
+    )
 }
 
 fn join_slash(rel: &Path) -> String {
@@ -79,7 +78,10 @@ fn join_slash(rel: &Path) -> String {
         .components()
         .filter_map(|c| match c {
             Component::Normal(s) => Some(s.to_owned()),
-            _ => None,
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect();
     if parts.is_empty() {

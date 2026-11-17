@@ -297,7 +297,7 @@ fn a_validly_signed_next_minor_candidate_is_refused_before_any_download() {
         hits: AtomicUsize::new(0),
     });
     let fx = installed();
-    let mut rt = runtime(&fx, srv.clone(), Box::new(verifier));
+    let mut rt = runtime(&fx, Arc::clone(&srv), Box::new(verifier));
     rt.target = Some(LINUX);
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "update-prerelease-refused");

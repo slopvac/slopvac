@@ -2,6 +2,7 @@
 //!
 //! Expected spellings are worked out from the canonical terms (`GitHub`, `JavaScript`), not
 //! from the matcher: a term differs from the canonical spelling in case only.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -14,11 +15,6 @@ use slopvac_engine::{Engine, Input, TERMS_PACK, terms_rule_set};
 use slopvac_model::{Document, PackId};
 use slopvac_terms::TermSet;
 
-#[expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn engine_with(allowed: &[&str]) -> Engine {
     let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap_or_else(|e| panic!("{e}"));
     let mut settings = settings();
@@ -26,10 +22,6 @@ fn engine_with(allowed: &[&str]) -> Engine {
     Engine::new(vec![set], settings).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(text: &str) -> Document {
     engine_with(&[])
         .lint(&Input::markdown("a.md", text))

@@ -108,6 +108,10 @@ pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) ->
     });
     if let Err(e) = finished {
         // Best effort: the original error is the one to report.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup on an error path; the original error is the one reported"
+        )]
         let _ = parent.remove_file(&temp);
         return Err(e);
     }

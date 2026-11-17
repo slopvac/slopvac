@@ -3,6 +3,7 @@
 //! The expected tags are linguistic facts worked out apart from the code (a noun follows
 //! "the", a verb follows "we"), and the scope cases state what Vale lints: prose inside
 //! inline HTML, no inline code, hyphenated words whole.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -29,10 +30,6 @@ fn owner() -> Value {
     )
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn list(entries: &[(&str, &str)]) -> Blocklist {
     let mut text = String::from("schema_version = 3\n");
     for (word, pos) in entries {
@@ -45,10 +42,6 @@ fn list(entries: &[(&str, &str)]) -> Blocklist {
     Blocklist::parse("b.toml", "toml", &text).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn engine_with(rules: &[Value], blocklist: &Blocklist) -> Engine {
     Engine::new(
         vec![ruleset(vec![category("ste-words", rules)])],
@@ -59,10 +52,6 @@ fn engine_with(rules: &[Value], blocklist: &Blocklist) -> Engine {
     .unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(entries: &[(&str, &str)], text: &str) -> Document {
     engine_with(&[owner()], &list(entries))
         .lint(&Input::markdown("a.md", text))
@@ -306,10 +295,6 @@ fn an_adverb_entry_matches_a_wh_adverb_because_the_tag_pattern_is_unanchored() {
     assert_eq!(matched(&doc), ["how"]);
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint_with(extra: &Value, entries: &[(&str, &str)], text: &str) -> Document {
     engine_with(&[vocabulary_rule(OWNER, extra)], &list(entries))
         .lint(&Input::markdown("a.md", text))

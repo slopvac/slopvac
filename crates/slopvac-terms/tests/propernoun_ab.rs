@@ -1,4 +1,5 @@
 //! The H1 against H4 transformation of stored eval results.
+#![cfg(test)]
 
 use serde_json::{Value, json};
 use slopvac_terms::propernoun::ab::transform;
@@ -78,10 +79,10 @@ fn manifest(docs: &[(&str, &str, &str, Option<&str>)]) -> Value {
     let list: Vec<Value> = docs
         .iter()
         .map(|(id, origin, text, parent)| {
-            let source = match parent {
-                Some(p) => json!({"type": "derived", "parents": [p]}),
-                None => json!({"type": "github-file", "repo": "org/a"}),
-            };
+            let source = parent.map_or_else(
+                || json!({"type": "github-file", "repo": "org/a"}),
+                |p| json!({"type": "derived", "parents": [p]}),
+            );
             json!({"id": id, "origin": origin, "format": "markdown", "text": text, "source": source})
         })
         .collect();

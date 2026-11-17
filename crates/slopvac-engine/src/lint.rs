@@ -987,7 +987,10 @@ impl Run<'_> {
 
     /// Whether the rule's context gate or an exception detector drops a match: `range` in
     /// `text`, at `span` in the source.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct part of one match site"
+    )]
     fn guarded(
         &self,
         rule: &slopvac_rules::Rule,

@@ -346,7 +346,10 @@ fn type_mismatch_error_carries_the_span_of_the_value() {
 fn unknown_field_error_carries_the_span_of_the_key() {
     #[derive(Debug, Deserialize)]
     #[serde(deny_unknown_fields)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "the type exists to be deserialised; its fields are never read"
+    )]
     struct Strict {
         a: u8,
     }

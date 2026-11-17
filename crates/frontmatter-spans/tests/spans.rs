@@ -2,6 +2,7 @@
 //!
 //! YAML collection spans are zero-width at the start of their first entry. TOML and JSON
 //! collection spans come straight from `toml_edit` and the crate's own JSON parser.
+#![cfg(test)]
 
 mod common;
 

@@ -1,4 +1,5 @@
 //! Settings, rule selection, notices and parallel runs.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -15,18 +16,10 @@ fn leverage() -> serde_json::Value {
     tokens("dull", "leverage", &json!({}))
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn with(settings: slopvac_engine::Settings, rules: &[serde_json::Value]) -> Engine {
     Engine::new(vec![ruleset(vec![category("cat", rules)])], settings).unwrap()
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(e: &Engine, text: &str) -> slopvac_model::Document {
     e.lint(&Input::markdown("a.md", text)).unwrap()
 }
@@ -83,10 +76,6 @@ trait ParseCategory {
     fn parse_category(&self) -> slopvac_model::CategoryId;
 }
 impl ParseCategory for str {
-    #[expect(
-        clippy::unwrap_used,
-        reason = "test helper outside a test fn: a setup failure should fail the calling test"
-    )]
     fn parse_category(&self) -> slopvac_model::CategoryId {
         slopvac_model::CategoryId::new(self).unwrap()
     }

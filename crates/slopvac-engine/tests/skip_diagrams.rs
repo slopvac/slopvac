@@ -1,4 +1,5 @@
 //! Skip ranges and diagram rules.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -18,10 +19,6 @@ use slopvac_rules::BlockKind;
 
 const DOC: &str = "# Head\n\nSome `code` here.\n\n```\nfence\n```\n";
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn parsed() -> slopvac_parse::Document {
     parse_markdown(DOC, Span::new(0, DOC.len()).unwrap()).unwrap()
 }
@@ -62,10 +59,6 @@ fn skip_ranges_hold_list_items_and_quotes() {
 
 const MERMAID: &str = "Intro text.\n\n```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn diagram_engine(settings: slopvac_engine::Settings) -> Engine {
     let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
     Engine::new(vec![ruleset(vec![category("cat", &[])]), pack], settings).unwrap()
@@ -300,10 +293,6 @@ fn a_custom_checker_reports_under_its_own_pack() {
 
 const DIAGRAM: &str = "```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn reference_texts(source: &str) -> Vec<(String, usize, usize)> {
     let doc = diagram_engine(settings())
         .lint(&Input::markdown("a.md", source))
@@ -421,10 +410,6 @@ fn signal_rule(id: &str, check: &str, extra: &serde_json::Value) -> serde_json::
     )
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn found(engine: &Engine, input: &Input<'_>) -> Vec<String> {
     engine
         .lint(input)
@@ -513,10 +498,6 @@ fn an_inactive_rule_does_not_hide_a_later_rule_with_the_same_check() {
         ["core:extra.long-label"]
     );
 }
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn one_rule_engine(rules: Vec<(&str, &serde_json::Value)>) -> Engine {
     let sets = rules
         .into_iter()

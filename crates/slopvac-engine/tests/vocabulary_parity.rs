@@ -7,9 +7,17 @@
 //! rule only; the rest of the report is the golden's concern. The test compares the native
 //! sweep on the Rust tagger with the recorded results: rule, start, end column, severity and
 //! matched text.
+#![cfg(test)]
+#![allow(
+    missing_docs,
+    clippy::assert_is_empty,
+    reason = "test binary: assertions state expected emptiness plainly"
+)]
 
-#![allow(missing_docs, clippy::assert_is_empty)]
-
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use std::path::Path;

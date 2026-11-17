@@ -1,4 +1,5 @@
 //! Inline directives.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -19,10 +20,6 @@ fn dull() -> serde_json::Value {
     )
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(source: &str) -> Document {
     engine(&[dull()])
         .lint(&Input::markdown("a.md", source))

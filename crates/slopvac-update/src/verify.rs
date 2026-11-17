@@ -322,7 +322,7 @@ mod tests {
             .keynum()
             .iter()
             .rev()
-            .fold(String::new(), |acc, b| acc + &format!("{b:02X}"));
+            .fold(String::new(), |acc, b| format!("{acc}{b:02X}"));
         assert_eq!(id, "D9914BDB4570AC6D");
     }
 

@@ -150,6 +150,10 @@ impl Fetcher for UreqFetcher {
                 .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .into();
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "ureq::Error is non_exhaustive; every other failure is a network error"
+            )]
             let resp = agent.get(url).call().map_err(|e| match e {
                 ureq::Error::RequireHttpsOnly(_) => FetchError::NotHttps,
                 other => FetchError::Network(other.to_string()),

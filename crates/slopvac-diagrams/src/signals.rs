@@ -129,13 +129,13 @@ fn br_tag_len(s: &str) -> Option<usize> {
     if !head.eq_ignore_ascii_case("<br") {
         return None;
     }
-    let rest = &s[3..];
+    let rest = s.get(3..)?;
     let first = rest.chars().next()?;
     if !(first == '>' || first == '/' || first.is_whitespace()) {
         return None;
     }
     let end = rest.find(['<', '>'])?;
-    rest[end..].starts_with('>').then_some(3 + end + 1)
+    rest.get(end..)?.starts_with('>').then_some(3 + end + 1)
 }
 
 /// The length of a line break at the start of `s`: a newline, an HTML `<br>` tag, or, when
@@ -154,7 +154,7 @@ fn break_len(s: &str, literal_n: bool) -> Option<usize> {
 fn find_break(label: &str, literal_n: bool) -> Option<(usize, usize)> {
     label
         .char_indices()
-        .find_map(|(at, _)| break_len(&label[at..], literal_n).map(|len| (at, len)))
+        .find_map(|(at, _)| break_len(label.get(at..)?, literal_n).map(|len| (at, len)))
 }
 
 /// Split a label into words. Line breaks separate words, and tokens without a letter or digit are dropped.
@@ -163,7 +163,7 @@ fn words(label: &str, literal_n: bool) -> Vec<&str> {
     let mut rest = label;
     loop {
         let (line, next) = match find_break(rest, literal_n) {
-            Some((at, len)) => (&rest[..at], Some(&rest[at + len..])),
+            Some((at, len)) => (rest.get(..at).unwrap_or_default(), rest.get(at + len..)),
             None => (rest, None),
         };
         out.extend(
@@ -212,7 +212,7 @@ fn gloss_split(label: &str, literal_n: bool) -> Option<(&str, &str)> {
         }
         (l, o) => l.or(o)?,
     };
-    let (head, gloss) = (&label[..at], &label[at + len..]);
+    let (head, gloss) = (label.get(..at)?, label.get(at + len..)?);
     // A line break between two names lists components, as in "Istio Sidecar" over
     // "Envoy Pilot". It is a gloss only when the second line is not all capitalised words.
     (!is_break || !all_capitalised(gloss, literal_n)).then_some((head, gloss))

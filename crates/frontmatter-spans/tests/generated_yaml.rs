@@ -6,6 +6,11 @@
 //! and escapes, scalars folded over several lines, literal and folded block scalars with strip
 //! and clip chomping (also empty ones), keys with spaces and quotes, trailing and leading
 //! comments, blank lines, compact and indented sequences, CRLF, and a BOM.
+#![cfg(test)]
+#![expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the generator's own node enum N: a catch-all arm means every other node kind, so a new kind needs no edit in each helper"
+)]
 
 mod common;
 
@@ -31,7 +36,10 @@ enum N {
 }
 
 /// A collection and the rendering choices made for it.
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one bool per rendering choice the generator varies"
+)]
 #[derive(Clone, Debug)]
 struct Coll<T> {
     /// Each item with decoration bits: 1 trailing comment, 2 blank line before,
@@ -305,7 +313,7 @@ fn flow_multiline(n: &N, indent: usize) -> (char, Vec<String>) {
                 .collect(),
             c.comma,
         ),
-        _ => unreachable!(),
+        _ => panic!("not a collection"),
     };
     let mut lines = Vec::new();
     for (i, (d, text)) in parts.iter().enumerate() {
@@ -358,7 +366,7 @@ fn scalar_lines(lines: &mut Vec<String>, prefix: &str, n: &N, cont_pad: &str, d:
 /// A block scalar after `prefix`: header line, then its lines indented under `pad`.
 fn block_scalar_lines(lines: &mut Vec<String>, prefix: &str, n: &N, pad: &str, note: &str) {
     let N::Block(content, folded, strip) = n else {
-        unreachable!()
+        panic!("not a block scalar")
     };
     let header = format!(
         "{}{}",
@@ -454,7 +462,7 @@ fn block(n: &N, indent: usize) -> Vec<String> {
                 }
             }
         }
-        _ => unreachable!(),
+        _ => panic!("not a collection"),
     }
     lines
 }

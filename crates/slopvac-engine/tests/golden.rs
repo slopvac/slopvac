@@ -13,16 +13,21 @@
 //!
 //! Inputs that the engine cannot lint yet are in `SKIPPED`, each with the bead that owns it.
 //! The run summary and process exit status of a group belong to the CLI, which builds them.
-
+#![cfg(test)]
 #![allow(
     missing_docs,
     clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+    clippy::cloned_ref_to_slice_refs,
+    reason = "test binary: assertions state expected emptiness and slices plainly"
 )]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use common::{legacy_engine, read_json, root};
@@ -93,6 +98,10 @@ fn skipped(id: &str) -> bool {
 }
 
 /// The engine's report for one input in the shape of the golden document.
+#[expect(
+    clippy::unwrap_in_result,
+    reason = "test helper: a malformed corpus entry should fail loudly"
+)]
 fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
     // The runner stages every Markdown input as `.md`; the corpus files end in `.corpus`.
     let staged = format!("{}.md", entry.id);
@@ -591,7 +600,7 @@ fn record() {
     let file = json!({"reasons": reasons, "runs": runs});
     std::fs::write(
         divergence_path(),
-        serde_json::to_string_pretty(&file).unwrap() + "\n",
+        format!("{}\n", serde_json::to_string_pretty(&file).unwrap()),
     )
     .unwrap();
 }

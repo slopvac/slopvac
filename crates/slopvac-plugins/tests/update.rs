@@ -1,6 +1,7 @@
 //! `plugins update`: resolve within config ranges and write a new lock (bead
 //! 8l4.9.30; threat model K1-K3 rollback floor and key pins, K5 revocation;
 //! policies.md offline mode and exit code 2).
+#![cfg(test)]
 
 mod oci_server;
 mod revocations;
@@ -61,7 +62,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut builder = tar::Builder::new(Vec::new());
     for (name, data) in files {
         let mut header = tar::Header::new_gnu();
-        header.set_size(data.len() as u64);
+        header.set_size(u64::try_from(data.len()).unwrap());
         header.set_mode(0o644);
         header.set_entry_type(tar::EntryType::Regular);
         builder.append_data(&mut header, name, *data).unwrap();
@@ -1060,6 +1061,10 @@ fn a_second_update_waits_for_the_first_and_both_changes_survive() {
             Updater::new(Network::Online(&c), &pol, &revocations)
                 .with_guard_timeout(Duration::from_secs(60))
                 .with_guard_wait_hook(move || {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "test: a dropped receiver means the test already finished"
+                    )]
                     let _ = waiting_tx.lock().unwrap().send(());
                 })
                 .update(
@@ -1103,6 +1108,10 @@ fn repeated_sources_list_the_repository_once() {
     let c = client();
     let wanted = ranges(&[("a", "^1.2"), ("b", "^1.2"), ("c", "^1.2"), ("d", "^1.2")]);
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the test counts the requests the update made; its outcome is not under test"
+    )]
     let _ = env.update(Network::Online(&c), &policy(&[&key]), &wanted, &[]);
 
     assert_eq!(server.count("/v2/acme/style/tags/list"), 1);

@@ -3,6 +3,7 @@
 //! The interpreter is a shell script that prints the driver output that real docutils wrote
 //! for `tests/fixtures/rst/sections.rst.in`, so the test runs without Python.
 #![cfg(unix)]
+#![cfg(test)]
 #[expect(
     dead_code,
     reason = "each test binary uses the part of the shared helpers it needs"
@@ -23,10 +24,6 @@ use slopvac_model::NoticeLevel;
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rst");
 
 /// The fake interpreter, written once before any test starts a process.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn interpreter() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
@@ -58,10 +55,6 @@ fn with_rst(engine: Engine, options: RstOptions) -> Engine {
     engine.with_rst(options)
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn sections() -> String {
     fs::read_to_string(format!("{FIXTURES}/sections.rst.in")).unwrap()
 }
@@ -116,10 +109,6 @@ fn tables_engine(rules: &[serde_json::Value]) -> Engine {
     engine(rules).with_rst(options)
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn tables() -> String {
     fs::read_to_string(format!("{FIXTURES}/table-repeat.rst.in")).unwrap()
 }
@@ -202,10 +191,6 @@ fn wrap_engine(pattern: &str) -> Engine {
     .with_rst(options)
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn wrap_source() -> String {
     fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap()
 }
@@ -259,10 +244,6 @@ fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
 }
 
 /// Findings of `token` in the fixture `name` when the rule excludes `block`.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn excluded_findings(name: &str, python: &str, block: &str, token: &str) -> usize {
     let source = fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap();
     let mut options = RstOptions::default();

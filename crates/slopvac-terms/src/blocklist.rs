@@ -93,7 +93,10 @@ struct RawEntry {
     reason: Option<String>,
     replacement: Option<String>,
     #[serde(flatten)]
-    #[allow(clippy::zero_sized_map_values)] // only the key names are checked
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "only the key names are checked"
+    )]
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 

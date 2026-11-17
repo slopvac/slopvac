@@ -1,6 +1,11 @@
 //! The plugin launcher as a program of its own, which this package's tests
 //! start plugins through. The `slopvac` binary runs the same code.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "a program of its own: stderr is its output channel"
+)]
+
 fn main() {
     slopvac_plugins::launch::intercept();
     eprintln!(

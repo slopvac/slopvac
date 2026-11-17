@@ -1,6 +1,7 @@
 //! Resource limits, the stalled-frame rule and stderr logging (threat model
 //! P6, TM-5, P14; plugin-protocol.md sections 6.3 and 7).
 #![cfg(unix)]
+#![cfg(test)]
 
 mod common;
 

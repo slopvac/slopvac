@@ -224,7 +224,9 @@ impl NegatedAntecedent {
         let mut sentences = split_sentences(before).ok()?;
         if sentences.len() < ANTECEDENT_SENTENCES
             && let Some(i) = owner
-            && let Some(previous) = blocks[..i].iter().rev().find_map(|b| b.projection.as_ref())
+            && let Some(previous) = blocks
+                .get(..i)
+                .and_then(|b| b.iter().rev().find_map(|b| b.projection.as_ref()))
         {
             let mut earlier = split_sentences(previous.text()).ok()?;
             earlier.append(&mut sentences);
@@ -278,11 +280,12 @@ impl Detectors {
         let mut detectors = Self {
             by_name: BTreeMap::new(),
         };
-        for detector in [
-            Box::new(Quotation) as Box<dyn Detector>,
+        let all: [Box<dyn Detector>; 3] = [
+            Box::new(Quotation),
             Box::new(CodeSpan),
             Box::new(NegatedAntecedent),
-        ] {
+        ];
+        for detector in all {
             detectors
                 .register(detector)
                 .expect("built-in detector names are distinct");
@@ -346,7 +349,7 @@ mod tests {
                 .expect("a sentence holds the match");
             let range = at - sentence.start..at - sentence.start + needle.len();
             let site = MatchSite {
-                text: &text[sentence.start..sentence.end],
+                text: text.get(sentence.start..sentence.end).unwrap(),
                 range: &range,
                 span: block.span,
                 origin: Some(TextOrigin {

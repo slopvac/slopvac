@@ -5,6 +5,7 @@
 //!   pointer that `cases.toml` names;
 //! * the structs load every valid file and reject every invalid one;
 //! * the built-in genre and tagger files satisfy the same schemas.
+#![cfg(test)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,20 +19,12 @@ fn schemas() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3")
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn read_json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
 /// A validator for one published schema. Its `$ref`s reach the other schemas by URL, so
 /// every schema file is registered.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn validator(file: &str) -> jsonschema::Validator {
     validator_with(file, &[])
 }
@@ -58,11 +51,6 @@ fn validator_with(file: &str, replace: &[(&str, Value)]) -> jsonschema::Validato
         .unwrap()
 }
 
-#[expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn load(path: &Path) -> Value {
     let text = fs::read_to_string(path).unwrap();
     match path.extension().and_then(|e| e.to_str()) {
@@ -72,10 +60,6 @@ fn load(path: &Path) -> Value {
     }
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn files(artifact: &str, sub: &str) -> Vec<PathBuf> {
     let dir = schemas().join("conformance").join(artifact).join(sub);
     let mut out: Vec<PathBuf> = fs::read_dir(dir)
@@ -88,19 +72,11 @@ fn files(artifact: &str, sub: &str) -> Vec<PathBuf> {
     out
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn name(path: &Path) -> String {
     path.file_name().unwrap().to_string_lossy().into_owned()
 }
 
 /// File name to the JSON pointer of the defect, from `invalid/cases.toml`.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn cases(artifact: &str) -> toml::Table {
     let path = schemas()
         .join("conformance")
@@ -121,10 +97,6 @@ fn load_tagger(v: Value) -> Result<(), String> {
     spec.compile().map(|_| ()).map_err(|e| e.to_string())
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn check_corpus(artifact: &str, schema: &str, load_one: fn(Value) -> Result<(), String>) {
     let v = validator(schema);
     for path in files(artifact, "valid") {
@@ -162,10 +134,6 @@ fn tagger_corpus_agrees_with_the_schema_and_the_struct() {
     check_corpus("tagger", "tagger.schema.json", load_tagger);
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn builtin(file: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/builtin")

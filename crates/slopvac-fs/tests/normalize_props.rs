@@ -35,7 +35,7 @@ proptest! {
                 Component::ParentDir => prop_assert!(!seen_normal),
                 Component::Normal(_) => seen_normal = true,
                 Component::CurDir => prop_assert_eq!(n.components().count(), 1),
-                _ => prop_assert!(false),
+                Component::Prefix(_) | Component::RootDir => prop_assert!(false),
             }
         }
     }

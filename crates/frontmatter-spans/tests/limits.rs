@@ -1,4 +1,5 @@
 //! Resource limits: hostile input returns an error, never an abort or a runaway allocation.
+#![cfg(test)]
 
 use std::time::{Duration, Instant};
 

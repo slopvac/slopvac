@@ -1,4 +1,5 @@
 //! Matching: scopes, position mapping, filters and exceptions.
+#![cfg(test)]
 
 #[expect(
     dead_code,
@@ -11,10 +12,6 @@ use serde_json::json;
 use slopvac_engine::Input;
 use slopvac_model::Severity;
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn lint(engine: &slopvac_engine::Engine, source: &str) -> slopvac_model::Document {
     engine.lint(&Input::markdown("a.md", source)).unwrap()
 }
@@ -302,10 +299,6 @@ fn crlf_line_endings_keep_byte_exact_columns() {
 }
 
 /// The exclusive end of a finding as `(line, column)`, and its byte span.
-#[expect(
-    clippy::unwrap_used,
-    reason = "test helper outside a test fn: a setup failure should fail the calling test"
-)]
 fn extent(doc: &slopvac_model::Document) -> ((usize, usize), (usize, usize)) {
     let e = doc.findings[0].extent.unwrap();
     (

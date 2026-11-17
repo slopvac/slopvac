@@ -1,6 +1,6 @@
 //! The 3.0 engine against what `migrate` writes for directives.
-
-#![allow(missing_docs)]
+#![cfg(test)]
+#![allow(missing_docs, reason = "integration test crate")]
 
 use std::path::PathBuf;
 

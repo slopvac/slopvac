@@ -110,25 +110,23 @@ impl Counts {
             match t.shape {
                 Shape::Cap if !t.starts => self.words.entry(t.key.clone()).or_default().hits += 1,
                 Shape::Lower => self.words.entry(t.key.clone()).or_default().lower += 1,
-                _ => {}
+                Shape::Cap | Shape::Other => {}
             }
         }
         let mut seen: HashSet<String> = HashSet::new();
         let mut buf = String::new();
         for pair in toks.windows(2) {
-            if pair[1].joined
-                && !pair[0].starts
-                && pair[0].shape == Shape::Cap
-                && pair[1].shape == Shape::Cap
-            {
-                pair_key(&mut buf, &pair[0].key, &pair[1].key);
+            let [a, b] = pair else { continue };
+            if b.joined && !a.starts && a.shape == Shape::Cap && b.shape == Shape::Cap {
+                pair_key(&mut buf, &a.key, &b.key);
                 self.pairs.entry(buf.clone()).or_default().hits += 1;
                 seen.insert(buf.clone());
             }
         }
         for pair in toks.windows(2) {
-            if pair[1].joined && pair[0].shape == Shape::Lower && pair[1].shape == Shape::Lower {
-                pair_key(&mut buf, &pair[0].key, &pair[1].key);
+            let [a, b] = pair else { continue };
+            if b.joined && a.shape == Shape::Lower && b.shape == Shape::Lower {
+                pair_key(&mut buf, &a.key, &b.key);
                 if seen.contains(buf.as_str()) {
                     self.pairs.entry(buf.clone()).or_default().lower += 1;
                 }
@@ -252,21 +250,29 @@ impl Inferred {
         let mut out = Vec::new();
         let mut buf = String::new();
         let mut i = 0;
-        while i < toks.len() {
-            if toks[i].shape != Shape::Cap {
+        while let Some(first) = toks.get(i) {
+            if first.shape != Shape::Cap {
                 i += 1;
                 continue;
             }
             let mut j = i;
-            while j + 1 < toks.len() && toks[j + 1].joined && toks[j + 1].shape == Shape::Cap {
-                pair_key(&mut buf, &toks[j].key, &toks[j + 1].key);
+            while let (Some(cur), Some(next)) = (toks.get(j), toks.get(j + 1))
+                && next.joined
+                && next.shape == Shape::Cap
+            {
+                pair_key(&mut buf, &cur.key, &next.key);
                 if !self.pairs.contains_key(buf.as_str()) {
                     break;
                 }
                 j += 1;
             }
-            if j > i || self.words.contains_key(&toks[i].key) {
-                out.extend(toks[i..=j].iter().map(|t| t.range.clone()));
+            if j > i || self.words.contains_key(&first.key) {
+                out.extend(
+                    toks.get(i..=j)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|t| t.range.clone()),
+                );
             }
             i = j + 1;
         }
@@ -278,6 +284,10 @@ impl Inferred {
     /// capitalised word, so a heading made of names is not flagged. This only
     /// counts; the caller decides what the count means.
     #[must_use]
+    #[expect(
+        clippy::string_slice,
+        reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+    )]
     pub fn residual_capitals(&self, heading: &str) -> usize {
         let named = self.mask(heading);
         // The first token is the first run of non-space characters, as the
@@ -323,11 +333,13 @@ fn shape_of(word: &str) -> Shape {
     if b.len() < 2 || !b.iter().all(u8::is_ascii_alphabetic) {
         return Shape::Other;
     }
-    if b[1..].iter().all(u8::is_ascii_lowercase) {
-        if b[0].is_ascii_uppercase() {
+    if let [first, tail @ ..] = b
+        && tail.iter().all(u8::is_ascii_lowercase)
+    {
+        if first.is_ascii_uppercase() {
             return Shape::Cap;
         }
-        if b[0].is_ascii_lowercase() {
+        if first.is_ascii_lowercase() {
             return Shape::Lower;
         }
     }
@@ -336,6 +348,10 @@ fn shape_of(word: &str) -> Shape {
 
 /// Length of the code span that opens `rest`: a run of backticks up to the
 /// next run of the same length. `None` when the run never closes.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn code_span_len(rest: &str) -> Option<usize> {
     let open = rest.bytes().take_while(|b| *b == b'`').count();
     let mut at = open;
@@ -352,6 +368,10 @@ fn code_span_len(rest: &str) -> Option<usize> {
 
 /// Replace code spans, link destinations, URLs and tags with a filler that
 /// keeps byte offsets and separates tokens.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn blank_spans(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut i = 0;
@@ -383,6 +403,10 @@ fn blank_spans(line: &str) -> String {
 
 /// Blank `[text](#anchor)`: a table of contents repeats the headings, so its
 /// link text is an echo of them, not an independent use of the words.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn blank_anchor_links(line: &str) -> String {
     let mut out = line.to_owned();
     let mut from = 0;
@@ -409,6 +433,10 @@ fn is_bold_only(line: &str) -> bool {
 
 /// Length of a block marker (`>`, list bullet, ordered number) at the start of
 /// `line`, after indentation.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn marker_len(line: &str) -> usize {
     let mut at = 0;
     loop {
@@ -435,6 +463,10 @@ fn marker_len(line: &str) -> usize {
 }
 
 /// Whether the text between two tokens ends a sentence.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn ends_sentence(gap: &str, last_in_line: bool) -> bool {
     gap.char_indices().any(|(i, c)| {
         if !matches!(c, '.' | '?' | '!' | ':') {
@@ -453,6 +485,10 @@ fn is_setext_rule(line: &str) -> bool {
 }
 
 /// An opening or closing fence: its character, run length and what follows.
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn fence_of(rest: &str) -> Option<(char, usize, &str)> {
     let t = rest.trim_start_matches([' ', '\t']);
     let ch = t.chars().next().filter(|c| matches!(c, '`' | '~'))?;
@@ -468,6 +504,10 @@ fn is_atx_heading(rest: &str) -> bool {
         && (after.is_empty() || after.starts_with([' ', '\t']))
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn scan(text: &str, body: bool) -> Vec<Token> {
     let mut out = Vec::new();
     let mut start = true;
@@ -541,11 +581,15 @@ fn scan(text: &str, body: bool) -> Vec<Token> {
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric()
         || matches!(
-            c as u32,
+            u32::from(c),
             0x0300..=0x036f | 0x1ab0..=0x1aff | 0x1dc0..=0x1dff | 0x20d0..=0x20ff | 0xfe20..=0xfe2f
         )
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "offsets come from find, char_indices, ASCII byte counts or the widths of matched ASCII markers, so they lie on char boundaries"
+)]
 fn scan_line(line: &str, from: usize, base: usize, start: &mut bool, out: &mut Vec<Token>) {
     let mut words: Vec<Range<usize>> = Vec::new();
     let mut begin: Option<usize> = None;
@@ -564,7 +608,10 @@ fn scan_line(line: &str, from: usize, base: usize, start: &mut bool, out: &mut V
     }
     for (n, w) in words.iter().enumerate() {
         let word = &line[w.clone()];
-        let joined = n > 0 && &line[words[n - 1].end..w.start] == " ";
+        let joined = n
+            .checked_sub(1)
+            .and_then(|p| words.get(p))
+            .is_some_and(|prev| line.get(prev.end..w.start) == Some(" "));
         let shape = shape_of(word);
         out.push(Token {
             range: base + w.start..base + w.end,
@@ -574,11 +621,11 @@ fn scan_line(line: &str, from: usize, base: usize, start: &mut bool, out: &mut V
             joined,
         });
         let last = n + 1 == words.len();
-        let gap = if last {
-            &line[w.end..]
-        } else {
-            &line[w.end..words[n + 1].start]
-        };
+        let gap = match words.get(n + 1) {
+            Some(next) if !last => line.get(w.end..next.start),
+            _ => line.get(w.end..),
+        }
+        .unwrap_or_default();
         *start = ends_sentence(gap, last);
     }
 }

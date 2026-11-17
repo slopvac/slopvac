@@ -257,7 +257,7 @@ fn read_current_at(
     reader
         .read_to_end(&mut bytes)
         .map_err(|e| ApplyError::io(shown, &e))?;
-    if max.is_some_and(|m| bytes.len() as u64 > m) {
+    if max.is_some_and(|m| crate::num::widen(bytes.len()) > m) {
         return Err(ApplyError::TooLarge(shown.into()));
     }
     Ok((Current::File(bytes), Some(meta.permissions())))
@@ -276,7 +276,7 @@ impl Expect<'_> {
     /// longer file is not read: reads stop one byte past this.
     fn limit(&self) -> u64 {
         match self {
-            Self::Bytes(want) => want.len() as u64,
+            Self::Bytes(want) => crate::num::widen(want.len()),
             Self::Absent => 0,
         }
     }
@@ -327,6 +327,10 @@ fn create_temp(parent: &Dir, shown: &str) -> Result<(OsString, cap_std::fs::File
 /// Ownership is not copied: the replacement belongs to the user who applies it.
 ///
 /// A target longer than `expect` is not read whole: it counts as changed.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "only TooLarge changes meaning here; every other error passes through unchanged"
+)]
 pub(crate) fn replace(
     parent: &Dir,
     name: &OsStr,

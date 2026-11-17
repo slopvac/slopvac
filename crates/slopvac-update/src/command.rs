@@ -216,7 +216,12 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
             UpdateError::Prerelease(_) => "update-prerelease-refused",
-            _ => "self-update-failed",
+            UpdateError::UnsupportedPlatform
+            | UpdateError::Download { .. }
+            | UpdateError::NotNewer { .. }
+            | UpdateError::NoBinary
+            | UpdateError::Archive(_)
+            | UpdateError::Replace(_) => "self-update-failed",
         };
         Failure::new(code, e.to_string())
     })?;
