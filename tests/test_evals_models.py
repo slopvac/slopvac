@@ -300,6 +300,76 @@ def test_execute_runs_every_task_per_model_and_reviews_other_models_rewrites():
     assert len(out["runs"]) == out["planned_calls"]
 
 
+def counting_ask(calls):
+    def make(model):
+        inner = fake_ask(model)
+
+        def ask(prompt):
+            calls.append(model["name"])
+            return inner(prompt)
+
+        return ask
+
+    return make
+
+
+def row_keys(out):
+    return {(r["task"], r["model"], r["repeat"]) for r in out["runs"]}
+
+
+def test_plan_for_one_model_counts_only_the_calls_it_adds():
+    # Model "c" among 3, 3 repeats, tasks: update, rewrite, planted review.
+    # Own answers 3x3=9; other models rewrite again as review input 1x3x2=6;
+    # "c" is reviewed on its rewrite by 2 models (6) and reviews theirs (6).
+    counted = models.plan(tiny_tasks(), roster("a", "b", "c"), 3, only_model="c")
+    assert counted["total_calls"] == 27
+    assert counted["support_rewrite_calls"] == 6
+    assert list(counted["per_model"]) == ["c"]
+
+
+def test_plan_rejects_an_only_model_outside_the_roster():
+    with pytest.raises(models.ModelEvalError, match="not in the models file"):
+        models.plan(tiny_tasks(), roster("a", "b"), 3, only_model="z")
+
+
+def test_only_model_runs_just_its_jobs_and_joins_an_earlier_run_into_the_full_one():
+    tasks = tiny_tasks()
+    earlier = models.execute(
+        tasks, roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="2026-11-14"
+    )
+    calls: list[str] = []
+    added = models.execute(
+        tasks,
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=counting_ask(calls),
+        date="2026-11-17",
+        only_model="c",
+    )
+    assert len(calls) == added["planned_calls"] == 27
+    # 9 own answers + 6 reviews of c's rewrites + 6 reviews by c.
+    assert len(added["runs"]) == 21
+    assert all("c" in (r["model"], r.get("author_model")) for r in added["runs"])
+    full = models.execute(
+        tasks, roster("a", "b", "c"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
+    )
+    merged = models.merge_results(earlier, added)
+    assert row_keys(merged) == row_keys(full)
+    assert merged["date"] == "2026-11-17"
+    assert [m["name"] for m in merged["models"]] == ["a", "b", "c"]
+
+
+def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():
+    out = models.execute(
+        tiny_tasks(), roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
+    )
+    with pytest.raises(models.ModelEvalError, match="tasks_sha256 differs"):
+        models.merge_results(out, out | {"tasks_sha256": "other"})
+    with pytest.raises(models.ModelEvalError, match="duplicate run"):
+        models.merge_results(out, out)
+
+
 def test_summary_ranks_models_by_success_per_task():
     tasks = [t for t in tiny_tasks() if t["id"] != "a1"]
     out = models.execute(

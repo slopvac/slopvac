@@ -460,16 +460,28 @@ def plan(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
     repeats: int,
+    only_model: str | None = None,
 ) -> dict[str, Any]:
-    """Count the calls a run makes, so the payer can approve them first."""
+    """Count the calls a run makes, so the payer can approve them first.
+
+    With `only_model`, count just the calls that model adds to an earlier run:
+    its own answers, its reviews of the other models' rewrites and the other
+    models' reviews of its rewrites. The other models' rewrites are written
+    again, because those reviews need their text and earlier results keep only
+    a hash.
+    """
     if repeats < MIN_REPEATS:
         raise ModelEvalError(f"repeats must be at least {MIN_REPEATS}")
+    if only_model is not None and only_model not in {m["name"] for m in models}:
+        raise ModelEvalError(f"--only-model {only_model!r} is not in the models file")
     authors = [t for t in tasks if t["role"] == "author"]
     planted = [t for t in tasks if t["role"] == "reviewer"]
     chars = sum(len(t["prompt"]) for t in authors)
     planted_chars = sum(len(t["prompt"]) for t in planted)
     per_model = {}
     for m in models:
+        if only_model is not None and m["name"] != only_model:
+            continue
         per_model[m["name"]] = {
             "author_calls": len(authors) * repeats,
             "planted_review_calls": len(planted) * repeats,
@@ -477,17 +489,27 @@ def plan(
         }
     # Each rewrite answer is also reviewed once per other model.
     rewrites = [t for t in authors if t["type"] == "rewrite"]
-    cross = len(rewrites) * repeats * len(models) * max(len(models) - 1, 0)
+    others = max(len(models) - 1, 0)
+    support = 0
+    if only_model is None:
+        cross = len(rewrites) * repeats * len(models) * others
+    else:
+        # Reviews with the model as author, plus reviews with it as reviewer.
+        cross = 2 * len(rewrites) * repeats * others
+        support = len(rewrites) * repeats * others
     calls = (
         sum(v["author_calls"] + v["planted_review_calls"] for v in per_model.values())
         + cross
+        + support
     )
     return {
         "tasks": len(tasks),
         "models": len(models),
         "repeats": repeats,
+        "only_model": only_model,
         "per_model": per_model,
         "authored_review_calls": cross,
+        "support_rewrite_calls": support,
         "total_calls": calls,
     }
 
@@ -896,8 +918,13 @@ def execute(
     workers: int = 1,
     budget: Budget | None = None,
     journal: Journal | None = None,
+    only_model: str | None = None,
 ) -> dict[str, Any]:
     """Run every task against every model; reviewers see other models' rewrites.
+
+    With `only_model`, run just the jobs that model adds to an earlier run (see
+    `plan`). The other models' rewrites are written again as review input; their
+    rows stay out of the results, and their calls still reach the journal.
 
     Calls run on `workers` threads. A failed call is recorded as an empty answer
     with its error, so it counts as a failure and the run goes on. A `journal`
@@ -905,7 +932,7 @@ def execute(
     process past the ceiling; `BudgetExceeded` then propagates and the journal
     keeps all finished work.
     """
-    expected = plan(tasks, models, repeats)
+    expected = plan(tasks, models, repeats, only_model)
     live = procs.LiveGroups()
     make_ask = ask_for or (
         lambda m: command_ask(m["command"], budget=budget, live=live, model=m["name"])
@@ -916,6 +943,9 @@ def execute(
         for model in models
         for task in tasks
         for repeat in range(repeats)
+        if only_model is None
+        or model["name"] == only_model
+        or (task["role"] == "author" and task["type"] == "rewrite")
     ]
 
     def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
@@ -934,6 +964,10 @@ def execute(
     for (model, task, repeat), (answer, error, usage) in zip(
         first, answers, strict=True
     ):
+        if only_model is not None and model["name"] != only_model:
+            # Review input only: the earlier run already holds this model's rows.
+            rewrite_outputs.append((task, model, repeat, answer))
+            continue
         row = _row(task, model, repeat, answer, usage)
         if error:
             row["error"] = error
@@ -953,7 +987,9 @@ def execute(
     for task, author, repeat, answer in rewrite_outputs:
         review_task = authored_review_task(task, answer)
         for reviewer in models:
-            if reviewer["name"] != author["name"]:
+            if reviewer["name"] != author["name"] and (
+                only_model is None or only_model in (reviewer["name"], author["name"])
+            ):
                 second.append((review_task, author, reviewer, repeat))
 
     def run_second(job: tuple[Any, Any, Any, int]) -> tuple[str, str | None, Any]:
@@ -993,6 +1029,7 @@ def execute(
         "prompt_version": PROMPT_VERSION,
         "tasks_sha256": tasks_digest(tasks),
         "repeats": repeats,
+        "only_model": only_model,
         "planned_calls": expected["total_calls"],
         "failed_calls": sum(1 for r in runs if r.get("error")),
         "unscored_runs": sum(1 for r in runs if r.get("unscored")),
@@ -1019,6 +1056,52 @@ def execute(
             {"name": m["name"], "family": m["family"], "tier": m["tier"]}
             for m in models
         ],
+        "runs": runs,
+    }
+
+
+# --- summary -----------------------------------------------------------------------
+
+
+def merge_results(*docs: Mapping[str, Any]) -> dict[str, Any]:
+    """Join results files of one task set into one document for `summarize`.
+
+    The files must share the schema, prompt version, task-set hash and repeats,
+    and no run may appear twice. Models keep their first-seen order.
+    """
+    if not docs:
+        raise ModelEvalError("nothing to merge")
+    first = docs[0]
+    for key in ("schema", "prompt_version", "tasks_sha256", "repeats"):
+        for doc in docs[1:]:
+            if doc.get(key) != first.get(key):
+                raise ModelEvalError(
+                    f"cannot merge results: {key} differs "
+                    f"({first.get(key)!r} vs {doc.get(key)!r})"
+                )
+    roster: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        for m in doc["models"]:
+            if roster.setdefault(m["name"], m) != m:
+                raise ModelEvalError(
+                    f"cannot merge results: model {m['name']!r} differs"
+                )
+    runs: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int]] = set()
+    for doc in docs:
+        for run in doc["runs"]:
+            key = (run["task"], run["model"], run["repeat"])
+            if key in seen:
+                raise ModelEvalError(f"cannot merge results: duplicate run {key}")
+            seen.add(key)
+            runs.append(run)
+    return {
+        "schema": first["schema"],
+        "date": max(doc["date"] for doc in docs),
+        "prompt_version": first["prompt_version"],
+        "tasks_sha256": first["tasks_sha256"],
+        "repeats": first["repeats"],
+        "models": list(roster.values()),
         "runs": runs,
     }
 
