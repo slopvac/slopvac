@@ -99,6 +99,15 @@ impl WireMeter {
     }
 }
 
+/// Raw bytes read so far for the exchange that produced `resp`, headers,
+/// handshakes and trailers included, and the bytes of every redirect hop and
+/// failed read. Zero for a response that did not come from [`Transport::send`].
+pub(crate) fn wire_bytes_used<T>(resp: &Response<T>) -> u64 {
+    resp.extensions()
+        .get::<Arc<WireMeter>>()
+        .map_or(0, |m| m.used())
+}
+
 /// The I/O error a [`WireMeter`] raises past its cap.
 #[derive(Debug)]
 struct WireLimit {

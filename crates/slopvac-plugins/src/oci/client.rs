@@ -15,7 +15,7 @@ use ureq::http::Response;
 use super::auth::{Challenge, CredentialSource, DefaultCredentials};
 use super::http::{
     Req, TestNet, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error,
-    resolve, url_allowed,
+    resolve, url_allowed, wire_bytes_used,
 };
 use super::reference::{Reference, Target};
 use super::types::{
@@ -655,12 +655,14 @@ impl Client {
         self.list_tags_within(r, &AtomicU64::new(u64::MAX))
     }
 
-    /// Like [`Client::list_tags`], but every page body read is charged to
-    /// `allowance`, a byte count shared by several listings. Bytes are charged
-    /// as they are read, so a listing that fails on a later page (parse,
-    /// pagination or transport) has still used its share. A page read stops
-    /// when the allowance runs out, and a listing started with none left fails
-    /// at once without a request.
+    /// Like [`Client::list_tags`], but every page is charged to `allowance`, a
+    /// byte count shared by several listings. The charge is the raw bytes read
+    /// from the socket for the page (headers, TLS, chunk framing and trailers
+    /// included), taken whether the page parses, fails or is refused, so a
+    /// listing that fails on a later page has still used its share. A page read
+    /// stops when the allowance runs out, and a listing started with none left
+    /// fails at once without a request. Bytes of a request that fails before a
+    /// response arrives are not charged; the per-exchange cap bounds them.
     ///
     /// # Errors
     /// Any [`OciError`]; [`OciError::TooLarge`] when the allowance is used up.
@@ -682,13 +684,32 @@ impl Client {
                     limit: 0,
                 });
             }
-            let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
+            let page_max = allowance
+                .load(Ordering::Relaxed)
+                .min(MAX_MANIFEST_BYTES as u64);
+            let mut resp = self.call_capped(
+                r,
+                "pull",
+                page_max,
+                &Req {
+                    method: "GET",
+                    url: url.clone(),
+                    max_body: 0,
+                    headers: vec![],
+                    authorization: None,
+                    body: None,
+                },
+            )?;
             let status = resp.status().as_u16();
             if status != 200 {
+                charge(allowance, wire_bytes_used(&resp));
                 return Err(Self::deny_or_status(&url, status));
             }
             let next = next_link(&resp, &url);
-            let body = read_charged(resp.body_mut(), MAX_MANIFEST_BYTES, "tag list", allowance)?;
+            let limit = usize::try_from(page_max).unwrap_or(MAX_MANIFEST_BYTES);
+            let read = read_limited(resp.body_mut(), limit, "tag list");
+            charge(allowance, wire_bytes_used(&resp));
+            let body = read?;
             let page: Tags = serde_json::from_slice(&body)
                 .map_err(|e| OciError::Invalid(format!("tag list: {e}")))?;
             all.extend(page.tags.unwrap_or_default());
@@ -919,34 +940,11 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
     Ok(buf)
 }
 
-/// [`read_limited`] with the page capped at what is left of `allowance`; the
-/// bytes actually read are charged whether or not the read succeeds.
-fn read_charged(
-    body: &mut Body,
-    limit: usize,
-    what: &str,
-    allowance: &AtomicU64,
-) -> Result<Vec<u8>, OciError> {
-    let left = allowance.load(Ordering::Relaxed);
-    let cap = u64::try_from(limit).unwrap_or(u64::MAX).min(left);
-    let mut buf = Vec::new();
-    let read = body
-        .with_config()
-        .limit(cap.saturating_add(1))
-        .reader()
-        .read_to_end(&mut buf);
-    let used = buf.len() as u64;
+/// Take `used` bytes from the shared `allowance`, down to zero.
+fn charge(allowance: &AtomicU64, used: u64) {
     let _ = allowance.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(used))
     });
-    read.map_err(|e| read_error(what, &e))?;
-    if used > cap {
-        return Err(OciError::TooLarge {
-            what: what.into(),
-            limit: cap,
-        });
-    }
-    Ok(buf)
 }
 
 fn encode(s: &str) -> String {
