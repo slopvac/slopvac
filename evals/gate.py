@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +104,7 @@ def _compare_counts(
     was: Mapping[str, Any],
     now_entry: Mapping[str, Any] | None,
     min_n: int,
-    min_positives: int,
+    positives: int | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Return (regression, uncertain) for one count metric of one rule."""
     key, hits_key, direction = COUNT_METRICS[name]
@@ -113,9 +114,11 @@ def _compare_counts(
     src = now_entry[key]
     if src["n"] < min_n or was["n"] < min_n:
         return None, {**where, "n": src["n"]}
-    if name == "precision" and was["hits"] < min_positives:
+    if name == "precision" and (
+        positives is None or positives < labelling.MIN_POSITIVES
+    ):
         # Too few adjudicated true positives to trust the label set.
-        return None, {**where, "n": src["n"], "positives": was["hits"]}
+        return None, {**where, "n": src["n"], "positives": positives or 0}
     low, high = _noise_bounds(src, hits_key)
     worse = high < p0 if direction > 0 else low > p0
     if not worse:
@@ -152,17 +155,35 @@ def compare(
     cards: Mapping[str, Mapping[str, Any]],
     *,
     min_n: int = MIN_N,
-    min_positives: int = labelling.MIN_POSITIVES,
+    labels: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Compare per-split scorecards with a baseline; return regressions and notes."""
+    """Compare per-split scorecards with a baseline; return regressions and notes.
+
+    `labels` are the adjudicated labels (rows with `rule` and `label`). A rule's
+    precision is gated only when it has `labelling.MIN_POSITIVES` adjudicated true
+    positives, however many the baseline detected. Without labels precision is not
+    measured, and the gate does not pass if the baseline carries precision.
+    """
+    have = Counter(lbl["rule"] for lbl in labels or () if lbl["label"] == "tp")
     regressions: list[dict[str, Any]] = []
     uncertain: list[dict[str, Any]] = []
+    inadequate: dict[str, dict[str, Any]] = {}
+    gates_precision = False
     for split, card in cards.items():
         base = baseline["splits"].get(split)
         if base is None:
             continue
         # A rule the baseline never saw has a baseline of zero: no findings on
         # human text and no false positives on controls.
+        for rule, entry in card["rules"].items():
+            llm = entry.get("llm_findings", 0)
+            if llm and have[rule] < labelling.MIN_POSITIVES:
+                seen = inadequate.get(rule, {}).get("llm_findings", 0)
+                inadequate[rule] = {
+                    "rule": rule,
+                    "positives": have[rule],
+                    "llm_findings": max(llm, seen),
+                }
         for rule in sorted(set(base["rules"]) | set(card["rules"])):
             now_entry = card["rules"].get(rule)
             was = dict(base["rules"].get(rule, {}))
@@ -173,8 +194,14 @@ def compare(
                 if name not in was or not was[name]["n"]:
                     continue
                 where = {"split": split, "rule": rule, "metric": name}
+                gates_precision |= name == "precision"
                 reg, unc = _compare_counts(
-                    where, name, was[name], now_entry, min_n, min_positives
+                    where,
+                    name,
+                    was[name],
+                    now_entry,
+                    min_n,
+                    have[rule] if labels else None,
                 )
                 if reg:
                     regressions.append(reg)
@@ -183,7 +210,14 @@ def compare(
             reg = _human_regression({"split": split, "rule": rule}, base, was, card)
             if reg:
                 regressions.append(reg)
-    return {"regressions": regressions, "uncertain": uncertain}
+    measured = bool(labels)
+    return {
+        "regressions": regressions,
+        "uncertain": uncertain,
+        "inadequate_coverage": [inadequate[r] for r in sorted(inadequate)],
+        "precision": "measured" if measured else "not measured",
+        "passed": not regressions and (measured or not gates_precision),
+    }
 
 
 def fmt(value: float | None) -> str:
@@ -211,6 +245,19 @@ def markdown(result: Mapping[str, Any], mode: str) -> str:
                 f"| {r['split']} | `{r['rule']}` | {r['metric']} "
                 f"| {fmt(r['was'])} | {fmt(r['now'])} | {detail} |"
             )
+        lines.append("")
+    if result["precision"] == "not measured" and not result["passed"]:
+        lines.append(
+            "Precision not measured: no adjudicated labels were supplied, "
+            "so the gate does not pass."
+        )
+        lines.append("")
+    if result["inadequate_coverage"]:
+        rules = ", ".join(f"`{c['rule']}`" for c in result["inadequate_coverage"])
+        lines.append(
+            f"Inadequate label coverage (fewer than {labelling.MIN_POSITIVES} "
+            f"adjudicated true positives for findings on LLM text): {rules}."
+        )
         lines.append("")
     if result["uncertain"]:
         lines.append(

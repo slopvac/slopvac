@@ -137,7 +137,7 @@ How a label forms:
 
 A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
 
-A rule needs 20 adjudicated true positives before the precision gate trusts it. The gate lists the precision of a rule below that count as uncertain and never fails it. `stats.json` lists the count per rule.
+A rule needs 20 adjudicated true positives before the precision gate trusts it. The gate counts the adjudicated labels passed with `--labels`, not the positives the engine detects. It lists the precision of a rule below that count as uncertain and never fails it. It reports a rule with findings on LLM text and too few labels as inadequate coverage. With no labels the gate reports "precision not measured" and does not pass when the baseline holds precision. `stats.json` lists the count per rule.
 
 ## Ratchet
 

@@ -111,12 +111,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
     except (OSError, ValueError, runner.EngineError) as exc:
         print(f"evals gate: {exc}", file=sys.stderr)
         return 2
-    result = gate.compare(baseline, cards)
+    verdicts = scoring.load_verdicts(Path(args.labels)) if args.labels else {}
+    rows = [{"rule": key[1], "label": label} for key, label in verdicts.items()]
+    result = gate.compare(baseline, cards, labels=rows)
     text = gate.markdown(result, mode)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    return 1 if result["regressions"] and mode == "enforce" else 0
+    return 1 if not result["passed"] and mode == "enforce" else 0
 
 
 def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
