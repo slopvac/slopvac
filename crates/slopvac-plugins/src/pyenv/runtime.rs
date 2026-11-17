@@ -26,18 +26,18 @@ const MAX_MANIFEST_BYTES: u64 = 1 << 20;
 /// [`slopvac_sanitize::line`] (the sanitizing exception to derived `Display`),
 /// and [`RuntimeError::unescaped`] gives the text before escaping, for a
 /// caller that builds a larger message and escapes it once.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     /// The manifest is not a regular file (a symlink, a directory).
     NotRegular,
     /// The manifest cannot be examined or opened.
-    Io(io::Error),
+    Io(#[source] io::Error),
     /// The manifest cannot be read, or holds more than 1 MiB.
-    Read(Box<slopvac_fs::Error>),
+    Read(#[source] Box<slopvac_fs::Error>),
     /// The manifest is not UTF-8 text.
-    NotUtf8(std::str::Utf8Error),
+    NotUtf8(#[source] std::str::Utf8Error),
     /// The manifest is not valid TOML for the fields read here.
-    Toml(Box<toml::de::Error>),
+    Toml(#[source] TomlCause),
     /// `python` is set without `runtime = "python"`.
     PythonWithoutRuntime,
     /// `runtime = "python"` in a pack that is not `kind = "plugin"`.
@@ -78,6 +78,30 @@ pub enum RuntimeError {
     },
 }
 
+/// Where a manifest failed to parse, and nothing else.
+///
+/// The TOML error prints the offending source line, which is manifest text and may hold
+/// terminal controls. The cause keeps only the position, the same scrub as the
+/// `slopvac-fs` errors (docs/engineering.md, approved departures).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("TOML syntax error at line {line}, column {column}")]
+pub struct TomlCause {
+    /// One-based line.
+    pub line: usize,
+    /// One-based column, in characters.
+    pub column: usize,
+}
+
+impl TomlCause {
+    fn new(text: &str, e: &toml::de::Error) -> Self {
+        let at = e.span().map_or(0, |r| r.start).min(text.len());
+        let before = text.get(..at).unwrap_or_default();
+        let line = before.matches('\n').count() + 1;
+        let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        Self { line, column }
+    }
+}
+
 /// Result of reading or translating the manifest fields.
 pub type RuntimeResult<T> = std::result::Result<T, RuntimeError>;
 
@@ -93,7 +117,10 @@ impl RuntimeError {
             }
             Self::Read(e) => e.to_string(),
             Self::NotUtf8(e) => e.to_string(),
-            Self::Toml(e) => e.message().to_owned(),
+            Self::Toml(c) => format!(
+                "it is not valid TOML (line {}, column {})",
+                c.line, c.column
+            ),
             Self::PythonWithoutRuntime => "`python` needs `runtime = \"python\"`".into(),
             Self::RuntimeNeedsPluginKind => {
                 "`runtime` belongs to a `kind = \"plugin\"` pack".into()
@@ -123,18 +150,6 @@ impl RuntimeError {
 impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&esc(&self.unescaped()))
-    }
-}
-
-impl std::error::Error for RuntimeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::Read(e) => Some(e.as_ref()),
-            Self::NotUtf8(e) => Some(e),
-            Self::Toml(e) => Some(e.as_ref()),
-            _ => None,
-        }
     }
 }
 
@@ -196,7 +211,7 @@ impl PythonRuntime {
         .map_err(|e| RuntimeError::Read(Box::new(e)))?;
         let text = std::str::from_utf8(&bytes).map_err(RuntimeError::NotUtf8)?;
         let manifest: Manifest =
-            toml::from_str(text).map_err(|e| RuntimeError::Toml(Box::new(e)))?;
+            toml::from_str(text).map_err(|e| RuntimeError::Toml(TomlCause::new(text, &e)))?;
         let Some(plugin) = manifest.plugin else {
             return Ok(None);
         };

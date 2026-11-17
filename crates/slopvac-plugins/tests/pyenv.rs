@@ -736,6 +736,94 @@ fn a_manifest_error_shows_the_file_not_the_cache_path() {
     );
 }
 
+/// Display and Debug text of every link of an error chain, outermost first.
+fn chain_texts(err: &(dyn std::error::Error + 'static)) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = cur {
+        out.push(e.to_string());
+        out.push(format!("{e:?}"));
+        cur = e.source();
+    }
+    out
+}
+
+/// The innermost link of the chain.
+fn root_cause<'a>(
+    err: &'a (dyn std::error::Error + 'static),
+) -> &'a (dyn std::error::Error + 'static) {
+    let mut cur = err;
+    while let Some(next) = cur.source() {
+        cur = next;
+    }
+    cur
+}
+
+const SENTINEL: &str = "SENTINEL-s3cr3t-\u{1b}[31m-\u{202e}";
+
+/// Write `bytes` as the manifest of a fresh tree and read it.
+fn read_bytes(name: &str, bytes: &[u8]) -> PyEnvError {
+    let s = Scratch::new(&format!("rt-chain-{name}"));
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    fs::write(s.dir("tree").join(MANIFEST_FILE), bytes).unwrap();
+    PythonRuntime::read(&s.dir("tree")).unwrap_err()
+}
+
+#[test]
+fn no_link_of_a_manifest_error_chain_carries_manifest_text() {
+    let toml = format!("[plugin {SENTINEL}\n");
+    let utf8 = [SENTINEL.as_bytes(), &[0xff, 0xfe]].concat();
+    let big = format!("# {SENTINEL}\n{}", "x".repeat(1 << 20));
+    for (name, bytes) in [
+        ("toml", toml.into_bytes()),
+        ("utf8", utf8),
+        ("big", big.into_bytes()),
+    ] {
+        let err = read_bytes(name, &bytes);
+        for text in chain_texts(&err) {
+            assert!(!text.contains("SENTINEL"), "{name}: {text}");
+            assert!(
+                !text.contains('\u{1b}') && !text.contains('\u{202e}'),
+                "{name}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_manifest_error_chain_names_the_cause_kind() {
+    use slopvac_plugins::pyenv::TomlCause;
+    use std::error::Error as _;
+
+    let err = read_bytes(
+        "kind-toml",
+        format!("ok = 1\n[plugin\n# {SENTINEL}\n").as_bytes(),
+    );
+    let cause = root_cause(&err)
+        .downcast_ref::<TomlCause>()
+        .expect("TOML cause");
+    assert_eq!(cause.line, 2);
+
+    let err = read_bytes("kind-utf8", &[b'a', 0xff]);
+    assert!(root_cause(&err).is::<std::str::Utf8Error>(), "{err:?}");
+
+    let err = read_bytes("kind-big", "#".repeat((1 << 20) + 1).as_bytes());
+    let cause = root_cause(&err)
+        .downcast_ref::<Box<slopvac_fs::Error>>()
+        .expect("capped read");
+    assert!(
+        matches!(**cause, slopvac_fs::Error::CapExceeded { cap } if cap == 1 << 20),
+        "{cause:?}"
+    );
+
+    // A tree path below a file fails the metadata call with an I/O error.
+    let s = Scratch::new("rt-chain-io");
+    fs::write(s.dir("file"), "x").unwrap();
+    let err = PythonRuntime::read(&s.dir("file")).unwrap_err();
+    assert!(root_cause(&err).is::<std::io::Error>(), "{err:?}");
+    assert!(err.source().is_some());
+}
+
 #[test]
 fn the_manifest_reader_hands_uv_the_translated_request() {
     let m = manifest(

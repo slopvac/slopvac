@@ -81,7 +81,9 @@ use serde_json::json;
 use slopvac_sanitize::{line as esc, terminal};
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
-pub use runtime::{MANIFEST_FILE, PythonRuntime, RuntimeError, RuntimeResult, pep440_specifier};
+pub use runtime::{
+    MANIFEST_FILE, PythonRuntime, RuntimeError, RuntimeResult, TomlCause, pep440_specifier,
+};
 
 use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
