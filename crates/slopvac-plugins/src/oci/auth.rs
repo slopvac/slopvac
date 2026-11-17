@@ -20,6 +20,7 @@ use serde::Deserialize;
 
 use super::OciError;
 use super::process::Contained;
+use crate::trusted_path::find_trusted;
 
 /// Longest a credential helper may run.
 pub(crate) const HELPER_TIMEOUT: Duration = Duration::from_secs(10);
@@ -83,7 +84,12 @@ pub struct DefaultCredentials {
     /// Directory that holds `config.json`. `None` disables the Docker config.
     pub docker_config_dir: Option<PathBuf>,
     /// Directories searched for `docker-credential-*`. `None` uses `PATH`.
+    /// Only trusted directories count: absolute, outside the project, and
+    /// closed to group and others (CWE-427).
     pub helper_search_path: Option<std::ffi::OsString>,
+    /// The project directory, where no helper may run from. `None` means the
+    /// working directory.
+    pub project_root: Option<PathBuf>,
     /// Helper time limit. `None` means the default of 10 seconds; tests shorten it.
     pub helper_timeout: Option<Duration>,
 }
@@ -144,6 +150,7 @@ impl DefaultCredentials {
             },
             docker_config_dir: docker,
             helper_search_path: None,
+            project_root: None,
             helper_timeout: None,
         }
     }
@@ -269,10 +276,29 @@ fn find_with_suffixes(
     })
 }
 
+/// `program` from a trusted directory only (see [`crate::trusted_path`]). The
+/// resolved path is what runs, so a link cannot be repointed after the check.
+fn resolve_helper(
+    program: &str,
+    search: Option<&std::ffi::OsStr>,
+    project_root: Option<&Path>,
+) -> Result<PathBuf, OciError> {
+    let project = project_root
+        .map(Path::to_owned)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default();
+    find_trusted(program, search, &project).ok_or_else(|| {
+        OciError::Credential(format!(
+            "credential helper `{program}` was not found in a trusted directory"
+        ))
+    })
+}
+
 fn run_helper(
     name: &str,
     registry: &str,
     search: Option<&std::ffi::OsStr>,
+    project_root: Option<&Path>,
     timeout: Duration,
 ) -> Result<Option<Credential>, OciError> {
     let cred = |m: String| OciError::Credential(m);
@@ -287,9 +313,7 @@ fn run_helper(
         ));
     }
     let program = format!("docker-credential-{name}");
-    let Some(path) = find_in_path(&program, search) else {
-        return Err(cred(format!("credential helper `{program}` was not found")));
-    };
+    let path = resolve_helper(&program, search, project_root)?;
     // One deadline covers the helper's exit and the draining of its output.
     let deadline = Instant::now() + timeout;
     let mut command = Command::new(path);
@@ -415,6 +439,7 @@ impl DefaultCredentials {
                 name,
                 registry,
                 self.helper_search_path.as_deref(),
+                self.project_root.as_deref(),
                 self.helper_timeout.unwrap_or(HELPER_TIMEOUT),
             )?
         {

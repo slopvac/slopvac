@@ -1392,6 +1392,126 @@ mod helpers {
         );
         assert_eq!(got.unwrap(), None);
     }
+
+    /// A helper that records that it ran, then answers like a good one.
+    fn marking_script(marker: &Path) -> String {
+        format!(
+            "#!/bin/sh\ntouch '{}'\ncat >/dev/null\necho '{{\"Username\":\"bob\",\"Secret\":\"tok\"}}'\n",
+            marker.display()
+        )
+    }
+
+    fn plant(dir: &Path, store: &str, marker: &Path, mode: u32) {
+        std::fs::create_dir_all(dir).unwrap();
+        let file = dir.join(format!("docker-credential-{store}"));
+        std::fs::write(&file, marking_script(marker)).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    /// Credentials whose helper is looked up through `search`, with a project
+    /// at `project`.
+    fn creds_for(scratch: &Path, store: &str, search: &str, project: &Path) -> DefaultCredentials {
+        std::fs::write(
+            scratch.join("config.json"),
+            json!({"credsStore": store}).to_string(),
+        )
+        .unwrap();
+        DefaultCredentials {
+            docker_config_dir: Some(scratch.to_path_buf()),
+            helper_search_path: Some(search.into()),
+            project_root: Some(project.to_path_buf()),
+            helper_timeout: Some(Duration::from_secs(8)),
+            ..DefaultCredentials::default()
+        }
+    }
+
+    fn scratch() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        (dir, base)
+    }
+
+    fn refused(creds: &DefaultCredentials, marker: &Path) {
+        use slopvac_plugins::oci::CredentialSource;
+        let err = creds.credential("ghcr.io").unwrap_err().to_string();
+        assert!(err.contains("not found"), "{err}");
+        assert!(!marker.exists(), "the planted helper ran");
+    }
+
+    #[test]
+    fn tm38_a_helper_in_a_relative_path_entry_is_not_run() {
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("rel"), "planted", &marker, 0o755);
+        // The same directory, written relative to the working directory.
+        let cwd = std::env::current_dir().unwrap();
+        let up = "../".repeat(cwd.components().count() - 1);
+        let relative = format!(
+            "{up}{}",
+            base.join("rel").strip_prefix("/").unwrap().display()
+        );
+        let creds = creds_for(&base, "planted", &relative, &base.join("project"));
+        refused(&creds, &marker);
+    }
+
+    #[test]
+    fn tm38_a_helper_in_an_empty_path_entry_is_not_run() {
+        // An empty entry means the working directory.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let store = format!("planted{}", std::process::id());
+        let cwd = std::env::current_dir().unwrap();
+        let file = cwd.join(format!("docker-credential-{store}"));
+        std::fs::write(&file, marking_script(&marker)).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let creds = creds_for(&base, &store, "", &base.join("project"));
+        let result = std::panic::catch_unwind(|| refused(&creds, &marker));
+        std::fs::remove_file(&file).unwrap();
+        result.unwrap();
+    }
+
+    #[test]
+    fn tm38_a_helper_inside_the_project_is_not_run() {
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let project = base.join("project");
+        let bin = project.join("tools");
+        plant(&bin, "planted", &marker, 0o755);
+        let creds = creds_for(&base, "planted", bin.to_str().unwrap(), &project);
+        refused(&creds, &marker);
+    }
+
+    #[test]
+    fn tm38_a_helper_in_a_group_writable_directory_is_not_run() {
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let bin = base.join("shared");
+        plant(&bin, "planted", &marker, 0o775);
+        let creds = creds_for(
+            &base,
+            "planted",
+            bin.to_str().unwrap(),
+            &base.join("project"),
+        );
+        refused(&creds, &marker);
+    }
+
+    #[test]
+    fn tm38_an_untrusted_entry_does_not_hide_the_helper_in_a_trusted_one() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let (bad_marker, good_marker) = (base.join("bad"), base.join("good"));
+        let project = base.join("project");
+        plant(&project.join("tools"), "both", &bad_marker, 0o755);
+        plant(&base.join("trusted"), "both", &good_marker, 0o755);
+        let search = std::env::join_paths([project.join("tools"), base.join("trusted")]).unwrap();
+        let creds = creds_for(&base, "both", search.to_str().unwrap(), &project);
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "bob");
+        assert!(good_marker.exists(), "the trusted helper did not run");
+        assert!(!bad_marker.exists(), "the planted helper ran");
+    }
 }
 
 #[test]
