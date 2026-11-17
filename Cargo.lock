@@ -687,6 +687,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "etcetera"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de48cc4d1c1d97a20fd819def54b890cadde72ed3ad0c614822a0a433361be96"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1516,17 +1526,6 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest",
  "hmac",
-]
-
-[[package]]
-name = "pcre2"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e970b0fcce0c7ee6ef662744ff711f21ccd6f11b7cf03cd187a80e89797fc67"
-dependencies = [
- "libc",
- "log",
- "pcre2-sys",
 ]
 
 [[package]]
@@ -2491,10 +2490,10 @@ dependencies = [
  "globset",
  "ignore",
  "jsonschema",
- "pcre2",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "slopvac-pcre2",
  "thiserror",
  "toml",
 ]
@@ -2506,6 +2505,7 @@ dependencies = [
  "base64",
  "flate2",
  "roxmltree",
+ "rstest",
  "slopvac-model",
  "slopvac-parse",
 ]
@@ -2538,6 +2538,20 @@ dependencies = [
  "slopvac-text",
  "tempfile",
  "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "slopvac-fs"
+version = "0.0.0"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "etcetera",
+ "proptest",
+ "rustix",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -2567,6 +2581,10 @@ dependencies = [
  "serde_json",
  "similar 3.2.1",
  "slopvac-agents",
+ "slopvac-config",
+ "slopvac-engine",
+ "slopvac-model",
+ "slopvac-rules",
  "tempfile",
  "thiserror",
  "toml",
@@ -2603,6 +2621,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-pcre2"
+version = "0.0.0"
+dependencies = [
+ "pcre2-sys",
+ "proptest",
+ "rstest",
+ "thiserror",
+]
+
+[[package]]
 name = "slopvac-plugins"
 version = "0.0.0"
 dependencies = [
@@ -2624,6 +2652,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "tracing",
  "unicode-normalization",
  "ureq",
  "winapi-util",
@@ -2700,11 +2729,10 @@ dependencies = [
 name = "slopvac-text"
 version = "0.0.0"
 dependencies = [
- "pcre2",
- "pcre2-sys",
  "proptest",
  "serde",
  "serde_json",
+ "slopvac-pcre2",
  "thiserror",
 ]
 

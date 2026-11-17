@@ -67,6 +67,8 @@
 
 # sync.remote: "git+ssh://git@github.com/srobroek/slopvac"
 export:
-    auto: true
+    # JSONL export is optional (viewers, interchange). Sync is Dolt:
+    # bd dolt push / bd dolt pull.
+    auto: false
 sync:
-    remote: "git+https://github.com/srobroek/slopvac.git"
+    remote: "git+https://github.com/slopvac/slopvac.git"

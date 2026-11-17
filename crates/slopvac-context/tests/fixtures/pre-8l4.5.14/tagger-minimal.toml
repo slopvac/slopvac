@@ -1,0 +1,7 @@
+schema_version = 3
+id = "warning-sign"
+tag = "safety"
+
+[[match]]
+words = ["warning", "caution"]
+case_sensitive = true

@@ -1,8 +1,8 @@
 //! The terms conformance corpus under `schemas/v3/conformance/`.
 //!
 //! Every file under `valid/` must load. Every file under `invalid/` other than
-//! `cases.toml` must be rejected. The blocklist corpus is not covered here: it
-//! requires `schema_version`, which the 2.x blocklist format lacks.
+//! `cases.toml` must be rejected. Blocklist files also name the reason: the
+//! loader must give the diagnostic that matches each file's fault.
 
 use std::path::{Path, PathBuf};
 
@@ -38,4 +38,64 @@ fn invalid_terms_files_are_rejected() {
             path.display()
         );
     }
+}
+
+use slopvac_terms::{Blocklist, TermsError};
+
+/// Each invalid blocklist file and the part of the diagnostic that names its
+/// fault. `invalid/cases.toml` gives a JSON pointer per file; the loader reports
+/// the entry number and field in words, so the table pins the reason instead.
+const BLOCKLIST_REASONS: [(&str, &str); 9] = [
+    ("no-version.toml", "missing `schema_version`"),
+    ("wrong-table.toml", "no `entries` array; it defines `words`"),
+    ("unknown-key.toml", "unknown key `entries[1].severity`"),
+    ("no-word.toml", "entry 1 has no `word`"),
+    ("whitespace-word.toml", "entry 1 has no `word`"),
+    ("no-pos.toml", "unrecognized `pos`"),
+    ("bad-pos.toml", "unrecognized `pos`"),
+    ("no-reason.toml", "has no `reason`"),
+    ("blank-reason.toml", "has no `reason`"),
+];
+
+#[test]
+fn valid_blocklist_files_load() {
+    for path in files("blocklist", "valid") {
+        let list = Blocklist::load(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(!list.is_empty(), "{} loaded no entries", path.display());
+    }
+}
+
+#[test]
+fn invalid_blocklist_files_are_rejected_for_their_reason() {
+    let found = files("blocklist", "invalid");
+    let names: Vec<_> = found
+        .iter()
+        .map(|p| p.file_name().unwrap().to_str().unwrap().to_owned())
+        .collect();
+    let mut expected: Vec<_> = BLOCKLIST_REASONS
+        .iter()
+        .map(|(n, _)| (*n).to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(names, expected, "corpus files and reason table differ");
+    for (name, reason) in BLOCKLIST_REASONS {
+        let path = Path::new(ROOT).join("blocklist/invalid").join(name);
+        let error: TermsError = Blocklist::load(&path).expect_err(name);
+        assert!(error.to_string().contains(reason), "{name}: {error}");
+    }
+}
+
+#[test]
+fn blocklist_cases_file_lists_exactly_the_invalid_files() {
+    let text =
+        std::fs::read_to_string(Path::new(ROOT).join("blocklist/invalid/cases.toml")).unwrap();
+    let cases: toml::Table = text.parse().unwrap();
+    let mut listed: Vec<_> = cases.keys().cloned().collect();
+    listed.sort();
+    let mut expected: Vec<_> = BLOCKLIST_REASONS
+        .iter()
+        .map(|(n, _)| (*n).to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(listed, expected);
 }

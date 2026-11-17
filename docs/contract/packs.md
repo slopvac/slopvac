@@ -16,7 +16,7 @@ A pack is a folder or an OCI artifact with a `slopvac-pack.toml` manifest. A dat
 | genre files | [`genre`](../../schemas/v3/genre.schema.json) | Genres with detection signals. |
 | tagger files | [`tagger`](../../schemas/v3/tagger.schema.json) | Declarative context taggers. |
 | terms files | [`terms`](../../schemas/v3/terms.schema.json) | Also the format of `.slopvac/terms.toml`. |
-| blocklist files | [`blocklist`](../../schemas/v3/blocklist.schema.json) | TOML or JSON. The opt-in vocabulary check reads them. |
+| blocklist files | [`blocklist`](../../schemas/v3/blocklist.schema.json) | YAML, TOML or JSON (`.yml`, `.yaml`, `.toml` or `.json`; the suffix picks the format). The opt-in vocabulary check reads them. |
 | `.slopvac/packs.lock` | [`packs-lock`](../../schemas/v3/packs-lock.schema.json) | Written by `slopvac plugins sync`. |
 
 Every file carries `schema_version = 3`. Unknown keys are errors, and keys with the prefix `x-` are ignored. The manifest lists its files under `provides`. A path that leaves the pack, by an absolute path, a drive letter, a backslash or a `..` segment, is invalid.
@@ -47,7 +47,22 @@ The 2.x genres map to genre files with these profiles: `consumer` normal, `refer
 
 ## 5. Taggers
 
-A declarative tagger sets one context tag on each text unit where a `match` entry matches and no `unless` entry matches. The tag span is the whole unit. Output equals what a code tagger returns for the same unit: a span, the tag as `kind`, `confidence` and `evidence`. Taggers are deterministic and read nothing but the unit text.
+A declarative tagger sets one context tag. Output equals what a code tagger returns: a span, the tag as `kind`, `confidence` and `evidence`. Taggers are deterministic. A tagger has `match` entries or a `when` object, never both.
+
+A tagger with `match` sets the tag on each text unit where a `match` entry matches and no `unless` entry matches. The tag span is the whole unit, and the tagger reads nothing but the unit text.
+
+A tagger with `when` reads document structure. `when` takes these conditions, and all given conditions must hold:
+
+- `path` matches the file path with forward slashes.
+- `front_matter` names a `key` and optionally a `matches` pattern for its value. Without `matches` the key only has to exist.
+- `heading_path` matches when any enclosing heading matches.
+- `admonition_title` matches the title of the enclosing admonition.
+- `block_kind` is one of `heading`, `paragraph`, `list-item`, `table-row`, `code-block` and `quote`. Blocks of kind `code-block` are skipped unless `block_kind` names them.
+- `sentence` matches the text of a sentence.
+
+`scope` sets how far the tag spreads: `sentence` (the default) tags each matching sentence, `paragraph` the matching block, `section` the enclosing heading section and `document` the whole document. `scope` needs `when`, and `when` excludes `unit`. The built-in structural taggers use this shape.
+
+A genre lists `contexts` to give every document of the genre a context tag for the whole document, at confidence 1. Genres that extend it inherit the tags. A context such as `security` comes only from a declaration like this one and never from vocabulary.
 
 ## 6. Terms and blocklists
 
@@ -61,7 +76,7 @@ Casing has three modes:
 
 The two flags cannot combine. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
 
-A blocklist file holds `[[entries]]` with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
+A blocklist file holds an `entries` list (`[[entries]]` in TOML) with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
 
 ## 7. Lockfile
 

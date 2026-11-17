@@ -119,7 +119,7 @@ Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship mini
 
 ### 12. Distribution: cargo-dist, Homebrew tap, and maturin wheels
 
-cargo-dist builds archives and installers and feeds a Homebrew tap (`srobroek/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
+cargo-dist builds archives and installers and feeds a Homebrew tap (`slopvac/homebrew-tap`). maturin builds binary wheels, so `uvx slopvac` stays the default install. Each release also carries GitHub attestations, an SBOM, and an auditable binary. Release targets: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Amended 2026-11-16: decision 26 supersedes the earlier Windows target and PowerShell installer.
 
 ### 13. Dependabot only
 

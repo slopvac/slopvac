@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/plugin-protocol.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-protocol.schema.json",
   "title": "slopvac plugin protocol v1",
   "description": "One JSON-RPC 2.0 message of plugin protocol v1, as carried in the body of a Content-Length frame. The root validates a whole message: a request or notification is dispatched on method, a response is checked as a success or an error. Result shapes are separate $defs because a response names no method; validate one against the def of the method it answers. No object here sets additionalProperties false: a reader ignores unknown fields, and keys with the prefix x- never carry meaning. Semantics are in docs/contract/plugin-protocol.md. Owner: slopvac-8l4.2.6.",
   "type": "object",

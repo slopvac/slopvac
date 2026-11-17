@@ -150,7 +150,7 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
 
 ### Distribution and release
 
-- cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).
+- cargo-dist builds release archives, installers, and a Homebrew tap (`slopvac/homebrew-tap`).
 - maturin wheels keep `uvx slopvac` as the documented default.
 - Platforms: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Decided 2026-11-16: 3.0 has no native Windows build. Windows users run the Linux build under WSL, and native Windows is a 3.x feature (decision 26 of the architecture record). This supersedes the earlier Windows target and PowerShell installer.
 - Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable. In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.

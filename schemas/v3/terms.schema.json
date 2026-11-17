@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/terms.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/terms.schema.json",
   "title": "slopvac v3 terms file",
   "description": "A list of project terms: product names, acronyms and other words that rules must not flag or must spell a fixed way. The project file is .slopvac/terms.toml, and packs ship more. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",

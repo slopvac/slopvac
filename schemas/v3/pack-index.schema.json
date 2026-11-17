@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/pack-index.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/pack-index.schema.json",
   "title": "slopvac v3 pack index",
   "description": "The pack index document that `slopvac packs search` reads. A scheduled job rebuilds it from packs that follow the naming convention. The index lists packs for discovery and nothing more: it is not an authority for keys, and `publisher_key` is display-only (threat-model.md, section 5.2). A reader refuses a document over 32 MiB before it parses. Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/pack-index.md. Owner: slopvac-8l4.9.8.",
   "type": "object",

@@ -1,0 +1,10 @@
+{
+  "source": "https://aws.amazon.com/bedrock/pricing",
+  "unit": "USD per million tokens, list price",
+  "models": {
+    "claude-sonnet-5-5": { "input": 2, "output": 10 },
+    "claude-haiku-5-5": { "input": 0.1, "output": 0.5 },
+    "gpt-6.1-sol": { "input": 2, "output": 10 },
+    "gpt-6-luna": { "input": 0.1, "output": 0.5 }
+  }
+}
