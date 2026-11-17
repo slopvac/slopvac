@@ -6,7 +6,7 @@ use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::{
     Attribute, Data, DeriveInput, Error, Expr, ExprLit, Field, Fields, Ident, Lit, LitStr, Meta,
-    Result, Variant, parse::Parse, parse::ParseStream,
+    Result, Type, Variant, parse::Parse, parse::ParseStream,
 };
 
 use crate::template;
@@ -42,6 +42,16 @@ pub(crate) struct Message {
     pub(crate) template: String,
     pub(crate) summary: String,
     pub(crate) params: Vec<Param>,
+    /// The wrapped error that `source()` returns, if the variant has one.
+    pub(crate) source: Option<Source>,
+}
+
+/// A field that holds the cause of an error.
+pub(crate) struct Source {
+    pub(crate) field: Ident,
+    pub(crate) ty: Type,
+    /// `#[from]`: the enum gets `From<ty>`.
+    pub(crate) from: bool,
 }
 
 /// The one field of a variant that wraps another catalog.
@@ -53,6 +63,9 @@ pub(crate) enum Wrapped {
 pub(crate) struct Delegate {
     pub(crate) variant: Ident,
     pub(crate) field: Wrapped,
+    pub(crate) ty: Type,
+    /// `#[from]`: the enum gets `From<ty>`.
+    pub(crate) from: bool,
 }
 
 pub(crate) enum Item {
@@ -167,11 +180,12 @@ fn parse_delegate(variant: &Variant) -> Result<Delegate> {
             ));
         }
     }
-    let field = match &variant.fields {
-        Fields::Unnamed(f) if f.unnamed.len() == 1 => Wrapped::Positional,
-        Fields::Named(f) if f.named.len() == 1 => {
-            Wrapped::Named(f.named[0].ident.clone().expect("named field has an ident"))
-        }
+    let (field, inner) = match &variant.fields {
+        Fields::Unnamed(f) if f.unnamed.len() == 1 => (Wrapped::Positional, &f.unnamed[0]),
+        Fields::Named(f) if f.named.len() == 1 => (
+            Wrapped::Named(f.named[0].ident.clone().expect("named field has an ident")),
+            &f.named[0],
+        ),
         _ => {
             return Err(Error::new(
                 variant.ident.span(),
@@ -182,6 +196,8 @@ fn parse_delegate(variant: &Variant) -> Result<Delegate> {
     Ok(Delegate {
         variant: variant.ident.clone(),
         field,
+        ty: inner.ty.clone(),
+        from: inner.attrs.iter().any(|a| a.path().is_ident("from")),
     })
 }
 
@@ -217,6 +233,7 @@ fn parse_message(variant: &Variant, code: &LitStr) -> Result<Message> {
         template,
         summary: summary(variant)?,
         params,
+        source: source(variant)?,
     })
 }
 
@@ -259,13 +276,49 @@ fn params(variant: &Variant) -> Result<Vec<Param>> {
     fields.iter().filter(|f| !is_source(f)).map(param).collect()
 }
 
-/// Fields thiserror treats as the error source: wrapped errors, not message parameters.
+/// Fields that hold the cause of an error, not a message parameter: `#[source]`, `#[from]`,
+/// `#[backtrace]` or a field named `source`.
 fn is_source(field: &Field) -> bool {
-    field.attrs.iter().any(|a| {
-        ["source", "from", "backtrace"]
-            .iter()
-            .any(|name| a.path().is_ident(name))
-    })
+    field.ident.as_ref().is_some_and(|i| i == "source")
+        || field.attrs.iter().any(|a| {
+            ["source", "from", "backtrace"]
+                .iter()
+                .any(|name| a.path().is_ident(name))
+        })
+}
+
+/// The cause of a message variant, and whether `From` converts into it.
+fn source(variant: &Variant) -> Result<Option<Source>> {
+    let Fields::Named(named) = &variant.fields else {
+        return Ok(None);
+    };
+    let mut causes = named.named.iter().filter(|f| {
+        f.ident.as_ref().is_some_and(|i| i == "source")
+            || f.attrs
+                .iter()
+                .any(|a| a.path().is_ident("source") || a.path().is_ident("from"))
+    });
+    let Some(field) = causes.next() else {
+        return Ok(None);
+    };
+    if let Some(second) = causes.next() {
+        return Err(Error::new(
+            second.span(),
+            "a variant has one source: mark only one field with `#[source]` or `#[from]`",
+        ));
+    }
+    let from = field.attrs.iter().any(|a| a.path().is_ident("from"));
+    if from && named.named.len() != 1 {
+        return Err(Error::new(
+            field.span(),
+            "a `#[from]` field must be the only field of its variant, so `From` can build it",
+        ));
+    }
+    Ok(Some(Source {
+        field: field.ident.clone().expect("named field has an ident"),
+        ty: field.ty.clone(),
+        from,
+    }))
 }
 
 fn param(field: &Field) -> Result<Param> {

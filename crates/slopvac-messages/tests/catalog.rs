@@ -161,7 +161,7 @@ fn a_keyword_field_is_a_parameter_under_its_plain_name() {
 }
 
 /// Three layers: `Outer` wraps `Middle` wraps an I/O error.
-#[derive(Debug, thiserror::Error, Catalog)]
+#[derive(Debug, Catalog)]
 enum Outer {
     /// The run failed while reading.
     #[code(delegate)]
@@ -192,21 +192,62 @@ fn the_question_mark_converts_through_from_and_keeps_the_message() {
     );
 }
 
-#[test]
-fn source_walks_a_three_level_chain_to_the_io_error() {
-    let error = outer().expect_err("outer fails");
-    let mut chain = Vec::new();
-    let mut current: Option<&dyn std::error::Error> = error.source();
+/// The root message, then the `Display` of each error found by following `source()`.
+fn chain_lines(root: &dyn std::error::Error) -> Vec<String> {
+    let mut lines = vec![root.to_string()];
+    let mut current = root.source();
     while let Some(e) = current {
-        chain.push(e.to_string());
+        lines.push(e.to_string());
         current = e.source();
     }
-    // Outer -> RunError -> ReadError -> io::Error. A delegating variant renders as the
-    // wrapped message, so the first two levels print alike.
+    lines
+}
+
+#[test]
+fn a_tuple_delegate_chain_shows_each_error_once() {
+    // Outer -> RunError -> ReadError -> io::Error: delegates are transparent, so the
+    // chain is the root message and then the one real cause.
+    let error = outer().expect_err("outer fails");
     assert_eq!(
-        chain,
+        chain_lines(&error),
+        ["cannot read docs/a.md: permission denied", "denied"]
+    );
+}
+
+#[test]
+fn a_named_delegate_chain_shows_each_error_once() {
+    let error = RunError::Named {
+        inner: unreadable(),
+    };
+    assert_eq!(
+        chain_lines(&error),
+        ["cannot read docs/a.md: permission denied", "denied"]
+    );
+}
+
+/// A message variant with its own text returns the wrapped error as its source.
+#[derive(Debug, Catalog)]
+enum Wrapper {
+    /// Loading failed.
+    #[code("load-failed")]
+    #[message("load failed")]
+    Load {
+        #[from]
+        cause: RunError,
+    },
+}
+
+#[test]
+fn a_message_variant_with_from_returns_the_wrapped_error_as_its_source() {
+    fn load() -> Result<(), Wrapper> {
+        run()?;
+        Ok(())
+    }
+    let error = load().expect_err("load fails");
+    assert_eq!(
+        chain_lines(&error),
         [
-            "cannot read docs/a.md: permission denied",
+            "load failed",
             "cannot read docs/a.md: permission denied",
             "denied"
         ]

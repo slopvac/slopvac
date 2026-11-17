@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use slopvac_messages::Catalog;
 
 /// Errors of a made-up reader.
-#[derive(Debug, thiserror::Error, Catalog)]
+#[derive(Debug, Catalog)]
 pub enum ReadError {
     /// The file could not be read.
     #[code("file-unreadable")]
@@ -43,7 +43,7 @@ pub enum ReadError {
 }
 
 /// Errors that wrap another catalog.
-#[derive(Debug, thiserror::Error, Catalog)]
+#[derive(Debug, Catalog)]
 pub enum RunError {
     /// Reading failed.
     #[code(delegate)]

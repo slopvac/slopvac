@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use slopvac_messages::Catalog;
 
-#[derive(Catalog)]
+#[derive(Debug, Catalog)]
 enum Ok {
     /// A fine message.
     #[code("fine-message")]
