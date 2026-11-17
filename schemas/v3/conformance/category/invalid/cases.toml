@@ -4,3 +4,6 @@
 "bad-rule.json" = "/rules/0"
 "upper-id.json" = "/id"
 "profile-budget-negative.json" = "/max_per_100_words/strict"
+"id-trailing-newline.json" = "/id"
+"profile-trailing-newline.json" = "/max_per_100_words"
+"genre-trailing-newline.json" = "/recommended_for/0"

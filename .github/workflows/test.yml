@@ -192,6 +192,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Generated schemas
+        run: cargo run -p slopvac-schemas --locked -- check
+
       - name: Rustdoc
         run: cargo doc --workspace --no-deps --document-private-items --locked
 

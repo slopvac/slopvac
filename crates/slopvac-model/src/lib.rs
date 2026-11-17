@@ -8,6 +8,7 @@ mod edit;
 mod ids;
 mod origin;
 mod report;
+pub mod schema;
 mod source;
 mod span;
 mod values;

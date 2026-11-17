@@ -4,6 +4,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::schema;
+
 /// A malformed identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid {kind} {value:?}")]
@@ -46,12 +48,12 @@ impl IdError {
     }
 }
 
-/// Pack identifier: `^[a-z][a-z0-9-]*$`.
+/// Pack identifier: the namespace of a rule. Built-in rules live in the reserved pack core.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = schema::SLUG))]
 pub struct PackId(String);
 
 impl PackId {
@@ -94,12 +96,15 @@ impl fmt::Display for PackId {
     }
 }
 
-/// Qualified rule identifier `<pack>:<id>`.
+/// Qualified rule identifier <pack>:<id>. A rule from a category file has the id
+/// <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports
+/// may use a bare id such as core:passive-voice. Short names resolve in configuration only
+/// where they are unambiguous; every output carries the qualified form.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"))]
+#[schemars(with = "String", extend("pattern" = schema::RULE_ID))]
 pub struct RuleId(String);
 
 impl RuleId {
@@ -153,7 +158,8 @@ impl fmt::Display for RuleId {
     }
 }
 
-/// Finding severity. `off` belongs to config, not to findings.
+/// Finding severity. Excludes off: 2.x config accepts off to disable a rule, so off belongs
+/// to config, not to findings.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -167,12 +173,12 @@ pub enum Severity {
     Error,
 }
 
-/// Text-context label such as `prose` or `code-fence`: `^[a-z][a-z0-9-]*$`.
+/// Text-context label such as prose or code.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = schema::SLUG))]
 pub struct ContextTag(String);
 
 impl ContextTag {
@@ -238,11 +244,14 @@ impl JsonSchema for SchemaVersion {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "const": 3 })
+        schemars::json_schema!({
+            "description": "Root artifact schema version.",
+            "const": 3,
+        })
     }
 }
 
-/// Plugin API version: an integer of at least 1, separate from `schema_version`.
+/// Plugin API version, separate from schema_version.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -333,6 +342,10 @@ impl From<Contexts> for Vec<ContextTag> {
 impl JsonSchema for Contexts {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "Contexts".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {

@@ -24,4 +24,4 @@ pub use ruleset::{
     LoadedCategory, LoadedRule, MAX_PACK_BYTES, MAX_PACK_ENTRIES, MAX_PACK_FILES,
     MAX_RULE_FILE_BYTES, RuleSet,
 };
-pub use schema::{category_schema, rule_file_schema, rule_schema};
+pub use schema::{category_schema, rule_file_schema, rule_schema, schema_generator};

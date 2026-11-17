@@ -2,44 +2,34 @@ use std::num::NonZeroUsize;
 
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::json;
 use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
 use crate::origin::Origin;
+use crate::schema::{absent_not_null, dependent_required, if_then, x_extensions};
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
 };
 
-/// Optional producer fields are omitted when unset, never written as `null`; drop the
-/// `null` alternative schemars adds for `Option` so the schema says the same.
-fn absent_not_null(schema: &mut Schema) {
-    if let Some(Value::Array(types)) = schema.get_mut("type") {
-        types.retain(|t| t != "null");
-        if types.len() == 1 {
-            let only = types.remove(0);
-            schema.insert("type".into(), only);
-        }
-    }
-    if let Some(Value::Array(any)) = schema.get_mut("anyOf") {
-        any.retain(|alt| alt.get("type") != Some(&Value::String("null".into())));
-        if any.len() == 1 {
-            let only = any.remove(0);
-            schema.remove("anyOf");
-            if let Value::Object(map) = only {
-                for (k, v) in map {
-                    schema.insert(k, v);
-                }
-            }
-        }
-    }
-}
-
 /// `budget` is always written, as a non-negative number or `null`.
 fn nullable_budget(_: &mut schemars::SchemaGenerator) -> Schema {
     schemars::json_schema!({ "type": ["number", "null"], "minimum": 0 })
+}
+
+/// The schema of a count: a non-negative integer, shared as `$defs/Count`.
+struct Count;
+
+impl JsonSchema for Count {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Count".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> Schema {
+        schemars::json_schema!({ "type": "integer", "minimum": 0 })
+    }
 }
 
 /// How strongly a finding indicates machine-written text.
@@ -57,6 +47,7 @@ pub enum AiSignal {
 /// Severity of a [`Notice`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum NoticeLevel {
     /// Informational.
     Info,
@@ -64,17 +55,18 @@ pub enum NoticeLevel {
     Warning,
 }
 
-/// A stable, machine-readable fact with a human message.
+/// A stable, machine-readable fact with a human message. Consumers branch on `code`, never on
+/// `message`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Notice {
-    /// Stable kebab-case identifier.
+    /// Stable kebab-case identifier. A code is never reused for a different meaning.
     pub code: KebabName,
     /// Level.
     pub level: NoticeLevel,
     /// Human message.
     pub message: NonEmptyString,
-    /// File the notice concerns.
+    /// File the notice concerns, when it concerns one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -98,9 +90,11 @@ impl Notice {
     }
 }
 
-/// Where a rule came from.
+/// The pack that supplied a rule at run time: pack id, pack version and the pack-relative path
+/// of the defining file. A rule's citation of its own sources is the rule field citation, not
+/// this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct RuleProvenance {
     /// Owning pack.
     pub pack: PackId,
@@ -125,6 +119,7 @@ pub struct RuleProvenance {
 /// A config layer, lowest priority first; `env` marks the sticky environment switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum ConfigLayer {
     /// Built-in defaults.
     Core,
@@ -148,13 +143,16 @@ pub enum ConfigLayer {
     Env,
 }
 
-/// Config layer and location a setting came from.
+/// Config layer and location a setting came from. Layer order and file semantics are in
+/// docs/contract/config.md.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct ConfigSource {
-    /// Layer name.
+    /// Layer name, lowest priority first: core, style, genre, extends, project, override,
+    /// front-matter, directive, cli. env marks the sticky environment switches.
     pub layer: ConfigLayer,
-    /// File.
+    /// Path relative to the project root, or pack:<id>/<path> for a pack file. Absent where no
+    /// file holds the value: core, cli and env.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -180,7 +178,7 @@ pub struct ConfigSource {
     pub column: Option<NonZeroUsize>,
 }
 
-/// A machine-applicable correction: at least one edit, none overlapping.
+/// A machine-applicable correction. Edits address source bytes and never overlap.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "FixWire", into = "FixWire")]
 #[schemars(with = "FixWire")]
@@ -188,9 +186,9 @@ pub struct Fix {
     edits: Vec<Edit>,
 }
 
-/// Wire shape of [`Fix`].
+/// A machine-applicable correction. Edits address source bytes and never overlap.
 #[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(rename = "Fix", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(rename = "Fix", transform = x_extensions)]
 struct FixWire {
     /// Non-overlapping edits in original offsets.
     #[schemars(length(min = 1))]
@@ -261,7 +259,9 @@ pub enum FindingError {
     OriginWithFix,
 }
 
-/// One violation at one position.
+/// One violation at one position. `line`, `column`, `end_line` and `end_column` are the display
+/// position; `span` is the byte range. A finding with no source range, such as a metric over a
+/// whole document, omits `span`, `end_line` and `end_column`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(try_from = "FindingWire")]
 #[schemars(with = "FindingWire")]
@@ -313,9 +313,22 @@ impl Serialize for Finding {
     }
 }
 
-/// Wire shape of [`Finding`].
+/// One violation at one position. `line`, `column`, `end_line` and `end_column` are the display
+/// position; `span` is the byte range. A finding with no source range, such as a metric over a
+/// whole document, omits `span`, `end_line` and `end_column`.
 #[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(rename = "Finding", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}, "not" = {"required": ["origin", "fix"]}))]
+#[schemars(
+    rename = "Finding",
+    transform = x_extensions,
+    extend(
+        "dependentRequired" = dependent_required(&[
+            ("span", &["end_line", "end_column"]),
+            ("end_line", &["end_column", "span"]),
+            ("end_column", &["end_line", "span"]),
+        ]),
+        "not" = {"required": ["origin", "fix"]}
+    )
+)]
 struct FindingWire {
     /// Qualified rule id.
     rule_id: RuleId,
@@ -357,7 +370,7 @@ struct FindingWire {
     )]
     #[schemars(range(min = 1), transform = absent_not_null)]
     end_column: Option<usize>,
-    /// Text contexts the match sits in.
+    /// Text contexts the match sits in, such as prose or code-comment.
     contexts: Contexts,
     /// AI signal.
     ai_signal: AiSignal,
@@ -443,15 +456,18 @@ impl From<Finding> for FindingWire {
         }
     }
 }
-/// Counts for one reporting axis.
+/// Counts for one reporting axis, independent of scoring.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct AiRegisterSummary {
     /// Findings.
+    #[schemars(with = "Count")]
     pub findings: usize,
     /// Errors.
+    #[schemars(with = "Count")]
     pub errors: usize,
     /// Warnings.
+    #[schemars(with = "Count")]
     pub warnings: usize,
     /// Findings per 100 words.
     pub per_100_words: Density,
@@ -459,7 +475,7 @@ pub struct AiRegisterSummary {
 
 /// Strong and weak AI-signal summaries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct AiRegister {
     /// Strong signal.
     pub strong: AiRegisterSummary,
@@ -467,19 +483,23 @@ pub struct AiRegister {
     pub weak: AiRegisterSummary,
 }
 
-/// One category rolled up across every document.
+/// One category rolled up across every linted document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct CategorySummary {
     /// Category id.
     pub category: CategoryId,
     /// Findings.
+    #[schemars(with = "Count")]
     pub findings: usize,
     /// Errors.
+    #[schemars(with = "Count")]
     pub errors: usize,
     /// Warnings.
+    #[schemars(with = "Count")]
     pub warnings: usize,
     /// Suggestions.
+    #[schemars(with = "Count")]
     pub suggestions: usize,
     /// Findings per 100 words.
     pub per_100_words: Density,
@@ -487,27 +507,34 @@ pub struct CategorySummary {
     pub score: Score,
 }
 
-/// Every document rolled into one result.
+/// Every document rolled into one result. Densities use total words, not an average of
+/// per-document densities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct RunSummary {
     /// Documents linted.
+    #[schemars(with = "Count")]
     pub documents: usize,
     /// Total words.
+    #[schemars(with = "Count")]
     pub words: usize,
     /// Findings.
+    #[schemars(with = "Count")]
     pub findings: usize,
     /// Errors.
+    #[schemars(with = "Count")]
     pub errors: usize,
     /// Warnings.
+    #[schemars(with = "Count")]
     pub warnings: usize,
     /// Suggestions.
+    #[schemars(with = "Count")]
     pub suggestions: usize,
     /// Findings per 100 words.
     pub per_100_words: Density,
     /// Score, 0 to 100.
     pub score: Score,
-    /// Whether every document passed.
+    /// True when every document passed its gate.
     pub passed: bool,
     /// Per-category rollup.
     pub categories: Vec<CategorySummary>,
@@ -520,6 +547,7 @@ pub struct RunSummary {
 /// Where a genre choice came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum GenreSource {
     /// Config, command line or front matter.
     Explicit,
@@ -531,9 +559,9 @@ pub enum GenreSource {
 
 /// One signal that led to the genre choice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct GenreReason {
-    /// Kebab-case signal name.
+    /// Kebab-case signal name, such as `front-matter` or `path-glob`.
     pub signal: KebabName,
     /// Detail.
     pub detail: String,
@@ -541,11 +569,12 @@ pub struct GenreReason {
 
 /// The genre applied to a document and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct GenreResult {
     /// Genre id.
     pub id: GenreId,
-    /// Source of the choice.
+    /// `explicit` came from config, the command line or front matter; `detected` from genre
+    /// signals; `default` from the fallback.
     pub source: GenreSource,
     /// Reasons.
     pub reasons: Vec<GenreReason>,
@@ -553,23 +582,27 @@ pub struct GenreResult {
 
 /// Per-category result for one document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct CategoryScore {
     /// Category id.
     pub category: CategoryId,
     /// Findings.
+    #[schemars(with = "Count")]
     pub findings: usize,
     /// Errors.
+    #[schemars(with = "Count")]
     pub errors: usize,
     /// Warnings.
+    #[schemars(with = "Count")]
     pub warnings: usize,
     /// Suggestions.
+    #[schemars(with = "Count")]
     pub suggestions: usize,
     /// Findings per 100 words.
     pub per_100_words: Density,
-    /// Errors and warnings per 100 words.
+    /// Errors and warnings per 100 words: the figure the budget is checked against.
     pub gating_per_100_words: Density,
-    /// Gating limit, or null.
+    /// Gating density limit, or null when the category has none.
     #[serde(deserialize_with = "required_nullable")]
     #[schemars(schema_with = "nullable_budget")]
     pub budget: Option<Density>,
@@ -579,7 +612,7 @@ pub struct CategoryScore {
     pub over_budget: bool,
 }
 
-/// Pass or fail result for one document. It passes exactly when no reason is recorded.
+/// The pass or fail result for one document under its profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "GateWire", into = "GateWire")]
 #[schemars(with = "GateWire")]
@@ -587,13 +620,26 @@ pub struct Gate {
     reasons: Vec<String>,
 }
 
-/// Wire shape of [`Gate`].
+/// The pass or fail result for one document under its profile.
 #[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(rename = "Gate", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "allOf" = [{"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}}, {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}]))]
+#[schemars(
+    rename = "Gate",
+    transform = x_extensions,
+    extend("allOf" = [
+        if_then(
+            json!({"properties": {"passed": {"const": true}}}),
+            json!({"properties": {"reasons": {"maxItems": 0}}}),
+        ),
+        if_then(
+            json!({"properties": {"passed": {"const": false}}}),
+            json!({"properties": {"reasons": {"minItems": 1}}}),
+        ),
+    ])
+)]
 struct GateWire {
     /// Whether the document passed.
     passed: bool,
-    /// Each failed threshold; empty when passed.
+    /// Each failed threshold, named. Empty when passed.
     #[schemars(inner(length(min = 1)))]
     reasons: Vec<String>,
 }
@@ -677,7 +723,7 @@ impl From<Gate> for GateWire {
 }
 /// The whole result for one linted file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Document {
     /// File path.
     pub path: NonEmptyString,
@@ -685,27 +731,34 @@ pub struct Document {
     pub profile: NonEmptyString,
     /// Genre.
     pub genre: GenreResult,
-    /// Contexts found in the document.
+    /// Every text context found in the document, whether or not a finding fired in it.
     pub contexts_seen: Contexts,
-    /// Config layers that applied, lowest priority first.
+    /// Config layers that applied to this document, lowest priority first.
     pub config_sources: Vec<ConfigSource>,
     /// Words.
+    #[schemars(with = "Count")]
     pub words: usize,
     /// Sentences.
+    #[schemars(with = "Count")]
     pub sentences: usize,
     /// Paragraphs.
+    #[schemars(with = "Count")]
     pub paragraphs: usize,
     /// Findings.
     pub findings: Vec<Finding>,
     /// Per-category scores.
     pub categories: Vec<CategoryScore>,
     /// Total findings.
+    #[schemars(with = "Count")]
     pub total_findings: usize,
     /// Errors.
+    #[schemars(with = "Count")]
     pub errors: usize,
     /// Warnings.
+    #[schemars(with = "Count")]
     pub warnings: usize,
     /// Suggestions.
+    #[schemars(with = "Count")]
     pub suggestions: usize,
     /// Findings per 100 words.
     pub per_100_words: Density,
@@ -713,7 +766,7 @@ pub struct Document {
     pub score: Score,
     /// Gate result.
     pub gate: Gate,
-    /// What did not run, and why.
+    /// What did not run, and why. A skipped check must never read as a pass.
     pub unchecked: Vec<Notice>,
     /// AI register.
     pub ai_register: AiRegister,
@@ -721,18 +774,20 @@ pub struct Document {
     pub prose: AiRegisterSummary,
 }
 
-/// The `slopvac lint --format json` payload.
+/// The `slopvac lint --format json` payload. Spec: docs/contract/lint-report.md. Keys starting
+/// with `x-` are ignored by consumers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Report {
     /// Always 3.
     pub schema_version: SchemaVersion,
-    /// Version of the tool that wrote the report.
+    /// Version of the tool that wrote the report. Not a schema version.
     pub slopvac_version: NonEmptyString,
     /// Run summary.
     pub summary: RunSummary,
     /// Documents.
     pub documents: Vec<Document>,
-    /// Run-level notices.
+    /// Run-level facts a reader needs, such as skipped files or checks that did not run. Always
+    /// present; empty when there is nothing to say.
     pub notices: Vec<Notice>,
 }
