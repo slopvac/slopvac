@@ -236,6 +236,14 @@ fn normalize(t: &str) -> String {
     }
 }
 
+/// Sentences of one Markdown paragraph.
+fn sentences(paragraph: &str) -> Result<Vec<String>, AgentsError> {
+    Ok(slopvac_text::split_sentences(paragraph)?
+        .into_iter()
+        .map(|s| s.text)
+        .collect())
+}
+
 /// Content tokens for alignment: the engine's word tokens, lowercased, without
 /// stopwords, with a plural `s` removed.
 ///
@@ -257,16 +265,12 @@ fn tokens(text: &str, engine: &dyn TextEngine) -> Result<Vec<String>, AgentsErro
     if collapsed {
         // Occurrence counts of the words the ordinary tokens already carry.
         let mut carried: HashMap<String, usize> = HashMap::new();
-        for part in raw
-            .iter()
-            .flat_map(|t| t.split(|c: char| !c.is_alphanumeric()))
-            .filter(|w| !w.is_empty())
-        {
-            *carried.entry(normalize(part)).or_insert(0) += 1;
+        for part in raw.iter().flat_map(|t| slopvac_text::joined_words(t)) {
+            *carried.entry(normalize(&part)).or_insert(0) += 1;
         }
-        for word in text.split(|c: char| !c.is_alphanumeric()) {
+        for word in slopvac_text::joined_words(text) {
             let word = word.to_lowercase();
-            if word.is_empty() || STOPWORDS.contains(&word.as_str()) {
+            if STOPWORDS.contains(&word.as_str()) {
                 continue;
             }
             let word = normalize(&word);

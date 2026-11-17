@@ -341,6 +341,21 @@ fn a_repeated_collapsed_phrase_does_not_count_as_covered() {
 }
 
 #[test]
+fn hyphenated_compounds_in_a_quoted_span_count_as_retained() {
+    // The quoted span collapses to a placeholder, so its words are recovered from the text.
+    // The revision keeps both compounds whole, so five of the six content words (all but
+    // "check") are covered.
+    let r = compare(
+        "Keep alpha beta gamma. Check 'well-known cache-line' alpha beta gamma.",
+        "Keep alpha beta gamma with well-known cache-line.",
+    )
+    .unwrap();
+    assert_eq!(r.summary.dropped, 1, "{r:?}");
+    assert_eq!(r.dropped[0].token_coverage, 0.833, "{:?}", r.dropped[0]);
+    assert!(!r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
+}
+
+#[test]
 fn stopwords_inside_a_collapsed_span_do_not_count_as_content() {
     // The quoted span holds six "this", all stopwords. Coverage counts only the three
     // content words, which the revision keeps, so the sentence is covered.
@@ -351,4 +366,18 @@ fn stopwords_inside_a_collapsed_span_do_not_count_as_content() {
     .unwrap();
     assert_eq!(r.summary.dropped, 1, "{r:?}");
     assert!(!r.dropped[0].fact_candidate, "{:?}", r.dropped[0]);
+}
+
+#[test]
+fn doubled_hyphens_in_a_quoted_span_split_like_ordinary_tokens() {
+    // The tokenizer keeps a hyphen only with a word character on both sides, so `alpha--beta`
+    // is the two words `alpha` and `beta`. The revision keeps both words, so only "check"
+    // of the five content words is missing: coverage 4/5 = 0.8.
+    let r = compare(
+        "Keep gamma delta. Check 'alpha--beta' gamma delta.",
+        "Keep gamma delta with alpha beta.",
+    )
+    .unwrap();
+    assert_eq!(r.summary.dropped, 1, "{r:?}");
+    assert_eq!(r.dropped[0].token_coverage, 0.8, "{:?}", r.dropped[0]);
 }

@@ -25,4 +25,4 @@ pub use measure::{
 };
 pub use pattern::{Pattern, PatternError, TextError};
 pub use sentences::{Sentence, cell_sentence, split_sentences};
-pub use tokens::{count_words, tokens};
+pub use tokens::{count_words, joined_words, tokens};
