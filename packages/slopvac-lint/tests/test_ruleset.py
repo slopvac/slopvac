@@ -238,7 +238,11 @@ def _pattern_record(**fields):
 
 @pytest.mark.parametrize(
     "contexts",
-    [{"only": ["requirement"]}, {"skip": ["code-fence", "quotation"]}],
+    [
+        {"only": ["requirement"]},
+        {"skip": ["code-fence", "quotation"]},
+        {"only": [], "skip": ["quotation"]},
+    ],
 )
 def test_a_rule_accepts_a_context_gate(contexts):
     rule = Rule.model_validate(_pattern_record(contexts=contexts))

@@ -262,6 +262,27 @@ def test_context_gate_is_carried_into_the_v3_rule_and_validates() -> None:
     assert _errors(_validator("Rule"), rule) == []
 
 
+@pytest.mark.parametrize(
+    "contexts",
+    [{"only": []}, {"only": [], "skip": ["code-fence"]}, {"skip": []}],
+)
+def test_empty_context_lists_are_kept_and_validate(contexts: dict) -> None:
+    rule = convert.convert_rule(
+        {
+            "id": "r",
+            "name": "n",
+            "kind": "pattern",
+            "message": "m",
+            "pattern": "x",
+            "contexts": contexts,
+            "tiers": {"strict": "enforced"},
+            "provenance": {"source": "s"},
+        }
+    )
+    assert rule["contexts"] == contexts
+    assert _errors(_validator("Rule"), rule) == []
+
+
 def test_lexical_options_move_into_match() -> None:
     rule = convert.convert_rule(
         {
