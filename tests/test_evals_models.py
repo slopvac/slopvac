@@ -383,6 +383,33 @@ def test_a_planted_quote_found_in_neither_passage_is_a_false_alarm():
     assert (scored["found"], scored["false_alarms"]) == (0, 1)
 
 
+def test_a_planted_quote_of_a_single_digit_fact_locates_the_edit():
+    task = {
+        "variant": "planted",
+        "edits": [
+            {"kind": "number", "sentence": "Set `replicas` to 1 in the ConfigMap."}
+        ],
+        "passage": (
+            "Set `replicas` to 1 in the ConfigMap.\n"
+            "Set `replicas` to 2 in the ConfigMap."
+        ),
+    }
+    answer = json.dumps([{"quote": "1", "problem": "the value changed to 2"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"]) == (1, 0)
+
+
+def test_a_planted_quote_of_a_stray_letter_is_still_a_false_alarm():
+    task = {
+        "variant": "planted",
+        "edits": [{"kind": "number", "sentence": "Set a limit of 1 in the file."}],
+        "passage": "Set a limit of 1 in the file.\nSet a limit of 2 in the file.",
+    }
+    answer = json.dumps([{"quote": "a", "problem": "changed"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
 def test_a_short_planted_quote_of_the_dropped_flag_locates_the_edit():
     answer = json.dumps([{"quote": "--offline", "problem": "the flag was dropped"}])
     scored = models.score_review(planted_task(), answer)

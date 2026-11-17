@@ -352,7 +352,10 @@ def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str
 
 
 def _words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if len(w) > 1}
+    """Lowercase word tokens. A lone letter is noise; a lone digit is a fact."""
+    return {
+        w for w in re.findall(r"[a-z0-9_]+", text.lower()) if len(w) > 1 or w.isdigit()
+    }
 
 
 def _parse_findings(answer: str) -> list[dict[str, str]]:
