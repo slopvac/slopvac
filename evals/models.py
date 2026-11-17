@@ -357,6 +357,32 @@ def _parse_findings(answer: str) -> list[dict[str, str]]:
     ]
 
 
+REVIEW_METRIC = "detection by quotation"
+AUTHOR_METRIC = "lexical retention smoke check"
+
+# A finding that denies the loss is not a finding. This is a plain phrase list, not
+# a meaning-level oracle; it stops the common "X is preserved" reply from scoring.
+DENIAL_RE = re.compile(
+    r"\b(?:is|are|was|were|remains?|stays?|been)\s+"
+    r"(?:preserved|kept|retained|intact|correct|unchanged|present)\b"
+    r"|\bunchanged\b|\bno\s+(?:change|difference|loss|problem|issue)s?\b"
+    r"|\bnot\s+(?:changed|lost|missing|dropped|altered)\b"
+    r"|\bnothing\s+(?:is\s+)?(?:lost|missing|changed)\b"
+    r"|\bstill\s+(?:says|states|reads|has|contains|includes)\b"
+    r"|\bsame\s+as\s+the\s+original\b",
+    re.IGNORECASE,
+)
+
+
+def _asserts_change(problem: str) -> bool:
+    """True unless the explanation denies the loss or change."""
+    return DENIAL_RE.search(problem) is None
+
+
+def _in_passage(quote: str, passage: str) -> bool:
+    return _hits(quote, passage)
+
+
 def _hits(quote: str, sentence: str) -> bool:
     q, s = _words(quote), _words(sentence)
     return len(q) >= MIN_QUOTE_WORDS and len(q & s) / len(q) >= QUOTE_OVERLAP
@@ -377,19 +403,25 @@ def _mentions(fact: str, text: str) -> bool:
 
 
 def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
-    reported = _parse_findings(answer)
+    """Score a review by quotation: the quote, the location and a non-denying problem.
+
+    A finding counts when its quote is in the passage, it locates the planted or
+    lost change, and its `problem` does not deny the change.
+    """
+    reported = [r for r in _parse_findings(answer) if _asserts_change(r["problem"])]
     if task.get("variant") == "authored":
         lost = task["lost"]
-        found = [
-            f
-            for f in lost
-            if any(_mentions(f, r["quote"] + " " + r["problem"]) for r in reported)
-        ]
+        passage = task["passage"]
+
+        def names(fact: str, r: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and _mentions(
+                fact, r["quote"] + " " + r["problem"]
+            )
+
+        found = [f for f in lost if any(names(f, r) for r in reported)]
         edits_total, edits_found = len(lost), len(found)
-        alarms = sum(
-            1
-            for r in reported
-            if not any(_mentions(f, r["quote"] + " " + r["problem"]) for f in lost)
+        alarms = len(reported) - sum(
+            1 for r in reported if any(names(f, r) for f in lost)
         )
     else:
         edits = task["edits"]
@@ -397,10 +429,8 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
             any(_hits(r["quote"], e["sentence"]) for r in reported) for e in edits
         ]
         edits_total, edits_found = len(edits), sum(matched)
-        alarms = sum(
-            1
-            for r in reported
-            if not any(_hits(r["quote"], e["sentence"]) for e in edits)
+        alarms = len(reported) - sum(
+            1 for r in reported if any(_hits(r["quote"], e["sentence"]) for e in edits)
         )
     recall = edits_found / edits_total if edits_total else None
     return {
@@ -408,6 +438,7 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         "found": edits_found,
         "planted": edits_total,
         "false_alarms": alarms,
+        "metric": REVIEW_METRIC,
         "success": edits_total > 0
         and edits_found == edits_total
         and alarms <= FALSE_ALARM_LIMIT,
@@ -435,6 +466,7 @@ def authored_review_task(
             original=author_task["source"], candidate=output
         ),
         "lost": lost,
+        "passage": author_task["source"] + "\n" + output,
         "genre": author_task["genre"],
     }
 
@@ -1235,6 +1267,7 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
                 "type": rtype,
                 "role": role,
                 "model": model,
+                "metric": REVIEW_METRIC if role == "reviewer" else AUTHOR_METRIC,
                 "family": info[model]["family"],
                 "tier": info[model]["tier"],
                 "tasks": len(per_task),

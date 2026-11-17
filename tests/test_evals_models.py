@@ -211,10 +211,73 @@ def test_unparseable_review_answers_find_nothing(answer):
 
 
 def test_authored_review_matches_lost_facts_by_name():
-    task = {"variant": "authored", "lost": ["--offline", "3"]}
-    answer = json.dumps([{"quote": "x", "problem": "the --offline flag vanished"}])
+    task = {
+        "variant": "authored",
+        "lost": ["--offline", "3"],
+        "passage": "Run with the --offline flag first.",
+    }
+    answer = json.dumps(
+        [{"quote": "with the --offline flag", "problem": "the --offline flag vanished"}]
+    )
     scored = models.score_review(task, answer)
     assert (scored["found"], scored["planted"]) == (1, 2)
+
+
+def test_a_denial_with_the_right_quote_does_not_count_as_a_finding():
+    answer = json.dumps(
+        [
+            {
+                "quote": "The queue holds 63 jobs before it blocks writers",
+                "problem": "The 63 is preserved, so there is no change here.",
+            }
+        ]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 0)
+
+
+def test_an_authored_review_needs_a_quote_that_is_in_the_passage():
+    task = {
+        "variant": "authored",
+        "lost": ["--offline"],
+        "passage": "Run the migration with the `--offline` flag first. Original text.",
+    }
+    elsewhere = json.dumps(
+        [{"quote": "an invented sentence about weather", "problem": "--offline lost"}]
+    )
+    quoted = json.dumps(
+        [
+            {
+                "quote": "Run the migration with the --offline flag first",
+                "problem": "the --offline flag vanished",
+            }
+        ]
+    )
+    assert models.score_review(task, elsewhere)["found"] == 0
+    assert models.score_review(task, quoted)["found"] == 1
+
+
+def test_an_authored_denial_does_not_count_as_a_finding():
+    task = {
+        "variant": "authored",
+        "lost": ["--offline"],
+        "passage": "Run the migration with the `--offline` flag first.",
+    }
+    answer = json.dumps(
+        [
+            {
+                "quote": "Run the migration with the --offline flag first",
+                "problem": "the --offline flag still says what it did",
+            }
+        ]
+    )
+    assert models.score_review(task, answer)["found"] == 0
+
+
+def test_reviewer_scores_are_labelled_detection_by_quotation():
+    assert (
+        models.score_review(planted_task(), "[]")["metric"] == "detection by quotation"
+    )
 
 
 # --- planning, running and summarising ------------------------------------------------------
@@ -797,8 +860,14 @@ def test_the_cli_never_starts_a_model_for_plan(tmp_path, monkeypatch, capsys):
     ],
 )
 def test_authored_review_matches_whole_fact_tokens(reply, found):
-    task = {"variant": "authored", "lost": ["3"]}
-    answer = json.dumps([{"quote": "x", "problem": reply}])
+    task = {
+        "variant": "authored",
+        "lost": ["3"],
+        "passage": "Retry up to three times before the lock gives up.",
+    }
+    answer = json.dumps(
+        [{"quote": "Retry up to three times before the lock", "problem": reply}]
+    )
     assert models.score_review(task, answer)["found"] == found
 
 
