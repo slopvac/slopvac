@@ -178,6 +178,14 @@ def cmd_models(args: argparse.Namespace) -> int:
         out = Path(args.out) if args.out else models.default_output(models.today())
         journal_path = out.with_suffix(".journal.jsonl")
         ledger_path = out.with_suffix(".ledger.jsonl")
+        if args.candidates_from:
+            models.reject_aliases(
+                Path(args.candidates_from),
+                out=out,
+                journal=journal_path,
+                ledger=ledger_path,
+                lock=Path(str(ledger_path) + ".lock"),
+            )
         if (
             journal_path.is_file()
             and journal_path.stat().st_size

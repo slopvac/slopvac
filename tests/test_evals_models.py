@@ -399,6 +399,76 @@ def test_only_model_needs_a_candidates_journal_and_the_reverse(tmp_path):
         )
 
 
+@pytest.fixture
+def frozen(tmp_path):
+    """A finished earlier run of a and b: its journal, as --candidates-from reads it."""
+    path = tmp_path / "earlier.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+def add_c_run(monkeypatch, candidates, out, *, command="run"):
+    """Drive `models run` for the new model c through the CLI; return its exit code."""
+    monkeypatch.setattr(
+        cli, "_model_tasks", lambda args: (tiny_tasks(), roster("a", "b", "c"))
+    )
+    argv = ["models", command, "--models", "unused"]
+    argv += ["--only-model", "c", "--candidates-from", str(candidates)]
+    if command == "run":
+        argv += ["--confirm-calls", "21", "--max-invocations", "30", "--out", str(out)]
+    return cli.main(argv)
+
+
+@pytest.mark.parametrize(
+    "alias",
+    ["out", "journal", "ledger", "lock", "hard link to the journal"],
+)
+def test_the_frozen_journal_is_never_a_writable_destination(
+    alias, frozen, tmp_path, monkeypatch, capsys
+):
+    out = tmp_path / "x.json"
+    if alias == "hard link to the journal":
+        out = tmp_path / "other.json"
+        os.link(frozen, tmp_path / "other.journal.jsonl")
+        candidates = frozen
+    else:
+        candidates = {
+            "out": out,
+            "journal": tmp_path / "x.journal.jsonl",
+            "ledger": tmp_path / "x.ledger.jsonl",
+            "lock": tmp_path / "x.ledger.jsonl.lock",
+        }[alias]
+        candidates.write_bytes(frozen.read_bytes())
+    before = candidates.read_bytes()
+    assert add_c_run(monkeypatch, candidates, out) == 2
+    assert "read-only" in capsys.readouterr().err
+    assert candidates.read_bytes() == before
+    assert not (tmp_path / "x.ledger.jsonl").exists() or alias == "ledger"
+
+
+def test_execute_refuses_a_journal_that_is_also_the_candidates(frozen):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="read-only"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen),
+            journal=models.Journal(frozen),
+        )
+    assert calls == []
+
+
 def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():
     out = models.execute(
         tiny_tasks(), roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"

@@ -902,6 +902,24 @@ def _map_jobs(
         pool.shutdown(wait=True, cancel_futures=False)
 
 
+def same_file(a: Path, b: Path) -> bool:
+    """True when both paths name one file, through links, or one resolved path."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return a.resolve() == b.resolve()
+
+
+def reject_aliases(frozen: Path, **writable: Path) -> None:
+    """Refuse a frozen journal that is also a file this run writes."""
+    for role, path in writable.items():
+        if same_file(frozen, path):
+            raise ModelEvalError(
+                f"--candidates-from {frozen.name} is also the {role}; "
+                "the frozen journal must stay read-only"
+            )
+
+
 def frozen_candidates(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
@@ -965,6 +983,12 @@ def execute(
     if (only_model is None) != (candidates is None):
         raise ModelEvalError("only_model and candidates go together")
     frozen = frozen_candidates(tasks, models, repeats, only_model, candidates)
+    if candidates is not None:
+        reject_aliases(
+            candidates.path,
+            **({"journal": journal.path} if journal else {}),
+            **({"ledger": budget.ledger} if budget and budget.ledger else {}),
+        )
     live = procs.LiveGroups()
     make_ask = ask_for or (
         lambda m: command_ask(m["command"], budget=budget, live=live, model=m["name"])
