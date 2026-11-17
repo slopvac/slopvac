@@ -38,7 +38,7 @@ These keys have no 2.x counterpart.
 
 ## Notice data
 
-A notice may carry `data`, an object of plain JSON values. A notice with no details
+A notice may carry `data`, a JSON object whose values may be any JSON value, nested objects and arrays included. A notice with no details
 omits it. The schema does not constrain the keys. Each notice code documents its own
 keys, and a consumer must ignore keys it does not know.
 

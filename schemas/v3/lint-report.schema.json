@@ -32,7 +32,7 @@
         "level": {"enum": ["info", "warning"]},
         "message": {"type": "string", "minLength": 1},
         "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"},
-        "data": {"description": "Details as plain JSON values. Each notice code documents its own keys. Consumers must ignore keys they do not know. Omitted when the notice has none.", "type": "object"}
+        "data": {"description": "Details as a JSON object; a value may be any JSON value, including a nested object or array. Each notice code documents its own keys. Consumers must ignore keys they do not know. Omitted when the notice has none.", "type": "object"}
       },
       "required": ["code", "level", "message"],
       "patternProperties": {"^x-": true},
