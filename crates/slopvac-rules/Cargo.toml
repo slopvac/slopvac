@@ -13,6 +13,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
+slopvac-fs = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-text = { workspace = true }
 thiserror = { workspace = true }

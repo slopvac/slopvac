@@ -143,6 +143,32 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 
+### 1.9 Input size caps
+
+**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole. Slopvac never truncates it. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
+
+The span crates index text with 32-bit offsets and size their structures from its length, and they do not cap their input. Their documentation states the 64 MiB limit as a rule for callers. Memory per read stays bounded by the cap plus one byte, because the reader stops at the cap.
+
+| Entry point | Cap | Code | Why this value |
+|---|---|---|---|
+| Document: CLI file lint, `validate` documents, `cases --coverage` corpus files, `fix` | 64 MiB | `document-too-large` | The largest size every span crate accepts. A real document is a few hundred KiB. |
+| Document from stdin | 64 MiB | `document-too-large` | Same as a file. |
+| Document in the language server (`didOpen`, `didChange`), per document | 64 MiB | `document-too-large` | Same as a file. The server drops the document and publishes the notice instead of findings. |
+| Document read for `migrate` | 64 MiB | `document-too-large` | Same as a file. |
+| Changed file read for `--diff` scoping | 64 MiB | `document-too-large` | Uses the same constant as the lint read. |
+| Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
+| Rule or category file in a pack | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
+| Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
+| Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
+
+Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
+
+The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and the CLI reports it in that change.
+
+Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
+
+Owner: `slopvac-8l4.21.8`.
+
 ## 2. Accessibility
 
 ### 2.1 Plain and no-color output

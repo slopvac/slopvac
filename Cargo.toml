@@ -69,6 +69,7 @@ slopvac-config = { path = "crates/slopvac-config" }
 slopvac-context = { path = "crates/slopvac-context" }
 slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 slopvac-engine = { path = "crates/slopvac-engine" }
+slopvac-fs = { path = "crates/slopvac-fs" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-model = { path = "crates/slopvac-model" }

@@ -10,6 +10,7 @@ use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
+use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
 use crate::tree::{Node, Value, parse_toml};
@@ -137,7 +138,7 @@ pub fn load_labeled(
 ) -> Result<LoadedConfig, ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(label, source))?;
+    let text = ConfigError::read_config(&abs, label)?;
     let mut loader = Loader {
         root: &root,
         presets,
@@ -305,6 +306,7 @@ impl Loader<'_> {
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
+            self.check_styles(&tree, &mut diagnostics);
         }
         let blocks = if diagnostics.is_empty() {
             self.blocks(&tree, display, &text, &mut diagnostics)
@@ -343,6 +345,30 @@ impl Loader<'_> {
         match key {
             Key::Path(p) => safe_display(p, self.root),
             Key::Pack(_) => display.to_owned(),
+        }
+    }
+
+    /// Report a `styles` list that the provider cannot load for a reason that must stop the run.
+    fn check_styles(&self, tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
+        let Some(node) = tree.get("styles") else {
+            return;
+        };
+        let Value::Array(items) = &node.value else {
+            return;
+        };
+        let listed: Vec<String> = items
+            .iter()
+            .filter_map(|n| n.as_str().map(str::to_owned))
+            .collect();
+        if let Err(failure) = self.presets.check_styles(&listed) {
+            diagnostics.push(Diagnostic {
+                code: failure.code,
+                message: failure.message,
+                label: "listed here".into(),
+                span: node.span.clone(),
+                help: None,
+                path: vec!["styles".into()],
+            });
         }
     }
 
@@ -491,15 +517,20 @@ impl Loader<'_> {
             let body = match body {
                 Some(b) => b,
                 None => match &target {
-                    Key::Path(p) => fs::read_to_string(p).map_err(|e| {
-                        fail(
+                    Key::Path(p) => read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
+                        ReadFailure::TooLarge(cap) => fail(
+                            Code::TooLarge,
+                            format!("the extended config `{name}` is larger than {cap} bytes"),
+                            Some("split the file or remove unused settings".into()),
+                        ),
+                        ReadFailure::Io(e) => fail(
                             Code::ExtendsMissing,
                             format!(
                                 "cannot read the extended config `{}`: {e}",
                                 safe_display(p, self.root)
                             ),
                             Some("paths are relative to the file that holds the entry".into()),
-                        )
+                        ),
                     })?,
                     Key::Pack(_) => String::new(),
                 },

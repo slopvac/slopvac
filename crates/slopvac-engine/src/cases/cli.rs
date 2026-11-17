@@ -4,7 +4,7 @@
 //! mounts them (as `pack test`); nothing here owns `main`.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId};
@@ -29,6 +29,14 @@ pub enum CasesError {
     /// The run could not start, for example on an unknown rule id.
     #[error(transparent)]
     Cases(#[from] super::CasesError),
+    /// A corpus file is larger than the document cap. Its stable code is `document-too-large`.
+    #[error("[document-too-large] {path} is larger than {cap} bytes")]
+    TooLarge {
+        /// The file.
+        path: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// A corpus file or the output failed.
     #[error("{path}: {source}")]
     Io {
@@ -100,9 +108,26 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
         let sources = files
             .iter()
             .map(|p| {
-                std::fs::read_to_string(p).map_err(|source| CasesError::Io {
-                    path: (*p).clone(),
-                    source,
+                slopvac_fs::read_text_capped(Path::new(p), crate::MAX_FILE_BYTES).map_err(|e| {
+                    match e {
+                        slopvac_fs::Error::CapExceeded { cap } => CasesError::TooLarge {
+                            path: (*p).clone(),
+                            cap,
+                        },
+                        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
+                            CasesError::Io {
+                                path: (*p).clone(),
+                                source,
+                            }
+                        }
+                        other => CasesError::Io {
+                            path: (*p).clone(),
+                            source: std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                other.to_string(),
+                            ),
+                        },
+                    }
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;

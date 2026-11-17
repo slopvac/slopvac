@@ -11,6 +11,17 @@ pub enum TermsError {
         /// OS message.
         message: String,
     },
+    /// The file is larger than the cap. Its stable code is `terms-file-too-large`, or
+    /// `document-too-large` for a document.
+    #[error("[{code}] {path} is larger than {cap} bytes")]
+    TooLarge {
+        /// The stable code.
+        code: &'static str,
+        /// File path as given.
+        path: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// The file is not valid for its format.
     #[error("cannot parse {path}: {message}")]
     Parse {
