@@ -37,11 +37,12 @@ pub use view::{
 
 pub use pattern::MAX_PATTERN_BYTES;
 
-/// Errors from this crate.
+/// Errors from this crate. Text from documents, configs and plugins reaches `Display` only
+/// through `slopvac_sanitize::line`; the fields and sources stay raw.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A regular expression failed to compile.
-    #[error("invalid pattern `{pattern}`: {source}")]
+    #[error("invalid pattern `{}`: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Pattern {
         /// Pattern source.
         pattern: String,
@@ -58,7 +59,7 @@ pub enum Error {
         max: usize,
     },
     /// PCRE2 failed while matching, for example on a match or JIT stack limit.
-    #[error("pattern `{pattern}` failed while matching: {source}")]
+    #[error("pattern `{}` failed while matching: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Match {
         /// Pattern source.
         pattern: String,
@@ -67,16 +68,16 @@ pub enum Error {
         source: slopvac_pcre2::MatchError,
     },
     /// A tagger id was registered twice.
-    #[error("tagger `{0}` is already registered")]
+    #[error("tagger `{}` is already registered", slopvac_sanitize::line(.0))]
     DuplicateTagger(String),
     /// A genre id that no definition provides.
-    #[error("unknown genre `{0}`")]
+    #[error("unknown genre `{}`", slopvac_sanitize::line(.0))]
     UnknownGenre(String),
     /// A YAML data file did not parse.
-    #[error("{0}")]
+    #[error("{}", slopvac_sanitize::line(&.0.to_string()))]
     Yaml(#[source] serde_saphyr::Error),
     /// A `files` pattern is not a valid gitignore-style glob.
-    #[error("glob `{pattern}`: {source}")]
+    #[error("glob `{}`: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Glob {
         /// The pattern as written.
         pattern: String,
@@ -85,10 +86,10 @@ pub enum Error {
         source: ignore::Error,
     },
     /// A list of `files` patterns did not compile as a set.
-    #[error("{0}")]
+    #[error("{}", slopvac_sanitize::line(&.0.to_string()))]
     GlobSet(#[source] ignore::Error),
     /// A `path` signal glob of a genre is invalid.
-    #[error("genre `{genre}`: glob `{glob}`: {source}")]
+    #[error("genre `{}`: glob `{}`: {}", slopvac_sanitize::line(.genre), slopvac_sanitize::line(.glob), slopvac_sanitize::line(&.source.to_string()))]
     SignalGlob {
         /// Genre id.
         genre: String,
@@ -108,6 +109,6 @@ pub enum Error {
         source: std::io::Error,
     },
     /// A data file did not parse or validate.
-    #[error("{0}")]
+    #[error("{}", slopvac_sanitize::line(.0))]
     Parse(String),
 }

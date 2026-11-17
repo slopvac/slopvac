@@ -71,9 +71,9 @@ fn parse_assignments(matches: &ArgMatches) -> Result<Vec<GenreAssignment>, Error
         .into_iter()
         .flatten()
         .map(|raw| {
-            let (glob, genre) = raw.split_once('=').ok_or_else(|| {
-                Error::Parse(format!("`--assign {}` needs GLOB=GENRE", line(raw)))
-            })?;
+            let (glob, genre) = raw
+                .split_once('=')
+                .ok_or_else(|| Error::Parse(format!("`--assign {raw}` needs GLOB=GENRE")))?;
             Ok(GenreAssignment {
                 files: vec![glob.to_string()],
                 genre: genre.to_string(),

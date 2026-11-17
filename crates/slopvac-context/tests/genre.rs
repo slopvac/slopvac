@@ -605,3 +605,65 @@ mod error_sources {
         assert!(err.to_string().starts_with("no-such-file.md: "), "{err}");
     }
 }
+
+mod display_escaping {
+    use slopvac_context::{
+        Error, GenreAssignment, GenreRegistry, GenreSpec, Pattern, PlainDocument, ResolveOptions,
+        files_match, parse_genres,
+    };
+
+    const BAD: &str = "x\u{1b}[31m\u{202e}y";
+
+    fn clean(e: &Error) {
+        let msg = e.to_string();
+        assert!(msg.contains("x\\u{1b}[31m\\u{202e}y"), "{msg}");
+        assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+    }
+
+    #[test]
+    fn an_unknown_assigned_genre_is_escaped() {
+        let reg = GenreRegistry::new(
+            parse_genres("- {schema_version: 3, id: base}\n").unwrap(),
+            "base",
+        )
+        .unwrap();
+        let assignments = [GenreAssignment {
+            files: vec!["*".to_string()],
+            genre: BAD.to_string(),
+        }];
+        let opts = ResolveOptions {
+            assignments: &assignments,
+            relative_path: None,
+        };
+        let err = reg
+            .resolve(&PlainDocument::from_markdown("a.md", "t\n"), &opts)
+            .unwrap_err();
+        assert!(matches!(err, Error::UnknownGenre(_)));
+        clean(&err);
+    }
+
+    #[test]
+    fn an_unknown_default_genre_is_escaped() {
+        let err = GenreRegistry::new(Vec::new(), BAD).err().unwrap();
+        clean(&err);
+    }
+
+    #[test]
+    fn pattern_errors_are_escaped() {
+        clean(&Pattern::new(&format!("(?#{BAD}")).unwrap_err());
+        let p = Pattern::new(&format!("(?#{BAD})^(a+)+$")).unwrap();
+        let text = format!("{}b", "a".repeat(64));
+        clean(&p.is_match(&text).unwrap_err());
+    }
+
+    #[test]
+    fn parse_errors_are_escaped() {
+        let spec = GenreSpec::from_yaml("schema_version: 3\nid: \"x\\e[31m\\u202ey\"\n").unwrap();
+        clean(&spec.validate().unwrap_err());
+    }
+
+    #[test]
+    fn glob_errors_are_escaped() {
+        clean(&files_match(&[format!("{BAD}\\")], "a.md").unwrap_err());
+    }
+}
