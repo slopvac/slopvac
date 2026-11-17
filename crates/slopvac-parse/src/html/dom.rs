@@ -11,7 +11,7 @@
 //! the tree builder drops never come back, and the queue skips their items.
 
 use std::borrow::Cow;
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::rc::Rc;
@@ -77,7 +77,7 @@ pub(super) struct Elem {
     /// The start tag. Implied elements get the token that made them.
     pub(super) start: Range<usize>,
     /// The contents of a `<template>`, as a document fragment.
-    pub(super) template: Option<usize>,
+    pub(super) template: Option<NodeId>,
     /// Whether this is a `MathML` `annotation-xml` that holds HTML.
     annotation_xml: bool,
 }
@@ -99,21 +99,27 @@ pub(super) enum Kind {
     Other,
 }
 
+/// The index of a node in the arena. Only the `dom` module creates one: `Dom::push` for every
+/// node, and `Dom::new` for the document. Nodes are never removed, so every `NodeId`
+/// indexes the arena.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct NodeId(usize);
+
 #[derive(Debug)]
 pub(super) struct Node {
     pub(super) kind: Kind,
-    pub(super) parent: Option<usize>,
-    pub(super) first: Option<usize>,
-    pub(super) last: Option<usize>,
-    pub(super) prev: Option<usize>,
-    pub(super) next: Option<usize>,
+    pub(super) parent: Option<NodeId>,
+    pub(super) first: Option<NodeId>,
+    pub(super) last: Option<NodeId>,
+    pub(super) prev: Option<NodeId>,
+    pub(super) next: Option<NodeId>,
 }
 
 /// A node of the tree, by index. The name lets the tree builder read an element's name
 /// through a reference.
 #[derive(Clone, Debug)]
 pub(super) struct Handle {
-    pub(super) id: usize,
+    pub(super) id: NodeId,
     pub(super) name: Rc<QualName>,
 }
 
@@ -217,7 +223,23 @@ pub(super) struct Dom {
     /// Whether the last element the tree builder created is an HTML element.
     pub(super) created_html: Cell<Option<bool>>,
     unnamed: Rc<QualName>,
-    pub(super) document: usize,
+    pub(super) document: NodeId,
+}
+
+#[expect(
+    clippy::indexing_slicing,
+    reason = "NodeId is only created by Dom::push and nodes are never removed"
+)]
+impl Dom {
+    /// The node `id` names, for reading.
+    pub(super) fn node(&self, id: NodeId) -> Ref<'_, Node> {
+        Ref::map(self.nodes.borrow(), |nodes| &nodes[id.0])
+    }
+
+    /// The node `id` names, for writing. Hold at most one at a time.
+    fn node_mut(&self, id: NodeId) -> RefMut<'_, Node> {
+        RefMut::map(self.nodes.borrow_mut(), |nodes| &mut nodes[id.0])
+    }
 }
 
 impl Dom {
@@ -243,7 +265,7 @@ impl Dom {
             exhausted: Cell::new(false),
             created_html: Cell::new(None),
             unnamed,
-            document: 0,
+            document: NodeId(0),
         })
     }
 
@@ -271,20 +293,15 @@ impl Dom {
         self.stats.set(stats);
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn handle(&self, id: usize) -> Handle {
-        let nodes = self.nodes.borrow();
-        let name = match &nodes[id].kind {
+    fn handle(&self, id: NodeId) -> Handle {
+        let name = match &self.node(id).kind {
             Kind::Element(e) => Rc::clone(&e.name),
             Kind::Root | Kind::Text(_) | Kind::Other => Rc::clone(&self.unnamed),
         };
         Handle { id, name }
     }
 
-    fn push(&self, kind: Kind) -> usize {
+    fn push(&self, kind: Kind) -> NodeId {
         let mut nodes = self.nodes.borrow_mut();
         nodes.push(Node {
             kind,
@@ -294,7 +311,7 @@ impl Dom {
             prev: None,
             next: None,
         });
-        nodes.len() - 1
+        NodeId(nodes.len() - 1)
     }
 
     /// Take the segments for text the tree builder inserted.
@@ -341,93 +358,82 @@ impl Dom {
         out
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn detach(&self, id: usize) {
-        let mut nodes = self.nodes.borrow_mut();
-        let (parent, prev, next) = (nodes[id].parent, nodes[id].prev, nodes[id].next);
+    fn detach(&self, id: NodeId) {
+        let (parent, prev, next) = {
+            let n = self.node(id);
+            (n.parent, n.prev, n.next)
+        };
         if let Some(p) = prev {
-            nodes[p].next = next;
+            self.node_mut(p).next = next;
         } else if let Some(par) = parent {
-            nodes[par].first = next;
+            self.node_mut(par).first = next;
         }
         if let Some(n) = next {
-            nodes[n].prev = prev;
+            self.node_mut(n).prev = prev;
         } else if let Some(par) = parent {
-            nodes[par].last = prev;
+            self.node_mut(par).last = prev;
         }
-        nodes[id].parent = None;
-        nodes[id].prev = None;
-        nodes[id].next = None;
+        let mut node = self.node_mut(id);
+        node.parent = None;
+        node.prev = None;
+        node.next = None;
     }
 
     /// Link `id` as the last child of `parent`.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn link_last(&self, parent: usize, id: usize) {
-        let mut nodes = self.nodes.borrow_mut();
-        let last = nodes[parent].last;
-        nodes[id].parent = Some(parent);
-        nodes[id].prev = last;
-        nodes[id].next = None;
-        match last {
-            Some(l) => nodes[l].next = Some(id),
-            None => nodes[parent].first = Some(id),
+    fn link_last(&self, parent: NodeId, id: NodeId) {
+        let last = self.node(parent).last;
+        {
+            let mut node = self.node_mut(id);
+            node.parent = Some(parent);
+            node.prev = last;
+            node.next = None;
         }
-        nodes[parent].last = Some(id);
+        match last {
+            Some(l) => self.node_mut(l).next = Some(id),
+            None => self.node_mut(parent).first = Some(id),
+        }
+        self.node_mut(parent).last = Some(id);
     }
 
     /// Link `id` just before `sibling`.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn link_before(&self, sibling: usize, id: usize) {
-        let mut nodes = self.nodes.borrow_mut();
-        let parent = nodes[sibling].parent;
-        let prev = nodes[sibling].prev;
-        nodes[id].parent = parent;
-        nodes[id].prev = prev;
-        nodes[id].next = Some(sibling);
-        nodes[sibling].prev = Some(id);
+    fn link_before(&self, sibling: NodeId, id: NodeId) {
+        let (parent, prev) = {
+            let n = self.node(sibling);
+            (n.parent, n.prev)
+        };
+        {
+            let mut node = self.node_mut(id);
+            node.parent = parent;
+            node.prev = prev;
+            node.next = Some(sibling);
+        }
+        self.node_mut(sibling).prev = Some(id);
         match prev {
-            Some(p) => nodes[p].next = Some(id),
+            Some(p) => self.node_mut(p).next = Some(id),
             None => {
                 if let Some(par) = parent {
-                    nodes[par].first = Some(id);
+                    self.node_mut(par).first = Some(id);
                 }
             }
         }
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
     fn add_text(&self, segs: Vec<Seg>, place: Place) {
         if segs.is_empty() {
             return;
         }
         // Text joins an adjacent text node.
-        let neighbour = {
-            let nodes = self.nodes.borrow();
-            match place {
-                Place::Last(parent) => nodes[parent].last,
-                Place::Before(sibling) => nodes[sibling].prev,
-            }
+        let neighbour = match place {
+            Place::Last(parent) => self.node(parent).last,
+            Place::Before(sibling) => self.node(sibling).prev,
         };
-        if let Some(n) = neighbour {
-            let mut nodes = self.nodes.borrow_mut();
-            if let Kind::Text(existing) = &mut nodes[n].kind {
-                for seg in segs {
-                    push_seg(existing, seg);
-                }
-                return;
+        if let Some(n) = neighbour
+            && let Kind::Text(existing) = &mut self.node_mut(n).kind
+        {
+            for seg in segs {
+                push_seg(existing, seg);
             }
+            return;
         }
         let id = self.push(Kind::Text(segs));
         match place {
@@ -438,17 +444,12 @@ impl Dom {
     }
 
     /// Children of a node, in order.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    pub(super) fn children(&self, id: usize) -> Vec<usize> {
-        let nodes = self.nodes.borrow();
+    pub(super) fn children(&self, id: NodeId) -> Vec<NodeId> {
         let mut out = Vec::new();
-        let mut at = nodes[id].first;
+        let mut at = self.node(id).first;
         while let Some(n) = at {
             out.push(n);
-            at = nodes[n].next;
+            at = self.node(n).next;
         }
         out
     }
@@ -456,8 +457,8 @@ impl Dom {
 
 #[derive(Clone, Copy)]
 enum Place {
-    Last(usize),
-    Before(usize),
+    Last(NodeId),
+    Before(NodeId),
 }
 
 /// Add a segment, joining it to the last one when they continue each other.
@@ -551,17 +552,13 @@ impl TreeSink for Sink {
         }
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
     fn append_based_on_parent_node(
         &self,
         element: &Handle,
         prev_element: &Handle,
         child: NodeOrText<Handle>,
     ) {
-        let has_parent = self.0.nodes.borrow()[element.id].parent.is_some();
+        let has_parent = self.0.node(element.id).parent.is_some();
         if has_parent {
             self.append_before_sibling(element, child);
         } else {
@@ -572,14 +569,12 @@ impl TreeSink for Sink {
     fn append_doctype_to_document(&self, _: StrTendril, _: StrTendril, _: StrTendril) {}
 
     fn get_template_contents(&self, target: &Handle) -> Handle {
-        let nodes = self.0.nodes.borrow();
         // Only a template asks for contents. For any other node, answer with the node.
-        let id = match nodes.get(target.id).map(|n| &n.kind) {
-            Some(Kind::Element(e)) => e.template,
-            _ => None,
+        let id = match &self.0.node(target.id).kind {
+            Kind::Element(e) => e.template,
+            Kind::Root | Kind::Text(_) | Kind::Other => None,
         }
         .unwrap_or(target.id);
-        drop(nodes);
         self.0.handle(id)
     }
 
@@ -623,11 +618,7 @@ impl TreeSink for Sink {
         }
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
     fn is_mathml_annotation_xml_integration_point(&self, handle: &Handle) -> bool {
-        matches!(&self.0.nodes.borrow()[handle.id].kind, Kind::Element(e) if e.annotation_xml)
+        matches!(&self.0.node(handle.id).kind, Kind::Element(e) if e.annotation_xml)
     }
 }

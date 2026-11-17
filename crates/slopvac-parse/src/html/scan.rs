@@ -295,10 +295,6 @@ impl Feeder<'_> {
     /// HTML. The tree builder only says whether the current node is foreign, so this finds the
     /// node on the stack of open elements: the open elements form a chain from the document,
     /// and the end of the chain is the current node.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
     fn enclosing_context(&self) -> Vec<Ctx> {
         if !self
             .tb
@@ -310,11 +306,10 @@ impl Feeder<'_> {
         self.tb.trace_handles(&chain);
         let handles = chain.0.into_inner();
         self.dom.charge(handles.len());
-        let nodes = self.dom.nodes.borrow();
         let mut current = None;
         let mut parent = self.dom.document;
         for handle in handles.iter().skip(1) {
-            if nodes[handle.id].parent != Some(parent) {
+            if self.dom.node(handle.id).parent != Some(parent) {
                 break;
             }
             parent = handle.id;
@@ -331,7 +326,7 @@ impl Feeder<'_> {
             return Vec::new();
         };
         let html_annotation =
-            matches!(&nodes[handle.id].kind, NodeKind::Element(e) if e.annotation_xml());
+            matches!(&self.dom.node(handle.id).kind, NodeKind::Element(e) if e.annotation_xml());
         let mut ctx = vec![Ctx::Foreign(ns)];
         if let Some(name) = integration_point(ns, &handle.name.local, html_annotation) {
             ctx.push(Ctx::Integration(ns, name));

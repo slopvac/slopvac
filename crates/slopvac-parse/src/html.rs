@@ -24,7 +24,7 @@ use slopvac_model::{SourceIndex, Span};
 
 use crate::{Block, BlockKind, Container, Document, ParseError, Projection, TokenKind};
 pub use dom::Stats;
-use dom::{Dom, Kind, PieceKind, Seg, TagKind};
+use dom::{Dom, Kind, NodeId, PieceKind, Seg, TagKind};
 
 const BOM: &str = "\u{feff}";
 
@@ -335,8 +335,8 @@ struct Table {
 }
 
 enum Step {
-    Enter(usize),
-    Exit(usize),
+    Enter(NodeId),
+    Exit(NodeId),
 }
 
 /// Walks the tree in document order.
@@ -406,31 +406,22 @@ impl<'a> Walker<'a> {
     }
 
     /// Push the children of `id` so the first comes off the stack first.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn push_children(dom: &Dom, id: usize, stack: &mut Vec<Step>) {
-        let nodes = dom.nodes.borrow();
-        let mut at = nodes[id].last;
+    fn push_children(dom: &Dom, id: NodeId, stack: &mut Vec<Step>) {
+        let mut at = dom.node(id).last;
         while let Some(child) = at {
             stack.push(Step::Enter(child));
-            at = nodes[child].prev;
+            at = dom.node(child).prev;
         }
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn enter(&mut self, dom: &Dom, id: usize, stack: &mut Vec<Step>) {
+    fn enter(&mut self, dom: &Dom, id: NodeId, stack: &mut Vec<Step>) {
         let element = {
-            let nodes = dom.nodes.borrow();
-            match &nodes[id].kind {
+            let node = dom.node(id);
+            match &node.kind {
                 Kind::Root => None,
                 Kind::Text(segs) => {
                     let segs = segs.clone();
-                    drop(nodes);
+                    drop(node);
                     for seg in &segs {
                         self.seg(seg);
                     }
@@ -482,14 +473,10 @@ impl<'a> Walker<'a> {
         Self::push_children(dom, id, stack);
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn exit(&mut self, dom: &Dom, id: usize) {
+    fn exit(&mut self, dom: &Dom, id: NodeId) {
         let name = {
-            let nodes = dom.nodes.borrow();
-            let Kind::Element(e) = &nodes[id].kind else {
+            let node = dom.node(id);
+            let Kind::Element(e) = &node.kind else {
                 return;
             };
             Rc::clone(&e.name)
@@ -570,20 +557,15 @@ impl<'a> Walker<'a> {
     /// that tag. The tree does not say, so this finds the end tag that follows the
     /// element's content. Only end tags and white space may sit between them. When there
     /// is none, the element ended by implication at the end of its content.
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
-    )]
-    fn extent(&self, dom: &Dom, id: usize, start: &std::ops::Range<usize>) -> (usize, usize) {
+    fn extent(&self, dom: &Dom, id: NodeId, start: &std::ops::Range<usize>) -> (usize, usize) {
         let mut content = start.end;
         {
-            let nodes = dom.nodes.borrow();
             let mut stack = vec![id];
             while let Some(at) = stack.pop() {
-                let mut child = nodes[at].first;
+                let mut child = dom.node(at).first;
                 while let Some(c) = child {
                     dom.charge(1);
-                    match &nodes[c].kind {
+                    match &dom.node(c).kind {
                         Kind::Text(segs) => {
                             for seg in segs {
                                 content = content.max(seg.src.end);
@@ -595,11 +577,12 @@ impl<'a> Walker<'a> {
                         }
                         Kind::Root | Kind::Other => {}
                     }
-                    child = nodes[c].next;
+                    child = dom.node(c).next;
                 }
             }
         }
-        let Kind::Element(e) = &dom.nodes.borrow()[id].kind else {
+        let node = dom.node(id);
+        let Kind::Element(e) = &node.kind else {
             return (content, content);
         };
         let local: &str = &e.name.local;
