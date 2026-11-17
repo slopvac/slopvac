@@ -189,6 +189,23 @@ mod tests {
         assert_eq!(next.recorded_version(), Some(semver::Version::new(3, 2, 0)));
     }
 
+    // A crashed updater leaves its lock file behind, but the operating system drops its lock.
+    #[test]
+    fn a_stale_lock_file_from_a_dead_updater_does_not_block() {
+        let (dir, exe) = installed();
+        std::fs::write(dir.path().join("slopvac.update.lock"), b"3.9.0\n0 0").unwrap();
+        let mut lock = UpdateLock::acquire(&exe, Duration::ZERO).expect("stale file is not held");
+        assert_eq!(lock.recorded_version(), None, "its stamp no longer matches");
+    }
+
+    #[test]
+    fn a_garbled_lock_file_reads_as_no_record() {
+        let (dir, exe) = installed();
+        std::fs::write(dir.path().join("slopvac.update.lock"), b"\xff\xfe junk").unwrap();
+        let mut lock = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
+        assert_eq!(lock.recorded_version(), None);
+    }
+
     #[test]
     fn a_record_for_a_replaced_binary_is_ignored() {
         let (_dir, exe) = installed();
