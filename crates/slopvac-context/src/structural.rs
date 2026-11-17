@@ -225,6 +225,8 @@ impl StructuralTagger {
         }
         let blocks = doc.blocks();
         let mut out = Vec::new();
+        let mut bounds = None;
+        let mut emitted: Vec<bool> = Vec::new();
         for (i, b) in blocks.iter().enumerate() {
             if !self.block_ok(b)? {
                 continue;
@@ -249,11 +251,45 @@ impl StructuralTagger {
                     out.extend(hits.into_iter().map(|s| self.tag_for(s, "sentence")));
                 }
                 Scope::Paragraph => out.push(self.tag_for(b.span.clone(), "block")),
-                Scope::Section => out.push(self.tag_for(section_span(&blocks, i), "section")),
+                Scope::Section => {
+                    let (spans, owner_of) = bounds.get_or_insert_with(|| {
+                        let (spans, owner_of) = sections(&blocks);
+                        emitted = vec![false; spans.len()];
+                        (spans, owner_of)
+                    });
+                    if let Some(&id) = owner_of.get(i)
+                        && let Some(done) = emitted.get_mut(id)
+                        && !std::mem::replace(done, true)
+                        && let Some(span) = spans.get(id)
+                    {
+                        out.push(self.tag_for(span.clone(), "section"));
+                    }
+                }
                 Scope::Document => return Ok(vec![self.tag_for(whole, "document")]),
             }
         }
         Ok(out)
+    }
+}
+
+/// Count of blocks the section bounds routine has examined on this thread.
+#[doc(hidden)]
+pub mod work {
+    use std::cell::Cell;
+
+    thread_local! {
+        static STEPS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn step(n: usize) {
+        STEPS.with(|c| c.set(c.get() + n));
+    }
+
+    /// Blocks examined by section bounds since the last call, for tests that bound the work.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn take_section_steps() -> usize {
+        STEPS.with(|c| c.replace(0))
     }
 }
 
@@ -262,23 +298,72 @@ fn level(b: &BlockView<'_>) -> u8 {
         .unwrap_or_else(|| u8::try_from(b.heading_path.len()).unwrap_or(u8::MAX))
 }
 
-/// The section of block `i`: from its nearest heading up to the next heading of the same
+/// The section of every block: from its nearest heading up to the next heading of the same
 /// or a shallower level. Text before the first heading forms a section of its own.
-fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
-    let owner = (0..=i)
-        .rev()
-        .find(|&j| blocks[j].kind == BlockKind::Heading);
-    let (first, own_level) = match owner {
-        Some(j) => (j, level(&blocks[j])),
-        None => (0, 0),
-    };
-    let last = (i + 1..blocks.len())
-        .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
-        .map_or(blocks.len() - 1, |k| k - 1);
-    // Blocks that read out of source order (the cells of a wrapped table) can end after
-    // the last block does, so the section runs to the furthest end among its blocks.
-    let members = &blocks[first..=last];
-    let start = members.iter().map(|b| b.span.start).min().unwrap_or(0);
-    let end = members.iter().map(|b| b.span.end).max().unwrap_or(0);
-    start..end
+///
+/// Returns the distinct section spans and, for each block, the index of its section. A
+/// section's span runs to the furthest end among its blocks, because blocks that read out of
+/// source order (the cells of a wrapped table) can end after the last block does. One pass
+/// with a stack of open sections: a block lands in the innermost one, and a closing section
+/// folds its extent into the one that encloses it.
+fn sections(blocks: &[BlockView<'_>]) -> (Vec<Range<usize>>, Vec<usize>) {
+    struct Open {
+        /// Effective level: the next heading at this level or shallower closes it.
+        level: u8,
+        id: usize,
+        extent: Option<Range<usize>>,
+    }
+    fn widen(extent: &mut Option<Range<usize>>, with: &Range<usize>) {
+        *extent = Some(match extent.take() {
+            Some(e) => e.start.min(with.start)..e.end.max(with.end),
+            None => with.clone(),
+        });
+    }
+    // Close the innermost section: record its span and fold it into the enclosing one.
+    fn close(open: &mut Vec<Open>, spans: &mut [Range<usize>]) {
+        let Some(done) = open.pop() else { return };
+        let Some(extent) = done.extent else { return };
+        if let Some(slot) = spans.get_mut(done.id) {
+            slot.clone_from(&extent);
+        }
+        if let Some(parent) = open.last_mut() {
+            widen(&mut parent.extent, &extent);
+        }
+    }
+    // Section 0 is the text before the first heading.
+    let mut spans: Vec<Range<usize>> = Vec::new();
+    spans.push(0..0);
+    let mut owner_of = Vec::with_capacity(blocks.len());
+    // The text before the first heading closes at the first heading of level 1 or less.
+    let mut open = vec![Open {
+        level: 1,
+        id: 0,
+        extent: None,
+    }];
+    for b in blocks {
+        work::step(1);
+        if b.kind == BlockKind::Heading {
+            let l = level(b);
+            while open.last().is_some_and(|top| top.level >= l) {
+                close(&mut open, &mut spans);
+            }
+            open.push(Open {
+                level: l.max(1),
+                id: spans.len(),
+                extent: None,
+            });
+            spans.push(0..0);
+        }
+        // `open` is never empty here: a heading was just pushed, and a non-heading finds
+        // the section it was pushed to, or the prelude, which only a heading closes.
+        if let Some(top) = open.last_mut() {
+            widen(&mut top.extent, &b.span);
+            owner_of.push(top.id);
+        }
+    }
+    // Sections still open at the end of the document close there.
+    while !open.is_empty() {
+        close(&mut open, &mut spans);
+    }
+    (spans, owner_of)
 }

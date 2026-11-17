@@ -2497,6 +2497,7 @@ dependencies = [
  "globset",
  "ignore",
  "jsonschema",
+ "rstest",
  "serde",
  "serde-saphyr",
  "serde_json",
