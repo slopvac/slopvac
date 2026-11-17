@@ -8,7 +8,8 @@ Every output comes from one snapshot of its source, so the crate cannot drift fr
 
 - `data/renames.toml`: one entry per 2.x rule and category. The 2.x name comes from
   the 2.x rule YAML, the 3.0 id from the rule converter (docs/contract/rules.md,
-  `scripts/contract/convert_rules_v2_to_v3.py`), qualified by the `core` pack.
+  `scripts/contract/convert_rules_v2_to_v3.py`), qualified by the `core` pack. The
+  `[removed]` list comes from `docs/contract/compat/removed-rules.toml`.
 - `data/legacy/legacy-<profile>.toml`: the `core:legacy-<profile>` styles, copied
   verbatim from `docs/contract/compat/profiles/` (docs/contract/profiles.md).
 - `data/legacy/catalogue.toml`: each 2.x rule's kind and tier per profile, from the
@@ -29,12 +30,14 @@ import argparse
 import importlib.util
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 CRATE = Path(__file__).resolve().parents[2]
 ROOT = CRATE.parents[1]
 CONTRACT_TESTS = ROOT / "tests" / "contract"
 PROFILES_DIR = ROOT / "docs" / "contract" / "compat" / "profiles"
+REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 PACK = "core"
 GENERATOR = "crates/slopvac-migrate/tests/fixtures/generate.py"
 
@@ -47,14 +50,11 @@ PROFILES = reference.mapping.PROFILES
 # The rule id of the finding 2.x reports for a malformed directive (suppression.py).
 ENGINE_RULE = "meta.invalid-suppression"
 
-# 2.x rules that 3.0 removes (user decision). They have no 3.0 id: `migrate` drops
-# every reference to them. This list is explicit because no contract file owns it.
-REMOVED_RULES = (
-    "ste-practices.inconsistent-wording-for-same-step",
-    "ste-safety.safety-block-missing-consequence",
-    "ste-sentences.vertical-list-item-punctuation",
-    "ste-sentences.vertical-list-lead-in-missing-colon",
-    "ste-words.inconsistent-term-for-same-thing",
+# 2.x rules that 3.0 removes. They have no 3.0 id: `migrate` drops every reference to
+# them. The contract file owns the list.
+REMOVED_RULES = tuple(
+    entry["id"]
+    for entry in tomllib.loads(REMOVED_RULES_FILE.read_text(encoding="utf-8"))["rules"]
 )
 
 # Scenarios the crate adds to the contract's: each pins one expansion step.
@@ -173,7 +173,9 @@ def renames() -> tuple[dict[str, str], dict[str, str]]:
         rules.setdefault(rule.qualified_id, f"{PACK}:{rule.qualified_id}")
     rules.setdefault(ENGINE_RULE, f"{PACK}:{ENGINE_RULE}")
     for profile in PROFILES:
-        for name in reference.style_layer(profile)["categories"]:
+        # The profile tables, not the styles: the styles leave out the categories that
+        # have no rule, but a 2.x config can still name them.
+        for name in reference.mapping.engine_states(profile)[1].categories:
             categories.setdefault(name, f"{PACK}:{name}")
     for name in REMOVED_RULES:
         if rules.pop(name, None) is None:
@@ -338,9 +340,7 @@ def vectors_json(ruleset, rules: dict[str, str], categories: dict[str, str]) -> 
 
 def outputs() -> dict[str, str]:
     """Each generated file, keyed by its path relative to the crate."""
-    from slopvac.rules import load_ruleset
-
-    ruleset = load_ruleset()
+    ruleset = reference.mapping.engine_states("normal")[0]
     rules, categories = renames()
     files = {
         "data/renames.toml": renames_toml(rules, categories),
