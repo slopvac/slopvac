@@ -4,12 +4,13 @@ Run from the repository root:
 
     mise exec -- uv run --extra dev python crates/slopvac-engine/tests/fixtures/generate_fix.py [--check]
 
-For each document it runs the 2.x native engine over the same rule scope as
-``generate.py`` and then ``diff_scope.apply_replacements`` on a real file, the code that
+For each document it runs the 2.x native engine over the lexical and metric rules that the
+Rust engine runs, and then ``diff_scope.apply_replacements`` on a real file, the code that
 ``slopvac lint --fix`` runs. The fixture stores the text before and after. The Rust tests
-never take an expected value from Rust code. Documents come from ``engine-parity.json``
-(only those 2.x changes) and the ``SAMPLES`` below, which cover case, CRLF, links, code,
-front matter, wrapped matches and directives.
+never take an expected value from Rust code. Documents are the ones already in
+``fix-parity.json`` and the ``SAMPLES`` below, which cover case, CRLF, links, code,
+front matter, wrapped matches and directives. The golden suite records no ``--fix`` output,
+so this fixture stays the reference for fixes.
 
 ``--check`` recomputes the stored texts and fails when the expectations differ.
 """
@@ -22,13 +23,55 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from generate import FIXTURE as PARITY
-from generate import HERE, in_scope, load, to_2x
 from slopvac.analyze import parse
+from slopvac.config import Config, resolve_for
 from slopvac.diff_scope import apply_replacements
 from slopvac.engine import Engine
+from slopvac.model import RuleKind
+from slopvac.rules import load_ruleset
 
+HERE = Path(__file__).resolve().parent
 FIXTURE = HERE / "fix-parity.json"
+
+LEXICAL = {RuleKind.TOKENS, RuleKind.PATTERN, RuleKind.SUBSTITUTION}
+
+# The metrics the Rust engine measures.
+METRICS = {
+    "sentence_words",
+    "clause_boundaries",
+    "lead_in_words",
+    "paragraph_sentences",
+    "enumerating_paragraph_words",
+    "multiword_noun_words",
+    "coordinated_items",
+    "adjectives_per_noun",
+    "consecutive_bold_colon_bullets",
+    "bold_spans_per_1000_words",
+    "dash_per_1000_words",
+}
+
+
+def runs_in_rust(rule) -> bool:
+    return rule.kind in LEXICAL or (
+        rule.kind is RuleKind.METRIC and rule.metric in METRICS
+    )
+
+
+def load():
+    rules = load_ruleset()
+    config = resolve_for(Config(), Path("fixture.md"))
+    return rules, config
+
+
+def in_scope(rules, config):
+    engine = Engine(rules.rules, config)
+    return [r for r in engine.rules if runs_in_rust(r)], engine
+
+
+def to_2x(text: str) -> str:
+    """The 3.0 directive form to the 2.x form: ``rule=core:cat.id`` to ``rule=cat.id``."""
+    return text.replace("rule=core:", "rule=")
+
 
 SAMPLES = {
     "fix/case": "We Utilize the tool. UTILIZE it now. We utilize it too.\n",
@@ -64,12 +107,16 @@ def fixed(rules, config, text: str) -> str:
 
 
 def documents() -> list[tuple[str, str]]:
-    stored = json.loads(PARITY.read_text(encoding="utf-8"))
+    stored = json.loads(FIXTURE.read_text(encoding="utf-8"))
     docs = [(d["name"], d["text"]) for d in stored["documents"]]
     # A document with 3.0 directive text would need the 2.x spelling, which does not map
     # back to the same text, so the fix corpus leaves those to the parity fixture.
     docs = [(n, t) for n, t in docs if to_2x(t) == t]
-    return docs + list(SAMPLES.items())
+    # Merge by name: the stored fixture already holds the samples, and a sample's text in
+    # this file wins over the stored one.
+    merged = dict(docs)
+    merged.update(SAMPLES)
+    return list(merged.items())
 
 
 def render(rules, config, docs: list[tuple[str, str]], keep_all: bool) -> str:

@@ -302,7 +302,11 @@ def github_token(allow_gh_cli: bool = False) -> str | None:
         return token
     try:
         out = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, timeout=20, check=False
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -329,7 +333,12 @@ def http_get(url: str, token: str | None = None, retries: int = 4) -> bytes:
                 time.sleep(min(60, 5 * 2**attempt))
                 continue
             break
-        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError) as exc:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            http.client.HTTPException,
+            ConnectionError,
+        ) as exc:
             last = exc
             time.sleep(2**attempt)
     hint = ""
@@ -401,7 +410,9 @@ def _cached_get(
         pass
     body = getter(url, token)
     raw_cache.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=raw_cache, prefix=key[:12] + ".", suffix=".tmp", delete=False) as handle:
+    with tempfile.NamedTemporaryFile(
+        dir=raw_cache, prefix=key[:12] + ".", suffix=".tmp", delete=False
+    ) as handle:
         handle.write(body)
         tmp = Path(handle.name)
     os.replace(tmp, path)

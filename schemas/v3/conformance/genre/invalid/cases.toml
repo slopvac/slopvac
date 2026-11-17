@@ -4,3 +4,6 @@
 "signal-unknown-kind.toml" = "/detect/signals/0/kind"
 "detect-no-signals.toml" = "/detect/signals"
 "weight-zero.toml" = "/detect/signals/0/weight"
+"contexts-bad-tag.toml" = "/contexts/0"
+"contexts-duplicate.toml" = "/contexts"
+"contexts-not-array.toml" = "/contexts"

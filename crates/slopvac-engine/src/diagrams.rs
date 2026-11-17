@@ -26,6 +26,8 @@ pub struct DiagramRule {
 /// One diagram handed to a checker.
 #[derive(Debug, Clone, Copy)]
 pub struct DiagramInput<'a> {
+    /// The format the diagram is written in.
+    pub format: slopvac_diagrams::Format,
     /// The whole host file. Fragment spans address it.
     pub source: &'a str,
     /// What `slopvac-diagrams` extracted.
@@ -111,7 +113,7 @@ impl DiagramChecker for SignalChecker {
 
     fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit> {
         let fragments = &input.extraction.fragments;
-        let mut found = slopvac_diagrams::check_labels(input.source, fragments);
+        let mut found = slopvac_diagrams::check_labels(input.source, fragments, input.format);
         found.extend(slopvac_diagrams::check_prose(
             input.source,
             fragments,

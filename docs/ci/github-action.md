@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: srobroek/slopvac@v3
+      - uses: slopvac/slopvac@v3
         with:
           paths: README.md docs/
           changed-files-only: true
@@ -52,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: slopvac
-        uses: srobroek/slopvac@v3
+        uses: slopvac/slopvac@v3
         with:
           reporter: none
           sarif: false
