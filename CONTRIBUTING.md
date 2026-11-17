@@ -76,8 +76,11 @@ These tests check that each lexical rule's `bad` example matches its pattern. A 
 ## Stable releases and release candidates
 
 Merge the release PR. Then run `just release X.Y.Z` to start publishing from
-the matching `vX.Y.Z` tag. The workflow waits for approval in the `pypi`
-environment before it publishes to PyPI.
+the matching `vX.Y.Z` tag. For 3.0.0 and later, the recipe starts
+`publish-pypi.yml`, which publishes the binary wheels once a passed candidate
+has tested the same tree. Earlier versions start `publish-lint.yml`. Either
+workflow waits for approval in the `pypi` environment before it publishes to
+PyPI.
 
 Release candidates build from each update to the release PR branch. They also
 wait for `pypi` approval. They get no tag or changelog entry.

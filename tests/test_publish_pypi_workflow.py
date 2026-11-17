@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_expr import run_jobs
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish-pypi.yml"
 SCRIPT = ROOT / "scripts" / "release_provenance.py"
@@ -127,67 +129,87 @@ def test_the_upload_job_does_not_skip_existing_versions():
     assert "skip-existing" not in str(JOBS["publish"])
 
 
-def publish_condition(
-    *, stable: bool, active: bool = True, publish: bool = True, **results: str
-) -> bool:
-    """Evaluate the publish job's ``if`` the way Actions reads it.
+def validate_outputs(tag: str, publish: bool) -> dict[str, str]:
+    """The outputs the real ``validate`` job emits for ``tag``."""
+    release = provenance.parse_release_tag(tag)
 
-    ``results`` maps a needed job to its result; omitted jobs count as skipped.
-    """
-    expr = JOBS["publish"]["if"].strip()
-    assert expr.startswith("${{") and expr.endswith("}}")
-    outputs = {"publish": publish, "active": active, "stable": stable}
-    py = expr[3:-2].replace("!cancelled()", "True")
-    py = py.replace("&&", " and ").replace("||", " or ")
-    py = re.sub(
-        r"needs\.validate\.outputs\.(\w+) (==|!=) 'true'",
-        lambda m: str(outputs[m[1]] == (m[2] == "==")),
-        py,
-    )
-    py = re.sub(
-        r"needs\.(\w+)\.result == 'success'",
-        lambda m: str(results.get(m[1], "skipped") == "success"),
-        py,
-    )
-    assert re.fullmatch(r"[\sA-Za-z()]*", py), py
-    return bool(eval(py, {"__builtins__": {}}))  # noqa: S307 - fixed, checked above
+    def flag(value: bool) -> str:
+        return "true" if value else "false"
+
+    return {
+        "cargo-version": release.cargo_version,
+        "pypi-version": release.pypi_version,
+        "stable": flag(release.stable),
+        "active": flag(release.active),
+        "publish": flag(publish),
+    }
 
 
-BUILDS = {"evals": "success", "wheels": "success"}
-CANDIDATE_JOBS = {"archives": "success", "sign": "success", **BUILDS}
+def jobs_that_run(tag: str, publish: bool, fail: frozenset[str] = frozenset()):
+    return run_jobs(JOBS, {}, {"validate": validate_outputs(tag, publish)}, fail=fail)
 
 
-def test_a_stable_tag_publishes_with_provenance_and_without_candidate_assets():
-    # Stable archives and signatures come from release.yml, so they stay skipped here.
-    assert publish_condition(stable=True, provenance="success", **BUILDS)
+CANDIDATE = "rc/v3.0.0-rc.2"
+STABLE = "v3.0.0"
+LEGACY = "v2.19.0"
+CANDIDATE_ALL = {
+    "validate", "evals", "wheels", "archives", "sign", "publish", "prerelease",
+}  # fmt: skip
+STABLE_ALL = {"validate", "evals", "wheels", "provenance", "publish"}
 
 
-@pytest.mark.parametrize("result", ["failure", "skipped", "cancelled"])
-def test_a_stable_tag_without_a_passed_provenance_gate_never_publishes(result):
-    assert not publish_condition(stable=True, provenance=result, **BUILDS)
+@pytest.mark.parametrize(
+    ("tag", "publish", "expected"),
+    [
+        (CANDIDATE, True, CANDIDATE_ALL),
+        (CANDIDATE, False, {"validate", "evals", "wheels", "archives"}),
+        (STABLE, True, STABLE_ALL),
+        (STABLE, False, {"validate", "evals", "wheels"}),
+        (LEGACY, True, {"validate"}),
+        (LEGACY, False, {"validate"}),
+    ],
+    ids=[
+        "candidate-publish",
+        "candidate-dry-run",
+        "stable-publish",
+        "stable-dry-run",
+        "legacy-push",
+        "legacy-dry-run",
+    ],
+)
+def test_each_tag_kind_runs_exactly_its_jobs(tag, publish, expected):
+    assert jobs_that_run(tag, publish) == expected
 
 
-def test_a_candidate_publishes_only_when_built_signed_and_archived():
-    assert publish_condition(stable=False, **CANDIDATE_JOBS)
-    for broken in CANDIDATE_JOBS:
-        assert not publish_condition(
-            stable=False, **{**CANDIDATE_JOBS, broken: "failure"}
-        )
+@pytest.mark.parametrize(
+    ("tag", "failing"),
+    [
+        (CANDIDATE, "evals"),
+        (CANDIDATE, "wheels"),
+        (CANDIDATE, "archives"),
+        (CANDIDATE, "sign"),
+        (STABLE, "evals"),
+        (STABLE, "wheels"),
+        (STABLE, "provenance"),
+    ],
+)
+def test_a_failed_gate_or_build_stops_the_pypi_upload(tag, failing):
+    assert "publish" not in jobs_that_run(tag, True, frozenset({failing}))
 
 
-@pytest.mark.parametrize("stable", [True, False])
-@pytest.mark.parametrize("flags", [{"publish": False}, {"active": False}])
-def test_a_dry_run_or_an_unhandled_tag_never_publishes(stable, flags):
-    everything = {"provenance": "success", **CANDIDATE_JOBS}
-    assert not publish_condition(stable=stable, **flags, **everything)
+def test_the_prerelease_waits_for_a_successful_upload():
+    assert "prerelease" not in jobs_that_run(CANDIDATE, True, frozenset({"publish"}))
+
+
+def test_a_tag_without_the_active_output_runs_nothing_but_validation():
+    outputs = {"validate": {**validate_outputs(STABLE, True), "active": ""}}
+    assert run_jobs(JOBS, {}, outputs) == {"validate"}
 
 
 def test_the_stable_provenance_job_reuses_the_shared_gate():
     job = JOBS["provenance"]
     assert job["uses"] == "./.github/workflows/release-provenance.yml"
     assert job["needs"] == "validate"
-    for needed in ("publish == 'true'", "active == 'true'", "stable == 'true'"):
-        assert needed in job["if"]
 
 
 def test_a_stable_upload_first_rechecks_that_the_tag_still_points_at_the_commit():
@@ -480,63 +502,26 @@ def test_the_ancestry_guard_accepts_only_main_and_the_release_please_main_branch
         assert "not on main" in done.stderr
 
 
-def make_wheels(directory: Path, names: list[str]) -> None:
-    directory.mkdir()
-    for name in names:
-        (directory / name).write_text("")
+def test_the_wheel_check_binds_the_upload_to_the_version_and_the_target_count():
+    check = step("publish", "Check the wheel versions")
+    assert check["env"]["EXPECTED"] == "${{ needs.validate.outputs.pypi-version }}"
+    assert check["run"] == (
+        "python3 scripts/release_provenance.py check-dist dist "
+        '--version "$EXPECTED" --wheels "$WHEEL_COUNT"'
+    )
+    targets = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
+    )["jobs"]["build"]["strategy"]["matrix"]["include"]
+    assert int(check["env"]["WHEEL_COUNT"]) == len(targets)
 
 
-WHEEL_STEP = "Check the wheel versions"
-TARGET_TAGS = [
-    "macosx_11_0_arm64",
-    "macosx_10_12_x86_64",
-    "manylinux_2_17_x86_64",
-    "manylinux_2_17_aarch64",
-    "musllinux_1_2_x86_64",
-]
-
-
-def wheel_names(version: str) -> list[str]:
-    return [f"slopvac-{version}-py3-none-{t}.whl" for t in TARGET_TAGS]
-
-
-def run_wheel_guard(tmp_path: Path, names: list[str] | None, expected="3.0.0rc2"):
-    if names is not None:
-        make_wheels(tmp_path / "dist", names)
-    return run_step("publish", WHEEL_STEP, tmp_path, {"EXPECTED": expected})
-
-
-def test_the_wheel_guard_accepts_a_full_set_of_the_expected_version(tmp_path):
-    done = run_wheel_guard(tmp_path, wheel_names("3.0.0rc2"))
-    assert done.returncode == 0, done.stderr
-
-
-@pytest.mark.parametrize(
-    "names",
-    [
-        wheel_names("3.0.0rc1"),
-        wheel_names("3.0.0rc20"),
-        wheel_names("3.0.0"),
-        wheel_names("3.0.0rc2")[:-1] + wheel_names("2.18.1")[:1],
-    ],
-    ids=["older-rc", "longer-rc", "stable", "one-stray"],
-)
-def test_the_wheel_guard_rejects_a_wheel_of_another_version(tmp_path, names):
-    done = run_wheel_guard(tmp_path, names)
-    assert done.returncode == 1
-    assert "unexpected wheel" in done.stderr
-
-
-def test_the_wheel_guard_rejects_an_empty_directory(tmp_path):
-    done = run_wheel_guard(tmp_path, [])
-    assert done.returncode == 1
-    assert "no wheels downloaded" in done.stderr
-
-
-def test_the_wheel_guard_rejects_a_missing_directory(tmp_path):
-    done = run_wheel_guard(tmp_path, None)
-    assert done.returncode == 1
-    assert "no wheels downloaded" in done.stderr
+def test_the_wheels_are_checked_after_the_download_and_before_the_upload():
+    names = [s.get("name") for s in JOBS["publish"]["steps"]]
+    assert (
+        names.index("Download wheels")
+        < names.index("Check the wheel versions")
+        < names.index("Publish")
+    )
 
 
 # --- minisign signing of the candidate assets -----------------------------------

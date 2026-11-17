@@ -19,6 +19,11 @@ Subcommands:
   is-legacy VERSION
       print true when VERSION is below major 3, the only versions the
       publish-lint.yml workflow may publish
+  check-dist DIR --version VERSION [--project NAME] [--sdist] [--wheels N]
+      exit 0 when DIR holds exactly the files an upload of NAME VERSION may
+      carry: no extras, each file named for NAME and VERSION, and the project
+      name and version inside each file's own metadata equal to them. Run it in
+      an upload job, after the download and before the upload
   check-draft TAG --repo OWNER/NAME [--app-slug SLUG]
       exit 0 when the release for TAG is unpublished and was created by
       github-actions[bot] or SLUG[bot] (release-please); read-only
@@ -31,12 +36,16 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import email.parser
 import json
 import re
 import subprocess
 import sys
+import tarfile
+import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 # SemVer forbids leading zeros in every numeric field, and \d would also accept
 # non-ASCII digits, so each field is spelled out.
@@ -125,6 +134,112 @@ def route_tag(tag: str) -> bool:
     if match is None:
         raise ValueError(f"not a stable tag (expected vX.Y.Z): {tag}")
     return requires_gate(match["base"])
+
+
+PROJECT = "slopvac"
+MAX_METADATA_BYTES = 1 << 20
+_DIST_INFO_METADATA = re.compile(r"[^/]+\.dist-info/METADATA")
+_WHEEL_TAGS = r"[A-Za-z0-9_.]+-[A-Za-z0-9_.]+-[A-Za-z0-9_.]+"
+
+
+def _normalise(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _metadata_problems(text: bytes, what: str, project: str, version: str) -> list[str]:
+    fields = email.parser.BytesParser().parsebytes(text, headersonly=True)
+    problems = []
+    if _normalise(fields.get("Name", "")) != _normalise(project):
+        problems.append(f"{what}: project is {fields.get('Name')!r}, not {project!r}")
+    if fields.get("Version") != version:
+        problems.append(
+            f"{what}: version is {fields.get('Version')!r}, not {version!r}"
+        )
+    return problems
+
+
+def _read_capped(member) -> bytes:
+    if member is None:
+        raise ValueError("metadata is not a file")
+    with member:
+        data = member.read(MAX_METADATA_BYTES + 1)
+    if len(data) > MAX_METADATA_BYTES:
+        raise ValueError(f"metadata is larger than {MAX_METADATA_BYTES} bytes")
+    return data
+
+
+def _wheel_problems(path: Path, project: str, version: str) -> list[str]:
+    try:
+        with zipfile.ZipFile(path) as wheel:
+            found = [n for n in wheel.namelist() if _DIST_INFO_METADATA.fullmatch(n)]
+            if len(found) != 1:
+                return [
+                    f"{path.name}: expected one dist-info/METADATA, found {len(found)}"
+                ]
+            data = _read_capped(wheel.open(found[0]))
+    except (zipfile.BadZipFile, ValueError, OSError) as err:
+        return [f"{path.name}: unreadable wheel: {err}"]
+    return _metadata_problems(data, path.name, project, version)
+
+
+def _sdist_problems(path: Path, project: str, version: str) -> list[str]:
+    try:
+        with tarfile.open(path, "r:gz") as sdist:
+            data = _read_capped(sdist.extractfile(f"{project}-{version}/PKG-INFO"))
+    except (tarfile.TarError, KeyError, ValueError, OSError) as err:
+        return [f"{path.name}: unreadable sdist: {err}"]
+    return _metadata_problems(data, path.name, project, version)
+
+
+def check_dist(
+    directory: Path,
+    version: str,
+    *,
+    project: str = PROJECT,
+    sdist: bool = False,
+    wheels: int | None = None,
+) -> None:
+    """Fail unless ``directory`` holds exactly the files an upload may carry.
+
+    File names alone prove nothing, since a build backend can write any file next
+    to the expected ones. Each file's own metadata must name ``project`` and
+    ``version``. Expect one sdist when ``sdist`` is set and none otherwise, and
+    ``wheels`` wheels (at least one when ``wheels`` is None).
+    """
+    if not (_STABLE_VERSION.fullmatch(version) or _PRE_VERSION.fullmatch(version)):
+        raise ValueError(f"not a version: {version}")
+    if not directory.is_dir():
+        raise ValueError(f"no distribution directory: {directory}")
+    wheel_name = re.compile(
+        rf"{re.escape(project)}-{re.escape(version)}-{_WHEEL_TAGS}\.whl"
+    )
+    sdist_name = f"{project}-{version}.tar.gz"
+    problems: list[str] = []
+    wheel_files: list[Path] = []
+    sdist_files: list[Path] = []
+    for entry in sorted(directory.iterdir()):
+        if entry.is_symlink() or not entry.is_file():
+            problems.append(f"{entry.name}: not a regular file")
+        elif wheel_name.fullmatch(entry.name):
+            wheel_files.append(entry)
+        elif entry.name == sdist_name:
+            sdist_files.append(entry)
+        else:
+            problems.append(f"{entry.name}: unexpected file for {project} {version}")
+    if sdist != bool(sdist_files):
+        problems.append(
+            f"expected {'one sdist' if sdist else 'no sdist'}, found {len(sdist_files)}"
+        )
+    if wheels is None and not wheel_files:
+        problems.append("no wheels found")
+    if wheels is not None and len(wheel_files) != wheels:
+        problems.append(f"expected {wheels} wheels, found {len(wheel_files)}")
+    for path in wheel_files:
+        problems += _wheel_problems(path, project, version)
+    for path in sdist_files:
+        problems += _sdist_problems(path, project, version)
+    if problems:
+        raise ValueError("; ".join(problems))
 
 
 def run_command(argv: Sequence[str]) -> str:
@@ -278,6 +393,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify.add_argument("sha")
     legacy = sub.add_parser("is-legacy")
     legacy.add_argument("version")
+    dist = sub.add_parser("check-dist")
+    dist.add_argument("directory", type=Path)
+    dist.add_argument("--version", required=True)
+    dist.add_argument("--project", default=PROJECT)
+    dist.add_argument("--sdist", action="store_true")
+    dist.add_argument("--wheels", type=int, default=None)
     draft = sub.add_parser("check-draft")
     draft.add_argument("tag")
     draft.add_argument("--repo", required=True, help="owner/name")
@@ -296,6 +417,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"candidate={check_stable(args.tag, args.repo, args.sha)}")
         elif args.command == "verify-tag":
             verify_tag(args.tag, args.sha)
+        elif args.command == "check-dist":
+            check_dist(
+                args.directory,
+                args.version,
+                project=args.project,
+                sdist=args.sdist,
+                wheels=args.wheels,
+            )
         elif args.command == "check-draft":
             check_draft(args.tag, args.repo, args.app_slug)
         elif args.command == "route-tag":

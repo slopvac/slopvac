@@ -339,17 +339,14 @@ jobs:
           merge-multiple: true
           path: dist
 
+      # The wheels came from build jobs, so the upload trusts no file name. The
+      # directory must hold exactly one wheel per build target, and each wheel's own
+      # metadata must name slopvac and this version.
       - name: Check the wheel versions
         env:
           EXPECTED: ${{ needs.validate.outputs.pypi-version }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          wheels=(dist/*.whl)
-          [[ ${#wheels[@]} -gt 0 ]] || { echo "no wheels downloaded" >&2; exit 1; }
-          for wheel in "${wheels[@]}"; do
-            [[ "$(basename "$wheel")" == slopvac-"$EXPECTED"-* ]] || { echo "unexpected wheel: $wheel" >&2; exit 1; }
-          done
+          WHEEL_COUNT: "5" # one per target in wheels.yml
+        run: python3 scripts/release_provenance.py check-dist dist --version "$EXPECTED" --wheels "$WHEEL_COUNT"
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
