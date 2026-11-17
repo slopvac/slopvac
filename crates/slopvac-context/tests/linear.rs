@@ -9,7 +9,7 @@ use rstest::rstest;
 
 use slopvac_context::{
     BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger,
-    SentenceView, Tagger, TaggerSpec, work,
+    SentenceView, Tagger, TaggerSpec, take_section_steps, take_text_steps,
 };
 
 /// A document that counts the calls a tagger makes on it.
@@ -108,9 +108,9 @@ fn finding_section_bounds_examines_each_block_once(
     #[case] blocks: usize,
 ) {
     let doc = Counting::new(&many_sections(sections, paragraphs));
-    let _ = work::take_section_steps();
+    let _ = take_section_steps();
     section_tagger().tag(&doc).unwrap();
-    assert_eq!(work::take_section_steps(), blocks);
+    assert_eq!(take_section_steps(), blocks);
     assert_eq!(doc.blocks_calls.get(), 1);
     assert_eq!(doc.sentences_calls.get(), 0);
 }
@@ -118,9 +118,9 @@ fn finding_section_bounds_examines_each_block_once(
 /// Positions examined by `tagger` on one paragraph of `text`.
 fn text_steps(tagger: &dyn Tagger, text: &str) -> usize {
     let doc = Counting::new(&format!("# T\n\n{text}\n"));
-    let _ = work::take_text_steps();
+    let _ = take_text_steps();
     tagger.tag(&doc).unwrap();
-    work::take_text_steps()
+    take_text_steps()
 }
 
 fn text_taggers() -> [Box<dyn Tagger>; 2] {
