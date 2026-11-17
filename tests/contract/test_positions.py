@@ -17,6 +17,9 @@ from position_reference import (
     Doc,
     PositionError,
     apply_edits,
+    binary_host_edit,
+    binary_host_location,
+    parse_binary_host,
     check_tokens,
     formats,
     lsp_range,
@@ -179,3 +182,72 @@ def test_malformed_projection_tokens_are_rejected(tokens: list[dict]) -> None:
 def test_invalid_utf8_source_is_rejected() -> None:
     with pytest.raises(PositionError):
         Doc.from_bytes(b"ok \xff\n")
+
+
+@pytest.mark.parametrize("case", VECTORS["binary_hosts"], ids=lambda c: c["id"])
+def test_binary_host_location_is_segment_local(case: dict) -> None:
+    span, rng = case["span"], case["container_range"]
+    got = binary_host_location(
+        case["segment"],
+        span["start"],
+        span["end"],
+        path=case["path"],
+        locator=case["locator"],
+        container_range=(rng["start"], rng["end"]),
+        kind=case.get("kind", "resource"),
+    )
+    assert got["local"] == case["local"]
+    assert got["provenance"] == {"path": case["path"], "range": rng}
+    assert got["text"] == case["text"]
+    start = case["local"]["start"]
+    assert parse_binary_host(got["text"]) == (
+        case["path"],
+        case["locator"],
+        start["line"],
+        start["column"],
+    )
+    assert got["sarif"] == {
+        "physicalLocation": {"artifactLocation": {"uri": case["sarif_uri"]}},
+        "logicalLocations": [
+            {
+                "fullyQualifiedName": case["locator"],
+                "kind": case.get("kind", "resource"),
+            }
+        ],
+        "properties": {"slopvac/local": case["local"]},
+        "message": {"text": case["text"]},
+    }
+    assert "region" not in got["sarif"]["physicalLocation"]
+
+
+def test_binary_host_local_position_ignores_the_container_range() -> None:
+    near, far = (
+        binary_host_location(
+            "a\U0001f600b", 5, 6, path="d.pptx", locator="s", container_range=rng
+        )
+        for rng in ((100, 106), (90000, 90010))
+    )
+    assert near["local"] == far["local"]
+    assert near["provenance"] != far["provenance"]
+
+
+@pytest.mark.parametrize(
+    "case", VECTORS["binary_host_invalid_spans"], ids=lambda c: c["id"]
+)
+def test_binary_host_span_is_validated_against_the_segment(case: dict) -> None:
+    span = case["span"]
+    with pytest.raises(PositionError):
+        binary_host_location(
+            case["segment"],
+            span["start"],
+            span["end"],
+            path="x.docx",
+            locator="s",
+            container_range=(0, 10),
+        )
+
+
+def test_binary_host_edits_are_always_rejected() -> None:
+    binary_host_edit([])
+    with pytest.raises(PositionError):
+        binary_host_edit([{"span": {"start": 0, "end": 1}, "text": "x"}])

@@ -1,0 +1,17 @@
+schema_version = 3
+id = "generated-frontmatter"
+tag = "generated"
+scope = "document"
+evidence = "Front matter says the file is generated."
+
+[when]
+path = '^docs/'
+heading_path = 'reference'
+admonition_title = '^note'
+sentence = 'generated'
+block_kind = "quote"
+x-note = "extensions are allowed"
+
+[when.front_matter]
+key = "generated"
+matches = '^(?:true|yes)$'

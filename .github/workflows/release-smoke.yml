@@ -120,18 +120,18 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "$TAG" --repo "$REPO" --dir assets \
-            --pattern "slopvac-$TARGET.tar.xz" --pattern "slopvac-$TARGET.tar.xz.sha256"
+            --pattern "slopvac-$TARGET.tar.gz" --pattern "slopvac-$TARGET.tar.gz.sha256"
 
       - name: Verify the published sha256
         run: |
           python3 scripts/release_smoke.py verify-sha256 \
-            "assets/slopvac-$TARGET.tar.xz" "assets/slopvac-$TARGET.tar.xz.sha256"
+            "assets/slopvac-$TARGET.tar.gz" "assets/slopvac-$TARGET.tar.gz.sha256"
 
       - name: Unpack and run
         run: |
           set -euo pipefail
           mkdir unpacked
-          tar -xJf "assets/slopvac-$TARGET.tar.xz" -C unpacked
+          tar -xzf "assets/slopvac-$TARGET.tar.gz" -C unpacked
           bin="$(find unpacked -name slopvac -type f | head -n 1)"
           test -n "$bin"
           chmod +x "$bin"

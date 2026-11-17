@@ -2,5 +2,5 @@
 # Publishing rewrites the `$id` prefix of every committed schema to this URL, so
 # a custom domain changes this value only. Include the base path and end it with
 # a slash.
-site_url = "https://srobroek.github.io/slopvac/"
+site_url = "https://slopvac.github.io/slopvac/"
 api_version = "v3"

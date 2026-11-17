@@ -1,0 +1,7 @@
+schema_version = 3
+id = "t"
+tag = "safety"
+scope = "chapter"
+
+[when]
+sentence = "x"

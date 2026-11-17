@@ -25,6 +25,7 @@ pub use auth::{
     Anonymous, Challenge, Credential, CredentialSource, DefaultCredentials, EnvCredentials,
 };
 pub use client::{Client, Fetched};
+pub(crate) use reference::valid_tag;
 pub use reference::{Reference, Target};
 pub use types::{
     Descriptor, Digest, Index, MAX_BLOB_BYTES, MAX_MANIFEST_BYTES, MEDIA_EMPTY, MEDIA_INDEX,

@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use slopvac_update::command::{self, Runtime};
 use slopvac_update::fetch::{FetchError, Fetcher};
 use slopvac_update::notice::Cache;
-use slopvac_update::verify::{ArtifactVerifier, ReleaseVerifier, VerifyError};
+use slopvac_update::verify::{
+    ArtifactVerifier, MinisignVerifier, ReleaseFile, ReleaseVerifier, VerifyError,
+};
 
 const LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
 const BASE: &str = "https://example.test/dl";
@@ -37,7 +39,7 @@ impl Fetcher for Server {
 
 struct Fixed(Result<(), VerifyError>);
 impl ArtifactVerifier for Fixed {
-    fn verify(&self, _: &[u8], _: &[u8]) -> Result<(), VerifyError> {
+    fn verify(&self, _: &[u8], _: &[u8], _: &ReleaseFile<'_>) -> Result<(), VerifyError> {
         self.0.clone()
     }
 }
@@ -146,14 +148,163 @@ fn verifier_rejection_leaves_the_binary_untouched() {
     assert_eq!(content(&fx.exe), b"old binary");
 }
 
-#[test]
-fn real_downloads_fail_closed_until_a_release_key_is_embedded() {
-    // STUB(slopvac-8l4.13.25): when the key lands, `ReleaseVerifier` verifies for real and this
-    // test becomes a tampered-artifact test against the embedded key.
+/// A server whose archive carries `payload`, with `signature` as its `.minisig`.
+fn signed_server(payload: &[u8], signature: &str) -> Arc<Server> {
+    let url = format!("{BASE}/v3.1.0/slopvac-{TARGET}.tar.gz");
+    Arc::new(Server {
+        files: HashMap::from([
+            (LATEST.to_owned(), br#"{"tag_name":"v3.1.0"}"#.to_vec()),
+            (format!("{url}.minisig"), signature.as_bytes().to_vec()),
+            (url, archive(payload)),
+        ]),
+        hits: AtomicUsize::new(0),
+    })
+}
+
+/// Sign like release CI: prehashed, with `comment` as the trusted comment.
+fn sign_with(keys: &minisign::KeyPair, bytes: &[u8], comment: Option<&str>) -> String {
+    minisign::sign(None, &keys.sk, std::io::Cursor::new(bytes), comment, None)
+        .unwrap()
+        .to_string()
+}
+
+fn comment(target: &str, version: &str) -> String {
+    ReleaseFile {
+        name: &format!("slopvac-{target}.tar.gz"),
+        version,
+    }
+    .trusted_comment()
+}
+
+/// The comment release CI writes for the archive this test requests.
+fn sign(keys: &minisign::KeyPair, bytes: &[u8]) -> String {
+    sign_with(keys, bytes, Some(&comment(TARGET, "3.1.0")))
+}
+
+/// Run `self update` against a verifier with `keys` and a server that serves `signature`.
+fn update_with_signature(keys: &minisign::KeyPair, signature: &str) -> (Fixture, String) {
     let fx = installed();
-    let rt = runtime(&fx, server("3.1.0"), Box::new(ReleaseVerifier));
+    let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+    let rt = runtime(
+        &fx,
+        signed_server(b"new binary", signature),
+        Box::new(verifier),
+    );
+    let code = update(&rt).map_or_else(|f| f.code.to_owned(), |_| "ok".to_owned());
+    (fx, code)
+}
+
+#[test]
+fn archive_signed_by_the_verifier_key_is_installed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    let sig = sign(&keys, &archive(b"new binary"));
+    let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+    let rt = runtime(&fx, signed_server(b"new binary", &sig), Box::new(verifier));
+    update(&rt).unwrap();
+    assert_eq!(content(&fx.exe), b"new binary");
+}
+
+#[test]
+fn tampered_archive_fails_closed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    // The signature covers the honest archive; the server delivers different bytes.
+    let sig = sign(&keys, &archive(b"new binary"));
+    let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+    let rt = runtime(&fx, signed_server(b"evil binary", &sig), Box::new(verifier));
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn an_older_signed_release_served_at_the_new_url_fails_closed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    // Genuine bytes, genuine key, but signed as the 3.0.9 release.
+    let sig = sign_with(
+        &keys,
+        &archive(b"new binary"),
+        Some(&comment(TARGET, "3.0.9")),
+    );
+    let (fx, code) = update_with_signature(&keys, &sig);
+    assert_eq!(code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn another_targets_signed_archive_served_for_this_target_fails_closed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let sig = sign_with(
+        &keys,
+        &archive(b"new binary"),
+        Some(&comment("x86_64-unknown-linux-gnu", "3.1.0")),
+    );
+    let (fx, code) = update_with_signature(&keys, &sig);
+    assert_eq!(code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn a_signature_without_the_release_trusted_comment_fails_closed() {
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let sig = sign_with(&keys, &archive(b"new binary"), None);
+    let (fx, code) = update_with_signature(&keys, &sig);
+    assert_eq!(code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn release_key_rejects_an_archive_signed_by_another_key() {
+    let other = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    let sig = sign(&other, &archive(b"new binary"));
+    let rt = runtime(
+        &fx,
+        signed_server(b"new binary", &sig),
+        Box::new(ReleaseVerifier::default()),
+    );
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "update-verification-failed");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+#[test]
+fn a_validly_signed_next_minor_candidate_is_refused_before_any_download() {
+    const LINUX: &str = "x86_64-unknown-linux-gnu";
+    let name = format!("slopvac-{LINUX}.tar.gz");
+    let archive_bytes = include_bytes!("fixtures/slopvac-x86_64-unknown-linux-gnu.tar.gz");
+    let rc_sig =
+        include_bytes!("fixtures/slopvac-x86_64-unknown-linux-gnu.tar.gz.3.2.0-rc.1.minisig");
+    let verifier = MinisignVerifier::from_pub_file(include_str!("fixtures/test-only.pub")).unwrap();
+    // Precondition: the candidate is genuine, so only the stable-only rule can stop it.
+    let rc = ReleaseFile {
+        name: &name,
+        version: "3.2.0-rc.1",
+    };
+    verifier
+        .verify(archive_bytes, rc_sig, &rc)
+        .expect("the fixture is a valid signed candidate");
+
+    let url = format!("{BASE}/v3.2.0-rc.1/{name}");
+    let srv = Arc::new(Server {
+        files: HashMap::from([
+            (LATEST.to_owned(), br#"{"tag_name":"v3.2.0-rc.1"}"#.to_vec()),
+            (format!("{url}.minisig"), rc_sig.to_vec()),
+            (url, archive_bytes.to_vec()),
+        ]),
+        hits: AtomicUsize::new(0),
+    });
+    let fx = installed();
+    let mut rt = runtime(&fx, srv.clone(), Box::new(verifier));
+    rt.target = Some(LINUX);
+    let err = update(&rt).unwrap_err();
+    assert_eq!(err.code, "update-prerelease-refused");
+    assert_eq!(
+        srv.hits.load(Ordering::SeqCst),
+        1,
+        "only the version lookup"
+    );
     assert_eq!(content(&fx.exe), b"old binary");
 }
 

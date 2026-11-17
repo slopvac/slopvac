@@ -24,7 +24,7 @@ The descriptor is `integrations/megalinter/mega-linter-plugin-slopvac/slopvac.me
 
 ```yaml
 PLUGINS:
-  - https://raw.githubusercontent.com/srobroek/slopvac/v3.0.0/integrations/megalinter/mega-linter-plugin-slopvac/slopvac.megalinter-descriptor.yml
+  - https://raw.githubusercontent.com/slopvac/slopvac/v3.0.0/integrations/megalinter/mega-linter-plugin-slopvac/slopvac.megalinter-descriptor.yml
 ```
 
 The linter is `PROSE_SLOPVAC`. It runs `slopvac lint` on `.md`, `.markdown`, `.rst`, `.txt` and `.html` files, and passes `slopvac.toml` as `--config` when the repository has one. When MegaLinter's SARIF reporter is on, it adds `--format sarif --out <file>` and counts findings from the report.
