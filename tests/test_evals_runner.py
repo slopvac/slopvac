@@ -159,6 +159,39 @@ def test_a_report_with_paths_relative_to_the_engine_directory_is_matched(
     assert out["documents"]["a"]["words"] == 4
 
 
+def test_run_skip_format_skips_that_format_and_still_runs_the_other_documents(
+    tmp_path, fake, monkeypatch
+):
+    engine, calls = fake
+    cache = tmp_path / "cache"
+    manifest = {
+        "documents": [make_doc("a", "markdown"), make_doc("b", "commit-message")]
+    }
+    for d in manifest["documents"]:
+        write_cache(cache, d)
+    monkeypatch.setattr(cli.lib, "load_manifest", lambda: manifest)
+    out = tmp_path / "out.json"
+    code = cli.main(
+        [
+            "run",
+            "--engine",
+            " ".join(engine.command),
+            "--cache",
+            str(cache),
+            "--skip-format",
+            "markdown",
+            "--out",
+            str(out),
+        ]
+    )
+    assert code == 0
+    results = json.loads(out.read_text())
+    assert sorted(results["documents"]) == ["b"]
+    assert list(results["skipped"]) == ["a"]
+    linted = [p for c in calls() for p in c["argv"] if p.endswith((".md", ".txt"))]
+    assert [Path(p).suffix for p in linted] == [".txt"]
+
+
 def test_an_incomplete_run_with_a_report_keeps_its_findings(tmp_path):
     script = tmp_path / "inc.py"
     script.write_text(
