@@ -9,8 +9,8 @@ use std::time::Duration;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use slopvac_plugins::extract::{
-    Evicted, ExtractError, Limits, TreeHash, clean_staging, evict, extract_targz, tree_hash,
-    verify_tree,
+    Evicted, ExtractError, Limits, StagedTree, TreeHash, clean_staging, evict, extract_targz,
+    tree_hash, verify_tree,
 };
 
 const GOLDEN: &str = "sha256:649fc82b4e4db008e801244b088e12aa52921acb707eb30efdc6d60930ecdefa";
@@ -1161,4 +1161,64 @@ mod hostile_store {
         assert_eq!(store.staging_entries(), 0);
         fs::remove_dir_all(aside[0].path()).unwrap();
     }
+}
+
+/// Names under `dir`, sorted.
+fn names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn write(tree: &mut StagedTree, path: &str) -> Result<(), ExtractError> {
+    tree.write_file(path, &mut &b"x"[..], false)
+}
+
+#[test]
+fn a_staged_tree_stops_at_the_node_limit_before_creating_the_file() {
+    let store = tempfile::tempdir().unwrap();
+    let limits = Limits {
+        nodes: 3,
+        ..Limits::default()
+    };
+    let mut tree = StagedTree::new(&store.path().join("trees"), limits).unwrap();
+    // `a`, `a/b` and the file are three nodes.
+    write(&mut tree, "a/b/c.txt").unwrap();
+
+    let err = write(&mut tree, "x.txt").unwrap_err();
+
+    assert!(matches!(err, ExtractError::Refused(_)), "{err:?}");
+    assert_eq!(names_in(tree.root()), ["a"]);
+}
+
+#[test]
+fn a_staged_tree_counts_implicit_parents_once() {
+    let store = tempfile::tempdir().unwrap();
+    let limits = Limits {
+        nodes: 4,
+        ..Limits::default()
+    };
+    let mut tree = StagedTree::new(&store.path().join("trees"), limits).unwrap();
+    write(&mut tree, "a/b/one.txt").unwrap();
+    write(&mut tree, "a/b/two.txt").unwrap();
+    assert!(write(&mut tree, "a/b/three.txt").is_err());
+}
+
+#[test]
+fn a_staged_tree_refuses_a_name_that_collides_with_a_parent_before_creating_it() {
+    let store = tempfile::tempdir().unwrap();
+    let mut tree = StagedTree::new(&store.path().join("trees"), Limits::default()).unwrap();
+    write(&mut tree, "Dir/x").unwrap();
+
+    // Other spellings of `Dir` on a case-folding file system.
+    for clash in ["dir/y", "DIR/y"] {
+        let err = write(&mut tree, clash).unwrap_err();
+        assert!(matches!(err, ExtractError::Refused(_)), "{clash}: {err:?}");
+    }
+
+    assert_eq!(names_in(tree.root()), ["Dir"]);
+    assert_eq!(names_in(&tree.root().join("Dir")), ["x"]);
 }

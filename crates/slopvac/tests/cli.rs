@@ -1,11 +1,14 @@
 //! Installed-binary tests for the command tree, exit codes and global settings.
 
+mod support;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    cmd.current_dir(support::neutral_dir());
     for var in [
         "SLOPVAC_OFFLINE",
         "SLOPVAC_LOG",
@@ -167,7 +170,9 @@ fn unwired_commands_exit_2_without_naming_anyone() {
         .arg("packs")
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("is not available in this build."));
+        .stderr(predicate::str::contains(
+            "is not available in this build yet.",
+        ));
 }
 
 #[test]
@@ -177,7 +182,7 @@ fn review_is_an_unwired_command_not_a_usage_error() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with(
-            "error[command-not-wired]: `slopvac review` is not available in this build.",
+            "error[command-not-wired]: `slopvac review` is not available in this build yet.",
         ));
 }
 
@@ -605,6 +610,7 @@ fn lsp_stops_on_a_fatal_error_while_stdin_stays_open() {
     let bad = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":5}"#;
     let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
         .arg("lsp")
+        .current_dir(support::neutral_dir())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -676,6 +682,7 @@ fn stopped_reader_run(documents: usize) -> Stopped {
     use std::sync::atomic::{AtomicBool, Ordering};
     let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("slopvac"))
         .arg("lsp")
+        .current_dir(support::neutral_dir())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -775,4 +782,27 @@ fn lsp_exits_after_shutdown_although_the_client_stopped_reading_stdout() {
         "the stopped-reader scenario was never reached; (documents, diagnostics read before \
          the shutdown response): {seen:?}"
     );
+}
+
+#[test]
+fn lsp_publishes_findings_from_the_shipped_rules() {
+    let open = r##"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///work/doc.md","languageId":"markdown","version":1,"text":"# T\n\nWe leverage it.\n"}}}"##;
+    let input = [
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        open,
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "core:prose-inflation.slop-lexicon",
+        ));
 }

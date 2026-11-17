@@ -187,6 +187,7 @@ def test_hardening_the_pinned_dist_output_reproduces_the_committed_workflow(hard
 # Each string is a spot in dist's template that a rewrite depends on.
 ANCHORS = [
     "      - '**[0-9]+.[0-9]+.[0-9]+*'\n",
+    "on:\n  pull_request:\n  push:\n",
     "dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json",
     '          gh release upload "${{ needs.plan.outputs.tag }}" artifacts/*\n',
     '          gh release edit "${{ needs.plan.outputs.tag }}" --target',
@@ -528,12 +529,12 @@ def test_the_tap_token_is_minted_from_the_release_app_before_the_checkout(workfl
     assert mint["with"] == {
         "client-id": "${{ vars.RELEASE_APP_CLIENT_ID }}",
         "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
-        "owner": "srobroek",
+        "owner": "slopvac",
         "repositories": "homebrew-tap",
         "permission-contents": "write",
     }
     checkout = steps[1]
-    assert checkout["with"]["repository"] == "srobroek/homebrew-tap"
+    assert checkout["with"]["repository"] == "slopvac/homebrew-tap"
     assert checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
     # No stored secret feeds the tap push, in this or any other workflow.
     for path in (ROOT / ".github" / "workflows").glob("*.yml"):
@@ -581,3 +582,18 @@ def test_a_tap_checkout_outside_the_homebrew_job_is_not_rewritten(raw):
     renamed = raw.replace(patcher._TAP_JOB, "  publish-formula-elsewhere:\n")
     with pytest.raises(ValueError, match="expected exactly one Homebrew publish job"):
         patcher.harden(renamed)
+
+
+@pytest.mark.parametrize("job", ["build-local-artifacts", "build-global-artifacts"])
+def test_the_dist_build_jobs_install_the_pinned_toolchain_before_dist(workflow, job):
+    steps = workflow["jobs"][job]["steps"]
+    runs = [s.get("run", "") for s in steps]
+    helper = runs.index("bash scripts/ci/install-rust-toolchain.sh")
+    assert steps[helper - 1]["uses"].startswith("actions/setup-python@")
+    dist = next(i for i, s in enumerate(steps) if "dist" in s.get("name", "").lower())
+    assert helper < dist
+
+
+def test_a_missing_dist_build_job_fails_the_toolchain_patch(raw):
+    with pytest.raises(ValueError, match="expected"):
+        patcher.harden(raw.replace("  build-global-artifacts:\n", "  other:\n"))

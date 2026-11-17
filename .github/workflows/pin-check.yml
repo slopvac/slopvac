@@ -35,6 +35,9 @@ jobs:
           install: false
           cache: false
 
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       - name: Collect outdated pins
         run: |
           # GitHub runs this under `bash -e -o pipefail`, so any query failure fails the

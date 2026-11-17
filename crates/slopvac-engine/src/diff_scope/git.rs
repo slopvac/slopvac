@@ -85,6 +85,7 @@ pub(super) const DIFF_ARGS: [&str; 10] = [
 
 /// How much output git may produce and how long it may run, per git call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Limits {
     /// The most standard output bytes accepted.
     pub max_stdout: usize,
@@ -94,6 +95,36 @@ pub struct Limits {
     pub timeout: Duration,
     /// The largest changed file [`super::ChangedLines::ranges_for`] reads, in bytes.
     pub max_file: u64,
+}
+
+impl Limits {
+    /// The same limits with another stdout cap.
+    #[must_use]
+    pub const fn with_max_stdout(mut self, bytes: usize) -> Self {
+        self.max_stdout = bytes;
+        self
+    }
+
+    /// The same limits with another stderr cap.
+    #[must_use]
+    pub const fn with_max_stderr(mut self, bytes: usize) -> Self {
+        self.max_stderr = bytes;
+        self
+    }
+
+    /// The same limits with another time limit.
+    #[must_use]
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// The same limits with another changed-file size cap.
+    #[must_use]
+    pub const fn with_max_file(mut self, bytes: u64) -> Self {
+        self.max_file = bytes;
+        self
+    }
 }
 
 impl Default for Limits {
@@ -109,11 +140,28 @@ impl Default for Limits {
 
 /// How to run git: the program and the limits.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Options {
     /// The limits for each git call and for reading changed files.
     pub limits: Limits,
     /// The program to run. This is `git`; a test points it at a stand-in.
     pub program: OsString,
+}
+
+impl Options {
+    /// The same options with other limits.
+    #[must_use]
+    pub const fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// The same options with another program.
+    #[must_use]
+    pub fn with_program(mut self, program: impl Into<OsString>) -> Self {
+        self.program = program.into();
+        self
+    }
 }
 
 impl Default for Options {

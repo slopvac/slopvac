@@ -63,7 +63,12 @@ pub enum Kind {
 }
 
 /// One file to lint.
+///
+/// Build one with [`Input::new`] and the `with_*` setters, or with a shortcut such as
+/// [`Input::markdown`]. The struct is `#[non_exhaustive]`, so a new field is not a
+/// breaking change for callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Input<'a> {
     /// The path, as shown in the report.
     pub path: &'a str,
@@ -76,15 +81,49 @@ pub struct Input<'a> {
 }
 
 impl<'a> Input<'a> {
-    /// A Markdown file read from disk.
+    /// A Markdown file read from disk. Change the rest with the `with_*` setters.
     #[must_use]
-    pub const fn markdown(path: &'a str, source: &'a str) -> Self {
+    pub const fn new(path: &'a str, source: &'a str) -> Self {
         Self {
             path,
             source,
             kind: Kind::Markdown,
             bom: BomMode::Disk,
         }
+    }
+
+    /// The same input with another file kind.
+    #[must_use]
+    pub const fn with_kind(mut self, kind: Kind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    /// The same input with another byte order mark mode.
+    #[must_use]
+    pub const fn with_bom(mut self, bom: BomMode) -> Self {
+        self.bom = bom;
+        self
+    }
+
+    /// The same input with other file text, for a re-lint after an edit.
+    #[must_use]
+    pub const fn with_source(mut self, source: &'a str) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// The same input with another path.
+    #[must_use]
+    pub const fn with_path(mut self, path: &'a str) -> Self {
+        self.path = path;
+        self
+    }
+
+    /// A Markdown file read from disk.
+    #[must_use]
+    pub const fn markdown(path: &'a str, source: &'a str) -> Self {
+        Self::new(path, source)
     }
 
     /// An MDX file read from disk.
@@ -257,8 +296,15 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         .get(id)
         .copied()
         .or_else(|| settings.categories.get(category).and_then(|d| d.level))
-        .or_else(|| settings.genre_levels.get(id).copied())
-        .unwrap_or(Level::On(shipped))
+        // The genre chain and the rule definition are the levels the profile shifts.
+        .unwrap_or_else(|| {
+            settings
+                .genre_levels
+                .get(id)
+                .copied()
+                .unwrap_or(Level::On(shipped))
+                .shifted(settings.severity_shift)
+        })
 }
 
 fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, EngineError> {
@@ -459,15 +505,19 @@ impl Engine {
                             .and_then(|d| d.weight)
                             .unwrap_or(category.weight().get()),
                     },
-                    budget: meta.and_then(|d| d.max_per_100_words).or_else(|| {
-                        category
-                            .max_per_100_words()
-                            .and_then(|m| {
-                                m.iter()
-                                    .find(|(p, _)| p.as_str() == self.settings.profile.as_str())
-                            })
-                            .map(|(_, d)| d.get())
-                    }),
+                    budget: if meta.is_some_and(|d| d.budget_cleared) {
+                        None
+                    } else {
+                        meta.and_then(|d| d.max_per_100_words).or_else(|| {
+                            category
+                                .max_per_100_words()
+                                .and_then(|m| {
+                                    m.iter()
+                                        .find(|(p, _)| p.as_str() == self.settings.profile.as_str())
+                                })
+                                .map(|(_, d)| d.get())
+                        })
+                    },
                 };
                 self.categories.insert(category.id().clone(), info);
                 for (r, loaded) in category.rules().iter().enumerate() {
@@ -870,6 +920,7 @@ impl Run<'_> {
                 version: None,
                 source: None,
             }),
+            origin: None,
         })
     }
 
@@ -1100,6 +1151,7 @@ impl Run<'_> {
                         version: None,
                         source: None,
                     }),
+                    origin: None,
                 });
             }
         }

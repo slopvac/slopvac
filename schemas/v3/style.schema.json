@@ -49,7 +49,7 @@
       }
     },
     "terms": {
-      "$ref": "#/$defs/Terms"
+      "$ref": "#/$defs/StyleTerms"
     }
   },
   "required": [
@@ -60,7 +60,7 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "Terms": {
+    "StyleTerms": {
       "description": "Terms the style brings.",
       "type": "object",
       "properties": {

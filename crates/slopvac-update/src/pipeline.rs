@@ -19,7 +19,7 @@ use crate::fetch::{FetchError, Fetcher};
 use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
 /// Where release assets live.
-pub const DOWNLOAD_BASE: &str = "https://github.com/srobroek/slopvac/releases/download";
+pub const DOWNLOAD_BASE: &str = "https://github.com/slopvac/slopvac/releases/download";
 /// Largest archive accepted.
 const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES: u64 = 16 * 1024;
@@ -265,6 +265,29 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
         assert_eq!(leftovers(dir.path()), ["slopvac"]);
+    }
+
+    #[test]
+    fn production_base_downloads_from_the_slopvac_org_releases() {
+        let (_dir, exe) = installed();
+        let url = format!(
+            "https://github.com/slopvac/slopvac/releases/download/v3.1.0/slopvac-{TARGET}.tar.gz"
+        );
+        let files = Files(HashMap::from([
+            (format!("{url}.minisig"), b"sig".to_vec()),
+            (url, tar_gz("slopvac", b"new")),
+        ]));
+        update(
+            &files,
+            &Verdict(Ok(())),
+            DOWNLOAD_BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
     }
 
     #[cfg(unix)]

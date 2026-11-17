@@ -201,11 +201,9 @@ proptest! {
             .collect();
         expected.sort();
 
-        let options = Options {
-            selection: Selection::Both,
-            excludes: Some(Excludes::new(root, &exclude_patterns).unwrap()),
-            ..Options::default()
-        };
+        let options = Options::default()
+            .with_selection(Selection::Both)
+            .with_excludes(Some(Excludes::new(root, &exclude_patterns).unwrap()));
         match discover(&[pattern.as_str()], options) {
             Ok(found) => {
                 prop_assert!(!matched.is_empty(), "discovery found files the oracle did not");
@@ -235,11 +233,9 @@ proptest! {
             .collect();
         expected.sort();
 
-        let options = Options {
-            selection: Selection::Both,
-            excludes: Some(Excludes::new(root, &exclude_patterns).unwrap()),
-            ..Options::default()
-        };
+        let options = Options::default()
+            .with_selection(Selection::Both)
+            .with_excludes(Some(Excludes::new(root, &exclude_patterns).unwrap()));
         let found = discover(&[root.to_str().unwrap()], options).unwrap();
         let mut got: Vec<String> = found.files.iter().map(|f| rel(root, &f.path)).collect();
         got.sort();

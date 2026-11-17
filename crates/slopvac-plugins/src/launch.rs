@@ -71,7 +71,6 @@ pub enum Launcher {
 
 impl Launcher {
     /// The absolute path of the program.
-    #[cfg(unix)]
     pub(crate) fn path(&self) -> std::io::Result<PathBuf> {
         match self {
             Self::CurrentExe => std::env::current_exe(),

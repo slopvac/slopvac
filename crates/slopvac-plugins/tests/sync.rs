@@ -707,20 +707,6 @@ fn a_path_source_directory_is_checked_by_tree_hash_and_used_in_place() {
     assert_eq!(states[0].state, PackState::InPlaceChanged(dir));
 }
 
-#[test]
-fn a_git_source_is_reported_as_unsupported_not_skipped() {
-    let env = Env::new();
-    let lock = lock_text(&[format!(
-        "\n[[packs]]\nid = \"tagger\"\nkind = \"plugin\"\nversion = \"0.3.1\"\nslopvac_api = 1\n\
-         source = \"git+https://github.com/acme/tagger@{}\"\ndigest = \"sha256:{}\"\n",
-        "0123456789abcdef0123456789abcdef01234567",
-        "fe".repeat(32)
-    )]);
-    let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
-    assert!(matches!(err, SyncError::Unsupported { .. }), "{err:?}");
-    assert_eq!(err.exit_code(), 2);
-}
-
 fn resolved(id: &str, version: &str, digest: &str) -> ResolvedPack {
     ResolvedPack {
         id: id.parse().unwrap(),

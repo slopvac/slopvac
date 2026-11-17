@@ -301,6 +301,7 @@ fn finding_without_span_omits_span_and_end() {
         matched_text: String::new(),
         fix: None,
         provenance: None,
+        origin: None,
     };
     let json = serde_json::to_value(&f).unwrap();
     assert!(json.get("span").is_none() && json.get("end_line").is_none());

@@ -33,6 +33,7 @@ serde_json.workspace = true
 slopvac-agents.workspace = true
 slopvac-config.workspace = true
 slopvac-context.workspace = true
+slopvac-engine.workspace = true
 slopvac-lsp.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true

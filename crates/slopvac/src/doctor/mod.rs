@@ -212,7 +212,7 @@ struct Offline {
 }
 
 #[derive(Debug, Serialize)]
-struct ConfigSource {
+struct DoctorConfigFile {
     layer: &'static str,
     file: String,
     status: SourceStatus,
@@ -222,7 +222,7 @@ struct ConfigSource {
 #[derive(Debug, Serialize)]
 struct Config {
     ok: bool,
-    sources: Vec<ConfigSource>,
+    sources: Vec<DoctorConfigFile>,
 }
 
 #[derive(Debug, Serialize)]
@@ -569,7 +569,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
         sources: scan
             .sources
             .iter()
-            .map(|s| ConfigSource {
+            .map(|s| DoctorConfigFile {
                 layer: s.layer,
                 file: path_for_log(&s.path, i.cwd),
                 status: s.status,

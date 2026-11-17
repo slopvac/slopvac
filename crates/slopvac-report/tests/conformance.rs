@@ -101,6 +101,15 @@ fn json_validates_against_the_lint_report_schema() {
 }
 
 #[test]
+fn sarif_driver_links_to_the_slopvac_org_repository() {
+    let sarif: Value = serde_json::from_str(&out(Format::Sarif)).unwrap();
+    assert_eq!(
+        sarif["runs"][0]["tool"]["driver"]["informationUri"],
+        "https://github.com/slopvac/slopvac"
+    );
+}
+
+#[test]
 fn sarif_validates_and_maps_severities() {
     let schema = fixture("sarif-schema-2.1.0.json");
     let validator = jsonschema::draft4::new(&schema).unwrap();

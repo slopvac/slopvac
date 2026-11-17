@@ -51,7 +51,7 @@ fn every_placeholder_error_names_no_internal_id() {
         assert_eq!(out.status.code(), Some(2), "{name}");
         assert!(
             err.starts_with(&format!(
-                "error[command-not-wired]: `slopvac {name}` is not available in this build."
+                "error[command-not-wired]: `slopvac {name}` is not available in this build yet."
             )),
             "{err}"
         );

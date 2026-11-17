@@ -40,6 +40,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       # Pinned to a date so a nightly regression cannot fail the schedule.
       # Bump it together with a green manual run.
       - name: Install the nightly toolchain

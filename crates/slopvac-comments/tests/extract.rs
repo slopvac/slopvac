@@ -1,0 +1,463 @@
+//! Extraction results per language, worked out by hand in `common`.
+
+mod common;
+
+use common::{FIXTURES, pairs, pairs_lexical};
+use slopvac_comments::CommentKind::{Block, Doc, Line};
+use slopvac_comments::{Backend, CommentKind, Language};
+
+type Run = fn(Language, &str) -> Vec<(CommentKind, String)>;
+
+/// The default backend, then the lexer. They differ only for languages with a grammar.
+const RUNS: [(&str, Run); 2] = [("default", pairs), ("lexer", pairs_lexical)];
+
+#[test]
+fn every_fixture_extracts_the_expected_comments() {
+    let mut wrong = Vec::new();
+    for fixture in FIXTURES {
+        for (backend, run) in RUNS {
+            let got = run(fixture.language, fixture.source);
+            let want: Vec<(CommentKind, String)> = fixture
+                .expected
+                .iter()
+                .map(|(kind, text)| (*kind, (*text).to_owned()))
+                .collect();
+            if got != want {
+                wrong.push(format!(
+                    "{} [{backend}]:\n  want {want:?}\n  got  {got:?}",
+                    fixture.name
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn every_language_has_a_fixture() {
+    for language in Language::all() {
+        assert!(
+            FIXTURES.iter().any(|fixture| fixture.language == language),
+            "no fixture for {language:?}"
+        );
+    }
+}
+
+/// The names `FileKind::Source` carries in file discovery, from 2.x's
+/// `SOURCE_LANGUAGE_BY_EXTENSION`, plus `toml`.
+const DISCOVERY_NAMES: &[&str] = &[
+    "python",
+    "javascript",
+    "typescript",
+    "rust",
+    "go",
+    "java",
+    "c",
+    "cpp",
+    "csharp",
+    "ruby",
+    "php",
+    "swift",
+    "kotlin",
+    "scala",
+    "shell",
+    "lua",
+    "perl",
+    "r",
+    "elixir",
+    "haskell",
+    "fsharp",
+    "julia",
+    "powershell",
+    "proto",
+    "css",
+    "scss",
+    "less",
+    "clojure",
+    "dart",
+    "toml",
+];
+
+#[test]
+fn every_discovery_name_selects_a_language() {
+    for name in DISCOVERY_NAMES {
+        let language = Language::from_name(name).unwrap_or_else(|| panic!("no language {name}"));
+        assert_eq!(language.name(), *name);
+    }
+}
+
+#[test]
+fn an_unknown_name_selects_no_language() {
+    assert_eq!(Language::from_name("cobol"), None);
+}
+
+#[test]
+fn a_tsx_file_refines_typescript_to_tsx() {
+    assert_eq!(Language::TypeScript.refine("App.TSX"), Language::Tsx);
+    assert_eq!(Language::TypeScript.refine("app.ts"), Language::TypeScript);
+    assert_eq!(Language::Python.refine("x.tsx"), Language::Python);
+}
+
+#[test]
+fn crlf_line_endings_join_and_split_like_lf() {
+    let got = pairs(Language::Rust, "// a\r\n// b\r\n\r\n// c\r\n");
+    assert_eq!(got, [(Line, "a b".into()), (Line, "c".into())]);
+}
+
+#[test]
+fn a_lone_cr_is_a_line_ending() {
+    let got = pairs(Language::Python, "# a\r# b\r\r# c\r");
+    assert_eq!(got, [(Line, "a b".into()), (Line, "c".into())]);
+}
+
+#[test]
+fn crlf_inside_a_block_comment_is_a_line_ending() {
+    let got = pairs(Language::C, "/*\r\n * one\r\n * two\r\n */\r\n");
+    assert_eq!(got, [(Block, "one two".into())]);
+}
+
+#[test]
+fn an_empty_comment_line_starts_a_new_paragraph() {
+    let got = pairs(Language::Rust, "// a\n//\n// b\n");
+    assert_eq!(got, [(Line, "a".into()), (Line, "b".into())]);
+}
+
+#[test]
+fn a_blank_line_between_comments_starts_a_new_fragment() {
+    let got = pairs(Language::Go, "// a\n\n// b\n");
+    assert_eq!(got, [(Line, "a".into()), (Line, "b".into())]);
+}
+
+#[test]
+fn inner_and_outer_doc_comments_do_not_join() {
+    let got = pairs(Language::Rust, "//! inner\n/// outer\nfn f() {}\n");
+    assert_eq!(got, [(Doc, "inner".into()), (Doc, "outer".into())]);
+}
+
+#[test]
+fn multibyte_text_is_kept_whole() {
+    let got = pairs(Language::Rust, "// héllo → wörld 😀\n// ünï\n");
+    assert_eq!(got, [(Line, "héllo → wörld 😀 ünï".into())]);
+}
+
+#[test]
+fn trailing_whitespace_and_a_star_banner_are_decoration() {
+    let got = pairs(
+        Language::C,
+        "/***************\n * Title   \n ***************/\n",
+    );
+    assert_eq!(got, [(Block, "Title".into())]);
+}
+
+#[test]
+fn source_without_comments_yields_nothing() {
+    let got = pairs(Language::Rust, "fn main() { let x = 1; }\n");
+    assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn an_empty_source_yields_nothing() {
+    for language in Language::all() {
+        let got = pairs(language, "");
+        assert!(got.is_empty(), "{language:?}: {got:?}");
+    }
+}
+
+/// Source whose first line is a shebang, per grammar family. The grammars emit it as a
+/// comment, `hash_bang_line` or `shebang`; 2.x read it as text and so does 3.0.
+const SHEBANGS: &[(Language, &str, &str)] = &[
+    (
+        Language::JavaScript,
+        "#!/usr/bin/env node\n// a\nlet x = 1;\n",
+        "/usr/bin/env node",
+    ),
+    (
+        Language::TypeScript,
+        "#!/usr/bin/env node\n// a\nlet x = 1;\n",
+        "/usr/bin/env node",
+    ),
+    (
+        Language::Tsx,
+        "#!/usr/bin/env node\n// a\nlet x = 1;\n",
+        "/usr/bin/env node",
+    ),
+    (
+        Language::Rust,
+        "#!/usr/bin/env run\n// a\nfn main() {}\n",
+        "/usr/bin/env run",
+    ),
+    (
+        Language::Kotlin,
+        "#!/usr/bin/env kotlin\n// a\nval x = 1\n",
+        "/usr/bin/env kotlin",
+    ),
+    (
+        Language::Python,
+        "#!/usr/bin/env python\n# a\nx = 1\n",
+        "/usr/bin/env python",
+    ),
+    (
+        Language::Ruby,
+        "#!/usr/bin/env ruby\n# a\nx = 1\n",
+        "/usr/bin/env ruby",
+    ),
+    (
+        Language::Perl,
+        "#!/usr/bin/perl\n# a\nmy $x = 1;\n",
+        "/usr/bin/perl",
+    ),
+    (Language::Shell, "#!/bin/sh\n# a\nx=1\n", "/bin/sh"),
+    (
+        Language::Elixir,
+        "#!/usr/bin/env elixir\n# a\nx = 1\n",
+        "/usr/bin/env elixir",
+    ),
+    (
+        Language::R,
+        "#!/usr/bin/env Rscript\n# a\nx <- 1\n",
+        "/usr/bin/env Rscript",
+    ),
+    (
+        Language::Julia,
+        "#!/usr/bin/env julia\n# a\nx = 1\n",
+        "/usr/bin/env julia",
+    ),
+    (
+        Language::PowerShell,
+        "#!/usr/bin/env pwsh\n# a\n$x = 1\n",
+        "/usr/bin/env pwsh",
+    ),
+];
+
+#[test]
+fn a_shebang_is_its_own_fragment_in_every_grammar() {
+    let mut wrong = Vec::new();
+    for (language, source, shebang) in SHEBANGS {
+        let got: Vec<String> = pairs(*language, source)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if got != [*shebang, "a"] {
+            wrong.push(format!("{language:?}: {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_python_comment_ends_at_a_lone_cr_and_the_code_after_it_is_not_prose() {
+    let got = pairs(Language::Python, "# note\rtotal = compute_everything()\r");
+    assert_eq!(got, [(Line, "note".into())]);
+}
+
+#[test]
+fn a_comment_ends_at_a_lone_cr_in_every_hash_and_slash_grammar() {
+    let mut wrong = Vec::new();
+    for (language, source) in [
+        (Language::Ruby, "# note\rtotal = compute_everything\r"),
+        (Language::Shell, "# note\rtotal=compute_everything\r"),
+        (Language::Toml, "# note\rtotal = 1\r"),
+        (Language::Rust, "// note\rfn compute_everything() {}\r"),
+        (Language::Go, "// note\rvar compute_everything = 1\r"),
+    ] {
+        let got: Vec<String> = pairs(language, source)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if got != ["note"] {
+            wrong.push(format!("{language:?}: {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn haskell_comments_are_grouped_like_any_other_line_comments() {
+    let trailing = pairs(
+        Language::Haskell,
+        "x = 1 -- trailing\n-- standalone\ny = 2\n",
+    );
+    assert_eq!(
+        trailing,
+        [(Line, "trailing".into()), (Line, "standalone".into())]
+    );
+    let markers = pairs(Language::Haskell, "-- a\n--- b\ny = 2\n");
+    assert_eq!(markers, [(Line, "a".into()), (Line, "b".into())]);
+}
+
+#[test]
+fn a_bom_does_not_stop_the_first_comments_joining() {
+    let got = pairs(Language::Rust, "\u{feff}// a\n// b\n");
+    assert_eq!(got, [(Line, "a b".into())]);
+}
+
+#[test]
+fn every_fixture_gives_the_same_text_in_every_line_ending_and_with_a_bom() {
+    let mut wrong = Vec::new();
+    for fixture in FIXTURES {
+        for (label, source) in common::variants(fixture.source) {
+            for (backend, run) in RUNS {
+                let got = run(fixture.language, &source);
+                let want: Vec<(CommentKind, String)> = fixture
+                    .expected
+                    .iter()
+                    .map(|(kind, text)| (*kind, (*text).to_owned()))
+                    .collect();
+                if got != want {
+                    wrong.push(format!(
+                        "{} [{label}, {backend}]:\n  want {want:?}\n  got  {got:?}",
+                        fixture.name
+                    ));
+                }
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn only_grammars_without_an_external_scanner_use_tree_sitter() {
+    let mut got: Vec<&str> = Language::all()
+        .filter(|language| language.backend() == Backend::TreeSitter)
+        .map(Language::name)
+        .collect();
+    let mut want: Vec<&str> = [
+        ("c", cfg!(feature = "lang-c")),
+        ("go", cfg!(feature = "lang-go")),
+        ("java", cfg!(feature = "lang-java")),
+        ("proto", cfg!(feature = "lang-proto")),
+    ]
+    .into_iter()
+    .filter_map(|(name, on)| on.then_some(name))
+    .collect();
+    got.sort_unstable();
+    want.sort_unstable();
+    assert_eq!(got, want);
+}
+
+#[test]
+fn python_docstrings_are_strings_and_not_comments() {
+    let got = pairs(
+        Language::Python,
+        "def f():\n    \"\"\"A docstring.\"\"\"\n    x = \"# not a comment\"\n",
+    );
+    assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn a_comment_marker_inside_a_string_is_not_a_comment() {
+    let mut wrong = Vec::new();
+    for (language, source) in [
+        (Language::Rust, "let s = \"// no\"; // yes\n"),
+        (Language::Python, "s = '# no'  # yes\n"),
+        (Language::Go, "s := `// no` // yes\n"),
+        (
+            Language::JavaScript,
+            "s = `// no ${x}\n// still no`; // yes\n",
+        ),
+        (Language::Shell, "echo \"a # no\" # yes\n"),
+        (Language::Lua, "s = \"-- no\" -- yes\n"),
+        (Language::Toml, "s = \"\"\"\n# no\n\"\"\" # yes\n"),
+    ] {
+        let got: Vec<String> = pairs_lexical(language, source)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if got != ["yes"] {
+            wrong.push(format!("{language:?}: {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_rust_lifetime_or_a_c_digit_separator_does_not_open_a_string() {
+    let rust = pairs_lexical(
+        Language::Rust,
+        "fn f<'a>(x: &'a str) {} // after\n// next\n",
+    );
+    assert_eq!(rust, [(Line, "after".into()), (Line, "next".into())]);
+    let c = pairs_lexical(Language::Cpp, "int n = 1'000'000; // after\n");
+    assert_eq!(c, [(Line, "after".into())]);
+    let ch = pairs_lexical(Language::C, "char q = '\"'; // after\n");
+    assert_eq!(ch, [(Line, "after".into())]);
+}
+
+#[test]
+fn nested_block_comments_end_at_the_matching_closer() {
+    let rust = pairs_lexical(Language::Rust, "/* a /* b */ c */ let x = 1; // d\n");
+    assert_eq!(rust, [(Block, "a /* b */ c".into()), (Line, "d".into())]);
+    let c = pairs_lexical(Language::C, "/* a /* b */ int x; // d\n");
+    assert_eq!(c, [(Block, "a /* b".into()), (Line, "d".into())]);
+}
+
+#[test]
+fn a_shebang_counts_only_on_the_first_line() {
+    let got = pairs_lexical(Language::Rust, "#![allow(dead_code)]\n// c\n");
+    assert_eq!(got, [(Line, "c".into())]);
+    let got = pairs_lexical(Language::Rust, "// c\n#!/usr/bin/env run\n");
+    assert_eq!(got, [(Line, "c".into())]);
+}
+#[test]
+fn an_escaped_quote_char_literal_does_not_hide_a_comment_after_unicode() {
+    // The window after `'\"'` ends in the middle of the emoji, which once emptied it.
+    let source = "char q = '\\\"'; // ab \u{1F600} x\n";
+    for language in [Language::C, Language::Cpp, Language::Java, Language::Rust] {
+        let got: Vec<String> = pairs_lexical(language, source)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(got, ["ab \u{1F600} x"], "{language:?}");
+    }
+}
+
+#[test]
+fn a_rust_string_may_span_lines_and_hold_comment_markers() {
+    let source = "let s = \"first // not\nsecond /* not */\nthird\"; // yes\n";
+    let got = pairs_lexical(Language::Rust, source);
+    assert_eq!(got, [(Line, "yes".into())]);
+}
+
+#[test]
+fn lua_long_brackets_hold_strings_and_comments() {
+    let mut wrong = Vec::new();
+    for (source, want) in [
+        ("s = [[ -- no\n-- still no ]] -- yes\n", vec!["yes"]),
+        ("s = [==[ ]] -- no ]==] -- yes\n", vec!["yes"]),
+        (
+            "--[==[ ]] kept\nmore ]==] x = 1 -- yes\n",
+            vec!["]] kept more", "yes"],
+        ),
+        ("t = a[b[1]] -- yes\n", vec!["yes"]),
+    ] {
+        let got: Vec<String> = pairs_lexical(Language::Lua, source)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        if got != want {
+            wrong.push(format!("{source:?}: want {want:?}, got {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn clojure_character_literals_do_not_open_strings_or_comments() {
+    let mut wrong = Vec::new();
+    for (source, want) in [
+        ("(def q \\\")\n; yes\n", vec!["yes"]),
+        ("(def s \\;) ; yes\n", vec!["yes"]),
+        ("[\\newline \\u0041 \\a] ; yes\n", vec!["yes"]),
+        ("(def s \"a ; not\") ; yes\n", vec!["yes"]),
+        (";; one\n;; two\n", vec!["one two"]),
+    ] {
+        let got: Vec<String> = pairs(Language::Clojure, source)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if got != want {
+            wrong.push(format!("{source:?}: want {want:?}, got {got:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
