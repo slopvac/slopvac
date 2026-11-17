@@ -18,6 +18,7 @@ In scope:
 - network sources: OCI, release archives, git pins, local folders and the pack index;
 - minisign signatures, publisher keys, rotation and revocation;
 - regex resource limits in data packs;
+- binary container inputs (OOXML, ODF and PNG) and their extractors (section 6.8);
 - plugin text that the host prints, renders or writes.
 
 Out of scope for 3.0:
@@ -217,6 +218,61 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Regex pattern length in a data pack | 4,096 bytes | `slopvac-8l4.3.20` |
 | PCRE2 match, depth and heap limits | fixed in `slopvac-8l4.3.20`; a limit hit is an error, never a no-match | `slopvac-8l4.3.20` |
 
+### 5.6 Limits for binary containers
+
+First-party extractors for OOXML, ODF and PNG enforce these limits. They apply to the in-process adapter and to the same extractors run through the wire adapter. A breach is never a clean empty result: the document is incomplete, the run exits 2, and the diagnostic names the limit. Design record: `slopvac-8l4.20`, section D.
+
+| Limit | Value | Bead |
+|---|---|---|
+| Input file | 256 MiB | `slopvac-8l4.20.7` |
+| ZIP entries | 10,000, checked from the end-of-central-directory record before `ZipArchive::new` | `slopvac-8l4.20.7` |
+| ZIP central directory bytes | bounded from the same record, before `ZipArchive::new` | `slopvac-8l4.20.7` |
+| Bytes read from one ZIP entry | 64 MiB, enforced with `take(limit + 1)` | `slopvac-8l4.20.7` |
+| Bytes read from all entries of one container | 256 MiB | `slopvac-8l4.20.7` |
+| ZIP compression ratio | 100 to 1 at most, after a grace size of 100 KiB | `slopvac-8l4.20.7` |
+| Nested archives | none; an archive inside a container is not opened | `slopvac-8l4.20.7` |
+| Parts read | only known text parts and the relationships that name them | `slopvac-8l4.20.7` |
+| Entry names | `..`, absolute paths, duplicates and encrypted entries are rejected | `slopvac-8l4.20.7` |
+| XML parser | `allow_dtd = false` in every parser; node limit of about 1,000,000; depth 256; attribute and namespace caps applied before the DOM is built | `slopvac-8l4.20.7`, `slopvac-8l4.20.4` |
+| PNG chunks | 10,000 at most; chunks after `IEND` are ignored | `slopvac-8l4.20.4` |
+| One PNG text chunk | 16 MiB | `slopvac-8l4.20.4` |
+| PNG inflated text, total | 32 MiB | `slopvac-8l4.20.4` |
+| PNG checksums | the signature and every chunk CRC are checked before use | `slopvac-8l4.20.4` |
+| Extracted text, total | 32 MiB | `slopvac-8l4.20.7`, `slopvac-8l4.20.4` |
+| Plugin request and reply | must fit the negotiated `maxMessageBytes`, measured on the whole serialised message; 3.0 has no chunking | `slopvac-8l4.20.3` |
+| Time | first-party extractors check a deadline between parts (cooperative, see B9); plugin hooks keep the 30 s hook timeout | `slopvac-8l4.20.7`, `slopvac-8l4.20.3` |
+| In-flight allocation: raw, base64 and frame buffers together | 64 MiB across concurrent documents. Plugin-protocol.md, limits table (section 5.5.6), is the normative source. | `slopvac-8l4.20.1`, `slopvac-8l4.20.3` |
+
+Error data for these limits. The names `segments`, `part-chars`, `locator-chars`, `text-bytes` and `in-flight-bytes` come from the shared contract. The other names in the table are new. `extract-budget` (-32010, defined in plugin-protocol.md section 5.5) carries the name of the budget in `data.budget`. A separate `data.limit` holds the numeric limit when a caller needs it. The host reads these fields and never parses the message text. Every allowed value lives in the following table, marked `x-slopvac-extensible`: an output consumer must accept a value it does not know.
+
+| `data.budget` (`x-slopvac-extensible`) | Limit |
+|---|---|
+| `text-bytes` | Extracted text, 32 MiB |
+| `segments` | Segments per document |
+| `part-chars` | Characters in `part` |
+| `locator-chars` | Characters in `locator` |
+| `input-bytes` (new) | Input file |
+| `zip-entries` | ZIP entries |
+| `zip-directory-bytes` | ZIP central directory bytes |
+| `entry-bytes` | Bytes read from one ZIP entry |
+| `container-bytes` | Bytes read from all entries of one container |
+| `zip-ratio` | ZIP compression ratio |
+| `xml-bytes`, `xml-attributes`, `xml-namespaces`, `xml-depth`, `xml-nodes` | XML part size, attributes per element, namespaces, depth and node count |
+| `png-chunks`, `png-chunk-bytes`, `png-inflated-bytes` | PNG chunk count, one text chunk and total inflated text |
+| `in-flight-bytes` | The in-flight allocation budget |
+
+A ZIP structure failure uses `extract-malformed` with the failed check in `data.check`. One code covers every check, so a new check adds a value and not a code. This table is also marked `x-slopvac-extensible`.
+
+| `data.check` (`x-slopvac-extensible`) | Failure |
+|---|---|
+| `duplicate-name` | Two entries share a name |
+| `overlapping-entries` | Two entries share bytes |
+| `local-central-mismatch` | A local header differs from the central directory |
+| `header-consistency` | `validate_header_consistency` fails for another reason |
+| `unsafe-path` | An entry name holds `..` or an absolute path |
+
+The shared per-document and aggregate memory budget, which also covers concurrent documents, is set by `slopvac-8l4.20.1`.
+
 ## 6. Threat register
 
 Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is the bead that builds the control. "Test" is the test that proves the control. H-numbers are tests of plugin-protocol.md section 12.1. TM-numbers are tests this model adds, and section 7 lists them again by acceptance heading.
@@ -366,6 +422,23 @@ The spawn check misses an edit that keeps the size and restores the modification
 | X5 | A 100 MiB document makes a safe pattern slow. | D | CWE-400 | M/M | Per-document byte cap and per-rule time accounting. The run reports the slow rule, exits 2 at the cap. | `slopvac-8l4.3.20` | TM-58 |
 | X6 | A hostile pack shapes verdicts: severity, suppression or ignore rules that hide real findings. | T | CWE-807 | M/H | Project config, not a pack, decides which packs load. Pack-provided suppression stays within the pack's own rules. `--explain-config` shows provenance. | `slopvac-8l4.9.1`, `slopvac-8l4.4.2` | TM-59 (a pack cannot suppress another pack's rule) |
 
+### 6.8 Binary containers and extractors
+
+A binary container is a ZIP-based office file (OOXML, ODF) or a PNG with embedded diagram source. Section 5.6 holds the numbers. Each Test cell names the fixture its owning bead adds under its test directory (names are fixed here, files do not exist yet). The actor is T5. Every breach here leaves the document incomplete and the run at exit 2.
+
+| ID | Threat | STRIDE | CWE | L/I | Mitigation | Owner | Test |
+|---|---|---|---|---|---|---|---|
+| B1 | Whole-container disclosure: a `binary-extractor/extract` request carries the full file, so a plugin receives images, revision history, comments and embedded objects that the lint never needed. 3.0 has no sandbox, so a trusted plugin may keep or send all of it (R1, R12). | I | CWE-200, CWE-359 | M/M | The hook is a separate declared capability, so the trust hash and the declaration diff show it (O13). The host sends bytes only for a file type the plugin declared. Plugin docs state that the whole container is disclosed. First-party extractors run in-process and send nothing. | `slopvac-8l4.20.3` | TM-60 (`wire_discloses_whole_container`: a fake plugin echoes what it received; the full container arrives only for a declared type) |
+| B2 | An external relationship (`TargetMode="External"`, a linked image, an `oleObject`, a remote template or a `file:` target) makes the extractor fetch a URL or open a path, or embedded content (macros, OLE objects, nested archives, scripts) runs. | I, E | CWE-918, CWE-610, CWE-94 | M/H | The reader follows only internal relationships to known text parts. The reader resolves internal relationships only and treats every external target as inert text. Embedded objects stay as bytes and are never opened. Macro variants (`docm`, `xlsm`, `pptm`) are read as plain parts. | `slopvac-8l4.20.7` | TM-61 (`office_external_rel.docx`: a loopback listener sees no connection and a canary file outside the container is not read) |
+| B3 | ZIP parser disagreement: duplicate names, overlapping entries, or a local header that differs from the central directory, so the extractor reads other bytes than a second tool reads. | T | CWE-436, CWE-444 | M/H | Reject duplicate names, overlapping entries and local/central mismatch with one code, `extract-malformed`, and the failed check in `data.check`. Run `validate_header_consistency` on open, because the `zip` crate does not run it by default. Entries with `..`, an absolute path or encryption are rejected (section 5.6). | `slopvac-8l4.20.7` | TM-62 (`zip_duplicate_name.docx`, `zip_overlap.docx`, `zip_local_central_mismatch.docx`: each gives `extract-malformed` and exit 2, with `data.check` naming the failed check from the header-check table in section 5.6) |
+| B4 | Locator and metadata injection: a document supplies a page name, sheet name, part name, id or label that carries terminal escapes, bidi overrides, newlines or a path separator into `origin` strings, reports and fingerprints. | T, S | CWE-150, CWE-117 | H/M | Every locator and label that comes from a document passes the shared sanitiser (O1) and a length limit before it enters `origin`. Control characters are escaped, not dropped, so two hostile names stay distinct. | `slopvac-8l4.20.7`, `slopvac-8l4.20.4` | TM-63 (`office_hostile_names.xlsx`, `drawio_hostile_page.png`: names with ESC, OSC 8, bidi and CR LF leave no raw control character in any rendered output) |
+| B5 | Aggregate and semantic expansion: a small file makes the extractor build output far larger than the file through shared-string references, repeated cell references, many small segments, or a flood of findings. | D | CWE-409, CWE-776 | M/M | Budget the count of segments, shared-string expansions and extracted bytes before allocating the output, as a total across the run. A breach is `extract-budget` and incomplete (exit 2); `data.budget` names the budget. | `slopvac-8l4.20.7`, `slopvac-8l4.20.1` | TM-64 (`xlsx_shared_string_expansion.xlsx`: a few KiB of cells that refer to one 1 MiB string; stopped at the text cap with bounded memory) |
+| B6 | An unbounded structure drives allocation inside a parser: the `zip` crate allocates central headers at construction, and `roxmltree` reserves from raw counts of `<` and `=`, with a quadratic attribute check. | D | CWE-770, CWE-1284 | H/M | Parse the end-of-central-directory record ourselves and bound the central-directory bytes and the entry count before `ZipArchive::new`. Bound XML part size, attributes per element, namespaces and depth before `roxmltree` sees the part. | `slopvac-8l4.20.7` | TM-65 (`zip_huge_central_directory.docx`, `xml_many_attributes.docx`, `xml_deep_nesting.docx`: refused before the parser allocates; peak memory stays under a fixed test cap) |
+| B7 | DTD and entity expansion: a part declares entities (billion laughs) or an external entity. The draw.io reader in `drawio.rs` enables the DTD (lines 108 to 114). | D, I | CWE-776, CWE-611 | M/H | `allow_dtd = false` in every XML parser, including draw.io. A part with a DTD makes the document incomplete and is not parsed. | `slopvac-8l4.20.7`, `slopvac-8l4.20.4` | TM-66 (`xml_billion_laughs.docx`, `drawio_dtd.png`: refused, no expansion, no file read) |
+| B8 | A PNG with a bad CRC, a truncated chunk, a flood of chunks or an oversized text chunk hides or forges embedded source. The current walker checks no CRC and returns an empty extraction on any error. | T, D | CWE-354, CWE-770 | M/M | Check the signature and every CRC. Cap chunk count, chunk size and inflated size (section 5.6). A malformed payload in a named format is incomplete (exit 2), and is told apart from valid-empty and no-source. | `slopvac-8l4.20.4` | TM-67 (`png_bad_crc.png`, `png_chunk_flood.png`, `png_text_bomb.png`, `png_truncated.png`: each gives exit 2; `png_no_source.png` stays clean) |
+| B9 | A hook or an extractor runs past its time and stalls the run. First-party extractors cannot be killed. | D | CWE-400, CWE-835 | M/M | Plugin hooks keep the 30 s hook timeout and the host kills on expiry (P7). First-party timeouts are cooperative: the extractor checks a deadline between parts, so one large part can run past it. The size and ratio limits bound that part. A deadline hit is `plugin-timeout` and incomplete (exit 2). | `slopvac-8l4.20.7`, `slopvac-8l4.20.3` | TM-68 (`office_slow_parts.docx` with a test clock: stops between parts with exit 2; `wire_extract_hook_timeout` kills a hanging fake plugin) |
+| B10 | A hostile or oversized document, or a plugin that floods replies, exhausts memory through raw, base64 and frame buffers held at once. | D | CWE-770, CWE-400 | M/H | A 64 MiB in-flight allocation budget covers raw, base64 and frame buffers. It works with the text and segment caps, `maxMessageBytes` and the 30 s hook timeout (section 5.6). The numbers are normative in the limits table of plugin-protocol.md, section 5.5.6; this row does not restate them. A breach of a budget reports `extract-budget` (-32010) with `data.budget` naming the budget, or `message-too-large` (-32004) for a frame, and leaves the document incomplete (exit 2). | `slopvac-8l4.20.1`, `slopvac-8l4.20.3` | TM-69 (`wire_inflight_budget`: concurrent large containers and a flooding fake plugin stay under the budget and end with the named code) |
+
 ## 7. Coverage
 
 ### 7.1 Acceptance list of `slopvac-8l4.9.11`
@@ -469,6 +542,16 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-57 | Patterns with verbs that raise limits and with callouts. | Limits stay. Callouts do nothing. |
 | TM-58 | A document over the byte cap. | Reported at the cap, exit 2. |
 | TM-59 | A pack that tries to suppress another pack's rules. | Ignored, with a diagnostic. |
+| TM-60 | A fake plugin that declares one binary type receives a container of that type, and one of another type. | The full container arrives for the declared type only. Docs and the declaration diff name the hook. |
+| TM-61 | A docx with `TargetMode="External"` relationships (HTTP, `file:`), an `oleObject` and an embedded zip. | No connection on a loopback listener, no read of the canary file, nothing opened. The text parts still lint. |
+| TM-62 | Containers with a duplicate name, overlapping entries, and a local header that differs from the central directory. | Each fails with `extract-malformed` and exit 2, and `data.check` is `duplicate-name`, `overlapping-entries` or `local-central-mismatch`. |
+| TM-63 | Sheet and page names with ESC, OSC 8, bidi overrides, CR LF and over-long text. | Sanitised in `origin`, text, JSON, SARIF and fingerprints. Two distinct hostile names stay distinct. |
+| TM-64 | A workbook whose shared-string references expand to far more than its size. | Stopped at the extracted-text or segment cap, exit 2, bounded memory. |
+| TM-65 | A central directory with a large entry count or byte size, a part with a 1,000,000-attribute element, and one nested 10,000 levels deep. | Refused before the parser allocates, exit 2. |
+| TM-66 | A part with an internal entity bomb, and a draw.io PNG with an external entity. | Refused, nothing expanded, nothing read. |
+| TM-67 | PNGs with a bad CRC, a truncated chunk, 100,000 chunks and a 1 GiB inflated text chunk, plus one valid PNG without source. | The first four exit 2 and the last is clean. Chunks after `IEND` are ignored. |
+| TM-68 | An office file with many parts and a test clock past the deadline, and a fake plugin that hangs in `binary-extractor/extract`. | The first stops between parts with exit 2. The second is killed at the hook timeout. |
+| TM-69 | Four containers near the input cap sent at once, and a fake plugin that returns replies without pause. | Allocation stays within the in-flight budget. The run reports `extract-budget` (with `data.budget` set to `in-flight-bytes`) or `message-too-large`, and exits 2. |
 
 ### 7.4 Implemented tests
 
@@ -486,11 +569,11 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 | TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
 | TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
 | TM-49, TM-50, TM-51, TM-52, TM-53 (`tm<N>_...`; the `live_` tests need uv and skip without it) | `pyenv.rs` | Y1 to Y6 |
-| TM-5 limits, TM-4 on Linux (open, PR #389) | `limits.rs` | P5, P6 |
+| TM-5 limits, TM-4 on Linux (open) | `limits.rs` | P5, P6 |
 | TM-11 | `sanitize.rs`, `host.rs`, `trust.rs` in `slopvac-plugins` | O1, P15 |
 | TM-11, TM-12, TM-13 (the escaping functions) | `crates/slopvac-sanitize/src/lib.rs` | O1 to O4, P15 |
 
-Tests with no implementation yet: TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10, TM-14, TM-19 to TM-21, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-54 to TM-59. TM-54 to TM-58 belong to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat. TM-11 to TM-13 pass at the component level (`slopvac-8l4.9.32`). The renderer and Action wiring is open in `slopvac-8l4.12.2` and `slopvac-8l4.13.6`, which add the end-to-end checks.
+Tests with no implementation yet: TM-60 to TM-69 (binary containers, `slopvac-8l4.20`), TM-1 (named oversized frames, covered by H1 and H2), TM-7, TM-10, TM-14, TM-19 to TM-21, TM-31, TM-32, TM-37, TM-40, TM-42 and TM-54 to TM-59. TM-54 to TM-58 belong to `slopvac-8l4.3.20`. The rest wait for the bead that owns the threat. TM-11 to TM-13 pass at the component level (`slopvac-8l4.9.32`). The renderer and Action wiring is open in `slopvac-8l4.12.2` and `slopvac-8l4.13.6`, which add the end-to-end checks.
 
 ## 8. Work items from this model
 
@@ -498,13 +581,14 @@ Every work item of this model has a bead.
 
 | Work | Bead | Status | Threats |
 |---|---|---|---|
-| Managed Python environments | `slopvac-8l4.9.31` | in progress (PR #428) | Y1 to Y7 |
-| Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
-| Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
+| Managed Python environments | `slopvac-8l4.9.31` | in progress; tests TM-49 to TM-53 | Y1 to Y7 |
+| Safe application of edits and recipe plans | `slopvac-8l4.9.14` | implemented; tests TM-15 to TM-18 | O6 to O9 |
+| Plugin resource limits | `slopvac-8l4.9.13` | in progress; tests TM-4 and TM-5 | P5, P6 |
 | Rotation and the signed revocation list | `slopvac-8l4.9.15` | in progress | K5, K6 |
 | Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | component done (crate `slopvac-sanitize`); renderer wiring open | O1 to O4, P15 |
-| Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged (PR #344) | E1 to E7 |
+| Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | implemented; tests TM-43 to TM-47 | E1 to E7 |
 | Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |
+| Binary container extractors and limits | `slopvac-8l4.20.3`, `slopvac-8l4.20.4`, `slopvac-8l4.20.7` | open; tests TM-60 to TM-69 | B1 to B10 |
 
 Other beads that this model depends on: `slopvac-8l4.9.16` (compiled first-party key), `slopvac-8l4.9.19` (credential values in the public trust hash), `slopvac-8l4.9.27` (pinned-commit git fetch), `slopvac-8l4.9.28` (executable set of a plugin pack), `slopvac-8l4.9.29` (escaping in error messages) and `slopvac-8l4.3.20` (PCRE2 limits).
 
@@ -525,6 +609,7 @@ A residual risk stays after all controls above. The release notes and `slopvac p
 | R9 | Prompt injection cannot be solved at the host. The host only cuts the paths from provider output to edits and verdicts. | Model behavior is outside slopvac. | Medium. |
 | R10 | A signed pack can contain misleading or harmful rules. A signature identifies a publisher and does not judge content. | Review of content is outside the supply chain. | Low to medium. |
 | R11 | **Release freshness is unauthenticated.** `slopvac self update` and the update notice read the latest version from unsigned registry JSON: the GitHub releases API, or the PyPI JSON for wheel installs. An attacker who controls that answer (T2) can freeze or delay upgrades, or name an older signed release that is still newer than the running one. The attacker cannot install anything below the running version or anything the release key did not sign: the update pipeline refuses a version that is not newer than the running one or is a prerelease (`crates/slopvac-update/src/pipeline.rs`), and the minisign check against the compiled-in `keys/slopvac-release.pub` binds the archive to the exact asset and version (`crates/slopvac-update/src/verify.rs`). | A signed, expiring release manifest needs release-pipeline work that 3.0 does not include. Follow-up: `slopvac-8l4.13.46`. | Medium. A user can stay on a version with a known flaw while an attacker withholds the fix, and nothing in the client shows it. |
+| R12 | A trusted binary-extractor plugin receives the whole container, including images, revision history and embedded objects, and can keep or send it. | The hook needs the bytes, and 3.0 has no sandbox (R1). First-party extractors stay in-process. | Medium to high for private documents. |
 
 ## 10. Review sign-off
 
