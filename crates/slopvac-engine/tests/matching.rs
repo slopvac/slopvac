@@ -10,6 +10,7 @@
 mod common;
 
 use common::{engine, id, matched, places, rule, tokens};
+use rstest::rstest;
 use serde_json::json;
 use slopvac_engine::Input;
 use slopvac_model::Severity;
@@ -513,34 +514,31 @@ fn a_table_cell_with_two_sentences_counts_as_one_sentence_as_in_2x() {
     assert_eq!((doc.words, doc.sentences), (7, 4));
 }
 
-#[test]
-fn a_sentence_rule_matches_across_both_sentences_of_a_table_cell_at_exact_positions() {
+#[rstest]
+#[case::plain_lf("Stop it. Then wait.", "\n", 9, 27)]
+#[case::plain_crlf("Stop it. Then wait.", "\r\n", 11, 29)]
+#[case::inline_code_lf("Stop `x`. Then wait.", "\n", 9, 28)]
+#[case::inline_code_crlf("Stop `x`. Then wait.", "\r\n", 11, 30)]
+fn a_sentence_rule_matches_across_both_sentences_of_a_table_cell_at_exact_positions(
+    #[case] cell: &str,
+    #[case] eol: &str,
+    #[case] start: usize,
+    #[case] end: usize,
+) {
     // The cell is one sentence in 2.x, so a sentence-scoped pattern can span its full stop.
     let e = engine(&[rule(
         "span",
         &json!({"kind": "pattern", "pattern": r"^Stop.*\. Then wait"}),
         &json!({"scope": "sentence"}),
     )]);
-    // (cell, line ending, the source bytes the match covers, in the table text).
-    for (cell, eol, start, end) in [
-        ("Stop it. Then wait.", "\n", 9, 27),
-        ("Stop it. Then wait.", "\r\n", 11, 29),
-        ("Stop `x`. Then wait.", "\n", 9, 28),
-        ("Stop `x`. Then wait.", "\r\n", 11, 30),
-    ] {
-        let source = format!("|H|{eol}|-|{eol}|{cell}|{eol}");
-        let doc = lint(&e, &source);
-        assert_eq!(doc.findings.len(), 1, "{cell:?} {eol:?}");
-        let f = &doc.findings[0];
-        let span = f.extent.unwrap().span;
-        assert_eq!((span.start(), span.end()), (start, end), "{cell:?} {eol:?}");
-        assert_eq!(
-            (f.start.line(), f.start.column()),
-            (3, 2),
-            "{cell:?} {eol:?}"
-        );
-        assert_eq!(f.matched_text, &source[start..end]);
-    }
+    let source = format!("|H|{eol}|-|{eol}|{cell}|{eol}");
+    let doc = lint(&e, &source);
+    assert_eq!(doc.findings.len(), 1);
+    let f = &doc.findings[0];
+    let span = f.extent.unwrap().span;
+    assert_eq!((span.start(), span.end()), (start, end));
+    assert_eq!((f.start.line(), f.start.column()), (3, 2));
+    assert_eq!(f.matched_text, &source[start..end]);
 }
 
 #[test]

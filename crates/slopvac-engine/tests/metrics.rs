@@ -11,6 +11,7 @@
 mod common;
 
 use common::{engine, rule};
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_model::{Document, Severity};
 
@@ -143,24 +144,24 @@ fn one_cell_table(cell: &str, eol: &str) -> String {
     format!("|H|{eol}|-|{eol}|{cell}|{eol}")
 }
 
-#[test]
-fn a_table_cell_is_one_sentence_for_a_sentence_metric() {
+#[rstest]
+#[case::plain_lf("Stop it. Wait now.", "\n")]
+#[case::plain_crlf("Stop it. Wait now.", "\r\n")]
+#[case::inline_code_lf("Stop `x`. Wait now.", "\n")]
+#[case::inline_code_crlf("Stop `x`. Wait now.", "\r\n")]
+fn a_table_cell_is_one_sentence_for_a_sentence_metric(#[case] cell: &str, #[case] eol: &str) {
     // 2.x measures the cell as one sentence of four words, not two sentences of two.
     let rule = gt("sentence_words", 3.0);
-    for eol in ["\n", "\r\n"] {
-        for cell in ["Stop it. Wait now.", "Stop `x`. Wait now."] {
-            let doc = lint(&rule, &one_cell_table(cell, eol));
-            assert_eq!(
-                hits(&doc),
-                [(3, "Got 4 over 3.".to_owned())],
-                "{cell:?} {eol:?}"
-            );
-        }
-    }
+    let doc = lint(&rule, &one_cell_table(cell, eol));
+    assert_eq!(hits(&doc), [(3, "Got 4 over 3.".to_owned())]);
 }
 
-#[test]
-fn a_table_cell_takes_its_text_type_from_its_opening() {
+#[rstest]
+#[case::plain_lf("The valve opens. Close the door now.", "\n")]
+#[case::plain_crlf("The valve opens. Close the door now.", "\r\n")]
+#[case::inline_code_lf("The `valve` opens. Close the door now.", "\n")]
+#[case::inline_code_crlf("The `valve` opens. Close the door now.", "\r\n")]
+fn a_table_cell_takes_its_text_type_from_its_opening(#[case] cell: &str, #[case] eol: &str) {
     // The cell opens with a descriptive sentence, so the whole cell is descriptive and a
     // procedural limit skips it, although its second sentence is an instruction alone.
     let rule = metric(
@@ -169,15 +170,8 @@ fn a_table_cell_takes_its_text_type_from_its_opening() {
         "gt",
         &json!({"scope": "sentence", "text_type": "procedural"}),
     );
-    for eol in ["\n", "\r\n"] {
-        for cell in [
-            "The valve opens. Close the door now.",
-            "The `valve` opens. Close the door now.",
-        ] {
-            let doc = lint(&rule, &one_cell_table(cell, eol));
-            assert_eq!(hits(&doc), [], "{cell:?} {eol:?}");
-        }
-    }
+    let doc = lint(&rule, &one_cell_table(cell, eol));
+    assert_eq!(hits(&doc), []);
 }
 
 #[test]
