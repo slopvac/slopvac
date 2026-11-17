@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 import build_site
 
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
-PREFIX = "https://srobroek.github.io/slopvac/schemas/v3/"
+PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
 
 
 @pytest.fixture

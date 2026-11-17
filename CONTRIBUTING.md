@@ -49,6 +49,8 @@ CI also posts prose and shellcheck findings as review comments on added lines. T
 
 That workflow treats the artifacts as untrusted. It accepts a pull request number only when that PR is open and its head commit is the one the CI run tested. `workflow_run` workflows load from the default branch, so changes to `reviewdog.yml` take effect only after merge. The pass or fail result of the lint jobs does not depend on this path.
 
+Requirements for every Rust change, and the checklist reviewers use, are in [`docs/engineering.md`](docs/engineering.md).
+
 Rust test conventions are in [`docs/testing-rust.md`](docs/testing-rust.md). Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot.
 
 ## Rust checks
@@ -88,17 +90,17 @@ Open a pull request with a concise description and a list of checks you ran. CI 
 
 ## Report a problem or propose a rule
 
-Choose an issue form at [New issue](https://github.com/srobroek/slopvac/issues/new/choose):
+Choose an issue form at [New issue](https://github.com/slopvac/slopvac/issues/new/choose):
 
 The forms cover these categories:
 
-- **Bug:** Covers crashes, tracebacks, wrong exit codes, wrong or unstable output, or config, setup, init, Vale, cache, or prime defects.
-- **False positive:** Covers text that a rule flags as slop incorrectly.
-- **Missed slop:** Covers slop that no finding reports but an existing rule should catch. Use this form if unsure.
-- **Mis-tagged:** Covers a finding on slop with the wrong rule, severity, or span/location.
-- **Wrong fix:** Covers a correct match with a wrong message, replacement, or fix guidance. Use this form if `--fix` changes meaning or produces broken text.
-- **New rule:** Covers a writing pattern that no existing rule detects.
-- **Rule improvement:** Covers whole-rule changes to accuracy, examples, exceptions, judgment, tier, severity, genre advice, wording, or docs.
+- Bug: covers crashes, tracebacks, wrong exit codes, wrong or unstable output, or config, setup, init, Vale, cache, or prime defects.
+- False positive: covers text that a rule flags as slop incorrectly.
+- Missed slop: covers slop that no finding reports but an existing rule should catch. Use this form if unsure.
+- Mis-tagged: covers a finding on slop with the wrong rule, severity, or span/location.
+- Wrong fix: covers a correct match with a wrong message, replacement, or fix guidance. Use this form if `--fix` changes meaning or produces broken text.
+- New rule: covers a writing pattern that no existing rule detects.
+- Rule improvement: covers whole-rule changes to accuracy, examples, exceptions, judgment, tier, severity, genre advice, wording, or docs.
 
 Before submitting an agent report, run `slopvac prime report`. Get the user's approval for the exact post.
 
@@ -106,6 +108,7 @@ Do not include paths, file names, or private data.
 Do not include user names, host names, repository names, or organisation names.
 Paste sample text into the report. A local file path is not enough.
 Prefer a synthetic sample over text from private or proprietary sources.
+
 Record the agent product name. Record the active model exactly as the harness reports it in its system prompt, context, or `/model` selection. Do not use model self-description or config defaults. Write N/A when the active model is unavailable.
 Get the harness version from its version command. Write N/A when unavailable.
 Do not infer these fields from environment variables.

@@ -8,7 +8,7 @@ The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives 
   - macOS arm64 and x86_64.
   - Linux arm64 and x86_64 (glibc).
   - Linux x86_64 (musl).
-- A shell installer and a Homebrew formula pushed to `srobroek/homebrew-tap`.
+- A shell installer and a Homebrew formula pushed to `slopvac/homebrew-tap`.
 - GitHub build attestations, checksums, a CycloneDX SBOM, and binaries built with `cargo-auditable`.
 - A minisign signature (`<file>.minisig`) for every published file: archives, installers, the Homebrew formula, checksum files, the SBOM and `dist-manifest.json`.
 
@@ -45,16 +45,31 @@ Releases carry minisign signatures next to the GitHub build attestations. The re
 Verify a download:
 
 ```sh
-minisign -Vm slopvac-x86_64-unknown-linux-gnu.tar.xz -p keys/slopvac-release.pub
+minisign -Vm slopvac-x86_64-unknown-linux-gnu.tar.gz -p keys/slopvac-release.pub
 ```
 
-minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.xz.minisig` next to the file. A changed file, or a signature from another key, fails with a non-zero exit. For many files at once, run `python3 scripts/release_signing.py verify <files>`.
+minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.gz.minisig` next to the file. A changed file, or a signature from another key, fails with a non-zero exit. For many files at once, run `python3 scripts/release_signing.py verify <files>`.
+
+Each signature also carries a trusted comment that names the file and the release, for example `slopvac-release file:slopvac-x86_64-unknown-linux-gnu.tar.gz version:3.1.0`. The release version has no `v`, and a candidate keeps its suffix, as in `3.1.0-rc.2`. Minisign prints the comment after it verifies the signature, and the signature covers it. `slopvac self update` requires the comment to match the archive and version it requested, so a signed archive from another release or target does not install. It also installs stable releases only, so a signed candidate does not install either.
+
+When `slopvac self update` refuses or fails, it exits 2, leaves the installed binary unchanged and reports one of these codes:
+
+| Code | When |
+| --- | --- |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method, or the releases page otherwise. |
+| `offline-network-needed` | Offline mode is on. Self update needs the network. |
+| `update-check-failed` | The latest-release lookup failed. |
+| `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
+| `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
+| `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
+
+If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
 
 How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
-- `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
-- The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
+- `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory with the trusted comment for the version in `--version`, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
+- Both workflows pass the version from the validated tag through an environment variable. The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
 - The step fails closed. Without the public key file or the secret, the job stops before it uploads. `candidate.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
 
 To rotate the key, follow [Rotate the key](maintainer-setup.md#rotate-the-key). Releases already published keep verifying against the key that signed them, so keep the old public key under `keys/` with its key id in the file name, and record the change in the release notes.
@@ -74,7 +89,7 @@ dist build --artifacts=local --tag v<version>
 A maintainer must do these once. No workflow does them.
 
 - Create the `MINISIGN_SECRET_KEY` repository secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key). Release and candidate jobs stop without the secret or the committed public key.
-- Create the `srobroek/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
+- Create the `slopvac/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
 - Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
 - Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
 - Create the tag ruleset described next.
@@ -118,7 +133,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 
 ## Publish order and recovery
 
-Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `srobroek/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
+Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `slopvac/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
 
 ## Test an installed release
 
@@ -126,7 +141,7 @@ Each release of major 3 and later publishes in this order: build, upload to the 
 
 - the archive for each of the five targets, after checking the published `.sha256` file.
 - the shell installer on Linux and macOS.
-- `brew install srobroek/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
+- `brew install slopvac/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
 
 It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with `GITHUB_TOKEN`, which raises no event, and such a trigger could start before the assets exist. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.
 

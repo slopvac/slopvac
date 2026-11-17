@@ -110,7 +110,7 @@ impl Runtime {
             var,
             now,
             fetcher: Arc::new(UreqFetcher::new(std::time::Duration::from_secs(30))),
-            verifier: Box::new(ReleaseVerifier),
+            verifier: Box::new(ReleaseVerifier::default()),
             download_base: DOWNLOAD_BASE.to_owned(),
             target: pipeline::target_triple(),
             cache,
@@ -175,7 +175,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     let method = rt.method();
     if method != InstallMethod::Installer {
         let advice = method.upgrade_command().map_or_else(
-            || "download a release from https://github.com/srobroek/slopvac/releases".to_owned(),
+            || "download a release from https://github.com/slopvac/slopvac/releases".to_owned(),
             |c| format!("run `{c}`"),
         );
         return Err(Failure::new(
@@ -207,6 +207,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         &*rt.fetcher,
         &*rt.verifier,
         &rt.download_base,
+        &rt.current,
         &latest,
         target,
         &rt.exe,
@@ -214,6 +215,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     .map_err(|e| {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
+            UpdateError::Prerelease(_) => "update-prerelease-refused",
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

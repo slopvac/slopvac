@@ -72,7 +72,7 @@ Record each approval as one table:
 [[item]]
 id = "security-review"
 status = "pass"
-evidence = ["https://github.com/srobroek/slopvac/issues/123"]
+evidence = ["https://github.com/slopvac/slopvac/issues/123"]
 approver = "alias"
 date = 2026-11-14
 ```

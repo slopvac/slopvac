@@ -211,7 +211,7 @@ def test_descriptor_command_is_accepted_by_the_cli(
     tmp_path, slopvac_binary, build_argv
 ):
     config = tmp_path / "slopvac.toml"
-    config.write_text("", encoding="utf-8")
+    config.write_text("schema_version = 3\n", encoding="utf-8")
     target = tmp_path / "doc.md"
     target.write_text("# Title\n\nA short sentence.\n", encoding="utf-8")
     report = tmp_path / "report.sarif"

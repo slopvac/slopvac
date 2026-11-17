@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/pack-manifest.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/pack-manifest.schema.json",
   "title": "slopvac v3 pack manifest",
   "description": "The slopvac-pack.toml file at the root of a pack. A data pack holds rules, styles, genres, terms, taggers and prime snippets, and no code. A plugin pack adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",

@@ -78,7 +78,7 @@ def test_rewrites_every_configured_version_file(tmp_path):
         ),
         "README.md": (
             'rev: v2.17.0 # x-release-please-version\n'
-            'uses: srobroek/slopvac@v2.17.0 # x-release-please-version\n'
+            'uses: slopvac/slopvac@v2.17.0 # x-release-please-version\n'
         ),
     }
     for relative, text in files.items():

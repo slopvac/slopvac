@@ -75,7 +75,7 @@ host                                plugin
 4. **Work.** The host sends hook requests (section 5).
 5. **Shutdown.** The host sends `shutdown`. The plugin finishes or abandons pending work, answers `null`, and answers every later request except `exit` with `invalid-request`. The host then sends `exit`. The plugin exits with status 0 after `shutdown` and `exit`, and with status 1 after `exit` alone.
 6. **End of input.** Closing the plugin's standard input has the effect of `exit`. A plugin that sees end of input exits at once.
-7. **Kill.** The host kills a plugin that has not exited 2 seconds after `exit`. It kills the whole process group on Unix and the job object on Windows, so the children of the plugin die too.
+7. **Kill.** The host kills a plugin that has not exited 2 seconds after `exit`. It kills the whole process group, so the children of the plugin die too. Native Windows is out of scope for 3.0.
 
 A plugin that exits or crashes mid-run fails all its pending requests with `plugin-exited`. The host reports the exit status and the tail of standard error (section 7). It does not restart the plugin in the same run. The affected operation is incomplete, and the run exits 2.
 

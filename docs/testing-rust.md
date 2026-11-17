@@ -50,3 +50,11 @@ The scheduled workflow `rust-fuzz.yml` runs every target for 5 minutes each nigh
 ## Dependencies
 
 Declare test tools once under `[workspace.dependencies]` and use `.workspace = true` in a crate's `[dev-dependencies]`. `cargo shear` fails on an unused one.
+
+## Coverage
+
+Install `cargo-llvm-cov` 0.9.1 with `cargo install --locked cargo-llvm-cov@0.9.1`. Add the LLVM tools with `rustup component add llvm-tools-preview`. Then run `just coverage`.
+
+The recipe runs the nextest suite under instrumentation. It writes `target/llvm-cov/lcov.info` and prints a per-file summary. Run `cargo llvm-cov nextest --workspace --html` for an HTML report at `target/llvm-cov/html/index.html`. Run doctests separately with `cargo test --doc`.
+
+The `Rust coverage` workflow runs weekly and on demand. It uploads the lcov file as the `rust-coverage-lcov` artifact. It sets no threshold, so a pull request never waits on coverage.

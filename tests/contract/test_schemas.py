@@ -18,7 +18,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-BASE = "https://srobroek.github.io/slopvac/schemas/"
+BASE = "https://slopvac.github.io/slopvac/schemas/"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas" / "v3"
 CONFORMANCE = SCHEMA_DIR / "conformance"

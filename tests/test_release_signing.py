@@ -19,6 +19,7 @@ signing = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = signing
 SPEC.loader.exec_module(signing)
 
+VERSION = "3.1.0"
 SECRET = "untrusted comment: secret key\nRWRsecretmaterial\n"
 POSIX_ONLY = pytest.mark.skipif(os.name != "posix", reason="uses a POSIX fake binary")
 
@@ -62,8 +63,8 @@ def fake(tmp_path, monkeypatch):
 def release(tmp_path):
     directory = tmp_path / "artifacts"
     directory.mkdir()
-    (directory / "slopvac-x86_64.tar.xz").write_bytes(b"archive")
-    (directory / "sha256.sum").write_text("abc  slopvac-x86_64.tar.xz\n")
+    (directory / "slopvac-x86_64.tar.gz").write_bytes(b"archive")
+    (directory / "sha256.sum").write_text("abc  slopvac-x86_64.tar.gz\n")
     pub = tmp_path / "release.pub"
     pub.write_text("untrusted comment: public\nRWTpub\n")
     return directory, pub
@@ -75,7 +76,7 @@ def calls(log: Path) -> list[dict]:
 
 def run_sign(directory, pub, **env):
     environ = {**os.environ, **env}
-    return signing.sign(directory, pub, environ)
+    return signing.sign(directory, pub, environ, VERSION)
 
 
 @POSIX_ONLY
@@ -84,7 +85,7 @@ def test_every_artifact_gets_a_signature_that_is_then_verified(fake, release):
     run_sign(directory, pub, MINISIGN_SECRET_KEY=SECRET)
     assert sorted(p.name for p in directory.glob("*.minisig")) == [
         "sha256.sum.minisig",
-        "slopvac-x86_64.tar.xz.minisig",
+        "slopvac-x86_64.tar.gz.minisig",
     ]
     verifications = [c["args"] for c in calls(fake) if "-V" in c["args"]]
     assert len(verifications) == 2
@@ -140,7 +141,7 @@ def test_a_missing_secret_stops_signing(release, value):
     directory, pub = release
     env = {} if value is None else {"MINISIGN_SECRET_KEY": value}
     with pytest.raises(signing.SigningError, match="MINISIGN_SECRET_KEY"):
-        signing.sign(directory, pub, env)
+        signing.sign(directory, pub, env, VERSION)
     assert list(directory.glob("*.minisig")) == []
 
 
@@ -149,14 +150,14 @@ def test_an_empty_artifact_directory_is_an_error(tmp_path, release):
     empty = tmp_path / "empty"
     empty.mkdir()
     with pytest.raises(signing.SigningError, match="no artifacts"):
-        signing.sign(empty, pub, {"MINISIGN_SECRET_KEY": SECRET})
+        signing.sign(empty, pub, {"MINISIGN_SECRET_KEY": SECRET}, VERSION)
 
 
 def test_a_subdirectory_in_the_artifact_directory_is_an_error(fake, release):
     directory, pub = release
     (directory / "nested").mkdir()
     with pytest.raises(signing.SigningError, match="only files"):
-        signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": SECRET})
+        signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": SECRET}, VERSION)
 
 
 def test_require_key_exits_nonzero_without_the_public_key(tmp_path):
@@ -206,7 +207,7 @@ def test_signed_artifacts_verify_and_a_tampered_one_is_rejected(
 ):
     directory, _ = release
     pub, sec = generate_key(tmp_path)
-    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()})
+    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()}, VERSION)
     files = [p for p in directory.iterdir() if p.suffix != ".minisig"]
     signing.verify(files, pub)
 
@@ -218,7 +219,7 @@ def test_signed_artifacts_verify_and_a_tampered_one_is_rejected(
 def test_a_signature_from_another_key_is_rejected(real, tmp_path, release):
     directory, _ = release
     pub, sec = generate_key(tmp_path)
-    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()})
+    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()}, VERSION)
     other = tmp_path / "other"
     other.mkdir()
     other_pub, _ = generate_key(other)
@@ -230,8 +231,8 @@ def test_a_signature_from_another_key_is_rejected(real, tmp_path, release):
 def test_the_documented_user_command_verifies_a_signed_file(real, tmp_path, release):
     directory, _ = release
     pub, sec = generate_key(tmp_path)
-    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()})
-    artifact = directory / "slopvac-x86_64.tar.xz"
+    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()}, VERSION)
+    artifact = directory / "slopvac-x86_64.tar.gz"
     ok = subprocess.run(
         [MINISIGN, "-Vm", str(artifact), "-p", str(pub)],
         capture_output=True,
@@ -253,3 +254,95 @@ def test_the_committed_public_key_satisfies_the_release_gate():
     signing.require_key(signing.PUBKEY)
     first = signing.PUBKEY.read_text(encoding="utf-8").splitlines()[0]
     assert first == "untrusted comment: minisign public key D9914BDB4570AC6D"
+
+
+def read_signature(artifact: Path) -> list[str]:
+    return artifact.with_name(artifact.name + ".minisig").read_text().splitlines()
+
+
+def test_every_signature_carries_the_trusted_comment_for_its_file(
+    real, tmp_path, release
+):
+    directory, _ = release
+    pub, sec = generate_key(tmp_path)
+    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()}, "3.1.0-rc.2")
+    for name in ("slopvac-x86_64.tar.gz", "sha256.sum"):
+        trusted = read_signature(directory / name)[2]
+        assert (
+            trusted
+            == f"trusted comment: slopvac-release file:{name} version:3.1.0-rc.2"
+        )
+        # minisign prints the trusted comment only after the global signature verified.
+        out = subprocess.run(
+            [MINISIGN, "-Vm", str(directory / name), "-p", str(pub)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert (
+            f"Trusted comment: slopvac-release file:{name} version:3.1.0-rc.2"
+            in out.stdout
+        )
+
+
+def test_a_trusted_comment_edited_after_signing_fails_verification(
+    real, tmp_path, release
+):
+    directory, _ = release
+    pub, sec = generate_key(tmp_path)
+    signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": sec.read_text()}, "3.1.0")
+    artifact = directory / "slopvac-x86_64.tar.gz"
+    signature = artifact.with_name(artifact.name + ".minisig")
+    signature.write_text(
+        signature.read_text().replace("version:3.1.0", "version:3.0.0")
+    )
+    with pytest.raises(signing.SigningError, match=artifact.name):
+        signing.verify([artifact], pub)
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["", "v3.1.0", "3.1", "3.1.0 file:x", "3.1.0-rc.0", "3.1.0\nx", "3.1.0+b"],
+)
+def test_a_version_that_is_not_a_release_version_is_refused(release, version):
+    directory, pub = release
+    with pytest.raises(signing.SigningError, match="release version"):
+        signing.sign(directory, pub, {"MINISIGN_SECRET_KEY": SECRET}, version)
+    assert list(directory.glob("*.minisig")) == []
+
+
+def test_the_command_line_requires_a_version(release):
+    directory, pub = release
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--pubkey", str(pub), "sign", str(directory)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "--version" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "slopvac linux.tar.gz",
+        "slopvac\tlinux.tar.gz",
+        "slopvac\nlinux.tar.gz",
+        "slopvac\rlinux.tar.gz",
+        "slopvac-\u00e9.tar.gz",
+        "slopvac-\u4e2d.tar.gz",
+        "slopvac\u00a0linux.tar.gz",
+    ],
+)
+def test_a_file_name_that_cannot_go_in_a_trusted_comment_stops_signing_first(
+    fake, release, name
+):
+    directory, pub = release
+    (directory / name).write_bytes(b"x")
+    with pytest.raises(signing.SigningError, match="trusted comment"):
+        run_sign(directory, pub, MINISIGN_SECRET_KEY=SECRET)
+    # Nothing was signed, not even the valid files that sort before the bad one.
+    assert list(directory.glob("*.minisig")) == []
+    # The fake minisign logs every call; no log means it never ran.
+    assert not fake.exists()

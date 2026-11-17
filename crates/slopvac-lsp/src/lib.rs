@@ -19,8 +19,6 @@ mod linter;
 mod server;
 
 use clap::{ArgMatches, Command};
-use slopvac_engine::Settings;
-use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString};
 
 pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem};
 pub use server::{Exit, Server, ServerError};
@@ -34,23 +32,15 @@ pub fn command() -> Command {
     Command::new("lsp").about("Run the language server on standard input and output.")
 }
 
-/// Run the language server on standard input and output until the client exits.
+/// Run the language server on standard input and output until the client exits, linting
+/// with `linter`.
 ///
 /// The exit status follows the protocol: 0 after `shutdown` and `exit`, 1 for an `exit`
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
-pub fn run(_matches: &ArgMatches) -> Result<Exit, RunError> {
-    // STUB(slopvac-8l4.12.15): no rules are loaded. The server needs the resolved rule sets
-    // and settings from the config layer; until then it reports no findings.
-    let settings = Settings::new(
-        NonEmptyString::new("normal").map_err(|e| RunError::Setup(e.to_string()))?,
-        GenreResult {
-            id: GenreId::new("reference").map_err(|e| RunError::Setup(e.to_string()))?,
-            source: GenreSource::Default,
-            reasons: Vec::new(),
-        },
-    );
-    let linter =
-        EngineLinter::new(Vec::new(), settings).map_err(|e| RunError::Setup(e.to_string()))?;
+pub fn run(_matches: &ArgMatches, linter: EngineLinter) -> Result<Exit, RunError> {
+    // STUB(slopvac-8l4.12.15): the caller builds `linter` from the project config found at
+    // startup. A document in an `[[overrides]]` block still gets the project settings, and a
+    // config change shows only after a restart.
     let (connection, io_threads) = lsp_server::Connection::stdio();
     // STUB(slopvac-8l4.12.16): no `Check` is registered. Front-matter validation
     // (slopvac-8l4.4.6) and the terms check plug in through `Server::with_check`.

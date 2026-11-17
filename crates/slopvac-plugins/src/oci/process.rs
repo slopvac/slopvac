@@ -1,4 +1,4 @@
-//! A credential helper and everything it starts, killed as one unit.
+//! A credential helper or a `git` process, and everything it starts, killed as one unit.
 //!
 //! Unix: the helper leads its own process group, and the group is signalled
 //! before the helper is reaped, so the group id cannot have been recycled.
@@ -11,7 +11,7 @@ use std::io;
 use std::process::{Child, Command, ExitStatus};
 
 /// A spawned helper that has not been reaped yet.
-pub(super) struct Contained {
+pub(crate) struct Contained {
     child: Child,
     /// Exit status already collected by a non-Unix poll.
     #[cfg(not(unix))]
@@ -19,7 +19,7 @@ pub(super) struct Contained {
 }
 
 impl Contained {
-    pub(super) fn spawn(cmd: &mut Command) -> io::Result<Self> {
+    pub(crate) fn spawn(cmd: &mut Command) -> io::Result<Self> {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -32,13 +32,13 @@ impl Contained {
         })
     }
 
-    pub(super) fn child_mut(&mut self) -> &mut Child {
+    pub(crate) fn child_mut(&mut self) -> &mut Child {
         &mut self.child
     }
 
     /// Whether the helper has exited. On Unix the exit stays unreaped, so the
     /// process group is still reserved and can be signalled safely.
-    pub(super) fn has_exited(&mut self) -> io::Result<bool> {
+    pub(crate) fn has_exited(&mut self) -> io::Result<bool> {
         #[cfg(unix)]
         {
             use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
@@ -56,7 +56,7 @@ impl Contained {
     }
 
     /// Collect the exit status of a helper that `has_exited`.
-    pub(super) fn reap(mut self) -> io::Result<ExitStatus> {
+    pub(crate) fn reap(mut self) -> io::Result<ExitStatus> {
         #[cfg(not(unix))]
         if let Some(status) = self.status {
             return Ok(status);
@@ -65,7 +65,7 @@ impl Contained {
     }
 
     /// Kill the helper and its descendants, then reap the helper.
-    pub(super) fn kill_tree(mut self) {
+    pub(crate) fn kill_tree(mut self) {
         #[cfg(unix)]
         {
             use rustix::process::{Pid, Signal, kill_process_group};
