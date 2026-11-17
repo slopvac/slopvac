@@ -1,3 +1,4 @@
 Raw model-eval journals (full model responses) kept for rescoring (slopvac-8l4.15.25). Never merge this branch.
 
 2026-11-14.journal.jsonl sha256 96476d300d677fe7193a016d201f55ae318c5c7f09980bae0a0c0a767161a6ab
+2026-11-17-luna.journal.jsonl sha256 0bbc24ae20ddd8f3204ce5b6d33ad3db95ea0eae5911609e5131a7553b829ca6 (PR #549, run head 2f7f8b6fb0)
