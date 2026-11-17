@@ -272,7 +272,11 @@ impl DocumentView for View<'_> {
         split
             .into_iter()
             .map(|s| {
-                let from = s.span.start - block.span.start;
+                // A sentence that starts before its block cannot be mapped: keep it as the
+                // splitter gave it.
+                let Some(from) = s.span.start.checked_sub(block.span.start) else {
+                    return s;
+                };
                 let span = projection.span_for_bytes(from, from + s.text.len());
                 owners.insert((span.start(), span.end()), owner);
                 SentenceView {

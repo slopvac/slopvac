@@ -411,6 +411,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lines_outside_the_document_have_no_text_or_start() {
+        let lines = Lines::new("one\ntwo\n");
+        assert_eq!(lines.text(0), "");
+        assert_eq!(lines.start(0), None);
+        assert_eq!(lines.text(3), "");
+        assert_eq!(lines.start(3), None);
+        assert_eq!((lines.text(2), lines.start(2)), ("two", Some(4)));
+        let empty = Lines::new("");
+        assert_eq!((empty.text(1), empty.start(1)), ("", None));
+    }
+
+    #[test]
     fn parse_allow_reads_a_namespaced_id_and_a_reason() {
         assert_eq!(
             parse_allow(

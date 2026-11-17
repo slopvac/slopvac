@@ -150,7 +150,10 @@ impl std::error::Error for LocaleError {}
 /// unambiguous: a form this misses is a miss, and a form it invents is a false finding.
 fn inflect(word: &str) -> Vec<String> {
     let mut forms = vec![word.to_owned()];
-    let stem = sub(word, ..word.len() - 1);
+    let Some(stem_len) = word.len().checked_sub(1) else {
+        return forms;
+    };
+    let stem = sub(word, ..stem_len);
     if word.ends_with("ize")
         || word.ends_with("ise")
         || word.ends_with("yze")
@@ -349,6 +352,11 @@ pub fn spelling_rules(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_word_inflects_to_itself() {
+        assert_eq!(inflect(""), [String::new()]);
+    }
 
     fn pairs(locale: Locale) -> Vec<(String, String)> {
         spelling(locale, &[]).unwrap().substitutions
