@@ -153,7 +153,17 @@ def cmd_models(args: argparse.Namespace) -> int:
             _emit(report, args.out)
             return 0
         tasks, roster = _model_tasks(args)
+        if bool(args.only_model) != bool(args.candidates_from):
+            raise models.ModelEvalError(
+                "--only-model and --candidates-from go together"
+            )
+        candidates = (
+            models.Journal(Path(args.candidates_from)) if args.candidates_from else None
+        )
         counted = models.plan(tasks, roster, args.repeats, args.only_model)
+        models.frozen_candidates(  # fail before any call if a candidate is missing
+            tasks, roster, args.repeats, args.only_model, candidates
+        )
         if args.models_command == "plan":
             _emit(counted, None)
             return 0
@@ -191,6 +201,7 @@ def cmd_models(args: argparse.Namespace) -> int:
                     budget=budget,
                     journal=journal,
                     only_model=args.only_model,
+                    candidates=candidates,
                 )
         except models.BudgetExceeded as exc:
             print(
@@ -435,6 +446,11 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument(
             "--only-model",
             help="run only the jobs this model adds to an earlier run",
+        )
+        sp.add_argument(
+            "--candidates-from",
+            help="journal of the earlier run, read-only; supplies the other "
+            "models' rewrites for --only-model",
         )
         sp.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
         sp.set_defaults(func=cmd_models)

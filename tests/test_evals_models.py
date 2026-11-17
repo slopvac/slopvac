@@ -319,11 +319,12 @@ def row_keys(out):
 
 def test_plan_for_one_model_counts_only_the_calls_it_adds():
     # Model "c" among 3, 3 repeats, tasks: update, rewrite, planted review.
-    # Own answers 3x3=9; other models rewrite again as review input 1x3x2=6;
-    # "c" is reviewed on its rewrite by 2 models (6) and reviews theirs (6).
+    # Own answers 3x3=9; "c" is reviewed on its rewrite by 2 models (3x2=6) and
+    # reviews the 2 others' rewrites from the earlier journal (6). The others
+    # make no author calls: 9 + 6 + 6 = 21.
     counted = models.plan(tiny_tasks(), roster("a", "b", "c"), 3, only_model="c")
-    assert counted["total_calls"] == 27
-    assert counted["support_rewrite_calls"] == 6
+    assert counted["total_calls"] == 21
+    assert counted["authored_review_calls"] == 12
     assert list(counted["per_model"]) == ["c"]
 
 
@@ -332,11 +333,19 @@ def test_plan_rejects_an_only_model_outside_the_roster():
         models.plan(tiny_tasks(), roster("a", "b"), 3, only_model="z")
 
 
-def test_only_model_runs_just_its_jobs_and_joins_an_earlier_run_into_the_full_one():
+def test_only_model_reuses_the_earlier_rewrites_and_joins_the_earlier_run(tmp_path):
     tasks = tiny_tasks()
+    path = tmp_path / "earlier.journal.jsonl"
     earlier = models.execute(
-        tasks, roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="2026-11-14"
+        tasks,
+        roster("a", "b"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        date="2026-11-14",
+        journal=models.Journal(path),
     )
+    before = path.read_bytes()
     calls: list[str] = []
     added = models.execute(
         tasks,
@@ -346,11 +355,14 @@ def test_only_model_runs_just_its_jobs_and_joins_an_earlier_run_into_the_full_on
         ask_for=counting_ask(calls),
         date="2026-11-17",
         only_model="c",
+        candidates=models.Journal(path),
     )
-    assert len(calls) == added["planned_calls"] == 27
-    # 9 own answers + 6 reviews of c's rewrites + 6 reviews by c.
+    assert len(calls) == added["planned_calls"] == 21
+    # c answers 9 tasks and reviews 6 rewrites; a and b review c's rewrite 3 times each.
+    assert {m: calls.count(m) for m in "abc"} == {"a": 3, "b": 3, "c": 15}
     assert len(added["runs"]) == 21
     assert all("c" in (r["model"], r.get("author_model")) for r in added["runs"])
+    assert path.read_bytes() == before
     full = models.execute(
         tasks, roster("a", "b", "c"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
     )
@@ -358,6 +370,33 @@ def test_only_model_runs_just_its_jobs_and_joins_an_earlier_run_into_the_full_on
     assert row_keys(merged) == row_keys(full)
     assert merged["date"] == "2026-11-17"
     assert [m["name"] for m in merged["models"]] == ["a", "b", "c"]
+
+
+def test_a_missing_candidate_stops_the_run_before_any_call(tmp_path):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="missing.*no call was made"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(tmp_path / "empty.journal.jsonl"),
+        )
+    assert calls == []
+
+
+def test_only_model_needs_a_candidates_journal_and_the_reverse(tmp_path):
+    with pytest.raises(models.ModelEvalError, match="go together"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b"),
+            3,
+            NO_FINDINGS,
+            ask_for=fake_ask,
+            only_model="b",
+        )
 
 
 def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():

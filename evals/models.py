@@ -466,9 +466,8 @@ def plan(
 
     With `only_model`, count just the calls that model adds to an earlier run:
     its own answers, its reviews of the other models' rewrites and the other
-    models' reviews of its rewrites. The other models' rewrites are written
-    again, because those reviews need their text and earlier results keep only
-    a hash.
+    models' reviews of its rewrites. The other models' rewrites come from the
+    earlier run's journal (`execute(candidates=...)`), so they cost no calls.
     """
     if repeats < MIN_REPEATS:
         raise ModelEvalError(f"repeats must be at least {MIN_REPEATS}")
@@ -490,17 +489,14 @@ def plan(
     # Each rewrite answer is also reviewed once per other model.
     rewrites = [t for t in authors if t["type"] == "rewrite"]
     others = max(len(models) - 1, 0)
-    support = 0
     if only_model is None:
         cross = len(rewrites) * repeats * len(models) * others
     else:
         # Reviews with the model as author, plus reviews with it as reviewer.
         cross = 2 * len(rewrites) * repeats * others
-        support = len(rewrites) * repeats * others
     calls = (
         sum(v["author_calls"] + v["planted_review_calls"] for v in per_model.values())
         + cross
-        + support
     )
     return {
         "tasks": len(tasks),
@@ -509,7 +505,6 @@ def plan(
         "only_model": only_model,
         "per_model": per_model,
         "authored_review_calls": cross,
-        "support_rewrite_calls": support,
         "total_calls": calls,
     }
 
@@ -907,6 +902,38 @@ def _map_jobs(
         pool.shutdown(wait=True, cancel_futures=False)
 
 
+def frozen_candidates(
+    tasks: Sequence[Mapping[str, Any]],
+    models: Sequence[Mapping[str, Any]],
+    repeats: int,
+    only_model: str | None,
+    candidates: Journal | None,
+) -> list[tuple[Mapping[str, Any], Mapping[str, Any], int, str]]:
+    """The other models' rewrites from an earlier journal, or an error before any call."""
+    if only_model is None or candidates is None:
+        return []
+    found, missing = [], []
+    for model in models:
+        if model["name"] == only_model:
+            continue
+        for task in tasks:
+            if task["role"] != "author" or task["type"] != "rewrite":
+                continue
+            for repeat in range(repeats):
+                job = job_id("task", model["name"], task["prompt"], repeat)
+                entry = candidates.done(job)
+                if entry is None:
+                    missing.append(f"{model['name']}/{task['id']}/{repeat}")
+                else:
+                    found.append((task, model, repeat, entry["answer"]))
+    if missing:
+        raise ModelEvalError(
+            f"{len(missing)} candidate rewrites are missing from {candidates.path} "
+            f"(first: {', '.join(missing[:3])}); no call was made"
+        )
+    return found
+
+
 def execute(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
@@ -919,12 +946,14 @@ def execute(
     budget: Budget | None = None,
     journal: Journal | None = None,
     only_model: str | None = None,
+    candidates: Journal | None = None,
 ) -> dict[str, Any]:
     """Run every task against every model; reviewers see other models' rewrites.
 
     With `only_model`, run just the jobs that model adds to an earlier run (see
-    `plan`). The other models' rewrites are written again as review input; their
-    rows stay out of the results, and their calls still reach the journal.
+    `plan`). The other models' rewrites then come from `candidates`, the earlier
+    run's journal, so the reviewed pool stays the one the earlier reviewers saw.
+    If a candidate is missing there, no call is made. `candidates` is only read.
 
     Calls run on `workers` threads. A failed call is recorded as an empty answer
     with its error, so it counts as a failure and the run goes on. A `journal`
@@ -933,6 +962,9 @@ def execute(
     keeps all finished work.
     """
     expected = plan(tasks, models, repeats, only_model)
+    if (only_model is None) != (candidates is None):
+        raise ModelEvalError("only_model and candidates go together")
+    frozen = frozen_candidates(tasks, models, repeats, only_model, candidates)
     live = procs.LiveGroups()
     make_ask = ask_for or (
         lambda m: command_ask(m["command"], budget=budget, live=live, model=m["name"])
@@ -943,9 +975,7 @@ def execute(
         for model in models
         for task in tasks
         for repeat in range(repeats)
-        if only_model is None
-        or model["name"] == only_model
-        or (task["role"] == "author" and task["type"] == "rewrite")
+        if only_model is None or model["name"] == only_model
     ]
 
     def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
@@ -964,10 +994,6 @@ def execute(
     for (model, task, repeat), (answer, error, usage) in zip(
         first, answers, strict=True
     ):
-        if only_model is not None and model["name"] != only_model:
-            # Review input only: the earlier run already holds this model's rows.
-            rewrite_outputs.append((task, model, repeat, answer))
-            continue
         row = _row(task, model, repeat, answer, usage)
         if error:
             row["error"] = error
@@ -983,6 +1009,7 @@ def execute(
         else:
             row["score"] = score_review(task, answer)
         runs.append(row)
+    rewrite_outputs.extend(frozen)
     second = []
     for task, author, repeat, answer in rewrite_outputs:
         review_task = authored_review_task(task, answer)
