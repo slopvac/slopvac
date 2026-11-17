@@ -687,7 +687,7 @@ impl Client {
             let page_max = allowance
                 .load(Ordering::Relaxed)
                 .min(MAX_MANIFEST_BYTES as u64);
-            let mut resp = self.call_capped(
+            let called = self.call_capped(
                 r,
                 "pull",
                 page_max,
@@ -699,7 +699,12 @@ impl Client {
                     authorization: None,
                     body: None,
                 },
-            )?;
+            );
+            // A refused redirect has no response to read the meter from.
+            if let Err(OciError::BadRedirect { wire_bytes, .. }) = &called {
+                charge(allowance, *wire_bytes);
+            }
+            let mut resp = called?;
             let status = resp.status().as_u16();
             if status != 200 {
                 charge(allowance, wire_bytes_used(&resp));
@@ -771,6 +776,7 @@ impl Client {
             return Err(OciError::BadRedirect {
                 url: redact_url(&start),
                 why: "upload target is on another host".into(),
+                wire_bytes: 0,
             });
         }
         let put = format!(

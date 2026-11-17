@@ -482,6 +482,7 @@ impl Transport {
             let bad = |why: &str| OciError::BadRedirect {
                 url: redact_url(&url),
                 why: why.to_owned(),
+                wire_bytes: meter.used(),
             };
             if !matches!(req.method, "GET" | "HEAD") {
                 return Err(bad("redirect on a request that is not GET or HEAD"));
