@@ -335,11 +335,11 @@ fn update_runtime(
 }
 
 fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    // STUB(slopvac-8l4.16.7): NullLinter finds nothing until the engine can lint a
-    // 2.x config and a migrated tree.
+    let linter = slopvac_migrate::EngineLinter::new(vec![crate::rule_catalog::core()?])
+        .map_err(|e| CliError::new(e.code(), e.to_string()))?;
     slopvac_migrate::execute(
         m,
-        &slopvac_migrate::NullLinter,
+        &linter,
         &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
         out,
     )
@@ -446,7 +446,7 @@ fn lint_with(
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
-    output::deliver(m, &outcome, out)?;
+    output::deliver(m, &outcome, out, err_out)?;
     tracing::info!(documents = outcome.documents, "lint done");
     Ok(if !outcome.incomplete.is_empty() {
         exit::INCOMPLETE

@@ -11,6 +11,7 @@ mod config;
 mod directives;
 mod guide;
 mod legacy;
+mod lint;
 pub mod overlap;
 mod plan;
 mod preserve;
@@ -25,6 +26,7 @@ pub use cli::{command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
+pub use lint::EngineLinter;
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
 pub use renames::RenameTable;
 pub use report::{Finding, Linter, NullLinter, Phase, RuleDelta, compare};
@@ -107,6 +109,9 @@ pub enum Error {
     /// The rename table is malformed.
     #[error("rename table: {0}")]
     RenameTable(String),
+    /// The engine could not lint the project.
+    #[error("lint: {0}")]
+    Lint(String),
     /// A filesystem operation failed.
     #[error("{path}: {source}")]
     Io {
@@ -130,6 +135,7 @@ impl Error {
             Self::Unsafe(_) => "migrate-unsafe-path",
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
+            Self::Lint(_) => "migrate-lint-failed",
             Self::Io { .. } => "migrate-io-failed",
         }
     }

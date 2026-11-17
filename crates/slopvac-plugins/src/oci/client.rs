@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -596,6 +597,23 @@ impl Client {
     /// # Errors
     /// Any [`OciError`].
     pub fn list_tags(&self, r: &Reference) -> Result<Vec<String>, OciError> {
+        self.list_tags_within(r, &AtomicU64::new(u64::MAX))
+    }
+
+    /// Like [`Client::list_tags`], but every page body read is charged to
+    /// `allowance`, a byte count shared by several listings. Bytes are charged
+    /// as they are read, so a listing that fails on a later page (parse,
+    /// pagination or transport) has still used its share. A page read stops
+    /// when the allowance runs out, and a listing started with none left fails
+    /// at once without a request.
+    ///
+    /// # Errors
+    /// Any [`OciError`]; [`OciError::TooLarge`] when the allowance is used up.
+    pub fn list_tags_within(
+        &self,
+        r: &Reference,
+        allowance: &AtomicU64,
+    ) -> Result<Vec<String>, OciError> {
         #[derive(Deserialize)]
         struct Tags {
             tags: Option<Vec<String>>,
@@ -603,13 +621,19 @@ impl Client {
         let mut url = format!("{}/v2/{}/tags/list?n=1000", self.base(r), r.repository);
         let mut all: Vec<String> = Vec::new();
         for _ in 0..MAX_TAG_PAGES {
+            if allowance.load(Ordering::Relaxed) == 0 {
+                return Err(OciError::TooLarge {
+                    what: "tag list".into(),
+                    limit: 0,
+                });
+            }
             let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
             let status = resp.status().as_u16();
             if status != 200 {
                 return Err(Self::deny_or_status(&url, status));
             }
             let next = next_link(&resp, &url);
-            let body = read_limited(resp.body_mut(), MAX_MANIFEST_BYTES, "tag list")?;
+            let body = read_charged(resp.body_mut(), MAX_MANIFEST_BYTES, "tag list", allowance)?;
             let page: Tags = serde_json::from_slice(&body)
                 .map_err(|e| OciError::Invalid(format!("tag list: {e}")))?;
             all.extend(page.tags.unwrap_or_default());
@@ -838,6 +862,39 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
         return Err(OciError::TooLarge {
             what: what.into(),
             limit: limit as u64,
+        });
+    }
+    Ok(buf)
+}
+
+/// [`read_limited`] with the page capped at what is left of `allowance`; the
+/// bytes actually read are charged whether or not the read succeeds.
+fn read_charged(
+    body: &mut Body,
+    limit: usize,
+    what: &str,
+    allowance: &AtomicU64,
+) -> Result<Vec<u8>, OciError> {
+    let left = allowance.load(Ordering::Relaxed);
+    let cap = u64::try_from(limit).unwrap_or(u64::MAX).min(left);
+    let mut buf = Vec::new();
+    let read = body
+        .with_config()
+        .limit(cap.saturating_add(1))
+        .reader()
+        .read_to_end(&mut buf);
+    let used = buf.len() as u64;
+    let _ = allowance.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+        Some(v.saturating_sub(used))
+    });
+    read.map_err(|e| OciError::Network {
+        url: what.to_owned(),
+        message: e.to_string(),
+    })?;
+    if used > cap {
+        return Err(OciError::TooLarge {
+            what: what.into(),
+            limit: cap,
         });
     }
     Ok(buf)

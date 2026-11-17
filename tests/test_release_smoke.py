@@ -120,7 +120,7 @@ ABC_DIGEST = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 @pytest.fixture
 def archive(tmp_path):
-    path = tmp_path / "slopvac-x.tar.xz"
+    path = tmp_path / "slopvac-x.tar.gz"
     path.write_bytes(b"abc")
     return path
 
@@ -128,8 +128,8 @@ def archive(tmp_path):
 @pytest.mark.parametrize(
     "line",
     [
-        f"{ABC_DIGEST}  slopvac-x.tar.xz\n",
-        f"{ABC_DIGEST.upper()} *slopvac-x.tar.xz\n",
+        f"{ABC_DIGEST}  slopvac-x.tar.gz\n",
+        f"{ABC_DIGEST.upper()} *slopvac-x.tar.gz\n",
         ABC_DIGEST,
     ],
 )
