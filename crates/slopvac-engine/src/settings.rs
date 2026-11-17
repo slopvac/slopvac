@@ -78,6 +78,13 @@ impl CategoryDials {
         self.max_per_100_words = budget;
         self
     }
+
+    /// The same dials with the budget cleared or not.
+    #[must_use]
+    pub const fn with_budget_cleared(mut self, cleared: bool) -> Self {
+        self.budget_cleared = cleared;
+        self
+    }
 }
 
 /// The limits that fail a document's gate. An absent limit never fails.

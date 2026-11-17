@@ -297,14 +297,11 @@ fn validate_configs(
         // its own nearest config. All of them are checked, before any exclusion drops a file.
         if let Ok(found) = discover(
             &[target.to_string_lossy().into_owned()],
-            Options {
-                selection: if request.code_comments {
-                    Selection::CodeComments
-                } else {
-                    Selection::Prose
-                },
-                ..Options::default()
-            },
+            Options::default().with_selection(if request.code_comments {
+                Selection::CodeComments
+            } else {
+                Selection::Prose
+            }),
         ) {
             dirs.extend(found.files.iter().filter_map(|f| {
                 let parent = f.path.parent()?;
@@ -464,10 +461,7 @@ fn collect_targets(
         let shown_target = redact::shown_path(target, &request.root);
         let found = match discover(
             &[target.to_string_lossy().into_owned()],
-            Options {
-                selection,
-                ..Options::default()
-            },
+            Options::default().with_selection(selection),
         ) {
             Ok(found) => found,
             Err(err) => {
@@ -655,12 +649,7 @@ fn lint_items(
         };
         let inputs: Vec<Input<'_>> = indexes
             .iter()
-            .map(|&i| Input {
-                path: &items[i].shown,
-                source: &items[i].text,
-                kind: items[i].kind,
-                bom: slopvac_model::BomMode::Disk,
-            })
+            .map(|&i| Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind))
             .collect();
         for (&index, result) in indexes.iter().zip(engine.lint_all(&inputs)) {
             match result {

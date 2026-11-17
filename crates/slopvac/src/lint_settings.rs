@@ -398,12 +398,10 @@ pub fn build(
         let budget = resolved.get_by_any(&field("max_per_100_words"));
         settings.categories.insert(
             CategoryId::new(name).map_err(|e| internal("category", e))?,
-            CategoryDials {
-                level: None,
-                weight: resolved.get_by_any(&field("weight")).and_then(Json::as_f64),
-                max_per_100_words: budget.and_then(Json::as_f64),
-                budget_cleared: budget.is_some_and(Json::is_null),
-            },
+            CategoryDials::default()
+                .with_weight(resolved.get_by_any(&field("weight")).and_then(Json::as_f64))
+                .with_max_per_100_words(budget.and_then(Json::as_f64))
+                .with_budget_cleared(budget.is_some_and(Json::is_null)),
         );
         let floor = resolved
             .get_by_any(&field("minimum_severity"))

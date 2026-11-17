@@ -22,10 +22,7 @@ fn lint(clear: bool) -> Document {
     if clear {
         s.categories.insert(
             CategoryId::new("cat").unwrap(),
-            CategoryDials {
-                budget_cleared: true,
-                ..CategoryDials::default()
-            },
+            CategoryDials::default().with_budget_cleared(true),
         );
     }
     let filler = "word ".repeat(98);
