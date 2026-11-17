@@ -648,11 +648,12 @@ impl Engine {
         if !self.running.contains(id.as_str()) {
             return Some("the rule is switched off or does not apply under the engine settings");
         }
-        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let owns =
+            |plan: &vocabulary::Plan| plan.owner.is_some_and(|i| at(&&self.vocabulary_rules[i]));
         let executes = self.active.iter().any(|a| at(&a))
             || self.metrics.iter().any(|a| at(&a))
             || self.casing_rules.iter().any(|a| at(&a))
-            || owner.is_some_and(|a| at(&a));
+            || self.vocabulary.plans().any(owns);
         if executes {
             None
         } else if rule.kind() == MatchKind::Vocabulary {
@@ -747,6 +748,7 @@ impl Engine {
             front_matter: front_span,
             subject: &subject,
             index,
+            genre: &genre,
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
@@ -911,7 +913,7 @@ impl Engine {
         let words = prepared.words();
         let mut unchecked = not_run;
         unchecked.extend(extra);
-        unchecked.extend(self.vocabulary.notices().iter().cloned());
+        unchecked.extend(self.vocabulary.plan(&genre.id).notices().iter().cloned());
         let scoring = score_document(
             &findings,
             words,
@@ -992,6 +994,7 @@ struct Run<'a> {
     front_matter: Option<Span>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
+    genre: &'a GenreResult,
 }
 
 /// A paragraph next to a fenced diagram, and where a checker sees it.

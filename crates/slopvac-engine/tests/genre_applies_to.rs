@@ -6,10 +6,11 @@
 mod common;
 
 use common::{category, rule, ruleset, tokens};
-use serde_json::json;
+use serde_json::{Value, json};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{Engine, Input, Settings};
 use slopvac_model::{Document, GenreId, GenreResult, GenreSource, NonEmptyString};
+use slopvac_terms::Blocklist;
 
 const BODY: &str = "We refactored the parser.\n";
 
@@ -78,4 +79,58 @@ fn a_not_run_notice_is_kept_for_a_document_of_a_listed_genre_only() {
     };
     assert!(did_not_run(&reference), "{:?}", notice_messages(&reference));
     assert!(!did_not_run(&consumer), "{:?}", notice_messages(&consumer));
+}
+
+fn vocabulary_rule(id: &str, genres: &[&str]) -> Value {
+    rule(
+        id,
+        &json!({"kind": "vocabulary", "check": id}),
+        &json!({"message": "\"{match}\" is on the blocklist.", "applies_to": {"genres": genres}}),
+    )
+}
+
+#[test]
+fn the_vocabulary_sweep_is_owned_by_a_rule_that_applies_to_the_document() {
+    // The preferred owner applies to reference only; the other rule applies to consumer.
+    let rules = [
+        vocabulary_rule("word-outside-controlled-vocabulary", &["reference"]),
+        vocabulary_rule("word-used-in-wrong-part-of-speech", &["consumer"]),
+    ];
+    let set = ruleset(vec![category("ste-words", &rules)]);
+    let blocklist = Blocklist::parse(
+        "b.toml",
+        "toml",
+        "schema_version = 3\n[[entries]]\nword = \"parser\"\npos = \"noun\"\nreason = \"r\"\n",
+    )
+    .unwrap();
+    let engine = Engine::new(vec![set], per_document())
+        .unwrap()
+        .with_blocklist(&blocklist)
+        .unwrap();
+    let (reference, consumer) = lint_both(&engine);
+    let owners = |d: &Document| -> Vec<String> {
+        d.findings
+            .iter()
+            .map(|f| f.rule_id.as_str().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        owners(&reference),
+        ["core:ste-words.word-outside-controlled-vocabulary"]
+    );
+    assert_eq!(
+        owners(&consumer),
+        ["core:ste-words.word-used-in-wrong-part-of-speech"]
+    );
+    // One eligible rule per document: no "shared sweep" notice for either.
+    assert!(
+        !notice_messages(&reference)
+            .iter()
+            .any(|m| m.contains("sweep"))
+    );
+    assert!(
+        !notice_messages(&consumer)
+            .iter()
+            .any(|m| m.contains("sweep"))
+    );
 }
