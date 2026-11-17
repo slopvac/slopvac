@@ -23,6 +23,7 @@ fn forbidden(c: char) -> bool {
 
 /// Why an origin cannot exist.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum OriginError {
     /// A locator is empty, too long, has a forbidden character or a bad `%` escape.
     #[error("invalid origin locator: {0}")]
@@ -43,7 +44,10 @@ pub enum OriginError {
     },
 }
 
-fn check_locator(s: &str) -> Result<(), OriginError> {
+/// Result of an origin check or constructor.
+pub type Result<T> = std::result::Result<T, OriginError>;
+
+fn check_locator(s: &str) -> Result<()> {
     if s.is_empty() {
         return Err(OriginError::Locator("empty"));
     }
@@ -73,7 +77,7 @@ fn check_locator(s: &str) -> Result<(), OriginError> {
     Ok(())
 }
 
-fn check_label(s: &str) -> Result<(), OriginError> {
+fn check_label(s: &str) -> Result<()> {
     if s.is_empty() {
         Err(OriginError::Label("empty"))
     } else if s.chars().count() > LABEL_MAX_CHARS {
@@ -85,7 +89,7 @@ fn check_label(s: &str) -> Result<(), OriginError> {
     }
 }
 
-fn check_segment(s: &str) -> Result<(), OriginError> {
+fn check_segment(s: &str) -> Result<()> {
     let mut chars = s.chars();
     let first_ok = chars.next().is_some_and(|c| c.is_ascii_alphanumeric());
     if first_ok
@@ -119,14 +123,14 @@ struct SegmentRangeRepr {
 
 impl TryFrom<SegmentRangeRepr> for SegmentRange {
     type Error = OriginError;
-    fn try_from(r: SegmentRangeRepr) -> Result<Self, OriginError> {
+    fn try_from(r: SegmentRangeRepr) -> Result<Self> {
         Self::new(r.start, r.end)
     }
 }
 
 impl SegmentRange {
     /// Build a range, rejecting `start > end`.
-    pub const fn new(start: usize, end: usize) -> Result<Self, OriginError> {
+    pub const fn new(start: usize, end: usize) -> Result<Self> {
         if start > end {
             Err(OriginError::Range { start, end })
         } else {
@@ -156,7 +160,7 @@ macro_rules! checked_string {
 
         impl $name {
             /// Validate and wrap the text.
-            pub fn new(value: impl Into<String>) -> Result<Self, OriginError> {
+            pub fn new(value: impl Into<String>) -> Result<Self> {
                 let value = value.into();
                 $check(&value)?;
                 Ok(Self(value))
@@ -171,7 +175,7 @@ macro_rules! checked_string {
 
         impl TryFrom<String> for $name {
             type Error = OriginError;
-            fn try_from(value: String) -> Result<Self, OriginError> {
+            fn try_from(value: String) -> Result<Self> {
                 Self::new(value)
             }
         }
@@ -258,7 +262,7 @@ struct OriginWire {
 
 impl TryFrom<OriginWire> for Origin {
     type Error = OriginError;
-    fn try_from(w: OriginWire) -> Result<Self, OriginError> {
+    fn try_from(w: OriginWire) -> Result<Self> {
         Ok(Self {
             locator: w.locator,
             label: w.label,

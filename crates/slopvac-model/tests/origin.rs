@@ -1,10 +1,9 @@
 //! `Finding.origin`: limits, range order, the origin/fix exclusion and the round trip.
 
-#![allow(missing_docs)]
-
 mod common;
 
 use common::{corpus, load};
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_model::{
     Edit, Finding, FindingError, Fix, Origin, OriginLabel, OriginLocator, SegmentId, SegmentRange,
@@ -45,31 +44,25 @@ fn finding_keeps_its_origin_through_a_round_trip() {
     assert_eq!(serde_json::to_value(&finding).unwrap(), value);
 }
 
-#[test]
-fn label_accepts_256_code_points_and_rejects_257() {
-    assert!(OriginLabel::new("é".repeat(256)).is_ok());
-    assert!(OriginLabel::new("é".repeat(257)).is_err());
-}
-
-#[test]
-fn astral_characters_count_as_one_code_point_in_label_and_locator() {
-    // U+1F600 is 4 UTF-8 bytes and 2 UTF-16 units; the limits count code points.
-    assert!(OriginLabel::new("\u{1F600}".repeat(256)).is_ok());
-    assert!(OriginLabel::new("\u{1F600}".repeat(257)).is_err());
-    assert!(OriginLocator::new("\u{1F600}".repeat(512)).is_ok());
-    assert!(OriginLocator::new("\u{1F600}".repeat(513)).is_err());
-}
-
-#[test]
-fn segment_id_accepts_64_characters_and_rejects_65() {
-    assert!(SegmentId::new("a".repeat(64)).is_ok());
-    assert!(SegmentId::new("a".repeat(65)).is_err());
-}
-
-#[test]
-fn locator_accepts_512_code_points_and_rejects_513() {
-    assert!(OriginLocator::new("中".repeat(512)).is_ok());
-    assert!(OriginLocator::new("中".repeat(513)).is_err());
+/// Each field's limit: `n` code points pass, `n + 1` fail. ASCII and astral characters count
+/// once each (U+1F600 is 4 UTF-8 bytes and 2 UTF-16 units).
+#[rstest]
+#[case::label_ascii_at_limit(|n| OriginLabel::new("a".repeat(n)).is_ok(), 256, true)]
+#[case::label_ascii_over_limit(|n| OriginLabel::new("a".repeat(n)).is_ok(), 257, false)]
+#[case::label_multibyte_at_limit(|n| OriginLabel::new("é".repeat(n)).is_ok(), 256, true)]
+#[case::label_multibyte_over_limit(|n| OriginLabel::new("é".repeat(n)).is_ok(), 257, false)]
+#[case::label_astral_at_limit(|n| OriginLabel::new("\u{1F600}".repeat(n)).is_ok(), 256, true)]
+#[case::label_astral_over_limit(|n| OriginLabel::new("\u{1F600}".repeat(n)).is_ok(), 257, false)]
+#[case::locator_ascii_at_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 512, true)]
+#[case::locator_ascii_over_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 513, false)]
+#[case::locator_cjk_at_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 512, true)]
+#[case::locator_cjk_over_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 513, false)]
+#[case::locator_astral_at_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 512, true)]
+#[case::locator_astral_over_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 513, false)]
+#[case::segment_id_at_limit(|n| SegmentId::new("a".repeat(n)).is_ok(), 64, true)]
+#[case::segment_id_over_limit(|n| SegmentId::new("a".repeat(n)).is_ok(), 65, false)]
+fn field_limit(#[case] accepts: fn(usize) -> bool, #[case] count: usize, #[case] expected: bool) {
+    assert_eq!(accepts(count), expected);
 }
 
 #[test]
