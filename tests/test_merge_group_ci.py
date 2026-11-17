@@ -321,12 +321,19 @@ def test_pull_requests_test_rust_on_linux_x64_only():
     ]
 
 
-@pytest.mark.parametrize("context", [MERGE_GROUP, PUSH_MAIN], ids=["queue", "main"])
-def test_queue_and_main_test_every_rust_leg(context):
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        (PUSH_MAIN, set(EVERY_RUST_LEG)),
+        (MERGE_GROUP, set(EVERY_RUST_LEG) - {"macos-arm64"}),
+    ],
+    ids=["main", "queue"],
+)
+def test_rust_legs_per_event(context, expected):
     legs = matrix_axis("rust", "include", context)
     by_name = {leg["name"]: (leg["os"], leg.get("target")) for leg in legs}
-    assert by_name == EVERY_RUST_LEG
-    assert len(legs) == len(EVERY_RUST_LEG)
+    assert by_name == {n: EVERY_RUST_LEG[n] for n in expected}
+    assert len(legs) == len(expected)
     assert all(leg.get("musl", False) == ("target" in leg) for leg in legs)
 
 
