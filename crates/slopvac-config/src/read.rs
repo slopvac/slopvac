@@ -11,7 +11,7 @@ use std::path::Path;
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 /// The most bytes of one document that the crate reads for front matter and directives.
-pub const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
+pub use slopvac_fs::MAX_DOCUMENT_BYTES;
 
 /// Why a capped read failed.
 #[derive(Debug)]

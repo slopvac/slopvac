@@ -23,6 +23,7 @@ serde_json = { workspace = true }
 similar.workspace = true
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
+slopvac-fs = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-pos = { workspace = true }

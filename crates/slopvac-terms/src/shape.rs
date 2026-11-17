@@ -186,10 +186,7 @@ impl TermsFile {
     /// As [`TermsFile::parse`], plus read failures.
     pub fn load(path: &std::path::Path) -> Result<Self, TermsError> {
         let shown = path.display().to_string();
-        let text = std::fs::read_to_string(path).map_err(|e| TermsError::Io {
-            path: shown.clone(),
-            message: e.to_string(),
-        })?;
+        let text = crate::read::read_existing(path, &shown, crate::MAX_TERMS_FILE_BYTES)?;
         Self::parse(&shown, &text)
     }
 }

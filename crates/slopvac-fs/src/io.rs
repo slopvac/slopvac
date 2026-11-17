@@ -12,6 +12,13 @@ use cap_std::fs::{Dir, File, OpenOptions, OpenOptionsExt, Permissions};
 
 use crate::{Error, Result};
 
+/// The most bytes of one document that any slopvac entry point reads: 64 MiB.
+///
+/// The span crates index text with 32-bit offsets and size their structures from its length, so
+/// every path that feeds them text must stay under this. The larger caps for each entry point
+/// are listed in `docs/contract/policies.md`.
+pub const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Read all of `reader`, failing when it holds more than `cap` bytes.
 ///
 /// Memory stays bounded by `cap + 1` bytes, so an endless reader cannot exhaust it.

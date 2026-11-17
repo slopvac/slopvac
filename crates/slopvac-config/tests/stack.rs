@@ -1087,3 +1087,48 @@ fn an_extends_path_in_plain_drive_form_shows_relative_to_a_verbatim_root() {
         Some(&src(Layer::Extends, "../shared/base.toml", 2, 1))
     );
 }
+
+/// A sparse file of `len` bytes, so a test crosses a cap without writing the bytes.
+fn sparse(path: &Path, len: u64) {
+    let file = fs::File::create(path).unwrap();
+    file.set_len(len).unwrap();
+}
+
+#[test]
+fn a_config_one_byte_over_the_cap_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    let p = fx.root().join("slopvac.toml");
+    sparse(&p, slopvac_config::MAX_CONFIG_BYTES + 1);
+    let err = load(&p, &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::TooLarge);
+    assert_eq!(err.exit_code(), 2);
+    assert!(
+        err.render().starts_with("error[config-too-large]: "),
+        "{}",
+        err.render()
+    );
+}
+
+#[test]
+fn a_config_exactly_at_the_cap_is_read() {
+    let fx = Fixture::new();
+    let p = fx.write("slopvac.toml", "schema_version = 3\n");
+    let pad = "#".repeat(usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap() - 19);
+    fs::write(&p, format!("schema_version = 3\n{pad}")).unwrap();
+    assert!(load(&p, &NoPresets).is_ok());
+}
+
+#[test]
+fn an_extended_config_over_the_cap_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    sparse(
+        &fx.root().join("big.toml"),
+        slopvac_config::MAX_CONFIG_BYTES + 1,
+    );
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"big.toml\"]\n",
+    );
+    let err = load(&p, &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::TooLarge);
+}

@@ -13,6 +13,10 @@ use crate::error::{LoadError, LoadErrorKind, LoadErrors};
 use crate::matcher::{CompileOptions, LexicalMatcher, compile};
 use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, Weight};
 
+/// The most bytes of one rule or category file. The largest shipped file is about 130 KiB, so
+/// 2 MiB leaves more than a tenfold margin for a pack.
+pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
 /// A rule with its compiled matcher and where it came from.
 #[derive(Debug)]
 pub struct LoadedRule {
@@ -171,7 +175,21 @@ impl RuleSet {
         let sources = files
             .into_iter()
             .map(|p| {
-                let text = fs::read_to_string(&p).map_err(|e| read_error(&p, &e))?;
+                let text =
+                    slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
+                        slopvac_fs::Error::CapExceeded { cap } => LoadError {
+                            file: p.clone(),
+                            line: None,
+                            rule: None,
+                            kind: LoadErrorKind::TooLarge(cap),
+                        },
+                        other => LoadError {
+                            file: p.clone(),
+                            line: None,
+                            rule: None,
+                            kind: LoadErrorKind::Read(other.to_string()),
+                        },
+                    })?;
                 Ok((p, text))
             })
             .collect::<Result<Vec<_>, LoadError>>()?;

@@ -65,7 +65,7 @@ impl TermsDoc {
     /// Read or parse failures.
     pub fn open(path: &Path) -> Result<Self, TermsError> {
         let shown = path.display().to_string();
-        match std::fs::read_to_string(path) {
+        match crate::read::read(path, &shown, crate::MAX_TERMS_FILE_BYTES) {
             Ok(text) => {
                 crate::TermsFile::parse(&shown, &text)?;
                 let doc = text.parse::<DocumentMut>().map_err(|e| TermsError::Parse {
@@ -74,11 +74,8 @@ impl TermsDoc {
                 })?;
                 Ok(Self { doc })
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(TermsError::Io {
-                path: shown,
-                message: e.to_string(),
-            }),
+            Err(crate::read::ReadFailure::Missing(_)) => Ok(Self::default()),
+            Err(crate::read::ReadFailure::Error(e)) => Err(e),
         }
     }
 

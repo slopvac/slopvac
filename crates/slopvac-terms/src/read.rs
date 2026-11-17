@@ -1,0 +1,57 @@
+//! Size-capped reads of terms, blocklist and document files.
+
+use std::path::Path;
+
+use crate::TermsError;
+
+/// The most bytes of one terms or blocklist file. The built-in terms file is about 30 KiB, so
+/// 1 MiB leaves a wide margin.
+pub const MAX_TERMS_FILE_BYTES: u64 = 1024 * 1024;
+
+/// Why a capped read failed.
+pub(crate) enum ReadFailure {
+    /// The file does not exist. Carries the OS message.
+    Missing(String),
+    /// Any other failure, ready to return.
+    Error(TermsError),
+}
+
+/// Read `path` as UTF-8 text of at most `cap` bytes. `shown` names the file in errors. A file
+/// over `cap` fails with [`TermsError::TooLarge`].
+pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFailure> {
+    slopvac_fs::read_text_capped(path, cap).map_err(|e| match e {
+        slopvac_fs::Error::CapExceeded { cap } => ReadFailure::Error(TermsError::TooLarge {
+            code: if cap == slopvac_fs::MAX_DOCUMENT_BYTES {
+                "document-too-large"
+            } else {
+                "terms-file-too-large"
+            },
+            path: shown.to_owned(),
+            cap,
+        }),
+        slopvac_fs::Error::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
+            ReadFailure::Missing(source.to_string())
+        }
+        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
+            ReadFailure::Error(TermsError::Io {
+                path: shown.to_owned(),
+                message: source.to_string(),
+            })
+        }
+        other => ReadFailure::Error(TermsError::Io {
+            path: shown.to_owned(),
+            message: other.to_string(),
+        }),
+    })
+}
+
+/// Like [`read`], with a missing file reported as an I/O error that names `shown`.
+pub(crate) fn read_existing(path: &Path, shown: &str, cap: u64) -> Result<String, TermsError> {
+    read(path, shown, cap).map_err(|f| match f {
+        ReadFailure::Missing(message) => TermsError::Io {
+            path: shown.to_owned(),
+            message,
+        },
+        ReadFailure::Error(e) => e,
+    })
+}

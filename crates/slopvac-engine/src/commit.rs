@@ -20,7 +20,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 
 /// The largest file [`fix_file`](crate::fix_file) reads.
-pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_FILE_BYTES: u64 = slopvac_fs::MAX_DOCUMENT_BYTES;
 
 /// Why [`fix_file`](crate::fix_file) left a file alone. A refused file is never read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

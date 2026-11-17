@@ -5,6 +5,12 @@
 //! label, not as a sentence. The shape mirrors the `Segment` of the plugin
 //! protocol (`span`, `context`, `text`) so the same extractors can sit behind
 //! `extractor/extract` later.
+//!
+//! # Input size
+//!
+//! The crate does not cap its input. The caller must pass at most
+//! 64 MiB (`slopvac_fs::MAX_DOCUMENT_BYTES`) of text, and each slopvac entry point enforces
+//! that cap before it calls in. The caps are listed in `docs/contract/policies.md`.
 
 mod drawio;
 mod excalidraw;
