@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Install the pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Add the LLVM tools
         run: rustup component add llvm-tools-preview

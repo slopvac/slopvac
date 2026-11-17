@@ -113,7 +113,7 @@ jobs:
           persist-credentials: false
 
       - name: Install the pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
@@ -170,12 +170,13 @@ jobs:
           persist-credentials: false
 
       - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Add the build target
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: |
-          rustup show active-toolchain || rustup toolchain install
-          rustup target add "$TARGET"
+        run: rustup target add "$TARGET"
 
       - name: Install musl tools
         if: ${{ endsWith(matrix.target, '-musl') }}

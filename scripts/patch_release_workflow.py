@@ -124,6 +124,49 @@ _HOST_ENV = (
 )
 
 
+_SETUP_PYTHON = (
+    "      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0\n"
+    "        with:\n"
+    '          python-version: "3.14"\n'
+)
+_TOOLCHAIN_STEP = (
+    "      - name: Install the pinned toolchain\n"
+    "        run: bash scripts/ci/install-rust-toolchain.sh\n"
+)
+# Where each Rust-running job installs the pinned toolchain: before the first dist step,
+# after checkout and, for the local job, after the container bootstrap that provides
+# rustup. The helper reads rust-toolchain.toml with python3 3.11 or newer, which neither
+# ubuntu-22.04 nor every dist container has, so setup-python comes first.
+_TOOLCHAIN_AT = (
+    (
+        "  build-local-artifacts:\n",
+        "      - name: Install dist\n        run: ${{ matrix.install_dist.run }}",
+    ),
+    (
+        "  build-global-artifacts:\n",
+        "      - name: Install cached dist\n",
+    ),
+)
+
+
+def _install_toolchain(text: str) -> str:
+    """Run the pinned-toolchain helper in the dist jobs that build or call cargo."""
+    out: list[str] = []
+    done = set()
+    for chunk in _split_jobs(text):
+        for job, anchor in _TOOLCHAIN_AT:
+            if chunk.startswith(job):
+                chunk = _replace_once(
+                    chunk, anchor, _SETUP_PYTHON + _TOOLCHAIN_STEP + anchor, job.strip()
+                )
+                done.add(job)
+        out.append(chunk)
+    if len(done) != len(_TOOLCHAIN_AT):
+        raise ValueError("expected the local and global artifact jobs in the workflow")
+    return "".join(out)
+
+
+
 def _replace_once(text: str, old: str, new: str, what: str) -> str:
     if text.count(old) != 1:
         raise ValueError(
@@ -173,6 +216,7 @@ def harden(text: str) -> str:
     text = _verify_tag_before_publishing(text)
     text = _mint_tap_token(text)
     text = _route_by_major_version(text)
+    text = _install_toolchain(text)
     _assert_clean(text)
     return text
 
