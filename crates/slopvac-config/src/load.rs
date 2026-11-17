@@ -378,9 +378,10 @@ impl Loader<'_> {
         text: String,
         layer: Layer,
     ) -> Result<(), ConfigError> {
+        let label = self.error_label(key, display);
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
-                file: display.to_owned(),
+                file: label.clone(),
                 text,
                 diagnostics,
             }))
@@ -462,6 +463,16 @@ impl Loader<'_> {
         closure.push(id);
         self.closure.push(closure);
         Ok(())
+    }
+
+    /// How a file is named in an error: relative to the project root when it sits under it,
+    /// else `<external>/<file name>`. Provenance keeps the fuller relative form; an error
+    /// must not show the directories beside or above the root (policies.md, 1.7).
+    fn error_label(&self, key: &Key, display: &str) -> String {
+        match key {
+            Key::Path(p) => safe_display(p, self.root),
+            Key::Pack(_) => display.to_owned(),
+        }
     }
 
     fn blocks(
@@ -582,9 +593,10 @@ impl Loader<'_> {
         let mut acc = Ordered::default();
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
+            let label = self.error_label(key, display);
             let fail = |code: Code, message: String, help: Option<String>| {
                 ConfigError::Rejected(Box::new(Rejected {
-                    file: display.to_owned(),
+                    file: label.clone(),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code,
@@ -621,9 +633,11 @@ impl Loader<'_> {
                 pack @ Key::Pack(_) => pack,
             };
             if let Some(at) = self.stack.iter().position(|(k, _)| *k == target) {
-                let mut chain: Vec<String> =
-                    self.stack[at..].iter().map(|(_, d)| d.clone()).collect();
-                chain.push(shown);
+                let mut chain: Vec<String> = self.stack[at..]
+                    .iter()
+                    .map(|(k, d)| self.error_label(k, d))
+                    .collect();
+                chain.push(self.error_label(&target, &shown));
                 return Err(fail(
                     Code::ExtendsCycle,
                     format!("`extends` loops: {}", chain.join(" -> ")),
@@ -649,7 +663,8 @@ impl Loader<'_> {
                         fail(
                             Code::ExtendsMissing,
                             format!(
-                                "cannot read the extended config `{name}`: {}",
+                                "cannot read the extended config `{}`: {}",
+                                safe_display(p, self.root),
                                 crate::error::reason(&e)
                             ),
                             Some("paths are relative to the file that holds the entry".into()),
@@ -674,6 +689,23 @@ impl Loader<'_> {
         }
         Ok(acc.ids())
     }
+}
+
+/// A path for a message: relative to the project root when it sits under it, else
+/// `<external>/<file name>`. Unlike [`relative_display`] it never shows the directories
+/// above or beside the root.
+fn safe_display(path: &Path, root: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    format!("<external>/{name}")
 }
 
 fn is_pack_ref(name: &str) -> bool {

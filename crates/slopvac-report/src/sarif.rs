@@ -134,7 +134,7 @@ pub(crate) fn render(
             "tool": {"driver": {
                 "name": "slopvac",
                 "version": report.slopvac_version,
-                "informationUri": "https://github.com/srobroek/slopvac",
+                "informationUri": "https://github.com/slopvac/slopvac",
                 "rules": rules,
             }},
             "columnKind": "utf16CodeUnits",

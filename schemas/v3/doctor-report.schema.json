@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/doctor-report.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/doctor-report.schema.json",
   "title": "slopvac v3 doctor report",
   "description": "The document that `slopvac doctor --format json` prints. It reports the binary, update state, configuration sources, locked packs, plugin trust and the per-user directories. Doctor reads local files only and never changes them. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/doctor.md. Owner: slopvac-8l4.12.5.",
   "type": "object",
@@ -161,7 +161,7 @@
       },
       "additionalProperties": false
     },
-    "ConfigSource": {
+    "DoctorConfigFile": {
       "type": "object",
       "properties": {
         "layer": {
@@ -198,7 +198,7 @@
         "sources": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ConfigSource"
+            "$ref": "#/$defs/DoctorConfigFile"
           }
         }
       },

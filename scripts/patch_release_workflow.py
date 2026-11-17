@@ -16,7 +16,8 @@ so that is command injection. This script rewrites the generated text:
   variables, not as `${{ }}` text;
 * the CycloneDX step output is read as `outputs`, which dist spells `output`;
 * artifacts are signed with minisign before they reach the draft release;
-* the Homebrew job pushes with a token minted from the release App, not a stored secret.
+* the Homebrew job pushes with a token minted from the release App, not a stored secret;
+* a draft pull request runs no job, and marking it ready for review starts the run.
 
 Run `scripts/dist_generate.sh` instead of `dist generate`. Each rewrite must
 match exactly once, so a dist upgrade that changes the template fails loudly
@@ -32,6 +33,14 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/release.yml")
 
 _TRIGGER = ("      - '**[0-9]+.[0-9]+.[0-9]+*'\n", "      - 'v[0-9]+.[0-9]+.[0-9]+'\n")
+
+# Marking a draft ready must start a run, and so must converting a PR back to a
+# draft, so the draft run replaces a ready run in flight. The route job skips drafts.
+_PR_TYPES = "[opened, synchronize, reopened, ready_for_review, converted_to_draft]"
+_PR_TRIGGER = (
+    "on:\n  pull_request:\n  push:\n",
+    f"on:\n  pull_request:\n    types: {_PR_TYPES}\n  push:\n",
+)
 
 _VALIDATE = """\
       - name: Validate the tag
@@ -104,14 +113,58 @@ _SIGN_STEPS = """\
       - name: Sign the release artifacts
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          python3 scripts/release_signing.py sign artifacts
+          python3 scripts/release_signing.py sign artifacts --version "${RELEASE_TAG#v}"
 """
 _HOST_ENV = (
     "    env:\n"
     + _JOB_ENV
     + '    runs-on: "ubuntu-22.04"\n    outputs:\n      val: ${{ steps.host.outputs.manifest }}\n'
 )
+
+
+_SETUP_PYTHON = (
+    "      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0\n"
+    "        with:\n"
+    '          python-version: "3.14"\n'
+)
+_TOOLCHAIN_STEP = (
+    "      - name: Install the pinned toolchain\n"
+    "        run: bash scripts/ci/install-rust-toolchain.sh\n"
+)
+# Where each Rust-running job installs the pinned toolchain: before the first dist step,
+# after checkout and, for the local job, after the container bootstrap that provides
+# rustup. The helper reads rust-toolchain.toml with python3 3.11 or newer, which neither
+# ubuntu-22.04 nor every dist container has, so setup-python comes first.
+_TOOLCHAIN_AT = (
+    (
+        "  build-local-artifacts:\n",
+        "      - name: Install dist\n        run: ${{ matrix.install_dist.run }}",
+    ),
+    (
+        "  build-global-artifacts:\n",
+        "      - name: Install cached dist\n",
+    ),
+)
+
+
+def _install_toolchain(text: str) -> str:
+    """Run the pinned-toolchain helper in the dist jobs that build or call cargo."""
+    out: list[str] = []
+    done = set()
+    for chunk in _split_jobs(text):
+        for job, anchor in _TOOLCHAIN_AT:
+            if chunk.startswith(job):
+                chunk = _replace_once(
+                    chunk, anchor, _SETUP_PYTHON + _TOOLCHAIN_STEP + anchor, job.strip()
+                )
+                done.add(job)
+        out.append(chunk)
+    if len(done) != len(_TOOLCHAIN_AT):
+        raise ValueError("expected the local and global artifact jobs in the workflow")
+    return "".join(out)
+
 
 
 def _replace_once(text: str, old: str, new: str, what: str) -> str:
@@ -124,6 +177,7 @@ def _replace_once(text: str, old: str, new: str, what: str) -> str:
 
 def harden(text: str) -> str:
     text = _replace_once(text, *_TRIGGER, "tag trigger")
+    text = _replace_once(text, *_PR_TRIGGER, "pull request trigger")
     text = _insert_validation(text)
     text = _replace_once(text, _PLAN_RUN_OLD, _PLAN_RUN_NEW, "plan command")
     text = _replace_once(
@@ -162,6 +216,7 @@ def harden(text: str) -> str:
     text = _verify_tag_before_publishing(text)
     text = _mint_tap_token(text)
     text = _route_by_major_version(text)
+    text = _install_toolchain(text)
     _assert_clean(text)
     return text
 
@@ -245,7 +300,7 @@ _TAP_MINT_STEP = """\
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: srobroek
+          owner: slopvac
           repositories: homebrew-tap
           permission-contents: write
 """
@@ -257,7 +312,7 @@ _TAP_CHECKOUT = re.compile(
     r"      - uses: actions/checkout@\S+ # \S+\n"
     r"        with:\n"
     r"(?:          [^\n]*\n)*?"
-    r"          repository: \"srobroek/homebrew-tap\"\n"
+    r"          repository: \"slopvac/homebrew-tap\"\n"
     r"(?:          [^\n]*\n)*?" + re.escape(_TAP_TOKEN_OLD)
 )
 
@@ -300,7 +355,9 @@ def _verify_tag_before_publishing(text: str) -> str:
 _ROUTE_JOB = """\
   # Tags of major 3 and later go through dist. Earlier tags (2.x) only publish the
   # draft release release-please made, so they release as they always did.
+  # Every other job needs this one, so a draft pull request skips them all.
   route:
+    if: ${{ github.event.pull_request.draft != true }}
     runs-on: "ubuntu-22.04"
     outputs:
       gated: ${{ steps.route.outputs.gated }}

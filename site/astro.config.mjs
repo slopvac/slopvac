@@ -34,7 +34,7 @@ export default defineConfig({
           },
         },
       ],
-      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/srobroek/slopvac' }],
+      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/slopvac/slopvac' }],
       sidebar: [
         { label: 'Reference (v3)', items: [{ autogenerate: { directory: 'v3' } }] },
       ],

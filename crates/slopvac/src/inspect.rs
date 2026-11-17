@@ -5,7 +5,6 @@
 //! Output order is deterministic: category, then rule, as the pack lists them.
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
 
 use clap::ArgMatches;
 use serde::Serialize;
@@ -16,8 +15,8 @@ use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind, RuleS
 
 use crate::errors::CliError;
 use crate::exit;
-use crate::redact;
 use crate::rule_catalog;
+use crate::severity::{Effective, Severities};
 
 /// Generated catalogue prose is not written to the lint profile, so Markdown output
 /// wraps it in these directives, as 2.x did.
@@ -66,19 +65,9 @@ fn clean(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn load(m: &ArgMatches) -> Result<RuleSet, CliError> {
-    if let Some(path) = m.get_one::<PathBuf>("config")
-        && !path.is_file()
-    {
-        return Err(CliError::new(
-            "config-not-found",
-            format!(
-                "--config {}: no such file",
-                redact::shown_path(path, &std::env::current_dir().unwrap_or_default())
-            ),
-        ));
-    }
-    rule_catalog::core()
+fn load(m: &ArgMatches) -> Result<(RuleSet, Severities), CliError> {
+    let severities = Severities::load(m)?;
+    Ok((rule_catalog::core()?, severities))
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {
@@ -166,12 +155,12 @@ fn selected<'a>(set: &'a RuleSet, filter: &Filter) -> Vec<(&'a LoadedCategory, &
 /// A usage error for a bad `--genre`, or a load error.
 pub fn rules(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let filter = Filter::from_matches(m)?;
-    let set = load(m)?;
+    let (set, sev) = load(m)?;
     let picked = selected(&set, &filter);
     let text = match format_of(m) {
-        "json" => rules_json(&set, &picked),
-        "md" => rules_md(&picked),
-        _ => rules_text(&picked),
+        "json" => rules_json(&set, &picked, &sev),
+        "md" => rules_md(&picked, &sev),
+        _ => rules_text(&picked, &sev),
     };
     emit(out, &text)
 }
@@ -192,14 +181,14 @@ fn emit(out: &mut dyn std::io::Write, text: &str) -> Result<u8, CliError> {
     Ok(exit::PASS)
 }
 
-fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
+fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> String {
     let rows: Vec<[String; 5]> = picked
         .iter()
         .map(|(_, r)| {
             [
                 r.id().to_string(),
                 kind_name(r.kind()).to_owned(),
-                word(&r.rule().severity),
+                effective(sev, r).level,
                 word(&r.rule().scope),
                 source_of(r),
             ]
@@ -241,12 +230,17 @@ fn rules_text(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
     out
 }
 
-fn rule_json(category: &LoadedCategory, rule: &LoadedRule) -> Value {
+fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> Value {
     let mut value = serde_json::to_value(rule.rule()).unwrap_or(Value::Null);
     if let Value::Object(map) = &mut value {
         map.insert("id".into(), json!(rule.id().as_str()));
         map.insert("category".into(), json!(category.id().as_str()));
         map.insert("kind".into(), json!(kind_name(rule.kind())));
+        let eff = effective(sev, rule);
+        map.insert("effective_severity".into(), json!(eff.level));
+        if let Some(from) = eff.from {
+            map.insert("severity_from".into(), json!(from));
+        }
         if let Some(url) = url_of(rule) {
             map.insert("url".into(), json!(url));
         }
@@ -254,7 +248,11 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule) -> Value {
     value
 }
 
-fn rules_json(set: &RuleSet, picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
+fn rules_json(
+    set: &RuleSet,
+    picked: &[(&LoadedCategory, &LoadedRule)],
+    sev: &Severities,
+) -> String {
     let categories: Vec<Value> = set
         .categories()
         .iter()
@@ -268,7 +266,7 @@ fn rules_json(set: &RuleSet, picked: &[(&LoadedCategory, &LoadedRule)]) -> Strin
             })
         })
         .collect();
-    let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r)).collect();
+    let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
     let payload = json!({"pack": set.pack().as_str(), "categories": categories, "rules": rules});
     pretty(&payload)
 }
@@ -279,9 +277,9 @@ fn pretty(value: &Value) -> String {
     text
 }
 
-fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
+fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)], sev: &Severities) -> String {
     let mut out = format!(
-        "# Slopvac rules\n\nThis list has {} {}, with the severities each rule ships with.\n",
+        "# Slopvac rules\n\nThis list has {} {}, with the severities your config gives them.\n",
         picked.len(),
         if picked.len() == 1 { "rule" } else { "rules" },
     );
@@ -307,7 +305,7 @@ fn rules_md(picked: &[(&LoadedCategory, &LoadedRule)]) -> String {
             body.push(String::new());
             last = Some(category.id().as_str());
         }
-        body.extend(rule_block(rule));
+        body.extend(rule_block(rule, sev));
         body.push(String::new());
     }
     if !body.is_empty() {
@@ -356,6 +354,21 @@ fn example_lines(number: usize, example: &Example) -> Vec<String> {
     lines
 }
 
+/// The severity after the config layers.
+fn effective(sev: &Severities, rule: &LoadedRule) -> Effective {
+    sev.of(rule, &word(&rule.rule().severity))
+}
+
+fn severity_line(eff: &Effective) -> String {
+    match (&eff.from, eff.changed()) {
+        (Some(from), true) => format!(
+            "- Severity: `{}`; configured: `{}` ({from})",
+            eff.shipped, eff.level
+        ),
+        _ => format!("- Severity: `{}`", eff.level),
+    }
+}
+
 fn question_of(rule: &LoadedRule) -> Option<&str> {
     match &rule.rule().match_ {
         Match::Judgement(j) => Some(j.question.as_str()),
@@ -378,7 +391,7 @@ fn source_line(rule: &LoadedRule) -> String {
     parts.join("; ")
 }
 
-fn rule_block(rule: &LoadedRule) -> Vec<String> {
+fn rule_block(rule: &LoadedRule, sev: &Severities) -> Vec<String> {
     let r = rule.rule();
     let mut lines = vec![
         format!("### `{}`: {}", rule.id(), clean(r.name.as_str())),
@@ -386,7 +399,7 @@ fn rule_block(rule: &LoadedRule) -> Vec<String> {
         format!("- Category: `{}`", rule.category()),
         format!("- Scope: `{}`", word(&r.scope)),
         format!("- Kind: `{}`", kind_name(rule.kind())),
-        format!("- Severity: `{}`", word(&r.severity)),
+        severity_line(&effective(sev, rule)),
     ];
     match question_of(rule) {
         Some(q) => lines.push(format!("- Question: {}", clean(q))),
@@ -431,7 +444,7 @@ fn suppression(rule: &LoadedRule) -> Option<String> {
 /// `slopvac migrate`.
 pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let id = m.get_one::<String>("rule").expect("required");
-    let set = load(m)?;
+    let (set, sev) = load(m)?;
     let found = slopvac_model::RuleId::new(id.clone())
         .ok()
         .and_then(|rid| set.get(&rid));
@@ -453,29 +466,40 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         .expect("a rule has a category");
     let text = match format_of(m) {
         "json" => {
-            let mut value = rule_json(category, rule);
+            let mut value = rule_json(category, rule, &sev);
             if let (Value::Object(map), Some(s)) = (&mut value, suppression(rule)) {
                 map.insert("suppression".into(), json!(s));
             }
             pretty(&value)
         }
-        "md" => format!("{DISABLE}\n{}\n{ENABLE}\n", rule_block(rule).join("\n")),
-        _ => explain_text(rule),
+        "md" => format!(
+            "{DISABLE}\n{}\n{ENABLE}\n",
+            rule_block(rule, &sev).join("\n")
+        ),
+        _ => explain_text(rule, &sev),
     };
     emit(out, &text)
 }
 
-fn explain_text(rule: &LoadedRule) -> String {
+fn explain_text(rule: &LoadedRule, sev: &Severities) -> String {
     let r = rule.rule();
     let mut out = String::new();
     let _ = writeln!(out, "{} -- {}", rule.id(), clean(r.name.as_str()));
+    let eff = effective(sev, rule);
     let _ = writeln!(
         out,
         "kind: {}   severity: {}   scope: {}",
         kind_name(rule.kind()),
-        word(&r.severity),
+        eff.level,
         word(&r.scope)
     );
+    if let (Some(from), true) = (&eff.from, eff.changed()) {
+        let _ = writeln!(
+            out,
+            "configured: {} ({from}); it ships as {}",
+            eff.level, eff.shipped
+        );
+    }
     let _ = writeln!(out, "\n{}", message_text(r.message.as_str()));
     if let Some(fix) = &r.fix
         && !message_text(r.message.as_str())

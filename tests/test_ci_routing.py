@@ -242,6 +242,31 @@ def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
     assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "schemas/v3/tagger.schema.json",
+        "schemas/v3/conformance/blocklist/invalid/cases.toml",
+    ],
+)
+def test_schema_changes_route_to_rust(path):
+    # Rust crates load the schema files and the corpus, so a schema-only change must run Rust CI.
+    assert in_class("rust", path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-engine/tests/fixtures/x.json",
+        "crates/slopvac-rules/tests/fixtures/x.json",
+    ],
+)
+def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
+    outputs = classes_of([path])
+    assert "code" in outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
 @pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
 def test_folded_job_calls_its_workflow_with_read_only_token(job):
     call = JOBS[job]
@@ -303,10 +328,13 @@ FLAG_ENV = {
 ALWAYS = {"changes", "quick-lint"}
 
 
-def run_gate(flags: set[str], results: dict[str, str]) -> subprocess.CompletedProcess:
+def run_gate(
+    flags: set[str], results: dict[str, str], *, draft: bool = False
+) -> subprocess.CompletedProcess:
     needs = {name: {"result": results.get(name, "skipped")} for name in GATE_NEEDS}
     env = {k: "true" if v in flags else "false" for k, v in FLAG_ENV.items()}
     env["RESULTS"] = json.dumps(needs)
+    env["DRAFT"] = "true" if draft else "false"
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
         env={**os.environ, **env},
@@ -321,7 +349,7 @@ def ok(*names: str) -> dict[str, str]:
 
 
 def test_gate_step_declares_an_env_for_every_flag():
-    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS"}
+    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS", "DRAFT"}
 
 
 def test_gate_needs_include_the_folded_jobs():
@@ -369,3 +397,41 @@ def test_gate_rejects_mismatches_failures_and_cancellations(flags, results, mess
     proc = run_gate(flags, results)
     assert proc.returncode == 1
     assert message in proc.stdout
+
+
+# --- draft pull requests ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("flags", "results"),
+    [
+        # What a draft run produces: every routed job skipped.
+        (set(), {}),
+        # Even a run where every suite succeeded is not a pass for a draft.
+        ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
+    ],
+    ids=["skipped", "all-green"],
+)
+def test_gate_fails_a_draft(flags, results):
+    proc = run_gate(flags, results, draft=True)
+    assert proc.returncode == 1
+    assert "draft pull request" in proc.stdout
+
+
+# A skipped job reports success to branch protection, so the required checks
+# must run on a draft to fail it.
+@pytest.mark.parametrize("job", ["gate", "lint-gate-compat", "security-gate-compat"])
+def test_required_checks_are_never_skipped(job):
+    assert JOBS[job]["if"] == "always()"
+
+
+@pytest.mark.parametrize(
+    ("result", "code"), [("success", 0), ("failure", 1), ("skipped", 1)]
+)
+@pytest.mark.parametrize("job", ["lint-gate-compat", "security-gate-compat"])
+def test_compat_checks_pass_only_when_the_gate_passed(job, result, code):
+    step = JOBS[job]["steps"][0]
+    proc = subprocess.run(
+        ["bash", "-c", step["run"]], env={**os.environ, "RESULT": result}, check=False
+    )
+    assert proc.returncode == code

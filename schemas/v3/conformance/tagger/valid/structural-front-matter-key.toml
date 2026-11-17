@@ -1,0 +1,6 @@
+schema_version = 3
+id = "has-type"
+tag = "release"
+
+[when.front_matter]
+key = "type"

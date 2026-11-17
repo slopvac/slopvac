@@ -44,6 +44,7 @@ impl Mode {
 
 /// Dials for one category, from the resolved configuration.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub struct CategoryDials {
     /// The level every rule of the category reports at, unless a rule has its own.
     pub level: Option<Level>,
@@ -53,8 +54,32 @@ pub struct CategoryDials {
     pub max_per_100_words: Option<f64>,
 }
 
+impl CategoryDials {
+    /// The same dials with a category level.
+    #[must_use]
+    pub const fn with_level(mut self, level: Option<Level>) -> Self {
+        self.level = level;
+        self
+    }
+
+    /// The same dials with a score weight.
+    #[must_use]
+    pub const fn with_weight(mut self, weight: Option<f64>) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    /// The same dials with a density budget.
+    #[must_use]
+    pub const fn with_max_per_100_words(mut self, budget: Option<f64>) -> Self {
+        self.max_per_100_words = budget;
+        self
+    }
+}
+
 /// The limits that fail a document's gate. An absent limit never fails.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Thresholds {
     /// Most errors a document may carry.
     pub max_errors: Option<usize>,
@@ -68,8 +93,48 @@ pub struct Thresholds {
     pub min_score: Option<f64>,
 }
 
+impl Thresholds {
+    /// The same limits with a cap on errors.
+    #[must_use]
+    pub const fn with_max_errors(mut self, limit: Option<usize>) -> Self {
+        self.max_errors = limit;
+        self
+    }
+
+    /// The same limits with a cap on warnings.
+    #[must_use]
+    pub const fn with_max_warnings(mut self, limit: Option<usize>) -> Self {
+        self.max_warnings = limit;
+        self
+    }
+
+    /// The same limits with a cap on Unicode dash findings.
+    #[must_use]
+    pub const fn with_max_unicode_dashes(mut self, limit: Option<usize>) -> Self {
+        self.max_unicode_dashes = limit;
+        self
+    }
+
+    /// The same limits with a cap on weighted findings per 100 words.
+    #[must_use]
+    pub const fn with_max_total_per_100_words(mut self, limit: Option<f64>) -> Self {
+        self.max_total_per_100_words = limit;
+        self
+    }
+
+    /// The same limits with a lowest acceptable score.
+    #[must_use]
+    pub const fn with_min_score(mut self, limit: Option<f64>) -> Self {
+        self.min_score = limit;
+        self
+    }
+}
+
 /// The settings one run applies to every document.
+///
+/// Start from [`Settings::new`] and assign the fields you change.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Settings {
     /// The profile name, such as `normal`. It selects a category budget in the rule data.
     pub profile: NonEmptyString,

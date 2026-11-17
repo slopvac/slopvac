@@ -1,0 +1,9 @@
+schema_version = 3
+id = "t"
+tag = "safety"
+
+[when]
+sentence = "x"
+
+[[match]]
+pattern = "x"

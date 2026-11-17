@@ -1,0 +1,8 @@
+schema_version = 3
+id = "procedure-heading"
+tag = "procedure"
+scope = "section"
+confidence = 0.8
+
+[when]
+heading_path = '\b(?:procedures?|steps?)\b'

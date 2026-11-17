@@ -238,7 +238,7 @@ fn executable_suffixes() -> Vec<String> {
     found
 }
 
-fn find_in_path(program: &str, search: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+pub(crate) fn find_in_path(program: &str, search: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
     find_with_suffixes(program, search, &executable_suffixes())
 }
 

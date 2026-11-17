@@ -65,8 +65,10 @@
 # - linear.api_key  → use LINEAR_API_KEY env var instead
 # - github.token    → use GITHUB_TOKEN env var instead
 
-# sync.remote: "git+ssh://git@github.com/srobroek/slopvac"
+# sync.remote: "git+ssh://git@github.com/slopvac/slopvac"
 export:
-    auto: true
+    # JSONL export is optional (viewers, interchange). Sync is Dolt:
+    # bd dolt push / bd dolt pull.
+    auto: false
 sync:
-    remote: "git+https://github.com/srobroek/slopvac.git"
+    remote: "git+https://github.com/slopvac/slopvac.git"

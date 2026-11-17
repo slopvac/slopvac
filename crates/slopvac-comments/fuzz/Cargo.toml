@@ -1,0 +1,23 @@
+[package]
+name = "slopvac-comments-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "cargo-fuzz targets for slopvac-comments."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+slopvac-comments = { path = ".." }
+
+[[bin]]
+name = "extract"
+path = "fuzz_targets/extract.rs"
+test = false
+doc = false
+bench = false
+
+# Not part of the root workspace: cargo-fuzz needs nightly and its own lockfile.
+[workspace]
