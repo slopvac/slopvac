@@ -2527,6 +2527,7 @@ dependencies = [
  "proptest",
  "pulldown-cmark",
  "rayon",
+ "rstest",
  "rustix",
  "serde",
  "serde_json",

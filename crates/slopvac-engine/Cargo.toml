@@ -40,6 +40,7 @@ rustix = { workspace = true, features = ["fs", "process"] }
 
 [dev-dependencies]
 proptest.workspace = true
+rstest.workspace = true
 # The work-counter tests count the indexes a lint builds.
 slopvac-model = { workspace = true, features = ["test-counters"] }
 toml.workspace = true
