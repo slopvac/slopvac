@@ -577,6 +577,31 @@ def test_summarize_exits_2_for_a_join_across_scorer_versions(tmp_path, capsys):
     assert "scorer versions differ" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("field", "other", "message"),
+    [
+        ("schema", models.RESULTS_SCHEMA + 1, "schema differs"),
+        ("prompt_version", "2", "prompt_version differs"),
+        ("repeats", 5, "repeats differs"),
+        ("tasks_sha256", "other-task-set", "tasks_sha256 differs"),
+    ],
+)
+def test_a_join_refuses_files_that_differ_in_one_comparability_field(
+    field, other, message
+):
+    with pytest.raises(models.ModelEvalError, match=message):
+        models.merge_results(results_file("a"), results_file("b", **{field: other}))
+
+
+@pytest.mark.parametrize("field", ["family", "tier"])
+def test_a_join_refuses_a_model_whose_metadata_differs_between_files(field):
+    changed = results_file("a")
+    changed["models"] = [{"name": "a", "family": "f", "tier": "t", field: "other"}]
+    changed["runs"][0]["repeat"] = 1  # no shared run, so only the model differs
+    with pytest.raises(models.ModelEvalError, match="model 'a' differs"):
+        models.merge_results(results_file("a"), changed)
+
+
 def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():
     out = models.execute(
         tiny_tasks(), roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
