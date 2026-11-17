@@ -281,6 +281,7 @@ mod tests {
             &files,
             &Verdict(Ok(())),
             DOWNLOAD_BASE,
+            "3.0.0",
             "3.1.0",
             TARGET,
             &exe,
