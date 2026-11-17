@@ -366,6 +366,41 @@ impl Loader<'_> {
         })))
     }
 
+    /// The text of an extended file (read from disk unless a pack supplied it), counted against
+    /// the byte budget. The error is the diagnostic code, message and help.
+    fn take_body(
+        &mut self,
+        target: &Key,
+        body: Option<String>,
+    ) -> Result<String, (Code, String, Option<String>)> {
+        let body = match body {
+            Some(b) => b,
+            None => match target {
+                Key::Path(p) => crate::read::read_text(p).map_err(|e| {
+                    (
+                        Code::ExtendsMissing,
+                        format!(
+                            "cannot read the extended config `{}`: {}",
+                            safe_display(p, self.root),
+                            crate::error::reason(&e)
+                        ),
+                        Some("paths are relative to the file that holds the entry".into()),
+                    )
+                })?,
+                Key::Pack(_) => String::new(),
+            },
+        };
+        self.bytes += body.len();
+        if self.bytes > MAX_EXTENDS_BYTES {
+            return Err((
+                Code::ExtendsLimit,
+                format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
+                Some("extend smaller files".into()),
+            ));
+        }
+        Ok(body)
+    }
+
     /// Move `id` to the end of the application order.
     fn touch(&mut self, id: usize) {
         self.order.push(id);
@@ -656,31 +691,9 @@ impl Loader<'_> {
             if let Some((message, help)) = self.budget_exceeded() {
                 return Err(fail(Code::ExtendsLimit, message, Some(help.into())));
             }
-            let body = match body {
-                Some(b) => b,
-                None => match &target {
-                    Key::Path(p) => crate::read::read_text(p).map_err(|e| {
-                        fail(
-                            Code::ExtendsMissing,
-                            format!(
-                                "cannot read the extended config `{}`: {}",
-                                safe_display(p, self.root),
-                                crate::error::reason(&e)
-                            ),
-                            Some("paths are relative to the file that holds the entry".into()),
-                        )
-                    })?,
-                    Key::Pack(_) => String::new(),
-                },
-            };
-            self.bytes += body.len();
-            if self.bytes > MAX_EXTENDS_BYTES {
-                return Err(fail(
-                    Code::ExtendsLimit,
-                    format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
-                    Some("extend smaller files".into()),
-                ));
-            }
+            let body = self
+                .take_body(&target, body)
+                .map_err(|(code, message, help)| fail(code, message, help))?;
             self.load_text(&target, &shown, body, Layer::Extends)?;
             let id = self.ids[&target];
             for i in self.closure[id].clone() {
