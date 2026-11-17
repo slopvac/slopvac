@@ -582,3 +582,18 @@ def test_a_tap_checkout_outside_the_homebrew_job_is_not_rewritten(raw):
     renamed = raw.replace(patcher._TAP_JOB, "  publish-formula-elsewhere:\n")
     with pytest.raises(ValueError, match="expected exactly one Homebrew publish job"):
         patcher.harden(renamed)
+
+
+@pytest.mark.parametrize("job", ["build-local-artifacts", "build-global-artifacts"])
+def test_the_dist_build_jobs_install_the_pinned_toolchain_before_dist(workflow, job):
+    steps = workflow["jobs"][job]["steps"]
+    runs = [s.get("run", "") for s in steps]
+    helper = runs.index("bash scripts/ci/install-rust-toolchain.sh")
+    assert steps[helper - 1]["uses"].startswith("actions/setup-python@")
+    dist = next(i for i, s in enumerate(steps) if "dist" in s.get("name", "").lower())
+    assert helper < dist
+
+
+def test_a_missing_dist_build_job_fails_the_toolchain_patch(raw):
+    with pytest.raises(ValueError, match="expected"):
+        patcher.harden(raw.replace("  build-global-artifacts:\n", "  other:\n"))

@@ -7,6 +7,7 @@ the first N ``toolchain install`` calls.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -124,46 +125,51 @@ def test_malformed_toml_fails_before_rustup(tmp_path: Path) -> None:
 #
 # These jobs check out the repository but never run Rust. Add the helper to a
 # new job, or list it here with a reason.
-NO_RUST = {
-    ("action-test.yml", "action"): "runs the Python action and pipx docutils",
-    ("action-v3-test.yml", "action"): "runs the action against a fake binary",
-    ("candidate.yml", "validate"): "tag parsing and key checks in Python",
-    ("candidate.yml", "sign"): "minisign over downloaded artifacts",
-    ("cli-e2e.yml", "e2e"): "installs the Python wheel; no cargo",
-    ("cli-e2e.yml", "smoke"): "installs the Python package; no cargo",
-    ("lint.yml", "markdownlint"): "npx markdownlint",
-    ("lint.yml", "taplo"): "uvx taplo",
-    ("lint.yml", "pinact"): "third-party pinact action",
-    ("lint.yml", "complexity"): "uvx lizard over two Python files",
-    ("lint.yml", "shell-lint"): "shellcheck",
-    ("lint.yml", "python-lint"): "uvx ruff",
-    ("lint.yml", "action"): "runs the Python action",
-    ("lint.yml", "prose"): "slopvac lint (Python) over Markdown",
-    ("markdown-audit.yml", "inventory-and-audit"): "Python Markdown audit",
-    ("publish-lint.yml", "build"): "builds the Python sdist and wheel",
-    ("release-provenance.yml", "provenance"): "tag and ruleset checks in Python",
-    ("release-smoke.yml", "resolve"): "tag parsing in Python",
-    ("release-smoke.yml", "archive"): "unpacks a released binary",
-    ("release-smoke.yml", "shell-installer"): "runs the released shell installer",
-    ("release-smoke.yml", "homebrew"): "brew install of the released formula",
-    ("release.yml", "route"): "cargo-dist generated; tag routing in Python",
-    ("release.yml", "plan"): "cargo-dist generated; dist plan only",
-    ("release.yml", "build-local-artifacts"): "cargo-dist generated; installs rustup",
-    ("release.yml", "build-global-artifacts"): "cargo-dist generated; own toolchain",
-    ("release.yml", "host"): "cargo-dist generated; uploads artifacts",
-    ("release.yml", "publish-homebrew-formula"): "cargo-dist generated; git only",
-    ("release.yml", "announce"): "cargo-dist generated; no steps run",
-    ("release.yml", "publish-legacy-release"): "release checks in Python",
-    ("reviewdog.yml", "comment-v3"): "posts findings with reviewdog",
-    ("security.yml", "dependency-review"): "third-party action",
-    ("security.yml", "trufflehog"): "third-party action",
-    ("security.yml", "codeql"): "CodeQL Python analysis",
-    ("security.yml", "osv"): "third-party scanner",
-    ("security.yml", "trivy"): "third-party scanner",
-    ("test.yml", "changes"): "path classification",
-    ("test.yml", "quick-lint"): "ruff, JSON checks and Python steering tests",
-    ("trunk-dev-stale-branches.yml", "stale-bead-branches"): "bd and git only",
+_NO_RUST_GROUPS = {
+    "Python-only or installed-package job; no cargo": [
+        ("action-test.yml", "action"),
+        ("action-v3-test.yml", "action"),
+        ("candidate.yml", "validate"),
+        ("cli-e2e.yml", "e2e"),
+        ("cli-e2e.yml", "smoke"),
+        ("lint.yml", "action"),
+        ("lint.yml", "prose"),
+        ("markdown-audit.yml", "inventory-and-audit"),
+        ("publish-lint.yml", "build"),
+        ("release-provenance.yml", "provenance"),
+        ("release-smoke.yml", "resolve"),
+        ("test.yml", "quick-lint"),
+        ("test.yml", "changes"),
+        ("release.yml", "route"),
+        ("release.yml", "publish-legacy-release"),
+    ],
+    "runs only third-party actions or linters on files": [
+        ("lint.yml", "markdownlint"),
+        ("lint.yml", "taplo"),
+        ("lint.yml", "pinact"),
+        ("lint.yml", "complexity"),
+        ("lint.yml", "shell-lint"),
+        ("lint.yml", "python-lint"),
+        ("security.yml", "dependency-review"),
+        ("security.yml", "trufflehog"),
+        ("security.yml", "codeql"),
+        ("security.yml", "osv"),
+        ("security.yml", "trivy"),
+        ("reviewdog.yml", "comment-v3"),
+    ],
+    "handles released artifacts, git or the API only; builds nothing": [
+        ("candidate.yml", "sign"),
+        ("release-smoke.yml", "archive"),
+        ("release-smoke.yml", "shell-installer"),
+        ("release-smoke.yml", "homebrew"),
+        ("release.yml", "plan"),
+        ("release.yml", "host"),
+        ("release.yml", "publish-homebrew-formula"),
+        ("release.yml", "announce"),
+        ("trunk-dev-stale-branches.yml", "stale-bead-branches"),
+    ],
 }
+NO_RUST = {job: why for why, jobs in _NO_RUST_GROUPS.items() for job in jobs}
 # Steps that may sit between checkout and the helper.
 RUNTIME_SETUP = (
     "actions/setup-python@",
@@ -171,6 +177,8 @@ RUNTIME_SETUP = (
     "actions/setup-node@",
     "jdx/mise-action@",
 )
+# The dist container bootstrap installs rustup, which the helper needs.
+BOOTSTRAP = "Install Rust non-interactively if not already installed"
 
 
 def _all_jobs() -> list[tuple[str, str, dict]]:
@@ -198,7 +206,7 @@ def _problem(file: str, name: str, job: dict) -> str | None:
     )
     allowed = (file, name) in NO_RUST
     if checkout is None:
-        return None
+        return _unchecked_source_use(file, name, steps)
     has_helper = any(_is_helper(s) for s in steps)
     if allowed:
         return (
@@ -206,7 +214,10 @@ def _problem(file: str, name: str, job: dict) -> str | None:
         )
     rest = steps[checkout + 1 :]
     index = 0
-    while index < len(rest) and rest[index].get("uses", "").startswith(RUNTIME_SETUP):
+    while index < len(rest) and (
+        rest[index].get("uses", "").startswith(RUNTIME_SETUP)
+        or rest[index].get("name") == BOOTSTRAP
+    ):
         index += 1
     if index < len(rest) and _is_helper(rest[index]):
         return None
@@ -229,3 +240,35 @@ def test_job_installs_the_toolchain_or_is_classified(
 def test_no_rust_entries_name_real_jobs() -> None:
     existing = {(f, n) for f, n, _ in _all_jobs()}
     assert set(NO_RUST) <= existing
+
+
+# A job without a checkout is not checked above. Flag the two shapes that could
+# still run Rust over this repository's source: a shell clone or fetch, and an
+# artifact download followed by cargo. Other ways to obtain source are a known limit.
+CLONE = re.compile(r"\bgit\s+(clone|fetch)\b|\bgh\s+repo\s+clone\b")
+CARGO = re.compile(r"(?:^|[\s;&|(])cargo\s", re.MULTILINE)
+
+
+def _unchecked_source_use(file: str, name: str, steps: list[dict]) -> str | None:
+    runs = "\n".join(s.get("run", "") for s in steps)
+    downloads = any(
+        s.get("uses", "").startswith("actions/download-artifact@") for s in steps
+    )
+    if CLONE.search(runs) or (downloads and CARGO.search(runs)):
+        return (
+            f"{file}:{name} gets source without actions/checkout; "
+            f"check out the repository and run `bash {HELPER}`"
+        )
+    return None
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        [{"run": "git clone https://github.com/slopvac/slopvac src"}],
+        [{"uses": "actions/download-artifact@x"}, {"run": "cargo build"}],
+    ],
+    ids=["clone", "artifact-and-cargo"],
+)
+def test_source_without_checkout_is_flagged(steps: list[dict]) -> None:
+    assert _unchecked_source_use("x.yml", "job", steps) is not None
