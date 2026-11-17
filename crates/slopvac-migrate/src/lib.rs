@@ -24,7 +24,7 @@ use std::fmt;
 
 pub use cli::{command, execute, run};
 pub use config::{Rewrite, migrate_config};
-pub use directives::{UnknownId, rewrite_directives};
+pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use lint::EngineLinter;
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
