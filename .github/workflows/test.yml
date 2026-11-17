@@ -211,14 +211,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pull requests test linux-x64 only. The merge queue and pushes to main run
-        # every leg, so a platform break cannot reach main. Each event gets a
+        # Pull requests test linux-x64 only. Pushes to main run every leg, so a
+        # platform break cannot go unseen. The merge queue runs every leg except
+        # macos-arm64: GitHub often cannot acquire a hosted arm64 macOS runner, which
+        # ejects the merge group. See bead slopvac-8l4.14.36; revisit once arm64
+        # not-acquired cancellations on main are zero for 7 days. Each event gets a
         # complete list: GitHub turns an `include` entry that matches no
         # combination into a new one, so legs cannot be filtered out of one list.
         # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
         include: >-
           ${{ fromJSON(github.event_name == 'pull_request'
           && '[{"name": "linux-x64", "os": "ubuntu-latest"}]'
+          || github.event_name == 'merge_group'
+          && '[{"name": "linux-x64", "os": "ubuntu-latest"},
+          {"name": "linux-arm64", "os": "ubuntu-24.04-arm"},
+          {"name": "linux-x64-musl", "os": "ubuntu-latest",
+          "target": "x86_64-unknown-linux-musl", "musl": true},
+          {"name": "linux-arm64-musl", "os": "ubuntu-24.04-arm",
+          "target": "aarch64-unknown-linux-musl", "musl": true},
+          {"name": "macos-x64", "os": "macos-15-intel"}]'
           || '[{"name": "linux-x64", "os": "ubuntu-latest"},
           {"name": "linux-arm64", "os": "ubuntu-24.04-arm"},
           {"name": "linux-x64-musl", "os": "ubuntu-latest",
