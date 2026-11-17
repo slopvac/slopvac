@@ -894,5 +894,8 @@ fn a_parity_delta_moves_the_expected_findings() {
     let deltas = deltas_for(&source, "parity").unwrap();
     let before = want["document"]["findings"].as_array().unwrap().len();
     apply_deltas(&mut want, &deltas, "normal", "issue-254");
-    assert_eq!(want["document"]["findings"].as_array().unwrap().len(), before - 1);
+    assert_eq!(
+        want["document"]["findings"].as_array().unwrap().len(),
+        before - 1
+    );
 }
