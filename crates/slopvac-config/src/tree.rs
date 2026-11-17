@@ -321,6 +321,9 @@ fn yaml_key(k: &MarkedYaml<'_>) -> String {
 pub struct LineIndex<'a> {
     text: &'a str,
     starts: Vec<usize>,
+    /// For a line with a non-ASCII character: the code points before each byte of the line, so
+    /// a column is one lookup. An ASCII line has none, because its column is its byte offset.
+    chars_before: Vec<Option<Vec<u32>>>,
 }
 
 impl<'a> LineIndex<'a> {
@@ -340,7 +343,34 @@ impl<'a> LineIndex<'a> {
                 starts.push(i + 1);
             }
         }
-        Self { text, starts }
+        let chars_before = starts
+            .iter()
+            .enumerate()
+            .map(|(i, &start)| {
+                let end = starts.get(i + 1).copied().unwrap_or(text.len());
+                let line = text.get(start..end)?;
+                if line.is_ascii() {
+                    return None;
+                }
+                let mut table = Vec::with_capacity(line.len() + 1);
+                let mut count = 0u32;
+                for (at, _) in line.char_indices() {
+                    while table.len() <= at {
+                        table.push(count);
+                    }
+                    count += 1;
+                }
+                while table.len() <= line.len() {
+                    table.push(count);
+                }
+                Some(table)
+            })
+            .collect();
+        Self {
+            text,
+            starts,
+            chars_before,
+        }
     }
 
     /// One-based line and column of a byte offset. The column counts code points.
@@ -349,10 +379,11 @@ impl<'a> LineIndex<'a> {
         let offset = offset.clamp(self.starts[0], self.text.len());
         let line = self.starts.partition_point(|&s| s <= offset) - 1;
         let start = self.starts[line];
-        let col = self
-            .text
-            .get(start..offset)
-            .map_or(0, |s| s.chars().count());
+        let col = match &self.chars_before[line] {
+            None => offset - start,
+            Some(table) if self.text.is_char_boundary(offset) => table[offset - start] as usize,
+            Some(_) => 0,
+        };
         (line + 1, col + 1)
     }
 }
@@ -421,6 +452,36 @@ mod tests {
         assert_eq!(idx.line_col(0), (1, 1));
         assert_eq!(idx.line_col(3), (2, 1));
         assert_eq!(idx.line_col(text.find('x').unwrap()), (2, 2));
+    }
+
+    #[test]
+    fn columns_on_one_very_long_line_take_linear_time() {
+        use std::fmt::Write as _;
+        // 100k keys on one line, led by a non-ASCII character so every column needs a count.
+        let mut text = String::from("é = {");
+        let mut offsets = Vec::new();
+        for i in 0..100_000 {
+            offsets.push(text.len());
+            let _ = write!(text, "k{i} = 1, ");
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let owned = text.clone();
+        let wanted = offsets.clone();
+        std::thread::spawn(move || {
+            let idx = LineIndex::new(&owned);
+            let cols: Vec<usize> = wanted.iter().map(|o| idx.line_col(*o).1).collect();
+            let _ = tx.send(cols);
+        });
+        let cols = rx
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("column computation is not linear");
+        // The first key starts after `é = {`, which is five characters.
+        assert_eq!(cols[0], 6);
+        assert_eq!(cols[1] - cols[0], "k0 = 1, ".len());
+        assert_eq!(
+            cols[99_999],
+            6 + text[offsets[0]..offsets[99_999]].chars().count()
+        );
     }
 
     #[test]

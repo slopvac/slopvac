@@ -336,7 +336,9 @@ fn version_json_prints_a_document_with_notices() {
 #[test]
 fn self_update_on_an_unmanaged_install_names_the_upgrade_command() {
     // The test binary is not an installer install, so `self update` explains instead of fetching.
+    let clean = project("");
     slopvac()
+        .current_dir(clean.path())
         .env("SLOPVAC_OFFLINE", "1")
         .env("AXOUPDATER_CONFIG_PATH", "/nonexistent")
         .args(["self", "update"])
@@ -396,7 +398,8 @@ fn version_json(cmd: &mut Command, cache: &std::path::Path) -> serde_json::Value
 #[test]
 fn project_update_check_false_suppresses_the_notice() {
     let cache = cache_with_newer_release();
-    let with_notice = version_json(&mut update_enabled(), cache.path());
+    let clean = project("");
+    let with_notice = version_json(update_enabled().current_dir(clean.path()), cache.path());
     assert_eq!(with_notice["notices"][0]["x-latest"], "99.0.0");
 
     let dir = project("update_check = false\n");
@@ -434,6 +437,7 @@ fn project_offline_blocks_self_update_before_any_request() {
 #[test]
 fn version_json_accepts_flags_in_any_order() {
     let cache = cache_with_newer_release();
+    let clean = project("");
     for args in [
         &["--json", "--version"][..],
         &["--color", "never", "--version", "--json"],
@@ -441,6 +445,7 @@ fn version_json_accepts_flags_in_any_order() {
         &["--no-color", "--version", "--json"],
     ] {
         let out = update_enabled()
+            .current_dir(clean.path())
             .env("SLOPVAC_CACHE_DIR", cache.path())
             .args(args)
             .assert()
@@ -525,7 +530,7 @@ fn config_read_errors_do_not_print_absolute_paths() {
     let outside = String::from_utf8(outside).unwrap();
     assert!(!outside.contains(&sentinel), "{outside}");
     assert!(
-        outside.contains("error[config-unreadable]: <external>/slopvac.toml: not a regular file"),
+        outside.contains("error[config-unreadable]: cannot read slopvac.toml: not a regular file"),
         "{outside}"
     );
 
@@ -541,7 +546,7 @@ fn config_read_errors_do_not_print_absolute_paths() {
     let inside = String::from_utf8(inside).unwrap();
     assert!(!inside.contains(&sentinel), "{inside}");
     assert!(
-        inside.contains("error[config-unreadable]: slopvac.toml: not a regular file"),
+        inside.contains("error[config-unreadable]: cannot read slopvac.toml: not a regular file"),
         "{inside}"
     );
 }

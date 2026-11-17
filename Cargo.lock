@@ -2475,6 +2475,7 @@ dependencies = [
  "frontmatter-spans",
  "ignore",
  "insta",
+ "rustix",
  "saphyr",
  "serde",
  "serde_json",
@@ -2747,14 +2748,13 @@ dependencies = [
  "flate2",
  "minisign",
  "minisign-verify",
- "rustix",
  "semver",
  "serde",
  "serde_json",
+ "slopvac-config",
  "tar",
  "tempfile",
  "thiserror",
- "toml",
  "ureq",
 ]
 
