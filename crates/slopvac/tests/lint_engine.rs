@@ -804,3 +804,68 @@ fn an_unwired_command_says_so_without_any_internal_id() {
         "error[command-not-wired]: `slopvac packs` is not available in this build yet.\n"
     );
 }
+
+/// Three dead-opener warnings in a long document: 1.70 severity-weighted findings per 100
+/// words, between the `strict` budget (1.5) and the `normal` budget (3.0).
+fn three_warnings_in_a_long_document() -> String {
+    let paragraph = "The cat sat on the mat. The dog lay by the door.\n\n".repeat(4);
+    let opener = "It is important to note that the parser takes a week to write.\n\n".repeat(3);
+    format!("# Title\n\n{opener}{paragraph}")
+}
+
+const LEGACY_STRICT_STYLE_ONLY: &str = "schema_version = 3\nstyles = [\"core:legacy-strict\"]\n";
+const STRICT_PROFILE_AND_STYLE: &str =
+    "schema_version = 3\nprofile = \"strict\"\nstyles = [\"core:legacy-strict\"]\n";
+
+#[test]
+fn the_strict_profile_with_the_legacy_style_applies_the_strict_density_budget() {
+    let (_dir, path) = project(
+        "w.md",
+        &three_warnings_in_a_long_document(),
+        Some(STRICT_PROFILE_AND_STYLE),
+    );
+    let (code, reasons) = gate_with(&path, &["--min-score", "0"]);
+    assert_eq!(code, Some(1));
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r == "1.70 severity-weighted findings per 100 words, budget 1.5"),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn the_legacy_style_alone_keeps_the_normal_density_budget() {
+    let (_dir, path) = project(
+        "w.md",
+        &three_warnings_in_a_long_document(),
+        Some(LEGACY_STRICT_STYLE_ONLY),
+    );
+    let (_, reasons) = gate_with(&path, &["--min-score", "0"]);
+    assert!(
+        !reasons
+            .iter()
+            .any(|r| r.starts_with("1.70 severity-weighted")),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn the_strict_profile_with_the_legacy_style_requires_a_score_of_85() {
+    let (_dir, path) = project("bad.md", SLOPPY, Some(STRICT_PROFILE_AND_STYLE));
+    let (_, reasons) = gate_with(&path, &[]);
+    assert!(
+        reasons.contains(&"score 0.0, minimum 85.0".to_owned()),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn the_legacy_style_alone_requires_a_score_of_70() {
+    let (_dir, path) = project("bad.md", SLOPPY, Some(LEGACY_STRICT_STYLE_ONLY));
+    let (_, reasons) = gate_with(&path, &[]);
+    assert!(
+        reasons.contains(&"score 0.0, minimum 70.0".to_owned()),
+        "{reasons:?}"
+    );
+}

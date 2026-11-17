@@ -409,6 +409,10 @@ jobs:
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
         run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
+      - name: Install the hook runners
+        # tests/test_pre_commit_hooks.py runs the published hook through both.
+        run: python3 -m pip install --quiet pre-commit==4.7.0 prek==0.5.11
+
       - name: Run every discovered pytest suite
         run: python3 -m pytest
 

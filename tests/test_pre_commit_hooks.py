@@ -25,20 +25,12 @@ def _hooks() -> dict[str, dict]:
 
 
 def test_published_hook_ids():
-    assert set(_hooks()) == {"slopvac", "slopvac-strict"}
+    assert set(_hooks()) == {"slopvac"}
 
 
-@pytest.mark.parametrize(
-    ("hook_id", "entry"),
-    [
-        ("slopvac", "slopvac lint"),
-        # STUB(slopvac-8l4.13.13): --style is a placeholder for the CLI's style option.
-        ("slopvac-strict", "slopvac lint --style core:legacy-strict"),
-    ],
-)
-def test_hooks_run_the_binary_from_path(hook_id, entry):
-    hook = _hooks()[hook_id]
-    assert (hook["language"], hook["entry"]) == ("system", entry)
+def test_hook_runs_the_binary_from_path():
+    hook = _hooks()["slopvac"]
+    assert (hook["language"], hook["entry"]) == ("system", "slopvac lint")
     assert "additional_dependencies" not in hook
 
 
@@ -46,8 +38,7 @@ def test_hooks_run_the_binary_from_path(hook_id, entry):
 def slopvac_binary() -> Path:
     """Build the workspace CLI once; the hook tests run it through the runners."""
     cargo = shutil.which("cargo")
-    if cargo is None:
-        pytest.skip("cargo is not installed")
+    assert cargo, "cargo is required to build the CLI under test"
     subprocess.run([cargo, "build", "--quiet", "-p", "slopvac"], cwd=ROOT, check=True)
     return ROOT / "target" / "debug" / "slopvac"
 
@@ -56,8 +47,7 @@ def _run_hook(
     tmp_path: Path, runner: str, hook_id: str, binary: Path, content: bytes
 ) -> subprocess.CompletedProcess[str]:
     """Run a hook through a pre-commit compatible runner with the real CLI on PATH."""
-    if shutil.which(runner) is None:
-        pytest.skip(f"{runner} is not installed")
+    assert shutil.which(runner), f"{runner} is required; install the dev extra"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "slopvac").symlink_to(binary)
@@ -111,44 +101,7 @@ def test_hook_fails_with_exit_2_when_the_check_is_incomplete(
 
 @pytest.mark.parametrize("runner", RUNNERS)
 def test_hook_fails_with_exit_1_on_findings(tmp_path, runner, slopvac_binary):
-    direct = subprocess.run(
-        [str(slopvac_binary), "lint", "--stdin"],
-        input=BAD.decode(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if direct.returncode == 0:
-        # STUB(slopvac-8l4.12.12): the CLI still runs a null linter that reports no
-        # findings. Remove this skip when 12.12 wires slopvac-engine into `lint`.
-        pytest.skip("STUB(slopvac-8l4.12.12): the CLI engine reports no findings yet")
     done = _run_hook(tmp_path, runner, "slopvac", slopvac_binary, BAD)
     assert done.returncode != 0
     assert "exit code: 1" in done.stdout
-
-
-@pytest.mark.parametrize("runner", RUNNERS)
-@pytest.mark.xfail(
-    strict=True,
-    reason="STUB(slopvac-8l4.13.13): the CLI has no --style option; styles come from slopvac.toml",
-)
-def test_strict_hook_passes_on_clean_prose(tmp_path, runner, slopvac_binary):
-    done = _run_hook(tmp_path, runner, "slopvac-strict", slopvac_binary, CLEAN)
-    assert done.returncode == 0, done.stdout + done.stderr
-
-
-@pytest.mark.parametrize("hook_id", ["slopvac", "slopvac-strict"])
-def test_hook_flags_are_accepted_by_the_real_cli(hook_id, slopvac_binary):
-    """Every flag in a hook entry must parse in the built binary (`--profile` is gone in 3.0)."""
-    help_text = subprocess.run(
-        [str(slopvac_binary), "lint", "--help"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    words = _hooks()[hook_id]["entry"].split()
-    assert words[:2] == ["slopvac", "lint"]
-    for flag in (word for word in words[2:] if word.startswith("--")):
-        if flag == "--style":
-            continue  # STUB(slopvac-8l4.13.13): not in `lint --help` yet.
-        assert flag in help_text
+    assert "README.md" in done.stdout

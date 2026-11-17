@@ -2,7 +2,7 @@
 
 # 2.x compatibility matrix
 
-Totals: migrate 3, preserve 108, remove 30, 141 rows.
+Totals: migrate 3, preserve 107, remove 31, 141 rows.
 
 | Row | Disposition | 3.0 note | Owner | Test |
 | --- | --- | --- | --- | --- |
@@ -81,7 +81,7 @@ Totals: migrate 3, preserve 108, remove 30, 141 rows.
 | `cmd:setup` | preserve | Covers all harnesses including OpenCode. | slopvac-8l4.11.2 | pending |
 | `hook:slopvac` | preserve | Hook ID stays; entry runs the 3.0 binary. | slopvac-8l4.13.8 | pending |
 | `hook:slopvac-no-vale` | remove | Vale is gone; the hook ID is removed. | slopvac-8l4.13.8 | n/a |
-| `hook:slopvac-strict` | preserve | Hook ID stays. | slopvac-8l4.13.8 | pending |
+| `hook:slopvac-strict` | remove | The 3.0 CLI has no style or profile option, so the hook ID is removed; set a style in slopvac.toml and scope the slopvac hook with `files:`. | slopvac-8l4.13.34 | n/a |
 | `opt:cache:--all` | remove | Vale cache option. | slopvac-8l4.16.2 | n/a |
 | `opt:cache:--prune` | remove | Vale cache option. | slopvac-8l4.16.2 | n/a |
 | `opt:compile:--config` | remove | Vale compile option. | slopvac-8l4.16.2 | n/a |
