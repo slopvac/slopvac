@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
+use crate::error::PluginError;
 use crate::extract::ExtractError;
 use crate::lock::{LockDiff, PackId};
 use crate::oci::OciError;
@@ -40,6 +41,17 @@ pub enum SyncError {
         id: PackId,
         /// What went wrong.
         why: String,
+    },
+    /// A git source needs the plugin launcher and the running program did not
+    /// install it ([`PluginError::LauncherNotInstalled`], code
+    /// `launcher-not-installed`). No git process ran and nothing was installed.
+    #[error("pack `{id}`: {source}")]
+    Launcher {
+        /// Pack id.
+        id: PackId,
+        /// The cause.
+        #[source]
+        source: PluginError,
     },
     /// A git source passed a limit: the download size, the number of files or
     /// the expanded size.
@@ -166,6 +178,7 @@ impl SyncError {
             Self::Revoked { .. } => "pack-revoked",
             Self::Revocation(e) => e.code(),
             Self::Fetch { source, .. } => source.code().unwrap_or("sync-failed"),
+            Self::Launcher { .. } => "launcher-not-installed",
             _ => "sync-failed",
         }
     }

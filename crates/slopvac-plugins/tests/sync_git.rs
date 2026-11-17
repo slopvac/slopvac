@@ -11,6 +11,7 @@ use std::process::Command;
 
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
+use slopvac_plugins::PluginError;
 use slopvac_plugins::extract::{Limits, tree_hash};
 use slopvac_plugins::launch::Launcher;
 use slopvac_plugins::lock::Lockfile;
@@ -207,6 +208,20 @@ impl Env {
         limits: Limits,
         memory: Option<u64>,
     ) -> Result<SyncReport, SyncError> {
+        let launcher = Launcher::Program(launcher().into());
+        self.sync_through(launcher, network, served_from, lock, limits, memory)
+    }
+
+    /// Like `sync_capped`, with `launcher` as the program that runs `git`.
+    fn sync_through(
+        &self,
+        launcher: Launcher,
+        network: Network<'_>,
+        served_from: &str,
+        lock: &Lockfile,
+        limits: Limits,
+        memory: Option<u64>,
+    ) -> Result<SyncReport, SyncError> {
         let store = self.store();
         let revocations = Revocations::new(
             self.data.path().join("state"),
@@ -218,7 +233,7 @@ impl Env {
         let policy = KeyPolicy::default();
         let syncer = Syncer::new(&store, network, &policy, self.project.path(), &revocations)
             .with_limits(limits)
-            .with_launcher(Launcher::Program(launcher().into()))
+            .with_launcher(launcher)
             .with_git_rewrite_for_tests(LOCKED_HOST, served_from);
         match memory {
             Some(bytes) => syncer.with_git_memory_for_tests(bytes),
@@ -303,6 +318,40 @@ fn a_second_online_sync_uses_the_stored_tree() {
     let again = env.sync(Network::Online(&c), &remote, &lock).unwrap();
 
     assert_eq!(again.packs[0].change, Change::Unchanged);
+}
+
+/// This test binary never calls `launch::intercept`, so the current
+/// executable is not a launcher.
+#[test]
+fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
+    let remote = Remote::with_files(FILES, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(FILES));
+
+    let err = env
+        .sync_through(
+            Launcher::CurrentExe,
+            Network::Online(&c),
+            &remote.served_from(),
+            &lock,
+            Limits::default(),
+            None,
+        )
+        .unwrap_err();
+
+    let SyncError::Launcher { source, .. } = &err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(*source, PluginError::LauncherNotInstalled);
+    assert_eq!(err.code(), "launcher-not-installed");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(
+        err.to_string(),
+        "pack `style`: the running program did not install the slopvac plugin launcher, \
+         so plugins and git pack sources cannot start"
+    );
+    env.assert_no_trees();
 }
 
 #[test]

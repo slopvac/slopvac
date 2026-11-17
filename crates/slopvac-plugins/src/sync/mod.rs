@@ -654,13 +654,17 @@ impl<'a> Syncer<'a> {
             id: id.clone(),
             why,
         };
+        let launcher = self.git.launcher.path().map_err(|e| match e {
+            crate::launch::LaunchError::NotInstalled => SyncError::Launcher {
+                id: id.clone(),
+                source: crate::PluginError::LauncherNotInstalled,
+            },
+            crate::launch::LaunchError::CurrentExe(e) => {
+                git_failed(format!("cannot find the launcher: {e}"))
+            }
+        })?;
         let program = git::find_git(self.project_root)
             .ok_or_else(|| git_failed("git was not found in a trusted PATH directory".into()))?;
-        let launcher = self
-            .git
-            .launcher
-            .path()
-            .map_err(|e| git_failed(format!("cannot find the launcher: {e}")))?;
         let scratch = self.store.scratch_dir()?;
         let mut staged = StagedTree::new(&self.store.trees(), self.limits).map_err(extract)?;
         let request = git::Request {
