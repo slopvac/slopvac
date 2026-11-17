@@ -578,6 +578,15 @@ mod error_sources {
     }
 
     #[test]
+    fn a_glob_set_that_fails_to_build_keeps_its_source() {
+        // Each pattern parses, but the combined matcher is too large to build.
+        let huge = "?".repeat(3_000_000);
+        let err = files_match(&[huge], "a.md").unwrap_err();
+        assert!(matches!(err, Error::GlobSet(_)), "{err:?}");
+        assert!(has_source(&err));
+    }
+
+    #[test]
     fn pattern_errors_keep_their_source() {
         assert!(has_source(&Pattern::new("(").unwrap_err()));
         let p = Pattern::new("^(a+)+$").unwrap();
