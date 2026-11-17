@@ -2,8 +2,6 @@
 //! `parse_html_segments`: several source ranges read as one HTML stream. Expected values
 //! are the source text each range covers, worked out from the input.
 
-use std::fmt::Write as _;
-
 use slopvac_model::{SourceIndex, Span};
 use slopvac_parse::{
     BlockKind, Document, ParseError, Projection, parse_html, parse_html_segments,
@@ -140,7 +138,9 @@ fn work_for(lines: usize) -> usize {
     let mut parts = vec![(0, source.len())];
     for i in 0..lines {
         let start = source.len();
-        source.push_str(&format!("w{i}\n"));
+        source.push('w');
+        source.push_str(&i.to_string());
+        source.push('\n');
         parts.push((start, source.len()));
     }
     let segments: Vec<Span> = parts

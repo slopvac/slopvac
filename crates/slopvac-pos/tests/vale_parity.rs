@@ -187,6 +187,10 @@ fn agreement(list: &BTreeMap<&str, BTreeSet<String>>) -> BTreeMap<&'static str, 
         .collect()
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "reports the measured rate for a run with --nocapture; this helper is not a test fn"
+)]
 fn assert_agreement(
     label: &str,
     list: &BTreeMap<&str, BTreeSet<String>>,
@@ -197,10 +201,6 @@ fn assert_agreement(
             "{label} {pos}: the slice has no candidate findings"
         );
         let rate = ratio(both, union)?;
-        #[expect(
-            clippy::print_stderr,
-            reason = "reports the measured rate for a run with --nocapture; this helper is not a test fn"
-        )]
         eprintln!("{label} {pos}: {both}/{union} = {rate:.4}");
         assert!(
             rate >= BLOCKLIST_AGREEMENT_FLOOR,
