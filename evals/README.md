@@ -258,6 +258,6 @@ Reviewer scores are detection by quotation, and the results and summary rows car
 
 The reviewer is always a different model from the author. Every task repeats at least three times. The summary averages repeats within a task, then resamples tasks for a 95% interval, and ranks models per review type and role.
 
-Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output. Treat it as a lexical retention smoke check, not proof that meaning survived. Treat the reviewer scores as detection by quotation: a reviewer counts as finding an edit when it quotes the edited words, whatever its explanation says.
+Fact preservation is a lexical retention smoke check, and author rows carry that label as `metric`. `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output as multisets. It cannot see meaning: swapped limits ("min 5, max 10" becoming "min 10, max 5") and a moved negation pass it. A meaning-level oracle is tracked in slopvac-8l4.15.24. A rewrite whose output equals the input, after whitespace is normalised, fails rewrite success, because echoing the input keeps every fact.
 
 The results file records the date, the prompt version, the task-set hash, the models and one row per run with an output hash. The model text itself is not stored.

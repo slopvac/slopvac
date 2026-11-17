@@ -311,6 +311,10 @@ def _clean(answer: str) -> str:
     return m.group(1).strip() if m else text
 
 
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
 def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str, Any]:
     output = _clean(answer)
     expected = task.get("expected", [])
@@ -321,6 +325,7 @@ def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str
         "facts_lost": len(pres["lost"]),
         "words": words,
         "empty": not output,
+        "metric": AUTHOR_METRIC,
     }
     if task["type"] == "mechanical":
         fired = any(f["rule"] == task["rule"] for f in lint(output))
@@ -334,7 +339,14 @@ def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str
         after = len(lint(output)) / words
         out["slop_before_per_word"] = before
         out["slop_after_per_word"] = after
-        out["success"] = bool(output) and not pres["lost"] and after <= before
+        # Echoing the input keeps every fact and adds no slop, so it must not pass.
+        out["unchanged"] = _squash(output) == _squash(task["source"])
+        out["success"] = (
+            bool(output)
+            and not out["unchanged"]
+            and not pres["lost"]
+            and after <= before
+        )
     return out
 
 

@@ -146,6 +146,49 @@ def test_rewrite_fails_when_slop_rises_even_if_facts_survive():
     assert (ok["success"], worse["success"]) == (True, False)
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        "Cache 40 items now.",
+        "Cache   40\nitems now.\n",
+        "```\nCache 40 items now.\n```",
+    ],
+)
+def test_an_unchanged_rewrite_fails(output):
+    task = {"type": "rewrite", "source": "Cache 40 items now.", "expected": []}
+    scored = models.score_author(task, output, NO_FINDINGS)
+    assert (scored["unchanged"], scored["success"]) == (True, False)
+
+
+def test_author_scores_are_labelled_a_lexical_retention_smoke_check():
+    task = {"type": "rewrite", "source": "Cache 40 items now.", "expected": []}
+    scored = models.score_author(task, "Keep 40 items cached.", NO_FINDINGS)
+    assert scored["metric"] == "lexical retention smoke check"
+
+
+LEXICAL_ORACLE = pytest.mark.xfail(
+    strict=True,
+    reason="lexical oracle; meaning-level oracle tracked in slopvac-8l4.15.24",
+)
+
+
+@LEXICAL_ORACLE
+@pytest.mark.parametrize(
+    ("source", "output"),
+    [
+        ("Set min 5, max 10 for the pool.", "Set min 10, max 5 for the pool."),
+        (
+            "Never skip the check; always run it.",
+            "Always skip the check; never run it.",
+        ),
+    ],
+    ids=["swapped-limits", "moved-negation"],
+)
+def test_a_rewrite_that_changes_meaning_without_losing_tokens_fails(source, output):
+    task = {"type": "rewrite", "source": source, "expected": []}
+    assert not models.score_author(task, output, NO_FINDINGS)["success"]
+
+
 def test_a_code_fence_around_the_answer_is_ignored():
     task = {"type": "rewrite", "source": "Cache 40 items."}
     scored = models.score_author(task, "```markdown\nCache 40 items.\n```", NO_FINDINGS)
@@ -338,7 +381,9 @@ def fake_ask(model):
         if "Update the passage" in prompt:
             return "Cache 40 items."
         if "Rewrite the passage" in prompt:
-            return "Cache 40 items." if model["name"] == "good" else "Cache items."
+            return (
+                "Keep 40 items cached." if model["name"] == "good" else "Cache items."
+            )
         return json.dumps([{"quote": "alpha beta gamma delta", "problem": "changed"}])
 
     return ask
