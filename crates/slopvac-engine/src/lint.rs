@@ -11,12 +11,12 @@ use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
-use slopvac_context::{TagIndex, TagRegistry};
+use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
 use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
-    KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
-    RuleProvenance, Severity, SourceIndex, Span,
+    GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol, NonEmptyString, Notice,
+    NoticeLevel, PackId, PositionError, RuleId, RuleProvenance, Severity, SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -225,6 +225,8 @@ pub struct Engine {
     pub(crate) settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
+    /// The genres a document is matched to, when the settings ask for per-document genres.
+    genres: Option<GenreRegistry>,
     checkers: Vec<Box<dyn DiagramChecker>>,
     /// Lexical rules that run.
     active: Vec<Active>,
@@ -333,12 +335,18 @@ impl Engine {
         sets: Vec<Arc<RuleSet>>,
         mut settings: Settings,
     ) -> Result<Self, EngineError> {
-        // The run's genre sets the genre levels. Levels the caller already filled stay.
         let genres =
             slopvac_context::builtin_genres().map_err(|e| EngineError::Context(e.to_string()))?;
-        settings
-            .apply_genre_levels(&genres)
-            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        // Per-document genres apply their levels to each document's findings. Otherwise the
+        // run's genre sets the genre levels now. Levels the caller already filled stay.
+        let genres = if settings.genre_assignments.is_some() {
+            Some(genres)
+        } else {
+            settings
+                .apply_genre_levels(&genres)
+                .map_err(|e| EngineError::Internal(e.to_string()))?;
+            None
+        };
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
@@ -347,6 +355,7 @@ impl Engine {
             settings,
             detectors: Detectors::builtin(),
             tagger,
+            genres,
             checkers: Vec::new(),
             active: Vec::new(),
             vocabulary_rules: Vec::new(),
@@ -537,10 +546,11 @@ impl Engine {
                     if let Some(applies) = &rule.applies_to {
                         let mode = self.settings.mode.apply_mode();
                         if applies.modes.as_ref().is_some_and(|m| !m.contains(&mode))
-                            || applies
-                                .genres
-                                .as_ref()
-                                .is_some_and(|g| !g.contains(&self.settings.genre.id))
+                            || (self.genres.is_none()
+                                && applies
+                                    .genres
+                                    .as_ref()
+                                    .is_some_and(|g| !g.contains(&self.settings.genre.id)))
                         {
                             continue;
                         }
@@ -687,6 +697,7 @@ impl Engine {
             )
             .map_err(|e| EngineError::Context(e.to_string()))?,
         };
+        let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let directives = match input.kind {
             Kind::Diagram(_) => Directives::default(),
@@ -729,7 +740,95 @@ impl Engine {
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
-        Ok(self.document(input, &prepared, &tags, findings, extra))
+        self.apply_genre(&genre, &mut findings);
+        Ok(self.document(input, &prepared, &tags, genre, findings, extra))
+    }
+
+    /// The genre of one document: chosen from the document when the settings ask for it,
+    /// else the run's genre.
+    fn genre_of(
+        &self,
+        input: &Input<'_>,
+        parsed: &Parsed,
+        front_matter: Option<&FrontMatter<'_>>,
+    ) -> Result<GenreResult, EngineError> {
+        let (Some(registry), Some(assignments), false) = (
+            &self.genres,
+            &self.settings.genre_assignments,
+            matches!(input.kind, Kind::Diagram(_)),
+        ) else {
+            return Ok(self.settings.genre.clone());
+        };
+        let opts = ResolveOptions {
+            assignments,
+            relative_path: None,
+        };
+        let found = tagging::genre(
+            registry,
+            &opts,
+            input.path,
+            input.source,
+            parsed,
+            front_matter,
+        )
+        .map_err(|e| EngineError::Context(e.to_string()))?;
+        Ok(GenreResult {
+            id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
+            source: match found.source {
+                slopvac_context::GenreSource::Explicit => GenreSource::Explicit,
+                slopvac_context::GenreSource::Detected => GenreSource::Detected,
+                slopvac_context::GenreSource::Default => GenreSource::Default,
+            },
+            reasons: found
+                .reasons
+                .into_iter()
+                .map(|r| {
+                    Ok(GenreReason {
+                        signal: KebabName::new(r.signal)
+                            .map_err(|e| EngineError::Internal(e.to_string()))?,
+                        detail: r.detail,
+                    })
+                })
+                .collect::<Result<_, EngineError>>()?,
+        })
+    }
+
+    /// Give the findings of one document the levels of its genre. A rule or category level
+    /// from the configuration stays above a genre level, as in `level_of`. A rule that
+    /// `applies_to` other genres does not report.
+    fn apply_genre(&self, genre: &GenreResult, findings: &mut Vec<Finding>) {
+        let Some(registry) = &self.genres else {
+            return;
+        };
+        // An unreadable genre key leaves the document at the shipped levels.
+        let levels = crate::settings::genre_levels(registry, genre.id.as_str()).unwrap_or_default();
+        findings.retain_mut(|f| {
+            let loaded = self.loaded(f.rule_id.as_str());
+            if loaded
+                .and_then(|l| l.rule().applies_to.as_ref()?.genres.as_ref())
+                .is_some_and(|g| !g.contains(&genre.id))
+            {
+                return false;
+            }
+            let category = loaded.map_or_else(|| category_of(&f.rule_id), |l| l.category().clone());
+            let explicit = self.settings.rule_levels.contains_key(&f.rule_id)
+                || self
+                    .settings
+                    .categories
+                    .get(&category)
+                    .is_some_and(|d| d.level.is_some());
+            if explicit {
+                return true;
+            }
+            match levels.get(&f.rule_id) {
+                Some(Level::Off) => false,
+                Some(Level::On(severity)) => {
+                    f.severity = *severity;
+                    true
+                }
+                None => true,
+            }
+        });
     }
 
     /// Read an RST file. A file that cannot be read is an empty document with a warning
@@ -773,6 +872,7 @@ impl Engine {
         input: &Input<'_>,
         prepared: &Prepared<'_>,
         tags: &TagIndex,
+        genre: GenreResult,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
@@ -792,7 +892,7 @@ impl Engine {
                 NonEmptyString::new("<stdin>").expect("a literal is not empty")
             }),
             profile: self.settings.profile.clone(),
-            genre: self.settings.genre.clone(),
+            genre,
             contexts_seen: contexts(tags.kinds_seen()),
             config_sources: self.settings.config_sources.clone(),
             words,
