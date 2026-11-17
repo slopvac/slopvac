@@ -78,10 +78,7 @@ fn an_explicit_category_level_beats_the_genre() {
         let mut settings = settings_for(genre);
         settings.categories.insert(
             CategoryId::new("docs-discipline").unwrap(),
-            CategoryDials {
-                level: Some(Level::On(Severity::Error)),
-                ..CategoryDials::default()
-            },
+            CategoryDials::default().with_level(Some(Level::On(Severity::Error))),
         );
         assert_eq!(severities(&lint(settings)), [Severity::Error], "{genre}");
     }

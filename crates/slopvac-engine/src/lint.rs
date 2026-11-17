@@ -63,7 +63,12 @@ pub enum Kind {
 }
 
 /// One file to lint.
+///
+/// Build one with [`Input::new`] and the `with_*` setters, or with a shortcut such as
+/// [`Input::markdown`]. The struct is `#[non_exhaustive]`, so a new field is not a
+/// breaking change for callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Input<'a> {
     /// The path, as shown in the report.
     pub path: &'a str,
@@ -76,15 +81,49 @@ pub struct Input<'a> {
 }
 
 impl<'a> Input<'a> {
-    /// A Markdown file read from disk.
+    /// A Markdown file read from disk. Change the rest with the `with_*` setters.
     #[must_use]
-    pub const fn markdown(path: &'a str, source: &'a str) -> Self {
+    pub const fn new(path: &'a str, source: &'a str) -> Self {
         Self {
             path,
             source,
             kind: Kind::Markdown,
             bom: BomMode::Disk,
         }
+    }
+
+    /// The same input with another file kind.
+    #[must_use]
+    pub const fn with_kind(mut self, kind: Kind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    /// The same input with another byte order mark mode.
+    #[must_use]
+    pub const fn with_bom(mut self, bom: BomMode) -> Self {
+        self.bom = bom;
+        self
+    }
+
+    /// The same input with other file text, for a re-lint after an edit.
+    #[must_use]
+    pub const fn with_source(mut self, source: &'a str) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// The same input with another path.
+    #[must_use]
+    pub const fn with_path(mut self, path: &'a str) -> Self {
+        self.path = path;
+        self
+    }
+
+    /// A Markdown file read from disk.
+    #[must_use]
+    pub const fn markdown(path: &'a str, source: &'a str) -> Self {
+        Self::new(path, source)
     }
 
     /// An MDX file read from disk.
