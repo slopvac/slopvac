@@ -1423,3 +1423,35 @@ def test_without_os_waitid_the_harness_refuses_before_spawning_or_reserving(
         models.command_ask(cmd, budget=budget)
     assert not marker.exists()
     assert ledger.read_text() == ""
+
+
+def test_models_run_without_os_waitid_exits_2_and_spawns_and_reserves_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delattr(os, "waitid")
+    marker = tmp_path / "spawned"
+    body = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('x')\n"
+    command = f"{sys.executable} {script(tmp_path, 'touch.py', body)}"
+    tasks, roster_ = author_tasks(2), roster(command)
+    monkeypatch.setattr(cli, "_model_tasks", lambda args: (tasks, roster_))
+    out = tmp_path / "r.json"
+    code = cli.main(
+        [
+            "models",
+            "run",
+            "--confirm-calls",
+            str(models.plan(tasks, roster_, 3)["total_calls"]),
+            "--out",
+            str(out),
+            "--models",
+            "unused.json",
+            "--max-invocations",
+            "100",
+        ]
+    )
+    assert code == 2
+    assert "Python 3.13" in capsys.readouterr().err
+    assert not marker.exists()
+    ledger = out.with_suffix(".ledger.jsonl")
+    reserved = [x for x in ledger.read_text().splitlines() if '"reserve"' in x]
+    assert reserved == [] and not out.exists()
