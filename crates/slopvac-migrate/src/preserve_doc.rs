@@ -80,8 +80,53 @@ pub(crate) fn apply(
         block: e.block,
         reason: e.reason,
     })?;
+    remove_inert_categories(doc, &legacy, ctx);
     write(doc, &config, &expanded, ctx);
     Ok(())
+}
+
+/// Remove the entries for categories that no rule belongs to. 2.x never read them,
+/// and the legacy styles leave them out, so 3.0 has no category to hold them.
+fn remove_inert_categories(doc: &mut DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) {
+    let known = &legacy.style(DEFAULT_PROFILE).categories;
+    let inert = |key: &str| {
+        key.strip_prefix("core:")
+            .is_some_and(|name| !known.contains_key(name))
+    };
+    let mut removed = Vec::new();
+    let mut strip = |t: &mut dyn TableLike| {
+        let Some(cats) = t.get_mut("categories").and_then(Item::as_table_like_mut) else {
+            return;
+        };
+        let keys: Vec<String> = cats
+            .iter()
+            .map(|(k, _)| k.to_owned())
+            .filter(|k| inert(k))
+            .collect();
+        for key in keys {
+            cats.remove(&key);
+            removed.push(key);
+        }
+    };
+    strip(doc.as_table_mut());
+    match doc.get_mut("overrides") {
+        Some(Item::ArrayOfTables(aot)) => aot.iter_mut().for_each(|t| strip(t)),
+        Some(item) => {
+            if let Some(arr) = item.as_array_mut() {
+                arr.iter_mut()
+                    .filter_map(Value::as_inline_table_mut)
+                    .for_each(|t| strip(t));
+            }
+        }
+        None => {}
+    }
+    removed.sort();
+    removed.dedup();
+    for key in removed {
+        ctx.notes.push(format!(
+            "removed category {key}: no rule belongs to it, so 2.x never read it"
+        ));
+    }
 }
 
 fn override_tables(doc: &DocumentMut) -> Vec<&dyn TableLike> {
@@ -159,8 +204,11 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
     if let Some(cats) = t.get("categories").and_then(Item::as_table_like) {
         for (name, item) in cats.iter() {
             let path = join(&join(prefix, "categories"), name);
-            if !legacy.style(DEFAULT_PROFILE).categories.contains_key(name) {
+            if ctx.renames.category(name).is_none() {
                 ctx.drop_key(&path, "unknown 2.x category; 2.x rejected it");
+            } else if !legacy.style(DEFAULT_PROFILE).categories.contains_key(name) {
+                // No rule belongs to it, so 2.x never read it (the contract reference
+                // skips it too): nothing to expand.
             } else if let Some(d) = read_dials(item) {
                 layer.categories.insert(name.to_owned(), d);
             }
