@@ -156,12 +156,13 @@ fn migration_is_idempotent() {
 
 #[test]
 fn a_config_the_version_gate_accepts_or_finds_newer_is_already_migrated() {
-    for text in ["schema_version = 4\n"] {
-        assert!(
-            matches!(migrate(text), Err(Error::AlreadyMigrated { .. })),
-            "{text}"
-        );
-    }
+    assert!(
+        matches!(
+            migrate("schema_version = 4\n"),
+            Err(Error::AlreadyMigrated { .. })
+        ),
+        "a newer version counts as migrated"
+    );
 }
 
 #[test]
