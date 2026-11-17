@@ -1129,6 +1129,23 @@ def execute(
 # --- summary -----------------------------------------------------------------------
 
 
+def file_scorer_version(doc: Mapping[str, Any]) -> str | None:
+    """The scorer version of a results file; None means legacy.
+
+    A row without its own `scorer_version` takes the file header's. A file with
+    no header is legacy, and a row that names a different version than its header
+    (or any version under a legacy header) is an error.
+    """
+    header = doc.get("scorer_version")
+    for run in doc["runs"]:
+        if "scorer_version" in run and run["scorer_version"] != header:
+            raise ModelEvalError(
+                f"run {run['task']!r} has scorer version {run['scorer_version']!r}, "
+                f"which disagrees with its file header ({header or 'legacy'})"
+            )
+    return header
+
+
 def merge_results(*docs: Mapping[str, Any]) -> dict[str, Any]:
     """Join results files of one task set into one document for `summarize`.
 
@@ -1145,12 +1162,7 @@ def merge_results(*docs: Mapping[str, Any]) -> dict[str, Any]:
                     f"cannot merge results: {key} differs "
                     f"({first.get(key)!r} vs {doc.get(key)!r})"
                 )
-    versions = {doc.get("scorer_version") for doc in docs}
-    versions |= {
-        r.get("scorer_version", doc.get("scorer_version"))
-        for doc in docs
-        for r in doc["runs"]
-    }
+    versions = {file_scorer_version(doc) for doc in docs}
     if len(versions) > 1:
         shown = ", ".join(sorted(str(v or "legacy") for v in versions))
         raise ModelEvalError(f"cannot merge results: scorer versions differ ({shown})")
@@ -1236,11 +1248,8 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             )
             if ordered:
                 ranking[f"{rtype}/{role}"] = [r["model"] for r in ordered]
-    carried = (
-        {"scorer_version": results["scorer_version"]}
-        if results.get("scorer_version") is not None
-        else {}
-    )
+    version = file_scorer_version(results)
+    carried = {"scorer_version": version} if version is not None else {}
     return carried | {
         "schema": RESULTS_SCHEMA,
         "date": results["date"],

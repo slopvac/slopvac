@@ -552,10 +552,36 @@ def test_legacy_results_without_a_scorer_version_join_only_each_other():
 
 
 def test_a_run_row_with_another_scorer_version_than_its_file_is_refused():
-    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+    with pytest.raises(models.ModelEvalError, match="disagrees with its file header"):
         models.merge_results(
             results_file("a", scorer="2"), results_file("b", scorer="2", run_scorer="1")
         )
+
+
+def test_a_row_without_its_own_version_takes_the_file_headers():
+    a = results_file("a", scorer="2")  # the row has no scorer_version field
+    b = results_file("b", scorer="2", run_scorer="2")
+    assert (
+        models.summarize(models.merge_results(a, b), resamples=5)["scorer_version"]
+        == "2"
+    )
+    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+        models.merge_results(a, results_file("c", scorer="3", run_scorer="3"))
+
+
+def test_a_file_without_a_header_is_legacy_and_its_rows_cannot_claim_a_version():
+    assert "scorer_version" not in models.summarize(results_file("a"), resamples=5)
+    with pytest.raises(models.ModelEvalError, match="legacy"):
+        models.summarize(results_file("a", run_scorer="2"), resamples=5)
+
+
+def test_a_row_that_disagrees_with_its_header_fails_even_in_a_single_file(
+    tmp_path, capsys
+):
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(results_file("a", scorer="2", run_scorer="1")))
+    assert cli.main(["models", "summarize", str(path)]) == 2
+    assert "disagrees with its file header" in capsys.readouterr().err
 
 
 def test_the_joined_summary_carries_the_shared_scorer_version():
