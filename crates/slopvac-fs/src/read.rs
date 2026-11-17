@@ -10,7 +10,7 @@ use cap_std::fs::{Dir, File, MetadataExt, OpenOptions, OpenOptionsExt};
 use rustix::fs::OFlags;
 
 use crate::io::split_plain;
-use crate::{Error, InputKind, Reason, Result, read_capped};
+use crate::{Error, InputKind, Result, read_capped};
 
 /// Options for [`read_capped_regular`] and [`read_capped_regular_to_string`].
 ///
@@ -44,19 +44,22 @@ impl ReadOptions {
 ///
 /// - `rel` may have several components. Each one is opened through a directory handle without
 ///   following links, so a symlink anywhere on the way, the last component included, fails
-///   with [`InputKind::Symlink`]. `..` and a root are refused with [`Error::UnsafeTarget`].
-///   (`root` itself is whatever the caller opened.)
+///   with [`InputKind::Symlink`]. `..`, a root and an empty path are refused with
+///   [`InputKind::UnsafePath`], before anything is opened. (`root` itself is whatever the
+///   caller opened.)
 /// - The file opens non-blocking, so a FIFO with no writer cannot hang the call. Anything but
 ///   a regular file is refused with [`InputKind::NotRegular`]. Then the non-blocking flag is
 ///   cleared and the read is capped, so memory stays bounded by `cap + 1` bytes.
-/// - A file with more than one hard link is refused with [`InputKind::MultiplyLinked`].
+/// - A file with more than one hard link is always refused with [`InputKind::MultiplyLinked`].
+///   This is stricter than [`read_capped_regular`], which accepts such a file by default.
 /// - Errors carry `rel` as [`Error::path`] and never put it in their text. A missing file is
 ///   [`InputKind::NotFound`], apart from other failures, so a caller can treat it as normal.
 ///
-/// Like [`write_atomic`](crate::write_atomic), this assumes no other process can change the
-/// directories involved while the call runs.
+/// Like [`write_atomic`](crate::write_atomic), this narrows but does not close the window
+/// for a same-user process that changes the directories involved while the call runs
+/// (residual risk R6; see the crate docs).
 pub fn read_capped_regular_in(root: &Dir, rel: &Path, cap: u64) -> Result<Vec<u8>> {
-    let (name, ancestors) = split_plain(rel)?;
+    let (name, ancestors) = split_plain(rel).map_err(|_| unsafe_path(rel))?;
     read_in(root, &ancestors, name, rel, cap, true)
 }
 
@@ -73,7 +76,7 @@ pub fn read_capped_regular_to_string_in(root: &Dir, rel: &Path, cap: u64) -> Res
 /// [`ReadOptions::reject_multiply_linked`] is set.
 pub fn read_capped_regular(path: &Path, cap: u64, opts: ReadOptions) -> Result<Vec<u8>> {
     let Some(name) = path.file_name() else {
-        return Err(Error::unsafe_target(Reason::NoFileName, path));
+        return Err(unsafe_path(path));
     };
     let dir = path
         .parent()
@@ -87,6 +90,10 @@ pub fn read_capped_regular(path: &Path, cap: u64, opts: ReadOptions) -> Result<V
 /// [`read_capped_regular`] returning the content as UTF-8, or [`InputKind::NotUtf8`].
 pub fn read_capped_regular_to_string(path: &Path, cap: u64, opts: ReadOptions) -> Result<String> {
     into_string(read_capped_regular(path, cap, opts)?, path)
+}
+
+fn unsafe_path(path: &Path) -> Error {
+    Error::input(InputKind::UnsafePath, path, None)
 }
 
 fn into_string(bytes: Vec<u8>, report: &Path) -> Result<String> {
@@ -107,12 +114,12 @@ fn read_in(
     for ancestor in ancestors {
         dir = match dir.open_dir_nofollow(ancestor) {
             Ok(d) => d,
-            Err(e) => return Err(classify_step(&dir, ancestor, &e, report)),
+            Err(e) => return Err(classify_step(&dir, ancestor, &e, report, false)),
         };
     }
     let file = match open_nonblocking(&dir, name) {
         Ok(f) => f,
-        Err(e) => return Err(classify_step(&dir, name, &e, report)),
+        Err(e) => return Err(classify_step(&dir, name, &e, report, true)),
     };
     let meta = file
         .metadata()
@@ -150,10 +157,21 @@ fn clear_nonblocking(file: &File) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Name why opening `name` in `dir` failed: a symlink there, nothing there, or something else.
-fn classify_step(dir: &Dir, name: &OsStr, error: &std::io::Error, report: &Path) -> Error {
+/// Name why opening `name` in `dir` failed: a symlink there, nothing there, a special file at
+/// the end of the path, or something else.
+fn classify_step(
+    dir: &Dir,
+    name: &OsStr,
+    error: &std::io::Error,
+    report: &Path,
+    leaf: bool,
+) -> Error {
     match dir.symlink_metadata(name) {
         Ok(meta) if meta.is_symlink() => Error::input(InputKind::Symlink, report, None),
+        // A socket, or a device with no backing, fails to open; it is still not regular.
+        Ok(meta) if leaf && !meta.is_file() && !meta.is_dir() => {
+            Error::input(InputKind::NotRegular, report, None)
+        }
         // Something that is not a directory sits on the way: nothing can be below it.
         Ok(meta) if !meta.is_dir() && error.kind() == ErrorKind::NotADirectory => {
             Error::input(InputKind::NotFound, report, None)

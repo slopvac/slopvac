@@ -7,13 +7,13 @@
 //!
 //! # Threat model
 //!
-//! Repository content is hostile; a concurrent local writer is not. The confined readers and
-//! writers refuse symlinks, special files and escapes that the content of the tree can plant.
-//! They do not defend against another process that can write to the directories involved while
-//! an operation runs, such as one that swaps the destination or its parent, or replaces a
-//! temporary name. Such a process is out of scope. The one check that costs little is made: a
-//! staged file is compared with its name before it replaces the destination, and a mismatch
-//! fails the write.
+//! Repository content is hostile. The confined readers and writers refuse symlinks, special
+//! files and escapes that the content of the tree can plant. A concurrent local writer is
+//! actor T6 of the threat model, only partly in scope: a same-user process that can write to
+//! the directories involved while an operation runs can swap the destination or its parent, or
+//! replace a temporary name. A staged file is compared with its name before it replaces the
+//! destination, and a mismatch fails the write. That narrows the window but does not close it
+//! (residual risk R6).
 //!
 //! # Directories are UTF-8 only
 //!

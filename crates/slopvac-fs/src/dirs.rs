@@ -230,4 +230,22 @@ mod tests {
             "environment variable XDG_CONFIG_HOME is not valid UTF-8"
         );
     }
+
+    #[test]
+    fn non_utf8_home_does_not_matter_when_xdg_is_valid() {
+        let e = |n: &str| match n {
+            "HOME" => Err(not_unicode()),
+            "XDG_CACHE_HOME" => Ok("/x".to_owned()),
+            "XDG_CONFIG_HOME" => Ok("/xc".to_owned()),
+            _ => Err(VarError::NotPresent),
+        };
+        assert_eq!(
+            cache_dir_with(&e, &no_home).unwrap(),
+            Path::new("/x/slopvac")
+        );
+        assert_eq!(
+            config_dir_with(&e, &no_home).unwrap(),
+            Path::new("/xc/slopvac")
+        );
+    }
 }

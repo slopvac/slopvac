@@ -167,6 +167,8 @@ impl std::fmt::Display for Reason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum InputKind {
+    /// The path is absolute, has a `..` component or names no file, so it was not tried.
+    UnsafePath,
     /// The file, or a directory on the way to it, does not exist. Callers may treat this as
     /// normal.
     NotFound,
@@ -189,6 +191,7 @@ impl InputKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::UnsafePath => "path must be relative, stay below the root and name a file",
             Self::NotFound => "not found",
             Self::Symlink => "a path component is a symlink",
             Self::NotRegular => "not a regular file",

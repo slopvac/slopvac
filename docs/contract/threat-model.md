@@ -61,6 +61,8 @@ Method. Section 2 lists assets, section 3 actors, and section 4 boundaries and f
 
 A local attacker with the user's full rights (T6) is only partly in scope. Slopvac cannot defend a store that the attacker may write. The model records where the design still raises the cost (section 9, R6).
 
+This includes a process that writes to a destination directory, its parent or a temporary file's directory while a `slopvac-fs` operation runs. Such a process can swap the destination or its parent, or replace a temporary name. `slopvac-fs` compares the staged file with its name before the rename and fails the write on a mismatch. This narrows the window, so a replaced temporary file fails closed, but it does not close the window (R6).
+
 ## 4. Trust boundaries and flows
 
 ```text
@@ -250,7 +252,7 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 | O3 | SARIF or CodeClimate fields carry hostile URIs or paths. | T | CWE-74, CWE-22 | M/M | Locations are relative project paths. `helpUri` and links allow `https` only. JSON encoding of every string. | `slopvac-8l4.9.32`, `slopvac-8l4.12.2` | TM-12 |
 | O4 | Newlines in a message become GitHub Actions workflow commands (`::set-output`, `::error`) or forge annotations. | T, E | CWE-93, CWE-117 | M/H | The Action escapes `%`, `\r`, `\n` and `::` for every annotation. The text reporter writes a line that starts with `::` only after it escapes the start. | `slopvac-8l4.9.32`, `slopvac-8l4.13.6` | TM-13 |
 | O5 | A fixer rewrites more than the selected findings through many edits. | T | CWE-20 | M/M | Edit-in-envelope rule, plus the per-document limits in section 5.5. Over a limit, the document fails with `plugin-output-invalid`. | `slopvac-8l4.9.6`, `slopvac-8l4.3.17` | H27, H28, H29, TM-14 (1,001 edits rejected; inserted bytes over the cap rejected) |
-| O6 | Applying edits or recipes tears a file, loses an update, or follows a swapped path. | T, D | CWE-367, CWE-362 | M/M | Write a temporary file in the same directory, check the source is unchanged (size, mtime and content hash), rename atomically. Open with no-follow flags and parent descriptors. Refuse a hardlinked target (link count above 1) and a path whose parent chain contains a symlink that leaves the root. | `slopvac-8l4.9.14` | TM-15 (rename race, hardlink and symlink swap tests) |
+| O6 | Applying edits or recipes tears a file, loses an update, or follows a swapped path. | T, D | CWE-367, CWE-362 | M/M | Write a temporary file in the same directory, check the source is unchanged (size, mtime and content hash), check the staged file is still the one created (device and inode) before the rename, rename atomically. Open with no-follow flags and parent descriptors. Refuse a hardlinked target (link count above 1) and a path whose parent chain contains a symlink that leaves the root. | `slopvac-8l4.9.14` | TM-15 (rename race, hardlink and symlink swap tests); `a_staged_file_replaced_before_the_rename_fails_closed` (a replaced temporary file fails the write) |
 | O7 | A recipe targets a sensitive in-project file: `.git/`, hooks, `.slopvac/` state, CI workflows, `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc`, `.vscode/tasks.json`. | E | CWE-73, CWE-22 | M/H | A deny list the host enforces. A recipe may touch a denied path only after a separate approval per path, in a command that allows writes (`--allow-sensitive <path>`). The plan output marks them. No plugin sets the flag. | `slopvac-8l4.9.14` | TM-16 (each denied path refused without the flag, nothing written) |
 | O8 | A recipe writes agent harness files (`AGENTS.md`, hooks, MCP server entries, `.claude/`, `.opencode/`) that later run code with an agent's rights. Writing these files is the recipe's purpose, and it is also an escalation path. | E | CWE-94, CWE-829 | M/H | Show the full plan and content before applying. Hook-like and command-bearing entries are marked in the plan. Apply only with an explicit write command, only from a command that allows writes. | `slopvac-8l4.9.14` | TM-17 (a plan with a hook entry prints a marked warning and writes nothing under `--dry-run`) |
 | O9 | A recipe path escapes the root: absolute, `..`, Windows drive, case-folding tricks, reserved device names, or a symlink. | T, E | CWE-22, CWE-59, CWE-178 | M/H | Host check is the boundary (plugin-protocol.md section 8.2). Resolve symlinks, compare case-insensitively on case-insensitive file systems, refuse reserved device names (CON, NUL, COM and LPT, with superscript digits), trailing dots or spaces, and a colon (NTFS streams) on every platform. This also covers WSL projects on `/mnt`. | `slopvac-8l4.9.14` | H22, TM-18 (Windows path forms and case-fold collisions) |
@@ -486,7 +488,7 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 | TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
 | TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
 | TM-49, TM-50, TM-51, TM-52, TM-53 (`tm<N>_...`; the `live_` tests need uv and skip without it) | `pyenv.rs` | Y1 to Y6 |
-| TM-5 limits, TM-4 on Linux (open, PR #389) | `limits.rs` | P5, P6 |
+| TM-5 limits, TM-4 on Linux ((open)) | `limits.rs` | P5, P6 |
 | TM-11 | `sanitize.rs`, `host.rs`, `trust.rs` in `slopvac-plugins` | O1, P15 |
 | TM-11, TM-12, TM-13 (the escaping functions) | `crates/slopvac-sanitize/src/lib.rs` | O1 to O4, P15 |
 
@@ -498,12 +500,12 @@ Every work item of this model has a bead.
 
 | Work | Bead | Status | Threats |
 |---|---|---|---|
-| Managed Python environments | `slopvac-8l4.9.31` | in progress (PR #428) | Y1 to Y7 |
-| Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed (PR #386) | O6 to O9 |
-| Plugin resource limits | `slopvac-8l4.9.13` | in progress (PR #389) | P5, P6 |
+| Managed Python environments | `slopvac-8l4.9.31` | in progress | Y1 to Y7 |
+| Safe application of edits and recipe plans | `slopvac-8l4.9.14` | closed | O6 to O9 |
+| Plugin resource limits | `slopvac-8l4.9.13` | in progress | P5, P6 |
 | Rotation and the signed revocation list | `slopvac-8l4.9.15` | in progress | K5, K6 |
 | Shared sanitizer for plugin-origin text | `slopvac-8l4.9.32` | component done (crate `slopvac-sanitize`); renderer wiring open | O1 to O4, P15 |
-| Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged (PR #344) | E1 to E7 |
+| Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged | E1 to E7 |
 | Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |
 
 Other beads that this model depends on: `slopvac-8l4.9.16` (compiled first-party key), `slopvac-8l4.9.19` (credential values in the public trust hash), `slopvac-8l4.9.27` (pinned-commit git fetch), `slopvac-8l4.9.28` (executable set of a plugin pack), `slopvac-8l4.9.29` (escaping in error messages) and `slopvac-8l4.3.20` (PCRE2 limits).
@@ -519,7 +521,7 @@ A residual risk stays after all controls above. The release notes and `slopvac p
 | R3 | Revocation is not instant. An offline or never-synced machine runs a revoked artifact until it fetches the list. | Offline mode is a feature (policies.md section 1.3). | Medium. |
 | R4 | A provider plugin can send any text it receives. The dry run shows the payload and says nothing about what the plugin does with it. | The host cannot observe a plugin's network use. | Medium to high for private documents. |
 | R5 | `SLOPVAC_TRUST` in CI trusts whatever the workflow names. A pull request that changes the workflow can name its own hash. | Review of CI configuration is the project's job. | High in an unprotected repository. |
-| R6 | A local process of the same user can write the trust store, cache or environments, and can swap files between check and use. | The user's rights equal the attacker's. The design only raises the cost. | High, but needs prior local compromise. |
+| R6 | A local process of the same user can write the trust store, cache or environments, and can swap files between check and use, or swap a destination, its parent or a temporary file during a `slopvac-fs` write. | The user's rights equal the attacker's. The design only raises the cost. | High, but needs prior local compromise. |
 | R7 | The first key pin is trust on first use. A user who confirms a hostile fingerprint trusts it. | The user has to decide somewhere. The fingerprint display and the namespace binding reduce the risk. | Medium. |
 | R8 | The first-party root key is a single point of trust. Replacing a lost key takes a new slopvac release. | A compiled key changes only with a release. | High, with low likelihood. |
 | R9 | Prompt injection cannot be solved at the host. The host only cuts the paths from provider output to edits and verdicts. | Model behavior is outside slopvac. | Medium. |

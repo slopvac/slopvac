@@ -1,13 +1,13 @@
 //! Confined and plain reads of regular files, through the public API.
 
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use rstest::rstest;
 use slopvac_fs::{
-    Error, InputKind, ReadOptions, Reason, read_capped_regular, read_capped_regular_in,
+    InputKind, ReadOptions, read_capped_regular, read_capped_regular_in,
     read_capped_regular_to_string, read_capped_regular_to_string_in,
 };
 
@@ -32,6 +32,7 @@ fn tree() -> tempfile::TempDir {
         .status()
         .unwrap();
     assert!(made.success());
+    drop(std::os::unix::net::UnixListener::bind(p.join("sock")).unwrap());
     dir
 }
 
@@ -57,6 +58,7 @@ fn confined_read_returns_the_content(#[case] rel: &str, #[case] want: &[u8]) {
 #[case::ancestor_symlink("dlink/e/f.txt", InputKind::Symlink)]
 #[case::directory("d", InputKind::NotRegular)]
 #[case::fifo("fifo", InputKind::NotRegular)]
+#[case::socket("sock", InputKind::NotRegular)]
 #[case::too_large("big", InputKind::TooLarge)]
 #[case::hard_linked("hard", InputKind::MultiplyLinked)]
 fn confined_read_refuses_with_a_matchable_kind(#[case] rel: &str, #[case] kind: InputKind) {
@@ -74,16 +76,30 @@ fn confined_read_refuses_with_a_matchable_kind(#[case] rel: &str, #[case] kind: 
 fn confined_read_rejects_paths_that_leave_the_root(#[case] rel: &str) {
     let t = tree();
     let err = read_capped_regular_in(&root(&t), Path::new(rel), 100).unwrap_err();
-    assert!(
-        matches!(
-            err,
-            Error::UnsafeTarget {
-                reason: Reason::NotRelative | Reason::NoFileName,
-                ..
-            }
-        ),
-        "{err:?}"
-    );
+    assert_eq!(err.input_kind(), Some(InputKind::UnsafePath), "{err:?}");
+    assert_eq!(err.path(), Some(Path::new(rel)));
+}
+
+#[test]
+fn a_real_failing_open_is_an_io_error_with_its_os_code_and_no_path_in_the_text() {
+    if rustix::process::geteuid().is_root() {
+        // Permissions do not apply to root.
+        return;
+    }
+    let t = tree();
+    let path = t.path().join("a.txt");
+    std::fs::remove_file(t.path().join("hard")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let err = read_capped_regular(&path, 100, ReadOptions::new()).unwrap_err();
+    assert_eq!(err.input_kind(), Some(InputKind::Io), "{err:?}");
+    assert_eq!(err.path(), Some(path.as_path()));
+    let source = std::error::Error::source(&err).expect("the I/O error is the source");
+    let source = source.downcast_ref::<std::io::Error>().unwrap();
+    assert_eq!(source.raw_os_error(), Some(13), "EACCES");
+    assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
+    let secret = t.path().to_string_lossy().into_owned();
+    let text = format!("{err} | {err:?} | {source} | {source:?}");
+    assert!(!text.contains(&secret) && !text.contains("a.txt"), "{text}");
 }
 
 #[test]
@@ -131,6 +147,7 @@ fn plain_reader_accepts_hard_links_unless_told_otherwise() {
 #[case::final_symlink("link", InputKind::Symlink)]
 #[case::directory("d", InputKind::NotRegular)]
 #[case::fifo("fifo", InputKind::NotRegular)]
+#[case::socket("sock", InputKind::NotRegular)]
 #[case::too_large("big", InputKind::TooLarge)]
 fn plain_reader_refuses_with_a_matchable_kind(#[case] rel: &str, #[case] kind: InputKind) {
     let t = tree();
@@ -156,14 +173,9 @@ fn plain_reader_follows_symlinked_directories_above_the_file() {
 fn plain_reader_needs_a_file_name() {
     for path in ["/", "a/..", ""] {
         let err = read_capped_regular(Path::new(path), 10, ReadOptions::new()).unwrap_err();
-        assert!(
-            matches!(
-                err,
-                Error::UnsafeTarget {
-                    reason: Reason::NoFileName,
-                    ..
-                }
-            ),
+        assert_eq!(
+            err.input_kind(),
+            Some(InputKind::UnsafePath),
             "{path}: {err:?}"
         );
     }

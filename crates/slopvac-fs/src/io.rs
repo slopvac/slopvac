@@ -134,7 +134,7 @@ pub(crate) fn split_plain(rel: &Path) -> Result<(&OsStr, Vec<&OsStr>)> {
 ///   are two steps, not one: the guarantee assumes no other process can write to the
 ///   destination's directory meanwhile. A process that can, and swaps the destination in
 ///   between, gets the swapped entry replaced (the link itself, never its target). Such a
-///   process is outside the threat model; see the crate docs.
+///   process is a same-user writer, residual risk R6; see the crate docs.
 /// - The bytes go to a new file in the destination's directory, with a random name and
 ///   exclusive creation. The file is synced, then compared with its name (device and inode,
 ///   and that the name is a regular file), and renamed over the destination within that
