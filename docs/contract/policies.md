@@ -261,7 +261,7 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 
 - `SchemaVersion` is a positive integer. It counts breaking changes to one artifact's shape and has no minor or patch part.
 - Every root instance of a versioned artifact carries `schema_version` with the constant 3. Lint JSON jumps from 1 to 3 so that all artifacts share one number at first. The migration guide states this jump. A later breaking change raises only the number of the artifact it affects, so numbers can diverge after 3.0.
-- Changes within one `schema_version` are additive only.
+- Changes within one `schema_version` are additive only. Section 3.9 describes the check that enforces this.
   - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
 - A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
@@ -349,6 +349,39 @@ Owners: `slopvac-8l4.4.5` for the version check, `slopvac-8l4.2.5` for the mappi
 - An SDK in another language builds on the published JSON Schemas.
 
 Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
+
+### 3.9 Schema source
+
+**Generation.** The files in `schemas/v3/` are generated from the Rust types by the `slopvac-schemas` crate. CI regenerates them and fails on any difference. Edit the Rust types, never the generated files. The conformance corpus under `schemas/v3/conformance/` is hand-written and stays the referee: the Python and Rust implementations must accept and reject it exactly as each `cases.toml` says. Each artifact moves to generation in its own change.
+
+**Additive-only check.** `scripts/contract/schema_compat.py` compares `schemas/v3/*.schema.json` with a baseline and enforces section 3.2. It fails on these changes:
+
+- a removed file, or a changed `$id`
+- a removed property or `$defs` entry, at any depth
+- a new `required` entry
+- a narrowed `type`, `enum` or `const`
+- a raised `min*` bound or a lowered `max*` bound
+- a changed `pattern`
+- `additionalProperties` that is newly `false`, or newly a narrower schema
+
+It then validates every `valid/` instance of the baseline corpus against the new schema and fails on any rejection. Added optional properties, widened enums, new `$defs` entries and new files pass. Each finding prints as `file:json-pointer: kind: old -> new`. The `kind` is a stable kebab-case code. A code is never reused and never changes meaning (see section 3.5 and `docs/engineering.md`). Exit code 0 means compatible, 1 means a breaking finding, and 2 means a usage or read error, which is never a pass.
+
+**Baseline.** Before the first 3.0 release candidate, the baseline is the pull request's merge-base with `origin/main` (`--base <git-ref>`). This catches accidental breaks in each change. At the release candidate, a snapshot is committed under `schemas/v3/baseline/` and replaces the ref (`--baseline-dir`).
+
+**Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
+
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
+- Proving that a recursive schema and its inlined expansion accept the same instances is out of scope. When a reference was added or removed and the same target recurs, the check stops at that point and reports `unverified`. The corpus re-validation is the backstop.
+- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
+- A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
+- Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
+- The check compares `enum` and `const` as JSON values: a Boolean is not a number.
+- If the corpus needs a definition that the new schema deleted, the check exits 2.
+- A merge-queue entry uses the base commit that the queue built it on as its baseline.
+
+**Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. A matching entry suppresses that finding. An entry that matches no finding fails the check, so stale entries cannot pile up. The file starts empty.
+
+Owner: `slopvac-8l4.2.50`.
 
 ## 4. Conformance tests
 
