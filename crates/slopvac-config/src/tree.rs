@@ -371,11 +371,11 @@ impl<'a> LineIndex<'a> {
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
         let first = self.starts.first().copied().unwrap_or(0);
         let offset = offset.clamp(first, self.text.len());
-        // `starts[0]` is at most `offset`, so at least one start precedes it.
-        let line = self
-            .starts
-            .partition_point(|&s| s <= offset)
-            .saturating_sub(1);
+        // `starts[0]` is at most `offset`, so at least one start precedes it. An index with no
+        // starts has no lines, so every offset is line 1, column 1.
+        let Some(line) = self.starts.partition_point(|&s| s <= offset).checked_sub(1) else {
+            return (1, 1);
+        };
         let start = self.starts.get(line).copied().unwrap_or(first);
         let col = self
             .text
