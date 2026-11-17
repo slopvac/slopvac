@@ -197,6 +197,10 @@ def evaluate(template: str, context: dict) -> str:
         ("x == false", {}, True),
         ("x == 'TRUE'", {"x": "true"}, True),
         ("x == 0", {"x": ""}, True),
+        ("x == '3.14'", {"x": 3.14}, True),
+        ("x == 3.14", {"x": "3.14"}, True),
+        ("x == 3.1", {"x": "3.10"}, True),
+        ("x == '3.1'", {"x": "3.10"}, False),
         ("x == 'abc'", {"x": 0}, False),
         ("x || 'b'", {"x": ""}, "b"),
         ("x && 'b'", {"x": 0}, 0),
@@ -353,7 +357,7 @@ def test_rules_reference_check_runs_on_exactly_one_python_leg(context):
     runs = [
         v
         for v in matrix_axis("lint-package", "python", context)
-        if evaluate("${{ " + step["if"] + " }}", {"matrix": {"python": v}})
+        if condition(step["if"], {"matrix": {"python": v}})
     ]
     assert len(runs) == 1
 
