@@ -571,7 +571,7 @@ jobs:
           payload = json.load(open("/tmp/rules.json"))
           kinds = [rule["kind"] for rule in payload["rules"]]
           assert len(kinds) == 238
-          assert kinds.count("judgement") == 68
+          assert kinds.count("judgement") == 69
           assert all(
               rule["judgement_question"]
               for rule in payload["rules"]

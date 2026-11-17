@@ -132,7 +132,7 @@ def test_checked_and_judgement_rules_partition_the_catalogue(ruleset):
     checked = {rule.qualified_id for rule in ruleset.rules}
     judgement = {rule.qualified_id for rule in ruleset.judgement_rules}
     assert len(checked) == 169
-    assert len(judgement) == 68
+    assert len(judgement) == 69
     assert not checked & judgement
     assert checked | judgement == {rule.qualified_id for rule in ruleset.all_rules}
     assert {

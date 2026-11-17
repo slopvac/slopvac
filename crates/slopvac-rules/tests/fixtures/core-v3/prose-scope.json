@@ -177,6 +177,35 @@
         "source": "retired review guidance (\"Read the headings alone, in order\")",
         "note": "The comma-joined sibling of prose-scope.epigram. Epigram matches the parallel pair written as two SENTENCES and uses the full stops to tell it apart from an ordinary two-clause sentence; this rule matches the same pair written as a TITLE, and the absence of terminal punctuation does that same work here. Both halves must be determiner-led with a finite-looking predicate, which is what keeps the rule off a factual contrast (\"The parser reads JSON, not YAML.\") and off a contrastive inversion whose second subject is a pronoun (\"The Harness Measures, It Does Not Judge\") -- that shape belongs to ai-tells-structure.contrastive-appositive. The predicate alternation ends in `[a-z][\\w-]*(?<!s)s` rather than `\\w+s`, so a plural noun spelled with a double s (\"The Address Class, The Access Class\") cannot pose as a verb. `scope: paragraph`, not `heading`: the native engine's paragraph scope covers every rendered block INCLUDING headings, list items, and quotes, so the rule reaches a bolded pseudo-heading too. Heading scope would instead compile to a Vale `heading` payload, and Vale then owns the rule -- which means `--no-vale` leaves it unchecked. See compile_vale.PARAGRAPH_SCOPE_REASON."
       }
+    },
+    {
+      "id": "mixed-content-types",
+      "name": "Serve one reader need per page",
+      "message": "mixed content types: split the page so each page serves one reader need",
+      "severity": "suggestion",
+      "scope": "document",
+      "match": {
+        "kind": "judgement",
+        "question": "Does this page serve more than one reader need, such as teaching a first task (tutorial), solving a stated problem (how-to), listing facts (reference) or explaining why (explanation)? Brief cross-links to a page of another type are not a defect; flag the page only when two or more types each take a section of their own that a separate page could hold."
+      },
+      "examples": [
+        {
+          "bad": "A tutorial page that has a \"How to deploy\" section with its own steps.",
+          "note": "split: the deploy steps belong in a how-to page"
+        },
+        {
+          "bad": "A reference page that ends with a one-line link to the matching how-to.",
+          "note": "preserve: a cross-link is not a second content type"
+        }
+      ],
+      "fix": "Split the page by content type and link the pages to each other.",
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "citation": {
+        "source": "Diátaxis documentation framework",
+        "url": "https://diataxis.fr/",
+        "note": "A page that mixes tutorial, how-to, reference and explanation content serves none of its readers well. Detection needs the section structure and the page's place in the docs tree, which the native engine's genre registry reads to name the types. The Python reference never emits a finding for a judgement rule."
+      }
     }
   ]
 }

@@ -218,6 +218,7 @@ weight = 0.8
 "prose-inflation.borderline-hype" = "suggestion"
 "prose-scope.code-change-prose-scope" = "error"
 "prose-scope.epigram" = "suggestion"
+"prose-scope.mixed-content-types" = "suggestion"
 "ste-descriptive.information-not-gradual" = "suggestion"
 "ste-descriptive.missing-key-word-structure" = "suggestion"
 "ste-descriptive.paragraph-without-related-information" = "suggestion"
