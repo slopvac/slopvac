@@ -152,7 +152,7 @@ Each request names one hook id, so a batch holds documents for a single hook.
 
 ### 5.4 Positions
 
-The rules below cover hooks that receive a UTF-8 `Document`. Spans from a binary extractor follow section 5.5.3 instead.
+The rules below cover hooks that receive a UTF-8 `PluginDocument`. Spans from a binary extractor follow section 5.5.3 instead.
 
 Spans use the `Span` def in `common.schema.json`. They are half-open byte ranges into the UTF-8 `text` of the document in the same request. A span must lie inside the text and on character boundaries. The host drops a span that does not. It counts that as `plugin-output-invalid`, which makes the run incomplete. Semantics for line and column conversion belong to `slopvac-8l4.2.11`. A plugin reports spans in bytes.
 
@@ -170,7 +170,7 @@ A format is an id from a closed list. The 3.0 list holds these ids:
 - OpenDocument: `odt`, `odp` and `ods`.
 - PNG with an embedded diagram source: `drawio-png`, `excalidraw-png` and `plantuml-png`.
 
-Plugin-defined formats are not part of 3.0. A hook may declare only ids from this list. The host validates the manifest before spawn and refuses a manifest that declares any other id. Opening the list is a 3.x feature with its own contract.
+Plugin-defined formats are not part of 3.0. A hook may declare only ids from this list. The host validates the manifest before spawn and refuses a manifest that declares any other id, because the host's list is the authority. The list is extensible (section 9), so a later release may add ids without a new protocol version.
 
 The host sends a file to a binary extractor only under these rules:
 
@@ -178,7 +178,8 @@ The host sends a file to a binary extractor only under these rules:
 - The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
 - When the signature and the name disagree, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
 - When no extractor reads the detected format, the host reports `binary-unsupported`, and the run exits 2.
-- The host sends a document only to a hook that lists its format, and to one binary extractor only. A plugin that gets a format it did not list answers that document with `binary-unsupported`.
+- The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
+- A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with `binary-unsupported`, answers the other documents, and does not fail the request. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
 - No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. `slopvac-8l4.2` fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
@@ -236,16 +237,21 @@ Each document ends in exactly one outcome:
 
 #### 5.5.5 Limits
 
-These limits hold for every binary extractor. They are fixed host constants, and `initialize` does not negotiate them. A later raise is additive. A cut breaks compatibility, and policies.md section 3.6 applies.
+These budgets hold for every binary extractor. They are fixed host constants, and `initialize` does not negotiate them. A later raise is additive. A cut breaks compatibility, and policies.md section 3.6 applies.
 
-| Limit | Value | On breach |
+| Budget | Value | `data.budget` |
 |---|---|---|
-| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `binary-budget`, cap `text-bytes`. |
-| Segments | 1,000,000 per document | `binary-budget`, cap `segments`. |
-| `part` and `locator` | 1024 characters each | `binary-budget`, cap `part-length` or `locator-length`. |
-| Time | The 30 s hook timeout of section 6.3 | `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative. |
+| Segments | 1,000,000 per document | `segments` |
+| `part` | 1024 characters | `part-chars` |
+| `locator` | 1024 characters | `locator-chars` |
+| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `text-bytes` |
+| Request buffers in flight | 64 MiB (67108864 bytes) across all plugins (section 5.5.6) | `in-flight-bytes` |
 
-An extractor that reaches a cap reports `binary-budget` itself. When its output still exceeds a cap, the validator fails that document with `binary-budget`. In both cases `data.cap` names the cap. The schema pattern also bounds `part` and `locator`, but the host checks the caps first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each cap.
+A breach of any budget is `binary-budget` (-32010). `data.budget` names the budget, and `data.limit` holds its value from the table. Both are named fields in the error data, and a reader never parses them from the message. The schema def [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) is the one list of names. It carries `x-slopvac-extensible`, so a later release may add a budget, and a reader keeps a name it does not know.
+
+An extractor that reaches an output budget reports `binary-budget` itself. When its output still exceeds a budget, the validator fails that document with `binary-budget`. The schema pattern also bounds `part` and `locator`, but the host checks the budgets first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each output budget.
+
+The 30 s hook timeout of section 6.3 also applies, and its expiry is `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative.
 
 Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). Every host read of a binary file has a bound. The wire adapter reads under section 5.5.6, and the native adapter reads at most its input limit plus one byte. The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
 
@@ -255,10 +261,10 @@ The negotiated `maxMessageBytes` of section 2.2 bounds both directions. v1 has n
 
 **Base64 growth.** A file of n bytes encodes to 4 × ⌈n / 3⌉ characters. A 12,582,912-byte file encodes to 16,777,216 characters, which is the whole default limit before any JSON, so that file never fits. The largest file that fits is about 3 × ⌊(`maxMessageBytes` − envelope) / 4⌋ bytes. The envelope is the size of the same request with an empty `bytes` string. The vectors in [`binary-frames.json`](../../schemas/v3/conformance/plugin-protocol/binary-frames.json) fix the exact boundary.
 
-**Requests.** The host builds each request in the order below, so a large file costs no memory before it is admitted (CWE-770). A document that fails step 1, 2, 4 or 5 gets `message-too-large`. The host does not send a failed document, and the run exits 2. All size arithmetic is checked (section 2.2).
+**Requests.** The host builds each request in the order below, so a large file costs no memory before it is admitted (CWE-770). A document that fails step 1, 4 or 5 gets `message-too-large`. The host does not send a failed document, and the run exits 2. All size arithmetic is checked (section 2.2).
 
 1. **Preflight.** The host takes n from the file metadata and serializes the envelope, which is small. It computes 4 × ⌈n / 3⌉ plus the envelope size and compares the sum with `maxMessageBytes`. It reads and encodes nothing before this check passes.
-2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once. The host releases the reservation when the frame is written or the request fails.
+2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once with `binary-budget`, budget `in-flight-bytes`. The host releases the reservation when the frame is written or the request fails.
 3. **Bounded read.** The host reads at most n + 1 bytes. A file that holds more than n bytes changed after the preflight. The host stops reading and reports `binary-input-changed`. A file that holds fewer bytes is sent with its real length.
 4. **Capped serialization.** The host encodes into a buffer of exactly the base64 length. It serializes into a writer that stops at `maxMessageBytes`, so escaping in other fields cannot grow the frame past the limit.
 5. **Final gate.** The host sends the frame only when its exact serialized size is at most `maxMessageBytes`. The size counts the bytes the host writes, so its serializer choices count too.
@@ -324,7 +330,7 @@ Only recipes return paths. Each is relative to the project root with the same re
 - A reader ignores a field it does not know, in every message and at every depth. It may log the field at debug level.
 - A key with the prefix `x-` is ignored everywhere. Its meaning stays undefined. A plugin or host may use one for private data.
 - The schema leaves `additionalProperties` open on every protocol message. This differs from user-written files, where an unknown key is an error (policies.md section 3.3).
-- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names and segment roles (section 5.5). Binary format ids are a closed list (section 5.5.1). Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
+- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names, segment roles, binary format ids and binary budget names (section 5.5). The schema marks an extensible enum with `x-slopvac-extensible: true` (bead `slopvac-8l4.2.61`), and `BinaryFormat` and `BinaryBudget` carry it. Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
 - A required field that is missing or has the wrong type makes the message invalid, however lenient the rest of the rules are.
 - Additive changes within version 1 are: a new optional field, a new hook kind, a new feature, a new optional notification. Everything else needs version 2.
 
@@ -463,11 +469,11 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H38 | Binary documents that end `empty`, `no-source`, `binary-unsupported`, `binary-malformed` and `binary-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
 | H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `binary-unsupported`. No extractor gets the file. The run exits 2. |
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
-| H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P22. |
+| H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P23. |
 | H42 | Concurrent binary requests whose reservations exceed the in-flight budget, and a file that grows after the preflight. | The later requests wait, and peak memory for request buffers stays under the budget. The grown file gets `binary-input-changed`, and the run exits 2. |
 | H43 | Two enabled hooks list one format: two plugins, and a plugin with a built-in extractor. Run with and without a config mapping. | Without a mapping, the host reports `binary-format-ambiguous`, names both hooks and the config key, gives no extractor the file, and exits 2. With a mapping, only the mapped hook gets the file. |
 | H44 | A manifest whose `binary-extractor` hook lists a format outside the 3.0 list. | The manifest is refused before spawn. |
-| H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-cap cases fail with `binary-budget`, and `data.cap` names the cap. At-cap cases pass. The first-party failure is `builtin-output-invalid`. |
+| H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-budget cases fail with `binary-budget`, `data.budget` names the budget, and `data.limit` holds its value. At-budget cases pass. The first-party failure is `builtin-output-invalid`. |
 
 ### 12.2 Plugin
 
@@ -495,6 +501,7 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | P20 | A `binary-extractor/extract` request for each declared format, sent twice. | Each entry has one outcome. Spans lie inside `byte_length`, `part` and `locator` pairs are unique, and both results are equal. |
 | P21 | A corrupt file in a declared format, and a valid container with no embedded source. | `binary-malformed`, and `no-source`. Neither is `empty`. |
 | P22 | A document whose segments do not fit `maxMessageBytes`. | That document gets `message-too-large`. The reply fits, and no segment is truncated. |
+| P23 | The request in `binary-unknown-format.json`: one known format and one id the plugin does not know. | The plugin declines the unknown document with `binary-unsupported` and answers the other. It does not answer `invalid-params`. |
 
 ## 13. Owners
 

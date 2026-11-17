@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "error": {
+        "code": -32010,
+        "message": "segment budget reached",
+        "data": {
+          "slopvac_code": "binary-budget",
+          "budget": "segments",
+          "limit": 1000000
+        }
+      }
+    }
+  ]
+}

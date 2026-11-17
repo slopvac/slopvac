@@ -1,0 +1,63 @@
+{
+  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with binary-unsupported (-32008) and answers the others; it does not fail the request with invalid-params. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer.",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "method": "binary-extractor/extract",
+    "params": {
+      "extractor": "office",
+      "documents": [
+        {
+          "id": "d1",
+          "format": "docx",
+          "byte_length": 8,
+          "bytes": "UEsDBBQABgA="
+        },
+        {
+          "id": "d2",
+          "format": "vsdx",
+          "byte_length": 8,
+          "bytes": "UEsDBBQABgA="
+        }
+      ]
+    }
+  },
+  "unknown_format_pointer": "/params/documents/1/format",
+  "reply": {
+    "results": [
+      {
+        "document": "d1",
+        "outcome": "empty"
+      },
+      {
+        "document": "d2",
+        "error": {
+          "code": -32008,
+          "message": "format vsdx is not supported",
+          "data": {
+            "slopvac_code": "binary-unsupported"
+          }
+        }
+      }
+    ]
+  },
+  "declined_document": "d2",
+  "manifest": {
+    "network": false,
+    "hooks": [
+      {
+        "kind": "binary-extractor",
+        "id": "office",
+        "formats": [
+          "docx",
+          "vsdx"
+        ]
+      }
+    ],
+    "features": {
+      "required": [],
+      "optional": []
+    }
+  },
+  "manifest_pointer": "/hooks/0/formats/1"
+}

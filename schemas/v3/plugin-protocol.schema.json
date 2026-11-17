@@ -587,7 +587,8 @@
       ]
     },
     "BinaryFormat": {
-      "description": "Format id of a binary document, from the closed 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. A hook may declare only these ids; the host refuses a manifest that declares any other id when it validates the manifest. Plugin-defined formats are not part of 3.0.",
+      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document as binary-unsupported and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
+      "x-slopvac-extensible": true,
       "enum": [
         "docx",
         "docm",
@@ -612,7 +613,7 @@
       ]
     },
     "BinaryDocument": {
-      "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows Document.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
+      "description": "One binary document in a batch. bytes is the whole file in standard base64 (RFC 4648 section 4) with padding and no line breaks; byte_length is the decoded length. format is the id the host detected. path follows PluginDocument.path and the document-path feature. Every BinarySpan in the result indexes the decoded bytes.",
       "type": "object",
       "properties": {
         "id": {
@@ -702,6 +703,17 @@
         "role"
       ]
     },
+    "BinaryBudget": {
+      "description": "The budget a binary-budget error names in data.budget. This def is the one list of allowed values; docs/contract/plugin-protocol.md section 5.5.5 gives each value its limit. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a reader keeps a value it does not know.",
+      "x-slopvac-extensible": true,
+      "enum": [
+        "segments",
+        "part-chars",
+        "locator-chars",
+        "text-bytes",
+        "in-flight-bytes"
+      ]
+    },
     "BinaryExtractParams": {
       "description": "binary-extractor/extract. Extract the prose of each binary document. The host admits a request by a length preflight before it reads or encodes the file, holds it against the in-flight budget, and sends it only when the exact serialized size fits the negotiated maxMessageBytes (plugin-protocol.md section 5.5.6).",
       "type": "object",
@@ -724,7 +736,7 @@
       ]
     },
     "BinaryExtractResult": {
-      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. The unsupported, malformed and budget outcomes travel as a per-document error (binary-unsupported, binary-malformed, binary-budget). The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
+      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. The unsupported, malformed and budget outcomes travel as a per-document error (binary-unsupported, binary-malformed, binary-budget). A binary-budget error names the budget in data.budget and its value in data.limit; a reader never parses either from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
       "type": "object",
       "properties": {
         "results": {
@@ -823,6 +835,56 @@
                       "properties": {
                         "segments": {
                           "maxItems": 0
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "data": {
+                              "properties": {
+                                "slopvac_code": {
+                                  "const": "binary-budget"
+                                }
+                              },
+                              "required": [
+                                "slopvac_code"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "data"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "data": {
+                              "properties": {
+                                "budget": {
+                                  "$ref": "#/$defs/BinaryBudget"
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "budget",
+                                "limit"
+                              ]
+                            }
+                          }
                         }
                       }
                     }
