@@ -531,3 +531,27 @@ fn a_planted_lock_symlink_fails_with_its_own_code_and_leaves_the_target_alone() 
     assert_eq!(content(&victim), b"precious");
     assert_eq!(content(&fx.exe), b"old binary");
 }
+
+/// Another installer puts a script at the install path that prints `body`. Returns the
+/// fingerprint of the binary that this process "started" as.
+#[cfg(unix)]
+fn replaced_by_other_installer(fx: &Fixture, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let started_as = slopvac_update::pipeline::running_fingerprint(&fx.exe).unwrap();
+    std::fs::write(&fx.exe, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&fx.exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    started_as
+}
+
+#[cfg(unix)]
+#[test]
+fn an_installed_binary_with_an_unknown_version_fails_with_its_own_code() {
+    let fx = installed();
+    let started_as = replaced_by_other_installer(&fx, "echo not json");
+    let before = content(&fx.exe);
+    let mut rt = runtime(&fx, server("3.2.0"), Box::new(Fixed(Ok(()))));
+    rt.running_sha = Some(started_as);
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "update-version-unknown");
+    assert_eq!(content(&fx.exe), before);
+}

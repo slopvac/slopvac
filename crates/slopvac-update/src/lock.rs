@@ -28,9 +28,20 @@
 //!   someone else changed the binary mid-update, and the next holder refuses with
 //!   [`LockError::Interrupted`] rather than install over it.
 //!
-//! An `installed` record whose fingerprint no longer matches the executable is stale: a package
-//! manager or another installer replaced the binary, so the running version is the best
-//! evidence and the record is ignored.
+//! # The installed version
+//!
+//! The version at `exe` is established from evidence tied to the file's fingerprint, never from
+//! the version of the process that runs the update: that process may be older than a build
+//! another installer put on disk since it started. The floor is the highest version that any of
+//! these vouches for:
+//!
+//! - an `installed` record, or a recovered `pending` record, whose fingerprint matches the file;
+//! - the running version, only when the file's fingerprint equals the running binary's;
+//! - otherwise, what the file reports when it is run (see [`crate::probe`]).
+//!
+//! A record whose fingerprint no longer matches is stale and counts for nothing. When no source
+//! vouches for the file and it cannot report a version, the holder refuses with
+//! [`LockError::VersionUnknown`].
 //!
 //! A record is replaced by writing the new text over the start of the file and then truncating,
 //! so a crash never leaves an empty file where a record was. Text that cannot be parsed is
@@ -71,11 +82,17 @@ pub(crate) enum LockError {
     /// An earlier update died part-way and the installed binary matches no known build.
     #[error(
         "an earlier update was interrupted and the installed binary is not one it knows; \
-         check the installed slopvac, then delete {file} and run the update again"
+         check the installed slopvac"
     )]
-    Interrupted {
-        /// Lock file name.
-        file: String,
+    Interrupted,
+    /// No record vouches for the installed binary and it did not report a version.
+    #[error(
+        "cannot tell which version of slopvac is installed ({reason}); refusing to install over \
+         it. Check that the installed slopvac runs, then run the update again"
+    )]
+    VersionUnknown {
+        /// Why the executable's version is unknown.
+        reason: String,
     },
     /// The lock file or the executable could not be opened, read, written or locked.
     #[error("cannot use the update lock {file}: {source}")]
@@ -168,6 +185,21 @@ fn fingerprint_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// The fingerprint of the file at `path`, as the lock records it.
+pub(crate) fn fingerprint_file(path: &Path) -> std::io::Result<String> {
+    File::open(path).and_then(fingerprint)
+}
+
+/// What is known about the process that runs the update.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Running<'a> {
+    /// Its version.
+    pub(crate) version: &'a semver::Version,
+    /// The fingerprint of its binary, taken when it started. `None` when it could not be taken,
+    /// which means the running version vouches for nothing.
+    pub(crate) sha: Option<&'a str>,
+}
+
 /// Open the lock file without following a symlink, creating it with mode `0600`.
 fn open_nofollow(path: &Path) -> std::io::Result<File> {
     let mut opts = OpenOptions::new();
@@ -203,6 +235,29 @@ fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
 #[cfg(not(unix))]
 fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
     Ok((!file.metadata()?.is_file()).then_some("it is not a regular file"))
+}
+
+/// What to tell the user after [`LockError::Interrupted`], decided by trying the lock.
+///
+/// The caller must have released its own hold. A free lock means no update is running, so the
+/// stale file is safe to remove. A held lock means another update is running, and removing the
+/// file under it would break the serialization, so the advice is to wait.
+pub(crate) fn recovery_hint(exe: &Path) -> String {
+    let name = lock_path(exe)
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    match UpdateLock::acquire(exe, Duration::ZERO) {
+        Ok(_free) => format!(
+            "No other update is running, so remove {name} beside it and run the update again."
+        ),
+        Err(LockError::Busy(_)) => "Another slopvac update is running; wait for it to finish, \
+             then run the update again."
+            .to_owned(),
+        Err(_) => format!(
+            "Make sure that no slopvac update is running before you remove {name}, \
+             then run the update again."
+        ),
+    }
 }
 
 impl UpdateLock {
@@ -261,12 +316,6 @@ impl UpdateLock {
         }
     }
 
-    fn interrupted(&self) -> LockError {
-        LockError::Interrupted {
-            file: self.name.clone(),
-        }
-    }
-
     /// The fingerprint of the executable as it is now.
     fn exe_fingerprint(&self) -> Result<String, LockError> {
         File::open(&self.exe)
@@ -292,7 +341,7 @@ impl UpdateLock {
             .ok()
             .and_then(Record::parse)
             .map(Some)
-            .ok_or_else(|| self.interrupted())
+            .ok_or(LockError::Interrupted)
     }
 
     /// Write `record` over the start of the file, truncate the tail, and sync.
@@ -310,42 +359,66 @@ impl UpdateLock {
 
     /// The version installed at `exe` right now, established under the lock.
     ///
-    /// `running` is the version of this process, the answer when no record vouches for the
-    /// executable. A `pending` record left by a dead updater is resolved from the executable's
-    /// fingerprint, or refused with [`LockError::Interrupted`] when the fingerprint fits neither
-    /// build.
+    /// The result is the highest version that the file's fingerprint vouches for: a matching
+    /// record, a `pending` record resolved from the fingerprint, or the running version when
+    /// `running` carries the same fingerprint. With none of those, the executable is run for its
+    /// version, and a failure is [`LockError::VersionUnknown`]. A `pending` record that fits
+    /// neither build is [`LockError::Interrupted`].
     pub(crate) fn installed_version(
         &mut self,
-        running: &semver::Version,
+        running: &Running<'_>,
+        probe_timeout: Duration,
     ) -> Result<semver::Version, LockError> {
-        let Some(record) = self.read_record()? else {
-            return Ok(running.clone());
-        };
+        let record = self.read_record()?;
         let now = self.exe_fingerprint()?;
+        let mut floor: Option<semver::Version> = None;
+        let mut vouch = |v: semver::Version| {
+            floor = Some(match floor.take() {
+                Some(f) => f.max(v),
+                None => v,
+            });
+        };
         match record {
-            Record::Installed { version, sha } => {
-                Ok(if sha == now { version } else { running.clone() })
-            }
-            Record::Pending {
+            Some(Record::Installed { version, sha }) if sha == now => vouch(version),
+            Some(Record::Pending {
                 to,
                 new_sha,
                 old_sha,
                 from,
-            } => {
+            }) => {
                 let (version, sha) = if now == new_sha {
                     (to, new_sha)
                 } else if now == old_sha {
                     (from, old_sha)
                 } else {
-                    return Err(self.interrupted());
+                    return Err(LockError::Interrupted);
                 };
                 self.write_record(&Record::Installed {
                     version: version.clone(),
                     sha,
                 })?;
-                Ok(version)
+                vouch(version);
             }
+            // No record, or a stale one: it vouches for nothing.
+            Some(Record::Installed { .. }) | None => {}
         }
+        if running.sha == Some(now.as_str()) {
+            vouch(running.version.clone());
+        }
+        if let Some(version) = floor {
+            return Ok(version);
+        }
+        crate::probe::installed_version(&self.exe, probe_timeout).map_err(|e| {
+            LockError::VersionUnknown {
+                reason: format!("{}: {e}", self.name_of_exe()),
+            }
+        })
+    }
+
+    fn name_of_exe(&self) -> String {
+        self.exe
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
     }
 
     /// Record, before the rename, that `to` is about to replace the build at `from`.
@@ -400,6 +473,15 @@ mod tests {
         UpdateLock::acquire(exe, Duration::ZERO).unwrap()
     }
 
+    /// Replace `exe` with a shell script that runs `body`, standing in for another installer's
+    /// build.
+    #[cfg(unix)]
+    fn fake_exe(exe: &Path, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(exe, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     #[test]
     fn the_lock_file_sits_beside_the_binary() {
         let (dir, exe) = installed();
@@ -431,11 +513,34 @@ mod tests {
         waiter.join().unwrap().expect("acquired after release");
     }
 
+    /// The installed version as the lock establishes it, for a process that runs `version`
+    /// from a binary with fingerprint `sha` (`None`: unknown).
+    fn floor(
+        lock: &mut UpdateLock,
+        version: &str,
+        sha: Option<&str>,
+    ) -> Result<semver::Version, LockError> {
+        let version = v(version);
+        lock.installed_version(
+            &Running {
+                version: &version,
+                sha,
+            },
+            Duration::from_secs(300),
+        )
+    }
+
+    /// The fingerprint of the file at `exe` as it is now: the running binary is that file.
+    fn sha_of(exe: &Path) -> String {
+        fingerprint_file(exe).unwrap()
+    }
+
     #[test]
-    fn a_fresh_lock_reports_the_running_version() {
+    fn a_running_binary_that_is_the_file_on_disk_vouches_for_its_version() {
         let (_dir, exe) = installed();
+        let sha = sha_of(&exe);
         assert_eq!(
-            acquire(&exe).installed_version(&v("3.0.0")).unwrap(),
+            floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap(),
             v("3.0.0")
         );
     }
@@ -443,40 +548,35 @@ mod tests {
     #[test]
     fn a_finished_update_is_read_back_by_the_next_holder() {
         let (_dir, exe) = installed();
+        let started_as = sha_of(&exe);
         let mut lock = acquire(&exe);
         lock.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
         lock.finish(&v("3.2.0")).unwrap();
         drop(lock);
+        // The next holder started as the old binary, so only the record can vouch for the file.
         assert_eq!(
-            acquire(&exe).installed_version(&v("3.0.0")).unwrap(),
+            floor(&mut acquire(&exe), "3.0.0", Some(&started_as)).unwrap(),
             v("3.2.0")
         );
-    }
-
-    #[test]
-    fn a_record_for_a_replaced_binary_is_ignored() {
-        let (_dir, exe) = installed();
-        let mut lock = acquire(&exe);
-        lock.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
-        std::fs::write(&exe, b"new").unwrap();
-        lock.finish(&v("3.2.0")).unwrap();
-        std::fs::write(&exe, b"a package manager installed this").unwrap();
-        assert_eq!(lock.installed_version(&v("3.1.0")).unwrap(), v("3.1.0"));
     }
 
     // The updater died after the rename and before the final record.
     #[test]
     fn an_update_that_died_after_the_rename_is_recovered_as_installed() {
         let (_dir, exe) = installed();
+        let started_as = sha_of(&exe);
         let mut dead = acquire(&exe);
         dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
         drop(dead);
         let mut next = acquire(&exe);
-        assert_eq!(next.installed_version(&v("3.0.0")).unwrap(), v("3.2.0"));
         assert_eq!(
-            next.installed_version(&v("3.0.0")).unwrap(),
+            floor(&mut next, "3.0.0", Some(&started_as)).unwrap(),
+            v("3.2.0")
+        );
+        assert_eq!(
+            floor(&mut next, "3.0.0", Some(&started_as)).unwrap(),
             v("3.2.0"),
             "the recovery was written back"
         );
@@ -486,11 +586,12 @@ mod tests {
     #[test]
     fn an_update_that_died_before_the_rename_leaves_the_old_build_installed() {
         let (_dir, exe) = installed();
+        let sha = sha_of(&exe);
         let mut dead = acquire(&exe);
         dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
         drop(dead);
         assert_eq!(
-            acquire(&exe).installed_version(&v("3.0.0")).unwrap(),
+            floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap(),
             v("3.0.0")
         );
     }
@@ -498,29 +599,29 @@ mod tests {
     #[test]
     fn a_pending_update_over_an_unknown_binary_is_refused() {
         let (_dir, exe) = installed();
+        let sha = sha_of(&exe);
         let mut dead = acquire(&exe);
         dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"someone else's build").unwrap();
         drop(dead);
-        let err = acquire(&exe).installed_version(&v("3.0.0")).unwrap_err();
-        assert!(
-            matches!(err, LockError::Interrupted { ref file } if file == "slopvac.update.lock"),
-            "{err}"
-        );
+        let err = floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap_err();
+        assert!(matches!(err, LockError::Interrupted), "{err}");
     }
 
     #[test]
     fn a_garbled_record_is_refused_not_guessed() {
         let (dir, exe) = installed();
+        let sha = sha_of(&exe);
         drop(acquire(&exe));
         std::fs::write(lock_file(&dir), b"\xff\xfe junk").unwrap();
-        let err = acquire(&exe).installed_version(&v("3.0.0")).unwrap_err();
-        assert!(matches!(err, LockError::Interrupted { .. }), "{err}");
+        let err = floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap_err();
+        assert!(matches!(err, LockError::Interrupted), "{err}");
     }
 
     #[test]
     fn a_stale_tail_after_the_record_is_ignored() {
         let (dir, exe) = installed();
+        let started_as = sha_of(&exe);
         let mut lock = acquire(&exe);
         lock.finish(&v("3.1.0")).unwrap();
         drop(lock);
@@ -528,9 +629,112 @@ mod tests {
         text.extend_from_slice(b"installed 9.9.9 left over from a longer record\n");
         std::fs::write(lock_file(&dir), text).unwrap();
         assert_eq!(
-            acquire(&exe).installed_version(&v("3.0.0")).unwrap(),
+            floor(&mut acquire(&exe), "3.0.0", Some(&started_as)).unwrap(),
             v("3.1.0")
         );
+    }
+
+    // Another installer replaced the binary after this process started: the running version
+    // says nothing about the file, the file has to say it.
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_replaced_since_start_is_asked_for_its_version() {
+        let (_dir, exe) = installed();
+        let started_as = sha_of(&exe);
+        fake_exe(&exe, "echo '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'");
+        // The running process is older (3.0.0) and no record exists.
+        assert_eq!(
+            floor(&mut acquire(&exe), "3.0.0", Some(&started_as)).unwrap(),
+            v("3.3.0")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stale_record_does_not_hide_a_newer_independent_install() {
+        let (_dir, exe) = installed();
+        let started_as = sha_of(&exe);
+        let mut lock = acquire(&exe);
+        lock.begin(&v("3.0.0"), &v("3.1.0"), b"new").unwrap();
+        std::fs::write(&exe, b"new").unwrap();
+        lock.finish(&v("3.1.0")).unwrap();
+        fake_exe(&exe, "echo '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'");
+        assert_eq!(
+            floor(&mut lock, "3.0.0", Some(&started_as)).unwrap(),
+            v("3.3.0")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unknown_running_fingerprint_never_vouches_for_the_running_version() {
+        let (_dir, exe) = installed();
+        fake_exe(&exe, "echo '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'");
+        assert_eq!(
+            floor(&mut acquire(&exe), "3.9.0", None).unwrap(),
+            v("3.3.0")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_that_cannot_report_its_version_fails_closed() {
+        let started_as = sha_of(&installed().1);
+        for body in [
+            "echo garbage",
+            "echo '{\"name\":\"slopvac\",\"version\":\"3\"}'",
+            "exit 1",
+        ] {
+            let (_dir, exe) = installed();
+            fake_exe(&exe, body);
+            let err = floor(&mut acquire(&exe), "3.0.0", Some(&started_as)).unwrap_err();
+            assert!(
+                matches!(err, LockError::VersionUnknown { .. }),
+                "{body}: {err}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_that_does_not_answer_in_time_fails_closed() {
+        let (_dir, exe) = installed();
+        let started_as = sha_of(&exe);
+        fake_exe(&exe, "exec sleep 30");
+        let mut lock = acquire(&exe);
+        let running = v("3.0.0");
+        let err = lock
+            .installed_version(
+                &Running {
+                    version: &running,
+                    sha: Some(&started_as),
+                },
+                Duration::from_millis(200),
+            )
+            .unwrap_err();
+        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+    }
+
+    #[test]
+    fn recovery_advice_says_to_remove_the_lock_only_when_no_update_holds_it() {
+        let (_dir, exe) = installed();
+        let held = acquire(&exe);
+        let busy = recovery_hint(&exe);
+        assert!(busy.contains("Another slopvac update is running"), "{busy}");
+        assert!(!busy.contains("remove"), "{busy}");
+        drop(held);
+        let free = recovery_hint(&exe);
+        assert!(
+            free.contains("remove slopvac.update.lock") && free.contains("No other"),
+            "{free}"
+        );
+    }
+
+    #[test]
+    fn recovery_advice_does_not_leave_the_lock_held() {
+        let (_dir, exe) = installed();
+        let _ = recovery_hint(&exe);
+        acquire(&exe);
     }
 
     #[test]

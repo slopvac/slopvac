@@ -19,7 +19,8 @@ use std::time::Duration;
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
-use crate::lock::{self, LockError, UpdateLock};
+use crate::lock::{self, LockError, Running, UpdateLock};
+use crate::probe;
 use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
 /// Where release assets live.
@@ -75,6 +76,9 @@ pub enum UpdateError {
     /// An earlier update died part-way and left an installed binary that it does not know.
     #[error("{0}")]
     Interrupted(String),
+    /// The installed binary's version cannot be established.
+    #[error("{0}")]
+    VersionUnknown(String),
     /// Writing the new binary failed.
     #[error("cannot replace the installed binary: {0}")]
     Replace(String),
@@ -85,7 +89,8 @@ impl From<LockError> for UpdateError {
         match e {
             LockError::Busy(_) => Self::Busy(e.to_string()),
             LockError::Unsafe { .. } => Self::LockUnsafe(e.to_string()),
-            LockError::Interrupted { .. } => Self::Interrupted(e.to_string()),
+            LockError::Interrupted => Self::Interrupted(e.to_string()),
+            LockError::VersionUnknown { .. } => Self::VersionUnknown(e.to_string()),
             LockError::Io { .. } => Self::Replace(e.to_string()),
         }
     }
@@ -114,19 +119,58 @@ pub fn asset_name(target: &str) -> String {
     format!("slopvac-{target}.tar.gz")
 }
 
-/// Run the pipeline and replace `exe`, which runs `current`, with the release for `version`.
+/// The installed executable and what is known about the process that updates it.
+#[derive(Debug, Clone)]
+pub struct Host<'a> {
+    exe: &'a Path,
+    running_sha: Option<String>,
+    lock_timeout: Duration,
+    probe_timeout: Duration,
+}
+
+impl<'a> Host<'a> {
+    /// The executable to replace, and the fingerprint of the running binary taken when the
+    /// process started ([`running_fingerprint`]), or `None` when it could not be taken.
+    ///
+    /// The running version counts as the installed version only while the file at `exe` still
+    /// has that fingerprint.
+    #[must_use]
+    pub fn new(exe: &'a Path, running_sha: Option<String>) -> Self {
+        Self {
+            exe,
+            running_sha,
+            lock_timeout: lock::DEFAULT_TIMEOUT,
+            probe_timeout: probe::DEFAULT_TIMEOUT,
+        }
+    }
+}
+
+/// The fingerprint of the binary at `exe`, to hand to [`Host::new`].
+///
+/// Take it once, when the process starts the update: it later tells whether another installer
+/// replaced the file. `None` means the file could not be read, and then nothing vouches for the
+/// running version.
+#[must_use]
+pub fn running_fingerprint(exe: &Path) -> Option<String> {
+    lock::fingerprint_file(exe).ok()
+}
+
+/// Run the pipeline and replace `host`'s executable, which runs `current`, with the release for
+/// `version`.
 ///
 /// The verifier must see a signature made for this exact asset of this exact `version`, so a
 /// server cannot pass off an older or another target's signed archive. `version` must also be
 /// a stable release newer than `current`: `self update` has no downgrade flag and no
 /// candidate channel, so a signed prerelease is refused before any download.
 ///
-/// The update holds an exclusive lock beside `exe` from before the download until after the
-/// rename. Under the lock it establishes the installed version from the lock record and a
-/// fingerprint of the executable, and refuses when that is not older than `version`. It records
-/// the update before the rename, so an updater that dies part-way is recovered or refused by the
-/// next one, never installed over. It waits up to a minute for another update, then fails with
-/// [`UpdateError::Busy`].
+/// The update holds an exclusive lock beside the executable from before the download until
+/// after the rename. Under the lock it establishes the installed version from evidence tied to
+/// the file's fingerprint: the lock record, the running version when the file is still the
+/// running binary, or else what the file reports when it runs. It refuses when that is not older
+/// than `version`, and fails with [`UpdateError::VersionUnknown`] when it cannot tell. It
+/// records the update before the rename, so an updater that dies part-way is recovered or
+/// refused by the next one, never installed over. It waits up to a minute for another update,
+/// then fails with [`UpdateError::Busy`].
 pub fn update(
     fetcher: &dyn Fetcher,
     verifier: &dyn ArtifactVerifier,
@@ -134,34 +178,9 @@ pub fn update(
     current: &str,
     version: &str,
     target: &str,
-    exe: &Path,
+    host: &Host<'_>,
 ) -> Result<(), UpdateError> {
-    update_waiting(
-        fetcher,
-        verifier,
-        base_url,
-        current,
-        version,
-        target,
-        exe,
-        lock::DEFAULT_TIMEOUT,
-    )
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "`update` is the public seven-argument form; this adds only the lock wait that tests shorten"
-)]
-fn update_waiting(
-    fetcher: &dyn Fetcher,
-    verifier: &dyn ArtifactVerifier,
-    base_url: &str,
-    current: &str,
-    version: &str,
-    target: &str,
-    exe: &Path,
-    lock_timeout: Duration,
-) -> Result<(), UpdateError> {
+    let exe = host.exe;
     let not_newer = |current: &str| UpdateError::NotNewer {
         current: current.to_owned(),
         requested: version.to_owned(),
@@ -178,10 +197,27 @@ fn update_waiting(
     if new <= cur {
         return Err(not_newer(current));
     }
-    let mut lock = UpdateLock::acquire(exe, lock_timeout)?;
-    // Another update may have installed a version since this process started. The version is
-    // established under the lock, so no update is in flight while it is compared.
-    let installed = lock.installed_version(&cur)?;
+    let mut lock = UpdateLock::acquire(exe, host.lock_timeout)?;
+    // Another update, or another installer, may have put a version on disk since this process
+    // started. The version is established under the lock, so no update is in flight while it is
+    // compared.
+    let running = Running {
+        version: &cur,
+        sha: host.running_sha.as_deref(),
+    };
+    let installed = match lock.installed_version(&running, host.probe_timeout) {
+        Ok(v) => v,
+        Err(LockError::Interrupted) => {
+            // Release our hold so that the advice can try the lock.
+            drop(lock);
+            return Err(UpdateError::Interrupted(format!(
+                "{} {}",
+                LockError::Interrupted,
+                lock::recovery_hint(exe)
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    };
     if new <= installed {
         return Err(not_newer(&installed.to_string()));
     }
@@ -257,6 +293,20 @@ fn replace(exe: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    /// `super::update` for a process that is the binary at `exe` right now.
+    fn update(
+        fetcher: &dyn Fetcher,
+        verifier: &dyn ArtifactVerifier,
+        base_url: &str,
+        current: &str,
+        version: &str,
+        target: &str,
+        exe: &Path,
+    ) -> Result<(), UpdateError> {
+        let host = Host::new(exe, running_fingerprint(exe));
+        super::update(fetcher, verifier, base_url, current, version, target, &host)
+    }
 
     struct Files(HashMap<String, Vec<u8>>);
 
@@ -546,6 +596,150 @@ mod tests {
         semver::Version::parse(s).unwrap()
     }
 
+    /// Another installer's build at `exe`, as a script that reports `body`'s output. The returned
+    /// fingerprint is the binary this process "started" as, taken before the replacement.
+    #[cfg(unix)]
+    fn replaced_by_other_installer(exe: &Path, body: &str) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let started_as = running_fingerprint(exe).unwrap();
+        std::fs::write(exe, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        started_as
+    }
+
+    #[cfg(unix)]
+    const REPORTS_3_3_0: &str = r#"echo '{"name":"slopvac","version":"3.3.0"}'"#;
+
+    /// A host whose version probe may take long, so a slow first run of a new script on a busy
+    /// machine is not mistaken for a hang.
+    #[cfg(unix)]
+    fn patient_host(exe: &Path, running_sha: Option<String>) -> Host<'_> {
+        let mut host = Host::new(exe, running_sha);
+        host.probe_timeout = Duration::from_secs(120);
+        host
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_older_target_does_not_replace_a_newer_independent_install() {
+        let (_dir, exe) = installed();
+        // This process runs 3.0.0, and another installer has since put 3.3.0 on disk.
+        let started_as = replaced_by_other_installer(&exe, REPORTS_3_3_0);
+        let before = std::fs::read(&exe).unwrap();
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        let err = super::update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &patient_host(&exe, Some(started_as)),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, UpdateError::NotNewer { ref current, .. } if current == "3.3.0"),
+            "{err}"
+        );
+        assert_eq!(std::fs::read(&exe).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_newer_target_still_replaces_an_independent_install() {
+        let (_dir, exe) = installed();
+        let started_as = replaced_by_other_installer(&exe, REPORTS_3_3_0);
+        let files = release(tar_gz("slopvac", b"binary 3.4.0"));
+        let files = Files(
+            files
+                .0
+                .into_iter()
+                .map(|(k, v)| (k.replace("v3.1.0", "v3.4.0"), v))
+                .collect(),
+        );
+        super::update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.4.0",
+            TARGET,
+            &patient_host(&exe, Some(started_as)),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary 3.4.0");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_running_fingerprint_is_not_trusted_as_the_installed_version() {
+        let (_dir, exe) = installed();
+        replaced_by_other_installer(&exe, REPORTS_3_3_0);
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        let err = super::update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &patient_host(&exe, None),
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::NotNewer { .. }), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_installed_binary_that_will_not_report_a_version_fails_closed() {
+        for body in [
+            "echo garbage",
+            "exit 1",
+            "echo '{\"name\":\"slopvac\",\"version\":\"3\"}'",
+        ] {
+            let (_dir, exe) = installed();
+            let started_as = replaced_by_other_installer(&exe, body);
+            let before = std::fs::read(&exe).unwrap();
+            let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+            let err = super::update(
+                &files,
+                &Verdict(Ok(())),
+                BASE,
+                "3.0.0",
+                "3.1.0",
+                TARGET,
+                &patient_host(&exe, Some(started_as)),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err, UpdateError::VersionUnknown(_)),
+                "{body}: {err}"
+            );
+            assert_eq!(std::fs::read(&exe).unwrap(), before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_installed_binary_that_times_out_fails_closed() {
+        let (_dir, exe) = installed();
+        let started_as = replaced_by_other_installer(&exe, "exec sleep 30");
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        let mut host = Host::new(&exe, Some(started_as));
+        host.probe_timeout = Duration::from_millis(200);
+        let err = super::update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &host,
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::VersionUnknown(_)), "{err}");
+    }
+
     /// An updater to `to` that dies right after the rename: pending record, new bytes, no final.
     fn die_after_rename(exe: &Path, from: &str, to: &str, bytes: &[u8]) {
         let mut dead = UpdateLock::acquire(exe, Duration::ZERO).unwrap();
@@ -592,6 +786,11 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, UpdateError::Interrupted(_)), "{err}");
+        // No update holds the lock now, so the advice says it is safe to remove.
+        assert!(
+            err.to_string().contains("remove slopvac.update.lock"),
+            "{err}"
+        );
         assert_eq!(std::fs::read(&exe).unwrap(), b"another installer's build");
     }
 
@@ -643,15 +842,16 @@ mod tests {
         let (_dir, exe) = installed();
         let _held = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
         // An empty server: reaching the download would fail with `Download`, not `Busy`.
-        let err = update_waiting(
+        let mut host = Host::new(&exe, running_fingerprint(&exe));
+        host.lock_timeout = Duration::ZERO;
+        let err = super::update(
             &Files(HashMap::new()),
             &Verdict(Ok(())),
             BASE,
             "3.0.0",
             "3.1.0",
             TARGET,
-            &exe,
-            Duration::ZERO,
+            &host,
         )
         .unwrap_err();
         assert!(matches!(err, UpdateError::Busy(_)), "{err}");

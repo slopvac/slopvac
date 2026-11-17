@@ -22,6 +22,7 @@ mod lock;
 pub mod notice;
 pub mod pipeline;
 pub mod policy;
+mod probe;
 pub mod verify;
 
 /// GitHub repository that publishes releases.

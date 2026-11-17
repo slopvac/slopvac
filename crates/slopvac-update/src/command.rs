@@ -73,6 +73,9 @@ pub struct Runtime {
     pub target: Option<&'static str>,
     /// Cache file, `None` when no cache directory exists.
     pub cache: Option<Cache>,
+    /// Fingerprint of the running binary taken when the process started, for the update's
+    /// check that nobody replaced it. `None` takes it when `self update` begins.
+    pub running_sha: Option<String>,
 }
 
 impl Runtime {
@@ -114,6 +117,7 @@ impl Runtime {
             download_base: DOWNLOAD_BASE.to_owned(),
             target: pipeline::target_triple(),
             cache,
+            running_sha: None,
         }
     }
 
@@ -203,6 +207,10 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::UnsupportedPlatform.to_string(),
         )
     })?;
+    let running_sha = rt
+        .running_sha
+        .clone()
+        .or_else(|| pipeline::running_fingerprint(&rt.exe));
     pipeline::update(
         &*rt.fetcher,
         &*rt.verifier,
@@ -210,7 +218,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         &rt.current,
         &latest,
         target,
-        &rt.exe,
+        &pipeline::Host::new(&rt.exe, running_sha),
     )
     .map_err(|e| {
         let code = match e {
@@ -219,6 +227,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::Busy(_) => "update-in-progress",
             UpdateError::LockUnsafe(_) => "update-lock-unsafe",
             UpdateError::Interrupted(_) => "update-interrupted",
+            UpdateError::VersionUnknown(_) => "update-version-unknown",
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

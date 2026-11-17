@@ -63,10 +63,13 @@ When `slopvac self update` refuses or fails, it exits 2, leaves the installed bi
 | `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
 | `update-in-progress` | Another `self update` held the update lock for the whole 60-second wait. Run it again when the other update finishes. |
 | `update-lock-unsafe` | The lock file `slopvac.update.lock` beside the binary is a symbolic link, has more than one hard link, belongs to another user, or has a mode looser than `0600`. Nothing is written through it. Remove the file after you check why it is there, then run the update again. |
-| `update-interrupted` | An earlier update died part-way, and the installed binary matches neither the build it replaced nor the build it was installing. The update refuses to install over it. Check the installed `slopvac`, delete `slopvac.update.lock` beside it, and run the update again. |
+| `update-interrupted` | An earlier update died part-way, and the installed binary matches neither the build it replaced nor the build it was installing, or the update record is unreadable. The update refuses to install over it. The message first tries the update lock. If no update holds it, the message says to remove `slopvac.update.lock` beside the binary after you check the installed `slopvac`, and to run the update again. If another update holds it, the message says to wait for that update to finish, and never to remove the file. |
+| `update-version-unknown` | No update record vouches for the installed binary, the binary is not the one that is running the update, and it did not report a version when run with `--offline --version --json` (it failed, printed something else, or took longer than 10 seconds). The update refuses to install over a binary of unknown version. Check that the installed `slopvac` runs, then run the update again. |
 | `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
 
 If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
+
+Before it replaces the binary, the update takes the lock `slopvac.update.lock` beside it and works out which version is installed there. The running version counts only while the file on disk still has the same SHA-256 as the running binary, so another installer that replaced the file since the process started cannot be overwritten with an older release. The update uses the highest version that the file's fingerprint vouches for: a matching record in the lock file, or the running version. When nothing vouches for the file, the update runs it with `--offline --version --json` and reads the version from the output. It refuses when that fails.
 
 How the workflows sign:
 
