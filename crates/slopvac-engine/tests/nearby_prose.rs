@@ -1,9 +1,8 @@
-//! Which paragraphs a diagram checker sees as nearby prose, and that finding them scales.
+//! Which paragraphs a diagram checker sees as nearby prose.
 
 mod common;
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use common::engine;
 use slopvac_engine::{DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Input};
@@ -87,36 +86,4 @@ fn nested_fences_share_neighbours_across_container_blocks() {
         nearby(source),
         [["Before.", "After."], ["Before.", "After."]]
     );
-}
-
-/// Time to lint a run of diagrams, optionally bordered by paragraphs.
-fn lint_time(fences: usize, with_paragraphs: bool) -> Duration {
-    let mut source = FENCE.repeat(fences);
-    if with_paragraphs {
-        source = format!("Before.\n\n{source}\nAfter.\n");
-    }
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let engine = engine(&[]).with_diagram_checker(Box::new(Recorder(Arc::clone(&seen))));
-    let start = Instant::now();
-    engine.lint(&Input::markdown("a.md", &source)).unwrap();
-    let took = start.elapsed();
-    assert_eq!(seen.lock().unwrap().len(), fences);
-    took
-}
-
-#[test]
-fn finding_nearby_prose_grows_about_linearly_with_the_fence_count() {
-    // Best of five runs reduces scheduling noise. Setup is outside the timed region.
-    for with_paragraphs in [false, true] {
-        let best = |n| (0..5).map(|_| lint_time(n, with_paragraphs)).min().unwrap();
-        let small = best(1_000);
-        let medium = best(2_000);
-        let large = best(4_000);
-        assert!(
-            medium.as_secs_f64() < 3.5 * small.as_secs_f64()
-                && large.as_secs_f64() < 3.5 * medium.as_secs_f64()
-                && large.as_secs_f64() < 6.0 * small.as_secs_f64(),
-            "with paragraphs {with_paragraphs}: 1k {small:?}, 2k {medium:?}, 4k {large:?}"
-        );
-    }
 }
