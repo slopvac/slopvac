@@ -245,8 +245,8 @@ def test_a_ruleset_with_a_non_admin_bypass_adds_no_rules():
         )
 
 
-def test_a_response_without_bypass_actors_fails_closed_with_the_token_hint():
-    with pytest.raises(TypeError, match="RULESET_READ_TOKEN"):
+def test_a_response_without_bypass_actors_fails_closed_with_the_permission_hint():
+    with pytest.raises(TypeError, match="Administration: read"):
         check([ruleset(bypass=None)])
 
 

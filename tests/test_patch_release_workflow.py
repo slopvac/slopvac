@@ -134,8 +134,8 @@ def test_host_requires_the_provenance_job(workflow):
 def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
     job = workflow["jobs"]["custom-release-provenance"]
     assert job["uses"] == "./.github/workflows/release-provenance.yml"
-    # Only the one optional token reaches the called workflow; never `secrets: inherit`.
-    assert job["secrets"] == {"RULESET_READ_TOKEN": "${{ secrets.RULESET_READ_TOKEN }}"}
+    # Only the app key reaches the called workflow; never `secrets: inherit`.
+    assert job["secrets"] == {"RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"}
     assert job["permissions"] == {"actions": "read", "contents": "read"}
 
 
@@ -349,7 +349,11 @@ def test_the_legacy_job_takes_its_values_from_the_environment(workflow):
 
 
 def test_the_legacy_job_checks_everything_before_it_publishes(workflow):
-    runs = [s["run"].strip() for s in _legacy_steps(workflow) if "run" in s]
+    runs = [
+        s["run"].strip()
+        for s in _legacy_steps(workflow)
+        if "run" in s and s["name"] != "Explain a failed token mint"
+    ]
     assert runs == [
         'python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"',
         'python3 scripts/release_provenance.py check-draft "$RELEASE_TAG" --repo "$REPO" --app-slug "$APP_SLUG"',
@@ -379,21 +383,22 @@ def test_release_please_makes_a_tagged_draft_that_dist_then_publishes():
     assert dist["dist"]["create-release"] is False
 
 
-def test_the_ruleset_token_reaches_only_the_check_steps(workflow):
-    expected = "${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}"
+def _mint_step(steps: list[dict]) -> dict:
+    return next(s for s in steps if s.get("id") == "ruleset-token")
+
+
+def test_the_legacy_ruleset_check_reads_with_the_app_token_and_no_fallback(workflow):
     steps = workflow["jobs"]["publish-legacy-release"]["steps"]
-    with_token = [s for s in steps if "RULESET_READ_TOKEN" in str(s)]
-    assert [s["run"].split()[1] for s in with_token] == ["scripts/release_ruleset.py"]
-    assert with_token[0]["env"] == {"GH_TOKEN": expected}
-    for step in steps:
-        assert "RULESET_READ_TOKEN" not in step.get("run", "")
+    checks = [s for s in steps if "release_ruleset.py" in s.get("run", "")]
+    assert [c["env"] for c in checks] == [
+        {"GH_TOKEN": "${{ steps.ruleset-token.outputs.token }}"}
+    ]
+    assert steps.index(_mint_step(steps)) < steps.index(checks[0])
 
 
-def test_the_pypi_gate_passes_only_the_ruleset_token():
+def test_the_pypi_gate_passes_only_the_app_key():
     provenance = _publish_jobs()["provenance"]
-    assert provenance["secrets"] == {
-        "RULESET_READ_TOKEN": "${{ secrets.RULESET_READ_TOKEN }}"
-    }
+    assert provenance["secrets"] == {"RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"}
 
 
 # --- the reusable provenance workflow ------------------------------------------
@@ -406,20 +411,45 @@ def provenance() -> dict:
     return yaml.safe_load(PROVENANCE.read_text(encoding="utf-8"))
 
 
-def test_the_ruleset_token_is_an_optional_workflow_call_secret(provenance):
+def test_the_app_key_is_a_required_workflow_call_secret(provenance):
     # PyYAML reads the bare `on` key as boolean True.
-    secret = provenance[True]["workflow_call"]["secrets"]["RULESET_READ_TOKEN"]
-    assert secret["required"] is False
+    secrets = provenance[True]["workflow_call"]["secrets"]
+    assert list(secrets) == ["RELEASE_APP_PRIVATE_KEY"]
+    assert secrets["RELEASE_APP_PRIVATE_KEY"]["required"] is True
 
 
-def test_only_the_ruleset_check_step_reads_the_ruleset_token(provenance):
+def test_the_ruleset_check_reads_with_the_minted_token_and_no_fallback(provenance):
     steps = provenance["jobs"]["provenance"]["steps"]
-    holders = [s for s in steps if "RULESET_READ_TOKEN" in str(s)]
-    assert [s["name"] for s in holders] == ["Require an immutable tag ruleset"]
-    assert holders[0]["env"]["GH_TOKEN"] == (
-        "${{ secrets.RULESET_READ_TOKEN || github.token }}"
-    )
-    assert "scripts/release_ruleset.py" in holders[0]["run"]
+    check = next(s for s in steps if "release_ruleset.py" in s.get("run", ""))
+    assert check["env"]["GH_TOKEN"] == "${{ steps.ruleset-token.outputs.token }}"
+    assert steps.index(_mint_step(steps)) < steps.index(check)
+
+
+def test_a_failed_mint_stops_the_job_with_an_instruction(provenance):
+    steps = provenance["jobs"]["provenance"]["steps"]
+    explain = steps[steps.index(_mint_step(steps)) + 1]
+    assert "steps.ruleset-token.outcome == 'failure'" in explain["if"]
+    assert "Administration: Read-only" in explain["run"]
+    assert explain["run"].rstrip().endswith("exit 1")
+
+
+def test_dispatching_with_a_tag_runs_only_the_ruleset_check(provenance):
+    dispatch = provenance[True]["workflow_dispatch"]["inputs"]["tag"]
+    assert dispatch["required"] is True
+    steps = {s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s}
+    # `inputs.tag` is empty when a release workflow calls this one, so a caller that
+    # was itself dispatched still gets the candidate check.
+    assert "inputs.tag == ''" in steps["Check the candidate"]["if"]
+    for name in ("Mint the ruleset read token", "Require an immutable tag ruleset"):
+        assert "inputs.tag != ''" in steps[name]["if"]
+    check = steps["Require an immutable tag ruleset"]
+    assert check["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
+    assert "inputs" not in check["run"]
+
+
+def test_the_provenance_workflow_has_no_write_permission(provenance):
+    assert set(provenance["permissions"].values()) == {"read"}
+    assert "permissions" not in provenance["jobs"]["provenance"]
 
 
 def test_the_candidate_check_keeps_the_workflow_token(provenance):
@@ -597,3 +627,45 @@ def test_the_dist_build_jobs_install_the_pinned_toolchain_before_dist(workflow, 
 def test_a_missing_dist_build_job_fails_the_toolchain_patch(raw):
     with pytest.raises(ValueError, match="expected"):
         patcher.harden(raw.replace("  build-global-artifacts:\n", "  other:\n"))
+
+
+# --- app tokens, never personal access tokens -----------------------------------
+
+ALL_WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+SECRET_REF = re.compile(r"secrets\.([A-Za-z0-9_]+)")
+APP_TOKEN = "actions/create-github-app-token@"
+
+
+def test_no_workflow_reads_a_token_secret_other_than_the_workflow_token():
+    found = {
+        (path.name, name)
+        for path in ALL_WORKFLOWS
+        for name in SECRET_REF.findall(path.read_text(encoding="utf-8"))
+        if name != "GITHUB_TOKEN" and re.search(r"(TOKEN|PAT)$", name)
+    }
+    assert found == set()
+
+
+def _app_token_steps():
+    for path in ALL_WORKFLOWS:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in doc["jobs"].values():
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith(APP_TOKEN):
+                    yield path.name, step
+
+
+def test_every_ruleset_check_token_asks_only_for_administration_read():
+    ruleset = [
+        (name, step["with"])
+        for name, step in _app_token_steps()
+        if step.get("id") == "ruleset-token"
+    ]
+    assert {name for name, _ in ruleset} == {
+        "release.yml",
+        "release-provenance.yml",
+    }
+    for _, inputs in ruleset:
+        permissions = {k: v for k, v in inputs.items() if k.startswith("permission-")}
+        assert permissions == {"permission-administration": "read"}
+        assert inputs["repositories"] == "${{ github.event.repository.name }}"

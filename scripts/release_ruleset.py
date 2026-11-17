@@ -107,8 +107,8 @@ ADMIN_ROLE_ID = 5
 NO_BYPASS_FIELD = (
     "the ruleset response has no bypass_actors field, so a bypass for a write role "
     "cannot be ruled out. GitHub returns that field only to a token that can "
-    "administer the repository: set the RULESET_READ_TOKEN secret to a fine-grained "
-    "token for this repository with the Administration: read permission"
+    "administer the repository: the release app's installation token needs the "
+    "Administration: read permission"
 )
 
 
