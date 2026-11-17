@@ -679,6 +679,48 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
     assert gone not in procs.redact(raw)
 
 
+@pytest.mark.parametrize(
+    ("raw", "gone"),
+    [
+        ('{"token": "abc123"}', "abc123"),
+        ('{"access_token":"s3cr3tv4lue"}', "s3cr3tv4lue"),
+        ('{"Authorization": "Bearer x7"}', "x7"),
+        ('{"aws_session_token": "FwoGZXIvYXdz"}', "FwoGZXIvYXdz"),
+        ("aws_session_token = FwoGZXIvYXdz", "FwoGZXIvYXdz"),
+        ("Authorization: Bearer shorttok", "shorttok"),
+        ("{'password': 'pw1'}", "pw1"),
+        ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI", "wJalrXUtnFEMI"),
+    ],
+    ids=[
+        "quoted-token",
+        "no-space",
+        "authorization-header-json",
+        "session-token-json",
+        "session-token-env",
+        "short-bearer",
+        "single-quotes",
+        "secret-access-key",
+    ],
+)
+def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
+    assert gone not in procs.redact(raw)
+    assert gone not in procs.redact_credentials(raw)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Rewrite the paragraph so the token budget is explicit.",
+        "The password policy requires 12 characters; see /Users/docs/policy.md.",
+        "Use `max_retries` 3 times, then fail. Secret sauce is optional.",
+        "A bearer of news arrived at the secret garden.",
+        'Return {"name": "queue", "limit": 63} for each request.',
+    ],
+)
+def test_credential_redaction_leaves_ordinary_text_unchanged(text):
+    assert procs.redact_credentials(text) == text
+
+
 def test_failure_messages_are_redacted_before_they_are_stored(tmp_path):
     script_path = script(
         tmp_path,

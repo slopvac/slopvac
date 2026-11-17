@@ -208,8 +208,37 @@ def _feed(proc: subprocess.Popen, text: str) -> None:
         pass
 
 
+CREDENTIAL_NAME = (
+    r"[A-Za-z0-9_.-]*?(?:secret|token|password|passwd|api[_-]?key|access[_-]?key"
+    r"|authorization|credential)[A-Za-z0-9_.-]*"
+)
+# `name = value` or `"name": "value"`, with the quotes and spacing of JSON, env files
+# and headers. The value is a quoted string, an auth scheme and its token, or a bare
+# run up to a delimiter, however short.
+STRUCTURED_RE = re.compile(
+    rf"""(?ix)(["']?)\b({CREDENTIAL_NAME})\1\s*[:=]\s*
+    (?:"[^"\n]*"|'[^'\n]*'|(?:bearer|basic)\s+[^\s,;&}}\]"']+|[^\s,;&}}\]"']+)"""
+)
+PEM_RE = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)",
+    re.DOTALL,
+)
+
+
+def redact_credentials(text: str) -> str:
+    """Remove credentials only: key ids, private keys and `name: value` secrets.
+
+    Ordinary text, paths and long words stay as they are, so it is safe to run over
+    a model answer that is stored and later rescored.
+    """
+    text = PEM_RE.sub("<private-key>", text)
+    text = re.sub(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b", "<key>", text)
+    return STRUCTURED_RE.sub(r"\1\2\1=<redacted>", text)
+
+
 def redact(text: str) -> str:
     """Remove paths and token-like strings before text is printed or stored."""
+    text = redact_credentials(text)
     text = re.sub(r"/(?:Users|home)/[^\s'\"]+", "<path>", text)
     text = re.sub(r"/(?:private/)?var/folders/[^\s'\"]+", "<path>", text)
     text = re.sub(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b", "<key>", text)
