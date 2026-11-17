@@ -93,7 +93,7 @@ pub fn extract_fenced(format: Format, source: &str, body: Range<usize>) -> Extra
         let (a, b) = (f.span.start, f.span.end);
         let start = map(a);
         let end = if b > a { map(b - 1) + 1 } else { start };
-        if f.text.is_none() && end - start != b - a {
+        if f.text.is_none() && end.checked_sub(start) != b.checked_sub(a) {
             f.text = Some(sub(&stripped, a..b).to_owned());
         }
         f.span = start..end;
