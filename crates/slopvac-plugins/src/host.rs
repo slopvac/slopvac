@@ -1402,7 +1402,7 @@ fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> Result<Command, Plugin
         };
         let launcher = cfg.launcher.path().map_err(|e| match e {
             crate::launch::LaunchError::NotInstalled => PluginError::LauncherNotInstalled,
-            crate::launch::LaunchError::CurrentExe(e) => {
+            e @ crate::launch::LaunchError::CurrentExe(_) => {
                 PluginError::SpawnFailed(format!("{}: {e}", spec.name))
             }
         })?;

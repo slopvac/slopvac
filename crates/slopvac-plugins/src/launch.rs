@@ -60,14 +60,19 @@ const ENV_PREFIX: &str = "SLOPVAC_PLUGIN_ENV_";
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Why the host cannot name its launcher.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum LaunchError {
     /// The running program never called [`intercept`], so a child started
     /// through it would be the program itself, not the launcher.
+    #[error("the running program did not install the slopvac plugin launcher")]
     NotInstalled,
     /// The OS cannot name the running executable.
-    CurrentExe(std::io::Error),
+    #[error("cannot find the running executable: {0}")]
+    CurrentExe(#[source] std::io::Error),
 }
+
+/// A launcher result; the error defaults to [`LaunchError`].
+pub(crate) type Result<T, E = LaunchError> = std::result::Result<T, E>;
 
 /// Which program the host starts as the launcher.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -93,7 +98,7 @@ impl Launcher {
     ///
     /// [`LaunchError::NotInstalled`] for [`Launcher::CurrentExe`] when the
     /// process never called [`intercept`]; nothing is spawned then.
-    pub(crate) fn path(&self) -> Result<PathBuf, LaunchError> {
+    pub(crate) fn path(&self) -> Result<PathBuf> {
         match self {
             Self::CurrentExe if !INSTALLED.load(Ordering::Acquire) => {
                 Err(LaunchError::NotInstalled)

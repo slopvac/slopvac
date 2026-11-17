@@ -352,6 +352,11 @@ fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
          so plugins and git pack sources cannot start"
     );
     env.assert_no_trees();
+    // A refused sync has no side effects: no revocation fetch, no store, no
+    // state directory.
+    assert_eq!(env.list.fetches(), 0);
+    let left: Vec<_> = fs::read_dir(env.data.path()).unwrap().collect();
+    assert!(left.is_empty(), "unexpected entries: {left:?}");
 }
 
 #[test]

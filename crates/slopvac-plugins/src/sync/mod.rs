@@ -263,6 +263,7 @@ impl<'a> Syncer<'a> {
     /// The first [`SyncError`]. Verification failures leave the store without
     /// new trees; see the module documentation.
     pub fn sync(&self, lock: &Lockfile) -> Result<SyncReport, SyncError> {
+        self.check_git_launcher(lock)?;
         let current = match self.network {
             Network::Online(client) => self.revocations.refresh(client)?,
             Network::Offline => self.revocations.cached()?,
@@ -610,6 +611,34 @@ impl<'a> Syncer<'a> {
         })
     }
 
+    /// The launcher path for a git fetch of pack `id`.
+    fn launcher_for(&self, id: &PackId) -> Result<PathBuf, SyncError> {
+        self.git.launcher.path().map_err(|e| match e {
+            crate::launch::LaunchError::NotInstalled => SyncError::Launcher {
+                id: id.clone(),
+                source: crate::PluginError::LauncherNotInstalled,
+            },
+            e @ crate::launch::LaunchError::CurrentExe(_) => SyncError::Git {
+                id: id.clone(),
+                why: format!("cannot find the launcher: {e}"),
+            },
+        })
+    }
+
+    /// Refuse before any side effect when a git pack must be fetched and the
+    /// launcher cannot start.
+    fn check_git_launcher(&self, lock: &Lockfile) -> Result<(), SyncError> {
+        for pack in lock.packs() {
+            if let SourceKind::Git { .. } = pack.source.kind() {
+                let expected = Self::locked_tree_hash(pack)?;
+                if fs::symlink_metadata(self.store.tree_dir(&expected)).is_err() {
+                    self.launcher_for(&pack.id)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// A git source: the digest is the hash of the tree at the pinned commit.
     /// A stored tree with that hash is used as is (offline too); otherwise the
     /// commit is fetched, exported without a checkout and hashed. The tree
@@ -654,15 +683,7 @@ impl<'a> Syncer<'a> {
             id: id.clone(),
             why,
         };
-        let launcher = self.git.launcher.path().map_err(|e| match e {
-            crate::launch::LaunchError::NotInstalled => SyncError::Launcher {
-                id: id.clone(),
-                source: crate::PluginError::LauncherNotInstalled,
-            },
-            crate::launch::LaunchError::CurrentExe(e) => {
-                git_failed(format!("cannot find the launcher: {e}"))
-            }
-        })?;
+        let launcher = self.launcher_for(id)?;
         let program = git::find_git(self.project_root)
             .ok_or_else(|| git_failed("git was not found in a trusted PATH directory".into()))?;
         let scratch = self.store.scratch_dir()?;
