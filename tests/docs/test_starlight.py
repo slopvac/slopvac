@@ -85,7 +85,8 @@ def test_schema_index_links_to_the_raw_files_by_relative_path(site_dir: Path) ->
 
 def test_site_config_splits_origin_and_base(site_dir: Path) -> None:
     config = json.loads((site_dir / "generated" / "site.json").read_text())
-    assert config == {"site": "https://docs.example.org", "base": "/tools"}
+    assert config["site"] == "https://docs.example.org"
+    assert config["base"] == "/tools"
 
 
 def test_stale_generated_pages_are_removed_on_rebuild(site_dir: Path) -> None:

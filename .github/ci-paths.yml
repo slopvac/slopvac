@@ -66,6 +66,7 @@ docs-site:
   - 'site/**'
   - 'docs/site.toml'
   - 'docs/site-lint.toml'
+  - 'docs/guides/**'
   - 'scripts/docs/**'
   - 'tests/docs/**'
   - 'schemas/**'
