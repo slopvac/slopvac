@@ -55,7 +55,7 @@ jobs:
       dependencies: ${{ steps.filter.outputs.dependencies }}
       filesystem: ${{ steps.filter.outputs.filesystem }}
       secrets: ${{ steps.filter.outputs.secrets }}
-      force_all: ${{ steps.bootstrap.outputs.force_all }}
+      force_all: ${{ steps.force.outputs.force_all }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,6 +74,21 @@ jobs:
               - '.github/ci-paths.yml'
               - '.github/workflows/test.yml'
 
+      # The merge queue and pushes to main are the authoritative backstop, so they
+      # run every suite whatever the diff touched. Only pull requests route by diff.
+      - name: Run every suite on the queue and main
+        id: force
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ROUTING_CHANGED: ${{ steps.bootstrap.outputs.force_all }}
+        run: |
+          set -euo pipefail
+          force_all=false
+          if [ "$ROUTING_CHANGED" = "true" ] || [ "$EVENT_NAME" = "merge_group" ] || [ "$EVENT_NAME" = "push" ]; then
+            force_all=true
+          fi
+          echo "force_all=$force_all" >> "$GITHUB_OUTPUT"
+
       - name: Classify changed files
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -83,7 +98,7 @@ jobs:
       - name: Report classification
         env:
           MATCHED: ${{ steps.filter.outputs.changes }}
-          FORCE_ALL: ${{ steps.bootstrap.outputs.force_all }}
+          FORCE_ALL: ${{ steps.force.outputs.force_all }}
         run: |
           set -euo pipefail
           echo "Matched CI classes: $MATCHED"
