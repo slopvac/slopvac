@@ -459,7 +459,12 @@ def test_candidate_assets_are_signed_in_a_job_that_gates_the_pypi_upload():
     ]
     assert order == sorted(order)
     signing = step("sign", "Sign the release artifacts")
-    assert signing["run"] == "python3 scripts/release_signing.py sign artifacts"
+    assert (
+        signing["run"]
+        == 'python3 scripts/release_signing.py sign artifacts --version "$VERSION"'
+    )
+    # The version is the validated tag's, passed by environment, never interpolated.
+    assert signing["env"]["VERSION"] == "${{ needs.validate.outputs.cargo-version }}"
     # Signing must finish before the irreversible PyPI upload and the prerelease.
     assert "sign" in JOBS["publish"]["needs"]
     assert "sign" in JOBS["prerelease"]["needs"]

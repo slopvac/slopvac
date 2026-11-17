@@ -34,3 +34,7 @@ perf-results/
 
 # Eval corpus downloads and generated twins; see evals/README.md.
 evals/.cache/
+
+# Model-eval journals hold full model responses; keep them local.
+evals/results/models/*.journal.jsonl
+evals/results/models/*.lock

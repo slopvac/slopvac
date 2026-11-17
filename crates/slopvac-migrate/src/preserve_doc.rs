@@ -399,6 +399,7 @@ fn wanted_rules(layer: &Layer, ctx: &Ctx<'_>) -> BTreeMap<String, String> {
     layer
         .rules
         .iter()
+        .filter(|(qid, _)| !ctx.renames.is_removed(qid))
         .map(|(qid, level)| (ctx.rule(qid), level.clone()))
         .collect()
 }
@@ -467,10 +468,11 @@ fn block_table(block: &Block3, comment: &str, ctx: &Ctx<'_>) -> Table {
         }
         t.insert("categories", Item::Table(cats));
     }
-    if !block.layer.rules.is_empty() {
+    let wanted = wanted_rules(&block.layer, ctx);
+    if !wanted.is_empty() {
         let mut rules = Table::new();
-        for (qid, level) in &block.layer.rules {
-            rules.insert(&ctx.rule(qid), value(level.as_str()));
+        for (id, level) in &wanted {
+            rules.insert(id, value(level.as_str()));
         }
         t.insert("rules", Item::Table(rules));
     }

@@ -242,6 +242,18 @@ def test_docs_and_python_changes_skip_the_rust_legs(paths, expected):
     assert {job: evaluate(JOBS[job]["if"], outputs) for job in HEAVY} == expected
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "schemas/v3/tagger.schema.json",
+        "schemas/v3/conformance/blocklist/invalid/cases.toml",
+    ],
+)
+def test_schema_changes_route_to_rust(path):
+    # Rust crates load the schema files and the corpus, so a schema-only change must run Rust CI.
+    assert in_class("rust", path)
+
+
 @pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
 def test_folded_job_calls_its_workflow_with_read_only_token(job):
     call = JOBS[job]

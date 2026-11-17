@@ -1,16 +1,16 @@
-//! Structural taggers: built-in taggers that read more than one text unit.
+//! Structural conditions of a declarative tagger: the `when` object of
+//! `tagger.schema.json`.
 //!
-//! `tagger.schema.json` taggers read only the text of one unit. These taggers also read the
+//! A tagger with `match` reads the text of one unit. A tagger with `when` also reads the
 //! heading path, an admonition title, front matter, the file path or the block kind, and
-//! they may tag a whole section or document. A pack file cannot say that, so the built-in
-//! ones live in `builtin/structural.yaml`, an internal format and not a pack artifact.
+//! it may tag a whole section or document.
 
 use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::schema::is_name;
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger, normalize_path};
+use crate::schema::{Extensions, present};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, normalize_path};
 
 /// How far a matching condition spreads its tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -27,91 +27,82 @@ pub enum Scope {
     Document,
 }
 
-/// Conditions of a declarative tagger. All given conditions must hold.
+/// Conditions of a structural tagger. All given conditions must hold.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct When {
     /// Any enclosing heading text matches.
+    #[serde(default, deserialize_with = "present")]
     pub heading_path: Option<String>,
     /// The enclosing admonition title matches.
+    #[serde(default, deserialize_with = "present")]
     pub admonition_title: Option<String>,
     /// Front matter key and a pattern for its value.
-    pub frontmatter: Option<FrontmatterCondition>,
+    #[serde(default, deserialize_with = "present")]
+    pub front_matter: Option<FrontMatterCondition>,
     /// The file path matches.
+    #[serde(default, deserialize_with = "present")]
     pub path: Option<String>,
     /// The sentence matches.
+    #[serde(default, deserialize_with = "present")]
     pub sentence: Option<String>,
     /// The block has this kind. Code blocks are skipped unless named here.
+    #[serde(default, deserialize_with = "present")]
     pub block_kind: Option<BlockKind>,
+    #[serde(flatten)]
+    _extensions: Extensions,
 }
 
 /// Front matter condition.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FrontmatterCondition {
+pub struct FrontMatterCondition {
     /// Key name.
     pub key: String,
     /// Pattern for the value; absent means the key only has to exist.
+    #[serde(default, deserialize_with = "present")]
     pub matches: Option<String>,
+    #[serde(flatten)]
+    _extensions: Extensions,
 }
 
-/// A structural tagger definition.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StructuralSpec {
-    /// Tagger id.
-    pub id: String,
-    /// Tag kind produced.
-    pub kind: String,
-    /// Tag scope.
-    #[serde(default)]
-    pub scope: Scope,
-    /// Confidence in 0..=1.
-    #[serde(default = "one")]
+/// The parts of a tagger file that a structural tagger needs.
+pub(crate) struct Settings<'a> {
+    pub id: &'a str,
+    pub tag: &'a str,
     pub confidence: f32,
-    /// Conditions.
-    pub when: When,
+    pub evidence: Option<&'a str>,
+    pub scope: Scope,
 }
 
-fn one() -> f32 {
-    1.0
-}
-
-impl StructuralSpec {
-    /// Parse one spec from YAML.
-    pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+impl When {
+    fn is_empty(&self) -> bool {
+        self.heading_path.is_none()
+            && self.admonition_title.is_none()
+            && self.front_matter.is_none()
+            && self.path.is_none()
+            && self.sentence.is_none()
+            && self.block_kind.is_none()
     }
 
     /// Compile into a tagger.
-    pub fn compile(self) -> Result<StructuralTagger, Error> {
-        if !is_name(&self.kind) {
-            return Err(Error::Parse(format!(
-                "tagger {}: kind `{}` is not a context tag (lowercase kebab-case)",
-                self.id, self.kind
-            )));
+    pub(crate) fn compile(&self, s: &Settings<'_>) -> Result<StructuralTagger, Error> {
+        let fail = |msg: &str| Error::Parse(format!("tagger `{}`: {msg}", s.id));
+        if self.is_empty() {
+            return Err(fail("`when` needs at least one condition"));
         }
-        if !(0.0..=1.0).contains(&self.confidence) {
-            return Err(Error::Parse(format!(
-                "tagger {}: confidence outside 0..=1",
-                self.id
-            )));
-        }
-        let w = &self.when;
-        if w.heading_path.is_none()
-            && w.admonition_title.is_none()
-            && w.frontmatter.is_none()
-            && w.path.is_none()
-            && w.sentence.is_none()
-            && w.block_kind.is_none()
+        let strings = [
+            &self.heading_path,
+            &self.admonition_title,
+            &self.path,
+            &self.sentence,
+        ];
+        let fm = self.front_matter.as_ref();
+        if strings.iter().any(|o| o.as_deref() == Some(""))
+            || fm.is_some_and(|f| f.key.is_empty() || f.matches.as_deref() == Some(""))
         {
-            return Err(Error::Parse(format!(
-                "tagger {}: `when` has no condition",
-                self.id
-            )));
+            return Err(fail("`when` conditions need at least one character"));
         }
         let c = |o: &Option<String>| o.as_deref().map(Pattern::new_caseless).transpose();
-        let fm = match &w.frontmatter {
+        let fm = match fm {
             Some(f) => Some((
                 f.key.clone(),
                 f.matches
@@ -122,23 +113,38 @@ impl StructuralSpec {
             None => None,
         };
         Ok(StructuralTagger {
-            heading: c(&w.heading_path)?,
-            admonition: c(&w.admonition_title)?,
-            path: c(&w.path)?,
-            sentence: c(&w.sentence)?,
+            id: s.id.to_owned(),
+            tag: s.tag.to_owned(),
+            confidence: s.confidence,
+            evidence: s.evidence.map(str::to_owned),
+            scope: s.scope,
+            block_kind: self.block_kind,
+            has_block_conditions: self.heading_path.is_some()
+                || self.admonition_title.is_some()
+                || self.sentence.is_some()
+                || self.block_kind.is_some(),
+            heading: c(&self.heading_path)?,
+            admonition: c(&self.admonition_title)?,
+            path: c(&self.path)?,
+            sentence: c(&self.sentence)?,
             fm,
-            spec: self,
         })
     }
 }
 
-/// A compiled declarative tagger.
+/// A compiled structural tagger.
 ///
 /// Conditions combine with AND at three levels. Path and front matter are document
 /// conditions. Heading path, admonition title and block kind are block conditions. The
 /// sentence pattern is a sentence condition. Every given condition must hold for a tag.
-pub struct StructuralTagger {
-    spec: StructuralSpec,
+pub(crate) struct StructuralTagger {
+    id: String,
+    tag: String,
+    confidence: f32,
+    evidence: Option<String>,
+    scope: Scope,
+    block_kind: Option<BlockKind>,
+    has_block_conditions: bool,
     heading: Option<Pattern>,
     admonition: Option<Pattern>,
     path: Option<Pattern>,
@@ -167,7 +173,7 @@ impl StructuralTagger {
     }
 
     fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
-        let kind_ok = match self.spec.when.block_kind {
+        let kind_ok = match self.block_kind {
             Some(k) => b.kind == k,
             None => b.kind != BlockKind::CodeBlock,
         };
@@ -195,35 +201,26 @@ impl StructuralTagger {
         Ok(true)
     }
 
-    fn has_block_conditions(&self) -> bool {
-        let w = &self.spec.when;
-        w.heading_path.is_some()
-            || w.admonition_title.is_some()
-            || w.sentence.is_some()
-            || w.block_kind.is_some()
-    }
-
     fn tag_for(&self, span: Range<usize>, evidence: &str) -> Tag {
         Tag {
-            kind: self.spec.kind.clone(),
+            kind: self.tag.clone(),
             span,
-            confidence: self.spec.confidence,
-            evidence: format!("{}: {evidence}", self.spec.id),
+            confidence: self.confidence,
+            evidence: self
+                .evidence
+                .clone()
+                .unwrap_or_else(|| format!("{}: {evidence}", self.id)),
         }
     }
 }
 
-impl Tagger for StructuralTagger {
-    fn id(&self) -> &str {
-        &self.spec.id
-    }
-
-    fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+impl StructuralTagger {
+    pub(crate) fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
         if !self.document_level_ok(doc)? {
             return Ok(Vec::new());
         }
         let whole = 0..doc.source_len();
-        if self.spec.scope == Scope::Document && !self.has_block_conditions() {
+        if self.scope == Scope::Document && !self.has_block_conditions {
             return Ok(vec![self.tag_for(whole, "document")]);
         }
         let blocks = doc.blocks();
@@ -247,7 +244,7 @@ impl Tagger for StructuralTagger {
             if hits.is_empty() {
                 continue;
             }
-            match self.spec.scope {
+            match self.scope {
                 Scope::Sentence => {
                     out.extend(hits.into_iter().map(|s| self.tag_for(s, "sentence")));
                 }

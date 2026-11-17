@@ -18,13 +18,13 @@ extend-exclude = [
   # Generated corpus (tests/fixtures/generate.py); it holds upper-, swapped- and
   # Kelvin-cased copies of rule examples on purpose.
   "crates/slopvac-rules/tests/fixtures/pattern-parity.json",
-  # Generated parity fixture (tests/fixtures/generate.py): matched text is cut mid-word.
-  "crates/slopvac-engine/tests/fixtures/engine-parity.json",
   # Generated patterns (tests/fixtures/generate_word_class.py) join random fragments.
   "crates/slopvac-text/tests/fixtures/word_class_differential.json",
   # Golden suite: inputs hold the misspellings and defects that rules report, and the
   # recorded parity output quotes them.
   "tests/golden/v3/",
+  # Recorded differences from the golden suite: input ids are truncated manifest names.
+  "crates/slopvac-engine/tests/golden-divergences.json",
 ]
 
 [default.extend-words]
@@ -62,6 +62,9 @@ unparseable = "unparseable"
 Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
+
+# OpenDocument Format acronym, used in the binary-inputs design and the office extractors.
+ODF = "ODF"
 
 # Product name (Azure Kubernetes Service) in the bundled terms list,
 # crates/slopvac-terms/data/builtin.toml.
