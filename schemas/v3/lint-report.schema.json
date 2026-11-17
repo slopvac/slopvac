@@ -514,11 +514,6 @@
       ],
       "type": "object"
     },
-    "Genre": {
-      "description": "Genre id.",
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
-      "type": "string"
-    },
     "GenreReason": {
       "additionalProperties": false,
       "description": "One signal that led to the genre choice.",
@@ -550,8 +545,9 @@
       },
       "properties": {
         "id": {
-          "$ref": "#/$defs/Genre",
-          "description": "Genre id."
+          "description": "Genre id.",
+          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+          "type": "string"
         },
         "reasons": {
           "description": "Reasons.",

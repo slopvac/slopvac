@@ -50,6 +50,32 @@ pub enum Error {
         /// The imported file.
         import: &'static str,
     },
+    /// An artifact asks to inline a definition it does not generate.
+    #[error("{file} inlines `$defs/{def}`, which it does not generate")]
+    UnknownInline {
+        /// The artifact being generated.
+        file: &'static str,
+        /// The definition name.
+        def: String,
+    },
+    /// A reference points inside a definition that is being inlined.
+    #[error("{file} references inside `$defs/{def}`, which is inlined")]
+    InlinePointer {
+        /// The artifact being generated.
+        file: &'static str,
+        /// The definition name.
+        def: String,
+    },
+    /// Two generated files publish a definition of the same name.
+    #[error("`$defs/{def}` is published by both {first} and {second}")]
+    DuplicateDef {
+        /// The definition name.
+        def: String,
+        /// One file.
+        first: &'static str,
+        /// The other file.
+        second: &'static str,
+    },
 }
 
 /// The result of a generator operation.

@@ -1,13 +1,5 @@
 {
   "$defs": {
-    "AiSignal": {
-      "description": "How strongly a finding indicates machine-written text.",
-      "enum": [
-        "strong",
-        "weak",
-        "none"
-      ]
-    },
     "AppliesTo": {
       "additionalProperties": false,
       "description": "Narrows where the rule is active. An absent key means no restriction.",
@@ -462,8 +454,13 @@
       },
       "properties": {
         "ai_signal": {
-          "$ref": "#/$defs/AiSignal",
-          "default": "none"
+          "default": "none",
+          "description": "How strongly a finding indicates machine-written text.",
+          "enum": [
+            "strong",
+            "weak",
+            "none"
+          ]
         },
         "ai_signal_source": {
           "default": "unmeasured",

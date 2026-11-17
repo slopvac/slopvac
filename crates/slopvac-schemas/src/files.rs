@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use slopvac_model::schema::id;
 use crate::artifacts::{ARTIFACTS, Artifact};
 use crate::canonical::to_canonical_json;
 use crate::error::{Error, Result};
-use crate::link::link_shared_defs;
+use crate::link::{inline_defs, link_shared_defs};
 
 /// Where the generated files live, relative to the repository root.
 const SCHEMA_DIR: &str = "schemas/v3";
@@ -39,8 +40,23 @@ pub struct Drift {
 /// Generate every artifact in memory.
 pub fn generate() -> Result<Vec<Generated>> {
     let mut done: Vec<(&'static str, Value)> = Vec::new();
+    let mut publisher: BTreeMap<String, &'static str> = BTreeMap::new();
     for artifact in ARTIFACTS {
         let schema = build(artifact, &done)?;
+        for def in schema
+            .get("$defs")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(first) = publisher.insert(def.0.clone(), artifact.file) {
+                return Err(Error::DuplicateDef {
+                    def: def.0.clone(),
+                    first,
+                    second: artifact.file,
+                });
+            }
+        }
         done.push((artifact.file, schema));
     }
     Ok(done
@@ -75,6 +91,16 @@ fn build(artifact: &Artifact, done: &[(&'static str, Value)]) -> Result<Value> {
         };
         imports.push((*file, schema));
     }
+    // Inline before linking: a shared definition is compared with the importer's copy, and
+    // the published copy already has its owner's inlined definitions written in place.
+    let mut inline: Vec<&str> = artifact.inline.to_vec();
+    let local = |def: &str| schema.get("$defs").and_then(|defs| defs.get(def)).is_some();
+    for import in artifact.imports {
+        if let Some(owner) = ARTIFACTS.iter().find(|a| a.file == *import) {
+            inline.extend(owner.inline.iter().filter(|def| local(def)));
+        }
+    }
+    inline_defs(artifact.file, &mut schema, &inline)?;
     link_shared_defs(artifact.file, &mut schema, &imports)?;
     Ok(schema)
 }

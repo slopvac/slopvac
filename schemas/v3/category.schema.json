@@ -1,15 +1,4 @@
 {
-  "$defs": {
-    "CategoryId": {
-      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
-      "type": "string"
-    },
-    "Density": {
-      "description": "Findings per 100 words.",
-      "minimum": 0,
-      "type": "number"
-    }
-  },
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/category.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -24,12 +13,15 @@
       "type": "string"
     },
     "id": {
-      "$ref": "#/$defs/CategoryId",
-      "description": "Category id. The qualified rule id is <pack>:<category>.<rule>."
+      "description": "Category id. The qualified rule id is <pack>:<category>.<rule>.",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
     },
     "max_per_100_words": {
       "additionalProperties": {
-        "$ref": "#/$defs/Density"
+        "description": "Findings per 100 words.",
+        "minimum": 0,
+        "type": "number"
       },
       "description": "Density budget per profile, keyed by profile name. Absent means no budget.",
       "propertyNames": {

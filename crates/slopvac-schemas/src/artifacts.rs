@@ -20,6 +20,10 @@ pub struct Artifact {
     /// Files whose `$defs` this one references. Each shared definition is published once, by
     /// the imported file that defines it, and referenced from here.
     pub imports: &'static [&'static str],
+    /// Local definitions written in place instead of under `$defs`, because another file
+    /// publishes a definition of the same name. A `$defs` name means one thing across
+    /// `schemas/v3`.
+    pub inline: &'static [&'static str],
     /// Build the schema: a root type's schema with its `$defs`, or `$defs` alone.
     pub(crate) build: fn() -> Value,
 }
@@ -31,6 +35,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         title: "slopvac v3 shared definitions",
         description: Some("Shared $defs referenced by every v3 artifact schema."),
         imports: &[],
+        inline: &[],
         build: common,
     },
     Artifact {
@@ -42,6 +47,7 @@ pub const ARTIFACTS: &[Artifact] = &[
              absent. Semantics are specified in docs/contract/rules.md.",
         ),
         imports: &["common.schema.json"],
+        inline: &["AiSignal"],
         build: rule,
     },
     Artifact {
@@ -49,6 +55,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         title: "slopvac v3 category",
         description: None,
         imports: &["common.schema.json", "rule.schema.json"],
+        inline: &["CategoryId", "Density"],
         build: category,
     },
     Artifact {
@@ -56,6 +63,7 @@ pub const ARTIFACTS: &[Artifact] = &[
         title: "slopvac v3 lint report",
         description: None,
         imports: &["common.schema.json"],
+        inline: &["Genre"],
         build: lint_report,
     },
 ];

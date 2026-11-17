@@ -63,6 +63,97 @@ pub fn link_shared_defs(
     Ok(())
 }
 
+/// Write each named local definition in place of every reference to it, and drop it from
+/// `$defs`, so it is published only where its owner publishes it. Keywords beside a `$ref`
+/// (a description, say) are kept and win over the definition's own.
+pub(crate) fn inline_defs(file: &'static str, root: &mut Value, names: &[&str]) -> Result<()> {
+    let Some(object) = root.as_object_mut() else {
+        return Err(Error::NotAnObject { file });
+    };
+    let mut defs = match object.remove("$defs") {
+        Some(Value::Object(defs)) => defs,
+        _ => Map::new(),
+    };
+    let mut bodies = Map::new();
+    for name in names {
+        let Some(body) = defs.remove(*name) else {
+            return Err(Error::UnknownInline {
+                file,
+                def: (*name).to_owned(),
+            });
+        };
+        bodies.insert((*name).to_owned(), body);
+    }
+    let mut failure = None;
+    let mut replace = |schema: &mut Value| {
+        replace_refs(schema, &bodies, &mut |def| {
+            failure.get_or_insert(Error::InlinePointer {
+                file,
+                def: def.to_owned(),
+            });
+        });
+    };
+    for def in defs.values_mut() {
+        replace(def);
+    }
+    let mut shape = Value::Object(std::mem::take(object));
+    replace(&mut shape);
+    if let Some(err) = failure {
+        return Err(err);
+    }
+    let Value::Object(shape) = shape else {
+        return Err(Error::NotAnObject { file });
+    };
+    *object = shape;
+    if !defs.is_empty() {
+        object.insert("$defs".into(), Value::Object(defs));
+    }
+    Ok(())
+}
+
+/// Replace each object whose `$ref` names a definition in `bodies` with that definition plus
+/// the object's other keywords. A reference into such a definition calls `into_def`.
+fn replace_refs(schema: &mut Value, bodies: &Map<String, Value>, into_def: &mut dyn FnMut(&str)) {
+    match schema {
+        Value::Object(map) => {
+            let target = map
+                .get("$ref")
+                .and_then(Value::as_str)
+                .and_then(|r| r.strip_prefix(LOCAL))
+                .map(str::to_owned);
+            if let Some(rest) = target {
+                if let Some(body) = bodies.get(rest.as_str()) {
+                    map.remove("$ref");
+                    let siblings = std::mem::take(map);
+                    if let Value::Object(body) = body.clone() {
+                        *map = body;
+                    }
+                    map.extend(siblings);
+                } else if bodies.contains_key(def_name(&rest)) {
+                    into_def(def_name(&rest));
+                }
+            }
+            for (key, member) in map.iter_mut() {
+                match key.as_str() {
+                    keyword if DATA.contains(&keyword) => {}
+                    keyword if NAMED.contains(&keyword) => {
+                        if let Value::Object(named) = member {
+                            named
+                                .values_mut()
+                                .for_each(|sub| replace_refs(sub, bodies, into_def));
+                        }
+                    }
+                    _ => replace_refs(member, bodies, into_def),
+                }
+            }
+        }
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| replace_refs(item, bodies, into_def)),
+        _ => {}
+    }
+}
+
 /// Definition name to owning file and its published definition.
 fn owners<'a>(
     file: &'static str,
@@ -294,6 +385,36 @@ mod tests {
             schema["properties"]["examples"]["items"]["$ref"],
             "common.schema.json#/$defs/Span"
         );
+    }
+
+    #[test]
+    fn an_inlined_def_is_written_in_place_with_the_reference_siblings_winning() {
+        let mut schema = json!({
+            "properties": {"a": {"$ref": "#/$defs/Id", "description": "A."}},
+            "$defs": {
+                "Id": {"type": "string", "description": "Id."},
+                "Other": {"items": {"$ref": "#/$defs/Id"}},
+            },
+        });
+        inline_defs("x.schema.json", &mut schema, &["Id"]).unwrap();
+        assert_eq!(
+            schema,
+            json!({
+                "properties": {"a": {"type": "string", "description": "A."}},
+                "$defs": {"Other": {"items": {"type": "string", "description": "Id."}}},
+            })
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::not_generated(json!({"$defs": {}}), "UnknownInline")]
+    #[case::pointer_inside(
+        json!({"$ref": "#/$defs/Id/properties/n", "$defs": {"Id": {"properties": {"n": {}}}}}),
+        "InlinePointer"
+    )]
+    fn inlining_fails_on(#[case] mut schema: Value, #[case] want: &str) {
+        let err = inline_defs("x.schema.json", &mut schema, &["Id"]).unwrap_err();
+        assert!(format!("{err:?}").starts_with(want), "{err:?}");
     }
 
     #[test]
