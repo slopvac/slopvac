@@ -141,6 +141,24 @@ def test_engine_exit_two_is_an_error(tmp_path):
         engine.lint([tmp_path / "a.md"])
 
 
+def test_a_report_with_paths_relative_to_the_engine_directory_is_matched(
+    tmp_path, monkeypatch
+):
+    script = tmp_path / "rel.py"
+    script.write_text(
+        "import json, os, sys\n"
+        "docs = [{'path': os.path.relpath(p), 'words': 4, 'findings': []}\n"
+        "        for p in sys.argv[1:] if p.endswith('.md')]\n"
+        "print(json.dumps({'documents': docs}))\n"
+    )
+    engine = runner.Engine("rel", (sys.executable, str(script)))
+    cache = tmp_path / "cache"
+    d = make_doc("a", "markdown")
+    write_cache(cache, d)
+    out = runner.run_engine(engine, {"documents": [d]}, cache)
+    assert out["documents"]["a"]["words"] == 4
+
+
 def test_an_incomplete_run_with_a_report_keeps_its_findings(tmp_path):
     script = tmp_path / "inc.py"
     script.write_text(
