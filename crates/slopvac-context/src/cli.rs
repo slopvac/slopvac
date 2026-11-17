@@ -2,7 +2,7 @@
 //!
 //! The CLI epic wires [`command`] and [`run`] into the clap tree.
 
-use std::fmt::Write as _;
+use crate::append_line;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
@@ -33,10 +33,6 @@ pub fn command() -> Command {
 
 /// Render one result as text.
 #[must_use]
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "writing to a String cannot fail"
-)]
 pub fn render(path: &str, r: &GenreResult) -> String {
     let source = match r.source {
         GenreSource::Explicit => "explicit",
@@ -45,10 +41,13 @@ pub fn render(path: &str, r: &GenreResult) -> String {
     };
     let mut out = format!("{path}: {} ({source})\n", r.id);
     for reason in &r.reasons {
-        let _ = writeln!(out, "  {}: {}", reason.signal, reason.detail);
+        append_line(
+            &mut out,
+            format_args!("  {}: {}", reason.signal, reason.detail),
+        );
     }
     let scores: Vec<String> = r.scores.iter().map(|(id, s)| format!("{id} {s}")).collect();
-    let _ = writeln!(out, "  scores: {}", scores.join(", "));
+    append_line(&mut out, format_args!("  scores: {}", scores.join(", ")));
     out
 }
 

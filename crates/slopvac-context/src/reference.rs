@@ -3,7 +3,7 @@
 //! [`reference_pages`] returns `(path, markdown)` pairs relative to the docs
 //! site root, like the style reference in `slopvac-styles`.
 
-use std::fmt::Write as _;
+use crate::{append, append_line};
 
 use crate::{
     Budget, CategoryTable, GenreRegistry, GenreSpec, RuleLevel, Scalar, Signal, SignalKind,
@@ -70,10 +70,6 @@ fn category(name: &str, t: &CategoryTable) -> String {
     format!("- `{name}`: {}", dials.join(", "))
 }
 
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "writing to a String cannot fail"
-)]
 fn index(reg: &GenreRegistry) -> String {
     let mut out = String::from(
         "# Genres\n\n\
@@ -88,62 +84,57 @@ fn index(reg: &GenreRegistry) -> String {
         .into_iter()
         .filter_map(|id| Some((id, reg.spec(id)?)))
     {
-        let _ = write!(out, "- [`{id}`]({id}.md)");
+        append(&mut out, format_args!("- [`{id}`]({id}.md)"));
         if let Some(d) = &spec.description {
-            let _ = write!(out, ": {d}");
+            append(&mut out, format_args!(": {d}"));
         }
         out.push('\n');
     }
     out
 }
 
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "writing to a String cannot fail"
-)]
 fn list_or(out: &mut String, items: &[String], none: &str) {
     if items.is_empty() {
-        let _ = writeln!(out, "{none}");
+        append_line(out, format_args!("{none}"));
     }
     for i in items {
-        let _ = writeln!(out, "{i}");
+        append_line(out, format_args!("{i}"));
     }
 }
 
 /// The page of one genre, or `None` when the registry cannot resolve it. A registry
 /// validates every chain when it is built, so that does not happen.
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "writing to a String cannot fail"
-)]
 fn page(reg: &GenreRegistry, spec: &GenreSpec) -> Option<String> {
     let id = &spec.id;
     let title = spec.title.as_deref().unwrap_or(id);
     let mut out = format!("# {title}\n\n");
     if let Some(d) = &spec.description {
-        let _ = write!(out, "{d}\n\n");
+        append(&mut out, format_args!("{d}\n\n"));
     }
     if let Some(s) = &spec.surfaces {
-        let _ = write!(out, "Typical documents: {s}\n\n");
+        append(&mut out, format_args!("Typical documents: {s}\n\n"));
     }
     out.push_str("## Settings\n\n");
-    let _ = writeln!(out, "- Id: `{id}`");
+    append_line(&mut out, format_args!("- Id: `{id}`"));
     if spec.extends.is_empty() {
         out.push_str("- Extends: none\n");
     } else {
         let direct: Vec<String> = spec.extends.iter().map(|e| format!("`{e}`")).collect();
-        let _ = writeln!(out, "- Extends: {}", direct.join(", "));
+        append_line(&mut out, format_args!("- Extends: {}", direct.join(", ")));
         let chain: Vec<String> = reg
             .chain(id)
             .ok()?
             .iter()
             .map(|s| format!("`{}`", s.id))
             .collect();
-        let _ = writeln!(out, "- Resolved chain, lowest first: {}", chain.join(" → "));
+        append_line(
+            &mut out,
+            format_args!("- Resolved chain, lowest first: {}", chain.join(" → ")),
+        );
     }
     match reg.profile(id).ok()? {
         Some(p) => {
-            let _ = writeln!(out, "- Profile: `{}`", p.as_str());
+            append_line(&mut out, format_args!("- Profile: `{}`", p.as_str()));
         }
         None => out.push_str("- Profile: none (the configured profile applies)\n"),
     }
@@ -151,9 +142,9 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> Option<String> {
     match &spec.detect {
         None => out.push_str("None. Config or front matter choose this genre.\n"),
         Some(d) => {
-            let _ = write!(out, "Minimum score: {}\n\n", d.min_score);
+            append(&mut out, format_args!("Minimum score: {}\n\n", d.min_score));
             for s in &d.signals {
-                let _ = writeln!(out, "- {}", signal(s));
+                append_line(&mut out, format_args!("- {}", signal(s)));
             }
         }
     }
